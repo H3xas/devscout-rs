@@ -45,7 +45,7 @@ fn run_git(dir: &Path, args: &[&str]) {
 fn bootstrap_initial_commit(dir: &Path) {
     const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
     let output =
-        Command::new("git").args(["commit-tree", EMPTY_TREE, "-m", "init"]).current_dir(dir).stdin(Stdio::null()).output().expect("git commit-tree must run");
+        Command::new("git").args(["commit-tree", EMPTY_TREE, "-m", "init"]).env("GIT_AUTHOR_NAME", "devscout-test").env("GIT_AUTHOR_EMAIL", "devscout-test@example.com").env("GIT_COMMITTER_NAME", "devscout-test").env("GIT_COMMITTER_EMAIL", "devscout-test@example.com").current_dir(dir).stdin(Stdio::null()).output().expect("git commit-tree must run");
     assert!(output.status.success(), "git commit-tree failed: {output:?}");
     let sha = String::from_utf8(output.stdout).unwrap().trim().to_string();
     run_git(dir, &["update-ref", "refs/heads/master", &sha]);

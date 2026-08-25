@@ -35,7 +35,7 @@ fn rust_bin() -> PathBuf {
 }
 
 fn git(dir: &Path, args: &[&str]) -> String {
-    let output = Command::new("git").args(args).current_dir(dir).stdin(Stdio::null()).output().expect("git binary must be on PATH");
+    let output = Command::new("git").args(args).current_dir(dir).stdin(Stdio::null()).env("GIT_AUTHOR_NAME", "devscout-test").env("GIT_AUTHOR_EMAIL", "devscout-test@example.com").env("GIT_COMMITTER_NAME", "devscout-test").env("GIT_COMMITTER_EMAIL", "devscout-test@example.com").output().expect("git binary must be on PATH");
     assert!(output.status.success(), "git {args:?} failed in {}: {output:?}", dir.display());
     String::from_utf8(output.stdout).unwrap().trim().to_string()
 }

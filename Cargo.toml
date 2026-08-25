@@ -3,6 +3,7 @@ name = "devscout-rs"
 version = "0.2.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
+repository = "https://github.com/H3xas/devscout-rs"
 description = "Fast code index for C# and TypeScript codebases -- map, find, refs, impact from the CLI."
 readme = "README.md"
 keywords = ["code-index", "csharp", "typescript", "code-navigation", "cli"]
