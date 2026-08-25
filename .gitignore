@@ -1,0 +1,32 @@
+/target/
+
+# Index artifacts, when they land in a repo root rather than the git dir.
+.scout/
+
+# Content-addressed store the agent hooks write, plus SQLite sidecars.
+content.db
+cache.db
+*.db-shm
+*.db-wal
+
+# Command output.
+out/
+
+# Assistant and private tooling; never published.
+.claude/
+.claude*
+CLAUDE.md
+CLAUDE.local.md
+MEMORY.md
+WORKTREE.md
+.local-npm-feed/
+*.tgz
+.DS_Store
+
+# Benchmark corpora and isolated bench state; cloned by bench/clone-corpus.sh, never committed.
+# (bench/out/ is already covered by the out/ rule above.)
+bench/corpora/
+bench/state/
+
+# Local release tooling, not published.
+scripts/preflight.sh

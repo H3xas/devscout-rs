@@ -1,0 +1,28 @@
+# Pinned public benchmark corpora.
+#
+# One pin per language kind. A figure published in docs/benchmarks/ must name the
+# corpus it was measured on and the SHA below that was checked out for it.
+# A corpus with status = "proposed" has no SHA yet and may not carry any published
+# number; the first run that measures against it records its pin here.
+
+version = 1
+
+[csharp]
+id = "csharp"
+repo = "MassTransit/MassTransit"
+url = "https://github.com/MassTransit/MassTransit.git"
+sha = "855cf1752c94ca9498e0c45ce8d09fdc9e957dd6"
+license = "Apache-2.0"
+kind = "code"
+status = "registered"
+note = "Registered C# corpus; already the pinned gate corpus for the extraction work."
+
+[typescript]
+id = "typescript"
+repo = "nrwl/nx"
+url = "https://github.com/nrwl/nx.git"
+sha = "1ce5e91f5ec13cf8812f3e67e1fae33079336876"
+license = "MIT"
+kind = "web"
+status = "registered"
+note = "Pinned at tag 22.5.4 (2026-08-25). Sized for the web kind; no lane has run against it yet."

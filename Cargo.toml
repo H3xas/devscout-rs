@@ -1,0 +1,54 @@
+[package]
+name = "devscout-rs"
+version = "0.2.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Fast code index for C# and TypeScript codebases -- map, find, refs, impact from the CLI."
+readme = "README.md"
+keywords = ["code-index", "csharp", "typescript", "code-navigation", "cli"]
+categories = ["command-line-utilities", "development-tools"]
+exclude = [".github/", "target/"]
+
+[[bin]]
+name = "devscout"
+path = "src/main.rs"
+
+[dependencies]
+lexopt = "=0.3.2"
+rayon = "=1.12.0"
+rusqlite = { version = "=0.40.2", features = ["bundled"] }
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.151"
+sha2 = "=0.11.0"
+# tree-sitter-c-sharp 0.23.5 depends on the lightweight `tree-sitter-language`
+# crate (^0.1) for its ABI, not on `tree-sitter` directly -- grammar crates
+# decoupled from the parser crate's version starting ~0.22. That means the
+# latest tree-sitter (0.26.12) and latest tree-sitter-c-sharp (0.23.5) are a
+# valid pair: both implement/consume the same tree-sitter-language ABI, so
+# there is no version lock between them to satisfy beyond "recent enough".
+tree-sitter = "=0.26.12"
+tree-sitter-c-sharp = "=0.23.5"
+# The TypeScript/JavaScript grammars, a second grammar set behind the same
+# seam. Both crates declare `tree-sitter-language` (^0.1) as their only
+# *normal* dependency and `tree-sitter` itself only as a *dev* dependency --
+# the same decoupled-ABI pattern the tree-sitter-c-sharp pin above already
+# relies on -- so both compile cleanly against this crate's pinned
+# tree-sitter = "=0.26.12" runtime with zero version conflict.
+tree-sitter-typescript = "=0.23.2"
+tree-sitter-javascript = "=0.25.0"
+
+[profile.release]
+lto = true
+strip = true
+
+[lints.rust]
+missing_docs = "allow" # raise to "warn" after the public-API docs pass
+
+[lints.rustdoc]
+broken_intra_doc_links = "deny"
+bare_urls = "warn"
+
+[lints.clippy]
+doc_markdown = "warn"
+empty_docs = "warn"
+too_long_first_doc_paragraph = "warn"

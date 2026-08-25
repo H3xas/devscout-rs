@@ -1,0 +1,44 @@
+{
+  "sealed": "2026-08-25",
+  "protocol": "docs/benchmarks/agentic.md",
+  "corpus": {
+    "id": "csharp",
+    "repo": "MassTransit/MassTransit",
+    "sha": "855cf1752c94ca9498e0c45ce8d09fdc9e957dd6"
+  },
+  "hash": "sha256, one file at a time, hex digest as printed by `shasum -a 256`",
+  "ticket_sourcing": "maintainer-authored, permitted for this run under the 2026-08-25 dated waiver in docs/benchmarks/agentic.md; not sourced from MassTransit's public issue tracker; disclosed per that waiver in any results that use them",
+  "verification": "every truth path hand-verified against the local clone at the pinned sha before sealing; corrections noted per ticket where the draft path was off",
+  "tickets": [
+    {
+      "id": "DS-01",
+      "ticket_file": "DS-01-ticket.md",
+      "ticket_sha256": "2739ad3f5824b03ea7f921deae7fb667333bfba663d5c7c93812f801945ebaf8",
+      "truth_file": "DS-01-truth.md",
+      "truth_sha256": "0fcf6b2d61527da02e209cdca537108a270d2f0f86250ee70aae1c0b00feb62e"
+    },
+    {
+      "id": "DS-02",
+      "ticket_file": "DS-02-ticket.md",
+      "ticket_sha256": "f1ef4e929c768daab5086d4af5f5d85bbf261a3bbc614b28539b04a26aa04791",
+      "truth_file": "DS-02-truth.md",
+      "truth_sha256": "17c678201904fa216bd1a12a3fdd47663daa31ed8650d15a7eb7e38c3d8a6f92"
+    },
+    {
+      "id": "DS-03",
+      "ticket_file": "DS-03-ticket.md",
+      "ticket_sha256": "887ce48b8f40c6369107d4d04fd2f19dfc9555451bddf82d4189e24d0d30228d",
+      "truth_file": "DS-03-truth.md",
+      "truth_sha256": "dea2abb5c8087a53723d7eedb82817845c2950fd100fe7a3125a7003b05b5eaf"
+    },
+    {
+      "id": "DS-04",
+      "ticket_file": "DS-04-ticket.md",
+      "ticket_sha256": "fded441bc9140c17df519debfbb7df1061c85e245d57274a66ec6697864243a8",
+      "truth_file": "DS-04-truth.md",
+      "truth_sha256": "a193658a44e3af242a75f21ce2d0b00e99a5fdb3e6053582a82847dc0834385a"
+    }
+  ],
+  "preregistration_file": "preregistration.md",
+  "preregistration_sha256": "a6eccdba0fde94249eb7ab9b08696a880d10ebbe67eb855b90e989823130fcba"
+}

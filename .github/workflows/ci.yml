@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-and-test:
+    name: Build & test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install stable Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      # This is a binary crate: commit Cargo.lock so builds are reproducible.
+      # If Cargo.lock isn't committed yet, fall back to an unlocked build
+      # rather than failing CI outright.
+      - name: Check for committed Cargo.lock
+        id: lockfile
+        run: |
+          if [ -f Cargo.lock ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Cargo.lock is not committed. Commit it for reproducible builds; falling back to an unlocked build for now."
+          fi
+
+      - name: Build (locked)
+        if: steps.lockfile.outputs.present == 'true'
+        run: cargo build --locked --all-targets
+
+      - name: Build (unlocked fallback, no Cargo.lock committed)
+        if: steps.lockfile.outputs.present == 'false'
+        run: cargo build --all-targets
+
+      - name: Test
+        run: cargo test --all-targets
+
+      # v0.1.0: fmt/clippy gates are intentionally skipped so first release
+      # isn't blocked on style convergence. fmt only runs, and only as a
+      # check, once the project has opted into a convention via rustfmt.toml.
+      - name: Check for rustfmt.toml
+        id: rustfmt_cfg
+        run: |
+          if [ -f rustfmt.toml ] || [ -f .rustfmt.toml ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: cargo fmt --check
+        if: steps.rustfmt_cfg.outputs.present == 'true'
+        run: cargo fmt --all -- --check
+
+  publish-dry-run:
+    name: cargo publish --dry-run
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install stable Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      # Keeps Cargo.toml / crate metadata publishable at all times, without
+      # publishing anything. Runs on every push/PR to main.
+      - name: cargo publish --dry-run
+        run: cargo publish --dry-run
