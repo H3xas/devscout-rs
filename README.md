@@ -196,6 +196,10 @@ commands, and the preliminary-run caveats are in
 | End-to-end retrieval | 1/2 correct | 2/2 correct | rg wins |
 | Agentic, Opus (preliminary) | 4/4 correct, median 180k tokens | 3/4 correct + 1 partial, median 199k tokens | No correctness edge; ~25k-token saving only |
 
+A separate scripted-lane run measured **tool calls issued per task**: the index arm used fewer
+calls in all four query kinds, largest on references (5.0 vs 11.8 per lane, ~2.4x) — single-run
+proxy, details under "Tool-call proxy" in the dated results.
+
 Gaps are published in both directions. `devscout` answers name-level and reachability questions
 from a prebuilt graph; questions that reduce to finding one distinctive string are answered
 well and cheaply by a skilled agent holding `rg`, with no index at all. Where a peer or the
