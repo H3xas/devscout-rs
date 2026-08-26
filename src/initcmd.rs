@@ -385,13 +385,11 @@ pub fn cmd_init(cwd: &Path, args: &[String]) -> (i32, String) {
 // operator's live settings on every test run.
 // ---------------------------------------------------------------------------
 
-// Extensions this tool can actually turn into AST-derived signatures today
-// (extract.rs / mapcmd.rs's `is_csharp`) -- just `.cs`. Everything else in
-// `walk::SOURCE_EXT` (`.ts`, `.tsx`, `.js`, `.jsx`, `.json`, `.md`) is
-// manifest-indexed via the heuristic `default_purpose` fallback, never
-// AST-extracted, so the census counts it as "present, not yet supported" even
-// though the walker already enumerates it as a "source" file.
-const SUPPORTED_EXT: &[&str] = &[".cs"];
+// C# gets the complete extraction path. TypeScript-family files are indexed
+// and resolved into the graph, but with narrower edge coverage. The remaining
+// extensions enumerated by `walk::SOURCE_EXT` are counted but not indexed.
+const FULLY_SUPPORTED_EXT: &[&str] = &[".cs"];
+const INDEXED_AND_GRAPHED_EXT: &[&str] = &[".ts", ".tsx", ".js", ".jsx"];
 
 // Flags handled only here -- stripped from `args` before they ever reach
 // `parse_init_args` (which treats unknown tokens as scope-dir positionals), so
@@ -467,15 +465,15 @@ fn census_line(root: &Path) -> String {
         }
     }
     counts.sort();
-    let (supported, other): (Vec<_>, Vec<_>) = counts.into_iter().partition(|(e, _)| SUPPORTED_EXT.contains(&e.as_str()));
+    let (fully_supported, other): (Vec<_>, Vec<_>) = counts.into_iter().partition(|(e, _)| FULLY_SUPPORTED_EXT.contains(&e.as_str()));
+    let (indexed_and_graphed, not_indexed): (Vec<_>, Vec<_>) = other.into_iter().partition(|(e, _)| INDEXED_AND_GRAPHED_EXT.contains(&e.as_str()));
     let fmt_group = |g: &[(String, usize)]| g.iter().map(|(e, c)| format!("{c} {e}")).collect::<Vec<_>>().join(", ");
 
-    match (supported.is_empty(), other.is_empty()) {
-        (false, false) => format!("languages: {} (supported); {} (present, not yet supported)", fmt_group(&supported), fmt_group(&other)),
-        (false, true) => format!("languages: {} (supported)", fmt_group(&supported)),
-        (true, false) => format!("languages: none supported; {} (present, not yet supported)", fmt_group(&other)),
-        (true, true) => unreachable!("a non-empty file list always contributes at least one counted extension"),
-    }
+    let mut groups = Vec::new();
+    if !fully_supported.is_empty() { groups.push(format!("{} (fully supported)", fmt_group(&fully_supported))); }
+    if !indexed_and_graphed.is_empty() { groups.push(format!("{} (indexed and graphed, narrower edge coverage)", fmt_group(&indexed_and_graphed))); }
+    if !not_indexed.is_empty() { groups.push(format!("{} (present, not indexed)", fmt_group(&not_indexed))); }
+    format!("languages: {}", groups.join("; "))
 }
 
 // ---------------------------------------------------------------------------
@@ -991,14 +989,14 @@ mod tests {
     // -- census_line ---------------------------------------------------
 
     #[test]
-    fn census_line_reports_supported_and_unsupported_separately() {
+    fn census_line_reports_all_three_support_tiers() {
         let dir = temp_dir("census-mixed");
         fs::write(dir.join("A.cs"), "namespace X { class A {} }").unwrap();
         fs::write(dir.join("B.cs"), "namespace X { class B {} }").unwrap();
         fs::write(dir.join("c.ts"), "export const x = 1;").unwrap();
         fs::write(dir.join("d.md"), "# doc").unwrap();
         let line = census_line(&dir);
-        assert_eq!(line, "languages: 2 .cs (supported); 1 .md, 1 .ts (present, not yet supported)");
+        assert_eq!(line, "languages: 2 .cs (fully supported); 1 .ts (indexed and graphed, narrower edge coverage); 1 .md (present, not indexed)");
     }
 
     #[test]
@@ -1006,7 +1004,7 @@ mod tests {
         let dir = temp_dir("census-cs-only");
         fs::write(dir.join("A.cs"), "namespace X { class A {} }").unwrap();
         let line = census_line(&dir);
-        assert_eq!(line, "languages: 1 .cs (supported)");
+        assert_eq!(line, "languages: 1 .cs (fully supported)");
     }
 
     #[test]
@@ -1014,7 +1012,7 @@ mod tests {
         let dir = temp_dir("census-unsupported-only");
         fs::write(dir.join("a.md"), "# doc").unwrap();
         let line = census_line(&dir);
-        assert_eq!(line, "languages: none supported; 1 .md (present, not yet supported)");
+        assert_eq!(line, "languages: 1 .md (present, not indexed)");
     }
 
     #[test]
@@ -1193,10 +1191,11 @@ mod tests {
         assert_eq!(reread, v);
     }
 
-    // -- SUPPORTED_EXT sanity ----------------------------------------------
+    // -- language tier sanity ----------------------------------------------
 
     #[test]
-    fn supported_ext_is_exactly_cs_today() {
-        assert_eq!(SUPPORTED_EXT, &[".cs"]);
+    fn census_language_tiers_are_explicit() {
+        assert_eq!(FULLY_SUPPORTED_EXT, &[".cs"]);
+        assert_eq!(INDEXED_AND_GRAPHED_EXT, &[".ts", ".tsx", ".js", ".jsx"]);
     }
 }

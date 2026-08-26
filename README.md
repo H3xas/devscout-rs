@@ -70,7 +70,7 @@ devscout init
 
 ```
 devscout initialized at /private/tmp/demo/.scout (non-git root: /private/tmp/demo)
-languages: 3 .cs (supported); 1 .js, 9 .ts, 1 .tsx (present, not yet supported)
+languages: 3 .cs (fully supported); 1 .js, 9 .ts, 1 .tsx (indexed and graphed, narrower edge coverage)
 hooks: installed (Read, Bash); backup /tmp/devscout-home/.claude/settings.json.bak.20260824-074758-728335000
 map: mapped 14 files under . (preserved 0 agent purposes, downgraded 0 changed, 14 new, 0 removed, 14 ast signatures); graph rebuilt in 0.01s (24 defs, 4 edges)
 ```
@@ -183,9 +183,6 @@ Known, rather than hidden:
 - **Generic-delegate `typeParams` divergence is under review.** Type-parameter handling for
   generic delegate declarations does not yet agree with the rest of the generic ladder; the
   affected shapes are under review rather than pinned.
-- **`init`'s language census understates TypeScript.** It labels every non-`.cs` extension
-  "present, not yet supported" because only C# gets the full extraction path. TypeScript is
-  indexed and graphed regardless; the census line has not caught up.
 - **The content-store fallback path is compile-time derived.** See `SCOUT_CONTENT_DB` above.
 - **No watch mode.** `map` is fast and incremental, but you run it; nothing watches the
   filesystem for you.
