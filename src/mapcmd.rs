@@ -125,7 +125,9 @@ fn is_graph_source(rel: &str) -> bool {
 // can never hold forces `changed == true` on every subsequent run forever,
 // defeating incremental reuse for the whole graph, not just this one file.
 fn read_source_lossy(path: &Path) -> Option<String> {
-    fs::read(path).ok().map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+    fs::read(path)
+        .ok()
+        .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
 }
 
 // ---------------------------------------------------------------------------
@@ -176,7 +178,9 @@ impl MapOptions {
     /// -- deterministic, no process-env mutation shared across parallel `cargo
     /// test` threads.
     pub fn from_env() -> Self {
-        MapOptions { hash_reuse: std::env::var("SCOUT_MTIME_REUSE").as_deref() != Ok("1") }
+        MapOptions {
+            hash_reuse: std::env::var("SCOUT_MTIME_REUSE").as_deref() != Ok("1"),
+        }
     }
 }
 
@@ -221,9 +225,16 @@ impl MapReport {
     /// what this run actually decided; the out-of-scope merge is a silent,
     /// additional safety property the summary line does not mention.
     pub fn summary_line(&self) -> String {
-        let graph_note = match (self.graph_rebuilt, self.graph_def_count, self.graph_edge_count) {
+        let graph_note = match (
+            self.graph_rebuilt,
+            self.graph_def_count,
+            self.graph_edge_count,
+        ) {
             (true, Some(defs), Some(edges)) => {
-                format!("graph rebuilt in {:.2}s ({defs} defs, {edges} edges)", self.graph_seconds)
+                format!(
+                    "graph rebuilt in {:.2}s ({defs} defs, {edges} edges)",
+                    self.graph_seconds
+                )
             }
             _ => "graph unchanged".to_string(),
         };
@@ -260,7 +271,10 @@ impl MapReport {
 // ---------------------------------------------------------------------------
 
 fn carries_best_source(entry: &Value, rel: &str) -> bool {
-    let source = entry.get("source").and_then(Value::as_str).unwrap_or("heuristic");
+    let source = entry
+        .get("source")
+        .and_then(Value::as_str)
+        .unwrap_or("heuristic");
     if source == "agent" {
         return true;
     }
@@ -288,7 +302,11 @@ fn entry_cache_key(entry: &Value) -> Option<i64> {
 // appended at the end.
 fn with_ensured_source(entry: &Value) -> Value {
     let fields = entry.as_object().unwrap_or(&[]);
-    let source = entry.get("source").and_then(Value::as_str).unwrap_or("heuristic").to_string();
+    let source = entry
+        .get("source")
+        .and_then(Value::as_str)
+        .unwrap_or("heuristic")
+        .to_string();
     let mut out: Vec<(String, Value)> = Vec::with_capacity(fields.len() + 1);
     let mut replaced = false;
     for (k, v) in fields {
@@ -315,7 +333,9 @@ fn with_ensured_source(entry: &Value) -> Value {
 // run (out of scope entirely)" -- a distinction a plain "is this rel in
 // `entries`" test cannot make, because that is true for neither case.
 fn is_within_scope(rel: &str, scope: &[String]) -> bool {
-    scope.iter().any(|d| d == "." || rel == d || rel.starts_with(&format!("{d}/")))
+    scope
+        .iter()
+        .any(|d| d == "." || rel == d || rel.starts_with(&format!("{d}/")))
 }
 
 // mtime keying (`hash_reuse == false`): the file's modification time in
@@ -380,7 +400,15 @@ enum ParsedFile {
 /// positional dir arguments with `--refresh` already stripped (module header) --
 /// an empty slice means "no explicit scope".
 pub fn map_repo(root: &Path, scope_dirs: &[String], opts: MapOptions) -> io::Result<MapReport> {
-    let scope = manifest::scope_for(root, if scope_dirs.is_empty() { None } else { Some(scope_dirs) }).map_err(io_err)?;
+    let scope = manifest::scope_for(
+        root,
+        if scope_dirs.is_empty() {
+            None
+        } else {
+            Some(scope_dirs)
+        },
+    )
+    .map_err(io_err)?;
     let files = walk::list_source_files(root, &scope)?;
 
     // A missing manifest, or one with no `entries` object, both collapse to "no
@@ -406,13 +434,23 @@ pub fn map_repo(root: &Path, scope_dirs: &[String], opts: MapOptions) -> io::Res
         .iter()
         .map(|rel| {
             let cache_key = cache_key_for(root, rel, &opts);
-            let fragment_ok = !is_graph_source(rel) || graph_index.get(rel.as_str()) == Some(&cache_key);
+            let fragment_ok =
+                !is_graph_source(rel) || graph_index.get(rel.as_str()) == Some(&cache_key);
             let prior_entry = prior_index.get(rel.as_str()).cloned();
             let reusable = prior_entry
                 .as_ref()
-                .map(|e| entry_cache_key(e) == Some(cache_key) && carries_best_source(e, rel) && fragment_ok)
+                .map(|e| {
+                    entry_cache_key(e) == Some(cache_key)
+                        && carries_best_source(e, rel)
+                        && fragment_ok
+                })
                 .unwrap_or(false);
-            PlanEntry { rel: rel.clone(), cache_key, prior_entry, reusable }
+            PlanEntry {
+                rel: rel.clone(),
+                cache_key,
+                prior_entry,
+                reusable,
+            }
         })
         .collect();
 
@@ -435,13 +473,15 @@ pub fn map_repo(root: &Path, scope_dirs: &[String], opts: MapOptions) -> io::Res
                 return None;
             }
             if is_csharp(&p.rel) {
-                return read_source_lossy(&root.join(&p.rel)).map(|src| ParsedFile::CSharp(p.rel.clone(), extract::extract(&src)));
+                return read_source_lossy(&root.join(&p.rel))
+                    .map(|src| ParsedFile::CSharp(p.rel.clone(), extract::extract(&src)));
             }
             // Markup never reaches a grammar -- the scan is a line walk -- but it
             // obeys the same reuse decision every other graph source obeys, so it
             // is dispatched from the same place.
             if markup::is_markup(&p.rel) {
-                return graph::markup_fragment(root, &p.rel).map(|f| ParsedFile::Markup(p.rel.clone(), f));
+                return graph::markup_fragment(root, &p.rel)
+                    .map(|f| ParsedFile::Markup(p.rel.clone(), f));
             }
             let grammar = parse::ts_grammar_for(&p.rel)?;
             // The leading-comment prefix rides inside `extract_ts_file` (not the
@@ -469,7 +509,10 @@ pub fn map_repo(root: &Path, scope_dirs: &[String], opts: MapOptions) -> io::Res
                 // the C# set change" check see a permanent mismatch for genuinely
                 // type-free files, forcing a rebuild on every run even when nothing
                 // changed.
-                fresh_fragments.insert(rel, AnyFragment::Cs(graph::fragment_from_extraction(&extraction)));
+                fresh_fragments.insert(
+                    rel,
+                    AnyFragment::Cs(graph::fragment_from_extraction(&extraction)),
+                );
             }
             ParsedFile::Markup(rel, fragment) => {
                 fresh_fragments.insert(rel, AnyFragment::Cs(fragment));
@@ -499,7 +542,11 @@ pub fn map_repo(root: &Path, scope_dirs: &[String], opts: MapOptions) -> io::Res
 
     for p in &plan {
         if p.reusable {
-            let merged = with_ensured_source(p.prior_entry.as_ref().expect("reusable implies a prior entry exists"));
+            let merged = with_ensured_source(
+                p.prior_entry
+                    .as_ref()
+                    .expect("reusable implies a prior entry exists"),
+            );
             if merged.get("source").and_then(Value::as_str) == Some("agent") {
                 preserved += 1;
             }
@@ -507,7 +554,10 @@ pub fn map_repo(root: &Path, scope_dirs: &[String], opts: MapOptions) -> io::Res
             continue;
         }
         if let Some(prior) = p.prior_entry.as_ref() {
-            let source = prior.get("source").and_then(Value::as_str).unwrap_or("heuristic");
+            let source = prior
+                .get("source")
+                .and_then(Value::as_str)
+                .unwrap_or("heuristic");
             if source == "agent" {
                 downgraded += 1;
             }
@@ -529,9 +579,16 @@ pub fn map_repo(root: &Path, scope_dirs: &[String], opts: MapOptions) -> io::Res
                 // TS/JS, so an unchanged mtime is reused on the next map instead of
                 // being resent for reparse. C# is untouched -- it still gets
                 // "heuristic".
-                let source = if parse::is_ts_js(&p.rel) { "ast-none" } else { "heuristic" };
+                let source = if parse::is_ts_js(&p.rel) {
+                    "ast-none"
+                } else {
+                    "heuristic"
+                };
                 Value::object(vec![
-                    ("purpose", Value::string(walk::default_purpose(root, &p.rel))),
+                    (
+                        "purpose",
+                        Value::string(walk::default_purpose(root, &p.rel)),
+                    ),
                     ("mtime", Value::number(p.cache_key)),
                     ("source", Value::string(source)),
                 ])
@@ -542,14 +599,20 @@ pub fn map_repo(root: &Path, scope_dirs: &[String], opts: MapOptions) -> io::Res
 
     // Counts BOTH freshly-reparsed AND reused entries whose source is already
     // "ast", over the (pre-merge, in-scope) `entries`.
-    let parsed_ast = entries.iter().filter(|(_, v)| v.get("source").and_then(Value::as_str) == Some("ast")).count();
+    let parsed_ast = entries
+        .iter()
+        .filter(|(_, v)| v.get("source").and_then(Value::as_str) == Some("ast"))
+        .count();
 
     // In-scope prior entries this run's walk no longer produced -- see
     // `removed`'s doc comment on `MapReport`. Scoped to a block so the
     // borrow of `entries` ends before the out-of-scope merge loop mutates it.
     let removed = {
         let entries_index: HashSet<String> = entries.iter().map(|(k, _)| k.clone()).collect();
-        prior_entries.iter().filter(|entry| is_within_scope(&entry.0, &scope) && !entries_index.contains(&entry.0)).count()
+        prior_entries
+            .iter()
+            .filter(|entry| is_within_scope(&entry.0, &scope) && !entries_index.contains(&entry.0))
+            .count()
     };
 
     let scoped_file_count = entries.len();
@@ -570,8 +633,17 @@ pub fn map_repo(root: &Path, scope_dirs: &[String], opts: MapOptions) -> io::Res
 
     let built_at_head = manifest::git_head(root);
     let manifest_value = Value::object(vec![
-        ("built_at_head", built_at_head.clone().map(Value::string).unwrap_or(Value::Null)),
-        ("scoped_dirs", Value::array(scope.iter().cloned().map(Value::string).collect())),
+        (
+            "built_at_head",
+            built_at_head
+                .clone()
+                .map(Value::string)
+                .unwrap_or(Value::Null),
+        ),
+        (
+            "scoped_dirs",
+            Value::array(scope.iter().cloned().map(Value::string).collect()),
+        ),
         ("entries", Value::Object(entries)),
     ]);
     manifest::write_manifest(root, &manifest_value)?;
@@ -580,7 +652,13 @@ pub fn map_repo(root: &Path, scope_dirs: &[String], opts: MapOptions) -> io::Res
     // manifest.json's own built_at_head refreshes on.
     let dirty = manifest::is_working_tree_dirty(root, &scope);
     let dirty_indexed_files = manifest::dirty_indexed_files_at(root, &scope, &indexed_file_set);
-    manifest::write_index_state(root, built_at_head, dirty, &dirty_indexed_files, total_manifest_entries as i64)?;
+    manifest::write_index_state(
+        root,
+        built_at_head,
+        dirty,
+        &dirty_indexed_files,
+        total_manifest_entries as i64,
+    )?;
 
     // Clear the `refresh-needed` flag if present.
     let flag = repo::scout_dir(root).join("refresh-needed");
@@ -591,7 +669,10 @@ pub fn map_repo(root: &Path, scope_dirs: &[String], opts: MapOptions) -> io::Res
     let graph_files: Vec<GraphFile> = plan
         .iter()
         .filter(|p| is_graph_source(&p.rel))
-        .map(|p| GraphFile { rel: p.rel.clone(), mtime: p.cache_key })
+        .map(|p| GraphFile {
+            rel: p.rel.clone(),
+            mtime: p.cache_key,
+        })
         .collect();
     // `graph::index_is_stale` decides whether the graph must be rebuilt (any
     // graph file's cache key changed, or the set of graph files changed size),
@@ -633,7 +714,10 @@ mod tests {
 
     fn temp_dir(label: &str) -> std::path::PathBuf {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-        let dir = std::env::temp_dir().join(format!("scout-mapcmd-test-{label}-{}-{n}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!(
+            "scout-mapcmd-test-{label}-{}-{n}",
+            std::process::id()
+        ));
         fs::create_dir_all(&dir).expect("create temp dir");
         dir
     }
@@ -719,7 +803,10 @@ mod tests {
         assert!(carries_best_source(&e, "a.ts"));
         assert!(carries_best_source(&e, "a.tsx"));
         assert!(carries_best_source(&e, "a.js"));
-        assert!(!carries_best_source(&e, "a.cs"), "C# never produces ast-none; an entry claiming it must still be reparsed");
+        assert!(
+            !carries_best_source(&e, "a.cs"),
+            "C# never produces ast-none; an entry claiming it must still be reparsed"
+        );
         assert!(!carries_best_source(&e, "a.json"));
     }
 
@@ -727,7 +814,10 @@ mod tests {
 
     #[test]
     fn ensured_source_is_appended_when_absent() {
-        let e = Value::object(vec![("purpose", Value::string("p")), ("mtime", Value::number(1))]);
+        let e = Value::object(vec![
+            ("purpose", Value::string("p")),
+            ("mtime", Value::number(1)),
+        ]);
         let out = with_ensured_source(&e);
         let fields = out.as_object().unwrap();
         assert_eq!(fields.last().unwrap().0, "source");
@@ -736,7 +826,11 @@ mod tests {
 
     #[test]
     fn ensured_source_overwrites_in_place_preserving_position() {
-        let e = Value::object(vec![("source", Value::string("agent")), ("purpose", Value::string("p")), ("mtime", Value::number(1))]);
+        let e = Value::object(vec![
+            ("source", Value::string("agent")),
+            ("purpose", Value::string("p")),
+            ("mtime", Value::number(1)),
+        ]);
         let out = with_ensured_source(&e);
         let fields = out.as_object().unwrap();
         // Position preserved (still first), value untouched (already "agent").
@@ -746,7 +840,10 @@ mod tests {
 
     #[test]
     fn ensured_source_null_collapses_to_heuristic_in_place() {
-        let e = Value::object(vec![("purpose", Value::string("p")), ("source", Value::Null)]);
+        let e = Value::object(vec![
+            ("purpose", Value::string("p")),
+            ("source", Value::Null),
+        ]);
         let out = with_ensured_source(&e);
         let fields = out.as_object().unwrap();
         assert_eq!(fields[1].0, "source"); // position preserved (was 2nd key)
@@ -758,45 +855,85 @@ mod tests {
     #[test]
     fn full_run_builds_entries_with_expected_sources() {
         let root = temp_dir("full");
-        write_file(&root.join("src/A.cs"), "namespace Fixtures.MapCmd\n{\n    public class A\n    {\n    }\n}\n");
+        write_file(
+            &root.join("src/A.cs"),
+            "namespace Fixtures.MapCmd\n{\n    public class A\n    {\n    }\n}\n",
+        );
         // This composes a purpose (`const x`) via the TS AST path instead of
         // falling back to the heuristic -- source is "ast".
-        write_file(&root.join("src/note.ts"), "// a helper\nexport const x = 1;\n");
+        write_file(
+            &root.join("src/note.ts"),
+            "// a helper\nexport const x = 1;\n",
+        );
         // A file with no exported top-level declaration still degrades to
         // the heuristic purpose, same as a C# file with no namespace-level
         // type -- proves the AST-vs-heuristic branch is still live, not
         // just "every TS/JS file is always ast now".
-        write_file(&root.join("src/internal.ts"), "function helper() { return 1; }\n");
+        write_file(
+            &root.join("src/internal.ts"),
+            "function helper() { return 1; }\n",
+        );
 
         let report = map_repo(&root, &[], MapOptions::default()).unwrap();
         assert_eq!(report.scoped_file_count, 3);
         assert_eq!(report.total_manifest_entries, 3);
         assert_eq!(report.merged_out_of_scope, 0);
         assert_eq!(report.added, 3);
-        assert_eq!(report.parsed_ast, 2, "A.cs and note.ts both compose a purpose; internal.ts has no exported declaration");
+        assert_eq!(
+            report.parsed_ast, 2,
+            "A.cs and note.ts both compose a purpose; internal.ts has no exported declaration"
+        );
         assert!(report.graph_rebuilt);
         // `A.cs`'s class AND `note.ts`'s exported `const x` -- TS/JS files
         // contribute graph defs. `internal.ts` exports nothing, so it still
         // contributes a cached fragment and no def.
-        assert_eq!(report.graph_def_count, Some(2), "A.cs's class plus note.ts's exported const");
+        assert_eq!(
+            report.graph_def_count,
+            Some(2),
+            "A.cs's class plus note.ts's exported const"
+        );
 
         let manifest = manifest::read_manifest(&root).unwrap().unwrap();
         let entries = manifest.get("entries").unwrap().as_object().unwrap();
-        let a = entries.iter().find(|(k, _)| k == "src/A.cs").unwrap().1.clone();
+        let a = entries
+            .iter()
+            .find(|(k, _)| k == "src/A.cs")
+            .unwrap()
+            .1
+            .clone();
         assert_eq!(a.get("source").and_then(Value::as_str), Some("ast"));
-        let note = entries.iter().find(|(k, _)| k == "src/note.ts").unwrap().1.clone();
+        let note = entries
+            .iter()
+            .find(|(k, _)| k == "src/note.ts")
+            .unwrap()
+            .1
+            .clone();
         assert_eq!(note.get("source").and_then(Value::as_str), Some("ast"));
         // note.ts's first line ("// a helper") IS comment-derived under
         // `default_purpose_detailed`, so its AST purpose carries the
         // leading-comment hybrid prefix.
-        assert_eq!(note.get("purpose").and_then(Value::as_str), Some("a helper — const x"));
-        let internal = entries.iter().find(|(k, _)| k == "src/internal.ts").unwrap().1.clone();
+        assert_eq!(
+            note.get("purpose").and_then(Value::as_str),
+            Some("a helper — const x")
+        );
+        let internal = entries
+            .iter()
+            .find(|(k, _)| k == "src/internal.ts")
+            .unwrap()
+            .1
+            .clone();
         // A zero-export TS/JS file is tagged "ast-none", not "heuristic" --
         // carries the same heuristic purpose text, but is recognised as
         // best-obtainable by `carries_best_source` so an unchanged rerun reuses
         // it instead of resending it.
-        assert_eq!(internal.get("source").and_then(Value::as_str), Some("ast-none"));
-        assert_eq!(internal.get("purpose").and_then(Value::as_str), Some("function helper() { return 1; }"));
+        assert_eq!(
+            internal.get("source").and_then(Value::as_str),
+            Some("ast-none")
+        );
+        assert_eq!(
+            internal.get("purpose").and_then(Value::as_str),
+            Some("function helper() { return 1; }")
+        );
 
         fs::remove_dir_all(&root).ok();
     }
@@ -815,14 +952,25 @@ mod tests {
         assert_eq!(first.parsed_ast, 1);
         let manifest = manifest::read_manifest(&root).unwrap().unwrap();
         let entries = manifest.get("entries").unwrap().as_object().unwrap();
-        let bar = entries.iter().find(|(k, _)| k == "src/bar.ts").unwrap().1.clone();
+        let bar = entries
+            .iter()
+            .find(|(k, _)| k == "src/bar.ts")
+            .unwrap()
+            .1
+            .clone();
         assert_eq!(bar.get("source").and_then(Value::as_str), Some("ast"));
-        assert_eq!(bar.get("purpose").and_then(Value::as_str), Some("function bar"));
+        assert_eq!(
+            bar.get("purpose").and_then(Value::as_str),
+            Some("function bar")
+        );
 
         let second = map_repo(&root, &[], MapOptions::default()).unwrap();
         assert_eq!(second.added, 0);
         assert_eq!(second.downgraded, 0);
-        assert_eq!(second.parsed_ast, 1, "reused ast-source TS entry still counts as ast on an unchanged rerun");
+        assert_eq!(
+            second.parsed_ast, 1,
+            "reused ast-source TS entry still counts as ast on an unchanged rerun"
+        );
 
         fs::remove_dir_all(&root).ok();
     }
@@ -830,7 +978,10 @@ mod tests {
     #[test]
     fn unchanged_second_run_reuses_everything() {
         let root = temp_dir("reuse");
-        write_file(&root.join("src/A.cs"), "namespace Fixtures.MapCmd\n{\n    public class A\n    {\n    }\n}\n");
+        write_file(
+            &root.join("src/A.cs"),
+            "namespace Fixtures.MapCmd\n{\n    public class A\n    {\n    }\n}\n",
+        );
 
         let first = map_repo(&root, &[], MapOptions::default()).unwrap();
         assert_eq!(first.added, 1);
@@ -840,7 +991,10 @@ mod tests {
         assert_eq!(second.downgraded, 0);
         assert_eq!(second.removed, 0);
         assert_eq!(second.parsed_ast, 1, "reused entry keeps its ast source");
-        assert!(!second.graph_rebuilt, "unchanged C# set must not rebuild the graph");
+        assert!(
+            !second.graph_rebuilt,
+            "unchanged C# set must not rebuild the graph"
+        );
 
         fs::remove_dir_all(&root).ok();
     }
@@ -848,8 +1002,14 @@ mod tests {
     #[test]
     fn deleted_file_is_pruned_and_counted_removed() {
         let root = temp_dir("prune");
-        write_file(&root.join("src/A.cs"), "namespace Fixtures.MapCmd { public class A {} }\n");
-        write_file(&root.join("src/B.cs"), "namespace Fixtures.MapCmd { public class B {} }\n");
+        write_file(
+            &root.join("src/A.cs"),
+            "namespace Fixtures.MapCmd { public class A {} }\n",
+        );
+        write_file(
+            &root.join("src/B.cs"),
+            "namespace Fixtures.MapCmd { public class B {} }\n",
+        );
         map_repo(&root, &[], MapOptions::default()).unwrap();
 
         fs::remove_file(root.join("src/B.cs")).unwrap();
@@ -863,8 +1023,14 @@ mod tests {
     #[test]
     fn scoped_run_merges_out_of_scope_entries() {
         let root = temp_dir("scoped-merge");
-        write_file(&root.join("src/Foo/A.cs"), "namespace Fixtures.MapCmd.Foo { public class A {} }\n");
-        write_file(&root.join("src/Bar/C.ts"), "// bar helper\nexport const bar = 1;\n");
+        write_file(
+            &root.join("src/Foo/A.cs"),
+            "namespace Fixtures.MapCmd.Foo { public class A {} }\n",
+        );
+        write_file(
+            &root.join("src/Bar/C.ts"),
+            "// bar helper\nexport const bar = 1;\n",
+        );
         write_file(&root.join("docs/readme.md"), "# Fixtures Map Demo\n");
 
         let full = map_repo(&root, &[], MapOptions::default()).unwrap();
@@ -872,16 +1038,28 @@ mod tests {
 
         let scoped = map_repo(&root, &["src/Foo".to_string()], MapOptions::default()).unwrap();
         assert_eq!(scoped.scope, vec!["src/Foo".to_string()]);
-        assert_eq!(scoped.scoped_file_count, 1, "only src/Foo/A.cs is walked this run");
-        assert_eq!(scoped.merged_out_of_scope, 2, "src/Bar/C.ts and docs/readme.md preserved, not destroyed");
+        assert_eq!(
+            scoped.scoped_file_count, 1,
+            "only src/Foo/A.cs is walked this run"
+        );
+        assert_eq!(
+            scoped.merged_out_of_scope, 2,
+            "src/Bar/C.ts and docs/readme.md preserved, not destroyed"
+        );
         assert_eq!(scoped.total_manifest_entries, 3);
         assert_eq!(scoped.removed, 0, "nothing in scope was actually deleted");
 
         let manifest = manifest::read_manifest(&root).unwrap().unwrap();
         let entries = manifest.get("entries").unwrap().as_object().unwrap();
         assert_eq!(entries.len(), 3);
-        assert!(entries.iter().any(|(k, _)| k == "src/Bar/C.ts"), "out-of-scope entry must survive a scoped map");
-        assert!(entries.iter().any(|(k, _)| k == "docs/readme.md"), "out-of-scope entry must survive a scoped map");
+        assert!(
+            entries.iter().any(|(k, _)| k == "src/Bar/C.ts"),
+            "out-of-scope entry must survive a scoped map"
+        );
+        assert!(
+            entries.iter().any(|(k, _)| k == "docs/readme.md"),
+            "out-of-scope entry must survive a scoped map"
+        );
 
         fs::remove_dir_all(&root).ok();
     }
@@ -889,9 +1067,18 @@ mod tests {
     #[test]
     fn scoped_run_still_prunes_in_scope_deletions() {
         let root = temp_dir("scoped-prune");
-        write_file(&root.join("src/Foo/A.cs"), "namespace Fixtures.MapCmd.Foo { public class A {} }\n");
-        write_file(&root.join("src/Foo/B.cs"), "namespace Fixtures.MapCmd.Foo { public class B {} }\n");
-        write_file(&root.join("src/Bar/C.ts"), "// bar\nexport const bar = 1;\n");
+        write_file(
+            &root.join("src/Foo/A.cs"),
+            "namespace Fixtures.MapCmd.Foo { public class A {} }\n",
+        );
+        write_file(
+            &root.join("src/Foo/B.cs"),
+            "namespace Fixtures.MapCmd.Foo { public class B {} }\n",
+        );
+        write_file(
+            &root.join("src/Bar/C.ts"),
+            "// bar\nexport const bar = 1;\n",
+        );
         map_repo(&root, &[], MapOptions::default()).unwrap();
 
         fs::remove_file(root.join("src/Foo/B.cs")).unwrap();
@@ -900,7 +1087,10 @@ mod tests {
         // only protects entries this run never looked at, not entries it looked
         // at and found gone.
         assert_eq!(scoped.removed, 1);
-        assert_eq!(scoped.merged_out_of_scope, 1, "src/Bar/C.ts still preserved");
+        assert_eq!(
+            scoped.merged_out_of_scope, 1,
+            "src/Bar/C.ts still preserved"
+        );
         assert_eq!(scoped.total_manifest_entries, 2);
 
         fs::remove_dir_all(&root).ok();
@@ -915,13 +1105,19 @@ mod tests {
         let path = root.join("src/Weird.cs");
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         let mut bytes = b"namespace Fixtures.MapCmd\n{\n    // note \x97 em dash\n    public class Weird\n    {\n    }\n}\n".to_vec();
-        assert!(std::str::from_utf8(&bytes).is_err(), "fixture must actually contain an invalid UTF-8 byte");
+        assert!(
+            std::str::from_utf8(&bytes).is_err(),
+            "fixture must actually contain an invalid UTF-8 byte"
+        );
         fs::write(&path, &bytes).unwrap();
         bytes.clear(); // silence "unused" if the assert above is ever removed
 
         let report = map_repo(&root, &[], MapOptions::default()).unwrap();
         assert_eq!(report.added, 1);
-        assert_eq!(report.parsed_ast, 1, "the file must still be AST-extracted despite the bad byte");
+        assert_eq!(
+            report.parsed_ast, 1,
+            "the file must still be AST-extracted despite the bad byte"
+        );
         assert!(report.graph_rebuilt);
         assert_eq!(report.graph_def_count, Some(1));
 
@@ -929,7 +1125,10 @@ mod tests {
         // must not be permanently tripped by a dropped file -- an immediate
         // unchanged rerun must skip the graph rebuild.
         let second = map_repo(&root, &[], MapOptions::default()).unwrap();
-        assert!(!second.graph_rebuilt, "an unchanged rerun must reuse, not be permanently stale");
+        assert!(
+            !second.graph_rebuilt,
+            "an unchanged rerun must reuse, not be permanently stale"
+        );
 
         fs::remove_dir_all(&root).ok();
     }
@@ -955,7 +1154,10 @@ mod tests {
         let second = map_repo(&root, &[], opts).unwrap();
         assert_eq!(second.added, 0);
         assert_eq!(second.downgraded, 0);
-        assert!(!second.graph_rebuilt, "same content hash must reuse, not reparse");
+        assert!(
+            !second.graph_rebuilt,
+            "same content hash must reuse, not reparse"
+        );
 
         fs::remove_dir_all(&root).ok();
     }
@@ -964,10 +1166,16 @@ mod tests {
     fn hash_reuse_reparses_on_real_content_change() {
         let root = temp_dir("hash-reparse");
         let opts = MapOptions { hash_reuse: true };
-        write_file(&root.join("src/A.cs"), "namespace Fixtures.MapCmd { public class A {} }\n");
+        write_file(
+            &root.join("src/A.cs"),
+            "namespace Fixtures.MapCmd { public class A {} }\n",
+        );
         map_repo(&root, &[], opts).unwrap();
 
-        write_file(&root.join("src/A.cs"), "namespace Fixtures.MapCmd { public class A { public void M() {} } }\n");
+        write_file(
+            &root.join("src/A.cs"),
+            "namespace Fixtures.MapCmd { public class A { public void M() {} } }\n",
+        );
         let second = map_repo(&root, &[], opts).unwrap();
         assert!(second.graph_rebuilt, "changed content hash must reparse");
 
@@ -990,7 +1198,10 @@ mod tests {
         // mtime moved -> not reusable -> reparsed -> graph still has the
         // same single def, but the fragments-index mtime must have moved,
         // which rebuild_graph treats as "changed".
-        assert!(second.graph_rebuilt, "default mode has no content-awareness -- an mtime bump alone reparses");
+        assert!(
+            second.graph_rebuilt,
+            "default mode has no content-awareness -- an mtime bump alone reparses"
+        );
 
         fs::remove_dir_all(&root).ok();
     }
@@ -1000,16 +1211,30 @@ mod tests {
     #[test]
     fn zero_export_ts_file_is_tagged_ast_none_not_heuristic() {
         let root = temp_dir("ast-none-tag");
-        write_file(&root.join("src/internal.ts"), "function helper() { return 1; }\n");
+        write_file(
+            &root.join("src/internal.ts"),
+            "function helper() { return 1; }\n",
+        );
 
         let report = map_repo(&root, &[], MapOptions::default()).unwrap();
         assert_eq!(report.added, 1);
-        assert_eq!(report.parsed_ast, 0, "ast-none never counts toward parsed_ast");
+        assert_eq!(
+            report.parsed_ast, 0,
+            "ast-none never counts toward parsed_ast"
+        );
 
         let manifest = manifest::read_manifest(&root).unwrap().unwrap();
         let entries = manifest.get("entries").unwrap().as_object().unwrap();
-        let entry = entries.iter().find(|(k, _)| k == "src/internal.ts").unwrap().1.clone();
-        assert_eq!(entry.get("source").and_then(Value::as_str), Some("ast-none"));
+        let entry = entries
+            .iter()
+            .find(|(k, _)| k == "src/internal.ts")
+            .unwrap()
+            .1
+            .clone();
+        assert_eq!(
+            entry.get("source").and_then(Value::as_str),
+            Some("ast-none")
+        );
 
         fs::remove_dir_all(&root).ok();
     }
@@ -1024,16 +1249,33 @@ mod tests {
         // prove this -- a resent file recomputes to the same deterministic text --
         // so this is the direct evidence for "rerun resends 0 TS files".
         let root = temp_dir("ast-none-resend-trap");
-        write_file(&root.join("src/internal.ts"), "function helper() { return 1; }\n");
+        write_file(
+            &root.join("src/internal.ts"),
+            "function helper() { return 1; }\n",
+        );
         map_repo(&root, &[], MapOptions::default()).unwrap();
 
         let manifest = manifest::read_manifest(&root).unwrap().unwrap();
-        let built_at_head = manifest.get("built_at_head").cloned().unwrap_or(Value::Null);
-        let scoped_dirs = manifest.get("scoped_dirs").cloned().unwrap_or_else(|| Value::array(vec![]));
-        let mut entries: Vec<(String, Value)> = manifest.get("entries").and_then(Value::as_object).unwrap().to_vec();
+        let built_at_head = manifest
+            .get("built_at_head")
+            .cloned()
+            .unwrap_or(Value::Null);
+        let scoped_dirs = manifest
+            .get("scoped_dirs")
+            .cloned()
+            .unwrap_or_else(|| Value::array(vec![]));
+        let mut entries: Vec<(String, Value)> = manifest
+            .get("entries")
+            .and_then(Value::as_object)
+            .unwrap()
+            .to_vec();
         for (k, v) in entries.iter_mut() {
             if k == "src/internal.ts" {
-                assert_eq!(v.get("source").and_then(Value::as_str), Some("ast-none"), "precondition");
+                assert_eq!(
+                    v.get("source").and_then(Value::as_str),
+                    Some("ast-none"),
+                    "precondition"
+                );
                 let cache_key = v.get("mtime").cloned().expect("mtime present");
                 *v = Value::object(vec![
                     ("purpose", Value::string("__SENTINEL_DO_NOT_RECOMPUTE__")),
@@ -1044,7 +1286,11 @@ mod tests {
         }
         manifest::write_manifest(
             &root,
-            &Value::object(vec![("built_at_head", built_at_head), ("scoped_dirs", scoped_dirs), ("entries", Value::Object(entries))]),
+            &Value::object(vec![
+                ("built_at_head", built_at_head),
+                ("scoped_dirs", scoped_dirs),
+                ("entries", Value::Object(entries)),
+            ]),
         )
         .unwrap();
 
@@ -1054,13 +1300,21 @@ mod tests {
 
         let after = manifest::read_manifest(&root).unwrap().unwrap();
         let after_entries = after.get("entries").and_then(Value::as_object).unwrap();
-        let reused = after_entries.iter().find(|(k, _)| k == "src/internal.ts").unwrap().1.clone();
+        let reused = after_entries
+            .iter()
+            .find(|(k, _)| k == "src/internal.ts")
+            .unwrap()
+            .1
+            .clone();
         assert_eq!(
             reused.get("purpose").and_then(Value::as_str),
             Some("__SENTINEL_DO_NOT_RECOMPUTE__"),
             "unchanged rerun must not resend this file for recompute"
         );
-        assert_eq!(reused.get("source").and_then(Value::as_str), Some("ast-none"));
+        assert_eq!(
+            reused.get("source").and_then(Value::as_str),
+            Some("ast-none")
+        );
 
         fs::remove_dir_all(&root).ok();
     }

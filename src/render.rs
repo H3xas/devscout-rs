@@ -40,14 +40,22 @@ const INFRA_SUFFIX: &str = " (infra)";
 // can never hold a guess (imports, ambiguous) carry no flag to read -- they get
 // no suffix, the same as any non-guess row.
 fn heuristic_suffix(heuristic: bool) -> &'static str {
-    if heuristic { HEURISTIC_SUFFIX } else { "" }
+    if heuristic {
+        HEURISTIC_SUFFIX
+    } else {
+        ""
+    }
 }
 
 // The source snippet, two spaces then the text, appended AFTER the heuristic
 // suffix by `ref_kind_block`. Only inbound rows ever carry a source line; every
 // other table's rows leave it empty and render no suffix.
 fn source_suffix(source: &str) -> String {
-    if source.is_empty() { String::new() } else { format!("  {source}") }
+    if source.is_empty() {
+        String::new()
+    } else {
+        format!("  {source}")
+    }
 }
 
 /// The impact seed kind as a string (`"file"`/`"symbol"`), used in the impact
@@ -93,7 +101,11 @@ fn rle(values: &[String]) -> Vec<String> {
 // it to one concrete lifetime (which is what happens if the parameter is
 // `impl Fn(&R) -> &str` and the closure is bound to a `let` once and
 // passed to multiple call sites).
-fn group_by_file<R>(rows: &[R], file_of: fn(&R) -> &str, line_fmt: impl Fn(&R) -> String) -> Vec<String> {
+fn group_by_file<R>(
+    rows: &[R],
+    file_of: fn(&R) -> &str,
+    line_fmt: impl Fn(&R) -> String,
+) -> Vec<String> {
     let mut out = Vec::new();
     let mut i = 0;
     while i < rows.len() {
@@ -111,9 +123,18 @@ fn group_by_file<R>(rows: &[R], file_of: fn(&R) -> &str, line_fmt: impl Fn(&R) -
 // Used by the DEFAULT (non-compact) renderer: a missing table is skipped, but a
 // present-but-empty table still prints its header, just with no row lines under
 // it.
-fn ref_kind_block<R>(out: &mut Vec<String>, label: &str, table: Option<&query::Table<R>>, row_fmt: impl Fn(&R) -> String) {
+fn ref_kind_block<R>(
+    out: &mut Vec<String>,
+    label: &str,
+    table: Option<&query::Table<R>>,
+    row_fmt: impl Fn(&R) -> String,
+) {
     let Some(t) = table else { return };
-    let dropped_note = if t.dropped != 0 { format!(", {} dropped", t.dropped) } else { String::new() };
+    let dropped_note = if t.dropped != 0 {
+        format!(", {} dropped", t.dropped)
+    } else {
+        String::new()
+    };
     out.push(format!("  {label} ({}{dropped_note}):", t.total));
     for r in &t.rows {
         out.push(format!("    {}", row_fmt(r)));
@@ -133,7 +154,11 @@ fn compact_block<R>(
     if t.total == 0 {
         return;
     }
-    let dropped_note = if t.dropped != 0 { format!(", {} dropped", t.dropped) } else { String::new() };
+    let dropped_note = if t.dropped != 0 {
+        format!(", {} dropped", t.dropped)
+    } else {
+        String::new()
+    };
     out.push(format!("{label} ({}{dropped_note}):", t.total));
     for line in group_by_file(&t.rows, file_of, line_fmt) {
         out.push(format!("  {line}"));
@@ -147,9 +172,21 @@ fn compact_block<R>(
 // (or a grep) to get. Printed only for an enum with at least one member-level
 // reference, so no other symbol's output moves.
 fn member_refs_line(m: &query::MemberRefs) -> String {
-    let named = m.members.iter().map(|e| format!("{} {}", e.name, e.count)).collect::<Vec<_>>().join(", ");
-    let more = if m.dropped != 0 { format!(" +{} more", m.dropped) } else { String::new() };
-    format!("member refs: {} across {} member(s): {named}{more}", m.total, m.member_count)
+    let named = m
+        .members
+        .iter()
+        .map(|e| format!("{} {}", e.name, e.count))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let more = if m.dropped != 0 {
+        format!(" +{} more", m.dropped)
+    } else {
+        String::new()
+    };
+    format!(
+        "member refs: {} across {} member(s): {named}{more}",
+        m.total, m.member_count
+    )
 }
 
 pub fn render_refs_text(model: &query::RefsModel) -> String {
@@ -157,25 +194,65 @@ pub fn render_refs_text(model: &query::RefsModel) -> String {
     out.push(format!("{}  ({})", model.id, model.kind));
     out.push(format!(
         "def: {}",
-        model.sites.iter().map(|s| format!("{}:{}", s.file, s.line)).collect::<Vec<_>>().join("  ")
+        model
+            .sites
+            .iter()
+            .map(|s| format!("{}:{}", s.file, s.line))
+            .collect::<Vec<_>>()
+            .join("  ")
     ));
 
     out.push("inbound:".to_string());
-    ref_kind_block(&mut out, "inherits", Some(&model.inbound.inherits), |r: &query::InboundRow| {
-        format!("{}:{}  inherits{}{}", r.file, r.line, heuristic_suffix(r.heuristic), source_suffix(&r.source))
-    });
-    ref_kind_block(&mut out, "uses-type", Some(&model.inbound.uses_type), |r: &query::InboundRow| {
-        format!("{}:{}  uses-type{}{}", r.file, r.line, heuristic_suffix(r.heuristic), source_suffix(&r.source))
-    });
-    ref_kind_block(&mut out, "uses-member", Some(&model.inbound.uses_member), |r: &query::InboundRow| {
-        format!("{}:{}  uses-member{}{}", r.file, r.line, heuristic_suffix(r.heuristic), source_suffix(&r.source))
-    });
+    ref_kind_block(
+        &mut out,
+        "inherits",
+        Some(&model.inbound.inherits),
+        |r: &query::InboundRow| {
+            format!(
+                "{}:{}  inherits{}{}",
+                r.file,
+                r.line,
+                heuristic_suffix(r.heuristic),
+                source_suffix(&r.source)
+            )
+        },
+    );
+    ref_kind_block(
+        &mut out,
+        "uses-type",
+        Some(&model.inbound.uses_type),
+        |r: &query::InboundRow| {
+            format!(
+                "{}:{}  uses-type{}{}",
+                r.file,
+                r.line,
+                heuristic_suffix(r.heuristic),
+                source_suffix(&r.source)
+            )
+        },
+    );
+    ref_kind_block(
+        &mut out,
+        "uses-member",
+        Some(&model.inbound.uses_member),
+        |r: &query::InboundRow| {
+            format!(
+                "{}:{}  uses-member{}{}",
+                r.file,
+                r.line,
+                heuristic_suffix(r.heuristic),
+                source_suffix(&r.source)
+            )
+        },
+    );
     // One trailer for the three kinds, because they share one cap: the
     // per-kind headers say how much each kind lost, this says what the call as
     // a whole did not return. `--all` lifts this cap too, the same lever the
     // outbound trailer below names, but the text here already reports the true
     // drop count and is unchanged whether or not `--all` is set.
-    let inbound_dropped = model.inbound.inherits.dropped + model.inbound.uses_type.dropped + model.inbound.uses_member.dropped;
+    let inbound_dropped = model.inbound.inherits.dropped
+        + model.inbound.uses_type.dropped
+        + model.inbound.uses_member.dropped;
     if inbound_dropped != 0 {
         out.push(format!("  +{inbound_dropped} more"));
     }
@@ -185,24 +262,74 @@ pub fn render_refs_text(model: &query::RefsModel) -> String {
 
     if let Some(ob) = &model.outbound {
         out.push("outbound:".to_string());
-        ref_kind_block(&mut out, "inherits", Some(&ob.inherits), |r: &query::OutboundRow| {
-            format!("{}:{}  inherits  -> {}{}{}", r.file, r.line, r.to_file, heuristic_suffix(r.heuristic), source_suffix(&r.source))
-        });
-        ref_kind_block(&mut out, "uses-type", Some(&ob.uses_type), |r: &query::OutboundRow| {
-            format!("{}:{}  uses-type  -> {}{}{}", r.file, r.line, r.to_file, heuristic_suffix(r.heuristic), source_suffix(&r.source))
-        });
-        ref_kind_block(&mut out, "uses-member", Some(&ob.uses_member), |r: &query::OutboundRow| {
-            format!("{}:{}  uses-member  -> {}{}{}", r.file, r.line, r.to_file, heuristic_suffix(r.heuristic), source_suffix(&r.source))
-        });
-        ref_kind_block(&mut out, "imports", Some(&ob.imports), |r: &query::ImportRow| {
-            format!("{}:{}  imports  -> {}{}", r.file, r.line, r.target, source_suffix(&r.source))
-        });
+        ref_kind_block(
+            &mut out,
+            "inherits",
+            Some(&ob.inherits),
+            |r: &query::OutboundRow| {
+                format!(
+                    "{}:{}  inherits  -> {}{}{}",
+                    r.file,
+                    r.line,
+                    r.to_file,
+                    heuristic_suffix(r.heuristic),
+                    source_suffix(&r.source)
+                )
+            },
+        );
+        ref_kind_block(
+            &mut out,
+            "uses-type",
+            Some(&ob.uses_type),
+            |r: &query::OutboundRow| {
+                format!(
+                    "{}:{}  uses-type  -> {}{}{}",
+                    r.file,
+                    r.line,
+                    r.to_file,
+                    heuristic_suffix(r.heuristic),
+                    source_suffix(&r.source)
+                )
+            },
+        );
+        ref_kind_block(
+            &mut out,
+            "uses-member",
+            Some(&ob.uses_member),
+            |r: &query::OutboundRow| {
+                format!(
+                    "{}:{}  uses-member  -> {}{}{}",
+                    r.file,
+                    r.line,
+                    r.to_file,
+                    heuristic_suffix(r.heuristic),
+                    source_suffix(&r.source)
+                )
+            },
+        );
+        ref_kind_block(
+            &mut out,
+            "imports",
+            Some(&ob.imports),
+            |r: &query::ImportRow| {
+                format!(
+                    "{}:{}  imports  -> {}{}",
+                    r.file,
+                    r.line,
+                    r.target,
+                    source_suffix(&r.source)
+                )
+            },
+        );
         // One trailer for the four outbound kinds, because they share one cap
         // (mirrors the inbound trailer above). Printing only ever happens when
         // `--all` would actually return more rows, so the hint is never dead
         // advice -- true of the inbound trailer above too, which is why that one
         // stays text-only rather than gaining the same hint.
-        let outbound_dropped = ob.inherits.dropped + ob.uses_type.dropped + ob.uses_member.dropped + ob.imports.dropped;
+        let outbound_dropped = ob.inherits.dropped
+            + ob.uses_type.dropped
+            + ob.uses_member.dropped
+            + ob.imports.dropped;
         if outbound_dropped != 0 {
             out.push(format!("  +{outbound_dropped} more, use --all"));
         }
@@ -213,7 +340,10 @@ pub fn render_refs_text(model: &query::RefsModel) -> String {
     if amb_in.total != 0 || amb_out.total != 0 {
         out.push("ambiguous:".to_string());
         let amb_row = |r: &query::AmbiguousRow| {
-            format!("{}:{}  {}  raw=\"{}\"  candidates={}", r.file, r.line, r.origin, r.raw, r.candidate_count)
+            format!(
+                "{}:{}  {}  raw=\"{}\"  candidates={}",
+                r.file, r.line, r.origin, r.raw, r.candidate_count
+            )
         };
         if amb_in.total != 0 {
             ref_kind_block(&mut out, "inbound", Some(amb_in), amb_row);
@@ -224,7 +354,10 @@ pub fn render_refs_text(model: &query::RefsModel) -> String {
     }
 
     if model.manifest_gap != 0 {
-        out.push(format!("manifest gap: {} graph file(s) not in manifest", model.manifest_gap));
+        out.push(format!(
+            "manifest gap: {} graph file(s) not in manifest",
+            model.manifest_gap
+        ));
     }
     out.join("\n")
 }
@@ -233,20 +366,35 @@ pub fn render_refs_text(model: &query::RefsModel) -> String {
 pub fn render_impact_text(query: &str, model: &query::ImpactModel) -> String {
     let mut out: Vec<String> = Vec::new();
     let joined = model.seed_files.join(", ");
-    let seeds = if joined.is_empty() { "-".to_string() } else { joined };
-    out.push(format!("impact: {query}  ({}, seed files: {seeds})  hops<={}", seed_kind_str(model.kind), model.hops));
+    let seeds = if joined.is_empty() {
+        "-".to_string()
+    } else {
+        joined
+    };
+    out.push(format!(
+        "impact: {query}  ({}, seed files: {seeds})  hops<={}",
+        seed_kind_str(model.kind),
+        model.hops
+    ));
     // The affected count stays the count of files reached by real edges, and
     // the guesses are declared beside it rather than folded into it. The
     // parenthetical appears ONLY when there is something to declare, so a
     // graph with no heuristic edges renders this line byte-for-byte unchanged.
-    let heuristic_note =
-        if model.heuristic_affected != 0 { format!(" (+{} heuristic)", model.heuristic_affected) } else { String::new() };
+    let heuristic_note = if model.heuristic_affected != 0 {
+        format!(" (+{} heuristic)", model.heuristic_affected)
+    } else {
+        String::new()
+    };
     // Test-coverage stage -- the term joins the summary only when the blast
     // radius actually reaches a test file, so a graph built before this stage
     // (and every query that reaches none) renders the line byte-for-byte as it
     // always did. Its ABSENCE is the gap signal, which is why it is never
     // printed as `tests=0`.
-    let tests_note = if model.tests_affected != 0 { format!(" tests={}", model.tests_affected) } else { String::new() };
+    let tests_note = if model.tests_affected != 0 {
+        format!(" tests={}", model.tests_affected)
+    } else {
+        String::new()
+    };
     out.push(format!(
         "affected files: {}{heuristic_note}  shown: {}  dropped: {}{tests_note}",
         model.total_affected,
@@ -273,8 +421,11 @@ pub fn render_impact_text(query: &str, model: &query::ImpactModel) -> String {
         // Present only on a row the interface hop actually reached, so every
         // other row (and the whole line under `--no-iface`) carries no `via`
         // suffix.
-        let iface_via =
-            if r.iface_via.is_empty() { String::new() } else { format!("  via {}", r.iface_via.join(", ")) };
+        let iface_via = if r.iface_via.is_empty() {
+            String::new()
+        } else {
+            format!("  via {}", r.iface_via.join(", "))
+        };
         // The same conditional-suffix rule again: a hub file says so on its own
         // row, so the reader never has to join the trailer to the table to learn
         // which row the walk stopped at.
@@ -291,8 +442,12 @@ pub fn render_impact_text(query: &str, model: &query::ImpactModel) -> String {
     // one is, and the flag that lets them through. A narrowing nobody can see is
     // indistinguishable from a missing edge. Printed only when the brake fired.
     if !model.braked.is_empty() {
-        let list =
-            model.braked.iter().map(|b| format!("{} (fan-in {})", b.iface, b.fanin)).collect::<Vec<_>>().join(", ");
+        let list = model
+            .braked
+            .iter()
+            .map(|b| format!("{} (fan-in {})", b.iface, b.fanin))
+            .collect::<Vec<_>>()
+            .join(", ");
         out.push(format!("braked: {list} — raise --iface-max-fanin to widen"));
     }
     // Its own trailer line, not a term on the interface brake's: the two brakes
@@ -305,10 +460,15 @@ pub fn render_impact_text(query: &str, model: &query::ImpactModel) -> String {
             .map(|b| format!("{} (in-degree {})", b.file, b.indegree))
             .collect::<Vec<_>>()
             .join(", ");
-        out.push(format!("braked: {list} — raise --hub-max-indegree to widen"));
+        out.push(format!(
+            "braked: {list} — raise --hub-max-indegree to widen"
+        ));
     }
     if model.manifest_gap != 0 {
-        out.push(format!("manifest gap: {} graph file(s) not in manifest", model.manifest_gap));
+        out.push(format!(
+            "manifest gap: {} graph file(s) not in manifest",
+            model.manifest_gap
+        ));
     }
     out.join("\n")
 }
@@ -319,7 +479,12 @@ pub fn render_refs_compact(model: &query::RefsModel) -> String {
     out.push(format!("{}  ({})", model.id, model.kind));
     out.push(format!(
         "def: {}",
-        model.sites.iter().map(|s| format!("{}:{}", s.file, s.line)).collect::<Vec<_>>().join("  ")
+        model
+            .sites
+            .iter()
+            .map(|s| format!("{}:{}", s.file, s.line))
+            .collect::<Vec<_>>()
+            .join("  ")
     ));
 
     // `file_of_*` are explicitly typed as `fn(&R) -> &str` (not left to
@@ -340,27 +505,82 @@ pub fn render_refs_compact(model: &query::RefsModel) -> String {
     // leaves no slot for a per-hit source line -- the snippet is a
     // default-renderer and `--json` affordance only.
     let file_of_ib: fn(&query::InboundRow) -> &str = |r| r.file.as_str();
-    let line_ib = |r: &query::InboundRow| if r.heuristic { format!("{}h", r.line) } else { r.line.to_string() };
-    compact_block(&mut out, "in:inherits", Some(&model.inbound.inherits), file_of_ib, line_ib);
-    compact_block(&mut out, "in:uses-type", Some(&model.inbound.uses_type), file_of_ib, line_ib);
-    compact_block(&mut out, "in:uses-member", Some(&model.inbound.uses_member), file_of_ib, line_ib);
+    let line_ib = |r: &query::InboundRow| {
+        if r.heuristic {
+            format!("{}h", r.line)
+        } else {
+            r.line.to_string()
+        }
+    };
+    compact_block(
+        &mut out,
+        "in:inherits",
+        Some(&model.inbound.inherits),
+        file_of_ib,
+        line_ib,
+    );
+    compact_block(
+        &mut out,
+        "in:uses-type",
+        Some(&model.inbound.uses_type),
+        file_of_ib,
+        line_ib,
+    );
+    compact_block(
+        &mut out,
+        "in:uses-member",
+        Some(&model.inbound.uses_member),
+        file_of_ib,
+        line_ib,
+    );
 
     if let Some(ob) = &model.outbound {
         let file_of_ob: fn(&query::OutboundRow) -> &str = |r| r.file.as_str();
-        let line_ob = |r: &query::OutboundRow| if r.heuristic { format!("{}h", r.line) } else { r.line.to_string() };
-        compact_block(&mut out, "out:inherits", Some(&ob.inherits), file_of_ob, line_ob);
-        compact_block(&mut out, "out:uses-type", Some(&ob.uses_type), file_of_ob, line_ob);
-        compact_block(&mut out, "out:uses-member", Some(&ob.uses_member), file_of_ob, line_ob);
+        let line_ob = |r: &query::OutboundRow| {
+            if r.heuristic {
+                format!("{}h", r.line)
+            } else {
+                r.line.to_string()
+            }
+        };
+        compact_block(
+            &mut out,
+            "out:inherits",
+            Some(&ob.inherits),
+            file_of_ob,
+            line_ob,
+        );
+        compact_block(
+            &mut out,
+            "out:uses-type",
+            Some(&ob.uses_type),
+            file_of_ob,
+            line_ob,
+        );
+        compact_block(
+            &mut out,
+            "out:uses-member",
+            Some(&ob.uses_member),
+            file_of_ob,
+            line_ob,
+        );
 
         let file_of_imp: fn(&query::ImportRow) -> &str = |r| r.file.as_str();
         let line_imp = |r: &query::ImportRow| r.line.to_string();
-        compact_block(&mut out, "out:imports", Some(&ob.imports), file_of_imp, line_imp);
+        compact_block(
+            &mut out,
+            "out:imports",
+            Some(&ob.imports),
+            file_of_imp,
+            line_imp,
+        );
     }
 
     let amb_in = &model.ambiguous.inbound;
     let amb_out = &model.ambiguous.outbound;
     let file_of_amb: fn(&query::AmbiguousRow) -> &str = |r| r.file.as_str();
-    let line_amb = |r: &query::AmbiguousRow| format!("{}(candidates={})", r.line, r.candidate_count);
+    let line_amb =
+        |r: &query::AmbiguousRow| format!("{}(candidates={})", r.line, r.candidate_count);
     compact_block(&mut out, "amb:in", Some(amb_in), file_of_amb, line_amb);
     compact_block(&mut out, "amb:out", Some(amb_out), file_of_amb, line_amb);
 
@@ -377,22 +597,44 @@ pub fn render_refs_compact(model: &query::RefsModel) -> String {
     let shown = model.inbound.inherits.rows.len()
         + model.inbound.uses_type.rows.len()
         + model.inbound.uses_member.rows.len()
-        + ob_sum(|o| o.inherits.rows.len() + o.uses_type.rows.len() + o.uses_member.rows.len() + o.imports.rows.len());
+        + ob_sum(|o| {
+            o.inherits.rows.len()
+                + o.uses_type.rows.len()
+                + o.uses_member.rows.len()
+                + o.imports.rows.len()
+        });
     let dropped = model.inbound.inherits.dropped
         + model.inbound.uses_type.dropped
         + model.inbound.uses_member.dropped
-        + ob_sum(|o| o.inherits.dropped + o.uses_type.dropped + o.uses_member.dropped + o.imports.dropped);
+        + ob_sum(|o| {
+            o.inherits.dropped + o.uses_type.dropped + o.uses_member.dropped + o.imports.dropped
+        });
     let ambiguous = amb_in.total + amb_out.total;
-    let gap = if model.manifest_gap != 0 { format!(" gap={}", model.manifest_gap) } else { String::new() };
+    let gap = if model.manifest_gap != 0 {
+        format!(" gap={}", model.manifest_gap)
+    } else {
+        String::new()
+    };
     // Same fact as the default renderer's line, spelled the way every other
     // compact block is: `name=count`, no prose, and absent entirely when there is
     // nothing to say.
     if let Some(m) = &model.member_refs {
-        let named = m.members.iter().map(|e| format!("{}={}", e.name, e.count)).collect::<Vec<_>>().join(",");
-        let more = if m.dropped != 0 { format!(",+{}", m.dropped) } else { String::new() };
+        let named = m
+            .members
+            .iter()
+            .map(|e| format!("{}={}", e.name, e.count))
+            .collect::<Vec<_>>()
+            .join(",");
+        let more = if m.dropped != 0 {
+            format!(",+{}", m.dropped)
+        } else {
+            String::new()
+        };
         out.push(format!("mem: {named}{more}"));
     }
-    out.push(format!("summary: edges={edges} shown={shown} dropped={dropped} ambiguous={ambiguous}{gap}"));
+    out.push(format!(
+        "summary: edges={edges} shown={shown} dropped={dropped} ambiguous={ambiguous}{gap}"
+    ));
     out.join("\n")
 }
 
@@ -424,7 +666,9 @@ fn read_def_line(model: &query::ReadModel) -> String {
 pub fn render_read_text(model: &query::ReadModel) -> String {
     let rendered = render_refs_text(&model.refs);
     let mut out: Vec<String> = rendered.split('\n').map(str::to_string).collect();
-    if out.len() > 1 { out[1] = read_def_line(model); }
+    if out.len() > 1 {
+        out[1] = read_def_line(model);
+    }
     if let Some(sp) = &model.span {
         out.splice(2..2, sp.source.split('\n').map(str::to_string));
     }
@@ -438,7 +682,9 @@ pub fn render_read_text(model: &query::ReadModel) -> String {
 pub fn render_read_compact(model: &query::ReadModel) -> String {
     let rendered = render_refs_compact(&model.refs);
     let mut out: Vec<String> = rendered.split('\n').map(str::to_string).collect();
-    if out.len() > 1 { out[1] = read_def_line(model); }
+    if out.len() > 1 {
+        out[1] = read_def_line(model);
+    }
     out.join("\n")
 }
 
@@ -446,15 +692,24 @@ pub fn render_read_compact(model: &query::ReadModel) -> String {
 pub fn render_impact_compact(query: &str, model: &query::ImpactModel) -> String {
     let mut out: Vec<String> = Vec::new();
     let joined = model.seed_files.join(", ");
-    let seeds = if joined.is_empty() { "-".to_string() } else { joined };
-    out.push(format!("impact: {query}  ({}, seed: {seeds})  hops<={}", seed_kind_str(model.kind), model.hops));
+    let seeds = if joined.is_empty() {
+        "-".to_string()
+    } else {
+        joined
+    };
+    out.push(format!(
+        "impact: {query}  ({}, seed: {seeds})  hops<={}",
+        seed_kind_str(model.kind),
+        model.hops
+    ));
 
     // The hop grouping preserves nothing order-relevant (the hop keys are
     // explicitly re-sorted right after), so a plain HashMap is fine. Row order
     // WITHIN a hop bucket must stay in `model.rows`' original
     // (score-desc/hop/file-sorted) order for `rle` to collapse the intended runs
     // -- `Vec::push` in a single forward pass preserves that.
-    let mut by_hop: std::collections::HashMap<u32, Vec<&query::ImpactRow>> = std::collections::HashMap::new();
+    let mut by_hop: std::collections::HashMap<u32, Vec<&query::ImpactRow>> =
+        std::collections::HashMap::new();
     for r in &model.rows {
         by_hop.entry(r.hop).or_default().push(r);
     }
@@ -473,9 +728,17 @@ pub fn render_impact_compact(query: &str, model: &query::ImpactModel) -> String 
                 if r.heuristic {
                     return format!("{} via={}h", r.file, r.heuristic_count);
                 }
-                let via = if r.ambiguous_count != 0 { format!("{}(+{}amb)", r.via_count, r.ambiguous_count) } else { r.via_count.to_string() };
+                let via = if r.ambiguous_count != 0 {
+                    format!("{}(+{}amb)", r.via_count, r.ambiguous_count)
+                } else {
+                    r.via_count.to_string()
+                };
                 // Same conditional-suffix rule as the default renderer's `via`.
-                let iface_suffix = if r.iface_via.is_empty() { String::new() } else { format!(" iface={}", r.iface_via.join(",")) };
+                let iface_suffix = if r.iface_via.is_empty() {
+                    String::new()
+                } else {
+                    format!(" iface={}", r.iface_via.join(","))
+                };
                 // Same conditional-suffix rule as the default renderer's class.
                 let class_suffix = if r.infra { " class=infra" } else { "" };
                 format!("{} via={via}{iface_suffix}{class_suffix}", r.file)
@@ -487,12 +750,24 @@ pub fn render_impact_compact(query: &str, model: &query::ImpactModel) -> String 
     }
 
     let ambiguous: u32 = model.rows.iter().map(|r| r.ambiguous_count).sum();
-    let gap = if model.manifest_gap != 0 { format!(" gap={}", model.manifest_gap) } else { String::new() };
+    let gap = if model.manifest_gap != 0 {
+        format!(" gap={}", model.manifest_gap)
+    } else {
+        String::new()
+    };
     // `affected` counts precisely-reached files; the heuristic term joins it
     // only when there is one, and always BEFORE ` gap=`, so a graph with no
     // heuristic edges renders the same summary line.
-    let heur = if model.heuristic_affected != 0 { format!(" heuristic={}", model.heuristic_affected) } else { String::new() };
-    let tests = if model.tests_affected != 0 { format!(" tests={}", model.tests_affected) } else { String::new() };
+    let heur = if model.heuristic_affected != 0 {
+        format!(" heuristic={}", model.heuristic_affected)
+    } else {
+        String::new()
+    };
+    let tests = if model.tests_affected != 0 {
+        format!(" tests={}", model.tests_affected)
+    } else {
+        String::new()
+    };
     // The compact spelling of the default renderer's `braked:` trailer, appended
     // LAST so every summary line the brake never touched is unchanged. One
     // `braked=` term still, file entries after interface ones, each spelled
@@ -504,7 +779,12 @@ pub fn render_impact_compact(query: &str, model: &query::ImpactModel) -> String 
             .braked
             .iter()
             .map(|b| format!("{}:{}", b.iface, b.fanin))
-            .chain(model.braked_files.iter().map(|b| format!("{}:{}", b.file, b.indegree)))
+            .chain(
+                model
+                    .braked_files
+                    .iter()
+                    .map(|b| format!("{}:{}", b.file, b.indegree)),
+            )
             .collect();
         format!(" braked={}", terms.join(","))
     };
@@ -530,11 +810,19 @@ pub fn render_tests_text(model: &query::TestsModel) -> String {
         out.push("no test references found".to_string());
         return out.join("\n");
     }
-    out.push(format!("covered by {} test file(s), {} reference(s)", model.test_file_count, model.ref_count));
+    out.push(format!(
+        "covered by {} test file(s), {} reference(s)",
+        model.test_file_count, model.ref_count
+    ));
     out.push(String::new());
     for r in &model.rows {
         out.push(format!("{}{}", r.file, heuristic_suffix(r.heuristic)));
-        let lines = r.lines.iter().map(|l| l.to_string()).collect::<Vec<_>>().join(", ");
+        let lines = r
+            .lines
+            .iter()
+            .map(|l| l.to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
         for def_id in &r.test_defs {
             out.push(format!("  {def_id}  lines: {lines}"));
         }
@@ -547,14 +835,26 @@ pub fn render_tests_text(model: &query::TestsModel) -> String {
 /// line per file. The `h` line marker is the compact renderer's existing
 /// convention for a guess.
 pub fn render_tests_compact(model: &query::TestsModel) -> String {
-    let heur = if model.heuristic_file_count != 0 { format!(" heuristic={}", model.heuristic_file_count) } else { String::new() };
-    let mut out: Vec<String> =
-        vec![format!("tests {} files={} refs={}{heur}", model.symbol, model.test_file_count, model.ref_count)];
+    let heur = if model.heuristic_file_count != 0 {
+        format!(" heuristic={}", model.heuristic_file_count)
+    } else {
+        String::new()
+    };
+    let mut out: Vec<String> = vec![format!(
+        "tests {} files={} refs={}{heur}",
+        model.symbol, model.test_file_count, model.ref_count
+    )];
     for r in &model.rows {
         let lines = r
             .lines
             .iter()
-            .map(|l| if r.heuristic { format!("{l}h") } else { l.to_string() })
+            .map(|l| {
+                if r.heuristic {
+                    format!("{l}h")
+                } else {
+                    l.to_string()
+                }
+            })
             .collect::<Vec<_>>()
             .join(",");
         out.push(format!("{} {lines}", r.file));
@@ -566,16 +866,25 @@ pub fn render_tests_compact(model: &query::TestsModel) -> String {
 mod tests {
     use super::*;
     use crate::query::{
-        AmbiguousRow, AmbiguousTables, DefSite, ImpactModel, ImpactRow, ImportRow, InboundRow, InboundTables,
-        OutboundRow, OutboundTables, RefsModel, SeedKind, Table, TestRow, TestsModel,
+        AmbiguousRow, AmbiguousTables, DefSite, ImpactModel, ImpactRow, ImportRow, InboundRow,
+        InboundTables, OutboundRow, OutboundTables, RefsModel, SeedKind, Table, TestRow,
+        TestsModel,
     };
 
     fn table<R>(rows: Vec<R>, dropped: usize) -> Table<R> {
-        Table { total: rows.len() + dropped, dropped, rows }
+        Table {
+            total: rows.len() + dropped,
+            dropped,
+            rows,
+        }
     }
 
     fn empty_inbound() -> InboundTables {
-        InboundTables { inherits: table(vec![], 0), uses_type: table(vec![], 0), uses_member: table(vec![], 0) }
+        InboundTables {
+            inherits: table(vec![], 0),
+            uses_type: table(vec![], 0),
+            uses_member: table(vec![], 0),
+        }
     }
     fn empty_outbound() -> OutboundTables {
         OutboundTables {
@@ -586,15 +895,26 @@ mod tests {
         }
     }
     fn empty_ambiguous() -> AmbiguousTables {
-        AmbiguousTables { inbound: table(vec![], 0), outbound: table(vec![], 0) }
+        AmbiguousTables {
+            inbound: table(vec![], 0),
+            outbound: table(vec![], 0),
+        }
     }
 
-    fn refs_model(inbound: InboundTables, outbound: OutboundTables, ambiguous: AmbiguousTables, manifest_gap: usize) -> RefsModel {
+    fn refs_model(
+        inbound: InboundTables,
+        outbound: OutboundTables,
+        ambiguous: AmbiguousTables,
+        manifest_gap: usize,
+    ) -> RefsModel {
         RefsModel {
             query: "IFoo".to_string(),
             id: "App.IFoo".to_string(),
             kind: "interface".to_string(),
-            sites: vec![DefSite { file: "src/IFoo.cs".to_string(), line: 3 }],
+            sites: vec![DefSite {
+                file: "src/IFoo.cs".to_string(),
+                line: 3,
+            }],
             inbound,
             outbound: Some(outbound),
             ambiguous,
@@ -608,7 +928,15 @@ mod tests {
     #[test]
     fn refs_compact_one_header_per_kind_empty_kinds_print_nothing() {
         let mut inbound = empty_inbound();
-        inbound.inherits = table(vec![InboundRow { file: "src/Foo.cs".into(), line: 5, heuristic: false, source: String::new() }], 0);
+        inbound.inherits = table(
+            vec![InboundRow {
+                file: "src/Foo.cs".into(),
+                line: 5,
+                heuristic: false,
+                source: String::new(),
+            }],
+            0,
+        );
         let mut outbound = empty_outbound();
         outbound.uses_type = table(
             vec![OutboundRow {
@@ -625,10 +953,16 @@ mod tests {
         let out = render_refs_compact(&model);
         assert!(out.contains("in:inherits (1):\n  src/Foo.cs:5"));
         assert!(out.contains("out:uses-type (1):\n  src/IFoo.cs:3"));
-        assert!(!out.contains("in:uses-type"), "a kind with zero rows must not print a header");
+        assert!(
+            !out.contains("in:uses-type"),
+            "a kind with zero rows must not print a header"
+        );
         assert!(!out.contains("out:inherits"));
         assert!(!out.contains("out:imports"));
-        assert!(!out.contains("Bar.cs"), "outbound target file is dropped in compact mode -- only path:line survives");
+        assert!(
+            !out.contains("Bar.cs"),
+            "outbound target file is dropped in compact mode -- only path:line survives"
+        );
     }
 
     #[test]
@@ -665,38 +999,96 @@ mod tests {
         let mut inbound = empty_inbound();
         inbound.uses_type = table(
             vec![
-                InboundRow { file: "src/Consumers/Big.cs".into(), line: 12, heuristic: false, source: String::new() },
-                InboundRow { file: "src/Consumers/Big.cs".into(), line: 40, heuristic: false, source: String::new() },
-                InboundRow { file: "src/Consumers/Big.cs".into(), line: 40, heuristic: false, source: String::new() },
-                InboundRow { file: "src/Consumers/Small.cs".into(), line: 3, heuristic: false, source: String::new() },
+                InboundRow {
+                    file: "src/Consumers/Big.cs".into(),
+                    line: 12,
+                    heuristic: false,
+                    source: String::new(),
+                },
+                InboundRow {
+                    file: "src/Consumers/Big.cs".into(),
+                    line: 40,
+                    heuristic: false,
+                    source: String::new(),
+                },
+                InboundRow {
+                    file: "src/Consumers/Big.cs".into(),
+                    line: 40,
+                    heuristic: false,
+                    source: String::new(),
+                },
+                InboundRow {
+                    file: "src/Consumers/Small.cs".into(),
+                    line: 3,
+                    heuristic: false,
+                    source: String::new(),
+                },
             ],
             0,
         );
         let model = refs_model(inbound, empty_outbound(), empty_ambiguous(), 0);
         let out = render_refs_compact(&model);
-        assert!(out.contains("in:uses-type (4):\n  src/Consumers/Big.cs:12,40x2\n  src/Consumers/Small.cs:3"));
-        assert_eq!(out.matches("src/Consumers/Big.cs").count(), 1, "the repeated file path must appear exactly once");
+        assert!(out.contains(
+            "in:uses-type (4):\n  src/Consumers/Big.cs:12,40x2\n  src/Consumers/Small.cs:3"
+        ));
+        assert_eq!(
+            out.matches("src/Consumers/Big.cs").count(),
+            1,
+            "the repeated file path must appear exactly once"
+        );
     }
 
     #[test]
     fn refs_compact_summary_line_folds_all_counts() {
         let mut inbound = empty_inbound();
-        inbound.inherits =
-            table(vec![InboundRow { file: "src/A.cs".into(), line: 1, heuristic: false, source: String::new() }, InboundRow { file: "src/B.cs".into(), line: 2, heuristic: false, source: String::new() }], 3);
+        inbound.inherits = table(
+            vec![
+                InboundRow {
+                    file: "src/A.cs".into(),
+                    line: 1,
+                    heuristic: false,
+                    source: String::new(),
+                },
+                InboundRow {
+                    file: "src/B.cs".into(),
+                    line: 2,
+                    heuristic: false,
+                    source: String::new(),
+                },
+            ],
+            3,
+        );
         let mut ambiguous = empty_ambiguous();
         ambiguous.inbound = table(
-            vec![AmbiguousRow { file: "src/C.cs".into(), line: 9, origin: "uses-type".into(), raw: "Config".into(), candidate_count: 2 }],
+            vec![AmbiguousRow {
+                file: "src/C.cs".into(),
+                line: 9,
+                origin: "uses-type".into(),
+                raw: "Config".into(),
+                candidate_count: 2,
+            }],
             0,
         );
         let model = refs_model(inbound, empty_outbound(), ambiguous, 4);
         let out = render_refs_compact(&model);
         let last_line = out.lines().last().unwrap();
-        assert_eq!(last_line, "summary: edges=5 shown=2 dropped=3 ambiguous=1 gap=4");
+        assert_eq!(
+            last_line,
+            "summary: edges=5 shown=2 dropped=3 ambiguous=1 gap=4"
+        );
         assert!(out.contains("amb:in (1):\n  src/C.cs:9(candidates=2)"));
-        assert!(!out.contains("Config"), "the raw ambiguous token is not a minimal column and must not appear");
+        assert!(
+            !out.contains("Config"),
+            "the raw ambiguous token is not a minimal column and must not appear"
+        );
     }
 
-    fn impact_model(rows: Vec<ImpactRow>, total_affected: usize, dropped: usize, manifest_gap: usize) -> ImpactModel {
+    fn impact_model(
+        rows: Vec<ImpactRow>,
+        total_affected: usize,
+        dropped: usize,
+        manifest_gap: usize,
+    ) -> ImpactModel {
         let heuristic_affected = rows.iter().filter(|r| r.heuristic).count();
         ImpactModel {
             kind: SeedKind::File,
@@ -741,8 +1133,18 @@ mod tests {
 
     /// A heuristic-ONLY row: reached by `heuristic_count` guesses and nothing
     /// else, which is the only shape `buildImpactModel` ever flags.
-    fn heuristic_impact_row(file: &str, hop: u32, heuristic_count: u32, top_symbols: &[&str], score: f64) -> ImpactRow {
-        ImpactRow { heuristic_count, heuristic: true, ..impact_row(file, hop, 0, 0, top_symbols, 0, score) }
+    fn heuristic_impact_row(
+        file: &str,
+        hop: u32,
+        heuristic_count: u32,
+        top_symbols: &[&str],
+        score: f64,
+    ) -> ImpactRow {
+        ImpactRow {
+            heuristic_count,
+            heuristic: true,
+            ..impact_row(file, hop, 0, 0, top_symbols, 0, score)
+        }
     }
 
     #[test]
@@ -759,7 +1161,10 @@ mod tests {
         let out = render_impact_compact("IFoo", &model);
         let hop1 = out.find("hop 1").unwrap();
         let hop2 = out.find("hop 2").unwrap();
-        assert!(hop1 < hop2, "hop 1 bucket must precede hop 2 regardless of row order in the model");
+        assert!(
+            hop1 < hop2,
+            "hop 1 bucket must precede hop 2 regardless of row order in the model"
+        );
         assert!(out.contains("hop 1 (1):\n  src/One.cs via=2(+1amb)"));
         assert!(out.contains("hop 2 (1):\n  src/Two.cs via=1"));
         assert!(!out.contains("Bar"), "compact drops top-symbols entirely");
@@ -771,7 +1176,10 @@ mod tests {
         let model = impact_model(vec![], 0, 0, 2);
         let out = render_impact_compact("IFoo", &model);
         let last_line = out.lines().last().unwrap();
-        assert_eq!(last_line, "summary: affected=0 shown=0 dropped=0 ambiguous=0 gap=2");
+        assert_eq!(
+            last_line,
+            "summary: affected=0 shown=0 dropped=0 ambiguous=0 gap=2"
+        );
     }
 
     // --- Missing-table tolerance, tested directly on the helpers (see module
@@ -780,14 +1188,22 @@ mod tests {
     #[test]
     fn ref_kind_block_missing_table_prints_nothing() {
         let mut out: Vec<String> = vec!["before".to_string()];
-        ref_kind_block::<InboundRow>(&mut out, "inherits", None, |r| format!("{}:{}", r.file, r.line));
+        ref_kind_block::<InboundRow>(&mut out, "inherits", None, |r| {
+            format!("{}:{}", r.file, r.line)
+        });
         assert_eq!(out, vec!["before".to_string()]);
     }
 
     #[test]
     fn compact_block_missing_table_prints_nothing() {
         let mut out: Vec<String> = vec!["before".to_string()];
-        compact_block::<InboundRow>(&mut out, "in:inherits", None, |r| r.file.as_str(), |r| r.line.to_string());
+        compact_block::<InboundRow>(
+            &mut out,
+            "in:inherits",
+            None,
+            |r| r.file.as_str(),
+            |r| r.line.to_string(),
+        );
         assert_eq!(out, vec!["before".to_string()]);
     }
 
@@ -795,7 +1211,9 @@ mod tests {
     fn ref_kind_block_present_but_empty_table_still_prints_header() {
         let mut out: Vec<String> = Vec::new();
         let t: Table<InboundRow> = table(vec![], 0);
-        ref_kind_block(&mut out, "inherits", Some(&t), |r: &InboundRow| format!("{}:{}", r.file, r.line));
+        ref_kind_block(&mut out, "inherits", Some(&t), |r: &InboundRow| {
+            format!("{}:{}", r.file, r.line)
+        });
         assert_eq!(out, vec!["  inherits (0):".to_string()]);
     }
 
@@ -803,22 +1221,48 @@ mod tests {
     fn compact_block_present_but_empty_table_prints_nothing_unlike_ref_kind_block() {
         let mut out: Vec<String> = Vec::new();
         let t: Table<InboundRow> = table(vec![], 0);
-        compact_block(&mut out, "in:inherits", Some(&t), |r: &InboundRow| r.file.as_str(), |r: &InboundRow| r.line.to_string());
+        compact_block(
+            &mut out,
+            "in:inherits",
+            Some(&t),
+            |r: &InboundRow| r.file.as_str(),
+            |r: &InboundRow| r.line.to_string(),
+        );
         assert!(out.is_empty());
     }
 
     #[test]
     fn ref_kind_block_dropped_note_only_appears_when_nonzero() {
         let mut out: Vec<String> = Vec::new();
-        let t = table(vec![InboundRow { file: "a.cs".into(), line: 1, heuristic: false, source: String::new() }], 2);
-        ref_kind_block(&mut out, "inherits", Some(&t), |r: &InboundRow| format!("{}:{}", r.file, r.line));
+        let t = table(
+            vec![InboundRow {
+                file: "a.cs".into(),
+                line: 1,
+                heuristic: false,
+                source: String::new(),
+            }],
+            2,
+        );
+        ref_kind_block(&mut out, "inherits", Some(&t), |r: &InboundRow| {
+            format!("{}:{}", r.file, r.line)
+        });
         assert_eq!(out[0], "  inherits (3, 2 dropped):");
     }
 
     #[test]
     fn rle_collapses_consecutive_equal_runs_only() {
-        let values = vec!["5".to_string(), "5".to_string(), "3".to_string(), "3".to_string(), "3".to_string(), "1".to_string()];
-        assert_eq!(rle(&values), vec!["5x2".to_string(), "3x3".to_string(), "1".to_string()]);
+        let values = vec![
+            "5".to_string(),
+            "5".to_string(),
+            "3".to_string(),
+            "3".to_string(),
+            "3".to_string(),
+            "1".to_string(),
+        ];
+        assert_eq!(
+            rle(&values),
+            vec!["5x2".to_string(), "3x3".to_string(), "1".to_string()]
+        );
     }
 
     #[test]
@@ -836,30 +1280,65 @@ mod tests {
             total: 3,
             member_count: 2,
             members: vec![
-                query::MemberRefEntry { name: "EnableX".into(), count: 2 },
-                query::MemberRefEntry { name: "EnableY".into(), count: 1 },
+                query::MemberRefEntry {
+                    name: "EnableX".into(),
+                    count: 2,
+                },
+                query::MemberRefEntry {
+                    name: "EnableY".into(),
+                    count: 1,
+                },
             ],
             dropped: 0,
         });
         let out = render_refs_text(&model);
-        assert!(out.contains("\nmember refs: 3 across 2 member(s): EnableX 2, EnableY 1"), "{out}");
-        assert!(render_refs_compact(&model).contains("\nmem: EnableX=2,EnableY=1\nsummary:"), "{}", render_refs_compact(&model));
+        assert!(
+            out.contains("\nmember refs: 3 across 2 member(s): EnableX 2, EnableY 1"),
+            "{out}"
+        );
+        assert!(
+            render_refs_compact(&model).contains("\nmem: EnableX=2,EnableY=1\nsummary:"),
+            "{}",
+            render_refs_compact(&model)
+        );
 
         model.member_refs = Some(query::MemberRefs {
             total: 9,
             member_count: 7,
-            members: vec![query::MemberRefEntry { name: "A".into(), count: 9 }],
+            members: vec![query::MemberRefEntry {
+                name: "A".into(),
+                count: 9,
+            }],
             dropped: 6,
         });
-        assert!(render_refs_text(&model).contains("member refs: 9 across 7 member(s): A 9 +6 more"), "{}", render_refs_text(&model));
-        assert!(render_refs_compact(&model).contains("mem: A=9,+6"), "{}", render_refs_compact(&model));
+        assert!(
+            render_refs_text(&model).contains("member refs: 9 across 7 member(s): A 9 +6 more"),
+            "{}",
+            render_refs_text(&model)
+        );
+        assert!(
+            render_refs_compact(&model).contains("mem: A=9,+6"),
+            "{}",
+            render_refs_compact(&model)
+        );
     }
 
     #[test]
     fn a_model_with_no_member_refs_renders_exactly_as_before() {
-        let out = render_refs_text(&refs_model(empty_inbound(), empty_outbound(), empty_ambiguous(), 0));
+        let out = render_refs_text(&refs_model(
+            empty_inbound(),
+            empty_outbound(),
+            empty_ambiguous(),
+            0,
+        ));
         assert!(!out.contains("member refs:"), "{out}");
-        assert!(!render_refs_compact(&refs_model(empty_inbound(), empty_outbound(), empty_ambiguous(), 0)).contains("mem: "));
+        assert!(!render_refs_compact(&refs_model(
+            empty_inbound(),
+            empty_outbound(),
+            empty_ambiguous(),
+            0
+        ))
+        .contains("mem: "));
     }
 
     // --- heuristic markers: the render literals ----------------------------
@@ -869,8 +1348,18 @@ mod tests {
         let mut inbound = empty_inbound();
         inbound.uses_member = table(
             vec![
-                InboundRow { file: "src/Fact.cs".into(), line: 4, heuristic: false, source: String::new() },
-                InboundRow { file: "src/Guess.cs".into(), line: 9, heuristic: true, source: String::new() },
+                InboundRow {
+                    file: "src/Fact.cs".into(),
+                    line: 4,
+                    heuristic: false,
+                    source: String::new(),
+                },
+                InboundRow {
+                    file: "src/Guess.cs".into(),
+                    line: 9,
+                    heuristic: true,
+                    source: String::new(),
+                },
             ],
             0,
         );
@@ -889,14 +1378,30 @@ mod tests {
         // An imports row carries no flag at all -- JS reads `r.heuristic` as
         // `undefined` there, which renders no suffix; this side has no field
         // to read, which is the same thing.
-        outbound.imports =
-            table(vec![ImportRow { file: "src/Guess.cs".into(), line: 1, target: "App.Core".into(), source: String::new() }], 0);
+        outbound.imports = table(
+            vec![ImportRow {
+                file: "src/Guess.cs".into(),
+                line: 1,
+                target: "App.Core".into(),
+                source: String::new(),
+            }],
+            0,
+        );
 
         let out = render_refs_text(&refs_model(inbound, outbound, empty_ambiguous(), 0));
         assert!(out.contains("    src/Fact.cs:4  uses-member\n"), "{out}");
-        assert!(out.contains("    src/Guess.cs:9  uses-member (heuristic)"), "{out}");
-        assert!(out.contains("    src/Guess.cs:9  uses-member  -> src/Widget.cs (heuristic)"), "{out}");
-        assert!(out.ends_with("    src/Guess.cs:1  imports  -> App.Core"), "an imports row is never suffixed\n{out}");
+        assert!(
+            out.contains("    src/Guess.cs:9  uses-member (heuristic)"),
+            "{out}"
+        );
+        assert!(
+            out.contains("    src/Guess.cs:9  uses-member  -> src/Widget.cs (heuristic)"),
+            "{out}"
+        );
+        assert!(
+            out.ends_with("    src/Guess.cs:1  imports  -> App.Core"),
+            "an imports row is never suffixed\n{out}"
+        );
         assert_eq!(out.matches("(heuristic)").count(), 2);
     }
 
@@ -905,49 +1410,103 @@ mod tests {
         let mut inbound = empty_inbound();
         inbound.uses_member = table(
             vec![
-                InboundRow { file: "src/A.cs".into(), line: 5, heuristic: false, source: String::new() },
-                InboundRow { file: "src/A.cs".into(), line: 5, heuristic: true, source: String::new() },
-                InboundRow { file: "src/A.cs".into(), line: 5, heuristic: true, source: String::new() },
+                InboundRow {
+                    file: "src/A.cs".into(),
+                    line: 5,
+                    heuristic: false,
+                    source: String::new(),
+                },
+                InboundRow {
+                    file: "src/A.cs".into(),
+                    line: 5,
+                    heuristic: true,
+                    source: String::new(),
+                },
+                InboundRow {
+                    file: "src/A.cs".into(),
+                    line: 5,
+                    heuristic: true,
+                    source: String::new(),
+                },
             ],
             0,
         );
         let out = render_refs_compact(&refs_model(inbound, empty_outbound(), empty_ambiguous(), 0));
-        assert!(out.contains("in:uses-member (3):\n  src/A.cs:5,5hx2"), "`5` and `5h` are distinct RLE entries\n{out}");
+        assert!(
+            out.contains("in:uses-member (3):\n  src/A.cs:5,5hx2"),
+            "`5` and `5h` are distinct RLE entries\n{out}"
+        );
     }
 
     #[test]
     fn impact_text_declares_heuristic_reached_files_beside_the_count_only_when_there_are_some() {
         let with_guess = impact_model(
-            vec![impact_row("src/Direct.cs", 1, 1, 0, &["Widget"], 0, 0.5), heuristic_impact_row("src/Guessed.cs", 1, 2, &["Widget"], 0.0)],
+            vec![
+                impact_row("src/Direct.cs", 1, 1, 0, &["Widget"], 0, 0.5),
+                heuristic_impact_row("src/Guessed.cs", 1, 2, &["Widget"], 0.0),
+            ],
             1,
             0,
             0,
         );
         let out = render_impact_text("Widget", &with_guess);
-        assert!(out.contains("affected files: 1 (+1 heuristic)  shown: 2  dropped: 0"), "{out}");
+        assert!(
+            out.contains("affected files: 1 (+1 heuristic)  shown: 2  dropped: 0"),
+            "{out}"
+        );
         assert!(out.contains("src/Direct.cs  1  1  Widget\n"), "{out}");
         assert!(
             out.contains("src/Guessed.cs  1  2  Widget (heuristic)"),
             "the via column reports the GUESS count, never the zero viaCount\n{out}"
         );
 
-        let without = impact_model(vec![impact_row("src/Direct.cs", 1, 1, 0, &["Widget"], 0, 0.5)], 1, 0, 0);
+        let without = impact_model(
+            vec![impact_row("src/Direct.cs", 1, 1, 0, &["Widget"], 0, 0.5)],
+            1,
+            0,
+            0,
+        );
         let out = render_impact_text("Widget", &without);
-        assert!(out.contains("affected files: 1  shown: 1  dropped: 0"), "byte-unchanged when there is nothing to declare\n{out}");
+        assert!(
+            out.contains("affected files: 1  shown: 1  dropped: 0"),
+            "byte-unchanged when there is nothing to declare\n{out}"
+        );
         assert!(!out.contains("heuristic"), "{out}");
     }
 
     #[test]
     fn impact_compact_summary_inserts_heuristic_before_gap() {
-        let model = impact_model(vec![heuristic_impact_row("src/Guessed.cs", 1, 3, &["Widget"], 0.0)], 0, 0, 2);
+        let model = impact_model(
+            vec![heuristic_impact_row(
+                "src/Guessed.cs",
+                1,
+                3,
+                &["Widget"],
+                0.0,
+            )],
+            0,
+            0,
+            2,
+        );
         let out = render_impact_compact("Widget", &model);
         assert!(out.contains("hop 1 (1):\n  src/Guessed.cs via=3h"), "{out}");
-        assert_eq!(out.lines().last().unwrap(), "summary: affected=0 shown=1 dropped=0 ambiguous=0 heuristic=1 gap=2");
+        assert_eq!(
+            out.lines().last().unwrap(),
+            "summary: affected=0 shown=1 dropped=0 ambiguous=0 heuristic=1 gap=2"
+        );
 
         // And it disappears entirely at zero.
-        let none = impact_model(vec![impact_row("src/Direct.cs", 1, 1, 0, &["Widget"], 0, 0.5)], 1, 0, 2);
+        let none = impact_model(
+            vec![impact_row("src/Direct.cs", 1, 1, 0, &["Widget"], 0, 0.5)],
+            1,
+            0,
+            2,
+        );
         assert_eq!(
-            render_impact_compact("Widget", &none).lines().last().unwrap(),
+            render_impact_compact("Widget", &none)
+                .lines()
+                .last()
+                .unwrap(),
             "summary: affected=1 shown=1 dropped=0 ambiguous=0 gap=2"
         );
     }
@@ -981,7 +1540,12 @@ mod tests {
 
     #[test]
     fn tests_text_heads_the_file_and_indents_one_line_per_test_def() {
-        let model = tests_model(vec![test_row("tests/OrderServiceTests.cs", &["App.Orders.Tests.OrderServiceTests"], &[10, 11], false)]);
+        let model = tests_model(vec![test_row(
+            "tests/OrderServiceTests.cs",
+            &["App.Orders.Tests.OrderServiceTests"],
+            &[10, 11],
+            false,
+        )]);
         assert_eq!(
             render_tests_text(&model),
             "tests for App.Orders.OrderService\ncovered by 1 test file(s), 2 reference(s)\n\ntests/OrderServiceTests.cs\n  App.Orders.Tests.OrderServiceTests  lines: 10, 11"
@@ -992,23 +1556,49 @@ mod tests {
     fn tests_text_answers_the_zero_case_in_one_line_instead_of_a_header_over_a_void() {
         let mut model = tests_model(vec![]);
         model.symbol = "App.Orders.Untested".to_string();
-        assert_eq!(render_tests_text(&model), "tests for App.Orders.Untested\nno test references found");
+        assert_eq!(
+            render_tests_text(&model),
+            "tests for App.Orders.Untested\nno test references found"
+        );
     }
 
     #[test]
     fn tests_text_marks_a_guessed_file_with_the_shared_heuristic_suffix() {
         let model = tests_model(vec![
-            test_row("tests/OrderServiceTests.cs", &["App.Orders.Tests.OrderServiceTests"], &[10], false),
-            test_row("tests/Partial.Extra.cs", &["App.Orders.Tests.PartialTests"], &[9], true),
+            test_row(
+                "tests/OrderServiceTests.cs",
+                &["App.Orders.Tests.OrderServiceTests"],
+                &[10],
+                false,
+            ),
+            test_row(
+                "tests/Partial.Extra.cs",
+                &["App.Orders.Tests.PartialTests"],
+                &[9],
+                true,
+            ),
         ]);
         let out = render_tests_text(&model);
-        assert!(out.contains("covered by 1 test file(s), 1 reference(s)"), "counts stay precise-only\n{out}");
-        assert!(out.ends_with("tests/Partial.Extra.cs (heuristic)\n  App.Orders.Tests.PartialTests  lines: 9"), "{out}");
+        assert!(
+            out.contains("covered by 1 test file(s), 1 reference(s)"),
+            "counts stay precise-only\n{out}"
+        );
+        assert!(
+            out.ends_with(
+                "tests/Partial.Extra.cs (heuristic)\n  App.Orders.Tests.PartialTests  lines: 9"
+            ),
+            "{out}"
+        );
     }
 
     #[test]
     fn tests_compact_folds_the_counts_into_the_header_and_drops_the_def_ids() {
-        let model = tests_model(vec![test_row("tests/OrderServiceTests.cs", &["App.Orders.Tests.OrderServiceTests"], &[10, 11], false)]);
+        let model = tests_model(vec![test_row(
+            "tests/OrderServiceTests.cs",
+            &["App.Orders.Tests.OrderServiceTests"],
+            &[10, 11],
+            false,
+        )]);
         assert_eq!(
             render_tests_compact(&model),
             "tests App.Orders.OrderService files=1 refs=2\ntests/OrderServiceTests.cs 10,11"
@@ -1016,14 +1606,27 @@ mod tests {
 
         let mut empty = tests_model(vec![]);
         empty.symbol = "App.Orders.Untested".to_string();
-        assert_eq!(render_tests_compact(&empty), "tests App.Orders.Untested files=0 refs=0");
+        assert_eq!(
+            render_tests_compact(&empty),
+            "tests App.Orders.Untested files=0 refs=0"
+        );
     }
 
     #[test]
     fn tests_compact_declares_heuristic_files_in_the_header_and_marks_their_lines() {
         let model = tests_model(vec![
-            test_row("tests/OrderServiceTests.cs", &["App.Orders.Tests.OrderServiceTests"], &[10], false),
-            test_row("tests/Partial.Extra.cs", &["App.Orders.Tests.PartialTests"], &[9, 12], true),
+            test_row(
+                "tests/OrderServiceTests.cs",
+                &["App.Orders.Tests.OrderServiceTests"],
+                &[10],
+                false,
+            ),
+            test_row(
+                "tests/Partial.Extra.cs",
+                &["App.Orders.Tests.PartialTests"],
+                &[9, 12],
+                true,
+            ),
         ]);
         assert_eq!(
             render_tests_compact(&model),
@@ -1035,25 +1638,59 @@ mod tests {
     fn impact_summaries_append_tests_only_when_the_blast_radius_reaches_one() {
         let reached = ImpactModel {
             tests_affected: 1,
-            ..impact_model(vec![impact_row("tests/OrderServiceTests.cs", 1, 1, 0, &["OrderService"], 0, 0.5)], 1, 0, 0)
+            ..impact_model(
+                vec![impact_row(
+                    "tests/OrderServiceTests.cs",
+                    1,
+                    1,
+                    0,
+                    &["OrderService"],
+                    0,
+                    0.5,
+                )],
+                1,
+                0,
+                0,
+            )
         };
         assert!(
-            render_impact_text("OrderService", &reached).contains("affected files: 1  shown: 1  dropped: 0 tests=1"),
+            render_impact_text("OrderService", &reached)
+                .contains("affected files: 1  shown: 1  dropped: 0 tests=1"),
             "{}",
             render_impact_text("OrderService", &reached)
         );
         assert_eq!(
-            render_impact_compact("OrderService", &reached).lines().last().unwrap(),
+            render_impact_compact("OrderService", &reached)
+                .lines()
+                .last()
+                .unwrap(),
             "summary: affected=1 shown=1 dropped=0 ambiguous=0 tests=1"
         );
 
-        let none = impact_model(vec![impact_row("src/Other.cs", 1, 1, 0, &["OrderService"], 0, 0.5)], 1, 0, 0);
+        let none = impact_model(
+            vec![impact_row(
+                "src/Other.cs",
+                1,
+                1,
+                0,
+                &["OrderService"],
+                0,
+                0.5,
+            )],
+            1,
+            0,
+            0,
+        );
         assert!(
-            render_impact_text("OrderService", &none).contains("affected files: 1  shown: 1  dropped: 0\n"),
+            render_impact_text("OrderService", &none)
+                .contains("affected files: 1  shown: 1  dropped: 0\n"),
             "its ABSENCE is the gap signal -- never printed as tests=0"
         );
         assert_eq!(
-            render_impact_compact("OrderService", &none).lines().last().unwrap(),
+            render_impact_compact("OrderService", &none)
+                .lines()
+                .last()
+                .unwrap(),
             "summary: affected=1 shown=1 dropped=0 ambiguous=0"
         );
     }
@@ -1064,7 +1701,15 @@ mod tests {
             tests_affected: 1,
             ..impact_model(
                 vec![
-                    impact_row("tests/OrderServiceTests.cs", 1, 1, 0, &["OrderService"], 0, 0.5),
+                    impact_row(
+                        "tests/OrderServiceTests.cs",
+                        1,
+                        1,
+                        0,
+                        &["OrderService"],
+                        0,
+                        0.5,
+                    ),
                     heuristic_impact_row("src/Guessed.cs", 1, 3, &["OrderService"], 0.0),
                 ],
                 1,
@@ -1073,7 +1718,10 @@ mod tests {
             )
         };
         assert_eq!(
-            render_impact_compact("OrderService", &model).lines().last().unwrap(),
+            render_impact_compact("OrderService", &model)
+                .lines()
+                .last()
+                .unwrap(),
             "summary: affected=1 shown=2 dropped=0 ambiguous=0 heuristic=1 tests=1 gap=2"
         );
     }

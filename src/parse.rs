@@ -61,8 +61,10 @@ pub fn node_text(node: Node, src: &[u8]) -> String {
     if range.start > range.end || range.end > src.len() {
         return String::new();
     }
-    let units: Vec<u16> =
-        src[range].chunks_exact(2).map(|pair| u16::from_le_bytes([pair[0], pair[1]])).collect();
+    let units: Vec<u16> = src[range]
+        .chunks_exact(2)
+        .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+        .collect();
     String::from_utf16_lossy(&units)
 }
 
@@ -84,7 +86,9 @@ pub fn run_parse(path: &str) {
 
     let mut parser = new_parser();
     let units = utf16_units(&source);
-    let tree = parser.parse_utf16_le(&units, None).expect("parse returned no tree");
+    let tree = parser
+        .parse_utf16_le(&units, None)
+        .expect("parse returned no tree");
     walk(tree.root_node(), &utf16_bytes(&units), 0);
 }
 
@@ -183,7 +187,9 @@ pub fn run_spans(path: &str) {
 pub fn collect_spans(source: &str) -> Vec<SpanRecord> {
     let mut parser = new_parser();
     let units = utf16_units(source);
-    let tree = parser.parse_utf16_le(&units, None).expect("parse returned no tree");
+    let tree = parser
+        .parse_utf16_le(&units, None)
+        .expect("parse returned no tree");
     let mut out = Vec::new();
     walk_spans(tree.root_node(), &utf16_bytes(&units), &mut out);
     out.sort_by(|a, b| {
@@ -201,7 +207,10 @@ fn walk_spans(node: Node, src: &[u8], out: &mut Vec<SpanRecord>) {
         if let Some(name_node) = node.child_by_field_name("name") {
             let start_point = node.start_position();
             let end_point = node.end_position();
-            let (start_byte, start_col) = (utf16_index(node.start_byte()), utf16_index(start_point.column));
+            let (start_byte, start_col) = (
+                utf16_index(node.start_byte()),
+                utf16_index(start_point.column),
+            );
             let (end_byte, end_col) = (utf16_index(node.end_byte()), utf16_index(end_point.column));
             out.push(SpanRecord {
                 kind: node.kind().to_string(),
@@ -308,7 +317,9 @@ fn new_ts_parser(grammar: TsGrammar) -> Parser {
         TsGrammar::Tsx => tree_sitter_typescript::LANGUAGE_TSX.into(),
         TsGrammar::Javascript => tree_sitter_javascript::LANGUAGE.into(),
     };
-    parser.set_language(&language).expect("failed to load TS/JS grammar");
+    parser
+        .set_language(&language)
+        .expect("failed to load TS/JS grammar");
     parser
 }
 
@@ -345,8 +356,16 @@ mod ts_grammar_tests {
 
     #[test]
     fn each_grammar_loads_and_parses_without_panicking() {
-        assert!(parse_ts_js(&utf16_units("const x: number = 1;\n"), TsGrammar::Typescript).is_some());
+        assert!(parse_ts_js(
+            &utf16_units("const x: number = 1;\n"),
+            TsGrammar::Typescript
+        )
+        .is_some());
         assert!(parse_ts_js(&utf16_units("const x = <div>hi</div>;\n"), TsGrammar::Tsx).is_some());
-        assert!(parse_ts_js(&utf16_units("function f() { return 1; }\n"), TsGrammar::Javascript).is_some());
+        assert!(parse_ts_js(
+            &utf16_units("function f() { return 1; }\n"),
+            TsGrammar::Javascript
+        )
+        .is_some());
     }
 }

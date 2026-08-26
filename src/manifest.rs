@@ -48,7 +48,12 @@ pub enum Value {
 
 impl Value {
     pub fn object(entries: Vec<(&str, Value)>) -> Value {
-        Value::Object(entries.into_iter().map(|(k, v)| (k.to_string(), v)).collect())
+        Value::Object(
+            entries
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v))
+                .collect(),
+        )
     }
 
     pub fn string(s: impl Into<String>) -> Value {
@@ -66,7 +71,10 @@ impl Value {
     /// Value for `key`, or `None` -- a missing key, or `self` not being an
     /// object at all. Reading a field off a non-object is `None`, not an error.
     pub fn get(&self, key: &str) -> Option<&Value> {
-        self.as_object()?.iter().find(|(k, _)| k == key).map(|(_, v)| v)
+        self.as_object()?
+            .iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v)
     }
 
     pub fn as_object(&self) -> Option<&[(String, Value)]> {
@@ -113,7 +121,9 @@ impl<'de> Deserialize<'de> for Value {
                 Ok(Value::Number(v.into()))
             }
             fn visit_f64<E>(self, v: f64) -> Result<Value, E> {
-                Ok(Value::Number(serde_json::Number::from_f64(v).unwrap_or_else(|| 0.into())))
+                Ok(Value::Number(
+                    serde_json::Number::from_f64(v).unwrap_or_else(|| 0.into()),
+                ))
             }
             fn visit_str<E>(self, v: &str) -> Result<Value, E> {
                 Ok(Value::String(v.to_owned()))
@@ -239,7 +249,11 @@ impl fmt::Display for ManifestError {
                 write!(f, "failed to read manifest at {}: {detail}", path.display())
             }
             ManifestError::InvalidJson { path, detail } => {
-                write!(f, "manifest at {} is not valid JSON: {detail}", path.display())
+                write!(
+                    f,
+                    "manifest at {} is not valid JSON: {detail}",
+                    path.display()
+                )
             }
         }
     }
@@ -248,10 +262,14 @@ impl fmt::Display for ManifestError {
 impl std::error::Error for ManifestError {}
 
 fn read_json_value(path: &Path) -> Result<Value, ManifestError> {
-    let text = fs::read_to_string(path)
-        .map_err(|e| ManifestError::Io { path: path.to_path_buf(), detail: e.to_string() })?;
-    serde_json::from_str::<Value>(&text)
-        .map_err(|e| ManifestError::InvalidJson { path: path.to_path_buf(), detail: e.to_string() })
+    let text = fs::read_to_string(path).map_err(|e| ManifestError::Io {
+        path: path.to_path_buf(),
+        detail: e.to_string(),
+    })?;
+    serde_json::from_str::<Value>(&text).map_err(|e| ManifestError::InvalidJson {
+        path: path.to_path_buf(),
+        detail: e.to_string(),
+    })
 }
 
 /// Parses the shared-path manifest if present; else falls back to the legacy
@@ -278,12 +296,18 @@ pub fn write_manifest(root: &Path, value: &Value) -> io::Result<()> {
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir)?;
     }
-    let json = serde_json::to_string_pretty(value).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+    let json = serde_json::to_string_pretty(value)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
-    let suffix = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
+    let suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
     let tmp_name = format!(
         "{}.tmp.{}.{suffix}",
-        path.file_name().and_then(|n| n.to_str()).unwrap_or("manifest.json"),
+        path.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("manifest.json"),
         std::process::id(),
     );
     let tmp_path = path.with_file_name(tmp_name);
@@ -399,40 +423,78 @@ pub struct FindResult {
 ///
 /// Returns `Ok(FindResult{..})` with no hits for no manifest or no tokens;
 /// `Err` on a corrupt manifest file or a missing `entries`.
-pub fn find_in_manifest_detailed(root: &Path, query: &str, inbound: &HashMap<String, usize>) -> Result<FindResult, FindError> {
+pub fn find_in_manifest_detailed(
+    root: &Path,
+    query: &str,
+    inbound: &HashMap<String, usize>,
+) -> Result<FindResult, FindError> {
     let manifest = match read_manifest(root)? {
         Some(m) => m,
-        None => return Ok(FindResult { hits: Vec::new(), fallback: false }),
+        None => {
+            return Ok(FindResult {
+                hits: Vec::new(),
+                fallback: false,
+            })
+        }
     };
 
-    let tokens: Vec<String> = query.to_lowercase().split_whitespace().map(String::from).collect();
+    let tokens: Vec<String> = query
+        .to_lowercase()
+        .split_whitespace()
+        .map(String::from)
+        .collect();
     if tokens.is_empty() {
-        return Ok(FindResult { hits: Vec::new(), fallback: false });
+        return Ok(FindResult {
+            hits: Vec::new(),
+            fallback: false,
+        });
     }
 
-    let entries = manifest.get("entries").and_then(Value::as_object).ok_or(FindError::EntriesNotObject)?;
+    let entries = manifest
+        .get("entries")
+        .and_then(Value::as_object)
+        .ok_or(FindError::EntriesNotObject)?;
 
     let scored: Vec<Scored> = entries
         .iter()
         .map(|(path, e)| {
             let purpose = e.get("purpose").and_then(Value::as_str).map(String::from);
-            let source =
-                e.get("source").and_then(Value::as_str).map(String::from).unwrap_or_else(|| "heuristic".to_string());
+            let source = e
+                .get("source")
+                .and_then(Value::as_str)
+                .map(String::from)
+                .unwrap_or_else(|| "heuristic".to_string());
             let hay = format!("{path} {}", purpose.as_deref().unwrap_or("")).to_lowercase();
             let hits = tokens.iter().filter(|t| hay.contains(t.as_str())).count();
-            Scored { path: path.clone(), purpose, source, hits, inbound: inbound.get(path).copied().unwrap_or(0) }
+            Scored {
+                path: path.clone(),
+                purpose,
+                source,
+                hits,
+                inbound: inbound.get(path).copied().unwrap_or(0),
+            }
         })
         .collect();
 
     let full: Vec<&Scored> = scored.iter().filter(|s| s.hits == tokens.len()).collect();
     let fallback = full.is_empty();
-    let mut pool: Vec<&Scored> = if !full.is_empty() { full } else { scored.iter().filter(|s| s.hits > 0).collect() };
+    let mut pool: Vec<&Scored> = if !full.is_empty() {
+        full
+    } else {
+        scored.iter().filter(|s| s.hits > 0).collect()
+    };
     // Both pools rank identically: tokens first, inbound second, stability
     // third. One comparator, applied once, keeps that rule in exactly one place.
     pool.sort_by(|a, b| b.hits.cmp(&a.hits).then_with(|| b.inbound.cmp(&a.inbound)));
 
-    let hits =
-        pool.into_iter().map(|s| FindHit { path: s.path.clone(), purpose: s.purpose.clone(), source: s.source.clone() }).collect();
+    let hits = pool
+        .into_iter()
+        .map(|s| FindHit {
+            path: s.path.clone(),
+            purpose: s.purpose.clone(),
+            source: s.source.clone(),
+        })
+        .collect();
     Ok(FindResult { hits, fallback })
 }
 
@@ -445,7 +507,12 @@ pub fn find_in_manifest_detailed(root: &Path, query: &str, inbound: &HashMap<Str
 /// on any failure (spawn failure, non-zero exit, e.g. no commits yet or not a
 /// repo).
 pub fn git_head(root: &Path) -> Option<String> {
-    let output = Command::new("git").arg("-C").arg(root).args(["rev-parse", "HEAD"]).output().ok()?;
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .ok()?;
     if !output.status.success() {
         return None;
     }
@@ -460,7 +527,10 @@ pub fn git_head(root: &Path) -> Option<String> {
 /// The directory scope for `root`: explicit dirs win if non-empty; else the
 /// registry entry's `scope` if non-empty; else `["."]`. A corrupt registry
 /// surfaces as `Err`, propagated straight from `repo::entry_for`.
-pub fn scope_for(root: &Path, explicit_dirs: Option<&[String]>) -> Result<Vec<String>, RegistryError> {
+pub fn scope_for(
+    root: &Path,
+    explicit_dirs: Option<&[String]>,
+) -> Result<Vec<String>, RegistryError> {
     if let Some(dirs) = explicit_dirs {
         if !dirs.is_empty() {
             return Ok(dirs.to_vec());
@@ -502,7 +572,13 @@ pub fn index_state_path(root: &Path) -> PathBuf {
 /// against, so those same files staying exactly as dirty as they were is never
 /// mistaken for having changed SINCE the map. Sorted so two writes of the same
 /// set are byte-identical.
-pub fn write_index_state(root: &Path, head: Option<String>, dirty: bool, dirty_indexed_files: &[String], file_count: i64) -> io::Result<()> {
+pub fn write_index_state(
+    root: &Path,
+    head: Option<String>,
+    dirty: bool,
+    dirty_indexed_files: &[String],
+    file_count: i64,
+) -> io::Result<()> {
     let path = index_state_path(root);
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir)?;
@@ -514,9 +590,13 @@ pub fn write_index_state(root: &Path, head: Option<String>, dirty: bool, dirty_i
         ("dirty", Value::Bool(dirty)),
         ("indexed_at", Value::string(crate::hookio::iso8601_now())),
         ("file_count", Value::number(file_count)),
-        ("dirty_indexed_files", Value::array(sorted.into_iter().map(Value::string).collect())),
+        (
+            "dirty_indexed_files",
+            Value::array(sorted.into_iter().map(Value::string).collect()),
+        ),
     ]);
-    let json = serde_json::to_string_pretty(&value).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+    let json = serde_json::to_string_pretty(&value)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
     fs::write(&path, format!("{json}\n"))
 }
 
@@ -542,7 +622,9 @@ const STATUS_LINE_CAP: usize = 5000;
 // callers never mistake "could not check" for "confirmed clean".
 fn git_status_paths(root: &Path, scope: &[String]) -> Option<HashSet<String>> {
     let mut cmd = Command::new("git");
-    cmd.arg("-C").arg(root).args(["status", "--porcelain", "--untracked-files=all", "--"]);
+    cmd.arg("-C")
+        .arg(root)
+        .args(["status", "--porcelain", "--untracked-files=all", "--"]);
     for s in scope {
         cmd.arg(s);
     }
@@ -552,7 +634,11 @@ fn git_status_paths(root: &Path, scope: &[String]) -> Option<HashSet<String>> {
     }
     let text = String::from_utf8(output.stdout).ok()?;
     let mut paths = HashSet::new();
-    for line in text.split('\n').filter(|l| !l.is_empty()).take(STATUS_LINE_CAP) {
+    for line in text
+        .split('\n')
+        .filter(|l| !l.is_empty())
+        .take(STATUS_LINE_CAP)
+    {
         if line.len() < 3 {
             continue;
         }
@@ -567,16 +653,27 @@ fn git_status_paths(root: &Path, scope: &[String]) -> Option<HashSet<String>> {
 /// `false` (a non-git root, or git being unavailable, is not "dirty"; it is
 /// unknown, and `false` is the safer default to persist for it).
 pub fn is_working_tree_dirty(root: &Path, scope: &[String]) -> bool {
-    git_status_paths(root, scope).map(|p| !p.is_empty()).unwrap_or(false)
+    git_status_paths(root, scope)
+        .map(|p| !p.is_empty())
+        .unwrap_or(false)
 }
 
 /// The indexed files currently dirty -- `git_status_paths` intersected with the
 /// manifest's own entries -- sorted for a stable, comparable list. Called once
 /// at index time (the baseline `write_index_state` stores) and once at query
 /// time (what `freshness_warning` diffs the baseline against).
-pub fn dirty_indexed_files_at(root: &Path, scope: &[String], indexed_files: &HashSet<String>) -> Vec<String> {
-    let Some(changed) = git_status_paths(root, scope) else { return Vec::new() };
-    let mut out: Vec<String> = changed.into_iter().filter(|p| indexed_files.contains(p)).collect();
+pub fn dirty_indexed_files_at(
+    root: &Path,
+    scope: &[String],
+    indexed_files: &HashSet<String>,
+) -> Vec<String> {
+    let Some(changed) = git_status_paths(root, scope) else {
+        return Vec::new();
+    };
+    let mut out: Vec<String> = changed
+        .into_iter()
+        .filter(|p| indexed_files.contains(p))
+        .collect();
     out.sort();
     out
 }
@@ -613,7 +710,13 @@ pub fn freshness_warning(root: &Path) -> Option<String> {
         .as_ref()
         .and_then(|m| m.get("scoped_dirs"))
         .and_then(|v| match v {
-            Value::Array(items) => Some(items.iter().filter_map(Value::as_str).map(str::to_string).collect::<Vec<_>>()),
+            Value::Array(items) => Some(
+                items
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_string)
+                    .collect::<Vec<_>>(),
+            ),
             _ => None,
         })
         .filter(|v: &Vec<String>| !v.is_empty())
@@ -623,11 +726,20 @@ pub fn freshness_warning(root: &Path) -> Option<String> {
     let baseline_dirty: HashSet<String> = state
         .get("dirty_indexed_files")
         .and_then(|v| match v {
-            Value::Array(items) => Some(items.iter().filter_map(Value::as_str).map(str::to_string).collect()),
+            Value::Array(items) => Some(
+                items
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_string)
+                    .collect(),
+            ),
             _ => None,
         })
         .unwrap_or_default();
-    let changed_count = current_dirty.iter().filter(|p| !baseline_dirty.contains(*p)).count();
+    let changed_count = current_dirty
+        .iter()
+        .filter(|p| !baseline_dirty.contains(*p))
+        .count();
 
     if current_head == stored_head && changed_count == 0 {
         return None;
@@ -665,7 +777,10 @@ mod tests {
 
     fn unique_temp_dir(prefix: &str) -> PathBuf {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-        let dir = env::temp_dir().join(format!("scout-manifest-rs-{prefix}-{}-{n}", std::process::id()));
+        let dir = env::temp_dir().join(format!(
+            "scout-manifest-rs-{prefix}-{}-{n}",
+            std::process::id()
+        ));
         fs::create_dir_all(&dir).expect("create temp dir");
         dir
     }
@@ -692,15 +807,24 @@ mod tests {
 
     #[test]
     fn value_pretty_print_matches_json_stringify_indent_two_shape() {
-        let v = Value::object(vec![("a", Value::number(1)), ("b", Value::array(vec![Value::string("x")]))]);
+        let v = Value::object(vec![
+            ("a", Value::number(1)),
+            ("b", Value::array(vec![Value::string("x")])),
+        ]);
         let out = serde_json::to_string_pretty(&v).unwrap();
         assert_eq!(out, "{\n  \"a\": 1,\n  \"b\": [\n    \"x\"\n  ]\n}");
     }
 
     #[test]
     fn value_empty_object_and_array_have_no_interior_whitespace() {
-        assert_eq!(serde_json::to_string_pretty(&Value::object(vec![])).unwrap(), "{}");
-        assert_eq!(serde_json::to_string_pretty(&Value::array(vec![])).unwrap(), "[]");
+        assert_eq!(
+            serde_json::to_string_pretty(&Value::object(vec![])).unwrap(),
+            "{}"
+        );
+        assert_eq!(
+            serde_json::to_string_pretty(&Value::array(vec![])).unwrap(),
+            "[]"
+        );
     }
 
     #[test]
@@ -717,7 +841,10 @@ mod tests {
     fn a_non_git_root_uses_the_legacy_scout_path() {
         let root = unique_temp_dir("plain");
         assert_eq!(manifest_path(&root), legacy_manifest_path(&root));
-        assert_eq!(legacy_manifest_path(&root), root.join(".scout").join("manifest.json"));
+        assert_eq!(
+            legacy_manifest_path(&root),
+            root.join(".scout").join("manifest.json")
+        );
     }
 
     // -- read_manifest / write_manifest ---------------------------------
@@ -733,7 +860,10 @@ mod tests {
         let root = unique_temp_dir("corrupt");
         fs::create_dir_all(root.join(".scout")).unwrap();
         fs::write(root.join(".scout").join("manifest.json"), "{not valid json").unwrap();
-        assert!(matches!(read_manifest(&root), Err(ManifestError::InvalidJson { .. })));
+        assert!(matches!(
+            read_manifest(&root),
+            Err(ManifestError::InvalidJson { .. })
+        ));
     }
 
     #[test]
@@ -744,7 +874,13 @@ mod tests {
             ("scoped_dirs", Value::array(vec![Value::string("src")])),
             (
                 "entries",
-                Value::object(vec![("src/a.ts", Value::object(vec![("purpose", Value::string("does A")), ("mtime", Value::number(1))]))]),
+                Value::object(vec![(
+                    "src/a.ts",
+                    Value::object(vec![
+                        ("purpose", Value::string("does A")),
+                        ("mtime", Value::number(1)),
+                    ]),
+                )]),
             ),
         ]);
         write_manifest(&root, &obj).unwrap();
@@ -775,9 +911,18 @@ mod tests {
                 Value::object(vec![
                     (
                         "src/GroupRepository.cs",
-                        Value::object(vec![("purpose", Value::string("Mongo CRUD for groups")), ("mtime", Value::number(1))]),
+                        Value::object(vec![
+                            ("purpose", Value::string("Mongo CRUD for groups")),
+                            ("mtime", Value::number(1)),
+                        ]),
                     ),
-                    ("src/Other.cs", Value::object(vec![("purpose", Value::string("unrelated")), ("mtime", Value::number(1))])),
+                    (
+                        "src/Other.cs",
+                        Value::object(vec![
+                            ("purpose", Value::string("unrelated")),
+                            ("mtime", Value::number(1)),
+                        ]),
+                    ),
                 ]),
             ),
         ])
@@ -797,9 +942,13 @@ mod tests {
     fn find_returns_empty_for_zero_hits_and_missing_manifest() {
         let root = unique_temp_dir("find-zero");
         write_manifest(&root, &sample_manifest()).unwrap();
-        assert!(find_in_manifest(&root, "nonexistentzzz").unwrap().is_empty());
+        assert!(find_in_manifest(&root, "nonexistentzzz")
+            .unwrap()
+            .is_empty());
         let missing_root = unique_temp_dir("find-missing");
-        assert!(find_in_manifest(&missing_root, "anything").unwrap().is_empty());
+        assert!(find_in_manifest(&missing_root, "anything")
+            .unwrap()
+            .is_empty());
     }
 
     #[test]
@@ -807,7 +956,10 @@ mod tests {
         let root = unique_temp_dir("find-source");
         let m = Value::object(vec![(
             "entries",
-            Value::object(vec![("a.ts", Value::object(vec![("purpose", Value::string("does A"))]))]),
+            Value::object(vec![(
+                "a.ts",
+                Value::object(vec![("purpose", Value::string("does A"))]),
+            )]),
         )]);
         write_manifest(&root, &m).unwrap();
         let hits = find_in_manifest(&root, "does").unwrap();
@@ -818,7 +970,10 @@ mod tests {
     fn find_errs_when_entries_is_missing() {
         let root = unique_temp_dir("find-no-entries");
         write_manifest(&root, &Value::object(vec![("built_at_head", Value::Null)])).unwrap();
-        assert!(matches!(find_in_manifest(&root, "x"), Err(FindError::EntriesNotObject)));
+        assert!(matches!(
+            find_in_manifest(&root, "x"),
+            Err(FindError::EntriesNotObject)
+        ));
     }
 
     #[test]
@@ -830,10 +985,22 @@ mod tests {
         let m = Value::object(vec![(
             "entries",
             Value::object(vec![
-                ("first.ts", Value::object(vec![("purpose", Value::string("alpha only"))])),
-                ("second.ts", Value::object(vec![("purpose", Value::string("alpha beta"))])),
-                ("third.ts", Value::object(vec![("purpose", Value::string("beta only"))])),
-                ("fourth.ts", Value::object(vec![("purpose", Value::string("neither"))])),
+                (
+                    "first.ts",
+                    Value::object(vec![("purpose", Value::string("alpha only"))]),
+                ),
+                (
+                    "second.ts",
+                    Value::object(vec![("purpose", Value::string("alpha beta"))]),
+                ),
+                (
+                    "third.ts",
+                    Value::object(vec![("purpose", Value::string("beta only"))]),
+                ),
+                (
+                    "fourth.ts",
+                    Value::object(vec![("purpose", Value::string("neither"))]),
+                ),
             ]),
         )]);
         write_manifest(&root, &m).unwrap();
@@ -852,8 +1019,14 @@ mod tests {
     }
 
     fn find_ranked(root: &Path, query: &str, inbound: &[(&str, usize)]) -> Vec<String> {
-        let map: HashMap<String, usize> = inbound.iter().map(|(p, n)| (p.to_string(), *n)).collect();
-        find_in_manifest_detailed(root, query, &map).unwrap().hits.into_iter().map(|h| h.path).collect()
+        let map: HashMap<String, usize> =
+            inbound.iter().map(|(p, n)| (p.to_string(), *n)).collect();
+        find_in_manifest_detailed(root, query, &map)
+            .unwrap()
+            .hits
+            .into_iter()
+            .map(|h| h.path)
+            .collect()
     }
 
     #[test]
@@ -866,8 +1039,14 @@ mod tests {
         let m = Value::object(vec![(
             "entries",
             Value::object(vec![
-                ("src/Island.cs", Value::object(vec![("purpose", Value::string("widget ledger store"))])),
-                ("src/Hub.cs", Value::object(vec![("purpose", Value::string("widget ledger hub"))])),
+                (
+                    "src/Island.cs",
+                    Value::object(vec![("purpose", Value::string("widget ledger store"))]),
+                ),
+                (
+                    "src/Hub.cs",
+                    Value::object(vec![("purpose", Value::string("widget ledger hub"))]),
+                ),
             ]),
         )]);
         write_manifest(&root, &m).unwrap();
@@ -891,14 +1070,27 @@ mod tests {
         let m = Value::object(vec![(
             "entries",
             Value::object(vec![
-                ("src/hub.cs", Value::object(vec![("purpose", Value::string("alpha only"))])),
-                ("src/rich.cs", Value::object(vec![("purpose", Value::string("alpha beta"))])),
+                (
+                    "src/hub.cs",
+                    Value::object(vec![("purpose", Value::string("alpha only"))]),
+                ),
+                (
+                    "src/rich.cs",
+                    Value::object(vec![("purpose", Value::string("alpha beta"))]),
+                ),
             ]),
         )]);
         write_manifest(&root, &m).unwrap();
-        let r =
-            find_in_manifest_detailed(&root, "alpha beta zeta", &[("src/hub.cs".to_string(), 99)].into_iter().collect()).unwrap();
-        assert!(r.fallback, "no entry matches every token: the OR pool answers");
+        let r = find_in_manifest_detailed(
+            &root,
+            "alpha beta zeta",
+            &[("src/hub.cs".to_string(), 99)].into_iter().collect(),
+        )
+        .unwrap();
+        assert!(
+            r.fallback,
+            "no entry matches every token: the OR pool answers"
+        );
         let paths: Vec<&str> = r.hits.iter().map(|h| h.path.as_str()).collect();
         assert_eq!(paths, vec!["src/rich.cs", "src/hub.cs"], "tokens primary");
 
@@ -906,12 +1098,22 @@ mod tests {
         let m2 = Value::object(vec![(
             "entries",
             Value::object(vec![
-                ("src/plain.cs", Value::object(vec![("purpose", Value::string("alpha here"))])),
-                ("src/popular.cs", Value::object(vec![("purpose", Value::string("alpha too"))])),
+                (
+                    "src/plain.cs",
+                    Value::object(vec![("purpose", Value::string("alpha here"))]),
+                ),
+                (
+                    "src/popular.cs",
+                    Value::object(vec![("purpose", Value::string("alpha too"))]),
+                ),
             ]),
         )]);
         write_manifest(&root, &m2).unwrap();
-        let paths2 = find_ranked(&root, "alpha zeta", &[("src/popular.cs", 9), ("src/plain.cs", 1)]);
+        let paths2 = find_ranked(
+            &root,
+            "alpha zeta",
+            &[("src/popular.cs", 9), ("src/plain.cs", 1)],
+        );
         assert_eq!(paths2, vec!["src/popular.cs", "src/plain.cs"]);
     }
 
@@ -924,13 +1126,26 @@ mod tests {
         let m = Value::object(vec![(
             "entries",
             Value::object(vec![
-                ("src/first.cs", Value::object(vec![("purpose", Value::string("twin widget"))])),
-                ("src/second.cs", Value::object(vec![("purpose", Value::string("twin widget"))])),
-                ("src/third.cs", Value::object(vec![("purpose", Value::string("twin widget"))])),
+                (
+                    "src/first.cs",
+                    Value::object(vec![("purpose", Value::string("twin widget"))]),
+                ),
+                (
+                    "src/second.cs",
+                    Value::object(vec![("purpose", Value::string("twin widget"))]),
+                ),
+                (
+                    "src/third.cs",
+                    Value::object(vec![("purpose", Value::string("twin widget"))]),
+                ),
             ]),
         )]);
         write_manifest(&root, &m).unwrap();
-        let tied = [("src/first.cs", 4usize), ("src/second.cs", 4), ("src/third.cs", 4)];
+        let tied = [
+            ("src/first.cs", 4usize),
+            ("src/second.cs", 4),
+            ("src/third.cs", 4),
+        ];
         let paths = find_ranked(&root, "twin widget", &tied);
         assert_eq!(paths, vec!["src/first.cs", "src/second.cs", "src/third.cs"]);
     }
@@ -949,13 +1164,25 @@ mod tests {
         let m = Value::object(vec![(
             "entries",
             Value::object(vec![
-                ("src/second.cs", Value::object(vec![("purpose", Value::string("alpha beta"))])),
-                ("src/first.cs", Value::object(vec![("purpose", Value::string("beta alpha"))])),
-                ("src/partial.cs", Value::object(vec![("purpose", Value::string("alpha only"))])),
+                (
+                    "src/second.cs",
+                    Value::object(vec![("purpose", Value::string("alpha beta"))]),
+                ),
+                (
+                    "src/first.cs",
+                    Value::object(vec![("purpose", Value::string("beta alpha"))]),
+                ),
+                (
+                    "src/partial.cs",
+                    Value::object(vec![("purpose", Value::string("alpha only"))]),
+                ),
             ]),
         )]);
         write_manifest(&root, &m).unwrap();
-        assert_eq!(find_ranked(&root, "alpha beta", &[]), vec!["src/second.cs", "src/first.cs"]);
+        assert_eq!(
+            find_ranked(&root, "alpha beta", &[]),
+            vec!["src/second.cs", "src/first.cs"]
+        );
 
         // OR pool: no entry matches every token of the three-token query.
         // Hits primary: the two-hit entry leads; the one-hit ties keep
@@ -965,14 +1192,29 @@ mod tests {
         let m2 = Value::object(vec![(
             "entries",
             Value::object(vec![
-                ("src/a.cs", Value::object(vec![("purpose", Value::string("alpha four"))])),
-                ("src/b.cs", Value::object(vec![("purpose", Value::string("beta five"))])),
-                ("src/c.cs", Value::object(vec![("purpose", Value::string("alpha beta six"))])),
-                ("src/d.cs", Value::object(vec![("purpose", Value::string("seven"))])),
+                (
+                    "src/a.cs",
+                    Value::object(vec![("purpose", Value::string("alpha four"))]),
+                ),
+                (
+                    "src/b.cs",
+                    Value::object(vec![("purpose", Value::string("beta five"))]),
+                ),
+                (
+                    "src/c.cs",
+                    Value::object(vec![("purpose", Value::string("alpha beta six"))]),
+                ),
+                (
+                    "src/d.cs",
+                    Value::object(vec![("purpose", Value::string("seven"))]),
+                ),
             ]),
         )]);
         write_manifest(&root, &m2).unwrap();
-        assert_eq!(find_ranked(&root, "alpha beta gamma", &[]), vec!["src/c.cs", "src/a.cs", "src/b.cs"]);
+        assert_eq!(
+            find_ranked(&root, "alpha beta gamma", &[]),
+            vec!["src/c.cs", "src/a.cs", "src/b.cs"]
+        );
     }
 
     // -- git_head -----------------------------------------------------
@@ -1003,7 +1245,10 @@ mod tests {
 
         env::set_var("SCOUT_REGISTRY", &reg_path);
         let result = (|| {
-            assert_eq!(scope_for(&scoped, None).unwrap(), vec!["src".to_string(), "app".to_string()]);
+            assert_eq!(
+                scope_for(&scoped, None).unwrap(),
+                vec!["src".to_string(), "app".to_string()]
+            );
             assert_eq!(scope_for(&unscoped, None).unwrap(), vec![".".to_string()]);
             let explicit = vec!["a".to_string(), "b".to_string()];
             assert_eq!(scope_for(&scoped, Some(&explicit)).unwrap(), explicit);

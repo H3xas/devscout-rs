@@ -120,7 +120,13 @@ struct Scored<'g> {
     kind: u8,
 }
 
-fn score_row(row: &GraphName, query: &str, lower_query: &str, query_tokens: &[String], query_ascii: bool) -> Option<(u8, usize)> {
+fn score_row(
+    row: &GraphName,
+    query: &str,
+    lower_query: &str,
+    query_tokens: &[String],
+    query_ascii: bool,
+) -> Option<(u8, usize)> {
     let lower = row.name.to_lowercase();
     // Containment is one-directional. A name the query swallows whole is not a
     // near miss for it -- every two-letter field in the index sits inside some
@@ -161,8 +167,14 @@ pub fn did_you_mean<'g>(names: &'g [GraphName], query: &str) -> Vec<&'g GraphNam
     let mut scored: Vec<Scored> = names
         .iter()
         .filter_map(|row| {
-            score_row(row, query, &lower_query, &query_tokens, query_ascii)
-                .map(|(rank, penalty)| Scored { row, rank, penalty, kind: kind_rank(&row.kind) })
+            score_row(row, query, &lower_query, &query_tokens, query_ascii).map(
+                |(rank, penalty)| Scored {
+                    row,
+                    rank,
+                    penalty,
+                    kind: kind_rank(&row.kind),
+                },
+            )
         })
         .collect();
     // Text keys compare by UTF-8 byte order, the same seam
@@ -207,15 +219,27 @@ mod tests {
     use super::*;
 
     fn row(name: &str, kind: &str, file: &str, line: usize) -> GraphName {
-        GraphName { name: name.into(), kind: kind.into(), file: file.into(), line, owner: String::new() }
+        GraphName {
+            name: name.into(),
+            kind: kind.into(),
+            file: file.into(),
+            line,
+            owner: String::new(),
+        }
     }
 
     #[test]
     fn tokens_split_camel_case_snake_and_acronym_runs() {
-        assert_eq!(tokens("PopulateToolbarItems"), vec!["populate", "toolbar", "items"]);
+        assert_eq!(
+            tokens("PopulateToolbarItems"),
+            vec!["populate", "toolbar", "items"]
+        );
         assert_eq!(tokens("_shelfCount"), vec!["shelf", "count"]);
         assert_eq!(tokens("XMLHttpRequest"), vec!["xml", "http", "request"]);
-        assert_eq!(tokens("Catalog.Shelf.Title"), vec!["catalog", "shelf", "title"]);
+        assert_eq!(
+            tokens("Catalog.Shelf.Title"),
+            vec!["catalog", "shelf", "title"]
+        );
         assert_eq!(tokens("Total total"), vec!["total"], "distinct tokens only");
     }
 
@@ -232,9 +256,19 @@ mod tests {
 
     #[test]
     fn a_name_the_query_swallows_whole_is_not_a_near_miss_for_it() {
-        let names = vec![row("op", "field", "src/Shell.cs", 15), row("ToolbarItem", "class", "src/Item.cs", 8)];
-        let got: Vec<&str> = did_you_mean(&names, "PopulateToolbarItem").iter().map(|n| n.name.as_str()).collect();
-        assert_eq!(got, vec!["ToolbarItem"], "the token tier keeps the real name and drops the two-letter field");
+        let names = vec![
+            row("op", "field", "src/Shell.cs", 15),
+            row("ToolbarItem", "class", "src/Item.cs", 8),
+        ];
+        let got: Vec<&str> = did_you_mean(&names, "PopulateToolbarItem")
+            .iter()
+            .map(|n| n.name.as_str())
+            .collect();
+        assert_eq!(
+            got,
+            vec!["ToolbarItem"],
+            "the token tier keeps the real name and drops the two-letter field"
+        );
     }
 
     #[test]
@@ -245,22 +279,33 @@ mod tests {
             row("ShelfCount", "field", "a.cs", 3),
             row("ShelfLoader", "class", "a.cs", 3),
         ];
-        let got: Vec<&str> = did_you_mean(&names, "Shelf Missing").iter().map(|n| n.kind.as_str()).collect();
+        let got: Vec<&str> = did_you_mean(&names, "Shelf Missing")
+            .iter()
+            .map(|n| n.kind.as_str())
+            .collect();
         assert_eq!(got, vec!["class", "field", "markup-name", "resource-key"]);
     }
 
     #[test]
     fn the_list_stops_at_five_distinct_names_however_many_rows_match() {
-        let mut names: Vec<GraphName> = (0..9).map(|i| row(&format!("ShelfPart{i}"), "method", "a.cs", i + 1)).collect();
+        let mut names: Vec<GraphName> = (0..9)
+            .map(|i| row(&format!("ShelfPart{i}"), "method", "a.cs", i + 1))
+            .collect();
         names.push(row("ShelfPart0", "method", "b.cs", 1));
         let got = did_you_mean(&names, "ShelfPart");
         assert_eq!(got.len(), SUGGESTION_CAP);
-        assert_eq!(got[0].file, "a.cs", "the first row of a repeated name wins, the later one is dropped");
+        assert_eq!(
+            got[0].file, "a.cs",
+            "the first row of a repeated name wins, the later one is dropped"
+        );
     }
 
     #[test]
     fn nothing_within_the_measure_suggests_nothing() {
-        let names = vec![row("ShelfLoader", "class", "a.cs", 3), row("Anchor", "class", "b.cs", 1)];
+        let names = vec![
+            row("ShelfLoader", "class", "a.cs", 3),
+            row("Anchor", "class", "b.cs", 1),
+        ];
         assert!(did_you_mean(&names, "Zzzznomatch").is_empty());
         assert!(did_you_mean(&names, "").is_empty());
     }
@@ -270,13 +315,26 @@ mod tests {
         let names = vec![row("Anchor", "class", "b.cs", 1)];
         assert_eq!(did_you_mean(&names, "Anchxr").len(), 1, "one substitution");
         assert_eq!(did_you_mean(&names, "Anchxy").len(), 1, "two substitutions");
-        assert!(did_you_mean(&names, "Axchxy").is_empty(), "three substitutions is past the bound");
+        assert!(
+            did_you_mean(&names, "Axchxy").is_empty(),
+            "three substitutions is past the bound"
+        );
     }
 
     #[test]
     fn a_non_ascii_name_is_reachable_by_token_but_never_by_edit_distance() {
-        let names = vec![row("Größe", "property", "a.cs", 1), row("GrößeReader", "class", "a.cs", 2)];
-        assert!(did_you_mean(&names, "Grosse").is_empty(), "the edit tier refuses a non-ASCII pair");
-        assert_eq!(did_you_mean(&names, "GrößeWriter").len(), 2, "the token tier still reaches it");
+        let names = vec![
+            row("Größe", "property", "a.cs", 1),
+            row("GrößeReader", "class", "a.cs", 2),
+        ];
+        assert!(
+            did_you_mean(&names, "Grosse").is_empty(),
+            "the edit tier refuses a non-ASCII pair"
+        );
+        assert_eq!(
+            did_you_mean(&names, "GrößeWriter").len(),
+            2,
+            "the token tier still reaches it"
+        );
     }
 }

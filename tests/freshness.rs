@@ -25,7 +25,10 @@ static COUNTER: AtomicU64 = AtomicU64::new(0);
 
 fn temp_dir(prefix: &str) -> PathBuf {
     let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-    let dir = env::temp_dir().join(format!("scout-freshness-{prefix}-{}-{n}", std::process::id()));
+    let dir = env::temp_dir().join(format!(
+        "scout-freshness-{prefix}-{}-{n}",
+        std::process::id()
+    ));
     fs::create_dir_all(&dir).expect("create temp dir");
     fs::canonicalize(&dir).expect("canonicalize temp dir")
 }
@@ -35,8 +38,21 @@ fn rust_bin() -> PathBuf {
 }
 
 fn git(dir: &Path, args: &[&str]) -> String {
-    let output = Command::new("git").args(args).current_dir(dir).stdin(Stdio::null()).env("GIT_AUTHOR_NAME", "devscout-test").env("GIT_AUTHOR_EMAIL", "devscout-test@example.com").env("GIT_COMMITTER_NAME", "devscout-test").env("GIT_COMMITTER_EMAIL", "devscout-test@example.com").output().expect("git binary must be on PATH");
-    assert!(output.status.success(), "git {args:?} failed in {}: {output:?}", dir.display());
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(dir)
+        .stdin(Stdio::null())
+        .env("GIT_AUTHOR_NAME", "devscout-test")
+        .env("GIT_AUTHOR_EMAIL", "devscout-test@example.com")
+        .env("GIT_COMMITTER_NAME", "devscout-test")
+        .env("GIT_COMMITTER_EMAIL", "devscout-test@example.com")
+        .output()
+        .expect("git binary must be on PATH");
+    assert!(
+        output.status.success(),
+        "git {args:?} failed in {}: {output:?}",
+        dir.display()
+    );
     String::from_utf8(output.stdout).unwrap().trim().to_string()
 }
 
@@ -110,8 +126,14 @@ impl Fixture {
     // which `git status` reports as staged changes -- exactly the "a file
     // changed" signal this must NOT also trigger.
     fn advance_head(&self, parent_sha: &str) -> String {
-        let tree = git(&self.root, &["rev-parse", &format!("{parent_sha}^{{tree}}")]);
-        let sha = git(&self.root, &["commit-tree", &tree, "-p", parent_sha, "-m", "advance"]);
+        let tree = git(
+            &self.root,
+            &["rev-parse", &format!("{parent_sha}^{{tree}}")],
+        );
+        let sha = git(
+            &self.root,
+            &["commit-tree", &tree, "-p", parent_sha, "-m", "advance"],
+        );
         git(&self.root, &["update-ref", "refs/heads/master", &sha]);
         sha
     }
@@ -133,7 +155,11 @@ fn fresh_index_prints_no_freshness_warning_on_any_of_the_three_verbs() {
 
     let impact = fx.run(&["impact", "src/IWidget.cs"]);
     assert_eq!(stderr_of(&impact), "", "{impact:?}");
-    assert_eq!(impact.status.code(), Some(0), "WidgetImpl.cs gives impact a real inbound edge to reach: {impact:?}");
+    assert_eq!(
+        impact.status.code(),
+        Some(0),
+        "WidgetImpl.cs gives impact a real inbound edge to reach: {impact:?}"
+    );
 }
 
 #[test]
@@ -162,8 +188,14 @@ fn a_modified_indexed_file_head_unchanged_is_reported_as_one_changed_file() {
 
     let find = fx.run(&["find", "IWidget"]);
     let stderr = stderr_of(&find);
-    assert!(stderr.starts_with("devscout: index for repo is stale (indexed at "), "{stderr:?}");
-    assert!(stderr.contains("; 1 changed files) — rebuild with devscout map\n"), "{stderr:?}");
+    assert!(
+        stderr.starts_with("devscout: index for repo is stale (indexed at "),
+        "{stderr:?}"
+    );
+    assert!(
+        stderr.contains("; 1 changed files) — rebuild with devscout map\n"),
+        "{stderr:?}"
+    );
 }
 
 #[test]
@@ -171,7 +203,10 @@ fn legacy_index_with_no_index_state_json_prints_no_warning_and_does_not_crash() 
     let (fx, _sha) = Fixture::build("legacy");
     // Simulate an index built before the sidecar existed.
     let state_path = fx.root.join(".git").join("scout").join("index-state.json");
-    assert!(state_path.exists(), "map must have written the sidecar: {state_path:?}");
+    assert!(
+        state_path.exists(),
+        "map must have written the sidecar: {state_path:?}"
+    );
     fs::remove_file(&state_path).unwrap();
 
     let find = fx.run(&["find", "IWidget"]);

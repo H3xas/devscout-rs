@@ -28,8 +28,12 @@ const PROBE_EXTENSIONS: &[&str] = &[".ts", ".tsx", ".js", ".jsx"];
 // ESM spells a relative import of a TypeScript module with the extension of
 // what it COMPILES to. The mapping is the TypeScript compiler's own, applied
 // only after the literal path has already failed to match a mapped file.
-const OUTPUT_EXTENSION_SOURCES: &[(&str, &[&str])] =
-    &[(".js", &[".ts", ".tsx"]), (".jsx", &[".tsx"]), (".mjs", &[".mts", ".ts"]), (".cjs", &[".cts", ".ts"])];
+const OUTPUT_EXTENSION_SOURCES: &[(&str, &[&str])] = &[
+    (".js", &[".ts", ".tsx"]),
+    (".jsx", &[".tsx"]),
+    (".mjs", &[".mts", ".ts"]),
+    (".cjs", &[".cts", ".ts"]),
+];
 const TSCONFIG_CHAIN_LIMIT: usize = 4;
 // Where a repo writes down what its bare specifiers mean. `tsconfig.json` is
 // the default entry point; a workspace whose root config is generated per-app
@@ -250,7 +254,11 @@ impl TsConfigDoc {
     // so a config declaring a non-object `paths` still wins the chain and still
     // contributes no alias.
     fn declares_paths(&self) -> bool {
-        match self.compiler_options.as_ref().and_then(|o| o.paths.as_ref()) {
+        match self
+            .compiler_options
+            .as_ref()
+            .and_then(|o| o.paths.as_ref())
+        {
             None => false,
             Some(PathsField::Map(_)) => true,
             Some(PathsField::Other(v)) => match v {
@@ -282,12 +290,16 @@ fn read_tsconfig_chain(root: &Path, start: &str) -> Vec<ChainLink> {
         if !path.exists() {
             break;
         }
-        let Ok(text) = fs::read_to_string(&path) else { break };
+        let Ok(text) = fs::read_to_string(&path) else {
+            break;
+        };
         let stripped = strip_jsonc(&text);
         // A parse failure means "cannot read this config" and stops the chain. A
         // config that parses but is not an object contributes no option at all,
         // which is what `TsConfigDoc::default()` is.
-        let Ok(value) = serde_json::from_str::<Value>(&stripped) else { break };
+        let Ok(value) = serde_json::from_str::<Value>(&stripped) else {
+            break;
+        };
         let cfg = if value.is_object() {
             serde_json::from_str::<TsConfigDoc>(&stripped).unwrap_or_default()
         } else {
@@ -298,7 +310,11 @@ fn read_tsconfig_chain(root: &Path, start: &str) -> Vec<ChainLink> {
         // node_modules, which this resolver deliberately does not resolve into.
         rel = match cfg.extends.as_ref().and_then(Value::as_str) {
             Some(ext) if ext.starts_with('.') => {
-                let spelled = if ext.ends_with(".json") { ext.to_string() } else { format!("{ext}.json") };
+                let spelled = if ext.ends_with(".json") {
+                    ext.to_string()
+                } else {
+                    format!("{ext}.json")
+                };
                 join_rel(&dir, &spelled)
             }
             _ => None,
@@ -361,12 +377,17 @@ pub fn read_ts_path_aliases(root: &Path) -> TsPathAliases {
             None => base_url_dir.clone().or_else(|| Some(pf.dir.clone())),
         };
         for (pattern, targets) in pf.cfg.paths().expect("paths_from declares paths").iter() {
-            let Some(targets) = targets.as_array() else { continue };
+            let Some(targets) = targets.as_array() else {
+                continue;
+            };
             let resolved: Vec<AliasTarget> = targets
                 .iter()
                 .filter_map(Value::as_str)
                 .map(|t| match t.find('*') {
-                    None => AliasTarget { prefix: join_rel(base.as_deref().unwrap_or(""), t), suffix: String::new() },
+                    None => AliasTarget {
+                        prefix: join_rel(base.as_deref().unwrap_or(""), t),
+                        suffix: String::new(),
+                    },
                     Some(star) => AliasTarget {
                         prefix: Some(
                             join_rel(base.as_deref().unwrap_or(""), &t[..star]).unwrap_or_default(),
@@ -396,8 +417,16 @@ pub fn read_ts_path_aliases(root: &Path) -> TsPathAliases {
     // Longest prefix wins, TypeScript's own tie-break; the name breaks a length
     // tie so the order is total and identical on every run. `sort_by` is stable,
     // matching V8's own stable `Array.prototype.sort`.
-    aliases.sort_by(|a, b| b.prefix.len().cmp(&a.prefix.len()).then_with(|| a.prefix.cmp(&b.prefix)));
-    TsPathAliases { aliases, base_url_dir }
+    aliases.sort_by(|a, b| {
+        b.prefix
+            .len()
+            .cmp(&a.prefix.len())
+            .then_with(|| a.prefix.cmp(&b.prefix))
+    });
+    TsPathAliases {
+        aliases,
+        base_url_dir,
+    }
 }
 
 fn alias_targets(spec: &str, aliases: &[Alias]) -> Vec<Option<String>> {
@@ -413,13 +442,21 @@ fn alias_targets(spec: &str, aliases: &[Alias]) -> Vec<Option<String>> {
         // what REMAINS expresses the same three conditions in one pass -- an
         // overlapping prefix/suffix pair fails the second strip exactly where the
         // length guard would reject it.
-        let Some(rest) = spec.strip_prefix(a.prefix.as_str()) else { continue };
-        let Some(mid) = rest.strip_suffix(a.suffix.as_str()) else { continue };
+        let Some(rest) = spec.strip_prefix(a.prefix.as_str()) else {
+            continue;
+        };
+        let Some(mid) = rest.strip_suffix(a.suffix.as_str()) else {
+            continue;
+        };
         return a
             .targets
             .iter()
             .map(|t| {
-                let rest = if t.suffix.is_empty() { mid.to_string() } else { format!("{mid}{}", t.suffix) };
+                let rest = if t.suffix.is_empty() {
+                    mid.to_string()
+                } else {
+                    format!("{mid}{}", t.suffix)
+                };
                 t.prefix.as_deref().and_then(|p| join_rel(p, &rest))
             })
             .collect();
@@ -534,7 +571,11 @@ pub fn resolve_ts_graph(fragments: &[(String, TsFragment)], alias: &TsPathAliase
                 spec: rx.spec.clone(),
                 line: rx.line,
                 star: rx.star,
-                names: rx.names.iter().map(|n| (n.exported.clone(), n.imported.clone())).collect(),
+                names: rx
+                    .names
+                    .iter()
+                    .map(|n| (n.exported.clone(), n.imported.clone()))
+                    .collect(),
                 to: resolve_specifier(file, &rx.spec, &file_set, alias),
             })
             .collect();
@@ -554,10 +595,16 @@ pub fn resolve_ts_graph(fragments: &[(String, TsFragment)], alias: &TsPathAliase
         if hops >= BARREL_HOPS {
             return None;
         }
-        for rx in reexports_by_file.get(file).map(Vec::as_slice).unwrap_or(&[]) {
+        for rx in reexports_by_file
+            .get(file)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+        {
             let Some(to) = &rx.to else { continue };
             if rx.star {
-                if let Some(hit) = lookup_export(to, name, hops + 1, exports_by_file, reexports_by_file) {
+                if let Some(hit) =
+                    lookup_export(to, name, hops + 1, exports_by_file, reexports_by_file)
+                {
                     return Some(hit);
                 }
                 continue;
@@ -566,7 +613,9 @@ pub fn resolve_ts_graph(fragments: &[(String, TsFragment)], alias: &TsPathAliase
                 if exported != name {
                     continue;
                 }
-                if let Some(hit) = lookup_export(to, imported, hops + 1, exports_by_file, reexports_by_file) {
+                if let Some(hit) =
+                    lookup_export(to, imported, hops + 1, exports_by_file, reexports_by_file)
+                {
                     return Some(hit);
                 }
             }
@@ -600,7 +649,9 @@ pub fn resolve_ts_graph(fragments: &[(String, TsFragment)], alias: &TsPathAliase
             // already broken TypeScript, and picking the later one would make
             // the answer depend on statement order for no gain.
             for b in &imp.bindings {
-                bindings.entry(b.local.clone()).or_insert((to.clone(), b.imported.clone()));
+                bindings
+                    .entry(b.local.clone())
+                    .or_insert((to.clone(), b.imported.clone()));
             }
             // A barrel is a routing table, not a dependency: `import
             // { useThing } from '../hooks'` names index.ts but DEPENDS on the
@@ -615,7 +666,9 @@ pub fn resolve_ts_graph(fragments: &[(String, TsFragment)], alias: &TsPathAliase
                 if b.imported == "*" {
                     continue;
                 }
-                let Some(target) = lookup_export(&to, &b.imported, 0, &exports_by_file, &reexports_by_file) else {
+                let Some(target) =
+                    lookup_export(&to, &b.imported, 0, &exports_by_file, &reexports_by_file)
+                else {
                     continue;
                 };
                 let target_file = defs[target].file.clone();
@@ -633,7 +686,11 @@ pub fn resolve_ts_graph(fragments: &[(String, TsFragment)], alias: &TsPathAliase
                 counts.import += 1;
             }
         }
-        for rx in reexports_by_file.get(file.as_str()).map(Vec::as_slice).unwrap_or(&[]) {
+        for rx in reexports_by_file
+            .get(file.as_str())
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+        {
             match &rx.to {
                 None => external_imports += 1,
                 Some(to) => {
@@ -658,10 +715,13 @@ pub fn resolve_ts_graph(fragments: &[(String, TsFragment)], alias: &TsPathAliase
                     Some(m) => lookup_export(to, m, 0, &exports_by_file, &reexports_by_file),
                     None => None,
                 },
-                Some((to, imported)) => lookup_export(to, imported, 0, &exports_by_file, &reexports_by_file),
-                None if r.member.is_none() => {
-                    exports_by_file.get(file.as_str()).and_then(|m| m.get(&r.name)).copied()
+                Some((to, imported)) => {
+                    lookup_export(to, imported, 0, &exports_by_file, &reexports_by_file)
                 }
+                None if r.member.is_none() => exports_by_file
+                    .get(file.as_str())
+                    .and_then(|m| m.get(&r.name))
+                    .copied(),
                 None => None,
             };
             let Some(target) = target else {
@@ -672,15 +732,30 @@ pub fn resolve_ts_graph(fragments: &[(String, TsFragment)], alias: &TsPathAliase
             let to_file = defs[target].file.clone();
             match r.kind.as_str() {
                 "call" => {
-                    edges.push(Edge::Call { from_file: file.clone(), from_line: r.line, to, to_file });
+                    edges.push(Edge::Call {
+                        from_file: file.clone(),
+                        from_line: r.line,
+                        to,
+                        to_file,
+                    });
                     counts.call += 1;
                 }
                 "jsx-use" => {
-                    edges.push(Edge::JsxUse { from_file: file.clone(), from_line: r.line, to, to_file });
+                    edges.push(Edge::JsxUse {
+                        from_file: file.clone(),
+                        from_line: r.line,
+                        to,
+                        to_file,
+                    });
                     counts.jsx_use += 1;
                 }
                 "dispatch" => {
-                    edges.push(Edge::Dispatch { from_file: file.clone(), from_line: r.line, to, to_file });
+                    edges.push(Edge::Dispatch {
+                        from_file: file.clone(),
+                        from_line: r.line,
+                        to,
+                        to_file,
+                    });
                     counts.dispatch += 1;
                 }
                 // Unreachable over a fragment this crate produced: the
@@ -698,18 +773,36 @@ pub fn resolve_ts_graph(fragments: &[(String, TsFragment)], alias: &TsPathAliase
         external_import_count: external_imports,
         unresolved_ref_count: unresolved_refs,
     };
-    TsGraph { defs, edges, edges_by_kind: counts, stats }
+    TsGraph {
+        defs,
+        edges,
+        edges_by_kind: counts,
+        stats,
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::extract::{TsBinding, TsFragmentDef, TsImport, TsRef, TsReexport, TsReexportName};
+    use crate::extract::{TsBinding, TsFragmentDef, TsImport, TsReexport, TsReexportName, TsRef};
 
-    fn frag(defs: Vec<(&str, &str, usize)>, imports: Vec<TsImport>, reexports: Vec<TsReexport>, refs: Vec<TsRef>) -> TsFragment {
+    fn frag(
+        defs: Vec<(&str, &str, usize)>,
+        imports: Vec<TsImport>,
+        reexports: Vec<TsReexport>,
+        refs: Vec<TsRef>,
+    ) -> TsFragment {
         TsFragment {
             ts: 1,
-            defs: defs.into_iter().map(|(n, k, l)| TsFragmentDef { name: n.into(), kind: k.into(), line: l, end_line: l }).collect(),
+            defs: defs
+                .into_iter()
+                .map(|(n, k, l)| TsFragmentDef {
+                    name: n.into(),
+                    kind: k.into(),
+                    line: l,
+                    end_line: l,
+                })
+                .collect(),
             imports,
             reexports,
             refs,
@@ -721,12 +814,23 @@ mod tests {
         TsImport {
             spec: spec.into(),
             line,
-            bindings: bindings.iter().map(|(l, i)| TsBinding { local: (*l).into(), imported: (*i).into() }).collect(),
+            bindings: bindings
+                .iter()
+                .map(|(l, i)| TsBinding {
+                    local: (*l).into(),
+                    imported: (*i).into(),
+                })
+                .collect(),
         }
     }
 
     fn call_ref(name: &str, line: usize) -> TsRef {
-        TsRef { kind: "call".into(), name: name.into(), member: None, line }
+        TsRef {
+            kind: "call".into(),
+            name: name.into(),
+            member: None,
+            line,
+        }
     }
 
     fn no_alias() -> TsPathAliases {
@@ -735,26 +839,38 @@ mod tests {
 
     #[test]
     fn join_rel_refuses_to_climb_above_the_repo_root() {
-        assert_eq!(join_rel("src", "../util/format"), Some("util/format".to_string()));
+        assert_eq!(
+            join_rel("src", "../util/format"),
+            Some("util/format".to_string())
+        );
         assert_eq!(join_rel("", "../escape"), None);
     }
 
     #[test]
     fn probe_order_prefers_a_typescript_source_over_a_built_js_sibling() {
         let files: HashSet<&str> = ["src/x.ts", "src/x.js"].into_iter().collect();
-        assert_eq!(probe_file(Some("src/x"), &files), Some("src/x.ts".to_string()));
+        assert_eq!(
+            probe_file(Some("src/x"), &files),
+            Some("src/x.ts".to_string())
+        );
     }
 
     #[test]
     fn an_esm_js_specifier_resolves_to_the_ts_source_it_compiles_from() {
         let files: HashSet<&str> = ["src/x.ts"].into_iter().collect();
-        assert_eq!(probe_file(Some("src/x.js"), &files), Some("src/x.ts".to_string()));
+        assert_eq!(
+            probe_file(Some("src/x.js"), &files),
+            Some("src/x.ts".to_string())
+        );
     }
 
     #[test]
     fn a_directory_specifier_resolves_through_its_index_file() {
         let files: HashSet<&str> = ["src/hooks/index.ts"].into_iter().collect();
-        assert_eq!(probe_file(Some("src/hooks"), &files), Some("src/hooks/index.ts".to_string()));
+        assert_eq!(
+            probe_file(Some("src/hooks"), &files),
+            Some("src/hooks/index.ts".to_string())
+        );
     }
 
     #[test]
@@ -770,12 +886,28 @@ mod tests {
         let fragments = vec![
             (
                 "src/a.ts".to_string(),
-                frag(vec![], vec![import("./b", 1, &[("go", "go")])], vec![], vec![call_ref("go", 3)]),
+                frag(
+                    vec![],
+                    vec![import("./b", 1, &[("go", "go")])],
+                    vec![],
+                    vec![call_ref("go", 3)],
+                ),
             ),
-            ("src/b.ts".to_string(), frag(vec![("go", "function", 1)], vec![], vec![], vec![])),
+            (
+                "src/b.ts".to_string(),
+                frag(vec![("go", "function", 1)], vec![], vec![], vec![]),
+            ),
         ];
         let g = resolve_ts_graph(&fragments, &no_alias());
-        assert_eq!(g.edges_by_kind, TsEdgeCounts { import: 1, call: 1, jsx_use: 0, dispatch: 0 });
+        assert_eq!(
+            g.edges_by_kind,
+            TsEdgeCounts {
+                import: 1,
+                call: 1,
+                jsx_use: 0,
+                dispatch: 0
+            }
+        );
         assert_eq!(g.stats.ts_def_count, 1);
         assert_eq!(g.stats.unresolved_ref_count, 0);
     }
@@ -784,7 +916,12 @@ mod tests {
     fn an_unresolvable_specifier_is_external_and_never_an_edge() {
         let fragments = vec![(
             "src/a.ts".to_string(),
-            frag(vec![], vec![import("./nowhere", 1, &[("go", "go")])], vec![], vec![call_ref("go", 3)]),
+            frag(
+                vec![],
+                vec![import("./nowhere", 1, &[("go", "go")])],
+                vec![],
+                vec![call_ref("go", 3)],
+            ),
         )];
         let g = resolve_ts_graph(&fragments, &no_alias());
         assert_eq!(g.edges.len(), 0);
@@ -798,12 +935,29 @@ mod tests {
             spec: spec.into(),
             line: 1,
             star: false,
-            names: vec![TsReexportName { exported: exported.into(), imported: exported.into() }],
+            names: vec![TsReexportName {
+                exported: exported.into(),
+                imported: exported.into(),
+            }],
         };
         let one = vec![
-            ("src/a.ts".to_string(), frag(vec![], vec![import("./b", 1, &[("go", "go")])], vec![], vec![])),
-            ("src/b.ts".to_string(), frag(vec![], vec![], vec![barrel("./c", "go")], vec![])),
-            ("src/c.ts".to_string(), frag(vec![("go", "function", 1)], vec![], vec![], vec![])),
+            (
+                "src/a.ts".to_string(),
+                frag(
+                    vec![],
+                    vec![import("./b", 1, &[("go", "go")])],
+                    vec![],
+                    vec![],
+                ),
+            ),
+            (
+                "src/b.ts".to_string(),
+                frag(vec![], vec![], vec![barrel("./c", "go")], vec![]),
+            ),
+            (
+                "src/c.ts".to_string(),
+                frag(vec![("go", "function", 1)], vec![], vec![], vec![]),
+            ),
         ];
         let g1 = resolve_ts_graph(&one, &no_alias());
         assert!(matches!(
@@ -812,13 +966,35 @@ mod tests {
         ));
 
         let two = vec![
-            ("src/a.ts".to_string(), frag(vec![], vec![import("./b", 1, &[("go", "go")])], vec![], vec![])),
-            ("src/b.ts".to_string(), frag(vec![], vec![], vec![barrel("./c", "go")], vec![])),
-            ("src/c.ts".to_string(), frag(vec![], vec![], vec![barrel("./d", "go")], vec![])),
-            ("src/d.ts".to_string(), frag(vec![("go", "function", 1)], vec![], vec![], vec![])),
+            (
+                "src/a.ts".to_string(),
+                frag(
+                    vec![],
+                    vec![import("./b", 1, &[("go", "go")])],
+                    vec![],
+                    vec![],
+                ),
+            ),
+            (
+                "src/b.ts".to_string(),
+                frag(vec![], vec![], vec![barrel("./c", "go")], vec![]),
+            ),
+            (
+                "src/c.ts".to_string(),
+                frag(vec![], vec![], vec![barrel("./d", "go")], vec![]),
+            ),
+            (
+                "src/d.ts".to_string(),
+                frag(vec![("go", "function", 1)], vec![], vec![], vec![]),
+            ),
         ];
         let g2 = resolve_ts_graph(&two, &no_alias());
-        assert!(!g2.edges.iter().any(|e| matches!(e, Edge::Import { via: Some(_), .. })), "two chained barrels resolve to nothing");
+        assert!(
+            !g2.edges
+                .iter()
+                .any(|e| matches!(e, Edge::Import { via: Some(_), .. })),
+            "two chained barrels resolve to nothing"
+        );
     }
 
     #[test]
@@ -831,12 +1007,20 @@ mod tests {
                     vec![import("./b", 1, &[("ns", "*")])],
                     vec![],
                     vec![
-                        TsRef { kind: "call".into(), name: "ns".into(), member: Some("go".into()), line: 3 },
+                        TsRef {
+                            kind: "call".into(),
+                            name: "ns".into(),
+                            member: Some("go".into()),
+                            line: 3,
+                        },
                         call_ref("ns", 4),
                     ],
                 ),
             ),
-            ("src/b.ts".to_string(), frag(vec![("go", "function", 1)], vec![], vec![], vec![])),
+            (
+                "src/b.ts".to_string(),
+                frag(vec![("go", "function", 1)], vec![], vec![], vec![]),
+            ),
         ];
         let g = resolve_ts_graph(&fragments, &no_alias());
         assert_eq!(g.edges_by_kind.call, 1);

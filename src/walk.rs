@@ -69,7 +69,9 @@ pub const SKIP_DIRS: &[&str] = &[
 /// File extensions (including the leading dot) eligible for inclusion.
 /// Case-sensitive, exact match on the substring from the *last* `.` in the
 /// file name onward.
-pub const SOURCE_EXT: &[&str] = &[".ts", ".tsx", ".js", ".jsx", ".cs", ".json", ".md", ".xaml", ".resw", ".resx"];
+pub const SOURCE_EXT: &[&str] = &[
+    ".ts", ".tsx", ".js", ".jsx", ".cs", ".json", ".md", ".xaml", ".resw", ".resx",
+];
 
 /// Enumerates source files under each scope directory. `root` must already be
 /// an absolute, normalized path (the caller's responsibility; root discovery
@@ -159,7 +161,12 @@ pub struct DefaultPurposeDetail {
 pub fn default_purpose_detailed(root: &Path, rel: &str) -> DefaultPurposeDetail {
     let text = match fs::read(root.join(rel)) {
         Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
-        Err(_) => return DefaultPurposeDetail { text: String::new(), is_comment: false },
+        Err(_) => {
+            return DefaultPurposeDetail {
+                text: String::new(),
+                is_comment: false,
+            }
+        }
     };
     for raw in text.split('\n').take(15) {
         // `char::is_whitespace` does not include U+FEFF (ZWNBSP/BOM), so a
@@ -170,25 +177,47 @@ pub fn default_purpose_detailed(root: &Path, rel: &str) -> DefaultPurposeDetail 
             continue;
         }
         if let Some(m) = match_comment(line) {
-            return DefaultPurposeDetail { text: truncate(m), is_comment: true };
+            return DefaultPurposeDetail {
+                text: truncate(m),
+                is_comment: true,
+            };
         }
         if starts_with_namespace_ws(line) {
-            return DefaultPurposeDetail { text: truncate(line), is_comment: false };
+            return DefaultPurposeDetail {
+                text: truncate(line),
+                is_comment: false,
+            };
         }
         if starts_with_any(
             line,
-            &["export", "public", "class", "interface", "def ", "function "],
+            &[
+                "export",
+                "public",
+                "class",
+                "interface",
+                "def ",
+                "function ",
+            ],
         ) {
-            return DefaultPurposeDetail { text: truncate(line), is_comment: false };
+            return DefaultPurposeDetail {
+                text: truncate(line),
+                is_comment: false,
+            };
         }
         // This unconditional fall-through returns the first non-blank line
         // regardless of whether any pattern above matched -- so the loop never
         // advances past line 1 in practice, and the final `return ""` after the
         // loop is dead code for any file with at least one non-blank line among
         // the first 15. Kept as-is deliberately.
-        return DefaultPurposeDetail { text: truncate(line), is_comment: false };
+        return DefaultPurposeDetail {
+            text: truncate(line),
+            is_comment: false,
+        };
     }
-    DefaultPurposeDetail { text: String::new(), is_comment: false }
+    DefaultPurposeDetail {
+        text: String::new(),
+        is_comment: false,
+    }
 }
 
 /// The heuristic purpose line for a source file -- `default_purpose_detailed(..).text`.
@@ -274,13 +303,19 @@ mod tests {
     fn skips_configured_dirs_and_filters_by_extension() {
         let root = scratch_dir("basic");
         write_file(&root.join("src/a.ts"), "export const x = 1;\n");
-        write_file(&root.join("src/sub/b.cs"), "namespace Foo.Bar;\nclass B {}\n");
+        write_file(
+            &root.join("src/sub/b.cs"),
+            "namespace Foo.Bar;\nclass B {}\n",
+        );
         write_file(&root.join("src/node_modules/pkg/c.js"), "ignored");
         write_file(&root.join("src/bin/d.ts"), "ignored");
 
         let mut files = list_source_files(&root, &["src".to_string()]).unwrap();
         files.sort();
-        assert_eq!(files, vec!["src/a.ts".to_string(), "src/sub/b.cs".to_string()]);
+        assert_eq!(
+            files,
+            vec!["src/a.ts".to_string(), "src/sub/b.cs".to_string()]
+        );
 
         fs::remove_dir_all(&root).ok();
     }
@@ -292,7 +327,10 @@ mod tests {
             &root.join("src/a.ts"),
             "// Handles group creation\nexport const x = 1;\n",
         );
-        write_file(&root.join("src/sub/b.cs"), "namespace Foo.Bar;\nclass B {}\n");
+        write_file(
+            &root.join("src/sub/b.cs"),
+            "namespace Foo.Bar;\nclass B {}\n",
+        );
 
         let a = default_purpose(&root, "src/a.ts");
         assert!(a.to_lowercase().contains("group creation"), "got {a:?}");
@@ -308,10 +346,20 @@ mod tests {
     #[test]
     fn default_purpose_detailed_flags_a_comment_derived_match() {
         let root = scratch_dir("purpose-detailed-comment");
-        write_file(&root.join("src/a.ts"), "// Handles group creation\nexport const x = 1;\n");
+        write_file(
+            &root.join("src/a.ts"),
+            "// Handles group creation\nexport const x = 1;\n",
+        );
         let d = default_purpose_detailed(&root, "src/a.ts");
-        assert!(d.is_comment, "leading `//` line must be flagged comment-derived");
-        assert!(d.text.to_lowercase().contains("group creation"), "got {:?}", d.text);
+        assert!(
+            d.is_comment,
+            "leading `//` line must be flagged comment-derived"
+        );
+        assert!(
+            d.text.to_lowercase().contains("group creation"),
+            "got {:?}",
+            d.text
+        );
         assert_eq!(default_purpose(&root, "src/a.ts"), d.text);
         fs::remove_dir_all(&root).ok();
     }
@@ -319,9 +367,15 @@ mod tests {
     #[test]
     fn default_purpose_detailed_does_not_flag_a_code_first_line() {
         let root = scratch_dir("purpose-detailed-code");
-        write_file(&root.join("src/a.ts"), "export const x = 1;\n// a comment on line 2, never reached\n");
+        write_file(
+            &root.join("src/a.ts"),
+            "export const x = 1;\n// a comment on line 2, never reached\n",
+        );
         let d = default_purpose_detailed(&root, "src/a.ts");
-        assert!(!d.is_comment, "a code first line must not be flagged comment-derived");
+        assert!(
+            !d.is_comment,
+            "a code first line must not be flagged comment-derived"
+        );
         assert_eq!(d.text, "export const x = 1;");
         fs::remove_dir_all(&root).ok();
     }

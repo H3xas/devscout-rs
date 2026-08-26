@@ -140,7 +140,14 @@ mod tests {
         assert_eq!(column_bytes, 6);
 
         let (offset_u16, column_u16) = table.translate_point(widget_byte, column_bytes);
-        assert_eq!(column_u16, 6, "line 2 is ASCII; column must equal raw byte column");
-        assert_eq!(offset_u16, widget_byte - 2, "global offset reflects line 1's -2 divergence");
+        assert_eq!(
+            column_u16, 6,
+            "line 2 is ASCII; column must equal raw byte column"
+        );
+        assert_eq!(
+            offset_u16,
+            widget_byte - 2,
+            "global offset reflects line 1's -2 divergence"
+        );
     }
 }
