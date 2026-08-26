@@ -684,12 +684,16 @@ fn cmd_tests(cwd: &Path, args: &[String]) -> (i32, String) {
 // Output caps: an uncapped find can dump the whole near-match pool (measured
 // 270-450KB on broad multi-token queries against a 5k-file manifest). The
 // full-match pool is what the user asked for, so it gets the wider cap; the
-// OR-fallback pool is near-matches only, so it gets the tighter one.
+// OR-fallback pool is near-matches only, so it gets the tighter one. Both
+// manifest pools are RANKED before their cap bites -- tokens matched, then the
+// file's inbound-edge count (see `manifest::find_in_manifest_detailed`) -- so
+// the rows a cap drops are the weakest, not just the last.
 const FIND_FULL_CAP: usize = 25;
 const FIND_FALLBACK_CAP: usize = 10;
 // The declaration block gets its own cap: it is a different pool from the
 // manifest's, and sharing one would let a name carried by 200 members swallow
-// the file rows the same query earned.
+// the file rows the same query earned. It stays in build order on purpose --
+// ranking is the manifest pools' job, not this one's.
 const FIND_NAMES_CAP: usize = 25;
 
 // `find`. Check order: `require_repo` FIRST, THEN the missing-query check -- the
@@ -717,6 +721,11 @@ fn cmd_find(cwd: &Path, query_str: &str, resources: bool) -> (i32, String) {
     // but resource keys is a miss for it, correctly, even though `named` itself is
     // non-empty.
     let graph = graph::read_graph(&root);
+    // One graph read per query: the ranking map folds off the SAME read the
+    // declaration block uses. No graph file (never mapped) reads as an empty
+    // map -- every entry ranks at 0 inbound and the manifest answers in its
+    // on-disk order, exactly as it did before this existed.
+    let inbound_counts = graph.as_ref().map(query::file_inbound_counts).unwrap_or_default();
     let (decl_lines, resource_count): (Vec<String>, usize) = match graph.as_ref() {
         None => (Vec::new(), 0),
         Some(g) => {
@@ -749,7 +758,7 @@ fn cmd_find(cwd: &Path, query_str: &str, resources: bool) -> (i32, String) {
             (out, resource_count)
         }
     };
-    match manifest::find_in_manifest_detailed(&root, query_str) {
+    match manifest::find_in_manifest_detailed(&root, query_str, &inbound_counts) {
         Ok(r) if r.hits.is_empty() && decl_lines.is_empty() => {
             (EXIT_NO_RESULT, format!("no matches for \"{query_str}\" (run 'devscout map' if manifest is missing)"))
         }

@@ -111,6 +111,11 @@ when nothing moved (`... 0 new, 0 removed ...; graph unchanged`). If the index f
 `HEAD`, queries print a staleness warning on stderr rather than silently answering from stale
 data.
 
+### Find ranking
+
+`find` ranks matching files by tokens matched, then by their precise inbound-reference count.
+References originating in the same file are excluded from a file's inbound count.
+
 ## Where it stores things
 
 Inside a git repository, artifacts live under the git common directory, so they never show up as
