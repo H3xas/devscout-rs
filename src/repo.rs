@@ -20,7 +20,7 @@ use std::path::{Component, Path, PathBuf};
 // normalizes (`.`/`..` collapsed, no symlink resolution, cannot climb above the
 // root). The result may name a path that does not exist; nothing here touches
 // disk beyond `current_dir()`.
-fn resolve_path(path: &Path) -> PathBuf {
+pub(crate) fn resolve_path(path: &Path) -> PathBuf {
     let base = if path.is_absolute() {
         path.to_path_buf()
     } else {

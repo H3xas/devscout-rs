@@ -144,10 +144,10 @@ Two stores live outside the repo:
 | Variable | Effect |
 | --- | --- |
 | `SCOUT_REGISTRY` | Path to the registry JSON. Default `$HOME/.claude/scout/repos.json`. |
-| `SCOUT_CONTENT_DB` | Path to the shared content-dedup SQLite database. **Set this if you use the hooks** — the default is derived at compile time and is not relocation-safe. |
+| `SCOUT_CONTENT_DB` | Path to the shared content-dedup SQLite database. Default `$HOME/.claude/scout/content.db`. |
 | `SCOUT_MTIME_REUSE` | `1` switches `map` from content-hash fragment reuse back to mtime-based reuse. |
 | `SCOUT_DEBUG` | `1` turns on hook debug output. Equivalent to creating a `.scout/debug` file. |
-| `HOME` | Used to locate the registry and the agent settings file. |
+| `HOME` | Used to locate the registry, content database, and agent settings file. |
 
 ## Reading a symbol
 
@@ -183,7 +183,8 @@ Known, rather than hidden:
 - **Generic-delegate `typeParams` divergence is under review.** Type-parameter handling for
   generic delegate declarations does not yet agree with the rest of the generic ladder; the
   affected shapes are under review rather than pinned.
-- **The content-store fallback path is compile-time derived.** See `SCOUT_CONTENT_DB` above.
+- **The content store follows `HOME` by default.** Set `SCOUT_CONTENT_DB` to keep it at a fixed
+  path when `HOME` varies between invocations.
 - **No watch mode.** `map` is fast and incremental, but you run it; nothing watches the
   filesystem for you.
 - **Ordering is load-bearing but not a stability promise.** Artifact ordering is fixed and

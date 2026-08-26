@@ -49,6 +49,8 @@ use std::fs::{self, DirEntry};
 use std::io;
 use std::path::Path;
 
+use crate::repo;
+
 /// Directory names skipped outright (and never recursed into), regardless
 /// of depth. Exact-name match against a single path component -- not a
 /// glob, not a suffix/prefix match.
@@ -111,7 +113,7 @@ fn walk(root: &Path, dir: &Path, out: &mut Vec<String>) -> io::Result<()> {
         } else if file_type.is_file() {
             let name_str = name.to_string_lossy();
             if SOURCE_EXT.contains(&extension_of(&name_str)) {
-                out.push(rel_path(root, &entry.path()));
+                out.push(repo::rel_path(root, &entry.path()));
             }
         }
         // Symlinks (file_type.is_symlink()) match neither arm above and
@@ -136,22 +138,6 @@ fn extension_of(name: &str) -> &str {
         Some(idx) => &name[idx..],
         None => "",
     }
-}
-
-// Repo-relative path for `abs_path` under `root`. Both are assumed already
-// absolute/normalized, which every caller here guarantees (`root` is walk's own
-// parameter, `abs_path` is always built by joining onto it). The `sep -> '/'`
-// swap normalizes Windows separators; on Unix `sep` is already `/`, so it is a
-// no-op.
-// TODO: fold into `repo::rel_path`, closing the Windows-normalization gap in
-// one place rather than two.
-fn rel_path(root: &Path, abs_path: &Path) -> String {
-    let rel = abs_path
-        .strip_prefix(root)
-        .unwrap_or(abs_path)
-        .to_string_lossy()
-        .into_owned();
-    rel.replace(std::path::MAIN_SEPARATOR, "/")
 }
 
 /// Detailed variant of `default_purpose`, exposing whether the returned line
