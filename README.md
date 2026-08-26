@@ -19,6 +19,7 @@ much.
 | `devscout map [scope ...]` | Build or refresh the index; incremental — unchanged files are reused |
 | `devscout find <query>` | Search the manifest by symbol name or by file purpose |
 | `devscout refs <symbol>` | Inbound references to a symbol, grouped by edge kind (`inherits`, `uses-type`, `uses-member`) |
+| `devscout read <symbol>` | The symbol's declaration span and verbatim source plus the same inbound answer as `refs` |
 | `devscout impact <file\|symbol>` | Blast radius: the files reachable from a seed within N hops |
 | `devscout tests <symbol>` | The test files that reach a symbol |
 | `devscout stats` | Index and cache summary for the current repo |
@@ -142,6 +143,21 @@ Two stores live outside the repo:
 | `SCOUT_MTIME_REUSE` | `1` switches `map` from content-hash fragment reuse back to mtime-based reuse. |
 | `SCOUT_DEBUG` | `1` turns on hook debug output. Equivalent to creating a `.scout/debug` file. |
 | `HOME` | Used to locate the registry and the agent settings file. |
+
+## Reading a symbol
+
+`devscout read <symbol>` returns the indexed declaration's start and end lines,
+the verbatim source in that span, and its inbound references. Use `--compact`
+for a line-oriented summary or `--json` for structured output. References that
+originate inside the target declaration itself are excluded from inbound rows
+and counts, so recursive and other self-references do not look like external
+callers.
+
+On the first agent-hook read of an indexed code file, devscout offers the
+nearest mapped symbol. A ranged read chooses the declaration nearest to the
+requested range; a full-file read chooses the first mapped declaration. The
+offer does not replace or truncate the file content, and non-code, unmapped,
+stale, or already-offered reads do not produce another offer.
 
 ## Agent hooks
 
