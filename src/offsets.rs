@@ -21,6 +21,7 @@ pub struct OffsetTable {
 }
 
 impl OffsetTable {
+    /// Builds a lookup table for the byte boundaries in `src`.
     pub fn build(src: &str) -> Self {
         let mut breakpoints = Vec::new();
         let mut divergence: i64 = 0;

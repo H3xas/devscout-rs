@@ -1,3 +1,5 @@
+//! Integration tests for command-line repository-root handling.
+
 // Root resolution that does not depend on the caller's working directory: the
 // global `-C <dir>` flag, and `impact`'s fallback to the root of its own path
 // argument.

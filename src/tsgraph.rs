@@ -47,6 +47,7 @@ const TSCONFIG_ROOTS: &[&str] = &["tsconfig.json", "tsconfig.base.json"];
 // a walk with no bound.
 const BARREL_HOPS: usize = 1;
 
+/// Builds a TypeScript definition identifier from a file and symbol name.
 pub fn ts_def_id(file: &str, name: &str) -> String {
     format!("{file}{DEF_SEPARATOR}{name}")
 }
@@ -340,6 +341,7 @@ struct Alias {
 }
 
 #[derive(Debug, Clone, Default)]
+/// Represents `TsPathAliases`.
 pub struct TsPathAliases {
     aliases: Vec<Alias>,
     base_url_dir: Option<String>,
@@ -494,9 +496,13 @@ pub fn resolve_specifier(
 /// order and only when the repo carries a TS fragment at all.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct TsEdgeCounts {
+    /// The import value.
     pub import: usize,
+    /// The call value.
     pub call: usize,
+    /// The jsx use value.
     pub jsx_use: usize,
+    /// The dispatch value.
     pub dispatch: usize,
 }
 
@@ -504,16 +510,25 @@ pub struct TsEdgeCounts {
 /// a TS fragment at all.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct TsStats {
+    /// The ts file count value.
     pub ts_file_count: usize,
+    /// The ts def count value.
     pub ts_def_count: usize,
+    /// The external import count value.
     pub external_import_count: usize,
+    /// The unresolved ref count value.
     pub unresolved_ref_count: usize,
 }
 
+/// Represents `TsGraph`.
 pub struct TsGraph {
+    /// The defs value.
     pub defs: Vec<Def>,
+    /// The edges value.
     pub edges: Vec<Edge>,
+    /// The edges by kind value.
     pub edges_by_kind: TsEdgeCounts,
+    /// The stats value.
     pub stats: TsStats,
 }
 

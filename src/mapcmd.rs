@@ -189,6 +189,7 @@ impl MapOptions {
 /// corresponds to a term in the one-line summary; see `summary_line`.
 #[derive(Debug, Clone)]
 pub struct MapReport {
+    /// The scope value.
     pub scope: Vec<String>,
     /// Files this run actually walked and (re)decided a manifest entry for.
     /// This is the IN-SCOPE count only; see `total_manifest_entries` for the
@@ -204,18 +205,26 @@ pub struct MapReport {
     /// naive whole-manifest replacement would drop these; this count is exactly
     /// what that approach would have destroyed.
     pub merged_out_of_scope: usize,
+    /// The preserved value.
     pub preserved: usize,
+    /// The downgraded value.
     pub downgraded: usize,
+    /// The added value.
     pub added: usize,
     /// In-scope prior entries this run's walk no longer produced -- legitimate
     /// pruning (deleted, renamed, or newly excluded by walk.rs's skip/extension
     /// rules), unaffected by the scoped merge: an out-of-scope prior entry is
     /// never a candidate for removal, merged or not.
     pub removed: usize,
+    /// The parsed ast value.
     pub parsed_ast: usize,
+    /// The graph rebuilt value.
     pub graph_rebuilt: bool,
+    /// The graph seconds value.
     pub graph_seconds: f64,
+    /// The graph def count value.
     pub graph_def_count: Option<usize>,
+    /// The graph edge count value.
     pub graph_edge_count: Option<usize>,
 }
 

@@ -21,6 +21,7 @@ const MEMBER_KINDS: &[&str] = &["method", "property", "field", "event", "enum-me
 // sits in the same bucket as the other markup names.
 const MARKUP_KINDS: &[&str] = &["markup-class", "markup-name", "markup-binding"];
 
+/// The SUGGESTION CAP value.
 pub const SUGGESTION_CAP: usize = 5;
 const MAX_EDIT_DISTANCE: usize = 2;
 

@@ -1,3 +1,5 @@
+//! Integration tests for bare-member command-line queries.
+
 // Bare member names: `refs <member>` names the declaring type through the
 // member index and then keeps only the inbound member edges whose own line
 // carries the member as a whole token.

@@ -189,6 +189,7 @@ fn member_refs_line(m: &query::MemberRefs) -> String {
     )
 }
 
+/// Renders a reference-query model as human-readable text.
 pub fn render_refs_text(model: &query::RefsModel) -> String {
     let mut out: Vec<String> = Vec::new();
     out.push(format!("{}  ({})", model.id, model.kind));

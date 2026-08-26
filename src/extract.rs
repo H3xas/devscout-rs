@@ -237,12 +237,19 @@ fn truncate(s: &str) -> String {
 // call-graph resolution.
 // ---------------------------------------------------------------------------
 
+/// Represents `DefRecord`.
 pub struct DefRecord {
+    /// The id value.
     pub id: String,
+    /// The name value.
     pub name: String,
+    /// The namespace value.
     pub namespace: String,
+    /// The kind value.
     pub kind: String,
+    /// The line value.
     pub line: usize,
+    /// The methods value.
     pub methods: Vec<String>,
     /// Declared property names, source order, deduped
     /// (indexers excluded by construction: `indexer_declaration` is a
@@ -324,7 +331,9 @@ pub struct DefRecord {
 /// order.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExtensionMethod {
+    /// The name value.
     pub name: String,
+    /// The this type value.
     pub this_type: String,
     /// Non-this parameters a caller cannot
     /// leave out: no default value AND no `params` modifier.
@@ -340,17 +349,24 @@ pub struct ExtensionMethod {
     pub this_args: Option<Vec<String>>,
 }
 
+/// Represents `RefRecord`.
 pub struct RefRecord {
+    /// The kind value.
     pub kind: String,
+    /// The name value.
     pub name: String,
+    /// The qualified value.
     pub qualified: Option<String>,
+    /// The member value.
     pub member: Option<String>,
+    /// The line value.
     pub line: usize,
     /// `None` only for 'imports' refs -- a using directive is not
     /// namespace-scoped, so `ns` is deliberately `null`. Every other ref
     /// carries `Some(ns)`, where `ns`
     /// may itself be the empty string at file scope.
     pub namespace: Option<String>,
+    /// The type arg count value.
     pub type_arg_count: Option<usize>,
     /// `true` when a uses-member qualifier carried a
     /// type-argument list anywhere (`Cache<T>.x`, `Ns.Cache<T>.x`): syntax
@@ -407,25 +423,39 @@ pub struct RefRecord {
     /// alongside `receiver_type`: the local's type is whatever `M` returns, a
     /// lookup only the resolver can do. Appended LAST of all.
     pub receiver_call_owner: Option<String>,
+    /// The receiver call member value.
     pub receiver_call_member: Option<String>,
 }
 
+/// Represents `UsingRecord`.
 pub enum UsingRecord {
+    /// The value value.
     Alias {
+        /// The alias name.
         alias: String,
+        /// The aliased target.
         target: String,
+        /// Whether the directive is global.
         global: bool,
     },
+    /// The value value.
     Plain {
+        /// The imported namespace text.
         text: String,
+        /// Whether the directive is global.
         global: bool,
     },
 }
 
+/// Represents `Extraction`.
 pub struct Extraction {
+    /// The purpose value.
     pub purpose: Option<String>,
+    /// The defs value.
     pub defs: Vec<DefRecord>,
+    /// The usings value.
     pub usings: Vec<UsingRecord>,
+    /// The refs value.
     pub refs: Vec<RefRecord>,
     /// Every member the file's types declare, appended LAST after
     /// `refs` in both the fragment and the `extract-dump` shape.
@@ -443,9 +473,13 @@ pub struct Extraction {
 /// fields.
 #[derive(Debug, Clone, PartialEq)]
 pub struct NameRecord {
+    /// The name value.
     pub name: String,
+    /// The kind value.
     pub kind: String,
+    /// The line value.
     pub line: usize,
+    /// The owner value.
     pub owner: String,
 }
 
@@ -1693,7 +1727,9 @@ fn record_using(node: Node, src: &[u8], usings: &mut Vec<UsingRecord>, refs: &mu
 /// conflict exactly like two different type names would.
 #[derive(Clone, PartialEq, Eq)]
 pub struct Fact {
+    /// The type name value.
     pub type_name: String,
+    /// The args value.
     pub args: Option<Vec<String>>,
     /// When set, the name's type is whatever the method of this name returns
     /// on the type `type_name` stands for, a lookup only the resolver can do.
@@ -2613,6 +2649,7 @@ pub fn extract(source: &str) -> Extraction {
 // `extract-dump` subcommand -- canonical JSON for one file.
 // ---------------------------------------------------------------------------
 
+/// Extracts the C# file at `path` and prints the extraction as JSON.
 pub fn run_extract_dump(path: &str) {
     let source = fs::read_to_string(path).unwrap_or_else(|err| {
         eprintln!("failed to read {path}: {err}");
@@ -3002,6 +3039,7 @@ fn name_to_json(n: &NameRecord) -> Json {
     Json::Obj(fields)
 }
 
+/// Serializes a C# extraction as JSON.
 pub fn extraction_to_json(e: &Extraction) -> String {
     let purpose_json = match &e.purpose {
         Some(p) => Json::Str(p.clone()),
@@ -3725,10 +3763,14 @@ pub fn extract_ts_purpose_with_heuristic(
 /// `name`, `kind`, `line`, in that order.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TsFragmentDef {
+    /// The name value.
     pub name: String,
+    /// The kind value.
     pub kind: String,
+    /// The line value.
     pub line: usize,
     #[serde(rename = "endLine")]
+    /// The end line value.
     pub end_line: usize,
 }
 
@@ -3737,14 +3779,20 @@ pub struct TsFragmentDef {
 /// for a namespace clause (or a whole-module `require`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TsBinding {
+    /// The local value.
     pub local: String,
+    /// The imported value.
     pub imported: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Represents `TsImport`.
 pub struct TsImport {
+    /// The spec value.
     pub spec: String,
+    /// The line value.
     pub line: usize,
+    /// The bindings value.
     pub bindings: Vec<TsBinding>,
 }
 
@@ -3753,15 +3801,22 @@ pub struct TsImport {
 /// declares.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TsReexportName {
+    /// The exported value.
     pub exported: String,
+    /// The imported value.
     pub imported: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Represents `TsReexport`.
 pub struct TsReexport {
+    /// The spec value.
     pub spec: String,
+    /// The line value.
     pub line: usize,
+    /// The star value.
     pub star: bool,
+    /// The names value.
     pub names: Vec<TsReexportName>,
 }
 
@@ -3769,13 +3824,16 @@ pub struct TsReexport {
 /// `line`) is significant.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TsRef {
+    /// The kind value.
     pub kind: String,
+    /// The name value.
     pub name: String,
     /// Present only on a qualified reference (`ns.member(...)`,
     /// `<Ns.Thing />`), and serialized between `name` and `line` exactly
     /// where the JS object literal writes it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub member: Option<String>,
+    /// The line value.
     pub line: usize,
 }
 
@@ -3792,9 +3850,13 @@ pub struct TsFragment {
     /// fragment carries no `ts` key at all, which is what makes the untagged
     /// discrimination total.
     pub ts: u8,
+    /// The defs value.
     pub defs: Vec<TsFragmentDef>,
+    /// The imports value.
     pub imports: Vec<TsImport>,
+    /// The reexports value.
     pub reexports: Vec<TsReexport>,
+    /// The refs value.
     pub refs: Vec<TsRef>,
     /// Appended LAST and only when the file has one -- the house rule for
     /// every added fact.
@@ -4464,10 +4526,15 @@ pub fn extract_ts_fragment(program_node: Node, src: &[u8]) -> TsFragment {
 /// file exports anything) and its reference fragment (always), from the same
 /// tree. A parse failure yields `None`, leaving the file out of BOTH outputs.
 pub struct TsFileExtraction {
+    /// The purpose value.
     pub purpose: Option<String>,
+    /// The fragment value.
     pub fragment: TsFragment,
 }
 
+/// Parses TypeScript-family source into its optional purpose and graph fragment.
+///
+/// Returns `None` when the selected grammar cannot parse the source.
 pub fn extract_ts_file(
     root: &Path,
     rel: &str,

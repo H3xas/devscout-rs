@@ -320,26 +320,32 @@ pub struct SeqSet<T: Eq + std::hash::Hash + Clone> {
 }
 
 impl<T: Eq + std::hash::Hash + Clone> SeqSet<T> {
+    /// Creates an empty insertion-ordered set.
     pub fn new() -> Self {
         Self {
             order: Vec::new(),
             seen: HashSet::new(),
         }
     }
+    /// Inserts `value` if it is not already present.
     pub fn insert(&mut self, value: T) {
         if self.seen.insert(value.clone()) {
             self.order.push(value);
         }
     }
+    /// Returns whether `value` is present.
     pub fn contains(&self, value: &T) -> bool {
         self.seen.contains(value)
     }
+    /// Returns the number of values.
     pub fn len(&self) -> usize {
         self.order.len()
     }
+    /// Iterates over values in insertion order.
     pub fn iter(&self) -> std::slice::Iter<'_, T> {
         self.order.iter()
     }
+    /// Consumes the set and returns its values in insertion order.
     pub fn into_vec(self) -> Vec<T> {
         self.order
     }
@@ -363,15 +369,18 @@ pub struct SeqMap<V> {
 }
 
 impl<V> SeqMap<V> {
+    /// Creates an empty insertion-ordered map.
     pub fn new() -> Self {
         Self {
             entries: Vec::new(),
             index: HashMap::new(),
         }
     }
+    /// Returns whether `key` is present.
     pub fn contains_key(&self, key: &str) -> bool {
         self.index.contains_key(key)
     }
+    /// Inserts or replaces the value for `key` while preserving key order.
     pub fn insert(&mut self, key: String, value: V) {
         match self.index.get(&key) {
             Some(&i) => self.entries[i].1 = value,
@@ -381,9 +390,11 @@ impl<V> SeqMap<V> {
             }
         }
     }
+    /// Iterates over entries in insertion order.
     pub fn iter(&self) -> impl Iterator<Item = (&String, &V)> {
         self.entries.iter().map(|(k, v)| (k, v))
     }
+    /// Iterates over keys in insertion order.
     pub fn keys(&self) -> impl Iterator<Item = &String> {
         self.entries.iter().map(|(k, _)| k)
     }
@@ -413,9 +424,13 @@ fn push_ordered_unique(map: &mut HashMap<String, Vec<usize>>, key: &str, value: 
 // ============================================================================
 
 #[derive(Debug, Clone, Default)]
+/// Represents `InboundEntry`.
 pub struct InboundEntry {
+    /// The inherits value.
     pub inherits: Vec<usize>,
+    /// The uses type value.
     pub uses_type: Vec<usize>,
+    /// The uses member value.
     pub uses_member: Vec<usize>,
 }
 
@@ -426,10 +441,15 @@ pub struct InboundEntry {
 pub type HeuristicEntry = InboundEntry;
 
 #[derive(Debug, Clone, Default)]
+/// Represents `OutboundEntry`.
 pub struct OutboundEntry {
+    /// The inherits value.
     pub inherits: Vec<usize>,
+    /// The uses type value.
     pub uses_type: Vec<usize>,
+    /// The uses member value.
     pub uses_member: Vec<usize>,
+    /// The imports value.
     pub imports: Vec<usize>,
 }
 
@@ -437,6 +457,7 @@ pub struct OutboundEntry {
 /// `by_lower_name` store `graph.defs` indices rather than cloned `Def`s, so a
 /// def is never copied into every bucket it is reachable from.
 pub struct GraphIndex<'g> {
+    /// The graph value.
     pub graph: &'g graph::Graph,
     /// The repository root every `file` in the graph is relative to. Held so a
     /// query can read the one source line a hit sits on; nothing else in this
@@ -823,9 +844,13 @@ fn implemented_interfaces(index: &GraphIndex, def_id: &str) -> Vec<String> {
 // ============================================================================
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Represents `Resolution`.
 pub enum Resolution {
+    /// Represents `Resolved`.
     Resolved(String),
+    /// Represents `Ambiguous`.
     Ambiguous(Vec<String>),
+    /// Represents `NotFound`.
     NotFound,
 }
 
@@ -894,8 +919,11 @@ pub fn resolve_symbol(index: &GraphIndex, query: &str) -> Resolution {
 // ============================================================================
 
 #[derive(Debug, Clone, PartialEq)]
+/// Represents `DefSite`.
 pub struct DefSite {
+    /// The file value.
     pub file: String,
+    /// The line value.
     pub line: usize,
 }
 
@@ -947,24 +975,38 @@ pub fn def_sites(index: &GraphIndex, def_id: &str) -> Vec<DefSite> {
 /// [`GraphIndex`] uses).
 #[derive(Debug, Clone, Default)]
 pub struct SymbolRefs {
+    /// The inbound inherits value.
     pub inbound_inherits: Vec<usize>,
+    /// The inbound uses type value.
     pub inbound_uses_type: Vec<usize>,
+    /// The inbound uses member value.
     pub inbound_uses_member: Vec<usize>,
+    /// The outbound inherits value.
     pub outbound_inherits: Vec<usize>,
+    /// The outbound uses type value.
     pub outbound_uses_type: Vec<usize>,
+    /// The outbound uses member value.
     pub outbound_uses_member: Vec<usize>,
+    /// The outbound imports value.
     pub outbound_imports: Vec<usize>,
     /// The same two tables again over the HEURISTIC adjacency, built by the
     /// identical rules (enum members union into the enum's inbound, partial
     /// classes union outbound over every declaring file) so a heuristic row is
     /// never present or absent for a reason a precise row would not have been.
     pub heuristic_inbound_inherits: Vec<usize>,
+    /// The heuristic inbound uses type value.
     pub heuristic_inbound_uses_type: Vec<usize>,
+    /// The heuristic inbound uses member value.
     pub heuristic_inbound_uses_member: Vec<usize>,
+    /// The heuristic outbound inherits value.
     pub heuristic_outbound_inherits: Vec<usize>,
+    /// The heuristic outbound uses type value.
     pub heuristic_outbound_uses_type: Vec<usize>,
+    /// The heuristic outbound uses member value.
     pub heuristic_outbound_uses_member: Vec<usize>,
+    /// The ambiguous inbound value.
     pub ambiguous_inbound: Vec<usize>,
+    /// The ambiguous outbound value.
     pub ambiguous_outbound: Vec<usize>,
 }
 
@@ -1116,9 +1158,13 @@ fn loc_cmp(a: &graph::Edge, b: &graph::Edge) -> std::cmp::Ordering {
 /// referencing line). An empty `source` is omitted from `--json`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct InboundRow {
+    /// The file value.
     pub file: String,
+    /// The line value.
     pub line: usize,
+    /// The heuristic value.
     pub heuristic: bool,
+    /// The source value.
     pub source: String,
 }
 
@@ -1129,11 +1175,17 @@ pub struct InboundRow {
 /// target's.
 #[derive(Debug, Clone, PartialEq)]
 pub struct OutboundRow {
+    /// The file value.
     pub file: String,
+    /// The line value.
     pub line: usize,
+    /// The to file value.
     pub to_file: String,
+    /// The to value.
     pub to: String,
+    /// The heuristic value.
     pub heuristic: bool,
+    /// The source value.
     pub source: String,
 }
 
@@ -1142,9 +1194,13 @@ pub struct OutboundRow {
 /// carries no `heuristic` field.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ImportRow {
+    /// The file value.
     pub file: String,
+    /// The line value.
     pub line: usize,
+    /// The target value.
     pub target: String,
+    /// The source value.
     pub source: String,
 }
 
@@ -1152,10 +1208,15 @@ pub struct ImportRow {
 /// `raw` text of the reference, and how many candidates it matched.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AmbiguousRow {
+    /// The file value.
     pub file: String,
+    /// The line value.
     pub line: usize,
+    /// The origin value.
     pub origin: String,
+    /// The raw value.
     pub raw: String,
+    /// The candidate count value.
     pub candidate_count: usize,
 }
 
@@ -1163,8 +1224,11 @@ pub struct AmbiguousRow {
 /// the surviving `rows`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Table<R> {
+    /// The total value.
     pub total: usize,
+    /// The dropped value.
     pub dropped: usize,
+    /// The rows value.
     pub rows: Vec<R>,
 }
 
@@ -1214,31 +1278,42 @@ fn ambiguous_row(e: &graph::Edge) -> AmbiguousRow {
 /// The three inbound tables, one per kind (inherits/uses-type/uses-member).
 #[derive(Debug, Clone, PartialEq)]
 pub struct InboundTables {
+    /// The inherits value.
     pub inherits: Table<InboundRow>,
+    /// The uses type value.
     pub uses_type: Table<InboundRow>,
+    /// The uses member value.
     pub uses_member: Table<InboundRow>,
 }
 
 /// The four outbound tables: three by kind plus imports.
 #[derive(Debug, Clone, PartialEq)]
 pub struct OutboundTables {
+    /// The inherits value.
     pub inherits: Table<OutboundRow>,
+    /// The uses type value.
     pub uses_type: Table<OutboundRow>,
+    /// The uses member value.
     pub uses_member: Table<OutboundRow>,
+    /// The imports value.
     pub imports: Table<ImportRow>,
 }
 
 /// The inbound and outbound ambiguous-reference tables.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AmbiguousTables {
+    /// The inbound value.
     pub inbound: Table<AmbiguousRow>,
+    /// The outbound value.
     pub outbound: Table<AmbiguousRow>,
 }
 
 /// One enum member that carries at least one inbound reference.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MemberRefEntry {
+    /// The name value.
     pub name: String,
+    /// The count value.
     pub count: usize,
 }
 
@@ -1246,9 +1321,13 @@ pub struct MemberRefEntry {
 /// split by member.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MemberRefs {
+    /// The total value.
     pub total: usize,
+    /// The member count value.
     pub member_count: usize,
+    /// The members value.
     pub members: Vec<MemberRefEntry>,
+    /// The dropped value.
     pub dropped: usize,
 }
 
@@ -1304,15 +1383,21 @@ fn enum_member_refs(index: &GraphIndex, def_id: &str) -> Option<MemberRefs> {
 /// The resolved `refs` result for one symbol.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RefsModel {
+    /// The query value.
     pub query: String,
+    /// The id value.
     pub id: String,
+    /// The kind value.
     pub kind: String,
+    /// The sites value.
     pub sites: Vec<DefSite>,
+    /// The inbound value.
     pub inbound: InboundTables,
     /// Present only under `--out`; `None` otherwise, which is what keeps
     /// `--json` and the two text renderers agreeing about whether the outbound
     /// side exists at all.
     pub outbound: Option<OutboundTables>,
+    /// The ambiguous value.
     pub ambiguous: AmbiguousTables,
     /// Number of files present in the graph but absent from the manifest.
     pub manifest_gap: usize,
@@ -1325,10 +1410,13 @@ pub struct RefsModel {
 /// or not found.
 #[derive(Debug, Clone, PartialEq)]
 pub enum RefsResult {
+    /// Represents `Resolved`.
     Resolved(RefsModel),
+    /// Represents `Ambiguous`.
     Ambiguous(Vec<String>),
     /// A bare-member answer: one resolved-shaped model per declaring type.
     Members(Vec<RefsModel>),
+    /// Represents `NotFound`.
     NotFound,
 }
 
@@ -1960,9 +2048,13 @@ fn build_refs_model_inner(
 /// no span at all.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReadSpan {
+    /// The file value.
     pub file: String,
+    /// The start line value.
     pub start_line: usize,
+    /// The end line value.
     pub end_line: usize,
+    /// The source value.
     pub source: String,
 }
 
@@ -1973,7 +2065,9 @@ pub struct ReadSpan {
 /// extracted) and never faked from a start line alone.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReadModel {
+    /// The refs value.
     pub refs: RefsModel,
+    /// The span value.
     pub span: Option<ReadSpan>,
 }
 
@@ -1981,10 +2075,13 @@ pub struct ReadModel {
 /// ambiguity and zero-hit discipline are literally the same code path's.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ReadResult {
+    /// Represents `Resolved`.
     Resolved(Box<ReadModel>),
     /// A bare-member answer: one resolved-shaped model per declaring type.
     Members(Vec<RefsModel>),
+    /// Represents `Ambiguous`.
     Ambiguous(Vec<String>),
+    /// Represents `NotFound`.
     NotFound,
 }
 
@@ -2060,33 +2157,48 @@ pub fn build_read_model(index: &GraphIndex, query: &str) -> ReadResult {
 /// whether the reference was guessed (`heuristic`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct TestRow {
+    /// The file value.
     pub file: String,
+    /// The test defs value.
     pub test_defs: Vec<String>,
+    /// The lines value.
     pub lines: Vec<usize>,
+    /// The ref count value.
     pub ref_count: usize,
+    /// The heuristic value.
     pub heuristic: bool,
 }
 
 /// The resolved `tests` result for one symbol.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TestsModel {
+    /// The query value.
     pub query: String,
+    /// The symbol value.
     pub symbol: String,
+    /// The def files value.
     pub def_files: Vec<String>,
     /// Precise rows first, heuristic rows after -- the same discipline every
     /// other consumer keeps, so a guess never sits inside the list of facts.
     pub rows: Vec<TestRow>,
+    /// The test file count value.
     pub test_file_count: usize,
+    /// The ref count value.
     pub ref_count: usize,
+    /// The heuristic file count value.
     pub heuristic_file_count: usize,
+    /// The heuristic ref count value.
     pub heuristic_ref_count: usize,
 }
 
 /// The outcome of a `tests` query: resolved, ambiguous, or not found.
 #[derive(Debug, Clone, PartialEq)]
 pub enum TestsResult {
+    /// Represents `Resolved`.
     Resolved(TestsModel),
+    /// Represents `Ambiguous`.
     Ambiguous(Vec<String>),
+    /// Represents `NotFound`.
     NotFound,
 }
 
@@ -2196,10 +2308,15 @@ pub fn build_tests_model(index: &GraphIndex, query: &str) -> TestsResult {
 /// of letting an ambiguous line win by being numerically smaller.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct KindLines {
+    /// The direct value.
     pub direct: usize,
+    /// The direct amb value.
     pub direct_amb: usize,
+    /// The ctor di value.
     pub ctor_di: usize,
+    /// The heuristic value.
     pub heuristic: usize,
+    /// The iface value.
     pub iface: usize,
 }
 
@@ -2228,10 +2345,15 @@ struct Hit {
 /// One visited file's entry in an impact walk.
 #[derive(Debug, Clone, PartialEq)]
 pub struct VisitedEntry {
+    /// The hop value.
     pub hop: u32,
+    /// The via count value.
     pub via_count: u32,
+    /// The ambiguous count value.
     pub ambiguous_count: u32,
+    /// The heuristic count value.
     pub heuristic_count: u32,
+    /// The symbols value.
     pub symbols: Vec<String>,
     /// The interface `via` labels for this file's hits.
     pub iface_via: Vec<String>,
@@ -2247,7 +2369,9 @@ pub struct VisitedEntry {
 /// depends on nothing about the walk's own iteration.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BrakedIface {
+    /// The iface value.
     pub iface: String,
+    /// The fanin value.
     pub fanin: usize,
 }
 
@@ -2258,7 +2382,9 @@ pub struct BrakedIface {
 /// same reason.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BrakedFile {
+    /// The file value.
     pub file: String,
+    /// The indegree value.
     pub indegree: usize,
 }
 
@@ -2678,8 +2804,11 @@ pub fn personalized_page_rank(
 // ============================================================================
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Represents `SeedKind`.
 pub enum SeedKind {
+    /// Represents `File`.
     File,
+    /// Represents `Symbol`.
     Symbol,
 }
 
@@ -2705,10 +2834,27 @@ pub fn looks_like_file_path(arg: &str) -> bool {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+/// Represents `SeedResolution`.
 pub enum SeedResolution {
-    Resolved { kind: SeedKind, ids: Vec<String> },
-    Ambiguous { kind: SeedKind, ids: Vec<String> },
-    NotFound { kind: SeedKind },
+    /// The value value.
+    Resolved {
+        /// The resolved seed kind.
+        kind: SeedKind,
+        /// The resolved definition identifiers.
+        ids: Vec<String>,
+    },
+    /// The value value.
+    Ambiguous {
+        /// The seed kind.
+        kind: SeedKind,
+        /// The candidate definition identifiers.
+        ids: Vec<String>,
+    },
+    /// The value value.
+    NotFound {
+        /// The inferred seed kind.
+        kind: SeedKind,
+    },
 }
 
 /// Resolve an impact-walk seed argument to a file's defs or a single symbol.
@@ -2745,12 +2891,19 @@ pub fn resolve_impact_seed(index: &GraphIndex, arg: &str) -> SeedResolution {
 /// One row of an impact model: a file in the blast radius and its metrics.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ImpactRow {
+    /// The file value.
     pub file: String,
+    /// The hop value.
     pub hop: u32,
+    /// The via count value.
     pub via_count: u32,
+    /// The ambiguous count value.
     pub ambiguous_count: u32,
+    /// The top symbols value.
     pub top_symbols: Vec<String>,
+    /// The top symbols more value.
     pub top_symbols_more: usize,
+    /// The score value.
     pub score: f64,
     /// "heuristic" is a property of how the file was REACHED, not of the edges
     /// that reached it: one precise or ambiguous hit makes the file an ordinary
@@ -2758,6 +2911,7 @@ pub struct ImpactRow {
     /// reached EXCLUSIVELY by guesses is flagged. On a precise row neither this
     /// nor `heuristic` is emitted in `--json`.
     pub heuristic_count: u32,
+    /// The heuristic value.
     pub heuristic: bool,
     /// Present only on a row the interface hop actually reached, empty (and
     /// omitted from `--json`) on every other row.
@@ -2778,12 +2932,19 @@ pub struct ImpactRow {
 /// The resolved `impact` result for one seed.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ImpactModel {
+    /// The kind value.
     pub kind: SeedKind,
+    /// The seed files value.
     pub seed_files: Vec<String>,
+    /// The hops value.
     pub hops: u32,
+    /// The total affected value.
     pub total_affected: usize,
+    /// The rows value.
     pub rows: Vec<ImpactRow>,
+    /// The dropped value.
     pub dropped: usize,
+    /// The manifest gap value.
     pub manifest_gap: usize,
     /// Number of files reached exclusively by guesses. Counted over EVERY row
     /// the walk found, capped or not.
@@ -2804,9 +2965,20 @@ pub struct ImpactModel {
 /// The outcome of an `impact` query: resolved, ambiguous, or not found.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ImpactResult {
+    /// Represents `Resolved`.
     Resolved(ImpactModel),
-    Ambiguous { kind: SeedKind, ids: Vec<String> },
-    NotFound { kind: SeedKind },
+    /// The value value.
+    Ambiguous {
+        /// The seed kind.
+        kind: SeedKind,
+        /// The candidate definition identifiers.
+        ids: Vec<String>,
+    },
+    /// The value value.
+    NotFound {
+        /// The inferred seed kind.
+        kind: SeedKind,
+    },
 }
 
 // Assembles a row's per-kind representative lines. The resolved-over-ambiguous

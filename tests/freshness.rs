@@ -1,3 +1,5 @@
+//! Integration tests for index-freshness reporting.
+
 // Index freshness. `devscout map` stamps a repo-relative sidecar
 // (`index-state.json`, beside `manifest.json` under `.git/scout/`) with the
 // HEAD it ran against; `find`/`refs`/`impact` compare that against the live

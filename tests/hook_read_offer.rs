@@ -1,3 +1,5 @@
+//! Integration tests for symbol offers from read hooks.
+
 // The read hook's first-read offer: a fresh, whole-file read of a mapped file
 // in a fresh index earns exactly one `additionalContext` line naming
 // `devscout read <symbol>`; every other path keeps today's behaviour --

@@ -160,6 +160,7 @@ plumbing
   -V, --version              show the version
 ";
 
+/// Parses and executes a `devscout` command from its argument vector.
 pub fn dispatch(args: Vec<String>) {
     let (cwd, args) = match apply_global_options(&current_dir(), &args) {
         Ok(v) => v,

@@ -147,7 +147,9 @@ fn extension_of(name: &str) -> &str {
 /// dispatch needs `is_comment` to decide whether an AST purpose gets a leading
 /// comment-text prefix.
 pub struct DefaultPurposeDetail {
+    /// The text value.
     pub text: String,
+    /// The is comment value.
     pub is_comment: bool,
 }
 

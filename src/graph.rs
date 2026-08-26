@@ -197,12 +197,14 @@ fn atomic_write_json<T: Serialize>(path: &Path, value: &T) -> io::Result<()> {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, PartialEq)]
+/// Represents `OrderedMap`.
 pub struct OrderedMap<V> {
     entries: Vec<(String, V)>,
     index: HashMap<String, usize>,
 }
 
 impl<V> OrderedMap<V> {
+    /// Creates an empty insertion-ordered map.
     pub fn new() -> Self {
         Self {
             entries: Vec::new(),
@@ -223,18 +225,22 @@ impl<V> OrderedMap<V> {
         }
     }
 
+    /// Returns the value associated with `key`, if present.
     pub fn get(&self, key: &str) -> Option<&V> {
         self.index.get(key).map(|&i| &self.entries[i].1)
     }
 
+    /// Returns the number of entries.
     pub fn len(&self) -> usize {
         self.entries.len()
     }
 
+    /// Returns whether the map contains no entries.
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
 
+    /// Iterates over entries in insertion order.
     pub fn iter(&self) -> impl Iterator<Item = (&String, &V)> {
         self.entries.iter().map(|(k, v)| (k, v))
     }
@@ -287,9 +293,11 @@ impl<'de, V: Deserialize<'de>> Deserialize<'de> for OrderedMap<V> {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Represents `Percent1`.
 pub struct Percent1(pub i64);
 
 impl Percent1 {
+    /// Returns a zero percentage value.
     pub fn zero() -> Self {
         Percent1(0)
     }
@@ -328,19 +336,30 @@ impl<'de> Deserialize<'de> for Percent1 {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Represents `AlsoIn`.
 pub struct AlsoIn {
+    /// The file value.
     pub file: String,
+    /// The line value.
     pub line: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Represents `Def`.
 pub struct Def {
+    /// The id value.
     pub id: String,
+    /// The name value.
     pub name: String,
+    /// The namespace value.
     pub namespace: String,
+    /// The kind value.
     pub kind: String,
+    /// The file value.
     pub file: String,
+    /// The line value.
     pub line: usize,
+    /// The methods value.
     pub methods: Vec<String>,
     /// Test-coverage stage -- the one member fact that SURVIVES onto disk
     /// (`properties`/`fields`/`extensionMethods`/`bases` are resolution inputs
@@ -351,14 +370,19 @@ pub struct Def {
     #[serde(default, rename = "testMethods", skip_serializing_if = "Vec::is_empty")]
     pub test_methods: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    /// The also in value.
     pub also_in: Vec<AlsoIn>,
     #[serde(default, rename = "endLine", skip_serializing_if = "is_zero")]
+    /// The end line value.
     pub end_line: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Represents `Candidate`.
 pub struct Candidate {
+    /// The id value.
     pub id: String,
+    /// The file value.
     pub file: String,
 }
 
@@ -375,45 +399,74 @@ pub struct Candidate {
 #[serde(tag = "kind")]
 pub enum Edge {
     #[serde(rename = "inherits")]
+    /// Represents `Inherits`.
     Inherits {
+        /// The value value.
         from_file: String,
+        /// The value value.
         from_line: usize,
+        /// The value value.
         to: String,
+        /// The value value.
         to_file: String,
         #[serde(default, skip_serializing_if = "is_false")]
+        /// The value value.
         heuristic: bool,
     },
     #[serde(rename = "uses-type")]
+    /// Represents `UsesType`.
     UsesType {
+        /// The value value.
         from_file: String,
+        /// The value value.
         from_line: usize,
+        /// The value value.
         to: String,
+        /// The value value.
         to_file: String,
         #[serde(default, skip_serializing_if = "is_false")]
+        /// The value value.
         heuristic: bool,
     },
     #[serde(rename = "uses-member")]
+    /// Represents `UsesMember`.
     UsesMember {
+        /// The value value.
         from_file: String,
+        /// The value value.
         from_line: usize,
+        /// The value value.
         to: String,
+        /// The value value.
         to_file: String,
         #[serde(default, skip_serializing_if = "is_false")]
+        /// The value value.
         heuristic: bool,
     },
     #[serde(rename = "imports")]
+    /// The value value.
     Imports {
+        /// The source file.
         from_file: String,
+        /// The source line.
         from_line: usize,
+        /// The imported target.
         target: String,
     },
     #[serde(rename = "ambiguous")]
+    /// Represents `Ambiguous`.
     Ambiguous {
+        /// The value value.
         origin: String,
+        /// The value value.
         from_file: String,
+        /// The value value.
         from_line: usize,
+        /// The value value.
         raw: String,
+        /// The value value.
         candidates: Vec<Candidate>,
+        /// The value value.
         candidate_count: usize,
     },
     /// Constructor-parameter DI resolution (see resolve.rs's
@@ -427,15 +480,22 @@ pub enum Edge {
     /// for 'ambiguous'.
     #[serde(rename = "ctor-di")]
     CtorDi {
+        /// The value value.
         from_file: String,
+        /// The value value.
         from_line: usize,
+        /// The value value.
         iface: String,
+        /// The value value.
         resolution: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        /// The value value.
         args: Option<Vec<String>>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        /// The value value.
         to: Option<String>,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        /// The value value.
         candidates: Vec<Candidate>,
     },
     /// A TS/TSX module import. Distinct from `imports` (C#'s
@@ -446,48 +506,73 @@ pub enum Edge {
     /// so a reader can tell the routing table apart from the dependency.
     #[serde(rename = "import")]
     Import {
+        /// The value value.
         from_file: String,
+        /// The value value.
         from_line: usize,
+        /// The value value.
         target: String,
+        /// The value value.
         to_file: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        /// The value value.
         via: Option<String>,
     },
     /// A call or `new` naming an imported or locally-exported
     /// declaration.
     #[serde(rename = "call")]
+    /// The value value.
     Call {
+        /// The source file.
         from_file: String,
+        /// The source line.
         from_line: usize,
+        /// The target definition identifier.
         to: String,
+        /// The target file.
         to_file: String,
     },
     /// A JSX tag naming a component declaration.
     #[serde(rename = "jsx-use")]
+    /// The value value.
     JsxUse {
+        /// The source file.
         from_file: String,
+        /// The source line.
         from_line: usize,
+        /// The target definition identifier.
         to: String,
+        /// The target file.
         to_file: String,
     },
     /// An action creator or thunk handed to a dispatching call
     /// (`dispatch(...)`, `ofType(...)`).
     #[serde(rename = "dispatch")]
+    /// The value value.
     Dispatch {
+        /// The source file.
         from_file: String,
+        /// The source line.
         from_line: usize,
+        /// The target definition identifier.
         to: String,
+        /// The target file.
         to_file: String,
     },
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+/// Represents `EdgesByKind`.
 pub struct EdgesByKind {
+    /// The inherits value.
     pub inherits: usize,
     #[serde(rename = "uses-type")]
+    /// The uses type value.
     pub uses_type: usize,
+    /// The imports value.
     pub imports: usize,
     #[serde(rename = "uses-member")]
+    /// The uses member value.
     pub uses_member: usize,
     /// Appended LAST, matching the `ctor-di` slot in the fixed key order.
     #[serde(rename = "ctor-di")]
@@ -499,20 +584,30 @@ pub struct EdgesByKind {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub import: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// The call value.
     pub call: Option<usize>,
     #[serde(rename = "jsx-use", default, skip_serializing_if = "Option::is_none")]
+    /// The jsx use value.
     pub jsx_use: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// The dispatch value.
     pub dispatch: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Represents `Stats`.
 pub struct Stats {
+    /// The def count value.
     pub def_count: usize,
+    /// The file count value.
     pub file_count: usize,
+    /// The edges by kind value.
     pub edges_by_kind: EdgesByKind,
+    /// The ambiguous count value.
     pub ambiguous_count: usize,
+    /// The ambiguous pct value.
     pub ambiguous_pct: Percent1,
+    /// The unresolved external count value.
     pub unresolved_external_count: usize,
     /// Appended LAST, and always serialized (unlike the edge flag above): the
     /// key is written unconditionally, so a graph with no guesses still
@@ -539,20 +634,31 @@ pub struct Stats {
 /// member, and every markup or resource key.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GraphName {
+    /// The name value.
     pub name: String,
+    /// The kind value.
     pub kind: String,
+    /// The file value.
     pub file: String,
+    /// The line value.
     pub line: usize,
     #[serde(default, skip_serializing_if = "String::is_empty")]
+    /// The owner value.
     pub owner: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Represents `Graph`.
 pub struct Graph {
+    /// The schema version value.
     pub schema_version: u32,
+    /// The built at head value.
     pub built_at_head: Option<String>,
+    /// The defs value.
     pub defs: Vec<Def>,
+    /// The edges value.
     pub edges: Vec<Edge>,
+    /// The stats value.
     pub stats: Stats,
     /// Appended LAST, after `stats`, and omitted when empty: the
     /// house rule for every added field, and what keeps a graph built over a
@@ -561,6 +667,7 @@ pub struct Graph {
     pub names: Vec<GraphName>,
 }
 
+/// Reads and deserializes the repository graph, returning `None` on failure.
 pub fn read_graph(root: &Path) -> Option<Graph> {
     let text = fs::read_to_string(graph_json_path(root)).ok()?;
     serde_json::from_str(&text).ok()
@@ -584,15 +691,23 @@ fn write_graph(root: &Path, graph: &Graph) -> io::Result<()> {
 /// exactly as it did before those additions.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FragDef {
+    /// The id value.
     pub id: String,
+    /// The name value.
     pub name: String,
+    /// The namespace value.
     pub namespace: String,
+    /// The kind value.
     pub kind: String,
+    /// The line value.
     pub line: usize,
+    /// The methods value.
     pub methods: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    /// The properties value.
     pub properties: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    /// The fields value.
     pub fields: Vec<String>,
     /// Member name -> declared return type NAME, in FIRST-DECLARATION SOURCE
     /// ORDER -- deliberately `OrderedMap`, never a `BTreeMap`: this is an
@@ -656,6 +771,7 @@ pub struct FragDef {
     )]
     pub property_types: OrderedMap<FragFact>,
     #[serde(default, rename = "endLine", skip_serializing_if = "is_zero")]
+    /// The end line value.
     pub end_line: usize,
 }
 
@@ -665,8 +781,10 @@ pub struct FragDef {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FragFact {
     #[serde(rename = "type")]
+    /// The type name value.
     pub type_name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// The args value.
     pub args: Option<Vec<String>>,
 }
 
@@ -678,12 +796,16 @@ pub struct FragFact {
 /// sentinel.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FragExtensionMethod {
+    /// The name value.
     pub name: String,
     #[serde(rename = "thisType")]
+    /// The this type value.
     pub this_type: String,
     #[serde(rename = "arityMin")]
+    /// The arity min value.
     pub arity_min: usize,
     #[serde(rename = "arityMax")]
+    /// The arity max value.
     pub arity_max: i64,
     /// Present only when the this-parameter type is generic (the key is omitted
     /// key otherwise), so a non-generic entry keeps four fields exactly.
@@ -693,26 +815,40 @@ pub struct FragExtensionMethod {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
+/// Represents `FragUsing`.
 pub enum FragUsing {
+    /// The value value.
     Alias {
+        /// The alias name.
         alias: String,
+        /// The aliased target.
         target: String,
+        /// Whether the directive is global.
         global: bool,
     },
+    /// The value value.
     Plain {
+        /// The imported namespace text.
         text: String,
+        /// Whether the directive is global.
         global: bool,
     },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Represents `FragRef`.
 pub struct FragRef {
+    /// The kind value.
     pub kind: String,
+    /// The name value.
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// The qualified value.
     pub qualified: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// The member value.
     pub member: Option<String>,
+    /// The line value.
     pub line: usize,
     /// Always serialized, including when `null` (imports refs) -- NOT
     /// `skip_serializing_if`, unlike `qualified`/`member` which are omitted
@@ -723,6 +859,7 @@ pub struct FragRef {
         rename = "typeArgCount",
         skip_serializing_if = "Option::is_none"
     )]
+    /// The type arg count value.
     pub type_arg_count: Option<usize>,
     /// Type-certainty flag (see extract.rs's RefRecord). Serialized last and
     /// only when `true`; an absent key reads back as false, which also makes
@@ -794,6 +931,7 @@ pub struct FragRef {
         rename = "receiverCallMember",
         skip_serializing_if = "Option::is_none"
     )]
+    /// The receiver call member value.
     pub receiver_call_member: Option<String>,
 }
 
@@ -811,17 +949,25 @@ fn is_zero(n: &usize) -> bool {
 /// a markup or resource key, owned by no C# type, serializes with three fields.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FragName {
+    /// The name value.
     pub name: String,
+    /// The kind value.
     pub kind: String,
+    /// The line value.
     pub line: usize,
     #[serde(default, skip_serializing_if = "String::is_empty")]
+    /// The owner value.
     pub owner: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Represents `Fragment`.
 pub struct Fragment {
+    /// The defs value.
     pub defs: Vec<FragDef>,
+    /// The usings value.
     pub usings: Vec<FragUsing>,
+    /// The refs value.
     pub refs: Vec<FragRef>,
     /// Appended LAST, after `refs`. Always serialized, like its
     /// three siblings: a fragment's top-level arrays are a fixed shape, and
@@ -840,7 +986,9 @@ pub struct Fragment {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum AnyFragment {
+    /// Represents `Ts`.
     Ts(extract::TsFragment),
+    /// Represents `Cs`.
     Cs(Fragment),
 }
 
@@ -1046,8 +1194,11 @@ pub fn markup_fragment(root: &Path, rel: &str) -> Option<Fragment> {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Represents `FragmentCacheEntry`.
 pub struct FragmentCacheEntry {
+    /// The mtime value.
     pub mtime: i64,
+    /// The fragment value.
     pub fragment: AnyFragment,
 }
 
@@ -1097,13 +1248,18 @@ pub fn index_is_stale(index: &OrderedMap<i64>, graph_files: &[GraphFile]) -> boo
 /// (imports, exported declarations, call/JSX/dispatch references).
 #[derive(Debug, Clone)]
 pub struct GraphFile {
+    /// The rel value.
     pub rel: String,
+    /// The mtime value.
     pub mtime: i64,
 }
 
 #[derive(Debug)]
+/// Represents `RebuildOutcome`.
 pub enum RebuildOutcome {
+    /// Represents `NotRebuilt`.
     NotRebuilt,
+    /// Represents `Rebuilt`.
     Rebuilt(Graph),
 }
 

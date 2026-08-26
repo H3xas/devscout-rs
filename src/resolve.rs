@@ -61,6 +61,7 @@ const SCORED_EMIT_CAP: usize = 3;
 /// `simple_name_to_defs` (bare name -> indexes, EVERY def EXCEPT enum members
 /// -- the asymmetry described in the module header).
 pub struct DefIndex {
+    /// The defs value.
     pub defs: Vec<Def>,
     /// Parallel to `defs` (same indexes), NOT fields on `Def`: a def's
     /// property/field lists are RESOLUTION inputs only. No graph.json reader
@@ -69,8 +70,11 @@ pub struct DefIndex {
     /// impact` read for nothing. Keeping them off `Def` keeps the on-disk def
     /// rows to exactly the serialized fields.
     pub member_lists: Vec<MemberLists>,
+    /// The qualified name to def value.
     pub qualified_name_to_def: HashMap<String, usize>,
+    /// The qualified name and arity to def value.
     pub qualified_name_and_arity_to_def: HashMap<(String, usize), usize>,
+    /// The simple name to defs value.
     pub simple_name_to_defs: HashMap<String, Vec<usize>>,
     /// The extension tier's own lookup: "<method_name> <this_type>" (one ASCII
     /// space) -> every candidate declaring that PAIR, as (def index, entry).
@@ -107,7 +111,9 @@ pub struct DefIndex {
 /// One bucket slot: which def declares the entry, and the entry itself (the
 /// range + generic-argument facts the tier filters on).
 pub struct ExtCandidate {
+    /// The def idx value.
     pub def_idx: usize,
+    /// The entry value.
     pub entry: FragExtensionMethod,
 }
 
@@ -115,7 +121,9 @@ pub struct ExtCandidate {
 /// (it IS serialized).
 #[derive(Default)]
 pub struct MemberLists {
+    /// The properties value.
     pub properties: Vec<String>,
+    /// The fields value.
     pub fields: Vec<String>,
     /// Kept here for the same reason as `properties`/`fields`: a resolution
     /// input, never a serialized def field. Holds the (name, this_type,

@@ -264,8 +264,11 @@ pub fn open_store(root: &Path) -> rusqlite::Result<Connection> {
 /// `SELECT sha256, lines, stub_count FROM ... WHERE ...` result.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StubRow {
+    /// The sha256 value.
     pub sha256: String,
+    /// The lines value.
     pub lines: i64,
+    /// The stub count value.
     pub stub_count: i64,
 }
 
@@ -286,14 +289,21 @@ pub fn lookup_bash(
 
 /// Arguments for `record_bash_fresh`: a freshly cached bash command result.
 pub struct RecordBashFresh<'a> {
+    /// The session id value.
     pub session_id: &'a str,
+    /// The agent id value.
     pub agent_id: &'a str,
+    /// The cache key value.
     pub cache_key: &'a str,
+    /// The sha256 value.
     pub sha256: &'a str,
+    /// The size value.
     pub size: i64,
+    /// The lines value.
     pub lines: i64,
 }
 
+/// Inserts or replaces the fresh shell-command row described by `p`.
 pub fn record_bash_fresh(conn: &Connection, p: &RecordBashFresh) -> rusqlite::Result<()> {
     let now = now_ms();
     with_busy_retry(|| {
@@ -329,11 +339,15 @@ pub fn bump_bash_stub(
 /// Aggregate bash-cache statistics (`bash_stats_for`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BashStats {
+    /// The commands tracked value.
     pub commands_tracked: i64,
+    /// The total stubs value.
     pub total_stubs: i64,
+    /// The bytes saved value.
     pub bytes_saved: i64,
 }
 
+/// Returns aggregate shell-command freshness statistics.
 pub fn bash_stats_for(conn: &Connection) -> rusqlite::Result<BashStats> {
     conn.query_row(
         "SELECT COUNT(*) AS n, COALESCE(SUM(stub_count),0) AS stubs, COALESCE(SUM(size*stub_count),0) AS bytes_saved FROM bash_reads",
@@ -367,16 +381,25 @@ pub fn lookup_read(
 /// is the cross-repo content-stub caller: bytes never reached the model, so
 /// `bytes_delivered` must not move even though the row is written.
 pub struct RecordFresh<'a> {
+    /// The session id value.
     pub session_id: &'a str,
+    /// The agent id value.
     pub agent_id: &'a str,
+    /// The rel path value.
     pub rel_path: &'a str,
+    /// The sha256 value.
     pub sha256: &'a str,
+    /// The size value.
     pub size: i64,
+    /// The mtime value.
     pub mtime: i64,
+    /// The lines value.
     pub lines: i64,
+    /// The delivered value.
     pub delivered: bool,
 }
 
+/// Inserts or replaces the fresh file-read row described by `p`.
 pub fn record_fresh(conn: &Connection, p: &RecordFresh) -> rusqlite::Result<()> {
     let now = now_ms();
     let bytes_delivered = if p.delivered { p.size } else { 0 };
@@ -401,12 +424,17 @@ pub fn record_fresh(conn: &Connection, p: &RecordFresh) -> rusqlite::Result<()> 
 /// equality check can never treat it as a stub candidate. On conflict, only the
 /// spend columns move.
 pub struct RecordSpend<'a> {
+    /// The session id value.
     pub session_id: &'a str,
+    /// The agent id value.
     pub agent_id: &'a str,
+    /// The rel path value.
     pub rel_path: &'a str,
+    /// The size value.
     pub size: i64,
 }
 
+/// Adds a delivered read to an existing file-read row.
 pub fn record_spend(conn: &Connection, p: &RecordSpend) -> rusqlite::Result<()> {
     let now = now_ms();
     with_busy_retry(|| {
@@ -445,18 +473,29 @@ pub fn bump_stub(
 /// excluded.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PathBreakdownRow {
+    /// The session id value.
     pub session_id: String,
+    /// The agent id value.
     pub agent_id: String,
+    /// The rel path value.
     pub rel_path: String,
+    /// The read count value.
     pub read_count: i64,
+    /// The bytes delivered value.
     pub bytes_delivered: i64,
+    /// The size value.
     pub size: i64,
+    /// The lines value.
     pub lines: i64,
+    /// The stub count value.
     pub stub_count: i64,
+    /// The first seen ts value.
     pub first_seen_ts: i64,
+    /// The last read ts value.
     pub last_read_ts: Option<i64>,
 }
 
+/// Returns file-read statistics grouped by session, agent, and path.
 pub fn path_breakdown(conn: &Connection) -> rusqlite::Result<Vec<PathBreakdownRow>> {
     let mut stmt = conn.prepare(
         "SELECT session_id, agent_id, rel_path, read_count, bytes_delivered,
@@ -485,12 +524,17 @@ pub fn path_breakdown(conn: &Connection) -> rusqlite::Result<Vec<PathBreakdownRo
 /// Aggregate read-cache statistics (`stats_for`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StatsFor {
+    /// The distinct files value.
     pub distinct_files: i64,
+    /// The total stubs value.
     pub total_stubs: i64,
+    /// The lines saved value.
     pub lines_saved: i64,
+    /// The bytes saved value.
     pub bytes_saved: i64,
 }
 
+/// Returns aggregate file-read freshness statistics.
 pub fn stats_for(conn: &Connection) -> rusqlite::Result<StatsFor> {
     let distinct_files: i64 = conn.query_row(
         "SELECT COUNT(DISTINCT rel_path) AS n FROM reads",
@@ -518,13 +562,19 @@ pub fn stats_for(conn: &Connection) -> rusqlite::Result<StatsFor> {
 /// Per-session read-cache statistics (`session_stats`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SessionStatsRow {
+    /// The session id value.
     pub session_id: String,
+    /// The files value.
     pub files: i64,
+    /// The stubs value.
     pub stubs: i64,
+    /// The lines saved value.
     pub lines_saved: i64,
+    /// The bytes saved value.
     pub bytes_saved: i64,
 }
 
+/// Returns file-read statistics grouped by session.
 pub fn session_stats(conn: &Connection) -> rusqlite::Result<Vec<SessionStatsRow>> {
     let mut stmt = conn.prepare(
         "SELECT session_id, COUNT(*) AS files, COALESCE(SUM(stub_count),0) AS stubs,
@@ -547,12 +597,17 @@ pub fn session_stats(conn: &Connection) -> rusqlite::Result<Vec<SessionStatsRow>
 /// One of the most-stubbed files (`top_stubbed`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TopStubbedRow {
+    /// The rel path value.
     pub rel_path: String,
+    /// The session id value.
     pub session_id: String,
+    /// The stub count value.
     pub stub_count: i64,
+    /// The lines value.
     pub lines: i64,
 }
 
+/// Returns at most `n` file-read rows ordered by descending stub count.
 pub fn top_stubbed(conn: &Connection, n: i64) -> rusqlite::Result<Vec<TopStubbedRow>> {
     let mut stmt = conn.prepare(
         "SELECT rel_path, session_id, stub_count, lines FROM reads WHERE stub_count > 0 ORDER BY stub_count DESC, rel_path LIMIT ?",
@@ -643,16 +698,25 @@ pub fn open_content_store() -> rusqlite::Result<Connection> {
 /// A content-dedup row (`lookup_content`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContentRow {
+    /// The session id value.
     pub session_id: String,
+    /// The agent id value.
     pub agent_id: String,
+    /// The sha256 value.
     pub sha256: String,
+    /// The root value.
     pub root: String,
+    /// The rel path value.
     pub rel_path: String,
+    /// The size value.
     pub size: i64,
+    /// The lines value.
     pub lines: i64,
+    /// The stub count value.
     pub stub_count: i64,
 }
 
+/// Looks up content freshness for a session, digest, and agent.
 pub fn lookup_content(
     conn: &Connection,
     session_id: &str,
@@ -681,15 +745,23 @@ pub fn lookup_content(
 /// Arguments for `record_content`. The first path to carry this content keeps
 /// the naming rights: `ON CONFLICT DO NOTHING`.
 pub struct RecordContent<'a> {
+    /// The session id value.
     pub session_id: &'a str,
+    /// The agent id value.
     pub agent_id: &'a str,
+    /// The sha256 value.
     pub sha256: &'a str,
+    /// The root value.
     pub root: &'a str,
+    /// The rel path value.
     pub rel_path: &'a str,
+    /// The size value.
     pub size: i64,
+    /// The lines value.
     pub lines: i64,
 }
 
+/// Inserts or replaces the content-freshness row described by `p`.
 pub fn record_content(conn: &Connection, p: &RecordContent) -> rusqlite::Result<()> {
     let now = now_ms();
     with_busy_retry(|| {
@@ -723,11 +795,15 @@ pub fn bump_content_stub(
 /// Aggregate content-dedup statistics (`content_stats_for`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ContentStats {
+    /// The distinct contents value.
     pub distinct_contents: i64,
+    /// The total stubs value.
     pub total_stubs: i64,
+    /// The bytes saved value.
     pub bytes_saved: i64,
 }
 
+/// Returns aggregate content-freshness statistics.
 pub fn content_stats_for(conn: &Connection) -> rusqlite::Result<ContentStats> {
     conn.query_row(
         "SELECT COUNT(*) AS n, COALESCE(SUM(stub_count),0) AS stubs, COALESCE(SUM(size*stub_count),0) AS bytes_saved FROM content",

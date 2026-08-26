@@ -37,16 +37,24 @@ use crate::repo::{entry_for, git_common_dir, scout_dir, RegistryEntry, RegistryE
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, PartialEq)]
+/// Represents `Value`.
 pub enum Value {
+    /// Represents `Null`.
     Null,
+    /// Represents `Bool`.
     Bool(bool),
+    /// Represents `Number`.
     Number(serde_json::Number),
+    /// Represents `String`.
     String(String),
+    /// Represents `Array`.
     Array(Vec<Value>),
+    /// Represents `Object`.
     Object(Vec<(String, Value)>),
 }
 
 impl Value {
+    /// Creates an object from string keys and values.
     pub fn object(entries: Vec<(&str, Value)>) -> Value {
         Value::Object(
             entries
@@ -56,14 +64,17 @@ impl Value {
         )
     }
 
+    /// Creates a string value.
     pub fn string(s: impl Into<String>) -> Value {
         Value::String(s.into())
     }
 
+    /// Creates an array value.
     pub fn array(items: Vec<Value>) -> Value {
         Value::Array(items)
     }
 
+    /// Creates a numeric value.
     pub fn number(n: impl Into<serde_json::Number>) -> Value {
         Value::Number(n.into())
     }
@@ -77,6 +88,7 @@ impl Value {
             .map(|(_, v)| v)
     }
 
+    /// Returns the object entries, or `None` for another value variant.
     pub fn as_object(&self) -> Option<&[(String, Value)]> {
         match self {
             Value::Object(entries) => Some(entries.as_slice()),
@@ -233,13 +245,24 @@ pub fn legacy_manifest_path(root: &Path) -> PathBuf {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug)]
+/// Represents `ManifestError`.
 pub enum ManifestError {
     /// The manifest file could not be read (permission, or the file vanishing
     /// in a race after the existence check -- the same "safer, not narrower"
     /// TOCTOU behavior documented on `repo::git_dir_for`).
-    Io { path: PathBuf, detail: String },
+    Io {
+        /// The manifest path.
+        path: PathBuf,
+        /// The I/O error text.
+        detail: String,
+    },
     /// The manifest file is present but not valid JSON.
-    InvalidJson { path: PathBuf, detail: String },
+    InvalidJson {
+        /// The manifest path.
+        path: PathBuf,
+        /// The JSON parsing error text.
+        detail: String,
+    },
 }
 
 impl fmt::Display for ManifestError {
@@ -328,7 +351,9 @@ pub fn write_manifest(root: &Path, value: &Value) -> io::Result<()> {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, PartialEq)]
+/// Represents `FindHit`.
 pub struct FindHit {
+    /// The path value.
     pub path: String,
     /// The entry's `purpose`, passed through as-is and NOT defaulted the way
     /// `source` is. `None` when the key is absent; an explicit JSON `null`
@@ -342,7 +367,9 @@ pub struct FindHit {
 }
 
 #[derive(Debug)]
+/// Represents `FindError`.
 pub enum FindError {
+    /// Represents `Manifest`.
     Manifest(ManifestError),
     /// The manifest has no object-valued `entries` field -- the realistic case
     /// being a manifest missing its `entries` key entirely. A non-object
@@ -394,7 +421,9 @@ pub fn find_in_manifest(root: &Path, query: &str) -> Result<Vec<FindHit>, FindEr
 /// `find_in_manifest_detailed`'s return shape: the hits plus which pool
 /// answered.
 pub struct FindResult {
+    /// The hits value.
     pub hits: Vec<FindHit>,
+    /// The fallback value.
     pub fallback: bool,
 }
 
@@ -560,6 +589,7 @@ fn index_state_dir(root: &Path) -> PathBuf {
     }
 }
 
+/// Returns the path of the repository's index-state artifact.
 pub fn index_state_path(root: &Path) -> PathBuf {
     index_state_dir(root).join("index-state.json")
 }

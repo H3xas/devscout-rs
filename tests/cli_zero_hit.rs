@@ -1,3 +1,5 @@
+//! Integration tests for command-line queries with no matches.
+
 // Zero-hit exits: a query that ran and found nothing leaves on its own code,
 // distinct from the environment (1) and usage (2) codes, and says so on stderr
 // in one fixed line per verb.

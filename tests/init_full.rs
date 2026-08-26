@@ -1,3 +1,5 @@
+//! Integration tests for full repository initialization.
+
 // End-to-end coverage of the out-of-the-box steps `devscout init` layers on
 // top of registering the repo -- language census, hook install, first map.
 // This file drives `cmd_init_full` (initcmd.rs, wired in cli.rs) through the

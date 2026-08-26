@@ -437,11 +437,17 @@ mod json {
 /// rejecting the whole registry.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct RegistryEntry {
+    /// The root value.
     pub root: String,
+    /// The kind value.
     pub kind: String,
+    /// The label value.
     pub label: Option<String>,
+    /// The scope value.
     pub scope: Vec<String>,
+    /// The initialized value.
     pub initialized: String,
+    /// The last seen value.
     pub last_seen: String,
 }
 
@@ -450,6 +456,7 @@ pub struct RegistryEntry {
 /// field.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Registry {
+    /// The roots value.
     pub roots: Vec<RegistryEntry>,
 }
 
@@ -460,9 +467,17 @@ pub enum RegistryError {
     /// The registry file could not be read or is not valid JSON. Read failures
     /// (permission, or the file vanishing in a race after the existence check)
     /// are reported here too, not as a separate IO variant.
-    NotValidJson { path: PathBuf, detail: String },
+    NotValidJson {
+        /// The registry path.
+        path: PathBuf,
+        /// The read or parsing error text.
+        detail: String,
+    },
     /// The parsed value is not an object, or its `roots` field is not an array.
-    NoRootsArray { path: PathBuf },
+    NoRootsArray {
+        /// The registry path.
+        path: PathBuf,
+    },
 }
 
 impl fmt::Display for RegistryError {

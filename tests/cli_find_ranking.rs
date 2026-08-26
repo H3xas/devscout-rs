@@ -1,3 +1,5 @@
+//! Integration tests for command-line find-result ranking.
+
 // Ranked `find`: whichever manifest pool answers is sorted by tokens matched,
 // then by the file's precise inbound-edge count, BEFORE the cap -- so on a text
 // tie the widely referenced file prints above the island, and a repo with no

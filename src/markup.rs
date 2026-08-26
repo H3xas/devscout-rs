@@ -15,6 +15,7 @@ use crate::extract::NameRecord;
 // counterpart. Both carry the identical `<data name="Key" ...>` schema, so
 // `.resx` gets the exact same treatment as `.resw` everywhere below -- same
 // scan function, same resource-key kind, same tier.
+/// Returns whether a repository-relative path has a supported markup extension.
 pub fn is_markup(rel: &str) -> bool {
     rel.ends_with(".xaml") || is_resource(rel)
 }
@@ -44,10 +45,15 @@ const USING_NAMESPACE: &str = "using:";
 /// def is. This is the `defs` entry `markup_facts` produces.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MarkupDef {
+    /// The id value.
     pub id: String,
+    /// The name value.
     pub name: String,
+    /// The namespace value.
     pub namespace: String,
+    /// The kind value.
     pub kind: String,
+    /// The line value.
     pub line: usize,
 }
 
@@ -58,17 +64,26 @@ pub struct MarkupDef {
 /// empty -- markup has no enclosing namespace of its own.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MarkupRef {
+    /// The kind value.
     pub kind: String,
+    /// The name value.
     pub name: String,
+    /// The qualified value.
     pub qualified: Option<String>,
+    /// The member value.
     pub member: Option<String>,
+    /// The line value.
     pub line: usize,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
+/// Represents `MarkupFacts`.
 pub struct MarkupFacts {
+    /// The defs value.
     pub defs: Vec<MarkupDef>,
+    /// The refs value.
     pub refs: Vec<MarkupRef>,
+    /// The names value.
     pub names: Vec<NameRecord>,
 }
 

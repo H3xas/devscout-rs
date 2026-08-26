@@ -50,12 +50,14 @@ const MIN_STDOUT_BYTES: usize = 256;
 // empty output -- the exit-0, tool-result-untouched contract.
 // ---------------------------------------------------------------------------
 
+/// Processes a read-hook JSON payload and returns the replacement payload.
 pub fn run_read(raw: &[u8]) -> Vec<u8> {
     std::panic::catch_unwind(|| decode_and_handle(raw, handle_read))
         .unwrap_or_default()
         .into_bytes()
 }
 
+/// Processes a shell-hook JSON payload and returns the replacement payload.
 pub fn run_bash(raw: &[u8]) -> Vec<u8> {
     std::panic::catch_unwind(|| decode_and_handle(raw, handle_bash))
         .unwrap_or_default()
