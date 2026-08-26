@@ -15,6 +15,7 @@ use crate::extract::NameRecord;
 // counterpart. Both carry the identical `<data name="Key" ...>` schema, so
 // `.resx` gets the exact same treatment as `.resw` everywhere below -- same
 // scan function, same resource-key kind, same tier.
+/// Returns whether a repository-relative path has a supported markup extension.
 pub fn is_markup(rel: &str) -> bool {
     rel.ends_with(".xaml") || is_resource(rel)
 }
@@ -44,10 +45,15 @@ const USING_NAMESPACE: &str = "using:";
 /// def is. This is the `defs` entry `markup_facts` produces.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MarkupDef {
+    /// The id value.
     pub id: String,
+    /// The name value.
     pub name: String,
+    /// The namespace value.
     pub namespace: String,
+    /// The kind value.
     pub kind: String,
+    /// The line value.
     pub line: usize,
 }
 
@@ -58,17 +64,26 @@ pub struct MarkupDef {
 /// empty -- markup has no enclosing namespace of its own.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MarkupRef {
+    /// The kind value.
     pub kind: String,
+    /// The name value.
     pub name: String,
+    /// The qualified value.
     pub qualified: Option<String>,
+    /// The member value.
     pub member: Option<String>,
+    /// The line value.
     pub line: usize,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
+/// Represents `MarkupFacts`.
 pub struct MarkupFacts {
+    /// The defs value.
     pub defs: Vec<MarkupDef>,
+    /// The refs value.
     pub refs: Vec<MarkupRef>,
+    /// The names value.
     pub names: Vec<NameRecord>,
 }
 
@@ -152,8 +167,15 @@ fn prefixed_element(line: &str, from: usize) -> Option<(&str, &str, usize)> {
 
 // What one scan pass found in source order, before prefixes are applied.
 enum Pending {
-    Element { prefix: String, local: String, line: usize },
-    Bind { path: String, line: usize },
+    Element {
+        prefix: String,
+        local: String,
+        line: usize,
+    },
+    Bind {
+        path: String,
+        line: usize,
+    },
 }
 
 struct XamlScan {
@@ -176,7 +198,12 @@ struct XamlScan {
 // table is a Vec of pairs, not a map, because first-declaration-wins is the rule
 // and iteration order has to stay fixed.
 fn scan_xaml(text: &str) -> XamlScan {
-    let mut scan = XamlScan { names: Vec::new(), pending: Vec::new(), prefixes: Vec::new(), decl: None };
+    let mut scan = XamlScan {
+        names: Vec::new(),
+        pending: Vec::new(),
+        prefixes: Vec::new(),
+        decl: None,
+    };
 
     for (i, line) in text.split('\n').enumerate() {
         let line_no = i + 1;
@@ -189,7 +216,9 @@ fn scan_xaml(text: &str) -> XamlScan {
             }
             let rest = &line[pos..];
             if rest.starts_with(X_CLASS_ATTR) {
-                let Some((value, next)) = quoted(line, pos + X_CLASS_ATTR.len()) else { break };
+                let Some((value, next)) = quoted(line, pos + X_CLASS_ATTR.len()) else {
+                    break;
+                };
                 if !value.is_empty() {
                     scan.names.push(NameRecord {
                         name: value.to_string(),
@@ -205,7 +234,9 @@ fn scan_xaml(text: &str) -> XamlScan {
                 continue;
             }
             if rest.starts_with(X_NAME_ATTR) {
-                let Some((value, next)) = quoted(line, pos + X_NAME_ATTR.len()) else { break };
+                let Some((value, next)) = quoted(line, pos + X_NAME_ATTR.len()) else {
+                    break;
+                };
                 if !value.is_empty() {
                     scan.names.push(NameRecord {
                         name: value.to_string(),
@@ -228,7 +259,9 @@ fn scan_xaml(text: &str) -> XamlScan {
                     continue;
                 }
                 let prefix = line[start..j].to_string();
-                let Some((value, next)) = quoted(line, j + 2) else { break };
+                let Some((value, next)) = quoted(line, j + 2) else {
+                    break;
+                };
                 let ns = if let Some(rest) = value.strip_prefix(CLR_NAMESPACE) {
                     Some(match rest.find(';') {
                         Some(semi) => &rest[..semi],
@@ -247,7 +280,12 @@ fn scan_xaml(text: &str) -> XamlScan {
             }
             if rest.starts_with(BINDING_OPEN) || rest.starts_with(XBIND_OPEN) {
                 let bind = rest.starts_with(XBIND_OPEN);
-                let from = pos + if bind { XBIND_OPEN.len() } else { BINDING_OPEN.len() };
+                let from = pos
+                    + if bind {
+                        XBIND_OPEN.len()
+                    } else {
+                        BINDING_OPEN.len()
+                    };
                 let (path, next) = binding_path(line, from);
                 if !path.is_empty() {
                     scan.names.push(NameRecord {
@@ -257,7 +295,10 @@ fn scan_xaml(text: &str) -> XamlScan {
                         owner: String::new(),
                     });
                     if bind {
-                        scan.pending.push(Pending::Bind { path: path.to_string(), line: line_no });
+                        scan.pending.push(Pending::Bind {
+                            path: path.to_string(),
+                            line: line_no,
+                        });
                     }
                 }
                 pos = if next > pos { next } else { pos + 1 };
@@ -287,14 +328,25 @@ fn scan_resw(text: &str) -> Vec<NameRecord> {
     for (i, line) in text.split('\n').enumerate() {
         let mut pos = 0usize;
         loop {
-            let Some(data) = line[pos..].find("<data") else { break };
+            let Some(data) = line[pos..].find("<data") else {
+                break;
+            };
             let data = pos + data;
-            let Some(attr) = line[data..].find(RESW_KEY_ATTR) else { break };
+            let Some(attr) = line[data..].find(RESW_KEY_ATTR) else {
+                break;
+            };
             let start = data + attr + RESW_KEY_ATTR.len();
-            let Some(offset) = line[start..].find('"') else { break };
+            let Some(offset) = line[start..].find('"') else {
+                break;
+            };
             let name = &line[start..start + offset];
             if !name.is_empty() {
-                out.push(NameRecord { name: name.to_string(), kind: "resource-key".to_string(), line: i + 1, owner: String::new() });
+                out.push(NameRecord {
+                    name: name.to_string(),
+                    kind: "resource-key".to_string(),
+                    line: i + 1,
+                    owner: String::new(),
+                });
             }
             pos = start + offset + 1;
         }
@@ -327,7 +379,11 @@ fn type_ref(kind: &str, qualified: &str, member: Option<String>, line: usize) ->
     MarkupRef {
         kind: kind.to_string(),
         name: name.to_string(),
-        qualified: if qualified.contains('.') { Some(qualified.to_string()) } else { None },
+        qualified: if qualified.contains('.') {
+            Some(qualified.to_string())
+        } else {
+            None
+        },
         member,
         line,
     }
@@ -353,7 +409,11 @@ fn type_ref(kind: &str, qualified: &str, member: Option<String>, line: usize) ->
 ///   applies to a binding exactly as it applies to a call.
 pub fn markup_facts(rel: &str, text: &str) -> MarkupFacts {
     if is_resource(rel) {
-        return MarkupFacts { defs: Vec::new(), refs: Vec::new(), names: scan_resw(text) };
+        return MarkupFacts {
+            defs: Vec::new(),
+            refs: Vec::new(),
+            names: scan_resw(text),
+        };
     }
     let scan = scan_xaml(text);
 
@@ -372,12 +432,20 @@ pub fn markup_facts(rel: &str, text: &str) -> MarkupFacts {
     let mut refs = Vec::new();
     for p in &scan.pending {
         match p {
-            Pending::Element { prefix, local, line } => {
-                let Some((_, ns)) = scan.prefixes.iter().find(|(name, _)| name == prefix) else { continue };
+            Pending::Element {
+                prefix,
+                local,
+                line,
+            } => {
+                let Some((_, ns)) = scan.prefixes.iter().find(|(name, _)| name == prefix) else {
+                    continue;
+                };
                 refs.push(type_ref("uses-type", &format!("{ns}.{local}"), None, *line));
             }
             Pending::Bind { path, line } => {
-                let Some((qualified, _)) = &scan.decl else { continue };
+                let Some((qualified, _)) = &scan.decl else {
+                    continue;
+                };
                 // The bound member is the FIRST path segment: `{x:Bind Vm.Name}`
                 // reads `Vm` off the x:Class type and everything after it off
                 // whatever `Vm` returns, which is a type this scan cannot name.
@@ -385,12 +453,21 @@ pub fn markup_facts(rel: &str, text: &str) -> MarkupFacts {
                     Some(dot) => &path[..dot],
                     None => path.as_str(),
                 };
-                refs.push(type_ref("uses-member", qualified, Some(member.to_string()), *line));
+                refs.push(type_ref(
+                    "uses-member",
+                    qualified,
+                    Some(member.to_string()),
+                    *line,
+                ));
             }
         }
     }
 
-    MarkupFacts { defs, refs, names: scan.names }
+    MarkupFacts {
+        defs,
+        refs,
+        names: scan.names,
+    }
 }
 
 #[cfg(test)]
@@ -398,7 +475,10 @@ mod tests {
     use super::*;
 
     fn names(rel: &str, text: &str) -> Vec<(String, String, usize)> {
-        markup_names(rel, text).into_iter().map(|n| (n.name, n.kind, n.line)).collect()
+        markup_names(rel, text)
+            .into_iter()
+            .map(|n| (n.name, n.kind, n.line))
+            .collect()
     }
 
     #[test]
@@ -407,7 +487,11 @@ mod tests {
         assert_eq!(
             names("src/Panel.xaml", src),
             vec![
-                ("Gadgets.PanelView".to_string(), "markup-class".to_string(), 2),
+                (
+                    "Gadgets.PanelView".to_string(),
+                    "markup-class".to_string(),
+                    2
+                ),
                 ("ShipButton".to_string(), "markup-name".to_string(), 3),
             ]
         );
@@ -418,7 +502,10 @@ mod tests {
         let src = "<Grid x:Name=\"Outer\"><Grid x:Name=\"Inner\" /></Grid>\n";
         assert_eq!(
             names("a.xaml", src),
-            vec![("Outer".to_string(), "markup-name".to_string(), 1), ("Inner".to_string(), "markup-name".to_string(), 1)]
+            vec![
+                ("Outer".to_string(), "markup-name".to_string(), 1),
+                ("Inner".to_string(), "markup-name".to_string(), 1)
+            ]
         );
     }
 
@@ -431,7 +518,10 @@ mod tests {
     #[test]
     fn resw_keys_come_from_data_elements_only() {
         let src = "<root>\n\t<resheader name=\"resmimetype\" />\n\t<data name=\"Ship.Content\" xml:space=\"preserve\">\n\t\t<value>Ship</value>\n\t</data>\n</root>\n";
-        assert_eq!(names("a.resw", src), vec![("Ship.Content".to_string(), "resource-key".to_string(), 3)]);
+        assert_eq!(
+            names("a.resw", src),
+            vec![("Ship.Content".to_string(), "resource-key".to_string(), 3)]
+        );
     }
 
     // (2026-08-23) -- `.resx` (.NET desktop/web resources) carries the exact
@@ -440,7 +530,10 @@ mod tests {
     #[test]
     fn resx_keys_come_from_data_elements_only_same_as_resw() {
         let src = "<root>\n\t<resheader name=\"resmimetype\" />\n\t<data name=\"Ship.Content\" xml:space=\"preserve\">\n\t\t<value>Ship</value>\n\t</data>\n</root>\n";
-        assert_eq!(names("a.resx", src), vec![("Ship.Content".to_string(), "resource-key".to_string(), 3)]);
+        assert_eq!(
+            names("a.resx", src),
+            vec![("Ship.Content".to_string(), "resource-key".to_string(), 3)]
+        );
     }
 
     #[test]
@@ -505,13 +598,19 @@ mod tests {
             page.refs.iter().all(|r| r.kind != "uses-member"),
             "a runtime DataContext is not statically known, so `{{Binding Title}}` earns a name fact and no edge"
         );
-        assert!(page.names.iter().any(|n| n.name == "Title" && n.kind == "markup-binding" && n.line == 4));
+        assert!(page
+            .names
+            .iter()
+            .any(|n| n.name == "Title" && n.kind == "markup-binding" && n.line == 4));
     }
 
     #[test]
     fn an_unmapped_prefix_and_a_bare_element_contribute_nothing() {
         let facts = markup_facts("a.xaml", "<Page xmlns:d=\"http://schemas.microsoft.com/expression/blend/2008\">\n  <d:DesignHost />\n  <Grid />\n</Page>\n");
-        assert!(facts.refs.is_empty(), "a prefix that names no CLR namespace is skipped, never guessed at");
+        assert!(
+            facts.refs.is_empty(),
+            "a prefix that names no CLR namespace is skipped, never guessed at"
+        );
     }
 
     #[test]
@@ -519,15 +618,25 @@ mod tests {
         let src = "<Page\n    xmlns:local=\"using:Demo.Controls\">\n    <local:ShipPanel>\n        <local:ShipPanel.Header>x</local:ShipPanel.Header>\n    </local:ShipPanel>\n</Page>\n";
         let facts = markup_facts("a.xaml", src);
         let lines: Vec<usize> = facts.refs.iter().map(|r| r.line).collect();
-        assert_eq!(lines, vec![3, 4], "the open tag and the property element, never a closing tag");
-        assert!(facts.refs.iter().all(|r| r.qualified.as_deref() == Some("Demo.Controls.ShipPanel")));
+        assert_eq!(
+            lines,
+            vec![3, 4],
+            "the open tag and the property element, never a closing tag"
+        );
+        assert!(facts
+            .refs
+            .iter()
+            .all(|r| r.qualified.as_deref() == Some("Demo.Controls.ShipPanel")));
     }
 
     #[test]
     fn a_clr_namespace_drops_its_assembly_suffix() {
         let src = "<Page xmlns:local=\"clr-namespace:Demo.Controls;assembly=Demo\">\n  <local:ShipPanel />\n</Page>\n";
         let facts = markup_facts("a.xaml", src);
-        assert_eq!(facts.refs[0].qualified.as_deref(), Some("Demo.Controls.ShipPanel"));
+        assert_eq!(
+            facts.refs[0].qualified.as_deref(),
+            Some("Demo.Controls.ShipPanel")
+        );
     }
 
     #[test]
@@ -543,9 +652,18 @@ mod tests {
 
     #[test]
     fn a_markup_file_with_no_x_class_declares_nothing_and_binds_nothing() {
-        let facts = markup_facts("a.xaml", "<ResourceDictionary>\n  <T V=\"{x:Bind Orphan}\" />\n</ResourceDictionary>\n");
+        let facts = markup_facts(
+            "a.xaml",
+            "<ResourceDictionary>\n  <T V=\"{x:Bind Orphan}\" />\n</ResourceDictionary>\n",
+        );
         assert!(facts.defs.is_empty());
-        assert!(facts.refs.is_empty(), "x:Bind with no x:Class root has no type to resolve against");
-        assert!(facts.names.iter().any(|n| n.name == "Orphan" && n.kind == "markup-binding"));
+        assert!(
+            facts.refs.is_empty(),
+            "x:Bind with no x:Class root has no type to resolve against"
+        );
+        assert!(facts
+            .names
+            .iter()
+            .any(|n| n.name == "Orphan" && n.kind == "markup-binding"));
     }
 }

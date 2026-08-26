@@ -44,6 +44,7 @@ fn new_parser() -> Parser {
 // uses -- so span translation is a halving, not a table lookup: tree-sitter
 // reports BYTE offsets into the buffer it parsed, and a UTF-16 buffer has
 // exactly two bytes per code unit, astral pairs included.
+/// Encodes source text as UTF-16 code units.
 pub fn utf16_units(source: &str) -> Vec<u16> {
     source.encode_utf16().collect()
 }
@@ -61,8 +62,10 @@ pub fn node_text(node: Node, src: &[u8]) -> String {
     if range.start > range.end || range.end > src.len() {
         return String::new();
     }
-    let units: Vec<u16> =
-        src[range].chunks_exact(2).map(|pair| u16::from_le_bytes([pair[0], pair[1]])).collect();
+    let units: Vec<u16> = src[range]
+        .chunks_exact(2)
+        .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+        .collect();
     String::from_utf16_lossy(&units)
 }
 
@@ -76,6 +79,7 @@ pub fn utf16_index(byte: usize) -> usize {
 // `parse` subcommand -- seed text dump.
 // ---------------------------------------------------------------------------
 
+/// Parses the C# file at `path` and prints its syntax tree.
 pub fn run_parse(path: &str) {
     let source = fs::read_to_string(path).unwrap_or_else(|err| {
         eprintln!("failed to read {path}: {err}");
@@ -84,7 +88,9 @@ pub fn run_parse(path: &str) {
 
     let mut parser = new_parser();
     let units = utf16_units(&source);
-    let tree = parser.parse_utf16_le(&units, None).expect("parse returned no tree");
+    let tree = parser
+        .parse_utf16_le(&units, None)
+        .expect("parse returned no tree");
     walk(tree.root_node(), &utf16_bytes(&units), 0);
 }
 
@@ -160,17 +166,27 @@ const SPAN_KINDS: &[&str] = &[
     "enum_member_declaration",
 ];
 
+/// Represents `SpanRecord`.
 pub struct SpanRecord {
+    /// The kind value.
     pub kind: String,
+    /// The name value.
     pub name: String,
+    /// The start byte value.
     pub start_byte: usize,
+    /// The end byte value.
     pub end_byte: usize,
+    /// The start row value.
     pub start_row: usize,
+    /// The start col value.
     pub start_col: usize,
+    /// The end row value.
     pub end_row: usize,
+    /// The end col value.
     pub end_col: usize,
 }
 
+/// Collects declaration spans from the C# file at `path` and prints them as JSON.
 pub fn run_spans(path: &str) {
     let source = fs::read_to_string(path).unwrap_or_else(|err| {
         eprintln!("failed to read {path}: {err}");
@@ -180,10 +196,13 @@ pub fn run_spans(path: &str) {
     println!("{}", spans_json(&records));
 }
 
+/// Parses C# source and returns its namespace, type, and member declaration spans.
 pub fn collect_spans(source: &str) -> Vec<SpanRecord> {
     let mut parser = new_parser();
     let units = utf16_units(source);
-    let tree = parser.parse_utf16_le(&units, None).expect("parse returned no tree");
+    let tree = parser
+        .parse_utf16_le(&units, None)
+        .expect("parse returned no tree");
     let mut out = Vec::new();
     walk_spans(tree.root_node(), &utf16_bytes(&units), &mut out);
     out.sort_by(|a, b| {
@@ -201,7 +220,10 @@ fn walk_spans(node: Node, src: &[u8], out: &mut Vec<SpanRecord>) {
         if let Some(name_node) = node.child_by_field_name("name") {
             let start_point = node.start_position();
             let end_point = node.end_position();
-            let (start_byte, start_col) = (utf16_index(node.start_byte()), utf16_index(start_point.column));
+            let (start_byte, start_col) = (
+                utf16_index(node.start_byte()),
+                utf16_index(start_point.column),
+            );
             let (end_byte, end_col) = (utf16_index(node.end_byte()), utf16_index(end_point.column));
             out.push(SpanRecord {
                 kind: node.kind().to_string(),
@@ -224,6 +246,7 @@ fn walk_spans(node: Node, src: &[u8], out: &mut Vec<SpanRecord>) {
 
 // Hand-rolled 2-space-indented JSON so the output format is fixed and does not
 // depend on a serializer's formatting choices.
+/// Serializes span records as a JSON array.
 pub fn spans_json(records: &[SpanRecord]) -> String {
     if records.is_empty() {
         return "[]".to_string();
@@ -277,9 +300,13 @@ fn json_string(s: &str) -> String {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Represents `TsGrammar`.
 pub enum TsGrammar {
+    /// Represents `Typescript`.
     Typescript,
+    /// Represents `Tsx`.
     Tsx,
+    /// Represents `Javascript`.
     Javascript,
 }
 
@@ -308,7 +335,9 @@ fn new_ts_parser(grammar: TsGrammar) -> Parser {
         TsGrammar::Tsx => tree_sitter_typescript::LANGUAGE_TSX.into(),
         TsGrammar::Javascript => tree_sitter_javascript::LANGUAGE.into(),
     };
-    parser.set_language(&language).expect("failed to load TS/JS grammar");
+    parser
+        .set_language(&language)
+        .expect("failed to load TS/JS grammar");
     parser
 }
 
@@ -345,8 +374,16 @@ mod ts_grammar_tests {
 
     #[test]
     fn each_grammar_loads_and_parses_without_panicking() {
-        assert!(parse_ts_js(&utf16_units("const x: number = 1;\n"), TsGrammar::Typescript).is_some());
+        assert!(parse_ts_js(
+            &utf16_units("const x: number = 1;\n"),
+            TsGrammar::Typescript
+        )
+        .is_some());
         assert!(parse_ts_js(&utf16_units("const x = <div>hi</div>;\n"), TsGrammar::Tsx).is_some());
-        assert!(parse_ts_js(&utf16_units("function f() { return 1; }\n"), TsGrammar::Javascript).is_some());
+        assert!(parse_ts_js(
+            &utf16_units("function f() { return 1; }\n"),
+            TsGrammar::Javascript
+        )
+        .is_some());
     }
 }

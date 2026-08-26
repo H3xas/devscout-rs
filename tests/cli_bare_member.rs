@@ -1,3 +1,5 @@
+//! Integration tests for bare-member command-line queries.
+
 // Bare member names: `refs <member>` names the declaring type through the
 // member index and then keeps only the inbound member edges whose own line
 // carries the member as a whole token.
@@ -26,13 +28,20 @@ static COUNTER: AtomicU64 = AtomicU64::new(0);
 
 fn temp_dir(prefix: &str) -> PathBuf {
     let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-    let dir = env::temp_dir().join(format!("scout-bare-member-{prefix}-{}-{n}", std::process::id()));
+    let dir = env::temp_dir().join(format!(
+        "scout-bare-member-{prefix}-{}-{n}",
+        std::process::id()
+    ));
     fs::create_dir_all(&dir).expect("create temp dir");
     fs::canonicalize(&dir).expect("canonicalize temp dir")
 }
 
 fn run_git(dir: &Path, args: &[&str]) {
-    let status = Command::new("git").args(args).current_dir(dir).status().expect("git binary must be on PATH");
+    let status = Command::new("git")
+        .args(args)
+        .current_dir(dir)
+        .status()
+        .expect("git binary must be on PATH");
     assert!(status.success(), "git {args:?} failed in {}", dir.display());
 }
 
@@ -41,12 +50,19 @@ fn run_git(dir: &Path, args: &[&str]) {
 fn bootstrap_initial_commit(dir: &Path) {
     const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
     let output = Command::new("git")
-        .args(["commit-tree", EMPTY_TREE, "-m", "init"]).env("GIT_AUTHOR_NAME", "devscout-test").env("GIT_AUTHOR_EMAIL", "devscout-test@example.com").env("GIT_COMMITTER_NAME", "devscout-test").env("GIT_COMMITTER_EMAIL", "devscout-test@example.com")
+        .args(["commit-tree", EMPTY_TREE, "-m", "init"])
+        .env("GIT_AUTHOR_NAME", "devscout-test")
+        .env("GIT_AUTHOR_EMAIL", "devscout-test@example.com")
+        .env("GIT_COMMITTER_NAME", "devscout-test")
+        .env("GIT_COMMITTER_EMAIL", "devscout-test@example.com")
         .current_dir(dir)
         .stdin(Stdio::null())
         .output()
         .expect("git commit-tree must run");
-    assert!(output.status.success(), "git commit-tree failed: {output:?}");
+    assert!(
+        output.status.success(),
+        "git commit-tree failed: {output:?}"
+    );
     let sha = String::from_utf8(output.stdout).unwrap().trim().to_string();
     run_git(dir, &["update-ref", "refs/heads/master", &sha]);
     run_git(dir, &["symbolic-ref", "HEAD", "refs/heads/master"]);
@@ -136,8 +152,14 @@ fn a_bare_member_never_matches_a_longer_identifier_that_starts_with_it() {
     let out = fx.run(&["refs", "Post"]);
     assert_eq!(out.status.code(), Some(0), "{out:?}");
     let text = stdout_of(&out);
-    assert!(text.contains("src/Consumer.cs:9  uses-member  Ledger.Post(1);"), "{text}");
-    assert!(!text.contains("PostEx"), "line 10 is a substring hit that must not survive verification: {text}");
+    assert!(
+        text.contains("src/Consumer.cs:9  uses-member  Ledger.Post(1);"),
+        "{text}"
+    );
+    assert!(
+        !text.contains("PostEx"),
+        "line 10 is a substring hit that must not survive verification: {text}"
+    );
 }
 
 #[test]
@@ -194,7 +216,8 @@ const AMBIGUOUS_APPROVE_OUT: &str = "ambiguous symbol \"Approve\" — 2 candidat
                                       App.Books.Ledger  src/Ledger.cs:3  class\n";
 
 #[test]
-fn a_bare_member_declared_on_two_types_renders_the_ambiguous_candidate_list_never_a_members_block() {
+fn a_bare_member_declared_on_two_types_renders_the_ambiguous_candidate_list_never_a_members_block()
+{
     let fx = ambiguous_member_fixture("ambiguous");
     let out = fx.run(&["refs", "Approve"]);
     assert_eq!(out.status.code(), Some(1), "{out:?}");

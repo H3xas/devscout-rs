@@ -1,3 +1,5 @@
+//! Integration tests for command-line repository-root handling.
+
 // Root resolution that does not depend on the caller's working directory: the
 // global `-C <dir>` flag, and `impact`'s fallback to the root of its own path
 // argument.
@@ -21,7 +23,10 @@ static COUNTER: AtomicU64 = AtomicU64::new(0);
 
 fn temp_dir(prefix: &str) -> PathBuf {
     let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-    let dir = env::temp_dir().join(format!("scout-cli-root-{prefix}-{}-{n}", std::process::id()));
+    let dir = env::temp_dir().join(format!(
+        "scout-cli-root-{prefix}-{}-{n}",
+        std::process::id()
+    ));
     fs::create_dir_all(&dir).expect("create temp dir");
     // macOS's `env::temp_dir()` is itself a symlink (`/var` -> `/private/var`)
     // and a child process reports the canonical form as its cwd, so a `-C`
@@ -32,7 +37,11 @@ fn temp_dir(prefix: &str) -> PathBuf {
 }
 
 fn run_git(dir: &Path, args: &[&str]) {
-    let status = Command::new("git").args(args).current_dir(dir).status().expect("git binary must be on PATH");
+    let status = Command::new("git")
+        .args(args)
+        .current_dir(dir)
+        .status()
+        .expect("git binary must be on PATH");
     assert!(status.success(), "git {args:?} failed in {}", dir.display());
 }
 
@@ -41,12 +50,19 @@ fn run_git(dir: &Path, args: &[&str]) {
 fn bootstrap_initial_commit(dir: &Path) {
     const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
     let output = Command::new("git")
-        .args(["commit-tree", EMPTY_TREE, "-m", "init"]).env("GIT_AUTHOR_NAME", "devscout-test").env("GIT_AUTHOR_EMAIL", "devscout-test@example.com").env("GIT_COMMITTER_NAME", "devscout-test").env("GIT_COMMITTER_EMAIL", "devscout-test@example.com")
+        .args(["commit-tree", EMPTY_TREE, "-m", "init"])
+        .env("GIT_AUTHOR_NAME", "devscout-test")
+        .env("GIT_AUTHOR_EMAIL", "devscout-test@example.com")
+        .env("GIT_COMMITTER_NAME", "devscout-test")
+        .env("GIT_COMMITTER_EMAIL", "devscout-test@example.com")
         .current_dir(dir)
         .stdin(Stdio::null())
         .output()
         .expect("git commit-tree must run");
-    assert!(output.status.success(), "git commit-tree failed: {output:?}");
+    assert!(
+        output.status.success(),
+        "git commit-tree failed: {output:?}"
+    );
     let sha = String::from_utf8(output.stdout).unwrap().trim().to_string();
     run_git(dir, &["update-ref", "refs/heads/master", &sha]);
     run_git(dir, &["symbolic-ref", "HEAD", "refs/heads/master"]);
@@ -89,7 +105,11 @@ impl Fixture {
         }
         run_git(&root, &["init", "-q", "."]);
         bootstrap_initial_commit(&root);
-        let fixture = Fixture { root, outside, home };
+        let fixture = Fixture {
+            root,
+            outside,
+            home,
+        };
         fixture.expect_ok(&fixture.root, &["init", "--no-hooks", "--no-map"]);
         fixture.expect_ok(&fixture.root, &["map", "."]);
         // A second map so every later `map` compares one no-change run
@@ -144,10 +164,22 @@ fn dash_c_answers_every_root_resolving_verb_byte_identically_from_an_unrelated_c
         let mut with_flag: Vec<&str> = vec!["-C", &root];
         with_flag.extend_from_slice(args);
         let outside = fx.run(&fx.outside, &with_flag);
-        assert_eq!(stdout_of(&inside), stdout_of(&outside), "stdout differs for {args:?}");
+        assert_eq!(
+            stdout_of(&inside),
+            stdout_of(&outside),
+            "stdout differs for {args:?}"
+        );
         assert_eq!(inside.stderr, outside.stderr, "stderr differs for {args:?}");
-        assert_eq!(inside.status.code(), outside.status.code(), "exit code differs for {args:?}");
-        assert_eq!(inside.status.code(), Some(0), "{args:?} did not answer from inside the repo either");
+        assert_eq!(
+            inside.status.code(),
+            outside.status.code(),
+            "exit code differs for {args:?}"
+        );
+        assert_eq!(
+            inside.status.code(),
+            Some(0),
+            "{args:?} did not answer from inside the repo either"
+        );
     }
 }
 
@@ -156,14 +188,29 @@ fn dash_c_reaches_stats_and_init_too() {
     let fx = Fixture::build("dash-c-write");
     let root = fx.root_str();
     let stats = fx.expect_ok(&fx.outside, &["-C", &root, "stats"]);
-    assert!(stats.starts_with(&format!("devscout stats ({root}):")), "stats named a different root: {stats}");
+    assert!(
+        stats.starts_with(&format!("devscout stats ({root}):")),
+        "stats named a different root: {stats}"
+    );
 
     let sub = fx.root.join("sub");
     fs::create_dir_all(&sub).expect("create sub dir");
-    let out = fx.expect_ok(&fx.outside, &["-C", &sub.to_string_lossy(), "init", "--no-hooks", "--no-map"]);
+    let out = fx.expect_ok(
+        &fx.outside,
+        &[
+            "-C",
+            &sub.to_string_lossy(),
+            "init",
+            "--no-hooks",
+            "--no-map",
+        ],
+    );
     // `-C` decides the directory init resolves FROM, not what init does with
     // it: the `.git` ancestor still wins over the subdirectory named.
-    assert!(out.contains(&fx.root.join(".scout").to_string_lossy().into_owned()), "init resolved elsewhere: {out}");
+    assert!(
+        out.contains(&fx.root.join(".scout").to_string_lossy().into_owned()),
+        "init resolved elsewhere: {out}"
+    );
     assert!(!sub.join(".scout").exists());
     assert!(!fx.outside.join(".scout").exists());
 }
@@ -171,9 +218,17 @@ fn dash_c_reaches_stats_and_init_too() {
 #[test]
 fn dash_c_composes_on_repeat_like_git() {
     let fx = Fixture::build("dash-c-compose");
-    let parent = fx.root.parent().expect("fixture root has a parent").to_string_lossy().into_owned();
+    let parent = fx
+        .root
+        .parent()
+        .expect("fixture root has a parent")
+        .to_string_lossy()
+        .into_owned();
     let direct = fx.expect_ok(&fx.root, &["refs", "IThing", "--compact"]);
-    let composed = fx.expect_ok(&fx.outside, &["-C", &parent, "-C", "repo", "refs", "IThing", "--compact"]);
+    let composed = fx.expect_ok(
+        &fx.outside,
+        &["-C", &parent, "-C", "repo", "refs", "IThing", "--compact"],
+    );
     assert_eq!(direct, composed);
 }
 
@@ -182,11 +237,17 @@ fn dash_c_rejects_a_missing_or_nonexistent_directory() {
     let fx = Fixture::build("dash-c-bad");
     let missing = fx.run(&fx.outside, &["-C"]);
     assert_eq!(missing.status.code(), Some(1));
-    assert_eq!(stdout_of(&missing), "error: no directory given for '-C' option\n");
+    assert_eq!(
+        stdout_of(&missing),
+        "error: no directory given for '-C' option\n"
+    );
 
     let nonexistent = fx.run(&fx.outside, &["-C", "nope", "find", "thing"]);
     assert_eq!(nonexistent.status.code(), Some(1));
-    assert_eq!(stdout_of(&nonexistent), "error: cannot change to 'nope': no such directory\n");
+    assert_eq!(
+        stdout_of(&nonexistent),
+        "error: cannot change to 'nope': no such directory\n"
+    );
 }
 
 #[test]
@@ -194,7 +255,10 @@ fn impact_derives_the_root_from_an_absolute_path_argument_with_no_flag() {
     let fx = Fixture::build("arg-abs");
     let seed = fx.root.join("src/IThing.cs");
     let inside = fx.expect_ok(&fx.root, &["impact", "src/IThing.cs", "--compact"]);
-    let outside = fx.expect_ok(&fx.outside, &["impact", &seed.to_string_lossy(), "--compact"]);
+    let outside = fx.expect_ok(
+        &fx.outside,
+        &["impact", &seed.to_string_lossy(), "--compact"],
+    );
     assert_eq!(inside, outside);
 }
 
@@ -205,7 +269,10 @@ fn impact_reads_a_relative_path_argument_from_the_directory_it_was_given() {
     // Same file, named from a subdirectory of the repo and from `-C`'s
     // directory: both rewrite to the repo-relative form the manifest keys on.
     let from_sub = fx.expect_ok(&fx.root.join("src"), &["impact", "IThing.cs", "--compact"]);
-    let from_flag = fx.expect_ok(&fx.outside, &["-C", &fx.root_str(), "impact", "src/IThing.cs", "--compact"]);
+    let from_flag = fx.expect_ok(
+        &fx.outside,
+        &["-C", &fx.root_str(), "impact", "src/IThing.cs", "--compact"],
+    );
     assert_eq!(inside, from_sub);
     assert_eq!(inside, from_flag);
 }
@@ -222,18 +289,35 @@ fn the_callers_directory_wins_over_the_argument_path_unless_dash_c_says_otherwis
     let from_a = a.run(&a.root, &["impact", &seed_str, "--compact"]);
     // A path the manifest does not know is a zero hit, not an error.
     assert_eq!(from_a.status.code(), Some(3));
-    assert_eq!(stdout_of(&from_a), format!("no file match for \"{seed_str}\"\n"));
+    assert_eq!(
+        stdout_of(&from_a),
+        format!("no file match for \"{seed_str}\"\n")
+    );
 
     // The same argument with `-C` naming repo B resolves there instead.
     let inside_b = b.expect_ok(&b.root, &["impact", "src/IThing.cs", "--compact"]);
-    let via_flag = a.expect_ok(&a.root, &["-C", &b.root.to_string_lossy(), "impact", &seed_str, "--compact"]);
+    let via_flag = a.expect_ok(
+        &a.root,
+        &[
+            "-C",
+            &b.root.to_string_lossy(),
+            "impact",
+            &seed_str,
+            "--compact",
+        ],
+    );
     assert_eq!(inside_b, via_flag);
 }
 
 #[test]
 fn a_symbol_argument_never_decides_the_root_and_the_error_text_is_unchanged() {
     let fx = Fixture::build("no-root");
-    for args in [&["refs", "IThing"][..], &["tests", "IThing"][..], &["impact", "IThing"][..], &["find", "thing"][..]] {
+    for args in [
+        &["refs", "IThing"][..],
+        &["tests", "IThing"][..],
+        &["impact", "IThing"][..],
+        &["find", "thing"][..],
+    ] {
         let out = fx.run(&fx.outside, args);
         assert_eq!(out.status.code(), Some(1), "{args:?}");
         assert_eq!(
@@ -246,5 +330,8 @@ fn a_symbol_argument_never_decides_the_root_and_the_error_text_is_unchanged() {
     // way: the fallback needs a real path, not a repo-relative guess.
     let out = fx.run(&fx.outside, &["impact", "src/IThing.cs"]);
     assert_eq!(out.status.code(), Some(1));
-    assert_eq!(stdout_of(&out), "error: no .scout or .git ancestor; run 'devscout init' from the repo or directory root\n");
+    assert_eq!(
+        stdout_of(&out),
+        "error: no .scout or .git ancestor; run 'devscout init' from the repo or directory root\n"
+    );
 }

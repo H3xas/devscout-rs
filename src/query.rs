@@ -165,7 +165,9 @@ pub const DEFAULT_ITERATIONS: u32 = 20;
 /// prints `file:line` with nothing after it rather than a row ending in a
 /// dangling separator.
 pub fn source_line(root: &Path, file: &str, line: usize) -> String {
-    let Ok(body) = std::fs::read_to_string(root.join(file)) else { return String::new() };
+    let Ok(body) = std::fs::read_to_string(root.join(file)) else {
+        return String::new();
+    };
     let lines: Vec<&str> = body.split('\n').collect();
     if line < 1 || line > lines.len() {
         return String::new();
@@ -185,7 +187,11 @@ pub fn source_line(root: &Path, file: &str, line: usize) -> String {
 /// graph (see the module header's two-phase note). Results come back in index
 /// build order; ranking is the caller's job.
 pub fn find_names<'g>(graph: &'g graph::Graph, query: &str) -> Vec<&'g graph::GraphName> {
-    let tokens: Vec<String> = query.to_lowercase().split_whitespace().map(String::from).collect();
+    let tokens: Vec<String> = query
+        .to_lowercase()
+        .split_whitespace()
+        .map(String::from)
+        .collect();
     if tokens.is_empty() {
         return Vec::new();
     }
@@ -238,20 +244,44 @@ pub fn file_inbound_counts(graph: &graph::Graph) -> HashMap<String, usize> {
     let mut counts: HashMap<String, usize> = HashMap::new();
     for e in &graph.edges {
         let (from_file, to_file) = match e {
-            graph::Edge::Inherits { from_file, to_file, heuristic, .. }
-            | graph::Edge::UsesType { from_file, to_file, heuristic, .. }
-            | graph::Edge::UsesMember { from_file, to_file, heuristic, .. } => {
+            graph::Edge::Inherits {
+                from_file,
+                to_file,
+                heuristic,
+                ..
+            }
+            | graph::Edge::UsesType {
+                from_file,
+                to_file,
+                heuristic,
+                ..
+            }
+            | graph::Edge::UsesMember {
+                from_file,
+                to_file,
+                heuristic,
+                ..
+            } => {
                 if *heuristic {
                     continue;
                 }
                 (from_file, to_file)
             }
-            graph::Edge::Call { from_file, to_file, .. }
-            | graph::Edge::JsxUse { from_file, to_file, .. }
-            | graph::Edge::Dispatch { from_file, to_file, .. } => (from_file, to_file),
+            graph::Edge::Call {
+                from_file, to_file, ..
+            }
+            | graph::Edge::JsxUse {
+                from_file, to_file, ..
+            }
+            | graph::Edge::Dispatch {
+                from_file, to_file, ..
+            } => (from_file, to_file),
             // Listed rather than caught by a wildcard so a future edge kind
             // still fails the exhaustiveness check here.
-            graph::Edge::Imports { .. } | graph::Edge::Import { .. } | graph::Edge::CtorDi { .. } | graph::Edge::Ambiguous { .. } => continue,
+            graph::Edge::Imports { .. }
+            | graph::Edge::Import { .. }
+            | graph::Edge::CtorDi { .. }
+            | graph::Edge::Ambiguous { .. } => continue,
         };
         if from_file == to_file {
             continue;
@@ -269,7 +299,11 @@ pub fn file_inbound_counts(graph: &graph::Graph) -> HashMap<String, usize> {
 /// (`--resources` includes it).
 pub fn name_tier(kind: &str) -> u8 {
     let rank = kind_rank(kind);
-    if rank <= 1 { 1 } else { rank }
+    if rank <= 1 {
+        1
+    } else {
+        rank
+    }
 }
 
 // ============================================================================
@@ -286,23 +320,32 @@ pub struct SeqSet<T: Eq + std::hash::Hash + Clone> {
 }
 
 impl<T: Eq + std::hash::Hash + Clone> SeqSet<T> {
+    /// Creates an empty insertion-ordered set.
     pub fn new() -> Self {
-        Self { order: Vec::new(), seen: HashSet::new() }
+        Self {
+            order: Vec::new(),
+            seen: HashSet::new(),
+        }
     }
+    /// Inserts `value` if it is not already present.
     pub fn insert(&mut self, value: T) {
         if self.seen.insert(value.clone()) {
             self.order.push(value);
         }
     }
+    /// Returns whether `value` is present.
     pub fn contains(&self, value: &T) -> bool {
         self.seen.contains(value)
     }
+    /// Returns the number of values.
     pub fn len(&self) -> usize {
         self.order.len()
     }
+    /// Iterates over values in insertion order.
     pub fn iter(&self) -> std::slice::Iter<'_, T> {
         self.order.iter()
     }
+    /// Consumes the set and returns its values in insertion order.
     pub fn into_vec(self) -> Vec<T> {
         self.order
     }
@@ -326,12 +369,18 @@ pub struct SeqMap<V> {
 }
 
 impl<V> SeqMap<V> {
+    /// Creates an empty insertion-ordered map.
     pub fn new() -> Self {
-        Self { entries: Vec::new(), index: HashMap::new() }
+        Self {
+            entries: Vec::new(),
+            index: HashMap::new(),
+        }
     }
+    /// Returns whether `key` is present.
     pub fn contains_key(&self, key: &str) -> bool {
         self.index.contains_key(key)
     }
+    /// Inserts or replaces the value for `key` while preserving key order.
     pub fn insert(&mut self, key: String, value: V) {
         match self.index.get(&key) {
             Some(&i) => self.entries[i].1 = value,
@@ -341,9 +390,11 @@ impl<V> SeqMap<V> {
             }
         }
     }
+    /// Iterates over entries in insertion order.
     pub fn iter(&self) -> impl Iterator<Item = (&String, &V)> {
         self.entries.iter().map(|(k, v)| (k, v))
     }
+    /// Iterates over keys in insertion order.
     pub fn keys(&self) -> impl Iterator<Item = &String> {
         self.entries.iter().map(|(k, _)| k)
     }
@@ -373,9 +424,13 @@ fn push_ordered_unique(map: &mut HashMap<String, Vec<usize>>, key: &str, value: 
 // ============================================================================
 
 #[derive(Debug, Clone, Default)]
+/// Represents `InboundEntry`.
 pub struct InboundEntry {
+    /// The inherits value.
     pub inherits: Vec<usize>,
+    /// The uses type value.
     pub uses_type: Vec<usize>,
+    /// The uses member value.
     pub uses_member: Vec<usize>,
 }
 
@@ -386,10 +441,15 @@ pub struct InboundEntry {
 pub type HeuristicEntry = InboundEntry;
 
 #[derive(Debug, Clone, Default)]
+/// Represents `OutboundEntry`.
 pub struct OutboundEntry {
+    /// The inherits value.
     pub inherits: Vec<usize>,
+    /// The uses type value.
     pub uses_type: Vec<usize>,
+    /// The uses member value.
     pub uses_member: Vec<usize>,
+    /// The imports value.
     pub imports: Vec<usize>,
 }
 
@@ -397,6 +457,7 @@ pub struct OutboundEntry {
 /// `by_lower_name` store `graph.defs` indices rather than cloned `Def`s, so a
 /// def is never copied into every bucket it is reachable from.
 pub struct GraphIndex<'g> {
+    /// The graph value.
     pub graph: &'g graph::Graph,
     /// The repository root every `file` in the graph is relative to. Held so a
     /// query can read the one source line a hit sits on; nothing else in this
@@ -492,7 +553,9 @@ pub fn load_graph_index<'g>(graph: &'g graph::Graph, root: &Path) -> GraphIndex<
     };
     let manifest_present = manifest_value.is_some();
     let manifest_paths: Option<HashSet<String>> = manifest_value.as_ref().and_then(|m| {
-        m.get("entries").and_then(|e| e.as_object()).map(|entries| entries.iter().map(|(k, _)| k.clone()).collect())
+        m.get("entries")
+            .and_then(|e| e.as_object())
+            .map(|entries| entries.iter().map(|(k, _)| k.clone()).collect())
     });
     let manifest_paths_ref = manifest_paths.as_ref();
 
@@ -519,11 +582,17 @@ pub fn load_graph_index<'g>(graph: &'g graph::Graph, root: &Path) -> GraphIndex<
                 }
             }
             for file in files {
-                test_defs_by_file.entry(file.to_string()).or_default().push(i);
+                test_defs_by_file
+                    .entry(file.to_string())
+                    .or_default()
+                    .push(i);
             }
         }
         by_simple_name.entry(d.name.clone()).or_default().push(i);
-        by_lower_name.entry(d.name.to_lowercase()).or_default().push(i);
+        by_lower_name
+            .entry(d.name.to_lowercase())
+            .or_default()
+            .push(i);
     }
 
     let mut inbound: HashMap<String, InboundEntry> = HashMap::new();
@@ -541,63 +610,140 @@ pub fn load_graph_index<'g>(graph: &'g graph::Graph, root: &Path) -> GraphIndex<
         match e {
             graph::Edge::Imports { from_file, .. } => {
                 note_file(&mut flagged_files, manifest_paths_ref, from_file);
-                outbound_by_file.entry(from_file.clone()).or_default().imports.push(i);
+                outbound_by_file
+                    .entry(from_file.clone())
+                    .or_default()
+                    .imports
+                    .push(i);
             }
-            graph::Edge::Ambiguous { from_file, candidates, .. } => {
+            graph::Edge::Ambiguous {
+                from_file,
+                candidates,
+                ..
+            } => {
                 note_file(&mut flagged_files, manifest_paths_ref, from_file);
-                ambiguous_by_file.entry(from_file.clone()).or_default().push(i);
+                ambiguous_by_file
+                    .entry(from_file.clone())
+                    .or_default()
+                    .push(i);
                 for c in candidates {
-                    ambiguous_by_candidate.entry(c.id.clone()).or_default().push(i);
+                    ambiguous_by_candidate
+                        .entry(c.id.clone())
+                        .or_default()
+                        .push(i);
                 }
             }
-            graph::Edge::Inherits { from_file, to, to_file, heuristic, .. } => {
+            graph::Edge::Inherits {
+                from_file,
+                to,
+                to_file,
+                heuristic,
+                ..
+            } => {
                 note_file(&mut flagged_files, manifest_paths_ref, from_file);
                 note_file(&mut flagged_files, manifest_paths_ref, to_file);
                 // Counted BEFORE the heuristic split below: the hub brake spans
                 // both kinds on purpose, because a hub file is reached through
                 // whichever of them the extractor happened to resolve.
                 if !to_file.is_empty() && !from_file.is_empty() && to_file != from_file {
-                    hub_referrers_by_file.entry(to_file.clone()).or_default().insert(from_file.clone());
+                    hub_referrers_by_file
+                        .entry(to_file.clone())
+                        .or_default()
+                        .insert(from_file.clone());
                 }
                 if *heuristic {
-                    heuristic_outbound_by_file.entry(from_file.clone()).or_default().inherits.push(i);
-                    heuristic_inbound.entry(to.clone()).or_default().inherits.push(i);
+                    heuristic_outbound_by_file
+                        .entry(from_file.clone())
+                        .or_default()
+                        .inherits
+                        .push(i);
+                    heuristic_inbound
+                        .entry(to.clone())
+                        .or_default()
+                        .inherits
+                        .push(i);
                 } else {
-                    outbound_by_file.entry(from_file.clone()).or_default().inherits.push(i);
+                    outbound_by_file
+                        .entry(from_file.clone())
+                        .or_default()
+                        .inherits
+                        .push(i);
                     inbound.entry(to.clone()).or_default().inherits.push(i);
                 }
             }
-            graph::Edge::UsesType { from_file, to, to_file, heuristic, .. } => {
+            graph::Edge::UsesType {
+                from_file,
+                to,
+                to_file,
+                heuristic,
+                ..
+            } => {
                 note_file(&mut flagged_files, manifest_paths_ref, from_file);
                 note_file(&mut flagged_files, manifest_paths_ref, to_file);
                 // Counted BEFORE the heuristic split below: the hub brake spans
                 // both kinds on purpose, because a hub file is reached through
                 // whichever of them the extractor happened to resolve.
                 if !to_file.is_empty() && !from_file.is_empty() && to_file != from_file {
-                    hub_referrers_by_file.entry(to_file.clone()).or_default().insert(from_file.clone());
+                    hub_referrers_by_file
+                        .entry(to_file.clone())
+                        .or_default()
+                        .insert(from_file.clone());
                 }
                 if *heuristic {
-                    heuristic_outbound_by_file.entry(from_file.clone()).or_default().uses_type.push(i);
-                    heuristic_inbound.entry(to.clone()).or_default().uses_type.push(i);
+                    heuristic_outbound_by_file
+                        .entry(from_file.clone())
+                        .or_default()
+                        .uses_type
+                        .push(i);
+                    heuristic_inbound
+                        .entry(to.clone())
+                        .or_default()
+                        .uses_type
+                        .push(i);
                 } else {
-                    outbound_by_file.entry(from_file.clone()).or_default().uses_type.push(i);
+                    outbound_by_file
+                        .entry(from_file.clone())
+                        .or_default()
+                        .uses_type
+                        .push(i);
                     inbound.entry(to.clone()).or_default().uses_type.push(i);
                 }
             }
-            graph::Edge::UsesMember { from_file, to, to_file, heuristic, .. } => {
+            graph::Edge::UsesMember {
+                from_file,
+                to,
+                to_file,
+                heuristic,
+                ..
+            } => {
                 note_file(&mut flagged_files, manifest_paths_ref, from_file);
                 note_file(&mut flagged_files, manifest_paths_ref, to_file);
                 // Counted BEFORE the heuristic split below: the hub brake spans
                 // both kinds on purpose, because a hub file is reached through
                 // whichever of them the extractor happened to resolve.
                 if !to_file.is_empty() && !from_file.is_empty() && to_file != from_file {
-                    hub_referrers_by_file.entry(to_file.clone()).or_default().insert(from_file.clone());
+                    hub_referrers_by_file
+                        .entry(to_file.clone())
+                        .or_default()
+                        .insert(from_file.clone());
                 }
                 if *heuristic {
-                    heuristic_outbound_by_file.entry(from_file.clone()).or_default().uses_member.push(i);
-                    heuristic_inbound.entry(to.clone()).or_default().uses_member.push(i);
+                    heuristic_outbound_by_file
+                        .entry(from_file.clone())
+                        .or_default()
+                        .uses_member
+                        .push(i);
+                    heuristic_inbound
+                        .entry(to.clone())
+                        .or_default()
+                        .uses_member
+                        .push(i);
                 } else {
-                    outbound_by_file.entry(from_file.clone()).or_default().uses_member.push(i);
+                    outbound_by_file
+                        .entry(from_file.clone())
+                        .or_default()
+                        .uses_member
+                        .push(i);
                     inbound.entry(to.clone()).or_default().uses_member.push(i);
                 }
             }
@@ -606,7 +752,13 @@ pub fn load_graph_index<'g>(graph: &'g graph::Graph, root: &Path) -> GraphIndex<
             // inherits/uses-type/uses-member -- so it earns no `inbound`/
             // `outbound_by_file` entry. It DOES earn its own reverse index,
             // keyed by the resolved implementor, when it carries one.
-            graph::Edge::CtorDi { from_file, from_line, iface, to, .. } => {
+            graph::Edge::CtorDi {
+                from_file,
+                from_line,
+                iface,
+                to,
+                ..
+            } => {
                 // Fan-in counts EVERY ctor-di edge, resolved or not; only the
                 // reverse index below is restricted to the ones carrying a
                 // confirmed implementor.
@@ -647,8 +799,14 @@ pub fn load_graph_index<'g>(graph: &'g graph::Graph, root: &Path) -> GraphIndex<
         flagged_files,
         manifest_present,
         ctor_di_by_to,
-        ctor_di_fanin: ctor_di_sites_by_iface.into_iter().map(|(name, sites)| (name, sites.len())).collect(),
-        hub_indegree: hub_referrers_by_file.into_iter().map(|(file, refs)| (file, refs.len())).collect(),
+        ctor_di_fanin: ctor_di_sites_by_iface
+            .into_iter()
+            .map(|(name, sites)| (name, sites.len()))
+            .collect(),
+        hub_indegree: hub_referrers_by_file
+            .into_iter()
+            .map(|(file, refs)| (file, refs.len()))
+            .collect(),
     }
 }
 
@@ -662,9 +820,13 @@ pub fn load_graph_index<'g>(graph: &'g graph::Graph, root: &Path) -> GraphIndex<
 fn implemented_interfaces(index: &GraphIndex, def_id: &str) -> Vec<String> {
     let mut seen: SeqSet<String> = SeqSet::new();
     for file in def_files(index, def_id) {
-        let Some(o) = index.outbound_by_file.get(&file) else { continue };
+        let Some(o) = index.outbound_by_file.get(&file) else {
+            continue;
+        };
         for &ei in &o.inherits {
-            let graph::Edge::Inherits { to, .. } = &index.graph.edges[ei] else { continue };
+            let graph::Edge::Inherits { to, .. } = &index.graph.edges[ei] else {
+                continue;
+            };
             if seen.contains(to) {
                 continue;
             }
@@ -682,9 +844,13 @@ fn implemented_interfaces(index: &GraphIndex, def_id: &str) -> Vec<String> {
 // ============================================================================
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Represents `Resolution`.
 pub enum Resolution {
+    /// Represents `Resolved`.
     Resolved(String),
+    /// Represents `Ambiguous`.
     Ambiguous(Vec<String>),
+    /// Represents `NotFound`.
     NotFound,
 }
 
@@ -700,7 +866,12 @@ pub fn resolve_symbol(index: &GraphIndex, query: &str) -> Resolution {
             return Resolution::Resolved(index.graph.defs[exact[0]].id.clone());
         }
         if exact.len() > 1 {
-            return Resolution::Ambiguous(exact.iter().map(|&i| index.graph.defs[i].id.clone()).collect());
+            return Resolution::Ambiguous(
+                exact
+                    .iter()
+                    .map(|&i| index.graph.defs[i].id.clone())
+                    .collect(),
+            );
         }
     }
     let lower = query.to_lowercase();
@@ -709,7 +880,9 @@ pub fn resolve_symbol(index: &GraphIndex, query: &str) -> Resolution {
             return Resolution::Resolved(index.graph.defs[ci[0]].id.clone());
         }
         if ci.len() > 1 {
-            return Resolution::Ambiguous(ci.iter().map(|&i| index.graph.defs[i].id.clone()).collect());
+            return Resolution::Ambiguous(
+                ci.iter().map(|&i| index.graph.defs[i].id.clone()).collect(),
+            );
         }
     }
     // A TAIL of a def id, which is how a caller spells an enum member:
@@ -724,8 +897,13 @@ pub fn resolve_symbol(index: &GraphIndex, query: &str) -> Resolution {
     // order) rather than the unordered `by_id` map.
     if query.contains('.') {
         let suffix = format!(".{query}");
-        let tail: Vec<String> =
-            index.graph.defs.iter().filter(|d| d.id.ends_with(&suffix)).map(|d| d.id.clone()).collect();
+        let tail: Vec<String> = index
+            .graph
+            .defs
+            .iter()
+            .filter(|d| d.id.ends_with(&suffix))
+            .map(|d| d.id.clone())
+            .collect();
         if tail.len() == 1 {
             return Resolution::Resolved(tail.into_iter().next().expect("one tail match"));
         }
@@ -741,8 +919,11 @@ pub fn resolve_symbol(index: &GraphIndex, query: &str) -> Resolution {
 // ============================================================================
 
 #[derive(Debug, Clone, PartialEq)]
+/// Represents `DefSite`.
 pub struct DefSite {
+    /// The file value.
     pub file: String,
+    /// The line value.
     pub line: usize,
 }
 
@@ -771,9 +952,15 @@ pub fn def_sites(index: &GraphIndex, def_id: &str) -> Vec<DefSite> {
     let mut out = Vec::new();
     if let Some(&i) = index.by_id.get(def_id) {
         let d = &index.graph.defs[i];
-        out.push(DefSite { file: d.file.clone(), line: d.line });
+        out.push(DefSite {
+            file: d.file.clone(),
+            line: d.line,
+        });
         for also in &d.also_in {
-            out.push(DefSite { file: also.file.clone(), line: also.line });
+            out.push(DefSite {
+                file: also.file.clone(),
+                line: also.line,
+            });
         }
     }
     out
@@ -788,24 +975,38 @@ pub fn def_sites(index: &GraphIndex, def_id: &str) -> Vec<DefSite> {
 /// [`GraphIndex`] uses).
 #[derive(Debug, Clone, Default)]
 pub struct SymbolRefs {
+    /// The inbound inherits value.
     pub inbound_inherits: Vec<usize>,
+    /// The inbound uses type value.
     pub inbound_uses_type: Vec<usize>,
+    /// The inbound uses member value.
     pub inbound_uses_member: Vec<usize>,
+    /// The outbound inherits value.
     pub outbound_inherits: Vec<usize>,
+    /// The outbound uses type value.
     pub outbound_uses_type: Vec<usize>,
+    /// The outbound uses member value.
     pub outbound_uses_member: Vec<usize>,
+    /// The outbound imports value.
     pub outbound_imports: Vec<usize>,
     /// The same two tables again over the HEURISTIC adjacency, built by the
     /// identical rules (enum members union into the enum's inbound, partial
     /// classes union outbound over every declaring file) so a heuristic row is
     /// never present or absent for a reason a precise row would not have been.
     pub heuristic_inbound_inherits: Vec<usize>,
+    /// The heuristic inbound uses type value.
     pub heuristic_inbound_uses_type: Vec<usize>,
+    /// The heuristic inbound uses member value.
     pub heuristic_inbound_uses_member: Vec<usize>,
+    /// The heuristic outbound inherits value.
     pub heuristic_outbound_inherits: Vec<usize>,
+    /// The heuristic outbound uses type value.
     pub heuristic_outbound_uses_type: Vec<usize>,
+    /// The heuristic outbound uses member value.
     pub heuristic_outbound_uses_member: Vec<usize>,
+    /// The ambiguous inbound value.
     pub ambiguous_inbound: Vec<usize>,
+    /// The ambiguous outbound value.
     pub ambiguous_outbound: Vec<usize>,
 }
 
@@ -878,7 +1079,11 @@ pub fn symbol_refs(index: &GraphIndex, def_id: &str) -> SymbolRefs {
         }
     }
 
-    let ambiguous_inbound = index.ambiguous_by_candidate.get(def_id).cloned().unwrap_or_default();
+    let ambiguous_inbound = index
+        .ambiguous_by_candidate
+        .get(def_id)
+        .cloned()
+        .unwrap_or_default();
     let ambiguous_outbound: Vec<usize> = def_files(index, def_id)
         .iter()
         .flat_map(|f| index.ambiguous_by_file.get(f).cloned().unwrap_or_default())
@@ -941,7 +1146,11 @@ fn edge_loc(e: &graph::Edge) -> (&str, usize) {
 fn loc_cmp(a: &graph::Edge, b: &graph::Edge) -> std::cmp::Ordering {
     let (af, al) = edge_loc(a);
     let (bf, bl) = edge_loc(b);
-    if af == bf { al.cmp(&bl) } else { af.cmp(bf) }
+    if af == bf {
+        al.cmp(&bl)
+    } else {
+        af.cmp(bf)
+    }
 }
 
 /// One inbound-table row: `file` and `line` of the referencing site, then
@@ -949,9 +1158,13 @@ fn loc_cmp(a: &graph::Edge, b: &graph::Edge) -> std::cmp::Ordering {
 /// referencing line). An empty `source` is omitted from `--json`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct InboundRow {
+    /// The file value.
     pub file: String,
+    /// The line value.
     pub line: usize,
+    /// The heuristic value.
     pub heuristic: bool,
+    /// The source value.
     pub source: String,
 }
 
@@ -962,11 +1175,17 @@ pub struct InboundRow {
 /// target's.
 #[derive(Debug, Clone, PartialEq)]
 pub struct OutboundRow {
+    /// The file value.
     pub file: String,
+    /// The line value.
     pub line: usize,
+    /// The to file value.
     pub to_file: String,
+    /// The to value.
     pub to: String,
+    /// The heuristic value.
     pub heuristic: bool,
+    /// The source value.
     pub source: String,
 }
 
@@ -975,9 +1194,13 @@ pub struct OutboundRow {
 /// carries no `heuristic` field.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ImportRow {
+    /// The file value.
     pub file: String,
+    /// The line value.
     pub line: usize,
+    /// The target value.
     pub target: String,
+    /// The source value.
     pub source: String,
 }
 
@@ -985,10 +1208,15 @@ pub struct ImportRow {
 /// `raw` text of the reference, and how many candidates it matched.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AmbiguousRow {
+    /// The file value.
     pub file: String,
+    /// The line value.
     pub line: usize,
+    /// The origin value.
     pub origin: String,
+    /// The raw value.
     pub raw: String,
+    /// The candidate count value.
     pub candidate_count: usize,
 }
 
@@ -996,17 +1224,29 @@ pub struct AmbiguousRow {
 /// the surviving `rows`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Table<R> {
+    /// The total value.
     pub total: usize,
+    /// The dropped value.
     pub dropped: usize,
+    /// The rows value.
     pub rows: Vec<R>,
 }
 
-fn build_table<R>(mut idxs: Vec<usize>, edges: &[graph::Edge], cap: usize, map_row: fn(&graph::Edge) -> R) -> Table<R> {
+fn build_table<R>(
+    mut idxs: Vec<usize>,
+    edges: &[graph::Edge],
+    cap: usize,
+    map_row: fn(&graph::Edge) -> R,
+) -> Table<R> {
     idxs.sort_by(|&a, &b| loc_cmp(&edges[a], &edges[b]));
     let total = idxs.len();
     let (shown, dropped) = cap_rows(idxs, cap);
     let rows = shown.into_iter().map(|i| map_row(&edges[i])).collect();
-    Table { total, dropped, rows }
+    Table {
+        total,
+        dropped,
+        rows,
+    }
 }
 
 // The per-table, per-kind outbound builder was removed here: the outbound
@@ -1017,7 +1257,14 @@ fn build_table<R>(mut idxs: Vec<usize>, edges: &[graph::Edge], cap: usize, map_r
 
 fn ambiguous_row(e: &graph::Edge) -> AmbiguousRow {
     match e {
-        graph::Edge::Ambiguous { origin, from_file, from_line, raw, candidate_count, .. } => AmbiguousRow {
+        graph::Edge::Ambiguous {
+            origin,
+            from_file,
+            from_line,
+            raw,
+            candidate_count,
+            ..
+        } => AmbiguousRow {
             file: from_file.clone(),
             line: *from_line,
             origin: origin.clone(),
@@ -1031,31 +1278,42 @@ fn ambiguous_row(e: &graph::Edge) -> AmbiguousRow {
 /// The three inbound tables, one per kind (inherits/uses-type/uses-member).
 #[derive(Debug, Clone, PartialEq)]
 pub struct InboundTables {
+    /// The inherits value.
     pub inherits: Table<InboundRow>,
+    /// The uses type value.
     pub uses_type: Table<InboundRow>,
+    /// The uses member value.
     pub uses_member: Table<InboundRow>,
 }
 
 /// The four outbound tables: three by kind plus imports.
 #[derive(Debug, Clone, PartialEq)]
 pub struct OutboundTables {
+    /// The inherits value.
     pub inherits: Table<OutboundRow>,
+    /// The uses type value.
     pub uses_type: Table<OutboundRow>,
+    /// The uses member value.
     pub uses_member: Table<OutboundRow>,
+    /// The imports value.
     pub imports: Table<ImportRow>,
 }
 
 /// The inbound and outbound ambiguous-reference tables.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AmbiguousTables {
+    /// The inbound value.
     pub inbound: Table<AmbiguousRow>,
+    /// The outbound value.
     pub outbound: Table<AmbiguousRow>,
 }
 
 /// One enum member that carries at least one inbound reference.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MemberRefEntry {
+    /// The name value.
     pub name: String,
+    /// The count value.
     pub count: usize,
 }
 
@@ -1063,9 +1321,13 @@ pub struct MemberRefEntry {
 /// split by member.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MemberRefs {
+    /// The total value.
     pub total: usize,
+    /// The member count value.
     pub member_count: usize,
+    /// The members value.
     pub members: Vec<MemberRefEntry>,
+    /// The dropped value.
     pub dropped: usize,
 }
 
@@ -1091,11 +1353,17 @@ fn enum_member_refs(index: &GraphIndex, def_id: &str) -> Option<MemberRefs> {
             continue;
         }
         let count = index.inbound.get(&d.id).map_or(0, |e| e.uses_member.len())
-            + index.heuristic_inbound.get(&d.id).map_or(0, |e| e.uses_member.len());
+            + index
+                .heuristic_inbound
+                .get(&d.id)
+                .map_or(0, |e| e.uses_member.len());
         if count == 0 {
             continue;
         }
-        members.push(MemberRefEntry { name: d.name.clone(), count });
+        members.push(MemberRefEntry {
+            name: d.name.clone(),
+            count,
+        });
         total += count;
     }
     if total == 0 {
@@ -1104,21 +1372,32 @@ fn enum_member_refs(index: &GraphIndex, def_id: &str) -> Option<MemberRefs> {
     let member_count = members.len();
     let dropped = member_count.saturating_sub(MEMBER_NAME_CAP);
     members.truncate(MEMBER_NAME_CAP);
-    Some(MemberRefs { total, member_count, members, dropped })
+    Some(MemberRefs {
+        total,
+        member_count,
+        members,
+        dropped,
+    })
 }
 
 /// The resolved `refs` result for one symbol.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RefsModel {
+    /// The query value.
     pub query: String,
+    /// The id value.
     pub id: String,
+    /// The kind value.
     pub kind: String,
+    /// The sites value.
     pub sites: Vec<DefSite>,
+    /// The inbound value.
     pub inbound: InboundTables,
     /// Present only under `--out`; `None` otherwise, which is what keeps
     /// `--json` and the two text renderers agreeing about whether the outbound
     /// side exists at all.
     pub outbound: Option<OutboundTables>,
+    /// The ambiguous value.
     pub ambiguous: AmbiguousTables,
     /// Number of files present in the graph but absent from the manifest.
     pub manifest_gap: usize,
@@ -1131,10 +1410,13 @@ pub struct RefsModel {
 /// or not found.
 #[derive(Debug, Clone, PartialEq)]
 pub enum RefsResult {
+    /// Represents `Resolved`.
     Resolved(RefsModel),
+    /// Represents `Ambiguous`.
     Ambiguous(Vec<String>),
     /// A bare-member answer: one resolved-shaped model per declaring type.
     Members(Vec<RefsModel>),
+    /// Represents `NotFound`.
     NotFound,
 }
 
@@ -1164,9 +1446,13 @@ pub type LineCache = HashMap<String, Option<Vec<String>>>;
 
 fn cached_line(root: &Path, file: &str, line: usize, cache: &mut LineCache) -> String {
     let lines = cache.entry(file.to_string()).or_insert_with(|| {
-        std::fs::read_to_string(root.join(file)).ok().map(|body| body.split('\n').map(str::to_string).collect())
+        std::fs::read_to_string(root.join(file))
+            .ok()
+            .map(|body| body.split('\n').map(str::to_string).collect())
     });
-    let Some(lines) = lines else { return String::new() };
+    let Some(lines) = lines else {
+        return String::new();
+    };
     if line < 1 || line > lines.len() {
         return String::new();
     }
@@ -1247,7 +1533,10 @@ fn member_owners(index: &GraphIndex, name: &str) -> Vec<(String, Vec<DefSite>)> 
         if n.name != name || n.owner.is_empty() || !index.by_id.contains_key(&n.owner) {
             continue;
         }
-        let site = DefSite { file: n.file.clone(), line: n.line };
+        let site = DefSite {
+            file: n.file.clone(),
+            line: n.line,
+        };
         match at.get(n.owner.as_str()) {
             Some(&i) => out[i].1.push(site),
             None => {
@@ -1278,7 +1567,11 @@ enum MemberRefsOutcome {
 // the house rule of never guessing between candidates. Overloads of one name
 // on ONE type are one group (one entry in `owners`, several sites), never an
 // ambiguity.
-fn build_member_refs_models(index: &GraphIndex, name: &str, inbound_cap: usize) -> Option<MemberRefsOutcome> {
+fn build_member_refs_models(
+    index: &GraphIndex,
+    name: &str,
+    inbound_cap: usize,
+) -> Option<MemberRefsOutcome> {
     let owners = member_owners(index, name);
     if owners.is_empty() {
         return None;
@@ -1306,7 +1599,9 @@ fn build_member_refs_models(index: &GraphIndex, name: &str, inbound_cap: usize) 
         // line.
         let foreign = |e: usize| usize::from(project_of(edge_loc(&edges[e]).0) != owner_project);
         kept.sort_by(|a, b| {
-            a.1.cmp(&b.1).then_with(|| foreign(a.0).cmp(&foreign(b.0))).then_with(|| loc_cmp(&edges[a.0], &edges[b.0]))
+            a.1.cmp(&b.1)
+                .then_with(|| foreign(a.0).cmp(&foreign(b.0)))
+                .then_with(|| loc_cmp(&edges[a.0], &edges[b.0]))
         });
         if !kept.is_empty() {
             groups.push((owner, sites, kept));
@@ -1319,11 +1614,17 @@ fn build_member_refs_models(index: &GraphIndex, name: &str, inbound_cap: usize) 
     // depend on `inbound_cap`: an ambiguity is a refusal, not a budgeted,
     // capped multi-block resolution.
     if groups.len() > 1 {
-        return Some(MemberRefsOutcome::Ambiguous(groups.into_iter().map(|(owner, _, _)| owner).collect()));
+        return Some(MemberRefsOutcome::Ambiguous(
+            groups.into_iter().map(|(owner, _, _)| owner).collect(),
+        ));
     }
 
     fn empty<R>() -> Table<R> {
-        Table { total: 0, dropped: 0, rows: Vec::new() }
+        Table {
+            total: 0,
+            dropped: 0,
+            rows: Vec::new(),
+        }
     }
     let mut budget = inbound_cap;
     let mut models = Vec::new();
@@ -1334,7 +1635,12 @@ fn build_member_refs_models(index: &GraphIndex, name: &str, inbound_cap: usize) 
         for &(e, heuristic) in &kept[..take] {
             let (file, line) = edge_loc(&edges[e]);
             let source = clip_source(&cached_line(&index.root, file, line, &mut cache));
-            rows.push(InboundRow { file: file.to_string(), line, heuristic, source });
+            rows.push(InboundRow {
+                file: file.to_string(),
+                line,
+                heuristic,
+                source,
+            });
         }
         let total = kept.len();
         models.push(RefsModel {
@@ -1345,10 +1651,17 @@ fn build_member_refs_models(index: &GraphIndex, name: &str, inbound_cap: usize) 
             inbound: InboundTables {
                 inherits: empty(),
                 uses_type: empty(),
-                uses_member: Table { total, dropped: total - rows.len(), rows },
+                uses_member: Table {
+                    total,
+                    dropped: total - rows.len(),
+                    rows,
+                },
             },
             outbound: None,
-            ambiguous: AmbiguousTables { inbound: empty(), outbound: empty() },
+            ambiguous: AmbiguousTables {
+                inbound: empty(),
+                outbound: empty(),
+            },
             manifest_gap: index.flagged_files.len(),
             member_refs: None,
         });
@@ -1385,10 +1698,12 @@ fn outbound_foreign(def_project: &str, edges: &[graph::Edge], r: &RankedOutbound
         return 1;
     }
     let to_file = match &edges[r.edge] {
-        graph::Edge::Inherits { to_file, .. } | graph::Edge::UsesType { to_file, .. } | graph::Edge::UsesMember { to_file, .. } => {
-            to_file.as_str()
-        }
-        _ => unreachable!("outbound ranked kinds 0-2 only ever hold inherits/uses-type/uses-member edge indices"),
+        graph::Edge::Inherits { to_file, .. }
+        | graph::Edge::UsesType { to_file, .. }
+        | graph::Edge::UsesMember { to_file, .. } => to_file.as_str(),
+        _ => unreachable!(
+            "outbound ranked kinds 0-2 only ever hold inherits/uses-type/uses-member edge indices"
+        ),
     };
     usize::from(project_of(to_file) != def_project)
 }
@@ -1400,28 +1715,62 @@ fn outbound_foreign(def_project: &str, edges: &[graph::Edge], r: &RankedOutbound
 // carries the same trimmed source line an inbound hit does, read at the SAME
 // `from_line` an inbound row reads -- for an outbound edge that is a line in
 // the def's own file, the site actually making the reference, not the caller's.
-fn build_outbound_tables(refs: &SymbolRefs, def_project: &str, edges: &[graph::Edge], root: &Path, outbound_cap: usize) -> OutboundTables {
+fn build_outbound_tables(
+    refs: &SymbolRefs,
+    def_project: &str,
+    edges: &[graph::Edge],
+    root: &Path,
+    outbound_cap: usize,
+) -> OutboundTables {
     let mut ranked: Vec<RankedOutbound> = Vec::new();
     for &e in &refs.outbound_inherits {
-        ranked.push(RankedOutbound { kind: 0, edge: e, heuristic: false });
+        ranked.push(RankedOutbound {
+            kind: 0,
+            edge: e,
+            heuristic: false,
+        });
     }
     for &e in &refs.heuristic_outbound_inherits {
-        ranked.push(RankedOutbound { kind: 0, edge: e, heuristic: true });
+        ranked.push(RankedOutbound {
+            kind: 0,
+            edge: e,
+            heuristic: true,
+        });
     }
     for &e in &refs.outbound_uses_type {
-        ranked.push(RankedOutbound { kind: 1, edge: e, heuristic: false });
+        ranked.push(RankedOutbound {
+            kind: 1,
+            edge: e,
+            heuristic: false,
+        });
     }
     for &e in &refs.heuristic_outbound_uses_type {
-        ranked.push(RankedOutbound { kind: 1, edge: e, heuristic: true });
+        ranked.push(RankedOutbound {
+            kind: 1,
+            edge: e,
+            heuristic: true,
+        });
     }
     for &e in &refs.outbound_uses_member {
-        ranked.push(RankedOutbound { kind: 2, edge: e, heuristic: false });
+        ranked.push(RankedOutbound {
+            kind: 2,
+            edge: e,
+            heuristic: false,
+        });
     }
     for &e in &refs.heuristic_outbound_uses_member {
-        ranked.push(RankedOutbound { kind: 2, edge: e, heuristic: true });
+        ranked.push(RankedOutbound {
+            kind: 2,
+            edge: e,
+            heuristic: true,
+        });
     }
     for &e in &refs.outbound_imports {
-        ranked.push(RankedOutbound { kind: 3, edge: e, heuristic: false });
+        ranked.push(RankedOutbound {
+            kind: 3,
+            edge: e,
+            heuristic: false,
+        });
     }
     let mut totals = [0usize; 4];
     for r in &ranked {
@@ -1430,7 +1779,13 @@ fn build_outbound_tables(refs: &SymbolRefs, def_project: &str, edges: &[graph::E
     ranked.sort_by(|a, b| {
         a.heuristic
             .cmp(&b.heuristic)
-            .then_with(|| outbound_foreign(def_project, edges, a).cmp(&outbound_foreign(def_project, edges, b)))
+            .then_with(|| {
+                outbound_foreign(def_project, edges, a).cmp(&outbound_foreign(
+                    def_project,
+                    edges,
+                    b,
+                ))
+            })
             .then_with(|| loc_cmp(&edges[a.edge], &edges[b.edge]))
     });
     let (shown, _) = cap_rows(ranked, outbound_cap);
@@ -1447,7 +1802,12 @@ fn build_outbound_tables(refs: &SymbolRefs, def_project: &str, edges: &[graph::E
             let graph::Edge::Imports { target, .. } = &edges[r.edge] else {
                 unreachable!("outbound kind 3 only ever holds imports edge indices");
             };
-            imports.push(ImportRow { file: file.to_string(), line, target: target.clone(), source });
+            imports.push(ImportRow {
+                file: file.to_string(),
+                line,
+                target: target.clone(),
+                source,
+            });
             continue;
         }
         let (to_file, to) = match &edges[r.edge] {
@@ -1456,7 +1816,14 @@ fn build_outbound_tables(refs: &SymbolRefs, def_project: &str, edges: &[graph::E
             | graph::Edge::UsesMember { to_file, to, .. } => (to_file.clone(), to.clone()),
             _ => unreachable!("outbound ranked kinds 0-2 only ever hold inherits/uses-type/uses-member edge indices"),
         };
-        let row = OutboundRow { file: file.to_string(), line, to_file, to, heuristic: r.heuristic, source };
+        let row = OutboundRow {
+            file: file.to_string(),
+            line,
+            to_file,
+            to,
+            heuristic: r.heuristic,
+            source,
+        };
         match r.kind {
             0 => inherits.push(row),
             1 => uses_type.push(row),
@@ -1465,10 +1832,26 @@ fn build_outbound_tables(refs: &SymbolRefs, def_project: &str, edges: &[graph::E
     }
 
     OutboundTables {
-        inherits: Table { total: totals[0], dropped: totals[0] - inherits.len(), rows: inherits },
-        uses_type: Table { total: totals[1], dropped: totals[1] - uses_type.len(), rows: uses_type },
-        uses_member: Table { total: totals[2], dropped: totals[2] - uses_member.len(), rows: uses_member },
-        imports: Table { total: totals[3], dropped: totals[3] - imports.len(), rows: imports },
+        inherits: Table {
+            total: totals[0],
+            dropped: totals[0] - inherits.len(),
+            rows: inherits,
+        },
+        uses_type: Table {
+            total: totals[1],
+            dropped: totals[1] - uses_type.len(),
+            rows: uses_type,
+        },
+        uses_member: Table {
+            total: totals[2],
+            dropped: totals[2] - uses_member.len(),
+            rows: uses_member,
+        },
+        imports: Table {
+            total: totals[3],
+            dropped: totals[3] - imports.len(),
+            rows: imports,
+        },
     }
 }
 
@@ -1484,7 +1867,16 @@ pub fn build_refs_model(
     outbound_cap: usize,
     all_out: bool,
 ) -> RefsResult {
-    build_refs_model_inner(index, query, out, cap, inbound_cap, outbound_cap, all_out, false)
+    build_refs_model_inner(
+        index,
+        query,
+        out,
+        cap,
+        inbound_cap,
+        outbound_cap,
+        all_out,
+        false,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1514,7 +1906,10 @@ fn build_refs_model_inner(
             };
         }
     };
-    let def_idx = *index.by_id.get(&id).expect("resolved id must exist in the index it was resolved from");
+    let def_idx = *index
+        .by_id
+        .get(&id)
+        .expect("resolved id must exist in the index it was resolved from");
     let def = &index.graph.defs[def_idx];
     let refs = symbol_refs(index, &id);
     let edges = &index.graph.edges;
@@ -1539,19 +1934,34 @@ fn build_refs_model_inner(
     for (kind, (precise, heuristic)) in [
         (&refs.inbound_inherits, &refs.heuristic_inbound_inherits),
         (&refs.inbound_uses_type, &refs.heuristic_inbound_uses_type),
-        (&refs.inbound_uses_member, &refs.heuristic_inbound_uses_member),
+        (
+            &refs.inbound_uses_member,
+            &refs.heuristic_inbound_uses_member,
+        ),
     ]
     .into_iter()
     .enumerate()
     {
         for &e in precise {
-            if is_self_inbound(e) { continue; }
-            ranked.push(RankedInbound { kind, edge: e, heuristic: false });
+            if is_self_inbound(e) {
+                continue;
+            }
+            ranked.push(RankedInbound {
+                kind,
+                edge: e,
+                heuristic: false,
+            });
             totals[kind] += 1;
         }
         for &e in heuristic {
-            if is_self_inbound(e) { continue; }
-            ranked.push(RankedInbound { kind, edge: e, heuristic: true });
+            if is_self_inbound(e) {
+                continue;
+            }
+            ranked.push(RankedInbound {
+                kind,
+                edge: e,
+                heuristic: true,
+            });
             totals[kind] += 1;
         }
     }
@@ -1572,10 +1982,19 @@ fn build_refs_model_inner(
     for r in shown_inbound {
         let (file, line) = edge_loc(&edges[r.edge]);
         let source = hit_source(&index.root, file, line, &mut source_cache);
-        rows[r.kind].push(InboundRow { file: file.to_string(), line, heuristic: r.heuristic, source });
+        rows[r.kind].push(InboundRow {
+            file: file.to_string(),
+            line,
+            heuristic: r.heuristic,
+            source,
+        });
     }
     let [inherits_rows, uses_type_rows, uses_member_rows] = rows;
-    let inbound_table = |total: usize, rows: Vec<InboundRow>| Table { total, dropped: total - rows.len(), rows };
+    let inbound_table = |total: usize, rows: Vec<InboundRow>| Table {
+        total,
+        dropped: total - rows.len(),
+        rows,
+    };
     let inbound = InboundTables {
         inherits: inbound_table(totals[0], inherits_rows),
         uses_type: inbound_table(totals[1], uses_type_rows),
@@ -1583,14 +2002,24 @@ fn build_refs_model_inner(
     };
 
     let outbound = out.then(|| {
-        build_outbound_tables(&refs, def_project, edges, &index.root, if all_out { usize::MAX } else { outbound_cap })
+        build_outbound_tables(
+            &refs,
+            def_project,
+            edges,
+            &index.root,
+            if all_out { usize::MAX } else { outbound_cap },
+        )
     });
     let ambiguous = AmbiguousTables {
         inbound: build_table(refs.ambiguous_inbound, edges, cap, ambiguous_row),
         outbound: build_table(refs.ambiguous_outbound, edges, cap, ambiguous_row),
     };
 
-    let member_refs = if def.kind == "enum" { enum_member_refs(index, &id) } else { None };
+    let member_refs = if def.kind == "enum" {
+        enum_member_refs(index, &id)
+    } else {
+        None
+    };
 
     RefsResult::Resolved(RefsModel {
         query: query.to_string(),
@@ -1619,9 +2048,13 @@ fn build_refs_model_inner(
 /// no span at all.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReadSpan {
+    /// The file value.
     pub file: String,
+    /// The start line value.
     pub start_line: usize,
+    /// The end line value.
     pub end_line: usize,
+    /// The source value.
     pub source: String,
 }
 
@@ -1632,7 +2065,9 @@ pub struct ReadSpan {
 /// extracted) and never faked from a start line alone.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReadModel {
+    /// The refs value.
     pub refs: RefsModel,
+    /// The span value.
     pub span: Option<ReadSpan>,
 }
 
@@ -1640,10 +2075,13 @@ pub struct ReadModel {
 /// ambiguity and zero-hit discipline are literally the same code path's.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ReadResult {
+    /// Represents `Resolved`.
     Resolved(Box<ReadModel>),
     /// A bare-member answer: one resolved-shaped model per declaring type.
     Members(Vec<RefsModel>),
+    /// Represents `Ambiguous`.
     Ambiguous(Vec<String>),
+    /// Represents `NotFound`.
     NotFound,
 }
 
@@ -1719,33 +2157,48 @@ pub fn build_read_model(index: &GraphIndex, query: &str) -> ReadResult {
 /// whether the reference was guessed (`heuristic`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct TestRow {
+    /// The file value.
     pub file: String,
+    /// The test defs value.
     pub test_defs: Vec<String>,
+    /// The lines value.
     pub lines: Vec<usize>,
+    /// The ref count value.
     pub ref_count: usize,
+    /// The heuristic value.
     pub heuristic: bool,
 }
 
 /// The resolved `tests` result for one symbol.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TestsModel {
+    /// The query value.
     pub query: String,
+    /// The symbol value.
     pub symbol: String,
+    /// The def files value.
     pub def_files: Vec<String>,
     /// Precise rows first, heuristic rows after -- the same discipline every
     /// other consumer keeps, so a guess never sits inside the list of facts.
     pub rows: Vec<TestRow>,
+    /// The test file count value.
     pub test_file_count: usize,
+    /// The ref count value.
     pub ref_count: usize,
+    /// The heuristic file count value.
     pub heuristic_file_count: usize,
+    /// The heuristic ref count value.
     pub heuristic_ref_count: usize,
 }
 
 /// The outcome of a `tests` query: resolved, ambiguous, or not found.
 #[derive(Debug, Clone, PartialEq)]
 pub enum TestsResult {
+    /// Represents `Resolved`.
     Resolved(TestsModel),
+    /// Represents `Ambiguous`.
     Ambiguous(Vec<String>),
+    /// Represents `NotFound`.
     NotFound,
 }
 
@@ -1765,7 +2218,10 @@ fn collect_test_rows(index: &GraphIndex, kinds: [&[usize]; 3], heuristic: bool) 
                     let slot = rows.len();
                     rows.push(TestRow {
                         file: from_file.to_string(),
-                        test_defs: test_defs.iter().map(|&d| index.graph.defs[d].id.clone()).collect(),
+                        test_defs: test_defs
+                            .iter()
+                            .map(|&d| index.graph.defs[d].id.clone())
+                            .collect(),
                         lines: Vec::new(),
                         ref_count: 0,
                         heuristic,
@@ -1803,12 +2259,20 @@ pub fn build_tests_model(index: &GraphIndex, query: &str) -> TestsResult {
 
     let precise = collect_test_rows(
         index,
-        [&refs.inbound_inherits, &refs.inbound_uses_type, &refs.inbound_uses_member],
+        [
+            &refs.inbound_inherits,
+            &refs.inbound_uses_type,
+            &refs.inbound_uses_member,
+        ],
         false,
     );
     let heuristic = collect_test_rows(
         index,
-        [&refs.heuristic_inbound_inherits, &refs.heuristic_inbound_uses_type, &refs.heuristic_inbound_uses_member],
+        [
+            &refs.heuristic_inbound_inherits,
+            &refs.heuristic_inbound_uses_type,
+            &refs.heuristic_inbound_uses_member,
+        ],
         true,
     );
 
@@ -1844,10 +2308,15 @@ pub fn build_tests_model(index: &GraphIndex, query: &str) -> TestsResult {
 /// of letting an ambiguous line win by being numerically smaller.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct KindLines {
+    /// The direct value.
     pub direct: usize,
+    /// The direct amb value.
     pub direct_amb: usize,
+    /// The ctor di value.
     pub ctor_di: usize,
+    /// The heuristic value.
     pub heuristic: usize,
+    /// The iface value.
     pub iface: usize,
 }
 
@@ -1876,10 +2345,15 @@ struct Hit {
 /// One visited file's entry in an impact walk.
 #[derive(Debug, Clone, PartialEq)]
 pub struct VisitedEntry {
+    /// The hop value.
     pub hop: u32,
+    /// The via count value.
     pub via_count: u32,
+    /// The ambiguous count value.
     pub ambiguous_count: u32,
+    /// The heuristic count value.
     pub heuristic_count: u32,
+    /// The symbols value.
     pub symbols: Vec<String>,
     /// The interface `via` labels for this file's hits.
     pub iface_via: Vec<String>,
@@ -1895,7 +2369,9 @@ pub struct VisitedEntry {
 /// depends on nothing about the walk's own iteration.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BrakedIface {
+    /// The iface value.
     pub iface: String,
+    /// The fanin value.
     pub fanin: usize,
 }
 
@@ -1906,7 +2382,9 @@ pub struct BrakedIface {
 /// same reason.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BrakedFile {
+    /// The file value.
     pub file: String,
+    /// The indegree value.
     pub indegree: usize,
 }
 
@@ -1933,7 +2411,10 @@ pub struct ImpactWalkResult {
 }
 
 fn add_adj(fwd_adj: &mut HashMap<String, HashSet<String>>, from: &str, to: &str) {
-    fwd_adj.entry(from.to_string()).or_default().insert(to.to_string());
+    fwd_adj
+        .entry(from.to_string())
+        .or_default()
+        .insert(to.to_string());
 }
 
 /// Reverse-edge k-hop walk from a set of seed def ids. Hop N's frontier is
@@ -2029,7 +2510,13 @@ pub fn impact_walk(
                 let mut seen_sites: HashSet<(String, usize)> = HashSet::new();
                 if let Some(ctor_idxs) = index.ctor_di_by_to.get(def_id) {
                     for &ei in ctor_idxs {
-                        let graph::Edge::CtorDi { from_file, from_line, iface: iface_name, .. } = &index.graph.edges[ei] else {
+                        let graph::Edge::CtorDi {
+                            from_file,
+                            from_line,
+                            iface: iface_name,
+                            ..
+                        } = &index.graph.edges[ei]
+                        else {
                             continue;
                         };
                         // A braked edge is skipped WHOLE: its site never enters
@@ -2053,8 +2540,13 @@ pub fn impact_walk(
                     }
                 }
                 for iface_id in implemented_interfaces(index, def_id) {
-                    let Some(iface_inb) = index.inbound.get(&iface_id) else { continue };
-                    let iface_name = index.def(&iface_id).map(|d| d.name.clone()).unwrap_or_else(|| iface_id.clone());
+                    let Some(iface_inb) = index.inbound.get(&iface_id) else {
+                        continue;
+                    };
+                    let iface_name = index
+                        .def(&iface_id)
+                        .map(|d| d.name.clone())
+                        .unwrap_or_else(|| iface_id.clone());
                     if brake_fanin(index, iface_max_fanin, &iface_name, &mut braked) {
                         continue;
                     }
@@ -2168,14 +2660,28 @@ pub fn impact_walk(
     // Sorted widest-first, then by name -- a total order that depends on
     // nothing about the walk's own iteration, so the output is deterministic
     // here without needing an ordered set.
-    let mut braked: Vec<BrakedIface> =
-        braked.into_iter().map(|(iface, fanin)| BrakedIface { iface, fanin }).collect();
+    let mut braked: Vec<BrakedIface> = braked
+        .into_iter()
+        .map(|(iface, fanin)| BrakedIface { iface, fanin })
+        .collect();
     braked.sort_by(|a, b| b.fanin.cmp(&a.fanin).then_with(|| a.iface.cmp(&b.iface)));
-    let mut braked_files: Vec<BrakedFile> =
-        braked_files.into_iter().map(|(file, indegree)| BrakedFile { file, indegree }).collect();
-    braked_files.sort_by(|a, b| b.indegree.cmp(&a.indegree).then_with(|| a.file.cmp(&b.file)));
+    let mut braked_files: Vec<BrakedFile> = braked_files
+        .into_iter()
+        .map(|(file, indegree)| BrakedFile { file, indegree })
+        .collect();
+    braked_files.sort_by(|a, b| {
+        b.indegree
+            .cmp(&a.indegree)
+            .then_with(|| a.file.cmp(&b.file))
+    });
 
-    ImpactWalkResult { visited, fwd_adj, seed_files, braked, braked_files }
+    ImpactWalkResult {
+        visited,
+        fwd_adj,
+        seed_files,
+        braked,
+        braked_files,
+    }
 }
 
 // Returns true when this injected type is braked, recording it on the way out
@@ -2224,7 +2730,11 @@ pub fn personalized_page_rank(
     if n == 0 {
         return HashMap::new();
     }
-    let idx: HashMap<&str, usize> = nodes.iter().enumerate().map(|(i, s)| (s.as_str(), i)).collect();
+    let idx: HashMap<&str, usize> = nodes
+        .iter()
+        .enumerate()
+        .map(|(i, s)| (s.as_str(), i))
+        .collect();
 
     let mut teleport = vec![0f64; n];
     let mut wsum = 0f64;
@@ -2249,7 +2759,10 @@ pub fn personalized_page_rank(
         .iter()
         .map(|id| match fwd_adj.get(id) {
             None => Vec::new(),
-            Some(s) => s.iter().filter_map(|t| idx.get(t.as_str()).copied()).collect(),
+            Some(s) => s
+                .iter()
+                .filter_map(|t| idx.get(t.as_str()).copied())
+                .collect(),
         })
         .collect();
 
@@ -2291,8 +2804,11 @@ pub fn personalized_page_rank(
 // ============================================================================
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Represents `SeedKind`.
 pub enum SeedKind {
+    /// Represents `File`.
     File,
+    /// Represents `Symbol`.
     Symbol,
 }
 
@@ -2318,38 +2834,76 @@ pub fn looks_like_file_path(arg: &str) -> bool {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+/// Represents `SeedResolution`.
 pub enum SeedResolution {
-    Resolved { kind: SeedKind, ids: Vec<String> },
-    Ambiguous { kind: SeedKind, ids: Vec<String> },
-    NotFound { kind: SeedKind },
+    /// The value value.
+    Resolved {
+        /// The resolved seed kind.
+        kind: SeedKind,
+        /// The resolved definition identifiers.
+        ids: Vec<String>,
+    },
+    /// The value value.
+    Ambiguous {
+        /// The seed kind.
+        kind: SeedKind,
+        /// The candidate definition identifiers.
+        ids: Vec<String>,
+    },
+    /// The value value.
+    NotFound {
+        /// The inferred seed kind.
+        kind: SeedKind,
+    },
 }
 
 /// Resolve an impact-walk seed argument to a file's defs or a single symbol.
 pub fn resolve_impact_seed(index: &GraphIndex, arg: &str) -> SeedResolution {
     if looks_like_file_path(arg) {
         return match index.by_file.get(arg) {
-            Some(ids) if !ids.is_empty() => {
-                SeedResolution::Resolved { kind: SeedKind::File, ids: ids.iter().map(|&i| index.graph.defs[i].id.clone()).collect() }
-            }
-            _ => SeedResolution::NotFound { kind: SeedKind::File },
+            Some(ids) if !ids.is_empty() => SeedResolution::Resolved {
+                kind: SeedKind::File,
+                ids: ids
+                    .iter()
+                    .map(|&i| index.graph.defs[i].id.clone())
+                    .collect(),
+            },
+            _ => SeedResolution::NotFound {
+                kind: SeedKind::File,
+            },
         };
     }
     match resolve_symbol(index, arg) {
-        Resolution::Resolved(id) => SeedResolution::Resolved { kind: SeedKind::Symbol, ids: vec![id] },
-        Resolution::Ambiguous(ids) => SeedResolution::Ambiguous { kind: SeedKind::Symbol, ids },
-        Resolution::NotFound => SeedResolution::NotFound { kind: SeedKind::Symbol },
+        Resolution::Resolved(id) => SeedResolution::Resolved {
+            kind: SeedKind::Symbol,
+            ids: vec![id],
+        },
+        Resolution::Ambiguous(ids) => SeedResolution::Ambiguous {
+            kind: SeedKind::Symbol,
+            ids,
+        },
+        Resolution::NotFound => SeedResolution::NotFound {
+            kind: SeedKind::Symbol,
+        },
     }
 }
 
 /// One row of an impact model: a file in the blast radius and its metrics.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ImpactRow {
+    /// The file value.
     pub file: String,
+    /// The hop value.
     pub hop: u32,
+    /// The via count value.
     pub via_count: u32,
+    /// The ambiguous count value.
     pub ambiguous_count: u32,
+    /// The top symbols value.
     pub top_symbols: Vec<String>,
+    /// The top symbols more value.
     pub top_symbols_more: usize,
+    /// The score value.
     pub score: f64,
     /// "heuristic" is a property of how the file was REACHED, not of the edges
     /// that reached it: one precise or ambiguous hit makes the file an ordinary
@@ -2357,6 +2911,7 @@ pub struct ImpactRow {
     /// reached EXCLUSIVELY by guesses is flagged. On a precise row neither this
     /// nor `heuristic` is emitted in `--json`.
     pub heuristic_count: u32,
+    /// The heuristic value.
     pub heuristic: bool,
     /// Present only on a row the interface hop actually reached, empty (and
     /// omitted from `--json`) on every other row.
@@ -2377,12 +2932,19 @@ pub struct ImpactRow {
 /// The resolved `impact` result for one seed.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ImpactModel {
+    /// The kind value.
     pub kind: SeedKind,
+    /// The seed files value.
     pub seed_files: Vec<String>,
+    /// The hops value.
     pub hops: u32,
+    /// The total affected value.
     pub total_affected: usize,
+    /// The rows value.
     pub rows: Vec<ImpactRow>,
+    /// The dropped value.
     pub dropped: usize,
+    /// The manifest gap value.
     pub manifest_gap: usize,
     /// Number of files reached exclusively by guesses. Counted over EVERY row
     /// the walk found, capped or not.
@@ -2403,9 +2965,20 @@ pub struct ImpactModel {
 /// The outcome of an `impact` query: resolved, ambiguous, or not found.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ImpactResult {
+    /// Represents `Resolved`.
     Resolved(ImpactModel),
-    Ambiguous { kind: SeedKind, ids: Vec<String> },
-    NotFound { kind: SeedKind },
+    /// The value value.
+    Ambiguous {
+        /// The seed kind.
+        kind: SeedKind,
+        /// The candidate definition identifiers.
+        ids: Vec<String>,
+    },
+    /// The value value.
+    NotFound {
+        /// The inferred seed kind.
+        kind: SeedKind,
+    },
 }
 
 // Assembles a row's per-kind representative lines. The resolved-over-ambiguous
@@ -2413,7 +2986,11 @@ pub enum ImpactResult {
 // one, and the ambiguous line is used only when the resolved half never fired.
 fn from_lines_of(lines: &KindLines) -> Vec<(&'static str, usize)> {
     let mut out: Vec<(&'static str, usize)> = Vec::new();
-    let direct = if lines.direct != 0 { lines.direct } else { lines.direct_amb };
+    let direct = if lines.direct != 0 {
+        lines.direct
+    } else {
+        lines.direct_amb
+    };
     if direct != 0 {
         out.push(("direct", direct));
     }
@@ -2447,7 +3024,14 @@ pub fn build_impact_model(
         SeedResolution::NotFound { kind } => return ImpactResult::NotFound { kind },
     };
 
-    let walk = impact_walk(index, &seed_ids, hops, iface, iface_max_fanin, hub_max_indegree);
+    let walk = impact_walk(
+        index,
+        &seed_ids,
+        hops,
+        iface,
+        iface_max_fanin,
+        hub_max_indegree,
+    );
 
     // `seed_files` then `visited` keys, deduped -- this order is
     // float-accumulation-order-visible in `personalized_page_rank`.
@@ -2461,14 +3045,28 @@ pub fn build_impact_model(
     let nodes = node_set.into_vec();
     let seeds: Vec<String> = walk.seed_files.iter().cloned().collect();
 
-    let rank = personalized_page_rank(&nodes, &walk.fwd_adj, &seeds, DEFAULT_DAMPING, DEFAULT_ITERATIONS);
+    let rank = personalized_page_rank(
+        &nodes,
+        &walk.fwd_adj,
+        &seeds,
+        DEFAULT_DAMPING,
+        DEFAULT_ITERATIONS,
+    );
 
     let mut rows: Vec<ImpactRow> = walk
         .visited
         .iter()
         .map(|(file, h)| {
-            let names: Vec<String> =
-                h.symbols.iter().map(|id| index.def(id).map(|d| d.name.clone()).unwrap_or_else(|| id.clone())).collect();
+            let names: Vec<String> = h
+                .symbols
+                .iter()
+                .map(|id| {
+                    index
+                        .def(id)
+                        .map(|d| d.name.clone())
+                        .unwrap_or_else(|| id.clone())
+                })
+                .collect();
             let top_symbols: Vec<String> = names.iter().take(3).cloned().collect();
             let top_symbols_more = names.len().saturating_sub(3);
             let heuristic = h.via_count == 0 && h.ambiguous_count == 0;
@@ -2497,14 +3095,21 @@ pub fn build_impact_model(
     rows.sort_by(|a, b| {
         a.heuristic
             .cmp(&b.heuristic)
-            .then_with(|| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal))
+            .then_with(|| {
+                b.score
+                    .partial_cmp(&a.score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
             .then_with(|| a.hop.cmp(&b.hop))
             .then_with(|| a.file.cmp(&b.file))
     });
 
     let heuristic_affected = rows.iter().filter(|r| r.heuristic).count();
     let total_affected = rows.len() - heuristic_affected;
-    let tests_affected = rows.iter().filter(|r| !r.heuristic && index.test_defs_by_file.contains_key(&r.file)).count();
+    let tests_affected = rows
+        .iter()
+        .filter(|r| !r.heuristic && index.test_defs_by_file.contains_key(&r.file))
+        .count();
     let (shown, dropped) = cap_rows(rows, cap);
 
     ImpactResult::Resolved(ImpactModel {
@@ -2541,7 +3146,10 @@ mod tests {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
 
     fn temp_repo_root(label: &str) -> PathBuf {
-        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
         let dir = std::env::temp_dir().join(format!("scout-query-test-{label}-{nanos}-{n}"));
         fs::create_dir_all(dir.join(".git")).unwrap();
@@ -2555,10 +3163,17 @@ mod tests {
         fs::create_dir_all(&dir).unwrap();
         let mut entries = serde_json::Map::new();
         for f in files {
-            entries.insert((*f).to_string(), serde_json::json!({"purpose": "x", "mtime": 1, "source": "ast"}));
+            entries.insert(
+                (*f).to_string(),
+                serde_json::json!({"purpose": "x", "mtime": 1, "source": "ast"}),
+            );
         }
         let manifest = serde_json::json!({"built_at_head": "deadbeef", "scoped_dirs": ["."], "entries": entries});
-        fs::write(dir.join("manifest.json"), serde_json::to_string(&manifest).unwrap()).unwrap();
+        fs::write(
+            dir.join("manifest.json"),
+            serde_json::to_string(&manifest).unwrap(),
+        )
+        .unwrap();
     }
 
     fn dummy_stats() -> graph::Stats {
@@ -2588,11 +3203,14 @@ mod tests {
         }
     }
 
-    fn def(id: &str, name: &str, namespace: &str, kind: &str, file: &str, line: usize) -> graph::Def {
-        graph::Def { id: id.into(), name: name.into(), namespace: namespace.into(), kind: kind.into(), file: file.into(), line, methods: vec![], test_methods: vec![], also_in: vec![], end_line: 0 }
-    }
-
-    fn def_also(id: &str, name: &str, namespace: &str, kind: &str, file: &str, line: usize, also_in: Vec<(&str, usize)>) -> graph::Def {
+    fn def(
+        id: &str,
+        name: &str,
+        namespace: &str,
+        kind: &str,
+        file: &str,
+        line: usize,
+    ) -> graph::Def {
         graph::Def {
             id: id.into(),
             name: name.into(),
@@ -2602,39 +3220,123 @@ mod tests {
             line,
             methods: vec![],
             test_methods: vec![],
-            also_in: also_in.into_iter().map(|(f, l)| graph::AlsoIn { file: f.into(), line: l }).collect(),
+            also_in: vec![],
+            end_line: 0,
+        }
+    }
+
+    fn def_also(
+        id: &str,
+        name: &str,
+        namespace: &str,
+        kind: &str,
+        file: &str,
+        line: usize,
+        also_in: Vec<(&str, usize)>,
+    ) -> graph::Def {
+        graph::Def {
+            id: id.into(),
+            name: name.into(),
+            namespace: namespace.into(),
+            kind: kind.into(),
+            file: file.into(),
+            line,
+            methods: vec![],
+            test_methods: vec![],
+            also_in: also_in
+                .into_iter()
+                .map(|(f, l)| graph::AlsoIn {
+                    file: f.into(),
+                    line: l,
+                })
+                .collect(),
             end_line: 0,
         }
     }
 
     fn inherits(from_file: &str, from_line: usize, to: &str, to_file: &str) -> graph::Edge {
-        graph::Edge::Inherits { from_file: from_file.into(), from_line, to: to.into(), to_file: to_file.into(), heuristic: false }
+        graph::Edge::Inherits {
+            from_file: from_file.into(),
+            from_line,
+            to: to.into(),
+            to_file: to_file.into(),
+            heuristic: false,
+        }
     }
     fn uses_type(from_file: &str, from_line: usize, to: &str, to_file: &str) -> graph::Edge {
-        graph::Edge::UsesType { from_file: from_file.into(), from_line, to: to.into(), to_file: to_file.into(), heuristic: false }
+        graph::Edge::UsesType {
+            from_file: from_file.into(),
+            from_line,
+            to: to.into(),
+            to_file: to_file.into(),
+            heuristic: false,
+        }
     }
     fn uses_member(from_file: &str, from_line: usize, to: &str, to_file: &str) -> graph::Edge {
-        graph::Edge::UsesMember { from_file: from_file.into(), from_line, to: to.into(), to_file: to_file.into(), heuristic: false }
+        graph::Edge::UsesMember {
+            from_file: from_file.into(),
+            from_line,
+            to: to.into(),
+            to_file: to_file.into(),
+            heuristic: false,
+        }
     }
     // The same edge, tagged as a guess -- the only difference the query layer
     // is allowed to see.
-    fn heuristic_uses_member(from_file: &str, from_line: usize, to: &str, to_file: &str) -> graph::Edge {
-        graph::Edge::UsesMember { from_file: from_file.into(), from_line, to: to.into(), to_file: to_file.into(), heuristic: true }
+    fn heuristic_uses_member(
+        from_file: &str,
+        from_line: usize,
+        to: &str,
+        to_file: &str,
+    ) -> graph::Edge {
+        graph::Edge::UsesMember {
+            from_file: from_file.into(),
+            from_line,
+            to: to.into(),
+            to_file: to_file.into(),
+            heuristic: true,
+        }
     }
-    fn heuristic_uses_type(from_file: &str, from_line: usize, to: &str, to_file: &str) -> graph::Edge {
-        graph::Edge::UsesType { from_file: from_file.into(), from_line, to: to.into(), to_file: to_file.into(), heuristic: true }
+    fn heuristic_uses_type(
+        from_file: &str,
+        from_line: usize,
+        to: &str,
+        to_file: &str,
+    ) -> graph::Edge {
+        graph::Edge::UsesType {
+            from_file: from_file.into(),
+            from_line,
+            to: to.into(),
+            to_file: to_file.into(),
+            heuristic: true,
+        }
     }
     fn imports(from_file: &str, from_line: usize, target: &str) -> graph::Edge {
-        graph::Edge::Imports { from_file: from_file.into(), from_line, target: target.into() }
+        graph::Edge::Imports {
+            from_file: from_file.into(),
+            from_line,
+            target: target.into(),
+        }
     }
-    fn ambiguous(from_file: &str, from_line: usize, raw: &str, candidates: Vec<(&str, &str)>) -> graph::Edge {
+    fn ambiguous(
+        from_file: &str,
+        from_line: usize,
+        raw: &str,
+        candidates: Vec<(&str, &str)>,
+    ) -> graph::Edge {
         let candidate_count = candidates.len();
         graph::Edge::Ambiguous {
             origin: "uses-type".into(),
             from_file: from_file.into(),
             from_line,
             raw: raw.into(),
-            candidates: candidates.into_iter().map(|(id, file)| graph::Candidate { id: id.into(), file: file.into() }).collect(),
+            candidates: candidates
+                .into_iter()
+                .map(|(id, file)| graph::Candidate {
+                    id: id.into(),
+                    file: file.into(),
+                })
+                .collect(),
             candidate_count,
         }
     }
@@ -2648,7 +3350,14 @@ mod tests {
     #[test]
     fn file_inbound_counts_counts_precise_reference_edges_by_target_file() {
         let g = make_graph(
-            vec![def("App.IWidget", "IWidget", "App", "interface", "Widgets/IWidget.cs", 3)],
+            vec![def(
+                "App.IWidget",
+                "IWidget",
+                "App",
+                "interface",
+                "Widgets/IWidget.cs",
+                3,
+            )],
             vec![
                 inherits("Widgets/Impl/A.cs", 5, "App.IWidget", "Widgets/IWidget.cs"),
                 uses_type("Consumers/B.cs", 4, "App.IWidget", "Widgets/IWidget.cs"),
@@ -2656,14 +3365,25 @@ mod tests {
             ],
         );
         let counts = file_inbound_counts(&g);
-        assert_eq!(counts.get("Widgets/IWidget.cs"), Some(&3), "every precise reference kind counts");
+        assert_eq!(
+            counts.get("Widgets/IWidget.cs"),
+            Some(&3),
+            "every precise reference kind counts"
+        );
         assert_eq!(counts.len(), 1);
     }
 
     #[test]
     fn file_inbound_counts_excludes_heuristic_edges_and_non_reference_kinds() {
         let g = make_graph(
-            vec![def("App.IWidget", "IWidget", "App", "interface", "Widgets/IWidget.cs", 3)],
+            vec![def(
+                "App.IWidget",
+                "IWidget",
+                "App",
+                "interface",
+                "Widgets/IWidget.cs",
+                3,
+            )],
             vec![
                 heuristic_uses_type("Guessy/Guesser.cs", 7, "App.IWidget", "Widgets/IWidget.cs"),
                 heuristic_uses_member("Guessy/Guesser2.cs", 8, "App.IWidget", "Widgets/IWidget.cs"),
@@ -2680,7 +3400,12 @@ mod tests {
                     to: None,
                     candidates: vec![],
                 },
-                ambiguous("Ambig/User.cs", 6, "IWidget", vec![("App.IWidget", "Widgets/IWidget.cs")]),
+                ambiguous(
+                    "Ambig/User.cs",
+                    6,
+                    "IWidget",
+                    vec![("App.IWidget", "Widgets/IWidget.cs")],
+                ),
                 // A module import that resolves to the file itself is still an
                 // import, not a reference to a declaration.
                 graph::Edge::Import {
@@ -2703,16 +3428,41 @@ mod tests {
         // On a TS repo call/jsx-use/dispatch ARE the reference graph; a count
         // blind to them would rank every TS file at zero.
         let g = make_graph(
-            vec![def("ui.Button", "Button", "", "function", "src/Button.tsx", 1)],
+            vec![def(
+                "ui.Button",
+                "Button",
+                "",
+                "function",
+                "src/Button.tsx",
+                1,
+            )],
             vec![
-                graph::Edge::Call { from_file: "src/App.ts".into(), from_line: 10, to: "ui.Button".into(), to_file: "src/Button.tsx".into() },
-                graph::Edge::JsxUse { from_file: "src/Page.tsx".into(), from_line: 20, to: "ui.Button".into(), to_file: "src/Button.tsx".into() },
-                graph::Edge::Dispatch { from_file: "src/store.ts".into(), from_line: 30, to: "ui.Button".into(), to_file: "src/Button.tsx".into() },
+                graph::Edge::Call {
+                    from_file: "src/App.ts".into(),
+                    from_line: 10,
+                    to: "ui.Button".into(),
+                    to_file: "src/Button.tsx".into(),
+                },
+                graph::Edge::JsxUse {
+                    from_file: "src/Page.tsx".into(),
+                    from_line: 20,
+                    to: "ui.Button".into(),
+                    to_file: "src/Button.tsx".into(),
+                },
+                graph::Edge::Dispatch {
+                    from_file: "src/store.ts".into(),
+                    from_line: 30,
+                    to: "ui.Button".into(),
+                    to_file: "src/Button.tsx".into(),
+                },
             ],
         );
         let counts = file_inbound_counts(&g);
         assert_eq!(counts.get("src/Button.tsx"), Some(&3));
-        assert!(!counts.contains_key("src/App.ts"), "keyed by the TARGET file only");
+        assert!(
+            !counts.contains_key("src/App.ts"),
+            "keyed by the TARGET file only"
+        );
     }
 
     #[test]
@@ -2728,7 +3478,11 @@ mod tests {
             ],
         );
         let counts = file_inbound_counts(&g);
-        assert_eq!(counts.get("src/Hub.cs"), Some(&1), "self-references earn nothing");
+        assert_eq!(
+            counts.get("src/Hub.cs"),
+            Some(&1),
+            "self-references earn nothing"
+        );
         assert_eq!(counts.len(), 1);
     }
 
@@ -2756,23 +3510,115 @@ mod tests {
     fn base_fixture_graph() -> graph::Graph {
         make_graph(
             vec![
-                def("App.Widgets.IWidget", "IWidget", "App.Widgets", "interface", "Widgets/IWidget.cs", 3),
-                def("App.Widgets.Impl.WidgetImpl", "WidgetImpl", "App.Widgets.Impl", "class", "Widgets/Impl/WidgetImpl.cs", 5),
-                def("App.Widgets.Impl.OtherImpl", "OtherImpl", "App.Widgets.Impl", "class", "Widgets/Impl/OtherImpl.cs", 5),
-                def("App.Consumers.TwoHop", "TwoHop", "App.Consumers", "class", "Consumers/TwoHop.cs", 3),
-                def("App.One.Config", "Config", "App.One", "class", "One/Config.cs", 1),
-                def("App.Two.Config", "Config", "App.Two", "class", "Two/Config.cs", 1),
-                def_also("App.Outer.Container", "Container", "App.Outer", "class", "Outer/Container.cs", 3, vec![("Outer/Container.Extra.cs", 1)]),
-                def("App.Outer.Container+Item", "Item", "App.Outer", "class", "Outer/Container.cs", 5),
-                def("App.Ghost.NotInManifest", "NotInManifest", "App.Ghost", "class", "Ghost/NotInManifest.cs", 1),
+                def(
+                    "App.Widgets.IWidget",
+                    "IWidget",
+                    "App.Widgets",
+                    "interface",
+                    "Widgets/IWidget.cs",
+                    3,
+                ),
+                def(
+                    "App.Widgets.Impl.WidgetImpl",
+                    "WidgetImpl",
+                    "App.Widgets.Impl",
+                    "class",
+                    "Widgets/Impl/WidgetImpl.cs",
+                    5,
+                ),
+                def(
+                    "App.Widgets.Impl.OtherImpl",
+                    "OtherImpl",
+                    "App.Widgets.Impl",
+                    "class",
+                    "Widgets/Impl/OtherImpl.cs",
+                    5,
+                ),
+                def(
+                    "App.Consumers.TwoHop",
+                    "TwoHop",
+                    "App.Consumers",
+                    "class",
+                    "Consumers/TwoHop.cs",
+                    3,
+                ),
+                def(
+                    "App.One.Config",
+                    "Config",
+                    "App.One",
+                    "class",
+                    "One/Config.cs",
+                    1,
+                ),
+                def(
+                    "App.Two.Config",
+                    "Config",
+                    "App.Two",
+                    "class",
+                    "Two/Config.cs",
+                    1,
+                ),
+                def_also(
+                    "App.Outer.Container",
+                    "Container",
+                    "App.Outer",
+                    "class",
+                    "Outer/Container.cs",
+                    3,
+                    vec![("Outer/Container.Extra.cs", 1)],
+                ),
+                def(
+                    "App.Outer.Container+Item",
+                    "Item",
+                    "App.Outer",
+                    "class",
+                    "Outer/Container.cs",
+                    5,
+                ),
+                def(
+                    "App.Ghost.NotInManifest",
+                    "NotInManifest",
+                    "App.Ghost",
+                    "class",
+                    "Ghost/NotInManifest.cs",
+                    1,
+                ),
             ],
             vec![
-                inherits("Widgets/Impl/WidgetImpl.cs", 5, "App.Widgets.IWidget", "Widgets/IWidget.cs"),
-                inherits("Widgets/Impl/OtherImpl.cs", 5, "App.Widgets.IWidget", "Widgets/IWidget.cs"),
-                uses_type("Consumers/Holder.cs", 8, "App.Widgets.IWidget", "Widgets/IWidget.cs"),
-                uses_type("Consumers/TwoHop.cs", 4, "App.Widgets.Impl.WidgetImpl", "Widgets/Impl/WidgetImpl.cs"),
+                inherits(
+                    "Widgets/Impl/WidgetImpl.cs",
+                    5,
+                    "App.Widgets.IWidget",
+                    "Widgets/IWidget.cs",
+                ),
+                inherits(
+                    "Widgets/Impl/OtherImpl.cs",
+                    5,
+                    "App.Widgets.IWidget",
+                    "Widgets/IWidget.cs",
+                ),
+                uses_type(
+                    "Consumers/Holder.cs",
+                    8,
+                    "App.Widgets.IWidget",
+                    "Widgets/IWidget.cs",
+                ),
+                uses_type(
+                    "Consumers/TwoHop.cs",
+                    4,
+                    "App.Widgets.Impl.WidgetImpl",
+                    "Widgets/Impl/WidgetImpl.cs",
+                ),
                 imports("Widgets/Impl/WidgetImpl.cs", 1, "App.Widgets"),
-                ambiguous("Three/Consumer.cs", 4, "Config", vec![("App.One.Config", "One/Config.cs"), ("App.Two.Config", "Two/Config.cs")]),
+                ambiguous(
+                    "Three/Consumer.cs",
+                    4,
+                    "Config",
+                    vec![
+                        ("App.One.Config", "One/Config.cs"),
+                        ("App.Two.Config", "Two/Config.cs"),
+                    ],
+                ),
             ],
         )
     }
@@ -2786,35 +3632,98 @@ mod tests {
     fn enum_fixture_graph() -> graph::Graph {
         make_graph(
             vec![
-                def("App.Enums.PostType", "PostType", "App.Enums", "enum", "Enums/PostType.cs", 3),
-                def("App.Enums.PostType.Post", "Post", "App.Enums", "enum-member", "Enums/PostType.cs", 5),
-                def("App.Enums.PostType.Question", "Question", "App.Enums", "enum-member", "Enums/PostType.cs", 6),
-                def("App.Consumers.Reader", "Reader", "App.Consumers", "class", "Consumers/Reader.cs", 3),
-                def("App.Consumers.TwoHop", "TwoHop", "App.Consumers", "class", "Consumers/TwoHop.cs", 3),
+                def(
+                    "App.Enums.PostType",
+                    "PostType",
+                    "App.Enums",
+                    "enum",
+                    "Enums/PostType.cs",
+                    3,
+                ),
+                def(
+                    "App.Enums.PostType.Post",
+                    "Post",
+                    "App.Enums",
+                    "enum-member",
+                    "Enums/PostType.cs",
+                    5,
+                ),
+                def(
+                    "App.Enums.PostType.Question",
+                    "Question",
+                    "App.Enums",
+                    "enum-member",
+                    "Enums/PostType.cs",
+                    6,
+                ),
+                def(
+                    "App.Consumers.Reader",
+                    "Reader",
+                    "App.Consumers",
+                    "class",
+                    "Consumers/Reader.cs",
+                    3,
+                ),
+                def(
+                    "App.Consumers.TwoHop",
+                    "TwoHop",
+                    "App.Consumers",
+                    "class",
+                    "Consumers/TwoHop.cs",
+                    3,
+                ),
             ],
             vec![
-                uses_member("Consumers/Reader.cs", 8, "App.Enums.PostType.Question", "Enums/PostType.cs"),
-                uses_type("Consumers/TwoHop.cs", 4, "App.Consumers.Reader", "Consumers/Reader.cs"),
+                uses_member(
+                    "Consumers/Reader.cs",
+                    8,
+                    "App.Enums.PostType.Question",
+                    "Enums/PostType.cs",
+                ),
+                uses_type(
+                    "Consumers/TwoHop.cs",
+                    4,
+                    "App.Consumers.Reader",
+                    "Consumers/Reader.cs",
+                ),
             ],
         )
     }
 
     fn enum_fixture_root() -> PathBuf {
         let root = temp_repo_root("enum");
-        write_manifest_fixture(&root, &["Enums/PostType.cs", "Consumers/Reader.cs", "Consumers/TwoHop.cs"]);
+        write_manifest_fixture(
+            &root,
+            &[
+                "Enums/PostType.cs",
+                "Consumers/Reader.cs",
+                "Consumers/TwoHop.cs",
+            ],
+        );
         root
     }
 
     // --- 1: load_graph_index + manifest flagging ---
 
     #[test]
-    fn load_graph_index_joins_def_files_against_the_manifest_and_flags_a_graph_file_missing_from_it() {
+    fn load_graph_index_joins_def_files_against_the_manifest_and_flags_a_graph_file_missing_from_it(
+    ) {
         let graph = base_fixture_graph();
         let root = base_fixture_root();
         let index = load_graph_index(&graph, &root);
-        assert!(index.by_id.contains_key("App.Ghost.NotInManifest"), "the def must still be indexed, not dropped");
-        assert!(index.flagged_files.contains("Ghost/NotInManifest.cs"), "its file must be flagged as missing from the manifest");
-        assert_eq!(index.flagged_files.len(), 1, "every other def/edge file is in the manifest and must not be flagged");
+        assert!(
+            index.by_id.contains_key("App.Ghost.NotInManifest"),
+            "the def must still be indexed, not dropped"
+        );
+        assert!(
+            index.flagged_files.contains("Ghost/NotInManifest.cs"),
+            "its file must be flagged as missing from the manifest"
+        );
+        assert_eq!(
+            index.flagged_files.len(),
+            1,
+            "every other def/edge file is in the manifest and must not be flagged"
+        );
         assert!(index.manifest_present);
     }
 
@@ -2826,19 +3735,35 @@ mod tests {
         let root = base_fixture_root();
         let index = load_graph_index(&graph, &root);
 
-        assert_eq!(resolve_symbol(&index, "App.Outer.Container+Item"), Resolution::Resolved("App.Outer.Container+Item".into()));
-        assert_eq!(resolve_symbol(&index, "IWidget"), Resolution::Resolved("App.Widgets.IWidget".into()));
-        assert_eq!(resolve_symbol(&index, "iwidget"), Resolution::Resolved("App.Widgets.IWidget".into()), "case-insensitive unique match must resolve");
+        assert_eq!(
+            resolve_symbol(&index, "App.Outer.Container+Item"),
+            Resolution::Resolved("App.Outer.Container+Item".into())
+        );
+        assert_eq!(
+            resolve_symbol(&index, "IWidget"),
+            Resolution::Resolved("App.Widgets.IWidget".into())
+        );
+        assert_eq!(
+            resolve_symbol(&index, "iwidget"),
+            Resolution::Resolved("App.Widgets.IWidget".into()),
+            "case-insensitive unique match must resolve"
+        );
 
         match resolve_symbol(&index, "Config") {
             Resolution::Ambiguous(mut ids) => {
                 ids.sort();
-                assert_eq!(ids, vec!["App.One.Config".to_string(), "App.Two.Config".to_string()]);
+                assert_eq!(
+                    ids,
+                    vec!["App.One.Config".to_string(), "App.Two.Config".to_string()]
+                );
             }
             other => panic!("expected Ambiguous, got {other:?}"),
         }
 
-        assert_eq!(resolve_symbol(&index, "NoSuchSymbolAnywhere"), Resolution::NotFound);
+        assert_eq!(
+            resolve_symbol(&index, "NoSuchSymbolAnywhere"),
+            Resolution::NotFound
+        );
     }
 
     // --- 3: build_refs_model basic inbound/outbound/imports/manifest-gap ---
@@ -2848,26 +3773,68 @@ mod tests {
         let graph = base_fixture_graph();
         let root = base_fixture_root();
         let index = load_graph_index(&graph, &root);
-        let model = match build_refs_model(&index, "IWidget", true, DEFAULT_CAP, INBOUND_CAP, OUTBOUND_CAP, false) {
+        let model = match build_refs_model(
+            &index,
+            "IWidget",
+            true,
+            DEFAULT_CAP,
+            INBOUND_CAP,
+            OUTBOUND_CAP,
+            false,
+        ) {
             RefsResult::Resolved(m) => m,
             other => panic!("expected Resolved, got {other:?}"),
         };
 
         assert_eq!(model.id, "App.Widgets.IWidget");
-        assert_eq!(model.sites, vec![DefSite { file: "Widgets/IWidget.cs".into(), line: 3 }]);
+        assert_eq!(
+            model.sites,
+            vec![DefSite {
+                file: "Widgets/IWidget.cs".into(),
+                line: 3
+            }]
+        );
 
         assert_eq!(model.inbound.inherits.total, 2);
-        let mut files: Vec<&str> = model.inbound.inherits.rows.iter().map(|r| r.file.as_str()).collect();
+        let mut files: Vec<&str> = model
+            .inbound
+            .inherits
+            .rows
+            .iter()
+            .map(|r| r.file.as_str())
+            .collect();
         files.sort();
-        assert_eq!(files, vec!["Widgets/Impl/OtherImpl.cs", "Widgets/Impl/WidgetImpl.cs"]);
+        assert_eq!(
+            files,
+            vec!["Widgets/Impl/OtherImpl.cs", "Widgets/Impl/WidgetImpl.cs"]
+        );
         assert_eq!(model.inbound.uses_type.total, 1);
         assert_eq!(model.inbound.uses_type.rows[0].file, "Consumers/Holder.cs");
 
         // IWidget's own file makes no outbound reference in the fixture.
-        assert_eq!(model.outbound.as_ref().expect("built with out=true").inherits.total, 0);
-        assert_eq!(model.outbound.as_ref().expect("built with out=true").imports.total, 0);
+        assert_eq!(
+            model
+                .outbound
+                .as_ref()
+                .expect("built with out=true")
+                .inherits
+                .total,
+            0
+        );
+        assert_eq!(
+            model
+                .outbound
+                .as_ref()
+                .expect("built with out=true")
+                .imports
+                .total,
+            0
+        );
 
-        assert_eq!(model.manifest_gap, 1, "the one flagged def file must surface in every refs call, not just the loader");
+        assert_eq!(
+            model.manifest_gap, 1,
+            "the one flagged def file must surface in every refs call, not just the loader"
+        );
     }
 
     // --- 4: outbound inherits+imports from own file; partial-class def sites ---
@@ -2878,23 +3845,85 @@ mod tests {
         let root = base_fixture_root();
         let index = load_graph_index(&graph, &root);
 
-        let impl_model = match build_refs_model(&index, "WidgetImpl", true, DEFAULT_CAP, INBOUND_CAP, OUTBOUND_CAP, false) {
+        let impl_model = match build_refs_model(
+            &index,
+            "WidgetImpl",
+            true,
+            DEFAULT_CAP,
+            INBOUND_CAP,
+            OUTBOUND_CAP,
+            false,
+        ) {
             RefsResult::Resolved(m) => m,
             other => panic!("expected Resolved, got {other:?}"),
         };
-        assert_eq!(impl_model.outbound.as_ref().expect("built with out=true").inherits.total, 1);
-        assert_eq!(impl_model.outbound.as_ref().expect("built with out=true").inherits.rows[0].to_file, "Widgets/IWidget.cs");
-        assert_eq!(impl_model.outbound.as_ref().expect("built with out=true").imports.total, 1);
-        assert_eq!(impl_model.outbound.as_ref().expect("built with out=true").imports.rows[0].target, "App.Widgets");
-        assert_eq!(impl_model.inbound.uses_type.total, 1, "TwoHop.cs references WidgetImpl");
+        assert_eq!(
+            impl_model
+                .outbound
+                .as_ref()
+                .expect("built with out=true")
+                .inherits
+                .total,
+            1
+        );
+        assert_eq!(
+            impl_model
+                .outbound
+                .as_ref()
+                .expect("built with out=true")
+                .inherits
+                .rows[0]
+                .to_file,
+            "Widgets/IWidget.cs"
+        );
+        assert_eq!(
+            impl_model
+                .outbound
+                .as_ref()
+                .expect("built with out=true")
+                .imports
+                .total,
+            1
+        );
+        assert_eq!(
+            impl_model
+                .outbound
+                .as_ref()
+                .expect("built with out=true")
+                .imports
+                .rows[0]
+                .target,
+            "App.Widgets"
+        );
+        assert_eq!(
+            impl_model.inbound.uses_type.total, 1,
+            "TwoHop.cs references WidgetImpl"
+        );
 
-        let container = match build_refs_model(&index, "App.Outer.Container", true, DEFAULT_CAP, INBOUND_CAP, OUTBOUND_CAP, false) {
+        let container = match build_refs_model(
+            &index,
+            "App.Outer.Container",
+            true,
+            DEFAULT_CAP,
+            INBOUND_CAP,
+            OUTBOUND_CAP,
+            false,
+        ) {
             RefsResult::Resolved(m) => m,
             other => panic!("expected Resolved, got {other:?}"),
         };
         assert_eq!(
             container.sites,
-            vec![DefSite { file: "Outer/Container.cs".into(), line: 3 }, DefSite { file: "Outer/Container.Extra.cs".into(), line: 1 }]
+            vec![
+                DefSite {
+                    file: "Outer/Container.cs".into(),
+                    line: 3
+                },
+                DefSite {
+                    file: "Outer/Container.Extra.cs".into(),
+                    line: 1
+                }
+            ]
         );
     }
 
@@ -2903,18 +3932,55 @@ mod tests {
     #[test]
     fn build_refs_model_partial_class_same_file_second_site_no_double_count() {
         let graph = make_graph(
-            vec![def_also("App.Split.Combo", "Combo", "App.Split", "class", "Split/Combo.cs", 3, vec![("Split/Combo.cs", 20)])],
-            vec![uses_type("Split/Combo.cs", 5, "App.Split.Combo", "Split/Combo.cs"), imports("Split/Combo.cs", 1, "System")],
+            vec![def_also(
+                "App.Split.Combo",
+                "Combo",
+                "App.Split",
+                "class",
+                "Split/Combo.cs",
+                3,
+                vec![("Split/Combo.cs", 20)],
+            )],
+            vec![
+                uses_type("Split/Combo.cs", 5, "App.Split.Combo", "Split/Combo.cs"),
+                imports("Split/Combo.cs", 1, "System"),
+            ],
         );
         let root = temp_repo_root("partial-same-file");
         write_manifest_fixture(&root, &["Split/Combo.cs"]);
         let index = load_graph_index(&graph, &root);
-        let model = match build_refs_model(&index, "Combo", true, DEFAULT_CAP, INBOUND_CAP, OUTBOUND_CAP, false) {
+        let model = match build_refs_model(
+            &index,
+            "Combo",
+            true,
+            DEFAULT_CAP,
+            INBOUND_CAP,
+            OUTBOUND_CAP,
+            false,
+        ) {
             RefsResult::Resolved(m) => m,
             other => panic!("expected Resolved, got {other:?}"),
         };
-        assert_eq!(model.outbound.as_ref().expect("built with out=true").uses_type.total, 1, "the single outbound uses-type edge must not be counted twice");
-        assert_eq!(model.outbound.as_ref().expect("built with out=true").imports.total, 1, "the single outbound imports edge must not be counted twice");
+        assert_eq!(
+            model
+                .outbound
+                .as_ref()
+                .expect("built with out=true")
+                .uses_type
+                .total,
+            1,
+            "the single outbound uses-type edge must not be counted twice"
+        );
+        assert_eq!(
+            model
+                .outbound
+                .as_ref()
+                .expect("built with out=true")
+                .imports
+                .total,
+            1,
+            "the single outbound imports edge must not be counted twice"
+        );
     }
 
     // --- 6: ambiguous edges land in a separate trailing section ---
@@ -2924,7 +3990,15 @@ mod tests {
         let graph = base_fixture_graph();
         let root = base_fixture_root();
         let index = load_graph_index(&graph, &root);
-        let model = match build_refs_model(&index, "App.One.Config", true, DEFAULT_CAP, INBOUND_CAP, OUTBOUND_CAP, false) {
+        let model = match build_refs_model(
+            &index,
+            "App.One.Config",
+            true,
+            DEFAULT_CAP,
+            INBOUND_CAP,
+            OUTBOUND_CAP,
+            false,
+        ) {
             RefsResult::Resolved(m) => m,
             other => panic!("expected Resolved, got {other:?}"),
         };
@@ -2943,10 +4017,21 @@ mod tests {
         let graph = base_fixture_graph();
         let root = base_fixture_root();
         let index = load_graph_index(&graph, &root);
-        match build_refs_model(&index, "Config", true, DEFAULT_CAP, INBOUND_CAP, OUTBOUND_CAP, false) {
+        match build_refs_model(
+            &index,
+            "Config",
+            true,
+            DEFAULT_CAP,
+            INBOUND_CAP,
+            OUTBOUND_CAP,
+            false,
+        ) {
             RefsResult::Ambiguous(mut ids) => {
                 ids.sort();
-                assert_eq!(ids, vec!["App.One.Config".to_string(), "App.Two.Config".to_string()]);
+                assert_eq!(
+                    ids,
+                    vec!["App.One.Config".to_string(), "App.Two.Config".to_string()]
+                );
             }
             other => panic!("expected Ambiguous, got {other:?}"),
         }
@@ -2956,9 +4041,27 @@ mod tests {
 
     #[test]
     fn build_refs_model_caps_a_table_and_reports_dropped() {
-        let edges: Vec<graph::Edge> =
-            (0..5).map(|i| uses_type(&format!("Consumers/C{i}.cs"), 1, "App.Hot.Popular", "Hot/Popular.cs")).collect();
-        let graph = make_graph(vec![def("App.Hot.Popular", "Popular", "App.Hot", "class", "Hot/Popular.cs", 1)], edges);
+        let edges: Vec<graph::Edge> = (0..5)
+            .map(|i| {
+                uses_type(
+                    &format!("Consumers/C{i}.cs"),
+                    1,
+                    "App.Hot.Popular",
+                    "Hot/Popular.cs",
+                )
+            })
+            .collect();
+        let graph = make_graph(
+            vec![def(
+                "App.Hot.Popular",
+                "Popular",
+                "App.Hot",
+                "class",
+                "Hot/Popular.cs",
+                1,
+            )],
+            edges,
+        );
         let root = temp_repo_root("cap-table");
         let mut files: Vec<String> = (0..5).map(|i| format!("Consumers/C{i}.cs")).collect();
         files.push("Hot/Popular.cs".to_string());
@@ -2970,8 +4073,15 @@ mod tests {
             other => panic!("expected Resolved, got {other:?}"),
         };
         assert_eq!(model.inbound.uses_type.total, 5);
-        assert_eq!(model.inbound.uses_type.rows.len(), 2, "must respect the cap");
-        assert_eq!(model.inbound.uses_type.dropped, 3, "must always report how many rows were dropped");
+        assert_eq!(
+            model.inbound.uses_type.rows.len(),
+            2,
+            "must respect the cap"
+        );
+        assert_eq!(
+            model.inbound.uses_type.dropped, 3,
+            "must always report how many rows were dropped"
+        );
     }
 
     // --- 8b: the outbound tables exist only when asked for ---
@@ -2981,11 +4091,22 @@ mod tests {
         let graph = base_fixture_graph();
         let root = base_fixture_root();
         let index = load_graph_index(&graph, &root);
-        let resolved = |out: bool| match build_refs_model(&index, "WidgetImpl", out, DEFAULT_CAP, INBOUND_CAP, OUTBOUND_CAP, false) {
+        let resolved = |out: bool| match build_refs_model(
+            &index,
+            "WidgetImpl",
+            out,
+            DEFAULT_CAP,
+            INBOUND_CAP,
+            OUTBOUND_CAP,
+            false,
+        ) {
             RefsResult::Resolved(m) => m,
             other => panic!("expected Resolved, got {other:?}"),
         };
-        assert!(resolved(false).outbound.is_none(), "the default model has no outbound tables at all");
+        assert!(
+            resolved(false).outbound.is_none(),
+            "the default model has no outbound tables at all"
+        );
         assert!(resolved(true).outbound.is_some(), "--out brings them back");
     }
 
@@ -2997,7 +4118,14 @@ mod tests {
         // cap would show all three uses-member rows; the shared one spends the
         // budget on the facts first, and among facts on the def's own project.
         let graph = make_graph(
-            vec![def("App.Hot.Popular", "Popular", "App.Hot", "class", "Hot/Popular.cs", 1)],
+            vec![def(
+                "App.Hot.Popular",
+                "Popular",
+                "App.Hot",
+                "class",
+                "Hot/Popular.cs",
+                1,
+            )],
             vec![
                 uses_member("Hot/Near.cs", 3, "App.Hot.Popular", "Hot/Popular.cs"),
                 heuristic_uses_member("Cold/Guess.cs", 4, "App.Hot.Popular", "Hot/Popular.cs"),
@@ -3007,9 +4135,27 @@ mod tests {
             ],
         );
         let root = temp_repo_root("inbound-rank");
-        write_manifest_fixture(&root, &["Hot/Popular.cs", "Hot/Near.cs", "Hot/Guess.cs", "Hot/AlsoNear.cs", "Cold/Guess.cs", "Cold/Far.cs"]);
+        write_manifest_fixture(
+            &root,
+            &[
+                "Hot/Popular.cs",
+                "Hot/Near.cs",
+                "Hot/Guess.cs",
+                "Hot/AlsoNear.cs",
+                "Cold/Guess.cs",
+                "Cold/Far.cs",
+            ],
+        );
         let index = load_graph_index(&graph, &root);
-        let model = match build_refs_model(&index, "Popular", false, DEFAULT_CAP, 3, OUTBOUND_CAP, false) {
+        let model = match build_refs_model(
+            &index,
+            "Popular",
+            false,
+            DEFAULT_CAP,
+            3,
+            OUTBOUND_CAP,
+            false,
+        ) {
             RefsResult::Resolved(m) => m,
             other => panic!("expected Resolved, got {other:?}"),
         };
@@ -3017,19 +4163,33 @@ mod tests {
         fn files(t: &Table<InboundRow>) -> Vec<&str> {
             t.rows.iter().map(|r| r.file.as_str()).collect()
         }
-        assert_eq!(files(&model.inbound.uses_type), vec!["Hot/AlsoNear.cs", "Cold/Far.cs"]);
+        assert_eq!(
+            files(&model.inbound.uses_type),
+            vec!["Hot/AlsoNear.cs", "Cold/Far.cs"]
+        );
         assert_eq!(files(&model.inbound.uses_member), vec!["Hot/Near.cs"]);
         assert_eq!(model.inbound.uses_member.total, 3);
-        assert_eq!(model.inbound.uses_member.dropped, 2, "both guesses lost the budget to the facts");
+        assert_eq!(
+            model.inbound.uses_member.dropped, 2,
+            "both guesses lost the budget to the facts"
+        );
         assert_eq!(model.inbound.uses_type.dropped, 0);
     }
 
     // --- 8d: one trimmed source line per shown hit ---
 
     #[test]
-    fn build_refs_model_shown_hit_carries_its_trimmed_source_line_and_a_missing_file_carries_none() {
+    fn build_refs_model_shown_hit_carries_its_trimmed_source_line_and_a_missing_file_carries_none()
+    {
         let graph = make_graph(
-            vec![def("App.Hot.Popular", "Popular", "App.Hot", "class", "Hot/Popular.cs", 1)],
+            vec![def(
+                "App.Hot.Popular",
+                "Popular",
+                "App.Hot",
+                "class",
+                "Hot/Popular.cs",
+                1,
+            )],
             vec![
                 uses_type("Hot/Real.cs", 2, "App.Hot.Popular", "Hot/Popular.cs"),
                 uses_type("Hot/Absent.cs", 2, "App.Hot.Popular", "Hot/Popular.cs"),
@@ -3038,16 +4198,45 @@ mod tests {
         let root = temp_repo_root("source-line");
         write_manifest_fixture(&root, &["Hot/Popular.cs", "Hot/Real.cs", "Hot/Absent.cs"]);
         std::fs::create_dir_all(root.join("Hot")).expect("fixture dir");
-        std::fs::write(root.join("Hot/Real.cs"), "class Real\n\t{\tpublic Popular P { get; set; }\t}\n").expect("fixture file");
+        std::fs::write(
+            root.join("Hot/Real.cs"),
+            "class Real\n\t{\tpublic Popular P { get; set; }\t}\n",
+        )
+        .expect("fixture file");
 
         let index = load_graph_index(&graph, &root);
-        let model = match build_refs_model(&index, "Popular", false, DEFAULT_CAP, INBOUND_CAP, OUTBOUND_CAP, false) {
+        let model = match build_refs_model(
+            &index,
+            "Popular",
+            false,
+            DEFAULT_CAP,
+            INBOUND_CAP,
+            OUTBOUND_CAP,
+            false,
+        ) {
             RefsResult::Resolved(m) => m,
             other => panic!("expected Resolved, got {other:?}"),
         };
-        let row = |file: &str| model.inbound.uses_type.rows.iter().find(|r| r.file == file).expect("row").clone();
-        assert_eq!(row("Hot/Real.cs").source, "{ public Popular P { get; set; } }", "tabs collapse to single spaces, the indent is trimmed off");
-        assert_eq!(row("Hot/Absent.cs").source, "", "a file that is not on disk yields no line, never a partial one");
+        let row = |file: &str| {
+            model
+                .inbound
+                .uses_type
+                .rows
+                .iter()
+                .find(|r| r.file == file)
+                .expect("row")
+                .clone()
+        };
+        assert_eq!(
+            row("Hot/Real.cs").source,
+            "{ public Popular P { get; set; } }",
+            "tabs collapse to single spaces, the indent is trimmed off"
+        );
+        assert_eq!(
+            row("Hot/Absent.cs").source,
+            "",
+            "a file that is not on disk yields no line, never a partial one"
+        );
     }
 
     // --- --out mirrors of 8c/8d above, over the four outbound kinds ---
@@ -3062,8 +4251,22 @@ mod tests {
         // tiebreak decides, since project ties them.
         let graph = make_graph(
             vec![
-                def("App.Hot.Consumer", "Consumer", "App.Hot", "class", "Hot/Consumer.cs", 1),
-                def("App.Hot.Local", "Local", "App.Hot", "class", "Hot/Local.cs", 1),
+                def(
+                    "App.Hot.Consumer",
+                    "Consumer",
+                    "App.Hot",
+                    "class",
+                    "Hot/Consumer.cs",
+                    1,
+                ),
+                def(
+                    "App.Hot.Local",
+                    "Local",
+                    "App.Hot",
+                    "class",
+                    "Hot/Local.cs",
+                    1,
+                ),
                 def("App.Cold.Far", "Far", "App.Cold", "class", "Cold/Far.cs", 1),
             ],
             vec![
@@ -3076,30 +4279,63 @@ mod tests {
         let root = temp_repo_root("outbound-rank");
         write_manifest_fixture(&root, &["Hot/Consumer.cs", "Hot/Local.cs", "Cold/Far.cs"]);
         let index = load_graph_index(&graph, &root);
-        let model = match build_refs_model(&index, "Consumer", true, DEFAULT_CAP, INBOUND_CAP, 2, false) {
-            RefsResult::Resolved(m) => m,
-            other => panic!("expected Resolved, got {other:?}"),
-        };
+        let model =
+            match build_refs_model(&index, "Consumer", true, DEFAULT_CAP, INBOUND_CAP, 2, false) {
+                RefsResult::Resolved(m) => m,
+                other => panic!("expected Resolved, got {other:?}"),
+            };
         let ob = model.outbound.as_ref().expect("built with out=true");
 
-        assert_eq!(ob.uses_type.rows.len(), 1, "the same-project resolved edge spends the shared budget first");
+        assert_eq!(
+            ob.uses_type.rows.len(),
+            1,
+            "the same-project resolved edge spends the shared budget first"
+        );
         assert_eq!(ob.uses_type.rows[0].line, 5);
-        assert_eq!(ob.imports.rows.len(), 1, "imports is never a guess, so it beats both the foreign inherits and the heuristic row");
+        assert_eq!(
+            ob.imports.rows.len(),
+            1,
+            "imports is never a guess, so it beats both the foreign inherits and the heuristic row"
+        );
         assert_eq!(ob.imports.rows[0].line, 1);
-        assert_eq!(ob.inherits.rows.len(), 0, "the foreign inherits edge lost the shared budget");
+        assert_eq!(
+            ob.inherits.rows.len(),
+            0,
+            "the foreign inherits edge lost the shared budget"
+        );
         assert_eq!(ob.inherits.dropped, 1);
-        assert_eq!(ob.uses_member.rows.len(), 0, "the heuristic guess lost the budget too, project notwithstanding");
+        assert_eq!(
+            ob.uses_member.rows.len(),
+            0,
+            "the heuristic guess lost the budget too, project notwithstanding"
+        );
         assert_eq!(ob.uses_member.dropped, 1);
         assert_eq!(ob.imports.dropped, 0);
         assert_eq!(ob.uses_type.dropped, 0);
     }
 
     #[test]
-    fn build_refs_model_shown_outbound_hit_carries_its_trimmed_source_line_and_a_missing_file_carries_none() {
+    fn build_refs_model_shown_outbound_hit_carries_its_trimmed_source_line_and_a_missing_file_carries_none(
+    ) {
         let graph = make_graph(
             vec![
-                def_also("App.Hot.Consumer", "Consumer", "App.Hot", "class", "Hot/Consumer.cs", 1, vec![("Hot/Consumer.Extra.cs", 1)]),
-                def("App.Hot.Local", "Local", "App.Hot", "class", "Hot/Local.cs", 1),
+                def_also(
+                    "App.Hot.Consumer",
+                    "Consumer",
+                    "App.Hot",
+                    "class",
+                    "Hot/Consumer.cs",
+                    1,
+                    vec![("Hot/Consumer.Extra.cs", 1)],
+                ),
+                def(
+                    "App.Hot.Local",
+                    "Local",
+                    "App.Hot",
+                    "class",
+                    "Hot/Local.cs",
+                    1,
+                ),
             ],
             vec![
                 uses_type("Hot/Consumer.cs", 2, "App.Hot.Local", "Hot/Local.cs"),
@@ -3107,44 +4343,94 @@ mod tests {
             ],
         );
         let root = temp_repo_root("outbound-source-line");
-        write_manifest_fixture(&root, &["Hot/Consumer.cs", "Hot/Consumer.Extra.cs", "Hot/Local.cs"]);
+        write_manifest_fixture(
+            &root,
+            &["Hot/Consumer.cs", "Hot/Consumer.Extra.cs", "Hot/Local.cs"],
+        );
         std::fs::create_dir_all(root.join("Hot")).expect("fixture dir");
-        std::fs::write(root.join("Hot/Consumer.cs"), "x\n\t{\tpublic Local L { get; set; }\t}\n").expect("fixture file");
+        std::fs::write(
+            root.join("Hot/Consumer.cs"),
+            "x\n\t{\tpublic Local L { get; set; }\t}\n",
+        )
+        .expect("fixture file");
         // Hot/Consumer.Extra.cs is deliberately never written to disk.
 
         let index = load_graph_index(&graph, &root);
-        let model = match build_refs_model(&index, "Consumer", true, DEFAULT_CAP, INBOUND_CAP, OUTBOUND_CAP, false) {
+        let model = match build_refs_model(
+            &index,
+            "Consumer",
+            true,
+            DEFAULT_CAP,
+            INBOUND_CAP,
+            OUTBOUND_CAP,
+            false,
+        ) {
             RefsResult::Resolved(m) => m,
             other => panic!("expected Resolved, got {other:?}"),
         };
-        let rows = &model.outbound.as_ref().expect("built with out=true").uses_type.rows;
+        let rows = &model
+            .outbound
+            .as_ref()
+            .expect("built with out=true")
+            .uses_type
+            .rows;
         let row = |line: usize| rows.iter().find(|r| r.line == line).expect("row").clone();
-        assert_eq!(row(2).source, "{ public Local L { get; set; } }", "tabs collapse to single spaces, the indent is trimmed off");
-        assert_eq!(row(3).source, "", "a file that is not on disk yields no line, never a partial one");
+        assert_eq!(
+            row(2).source,
+            "{ public Local L { get; set; } }",
+            "tabs collapse to single spaces, the indent is trimmed off"
+        );
+        assert_eq!(
+            row(3).source,
+            "",
+            "a file that is not on disk yields no line, never a partial one"
+        );
     }
 
     #[test]
     fn build_refs_model_all_out_lifts_the_outbound_cap() {
-        let edges: Vec<graph::Edge> = (0..5).map(|i| imports("Hot/Consumer.cs", i + 1, &format!("Ns{i}"))).collect();
-        let graph = make_graph(vec![def("App.Hot.Consumer", "Consumer", "App.Hot", "class", "Hot/Consumer.cs", 1)], edges);
+        let edges: Vec<graph::Edge> = (0..5)
+            .map(|i| imports("Hot/Consumer.cs", i + 1, &format!("Ns{i}")))
+            .collect();
+        let graph = make_graph(
+            vec![def(
+                "App.Hot.Consumer",
+                "Consumer",
+                "App.Hot",
+                "class",
+                "Hot/Consumer.cs",
+                1,
+            )],
+            edges,
+        );
         let root = temp_repo_root("outbound-all");
         write_manifest_fixture(&root, &["Hot/Consumer.cs"]);
         let index = load_graph_index(&graph, &root);
 
-        let capped = match build_refs_model(&index, "Consumer", true, DEFAULT_CAP, INBOUND_CAP, 2, false) {
-            RefsResult::Resolved(m) => m,
-            other => panic!("expected Resolved, got {other:?}"),
-        };
+        let capped =
+            match build_refs_model(&index, "Consumer", true, DEFAULT_CAP, INBOUND_CAP, 2, false) {
+                RefsResult::Resolved(m) => m,
+                other => panic!("expected Resolved, got {other:?}"),
+            };
         let capped_ob = capped.outbound.as_ref().expect("built with out=true");
-        assert_eq!(capped_ob.imports.rows.len(), 2, "must respect the outbound cap");
+        assert_eq!(
+            capped_ob.imports.rows.len(),
+            2,
+            "must respect the outbound cap"
+        );
         assert_eq!(capped_ob.imports.dropped, 3);
 
-        let all = match build_refs_model(&index, "Consumer", true, DEFAULT_CAP, INBOUND_CAP, 2, true) {
-            RefsResult::Resolved(m) => m,
-            other => panic!("expected Resolved, got {other:?}"),
-        };
+        let all =
+            match build_refs_model(&index, "Consumer", true, DEFAULT_CAP, INBOUND_CAP, 2, true) {
+                RefsResult::Resolved(m) => m,
+                other => panic!("expected Resolved, got {other:?}"),
+            };
         let all_ob = all.outbound.as_ref().expect("built with out=true");
-        assert_eq!(all_ob.imports.rows.len(), 5, "--all lifts the outbound cap entirely");
+        assert_eq!(
+            all_ob.imports.rows.len(),
+            5,
+            "--all lifts the outbound cap entirely"
+        );
         assert_eq!(all_ob.imports.dropped, 0);
     }
 
@@ -3154,27 +4440,59 @@ mod tests {
     // proves the file-loss shape, not just a row-count-under-cap shape.
     #[test]
     fn build_refs_model_all_out_now_lifts_the_inbound_cap_too() {
-        let files = ["Cold/ConsumerA.cs", "Cold/ConsumerB.cs", "Cold/ConsumerC.cs", "Cold/ConsumerD.cs", "Cold/ConsumerE.cs"];
-        let edges: Vec<graph::Edge> = files.iter().map(|f| uses_type(f, 1, "App.Hot.Widget", "Hot/Widget.cs")).collect();
-        let graph = make_graph(vec![def("App.Hot.Widget", "Widget", "App.Hot", "class", "Hot/Widget.cs", 1)], edges);
+        let files = [
+            "Cold/ConsumerA.cs",
+            "Cold/ConsumerB.cs",
+            "Cold/ConsumerC.cs",
+            "Cold/ConsumerD.cs",
+            "Cold/ConsumerE.cs",
+        ];
+        let edges: Vec<graph::Edge> = files
+            .iter()
+            .map(|f| uses_type(f, 1, "App.Hot.Widget", "Hot/Widget.cs"))
+            .collect();
+        let graph = make_graph(
+            vec![def(
+                "App.Hot.Widget",
+                "Widget",
+                "App.Hot",
+                "class",
+                "Hot/Widget.cs",
+                1,
+            )],
+            edges,
+        );
         let root = temp_repo_root("inbound-all");
         let mut manifest_files: Vec<&str> = vec!["Hot/Widget.cs"];
         manifest_files.extend_from_slice(&files);
         write_manifest_fixture(&root, &manifest_files);
         let index = load_graph_index(&graph, &root);
 
-        let capped = match build_refs_model(&index, "Widget", false, DEFAULT_CAP, 2, OUTBOUND_CAP, false) {
-            RefsResult::Resolved(m) => m,
-            other => panic!("expected Resolved, got {other:?}"),
-        };
-        assert_eq!(capped.inbound.uses_type.rows.len(), 2, "must respect the inbound cap");
-        assert_eq!(capped.inbound.uses_type.dropped, 3, "the other 3 referring files are lost without --all");
+        let capped =
+            match build_refs_model(&index, "Widget", false, DEFAULT_CAP, 2, OUTBOUND_CAP, false) {
+                RefsResult::Resolved(m) => m,
+                other => panic!("expected Resolved, got {other:?}"),
+            };
+        assert_eq!(
+            capped.inbound.uses_type.rows.len(),
+            2,
+            "must respect the inbound cap"
+        );
+        assert_eq!(
+            capped.inbound.uses_type.dropped, 3,
+            "the other 3 referring files are lost without --all"
+        );
 
-        let all = match build_refs_model(&index, "Widget", false, DEFAULT_CAP, 2, OUTBOUND_CAP, true) {
-            RefsResult::Resolved(m) => m,
-            other => panic!("expected Resolved, got {other:?}"),
-        };
-        assert_eq!(all.inbound.uses_type.rows.len(), 5, "--all lifts the inbound cap too, not just the outbound one");
+        let all =
+            match build_refs_model(&index, "Widget", false, DEFAULT_CAP, 2, OUTBOUND_CAP, true) {
+                RefsResult::Resolved(m) => m,
+                other => panic!("expected Resolved, got {other:?}"),
+            };
+        assert_eq!(
+            all.inbound.uses_type.rows.len(),
+            5,
+            "--all lifts the inbound cap too, not just the outbound one"
+        );
         assert_eq!(all.inbound.uses_type.dropped, 0);
     }
 
@@ -3186,22 +4504,56 @@ mod tests {
         let root = base_fixture_root();
         let index = load_graph_index(&graph, &root);
 
-        let one_hop = match build_impact_model(&index, "IWidget", 1, DEFAULT_CAP, true, DEFAULT_IFACE_MAX_FANIN, DEFAULT_HUB_MAX_INDEGREE) {
+        let one_hop = match build_impact_model(
+            &index,
+            "IWidget",
+            1,
+            DEFAULT_CAP,
+            true,
+            DEFAULT_IFACE_MAX_FANIN,
+            DEFAULT_HUB_MAX_INDEGREE,
+        ) {
             ImpactResult::Resolved(m) => m,
             other => panic!("expected Resolved, got {other:?}"),
         };
         let mut files: Vec<&str> = one_hop.rows.iter().map(|r| r.file.as_str()).collect();
         files.sort();
-        assert_eq!(files, vec!["Consumers/Holder.cs", "Widgets/Impl/OtherImpl.cs", "Widgets/Impl/WidgetImpl.cs"]);
-        assert!(!one_hop.rows.iter().any(|r| r.file == "Consumers/TwoHop.cs"), "TwoHop.cs is 2 hops away and must not appear at hops=1");
+        assert_eq!(
+            files,
+            vec![
+                "Consumers/Holder.cs",
+                "Widgets/Impl/OtherImpl.cs",
+                "Widgets/Impl/WidgetImpl.cs"
+            ]
+        );
+        assert!(
+            !one_hop.rows.iter().any(|r| r.file == "Consumers/TwoHop.cs"),
+            "TwoHop.cs is 2 hops away and must not appear at hops=1"
+        );
 
-        let two_hop = match build_impact_model(&index, "IWidget", 2, DEFAULT_CAP, true, DEFAULT_IFACE_MAX_FANIN, DEFAULT_HUB_MAX_INDEGREE) {
+        let two_hop = match build_impact_model(
+            &index,
+            "IWidget",
+            2,
+            DEFAULT_CAP,
+            true,
+            DEFAULT_IFACE_MAX_FANIN,
+            DEFAULT_HUB_MAX_INDEGREE,
+        ) {
             ImpactResult::Resolved(m) => m,
             other => panic!("expected Resolved, got {other:?}"),
         };
-        let two_hop_row = two_hop.rows.iter().find(|r| r.file == "Consumers/TwoHop.cs").expect("TwoHop.cs must appear at hops=2");
+        let two_hop_row = two_hop
+            .rows
+            .iter()
+            .find(|r| r.file == "Consumers/TwoHop.cs")
+            .expect("TwoHop.cs must appear at hops=2");
         assert_eq!(two_hop_row.hop, 2);
-        assert_eq!(two_hop_row.top_symbols, vec!["WidgetImpl".to_string()], "reached via WidgetImpl, not IWidget directly");
+        assert_eq!(
+            two_hop_row.top_symbols,
+            vec!["WidgetImpl".to_string()],
+            "reached via WidgetImpl, not IWidget directly"
+        );
     }
 
     // --- 10: file-path seed ---
@@ -3211,7 +4563,15 @@ mod tests {
         let graph = base_fixture_graph();
         let root = base_fixture_root();
         let index = load_graph_index(&graph, &root);
-        let model = match build_impact_model(&index, "Widgets/IWidget.cs", 1, DEFAULT_CAP, true, DEFAULT_IFACE_MAX_FANIN, DEFAULT_HUB_MAX_INDEGREE) {
+        let model = match build_impact_model(
+            &index,
+            "Widgets/IWidget.cs",
+            1,
+            DEFAULT_CAP,
+            true,
+            DEFAULT_IFACE_MAX_FANIN,
+            DEFAULT_HUB_MAX_INDEGREE,
+        ) {
             ImpactResult::Resolved(m) => m,
             other => panic!("expected Resolved, got {other:?}"),
         };
@@ -3219,7 +4579,14 @@ mod tests {
         assert_eq!(model.seed_files, vec!["Widgets/IWidget.cs".to_string()]);
         let mut files: Vec<&str> = model.rows.iter().map(|r| r.file.as_str()).collect();
         files.sort();
-        assert_eq!(files, vec!["Consumers/Holder.cs", "Widgets/Impl/OtherImpl.cs", "Widgets/Impl/WidgetImpl.cs"]);
+        assert_eq!(
+            files,
+            vec![
+                "Consumers/Holder.cs",
+                "Widgets/Impl/OtherImpl.cs",
+                "Widgets/Impl/WidgetImpl.cs"
+            ]
+        );
     }
 
     // --- 11: unknown file path -> notfound, not treated as a symbol ---
@@ -3229,7 +4596,15 @@ mod tests {
         let graph = base_fixture_graph();
         let root = base_fixture_root();
         let index = load_graph_index(&graph, &root);
-        match build_impact_model(&index, "Nowhere/Missing.cs", 1, DEFAULT_CAP, true, DEFAULT_IFACE_MAX_FANIN, DEFAULT_HUB_MAX_INDEGREE) {
+        match build_impact_model(
+            &index,
+            "Nowhere/Missing.cs",
+            1,
+            DEFAULT_CAP,
+            true,
+            DEFAULT_IFACE_MAX_FANIN,
+            DEFAULT_HUB_MAX_INDEGREE,
+        ) {
             ImpactResult::NotFound { kind } => assert_eq!(kind, SeedKind::File),
             other => panic!("expected NotFound, got {other:?}"),
         }
@@ -3242,16 +4617,31 @@ mod tests {
         let graph = base_fixture_graph();
         let root = base_fixture_root();
         let index = load_graph_index(&graph, &root);
-        let model = match build_impact_model(&index, "IWidget", 2, DEFAULT_CAP, true, DEFAULT_IFACE_MAX_FANIN, DEFAULT_HUB_MAX_INDEGREE) {
+        let model = match build_impact_model(
+            &index,
+            "IWidget",
+            2,
+            DEFAULT_CAP,
+            true,
+            DEFAULT_IFACE_MAX_FANIN,
+            DEFAULT_HUB_MAX_INDEGREE,
+        ) {
             ImpactResult::Resolved(m) => m,
             other => panic!("expected Resolved, got {other:?}"),
         };
         let score_of = |file: &str| model.rows.iter().find(|r| r.file == file).unwrap().score;
         let hop_of = |file: &str| model.rows.iter().find(|r| r.file == file).unwrap().hop;
-        assert!(score_of("Widgets/Impl/WidgetImpl.cs") > score_of("Consumers/TwoHop.cs"), "1-hop dependent must outrank the 2-hop one");
+        assert!(
+            score_of("Widgets/Impl/WidgetImpl.cs") > score_of("Consumers/TwoHop.cs"),
+            "1-hop dependent must outrank the 2-hop one"
+        );
         assert_eq!(hop_of("Consumers/TwoHop.cs"), 2);
         assert_eq!(model.dropped, 0);
-        assert_eq!(model.total_affected, model.rows.len(), "nothing filtered beyond the (unhit) cap");
+        assert_eq!(
+            model.total_affected,
+            model.rows.len(),
+            "nothing filtered beyond the (unhit) cap"
+        );
     }
 
     // --- 13: ranking determinism across repeated runs ---
@@ -3261,11 +4651,27 @@ mod tests {
         let graph = base_fixture_graph();
         let root = base_fixture_root();
         let index = load_graph_index(&graph, &root);
-        let a: Vec<String> = match build_impact_model(&index, "IWidget", 2, DEFAULT_CAP, true, DEFAULT_IFACE_MAX_FANIN, DEFAULT_HUB_MAX_INDEGREE) {
+        let a: Vec<String> = match build_impact_model(
+            &index,
+            "IWidget",
+            2,
+            DEFAULT_CAP,
+            true,
+            DEFAULT_IFACE_MAX_FANIN,
+            DEFAULT_HUB_MAX_INDEGREE,
+        ) {
             ImpactResult::Resolved(m) => m.rows.into_iter().map(|r| r.file).collect(),
             other => panic!("expected Resolved, got {other:?}"),
         };
-        let b: Vec<String> = match build_impact_model(&index, "IWidget", 2, DEFAULT_CAP, true, DEFAULT_IFACE_MAX_FANIN, DEFAULT_HUB_MAX_INDEGREE) {
+        let b: Vec<String> = match build_impact_model(
+            &index,
+            "IWidget",
+            2,
+            DEFAULT_CAP,
+            true,
+            DEFAULT_IFACE_MAX_FANIN,
+            DEFAULT_HUB_MAX_INDEGREE,
+        ) {
             ImpactResult::Resolved(m) => m.rows.into_iter().map(|r| r.file).collect(),
             other => panic!("expected Resolved, got {other:?}"),
         };
@@ -3274,7 +4680,13 @@ mod tests {
 
     // --- the interface hop ---
 
-    fn ctor_di_to(from_file: &str, from_line: usize, iface: &str, resolution: &str, to: &str) -> graph::Edge {
+    fn ctor_di_to(
+        from_file: &str,
+        from_line: usize,
+        iface: &str,
+        resolution: &str,
+        to: &str,
+    ) -> graph::Edge {
         graph::Edge::CtorDi {
             from_file: from_file.into(),
             from_line,
@@ -3285,7 +4697,12 @@ mod tests {
             candidates: vec![],
         }
     }
-    fn ctor_di_no_to(from_file: &str, from_line: usize, iface: &str, resolution: &str) -> graph::Edge {
+    fn ctor_di_no_to(
+        from_file: &str,
+        from_line: usize,
+        iface: &str,
+        resolution: &str,
+    ) -> graph::Edge {
         graph::Edge::CtorDi {
             from_file: from_file.into(),
             from_line,
@@ -3320,22 +4737,108 @@ mod tests {
     fn iface_hop_fixture_graph() -> graph::Graph {
         make_graph(
             vec![
-                def("App.Pay.IPaymentGateway", "IPaymentGateway", "App.Pay", "interface", "Pay/IPaymentGateway.cs", 3),
-                def("App.Pay.StripeGateway", "StripeGateway", "App.Pay", "class", "Pay/StripeGateway.cs", 3),
-                def("App.Pay.OrderService", "OrderService", "App.Pay", "class", "Pay/OrderService.cs", 3),
-                def("App.Pay.RefundService", "RefundService", "App.Pay", "class", "Pay/RefundService.cs", 3),
-                def("App.Pay.GatewayFactory", "GatewayFactory", "App.Pay", "class", "Pay/GatewayFactory.cs", 3),
-                def("App.Pay.GatewayHolder", "GatewayHolder", "App.Pay", "class", "Pay/GatewayHolder.cs", 3),
-                def("App.Pay.AuditLogger", "AuditLogger", "App.Pay", "class", "Pay/AuditLogger.cs", 3),
+                def(
+                    "App.Pay.IPaymentGateway",
+                    "IPaymentGateway",
+                    "App.Pay",
+                    "interface",
+                    "Pay/IPaymentGateway.cs",
+                    3,
+                ),
+                def(
+                    "App.Pay.StripeGateway",
+                    "StripeGateway",
+                    "App.Pay",
+                    "class",
+                    "Pay/StripeGateway.cs",
+                    3,
+                ),
+                def(
+                    "App.Pay.OrderService",
+                    "OrderService",
+                    "App.Pay",
+                    "class",
+                    "Pay/OrderService.cs",
+                    3,
+                ),
+                def(
+                    "App.Pay.RefundService",
+                    "RefundService",
+                    "App.Pay",
+                    "class",
+                    "Pay/RefundService.cs",
+                    3,
+                ),
+                def(
+                    "App.Pay.GatewayFactory",
+                    "GatewayFactory",
+                    "App.Pay",
+                    "class",
+                    "Pay/GatewayFactory.cs",
+                    3,
+                ),
+                def(
+                    "App.Pay.GatewayHolder",
+                    "GatewayHolder",
+                    "App.Pay",
+                    "class",
+                    "Pay/GatewayHolder.cs",
+                    3,
+                ),
+                def(
+                    "App.Pay.AuditLogger",
+                    "AuditLogger",
+                    "App.Pay",
+                    "class",
+                    "Pay/AuditLogger.cs",
+                    3,
+                ),
             ],
             vec![
-                inherits("Pay/StripeGateway.cs", 3, "App.Pay.IPaymentGateway", "Pay/IPaymentGateway.cs"),
-                ctor_di_to("Pay/OrderService.cs", 5, "IPaymentGateway", "plain", "App.Pay.StripeGateway"),
-                uses_type("Pay/OrderService.cs", 5, "App.Pay.IPaymentGateway", "Pay/IPaymentGateway.cs"),
-                ctor_di_to("Pay/RefundService.cs", 5, "IPaymentGateway", "plain", "App.Pay.StripeGateway"),
-                uses_type("Pay/RefundService.cs", 5, "App.Pay.IPaymentGateway", "Pay/IPaymentGateway.cs"),
-                uses_type("Pay/GatewayFactory.cs", 6, "App.Pay.StripeGateway", "Pay/StripeGateway.cs"),
-                uses_type("Pay/GatewayHolder.cs", 4, "App.Pay.IPaymentGateway", "Pay/IPaymentGateway.cs"),
+                inherits(
+                    "Pay/StripeGateway.cs",
+                    3,
+                    "App.Pay.IPaymentGateway",
+                    "Pay/IPaymentGateway.cs",
+                ),
+                ctor_di_to(
+                    "Pay/OrderService.cs",
+                    5,
+                    "IPaymentGateway",
+                    "plain",
+                    "App.Pay.StripeGateway",
+                ),
+                uses_type(
+                    "Pay/OrderService.cs",
+                    5,
+                    "App.Pay.IPaymentGateway",
+                    "Pay/IPaymentGateway.cs",
+                ),
+                ctor_di_to(
+                    "Pay/RefundService.cs",
+                    5,
+                    "IPaymentGateway",
+                    "plain",
+                    "App.Pay.StripeGateway",
+                ),
+                uses_type(
+                    "Pay/RefundService.cs",
+                    5,
+                    "App.Pay.IPaymentGateway",
+                    "Pay/IPaymentGateway.cs",
+                ),
+                uses_type(
+                    "Pay/GatewayFactory.cs",
+                    6,
+                    "App.Pay.StripeGateway",
+                    "Pay/StripeGateway.cs",
+                ),
+                uses_type(
+                    "Pay/GatewayHolder.cs",
+                    4,
+                    "App.Pay.IPaymentGateway",
+                    "Pay/IPaymentGateway.cs",
+                ),
                 ctor_di_no_to("Pay/AuditLogger.cs", 5, "ILogger", "infra"),
             ],
         )
@@ -3348,30 +4851,74 @@ mod tests {
     }
 
     #[test]
-    fn build_impact_model_widens_through_ctor_injected_interface_consumers_and_direct_interface_references() {
+    fn build_impact_model_widens_through_ctor_injected_interface_consumers_and_direct_interface_references(
+    ) {
         let graph = iface_hop_fixture_graph();
         let root = iface_hop_fixture_root();
         let index = load_graph_index(&graph, &root);
-        let model = match build_impact_model(&index, "StripeGateway", 1, DEFAULT_CAP, true, DEFAULT_IFACE_MAX_FANIN, DEFAULT_HUB_MAX_INDEGREE) {
+        let model = match build_impact_model(
+            &index,
+            "StripeGateway",
+            1,
+            DEFAULT_CAP,
+            true,
+            DEFAULT_IFACE_MAX_FANIN,
+            DEFAULT_HUB_MAX_INDEGREE,
+        ) {
             ImpactResult::Resolved(m) => m,
             other => panic!("expected Resolved, got {other:?}"),
         };
         let files: Vec<&str> = model.rows.iter().map(|r| r.file.as_str()).collect();
-        assert!(files.contains(&"Pay/GatewayFactory.cs"), "direct-name reference must still be reached: {files:?}");
-        assert!(files.contains(&"Pay/OrderService.cs"), "ctor-injected consumer must be reached: {files:?}");
-        assert!(files.contains(&"Pay/RefundService.cs"), "ctor-injected consumer must be reached: {files:?}");
-        assert!(files.contains(&"Pay/GatewayHolder.cs"), "direct interface-name reference must be reached: {files:?}");
-        assert!(!files.contains(&"Pay/AuditLogger.cs"), "an unrelated infra ctor-di edge must never widen: {files:?}");
+        assert!(
+            files.contains(&"Pay/GatewayFactory.cs"),
+            "direct-name reference must still be reached: {files:?}"
+        );
+        assert!(
+            files.contains(&"Pay/OrderService.cs"),
+            "ctor-injected consumer must be reached: {files:?}"
+        );
+        assert!(
+            files.contains(&"Pay/RefundService.cs"),
+            "ctor-injected consumer must be reached: {files:?}"
+        );
+        assert!(
+            files.contains(&"Pay/GatewayHolder.cs"),
+            "direct interface-name reference must be reached: {files:?}"
+        );
+        assert!(
+            !files.contains(&"Pay/AuditLogger.cs"),
+            "an unrelated infra ctor-di edge must never widen: {files:?}"
+        );
 
         let row_of = |file: &str| model.rows.iter().find(|r| r.file == file).unwrap();
-        assert_eq!(row_of("Pay/OrderService.cs").hop, 1, "the interface hop counts as ONE hop, same as a direct reference");
-        assert_eq!(row_of("Pay/OrderService.cs").iface_via, vec!["IPaymentGateway (ctor-di)".to_string()]);
-        assert_eq!(row_of("Pay/RefundService.cs").iface_via, vec!["IPaymentGateway (ctor-di)".to_string()]);
-        assert_eq!(row_of("Pay/GatewayHolder.cs").iface_via, vec!["IPaymentGateway".to_string()]);
-        assert!(row_of("Pay/GatewayFactory.cs").iface_via.is_empty(), "a plain direct-name hit carries no iface_via label");
+        assert_eq!(
+            row_of("Pay/OrderService.cs").hop,
+            1,
+            "the interface hop counts as ONE hop, same as a direct reference"
+        );
+        assert_eq!(
+            row_of("Pay/OrderService.cs").iface_via,
+            vec!["IPaymentGateway (ctor-di)".to_string()]
+        );
+        assert_eq!(
+            row_of("Pay/RefundService.cs").iface_via,
+            vec!["IPaymentGateway (ctor-di)".to_string()]
+        );
+        assert_eq!(
+            row_of("Pay/GatewayHolder.cs").iface_via,
+            vec!["IPaymentGateway".to_string()]
+        );
+        assert!(
+            row_of("Pay/GatewayFactory.cs").iface_via.is_empty(),
+            "a plain direct-name hit carries no iface_via label"
+        );
         // The companion plain `uses-type` ref (same from_file/from_line as the
         // ctor-di edge) must be deduped away, not double-counted.
-        assert_eq!(row_of("Pay/OrderService.cs").via_count, 1, "the ctor-di hit and its companion ref are ONE hit, not two");
+        assert_eq!(
+            row_of("Pay/OrderService.cs").via_count,
+            1,
+            "the ctor-di hit and its companion ref are ONE hit, not two"
+        );
     }
 
     #[test]
@@ -3379,13 +4926,28 @@ mod tests {
         let graph = iface_hop_fixture_graph();
         let root = iface_hop_fixture_root();
         let index = load_graph_index(&graph, &root);
-        let model = match build_impact_model(&index, "StripeGateway", 1, DEFAULT_CAP, false, DEFAULT_IFACE_MAX_FANIN, DEFAULT_HUB_MAX_INDEGREE) {
+        let model = match build_impact_model(
+            &index,
+            "StripeGateway",
+            1,
+            DEFAULT_CAP,
+            false,
+            DEFAULT_IFACE_MAX_FANIN,
+            DEFAULT_HUB_MAX_INDEGREE,
+        ) {
             ImpactResult::Resolved(m) => m,
             other => panic!("expected Resolved, got {other:?}"),
         };
         let files: Vec<&str> = model.rows.iter().map(|r| r.file.as_str()).collect();
-        assert_eq!(files, vec!["Pay/GatewayFactory.cs"], "only the direct-name reference survives with --no-iface");
-        assert!(model.rows.iter().all(|r| r.iface_via.is_empty()), "no row may carry an iface_via label with --no-iface");
+        assert_eq!(
+            files,
+            vec!["Pay/GatewayFactory.cs"],
+            "only the direct-name reference survives with --no-iface"
+        );
+        assert!(
+            model.rows.iter().all(|r| r.iface_via.is_empty()),
+            "no row may carry an iface_via label with --no-iface"
+        );
     }
 
     /// A second implementor with the SAME bare interface name in a different
@@ -3394,33 +4956,104 @@ mod tests {
     /// never name-matched. Also covers the truly ambiguous ctor-di shape
     /// (two tied implementors, `to: None`): it must widen neither.
     #[test]
-    fn build_impact_model_never_widens_through_a_same_named_interface_elsewhere_or_an_ambiguous_ctor_di_edge() {
+    fn build_impact_model_never_widens_through_a_same_named_interface_elsewhere_or_an_ambiguous_ctor_di_edge(
+    ) {
         let graph = make_graph(
             vec![
-                def("App.Pay.IPaymentGateway", "IPaymentGateway", "App.Pay", "interface", "Pay/IPaymentGateway.cs", 3),
-                def("App.Pay.StripeGateway", "StripeGateway", "App.Pay", "class", "Pay/StripeGateway.cs", 3),
-                def("Other.Billing.IPaymentGateway", "IPaymentGateway", "Other.Billing", "interface", "Billing/IPaymentGateway.cs", 3),
-                def("Other.Billing.LegacyGateway", "LegacyGateway", "Other.Billing", "class", "Billing/LegacyGateway.cs", 3),
-                def("App.Pay.UnrelatedConsumer", "UnrelatedConsumer", "App.Pay", "class", "Pay/UnrelatedConsumer.cs", 3),
+                def(
+                    "App.Pay.IPaymentGateway",
+                    "IPaymentGateway",
+                    "App.Pay",
+                    "interface",
+                    "Pay/IPaymentGateway.cs",
+                    3,
+                ),
+                def(
+                    "App.Pay.StripeGateway",
+                    "StripeGateway",
+                    "App.Pay",
+                    "class",
+                    "Pay/StripeGateway.cs",
+                    3,
+                ),
+                def(
+                    "Other.Billing.IPaymentGateway",
+                    "IPaymentGateway",
+                    "Other.Billing",
+                    "interface",
+                    "Billing/IPaymentGateway.cs",
+                    3,
+                ),
+                def(
+                    "Other.Billing.LegacyGateway",
+                    "LegacyGateway",
+                    "Other.Billing",
+                    "class",
+                    "Billing/LegacyGateway.cs",
+                    3,
+                ),
+                def(
+                    "App.Pay.UnrelatedConsumer",
+                    "UnrelatedConsumer",
+                    "App.Pay",
+                    "class",
+                    "Pay/UnrelatedConsumer.cs",
+                    3,
+                ),
             ],
             vec![
-                inherits("Pay/StripeGateway.cs", 3, "App.Pay.IPaymentGateway", "Pay/IPaymentGateway.cs"),
-                inherits("Billing/LegacyGateway.cs", 3, "Other.Billing.IPaymentGateway", "Billing/IPaymentGateway.cs"),
+                inherits(
+                    "Pay/StripeGateway.cs",
+                    3,
+                    "App.Pay.IPaymentGateway",
+                    "Pay/IPaymentGateway.cs",
+                ),
+                inherits(
+                    "Billing/LegacyGateway.cs",
+                    3,
+                    "Other.Billing.IPaymentGateway",
+                    "Billing/IPaymentGateway.cs",
+                ),
                 // Names the OTHER namespace's IPaymentGateway -- must never
                 // reach StripeGateway just because the bare name matches.
-                ctor_di_to("Pay/UnrelatedConsumer.cs", 5, "IPaymentGateway", "plain", "Other.Billing.LegacyGateway"),
+                ctor_di_to(
+                    "Pay/UnrelatedConsumer.cs",
+                    5,
+                    "IPaymentGateway",
+                    "plain",
+                    "Other.Billing.LegacyGateway",
+                ),
                 // A tied ('ambiguous') ctor-di edge naming StripeGateway's
                 // OWN interface -- no `to`, so it must not widen either.
-                ctor_di_no_to("Pay/UnrelatedConsumer.cs", 9, "IPaymentGateway", "ambiguous"),
+                ctor_di_no_to(
+                    "Pay/UnrelatedConsumer.cs",
+                    9,
+                    "IPaymentGateway",
+                    "ambiguous",
+                ),
             ],
         );
         let root = temp_repo_root("iface-hop-collision");
         write_manifest_fixture(
             &root,
-            &["Pay/IPaymentGateway.cs", "Pay/StripeGateway.cs", "Billing/IPaymentGateway.cs", "Billing/LegacyGateway.cs", "Pay/UnrelatedConsumer.cs"],
+            &[
+                "Pay/IPaymentGateway.cs",
+                "Pay/StripeGateway.cs",
+                "Billing/IPaymentGateway.cs",
+                "Billing/LegacyGateway.cs",
+                "Pay/UnrelatedConsumer.cs",
+            ],
         );
         let index = load_graph_index(&graph, &root);
-        let model = match build_impact_model(&index, "StripeGateway", 1, DEFAULT_CAP, true, DEFAULT_IFACE_MAX_FANIN, DEFAULT_HUB_MAX_INDEGREE) {
+        let model = match build_impact_model(
+            &index,
+            "StripeGateway",
+            1,
+            DEFAULT_CAP,
+            true,
+            DEFAULT_IFACE_MAX_FANIN,
+            DEFAULT_HUB_MAX_INDEGREE,
+        ) {
             ImpactResult::Resolved(m) => m,
             other => panic!("expected Resolved, got {other:?}"),
         };
@@ -3457,48 +5090,289 @@ mod tests {
     fn broad_iface_fixture_graph() -> graph::Graph {
         make_graph(
             vec![
-                def("App.Widgets.IWidgetRepository", "IWidgetRepository", "App.Widgets", "interface", "Widgets/IWidgetRepository.cs", 3),
-                def("App.Widgets.IWidgetClock", "IWidgetClock", "App.Widgets", "interface", "Widgets/IWidgetClock.cs", 3),
-                def("App.Widgets.WidgetRepository", "WidgetRepository", "App.Widgets", "class", "Widgets/WidgetRepository.cs", 3),
-                def("App.Widgets.GadgetService", "GadgetService", "App.Widgets", "class", "Widgets/GadgetService.cs", 3),
-                def("App.Widgets.WidgetConsumer00", "WidgetConsumer00", "App.Widgets", "class", "Widgets/WidgetConsumer00.cs", 3),
-                def("App.Widgets.WidgetConsumer01", "WidgetConsumer01", "App.Widgets", "class", "Widgets/WidgetConsumer01.cs", 3),
-                def("App.Widgets.WidgetConsumer02", "WidgetConsumer02", "App.Widgets", "class", "Widgets/WidgetConsumer02.cs", 3),
-                def("App.Widgets.WidgetConsumer03", "WidgetConsumer03", "App.Widgets", "class", "Widgets/WidgetConsumer03.cs", 3),
-                def("App.Widgets.WidgetConsumer04", "WidgetConsumer04", "App.Widgets", "class", "Widgets/WidgetConsumer04.cs", 3),
-                def("App.Widgets.WidgetConsumer05", "WidgetConsumer05", "App.Widgets", "class", "Widgets/WidgetConsumer05.cs", 3),
-                def("App.Widgets.WidgetConsumer06", "WidgetConsumer06", "App.Widgets", "class", "Widgets/WidgetConsumer06.cs", 3),
-                def("App.Widgets.WidgetConsumer07", "WidgetConsumer07", "App.Widgets", "class", "Widgets/WidgetConsumer07.cs", 3),
-                def("App.Widgets.WidgetConsumer08", "WidgetConsumer08", "App.Widgets", "class", "Widgets/WidgetConsumer08.cs", 3),
-                def("App.Widgets.ClockConsumer0", "ClockConsumer0", "App.Widgets", "class", "Widgets/ClockConsumer0.cs", 3),
-                def("App.Widgets.ClockConsumer1", "ClockConsumer1", "App.Widgets", "class", "Widgets/ClockConsumer1.cs", 3),
+                def(
+                    "App.Widgets.IWidgetRepository",
+                    "IWidgetRepository",
+                    "App.Widgets",
+                    "interface",
+                    "Widgets/IWidgetRepository.cs",
+                    3,
+                ),
+                def(
+                    "App.Widgets.IWidgetClock",
+                    "IWidgetClock",
+                    "App.Widgets",
+                    "interface",
+                    "Widgets/IWidgetClock.cs",
+                    3,
+                ),
+                def(
+                    "App.Widgets.WidgetRepository",
+                    "WidgetRepository",
+                    "App.Widgets",
+                    "class",
+                    "Widgets/WidgetRepository.cs",
+                    3,
+                ),
+                def(
+                    "App.Widgets.GadgetService",
+                    "GadgetService",
+                    "App.Widgets",
+                    "class",
+                    "Widgets/GadgetService.cs",
+                    3,
+                ),
+                def(
+                    "App.Widgets.WidgetConsumer00",
+                    "WidgetConsumer00",
+                    "App.Widgets",
+                    "class",
+                    "Widgets/WidgetConsumer00.cs",
+                    3,
+                ),
+                def(
+                    "App.Widgets.WidgetConsumer01",
+                    "WidgetConsumer01",
+                    "App.Widgets",
+                    "class",
+                    "Widgets/WidgetConsumer01.cs",
+                    3,
+                ),
+                def(
+                    "App.Widgets.WidgetConsumer02",
+                    "WidgetConsumer02",
+                    "App.Widgets",
+                    "class",
+                    "Widgets/WidgetConsumer02.cs",
+                    3,
+                ),
+                def(
+                    "App.Widgets.WidgetConsumer03",
+                    "WidgetConsumer03",
+                    "App.Widgets",
+                    "class",
+                    "Widgets/WidgetConsumer03.cs",
+                    3,
+                ),
+                def(
+                    "App.Widgets.WidgetConsumer04",
+                    "WidgetConsumer04",
+                    "App.Widgets",
+                    "class",
+                    "Widgets/WidgetConsumer04.cs",
+                    3,
+                ),
+                def(
+                    "App.Widgets.WidgetConsumer05",
+                    "WidgetConsumer05",
+                    "App.Widgets",
+                    "class",
+                    "Widgets/WidgetConsumer05.cs",
+                    3,
+                ),
+                def(
+                    "App.Widgets.WidgetConsumer06",
+                    "WidgetConsumer06",
+                    "App.Widgets",
+                    "class",
+                    "Widgets/WidgetConsumer06.cs",
+                    3,
+                ),
+                def(
+                    "App.Widgets.WidgetConsumer07",
+                    "WidgetConsumer07",
+                    "App.Widgets",
+                    "class",
+                    "Widgets/WidgetConsumer07.cs",
+                    3,
+                ),
+                def(
+                    "App.Widgets.WidgetConsumer08",
+                    "WidgetConsumer08",
+                    "App.Widgets",
+                    "class",
+                    "Widgets/WidgetConsumer08.cs",
+                    3,
+                ),
+                def(
+                    "App.Widgets.ClockConsumer0",
+                    "ClockConsumer0",
+                    "App.Widgets",
+                    "class",
+                    "Widgets/ClockConsumer0.cs",
+                    3,
+                ),
+                def(
+                    "App.Widgets.ClockConsumer1",
+                    "ClockConsumer1",
+                    "App.Widgets",
+                    "class",
+                    "Widgets/ClockConsumer1.cs",
+                    3,
+                ),
             ],
             vec![
-                inherits("Widgets/WidgetRepository.cs", 3, "App.Widgets.IWidgetRepository", "Widgets/IWidgetRepository.cs"),
-                inherits("Widgets/WidgetRepository.cs", 3, "App.Widgets.IWidgetClock", "Widgets/IWidgetClock.cs"),
-                uses_type("Widgets/GadgetService.cs", 6, "App.Widgets.WidgetRepository", "Widgets/WidgetRepository.cs"),
-                ctor_di_to("Widgets/WidgetConsumer00.cs", 5, "IWidgetRepository", "plain", "App.Widgets.WidgetRepository"),
-                uses_type("Widgets/WidgetConsumer00.cs", 5, "App.Widgets.IWidgetRepository", "Widgets/IWidgetRepository.cs"),
-                ctor_di_to("Widgets/WidgetConsumer01.cs", 5, "IWidgetRepository", "plain", "App.Widgets.WidgetRepository"),
-                uses_type("Widgets/WidgetConsumer01.cs", 5, "App.Widgets.IWidgetRepository", "Widgets/IWidgetRepository.cs"),
-                ctor_di_to("Widgets/WidgetConsumer02.cs", 5, "IWidgetRepository", "plain", "App.Widgets.WidgetRepository"),
-                uses_type("Widgets/WidgetConsumer02.cs", 5, "App.Widgets.IWidgetRepository", "Widgets/IWidgetRepository.cs"),
-                ctor_di_to("Widgets/WidgetConsumer03.cs", 5, "IWidgetRepository", "plain", "App.Widgets.WidgetRepository"),
-                uses_type("Widgets/WidgetConsumer03.cs", 5, "App.Widgets.IWidgetRepository", "Widgets/IWidgetRepository.cs"),
-                ctor_di_to("Widgets/WidgetConsumer04.cs", 5, "IWidgetRepository", "plain", "App.Widgets.WidgetRepository"),
-                uses_type("Widgets/WidgetConsumer04.cs", 5, "App.Widgets.IWidgetRepository", "Widgets/IWidgetRepository.cs"),
-                ctor_di_to("Widgets/WidgetConsumer05.cs", 5, "IWidgetRepository", "plain", "App.Widgets.WidgetRepository"),
-                uses_type("Widgets/WidgetConsumer05.cs", 5, "App.Widgets.IWidgetRepository", "Widgets/IWidgetRepository.cs"),
-                ctor_di_to("Widgets/WidgetConsumer06.cs", 5, "IWidgetRepository", "plain", "App.Widgets.WidgetRepository"),
-                uses_type("Widgets/WidgetConsumer06.cs", 5, "App.Widgets.IWidgetRepository", "Widgets/IWidgetRepository.cs"),
-                ctor_di_to("Widgets/WidgetConsumer07.cs", 5, "IWidgetRepository", "plain", "App.Widgets.WidgetRepository"),
-                uses_type("Widgets/WidgetConsumer07.cs", 5, "App.Widgets.IWidgetRepository", "Widgets/IWidgetRepository.cs"),
-                ctor_di_to("Widgets/WidgetConsumer08.cs", 5, "IWidgetRepository", "plain", "App.Widgets.WidgetRepository"),
-                uses_type("Widgets/WidgetConsumer08.cs", 5, "App.Widgets.IWidgetRepository", "Widgets/IWidgetRepository.cs"),
-                ctor_di_to("Widgets/ClockConsumer0.cs", 5, "IWidgetClock", "plain", "App.Widgets.WidgetRepository"),
-                uses_type("Widgets/ClockConsumer0.cs", 5, "App.Widgets.IWidgetClock", "Widgets/IWidgetClock.cs"),
-                ctor_di_to("Widgets/ClockConsumer1.cs", 5, "IWidgetClock", "plain", "App.Widgets.WidgetRepository"),
-                uses_type("Widgets/ClockConsumer1.cs", 5, "App.Widgets.IWidgetClock", "Widgets/IWidgetClock.cs"),
+                inherits(
+                    "Widgets/WidgetRepository.cs",
+                    3,
+                    "App.Widgets.IWidgetRepository",
+                    "Widgets/IWidgetRepository.cs",
+                ),
+                inherits(
+                    "Widgets/WidgetRepository.cs",
+                    3,
+                    "App.Widgets.IWidgetClock",
+                    "Widgets/IWidgetClock.cs",
+                ),
+                uses_type(
+                    "Widgets/GadgetService.cs",
+                    6,
+                    "App.Widgets.WidgetRepository",
+                    "Widgets/WidgetRepository.cs",
+                ),
+                ctor_di_to(
+                    "Widgets/WidgetConsumer00.cs",
+                    5,
+                    "IWidgetRepository",
+                    "plain",
+                    "App.Widgets.WidgetRepository",
+                ),
+                uses_type(
+                    "Widgets/WidgetConsumer00.cs",
+                    5,
+                    "App.Widgets.IWidgetRepository",
+                    "Widgets/IWidgetRepository.cs",
+                ),
+                ctor_di_to(
+                    "Widgets/WidgetConsumer01.cs",
+                    5,
+                    "IWidgetRepository",
+                    "plain",
+                    "App.Widgets.WidgetRepository",
+                ),
+                uses_type(
+                    "Widgets/WidgetConsumer01.cs",
+                    5,
+                    "App.Widgets.IWidgetRepository",
+                    "Widgets/IWidgetRepository.cs",
+                ),
+                ctor_di_to(
+                    "Widgets/WidgetConsumer02.cs",
+                    5,
+                    "IWidgetRepository",
+                    "plain",
+                    "App.Widgets.WidgetRepository",
+                ),
+                uses_type(
+                    "Widgets/WidgetConsumer02.cs",
+                    5,
+                    "App.Widgets.IWidgetRepository",
+                    "Widgets/IWidgetRepository.cs",
+                ),
+                ctor_di_to(
+                    "Widgets/WidgetConsumer03.cs",
+                    5,
+                    "IWidgetRepository",
+                    "plain",
+                    "App.Widgets.WidgetRepository",
+                ),
+                uses_type(
+                    "Widgets/WidgetConsumer03.cs",
+                    5,
+                    "App.Widgets.IWidgetRepository",
+                    "Widgets/IWidgetRepository.cs",
+                ),
+                ctor_di_to(
+                    "Widgets/WidgetConsumer04.cs",
+                    5,
+                    "IWidgetRepository",
+                    "plain",
+                    "App.Widgets.WidgetRepository",
+                ),
+                uses_type(
+                    "Widgets/WidgetConsumer04.cs",
+                    5,
+                    "App.Widgets.IWidgetRepository",
+                    "Widgets/IWidgetRepository.cs",
+                ),
+                ctor_di_to(
+                    "Widgets/WidgetConsumer05.cs",
+                    5,
+                    "IWidgetRepository",
+                    "plain",
+                    "App.Widgets.WidgetRepository",
+                ),
+                uses_type(
+                    "Widgets/WidgetConsumer05.cs",
+                    5,
+                    "App.Widgets.IWidgetRepository",
+                    "Widgets/IWidgetRepository.cs",
+                ),
+                ctor_di_to(
+                    "Widgets/WidgetConsumer06.cs",
+                    5,
+                    "IWidgetRepository",
+                    "plain",
+                    "App.Widgets.WidgetRepository",
+                ),
+                uses_type(
+                    "Widgets/WidgetConsumer06.cs",
+                    5,
+                    "App.Widgets.IWidgetRepository",
+                    "Widgets/IWidgetRepository.cs",
+                ),
+                ctor_di_to(
+                    "Widgets/WidgetConsumer07.cs",
+                    5,
+                    "IWidgetRepository",
+                    "plain",
+                    "App.Widgets.WidgetRepository",
+                ),
+                uses_type(
+                    "Widgets/WidgetConsumer07.cs",
+                    5,
+                    "App.Widgets.IWidgetRepository",
+                    "Widgets/IWidgetRepository.cs",
+                ),
+                ctor_di_to(
+                    "Widgets/WidgetConsumer08.cs",
+                    5,
+                    "IWidgetRepository",
+                    "plain",
+                    "App.Widgets.WidgetRepository",
+                ),
+                uses_type(
+                    "Widgets/WidgetConsumer08.cs",
+                    5,
+                    "App.Widgets.IWidgetRepository",
+                    "Widgets/IWidgetRepository.cs",
+                ),
+                ctor_di_to(
+                    "Widgets/ClockConsumer0.cs",
+                    5,
+                    "IWidgetClock",
+                    "plain",
+                    "App.Widgets.WidgetRepository",
+                ),
+                uses_type(
+                    "Widgets/ClockConsumer0.cs",
+                    5,
+                    "App.Widgets.IWidgetClock",
+                    "Widgets/IWidgetClock.cs",
+                ),
+                ctor_di_to(
+                    "Widgets/ClockConsumer1.cs",
+                    5,
+                    "IWidgetClock",
+                    "plain",
+                    "App.Widgets.WidgetRepository",
+                ),
+                uses_type(
+                    "Widgets/ClockConsumer1.cs",
+                    5,
+                    "App.Widgets.IWidgetClock",
+                    "Widgets/IWidgetClock.cs",
+                ),
             ],
         )
     }
@@ -3510,14 +5384,27 @@ mod tests {
     }
 
     #[test]
-    fn build_impact_model_brakes_a_broad_interface_by_fan_in_while_a_narrow_one_on_the_same_class_still_hops() {
+    fn build_impact_model_brakes_a_broad_interface_by_fan_in_while_a_narrow_one_on_the_same_class_still_hops(
+    ) {
         let graph = broad_iface_fixture_graph();
         let root = broad_iface_fixture_root();
         let index = load_graph_index(&graph, &root);
-        assert_eq!(index.ctor_di_fanin.get("IWidgetRepository"), Some(&9), "fan-in counts distinct constructor sites");
+        assert_eq!(
+            index.ctor_di_fanin.get("IWidgetRepository"),
+            Some(&9),
+            "fan-in counts distinct constructor sites"
+        );
         assert_eq!(index.ctor_di_fanin.get("IWidgetClock"), Some(&2));
 
-        let model = match build_impact_model(&index, "WidgetRepository", 1, DEFAULT_CAP, true, DEFAULT_IFACE_MAX_FANIN, DEFAULT_HUB_MAX_INDEGREE) {
+        let model = match build_impact_model(
+            &index,
+            "WidgetRepository",
+            1,
+            DEFAULT_CAP,
+            true,
+            DEFAULT_IFACE_MAX_FANIN,
+            DEFAULT_HUB_MAX_INDEGREE,
+        ) {
             ImpactResult::Resolved(m) => m,
             other => panic!("expected Resolved, got {other:?}"),
         };
@@ -3530,35 +5417,75 @@ mod tests {
         );
         assert_eq!(
             model.braked,
-            vec![BrakedIface { iface: "IWidgetRepository".to_string(), fanin: 9 }],
+            vec![BrakedIface {
+                iface: "IWidgetRepository".to_string(),
+                fanin: 9
+            }],
             "the narrowing is reported, never silent"
         );
     }
 
     #[test]
-    fn build_impact_model_iface_max_fanin_zero_disables_the_brake_and_restores_the_ds_0050_radius() {
+    fn build_impact_model_iface_max_fanin_zero_disables_the_brake_and_restores_the_ds_0050_radius()
+    {
         let graph = broad_iface_fixture_graph();
         let root = broad_iface_fixture_root();
         let index = load_graph_index(&graph, &root);
-        let model = match build_impact_model(&index, "WidgetRepository", 1, DEFAULT_CAP, true, 0, DEFAULT_HUB_MAX_INDEGREE) {
+        let model = match build_impact_model(
+            &index,
+            "WidgetRepository",
+            1,
+            DEFAULT_CAP,
+            true,
+            0,
+            DEFAULT_HUB_MAX_INDEGREE,
+        ) {
             ImpactResult::Resolved(m) => m,
             other => panic!("expected Resolved, got {other:?}"),
         };
-        assert_eq!(model.rows.len(), 12, "every ctor-injected consumer of both contracts, plus the direct-name reference");
-        assert!(model.braked.is_empty(), "a brake that never fired reports nothing");
+        assert_eq!(
+            model.rows.len(),
+            12,
+            "every ctor-injected consumer of both contracts, plus the direct-name reference"
+        );
+        assert!(
+            model.braked.is_empty(),
+            "a brake that never fired reports nothing"
+        );
 
         // A threshold BELOW the narrow contract's own fan-in brakes it too,
         // widest first in the report -- the brake is a number, not a name list.
-        let tight = match build_impact_model(&index, "WidgetRepository", 1, DEFAULT_CAP, true, 1, DEFAULT_HUB_MAX_INDEGREE) {
+        let tight = match build_impact_model(
+            &index,
+            "WidgetRepository",
+            1,
+            DEFAULT_CAP,
+            true,
+            1,
+            DEFAULT_HUB_MAX_INDEGREE,
+        ) {
             ImpactResult::Resolved(m) => m,
             other => panic!("expected Resolved, got {other:?}"),
         };
-        assert_eq!(tight.rows.iter().map(|r| r.file.as_str()).collect::<Vec<_>>(), vec!["Widgets/GadgetService.cs"]);
+        assert_eq!(
+            tight
+                .rows
+                .iter()
+                .map(|r| r.file.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Widgets/GadgetService.cs"]
+        );
         assert_eq!(
             tight.braked,
             vec![
-                BrakedIface { iface: "IWidgetRepository".to_string(), fanin: 9 },
-                BrakedIface { iface: "IWidgetClock".to_string(), fanin: 2 },
+                BrakedIface {
+                    iface: "IWidgetRepository".to_string(),
+                    fanin: 9
+                },
+                BrakedIface {
+                    iface: "IWidgetClock".to_string(),
+                    fanin: 2
+                },
             ]
         );
     }
@@ -3568,16 +5495,31 @@ mod tests {
         let graph = broad_iface_fixture_graph();
         let root = broad_iface_fixture_root();
         let index = load_graph_index(&graph, &root);
-        let model = match build_impact_model(&index, "WidgetRepository", 1, DEFAULT_CAP, false, DEFAULT_IFACE_MAX_FANIN, DEFAULT_HUB_MAX_INDEGREE) {
+        let model = match build_impact_model(
+            &index,
+            "WidgetRepository",
+            1,
+            DEFAULT_CAP,
+            false,
+            DEFAULT_IFACE_MAX_FANIN,
+            DEFAULT_HUB_MAX_INDEGREE,
+        ) {
             ImpactResult::Resolved(m) => m,
             other => panic!("expected Resolved, got {other:?}"),
         };
         assert_eq!(
-            model.rows.iter().map(|r| r.file.as_str()).collect::<Vec<_>>(),
+            model
+                .rows
+                .iter()
+                .map(|r| r.file.as_str())
+                .collect::<Vec<_>>(),
             vec!["Widgets/GadgetService.cs"],
             "the hop is off entirely, so the narrow contract does not widen either"
         );
-        assert!(model.braked.is_empty(), "nothing was braked because nothing was attempted");
+        assert!(
+            model.braked.is_empty(),
+            "nothing was braked because nothing was attempted"
+        );
     }
 
     // --- the hub-file brake ---
@@ -3591,12 +5533,47 @@ mod tests {
     /// kinds.
     fn hub_fixture_graph() -> graph::Graph {
         let mut defs = vec![
-            def("App.Core.Widget", "Widget", "App.Core", "class", "Core/Widget.cs", 3),
-            def("App.Api.Startup", "Startup", "App.Api", "class", "Api/Startup.cs", 3),
-            def("App.Core.Shared", "Shared", "App.Core", "class", "Core/Shared.cs", 3),
-            def("App.Core.Plain", "Plain", "App.Core", "class", "Core/Plain.cs", 3),
+            def(
+                "App.Core.Widget",
+                "Widget",
+                "App.Core",
+                "class",
+                "Core/Widget.cs",
+                3,
+            ),
+            def(
+                "App.Api.Startup",
+                "Startup",
+                "App.Api",
+                "class",
+                "Api/Startup.cs",
+                3,
+            ),
+            def(
+                "App.Core.Shared",
+                "Shared",
+                "App.Core",
+                "class",
+                "Core/Shared.cs",
+                3,
+            ),
+            def(
+                "App.Core.Plain",
+                "Plain",
+                "App.Core",
+                "class",
+                "Core/Plain.cs",
+                3,
+            ),
             def("App.Core.S5", "S5", "App.Core", "class", "Core/S5.cs", 3),
-            def("App.Core.PlainUser", "PlainUser", "App.Core", "class", "Core/PlainUser.cs", 3),
+            def(
+                "App.Core.PlainUser",
+                "PlainUser",
+                "App.Core",
+                "class",
+                "Core/PlainUser.cs",
+                3,
+            ),
         ];
         let mut edges = vec![
             uses_type("Api/Startup.cs", 10, "App.Core.Widget", "Core/Widget.cs"),
@@ -3606,12 +5583,36 @@ mod tests {
             uses_type("Core/PlainUser.cs", 4, "App.Core.Plain", "Core/Plain.cs"),
         ];
         for n in ["A", "B", "C", "D"] {
-            defs.push(def(&format!("App.Api.{n}"), n, "App.Api", "class", &format!("Api/{n}.cs"), 3));
-            edges.push(uses_type(&format!("Api/{n}.cs"), 4, "App.Api.Startup", "Api/Startup.cs"));
+            defs.push(def(
+                &format!("App.Api.{n}"),
+                n,
+                "App.Api",
+                "class",
+                &format!("Api/{n}.cs"),
+                3,
+            ));
+            edges.push(uses_type(
+                &format!("Api/{n}.cs"),
+                4,
+                "App.Api.Startup",
+                "Api/Startup.cs",
+            ));
         }
         for n in ["S1", "S2", "S3", "S4"] {
-            defs.push(def(&format!("App.Core.{n}"), n, "App.Core", "class", &format!("Core/{n}.cs"), 3));
-            edges.push(uses_type(&format!("Core/{n}.cs"), 4, "App.Core.Shared", "Core/Shared.cs"));
+            defs.push(def(
+                &format!("App.Core.{n}"),
+                n,
+                "App.Core",
+                "class",
+                &format!("Core/{n}.cs"),
+                3,
+            ));
+            edges.push(uses_type(
+                &format!("Core/{n}.cs"),
+                4,
+                "App.Core.Shared",
+                "Core/Shared.cs",
+            ));
         }
         make_graph(defs, edges)
     }
@@ -3655,7 +5656,10 @@ mod tests {
             "the heuristic referrer counts too -- a hub is reached by either kind"
         );
         assert_eq!(index.hub_indegree.get("Core/Plain.cs").copied(), Some(1));
-        assert!(index.hub_indegree.get("Api/A.cs").is_none(), "a file nothing references carries no entry at all");
+        assert!(
+            index.hub_indegree.get("Api/A.cs").is_none(),
+            "a file nothing references carries no entry at all"
+        );
     }
 
     #[test]
@@ -3663,7 +5667,15 @@ mod tests {
         let graph = hub_fixture_graph();
         let root = hub_fixture_root();
         let index = load_graph_index(&graph, &root);
-        let model = match build_impact_model(&index, "Widget", 2, DEFAULT_CAP, true, DEFAULT_IFACE_MAX_FANIN, DEFAULT_HUB_MAX_INDEGREE) {
+        let model = match build_impact_model(
+            &index,
+            "Widget",
+            2,
+            DEFAULT_CAP,
+            true,
+            DEFAULT_IFACE_MAX_FANIN,
+            DEFAULT_HUB_MAX_INDEGREE,
+        ) {
             ImpactResult::Resolved(m) => m,
             other => panic!("expected Resolved, got {other:?}"),
         };
@@ -3683,36 +5695,76 @@ mod tests {
             "the entry point is reached but its own four consumers are not"
         );
         let row_of = |file: &str| model.rows.iter().find(|r| r.file == file).unwrap();
-        assert!(row_of("Api/Startup.cs").infra, "the row says why the walk stopped there");
-        assert!(!row_of("Core/Shared.cs").infra, "an ordinary file carries no class key at all");
-        assert_eq!(model.braked_files, vec![BrakedFile { file: "Api/Startup.cs".to_string(), indegree: 4 }]);
+        assert!(
+            row_of("Api/Startup.cs").infra,
+            "the row says why the walk stopped there"
+        );
+        assert!(
+            !row_of("Core/Shared.cs").infra,
+            "an ordinary file carries no class key at all"
+        );
+        assert_eq!(
+            model.braked_files,
+            vec![BrakedFile {
+                file: "Api/Startup.cs".to_string(),
+                indegree: 4
+            }]
+        );
         assert!(model.braked.is_empty(), "no interface was braked here");
     }
 
     #[test]
-    fn build_impact_model_hub_max_indegree_brakes_a_file_no_name_pattern_matches_and_zero_disables_that_half_only() {
+    fn build_impact_model_hub_max_indegree_brakes_a_file_no_name_pattern_matches_and_zero_disables_that_half_only(
+    ) {
         let graph = hub_fixture_graph();
         let root = hub_fixture_root();
         let index = load_graph_index(&graph, &root);
-        let tight = match build_impact_model(&index, "Widget", 2, DEFAULT_CAP, true, DEFAULT_IFACE_MAX_FANIN, 5) {
+        let tight = match build_impact_model(
+            &index,
+            "Widget",
+            2,
+            DEFAULT_CAP,
+            true,
+            DEFAULT_IFACE_MAX_FANIN,
+            5,
+        ) {
             ImpactResult::Resolved(m) => m,
             other => panic!("expected Resolved, got {other:?}"),
         };
         assert_eq!(
             hub_files_of(&tight),
-            vec!["Api/Startup.cs", "Core/Plain.cs", "Core/PlainUser.cs", "Core/Shared.cs"],
+            vec![
+                "Api/Startup.cs",
+                "Core/Plain.cs",
+                "Core/PlainUser.cs",
+                "Core/Shared.cs"
+            ],
             "the in-degree-5 file stops expanding too"
         );
         assert_eq!(
             tight.braked_files,
             vec![
-                BrakedFile { file: "Core/Shared.cs".to_string(), indegree: 5 },
-                BrakedFile { file: "Api/Startup.cs".to_string(), indegree: 4 },
+                BrakedFile {
+                    file: "Core/Shared.cs".to_string(),
+                    indegree: 5
+                },
+                BrakedFile {
+                    file: "Api/Startup.cs".to_string(),
+                    indegree: 4
+                },
             ],
             "widest-first, then by path"
         );
 
-        let off = match build_impact_model(&index, "Widget", 2, DEFAULT_CAP, true, DEFAULT_IFACE_MAX_FANIN, 0) {
+        let off = match build_impact_model(
+            &index,
+            "Widget",
+            2,
+            DEFAULT_CAP,
+            true,
+            DEFAULT_IFACE_MAX_FANIN,
+            0,
+        ) {
             ImpactResult::Resolved(m) => m,
             other => panic!("expected Resolved, got {other:?}"),
         };
@@ -3721,7 +5773,10 @@ mod tests {
             vec![BrakedFile { file: "Api/Startup.cs".to_string(), indegree: 4 }],
             "0 disables the threshold; the name-pattern classification is not a threshold and stays on"
         );
-        assert!(hub_files_of(&off).contains(&"Core/S1.cs".to_string()), "the in-degree hub widens again");
+        assert!(
+            hub_files_of(&off).contains(&"Core/S1.cs".to_string()),
+            "the in-degree hub widens again"
+        );
         assert!(
             !hub_files_of(&off).contains(&"Api/A.cs".to_string()),
             "an entry point is still an entry point at --hub-max-indegree 0"
@@ -3733,16 +5788,30 @@ mod tests {
         let graph = hub_fixture_graph();
         let root = hub_fixture_root();
         let index = load_graph_index(&graph, &root);
-        let model = match build_impact_model(&index, "Widget", 1, DEFAULT_CAP, true, DEFAULT_IFACE_MAX_FANIN, DEFAULT_HUB_MAX_INDEGREE) {
+        let model = match build_impact_model(
+            &index,
+            "Widget",
+            1,
+            DEFAULT_CAP,
+            true,
+            DEFAULT_IFACE_MAX_FANIN,
+            DEFAULT_HUB_MAX_INDEGREE,
+        ) {
             ImpactResult::Resolved(m) => m,
             other => panic!("expected Resolved, got {other:?}"),
         };
-        assert_eq!(hub_files_of(&model), vec!["Api/Startup.cs", "Core/Plain.cs", "Core/Shared.cs"]);
+        assert_eq!(
+            hub_files_of(&model),
+            vec!["Api/Startup.cs", "Core/Plain.cs", "Core/Shared.cs"]
+        );
         assert!(
             model.rows.iter().find(|r| r.file == "Api/Startup.cs").unwrap().infra,
             "the classification is a fact about the file, not about whether the walk had another hop left"
         );
-        assert!(model.braked_files.is_empty(), "no hop remained, so no widening was refused");
+        assert!(
+            model.braked_files.is_empty(),
+            "no hop remained, so no widening was refused"
+        );
     }
 
     #[test]
@@ -3775,8 +5844,12 @@ mod tests {
 
     // --- the per-kind referencing line on an impact row ---
 
-    const FROM_LINES_MANIFEST_FILES: &[&str] =
-        &["Pay/IPaymentGateway.cs", "Pay/StripeGateway.cs", "Pay/Mixed.cs", "Pay/GuessOnly.cs"];
+    const FROM_LINES_MANIFEST_FILES: &[&str] = &[
+        "Pay/IPaymentGateway.cs",
+        "Pay/StripeGateway.cs",
+        "Pay/Mixed.cs",
+        "Pay/GuessOnly.cs",
+    ];
 
     /// One consumer file reached by ALL FOUR kinds the walk distinguishes, each
     /// at its own line: two direct `uses-type` refs (lines 5 and 12 -- the
@@ -3786,20 +5859,89 @@ mod tests {
     fn from_lines_fixture_graph() -> graph::Graph {
         make_graph(
             vec![
-                def("App.Pay.IPaymentGateway", "IPaymentGateway", "App.Pay", "interface", "Pay/IPaymentGateway.cs", 3),
-                def("App.Pay.StripeGateway", "StripeGateway", "App.Pay", "class", "Pay/StripeGateway.cs", 3),
-                def("App.Pay.Mixed", "Mixed", "App.Pay", "class", "Pay/Mixed.cs", 3),
-                def("App.Pay.GuessOnly", "GuessOnly", "App.Pay", "class", "Pay/GuessOnly.cs", 3),
+                def(
+                    "App.Pay.IPaymentGateway",
+                    "IPaymentGateway",
+                    "App.Pay",
+                    "interface",
+                    "Pay/IPaymentGateway.cs",
+                    3,
+                ),
+                def(
+                    "App.Pay.StripeGateway",
+                    "StripeGateway",
+                    "App.Pay",
+                    "class",
+                    "Pay/StripeGateway.cs",
+                    3,
+                ),
+                def(
+                    "App.Pay.Mixed",
+                    "Mixed",
+                    "App.Pay",
+                    "class",
+                    "Pay/Mixed.cs",
+                    3,
+                ),
+                def(
+                    "App.Pay.GuessOnly",
+                    "GuessOnly",
+                    "App.Pay",
+                    "class",
+                    "Pay/GuessOnly.cs",
+                    3,
+                ),
             ],
             vec![
-                inherits("Pay/StripeGateway.cs", 3, "App.Pay.IPaymentGateway", "Pay/IPaymentGateway.cs"),
-                uses_type("Pay/Mixed.cs", 12, "App.Pay.StripeGateway", "Pay/StripeGateway.cs"),
-                uses_type("Pay/Mixed.cs", 5, "App.Pay.StripeGateway", "Pay/StripeGateway.cs"),
-                ctor_di_to("Pay/Mixed.cs", 7, "IPaymentGateway", "plain", "App.Pay.StripeGateway"),
-                uses_type("Pay/Mixed.cs", 7, "App.Pay.IPaymentGateway", "Pay/IPaymentGateway.cs"),
-                uses_type("Pay/Mixed.cs", 20, "App.Pay.IPaymentGateway", "Pay/IPaymentGateway.cs"),
-                heuristic_uses_member("Pay/Mixed.cs", 30, "App.Pay.StripeGateway", "Pay/StripeGateway.cs"),
-                heuristic_uses_member("Pay/GuessOnly.cs", 9, "App.Pay.StripeGateway", "Pay/StripeGateway.cs"),
+                inherits(
+                    "Pay/StripeGateway.cs",
+                    3,
+                    "App.Pay.IPaymentGateway",
+                    "Pay/IPaymentGateway.cs",
+                ),
+                uses_type(
+                    "Pay/Mixed.cs",
+                    12,
+                    "App.Pay.StripeGateway",
+                    "Pay/StripeGateway.cs",
+                ),
+                uses_type(
+                    "Pay/Mixed.cs",
+                    5,
+                    "App.Pay.StripeGateway",
+                    "Pay/StripeGateway.cs",
+                ),
+                ctor_di_to(
+                    "Pay/Mixed.cs",
+                    7,
+                    "IPaymentGateway",
+                    "plain",
+                    "App.Pay.StripeGateway",
+                ),
+                uses_type(
+                    "Pay/Mixed.cs",
+                    7,
+                    "App.Pay.IPaymentGateway",
+                    "Pay/IPaymentGateway.cs",
+                ),
+                uses_type(
+                    "Pay/Mixed.cs",
+                    20,
+                    "App.Pay.IPaymentGateway",
+                    "Pay/IPaymentGateway.cs",
+                ),
+                heuristic_uses_member(
+                    "Pay/Mixed.cs",
+                    30,
+                    "App.Pay.StripeGateway",
+                    "Pay/StripeGateway.cs",
+                ),
+                heuristic_uses_member(
+                    "Pay/GuessOnly.cs",
+                    9,
+                    "App.Pay.StripeGateway",
+                    "Pay/StripeGateway.cs",
+                ),
             ],
         )
     }
@@ -3815,18 +5957,38 @@ mod tests {
         let graph = from_lines_fixture_graph();
         let root = from_lines_fixture_root();
         let index = load_graph_index(&graph, &root);
-        let model = match build_impact_model(&index, "StripeGateway", 1, DEFAULT_CAP, true, DEFAULT_IFACE_MAX_FANIN, DEFAULT_HUB_MAX_INDEGREE) {
+        let model = match build_impact_model(
+            &index,
+            "StripeGateway",
+            1,
+            DEFAULT_CAP,
+            true,
+            DEFAULT_IFACE_MAX_FANIN,
+            DEFAULT_HUB_MAX_INDEGREE,
+        ) {
             ImpactResult::Resolved(m) => m,
             other => panic!("expected Resolved, got {other:?}"),
         };
         let row_of = |file: &str| model.rows.iter().find(|r| r.file == file).unwrap();
         assert_eq!(
             row_of("Pay/Mixed.cs").from_lines,
-            vec![("direct", 5), ("ctor-di", 7), ("heuristic", 30), ("iface", 20)],
+            vec![
+                ("direct", 5),
+                ("ctor-di", 7),
+                ("heuristic", 30),
+                ("iface", 20)
+            ],
             "key order is the walk's own kind declaration order, never a map iteration"
         );
-        assert_eq!(row_of("Pay/Mixed.cs").via_count, 4, "the companion ref at the ctor-di site is still deduped, not a fifth hit");
-        assert_eq!(row_of("Pay/GuessOnly.cs").from_lines, vec![("heuristic", 9)]);
+        assert_eq!(
+            row_of("Pay/Mixed.cs").via_count,
+            4,
+            "the companion ref at the ctor-di site is still deduped, not a fifth hit"
+        );
+        assert_eq!(
+            row_of("Pay/GuessOnly.cs").from_lines,
+            vec![("heuristic", 9)]
+        );
     }
 
     #[test]
@@ -3834,11 +5996,23 @@ mod tests {
         let graph = from_lines_fixture_graph();
         let root = from_lines_fixture_root();
         let index = load_graph_index(&graph, &root);
-        let model = match build_impact_model(&index, "StripeGateway", 1, DEFAULT_CAP, false, DEFAULT_IFACE_MAX_FANIN, DEFAULT_HUB_MAX_INDEGREE) {
+        let model = match build_impact_model(
+            &index,
+            "StripeGateway",
+            1,
+            DEFAULT_CAP,
+            false,
+            DEFAULT_IFACE_MAX_FANIN,
+            DEFAULT_HUB_MAX_INDEGREE,
+        ) {
             ImpactResult::Resolved(m) => m,
             other => panic!("expected Resolved, got {other:?}"),
         };
-        let row = model.rows.iter().find(|r| r.file == "Pay/Mixed.cs").unwrap();
+        let row = model
+            .rows
+            .iter()
+            .find(|r| r.file == "Pay/Mixed.cs")
+            .unwrap();
         assert_eq!(
             row.from_lines,
             vec![("direct", 5), ("heuristic", 30)],
@@ -3851,11 +6025,23 @@ mod tests {
         let graph = base_fixture_graph();
         let root = base_fixture_root();
         let index = load_graph_index(&graph, &root);
-        let model = match build_impact_model(&index, "One/Config.cs", 1, DEFAULT_CAP, true, DEFAULT_IFACE_MAX_FANIN, DEFAULT_HUB_MAX_INDEGREE) {
+        let model = match build_impact_model(
+            &index,
+            "One/Config.cs",
+            1,
+            DEFAULT_CAP,
+            true,
+            DEFAULT_IFACE_MAX_FANIN,
+            DEFAULT_HUB_MAX_INDEGREE,
+        ) {
             ImpactResult::Resolved(m) => m,
             other => panic!("expected Resolved, got {other:?}"),
         };
-        let row = model.rows.iter().find(|r| r.file == "Three/Consumer.cs").unwrap();
+        let row = model
+            .rows
+            .iter()
+            .find(|r| r.file == "Three/Consumer.cs")
+            .unwrap();
         assert_eq!(row.ambiguous_count, 1);
         assert_eq!(
             row.from_lines,
@@ -3876,12 +6062,30 @@ mod tests {
         let root = temp_repo_root("from-lines-empty");
         write_manifest_fixture(&root, &["A/Seed.cs", "A/User.cs"]);
         let index = load_graph_index(&graph, &root);
-        let model = match build_impact_model(&index, "Seed", 1, DEFAULT_CAP, true, DEFAULT_IFACE_MAX_FANIN, DEFAULT_HUB_MAX_INDEGREE) {
+        let model = match build_impact_model(
+            &index,
+            "Seed",
+            1,
+            DEFAULT_CAP,
+            true,
+            DEFAULT_IFACE_MAX_FANIN,
+            DEFAULT_HUB_MAX_INDEGREE,
+        ) {
             ImpactResult::Resolved(m) => m,
             other => panic!("expected Resolved, got {other:?}"),
         };
-        assert_eq!(model.rows.iter().map(|r| r.file.as_str()).collect::<Vec<_>>(), vec!["A/User.cs"]);
-        assert!(model.rows[0].from_lines.is_empty(), "a line-less edge adds no key, exactly like every other conditional field");
+        assert_eq!(
+            model
+                .rows
+                .iter()
+                .map(|r| r.file.as_str())
+                .collect::<Vec<_>>(),
+            vec!["A/User.cs"]
+        );
+        assert!(
+            model.rows[0].from_lines.is_empty(),
+            "a line-less edge adds no key, exactly like every other conditional field"
+        );
     }
 
     // --- 14: enum-member resolve_symbol by id and by unique simple name ---
@@ -3891,8 +6095,14 @@ mod tests {
         let graph = enum_fixture_graph();
         let root = enum_fixture_root();
         let index = load_graph_index(&graph, &root);
-        assert_eq!(resolve_symbol(&index, "App.Enums.PostType.Question"), Resolution::Resolved("App.Enums.PostType.Question".into()));
-        assert_eq!(resolve_symbol(&index, "Question"), Resolution::Resolved("App.Enums.PostType.Question".into()));
+        assert_eq!(
+            resolve_symbol(&index, "App.Enums.PostType.Question"),
+            Resolution::Resolved("App.Enums.PostType.Question".into())
+        );
+        assert_eq!(
+            resolve_symbol(&index, "Question"),
+            Resolution::Resolved("App.Enums.PostType.Question".into())
+        );
     }
 
     // --- the Enum.Member tail and the member-count split ---
@@ -3912,14 +6122,31 @@ mod tests {
             Resolution::Resolved("App.Enums.PostType".into()),
             "the tail rule is not enum-specific: any dotted suffix of exactly one def id resolves"
         );
-        assert_eq!(resolve_symbol(&index, "PostType.Missing"), Resolution::NotFound);
+        assert_eq!(
+            resolve_symbol(&index, "PostType.Missing"),
+            Resolution::NotFound
+        );
 
         let two = make_graph(
             vec![
                 def("App.One.Mode", "Mode", "App.One", "enum", "One/Mode.cs", 1),
-                def("App.One.Mode.Fast", "Fast", "App.One", "enum-member", "One/Mode.cs", 2),
+                def(
+                    "App.One.Mode.Fast",
+                    "Fast",
+                    "App.One",
+                    "enum-member",
+                    "One/Mode.cs",
+                    2,
+                ),
                 def("App.Two.Mode", "Mode", "App.Two", "enum", "Two/Mode.cs", 1),
-                def("App.Two.Mode.Fast", "Fast", "App.Two", "enum-member", "Two/Mode.cs", 2),
+                def(
+                    "App.Two.Mode.Fast",
+                    "Fast",
+                    "App.Two",
+                    "enum-member",
+                    "Two/Mode.cs",
+                    2,
+                ),
             ],
             vec![],
         );
@@ -3936,24 +6163,82 @@ mod tests {
     fn build_refs_model_on_an_enum_appends_member_refs_in_declaration_order() {
         let graph = make_graph(
             vec![
-                def("App.Flags.Toggles", "Toggles", "App.Flags", "enum", "Flags/Toggles.cs", 3),
-                def("App.Flags.Toggles.EnableX", "EnableX", "App.Flags", "enum-member", "Flags/Toggles.cs", 5),
-                def("App.Flags.Toggles.EnableY", "EnableY", "App.Flags", "enum-member", "Flags/Toggles.cs", 6),
-                def("App.Flags.Toggles.EnableZ", "EnableZ", "App.Flags", "enum-member", "Flags/Toggles.cs", 7),
-                def("App.Run.Runner", "Runner", "App.Run", "class", "Run/Runner.cs", 3),
+                def(
+                    "App.Flags.Toggles",
+                    "Toggles",
+                    "App.Flags",
+                    "enum",
+                    "Flags/Toggles.cs",
+                    3,
+                ),
+                def(
+                    "App.Flags.Toggles.EnableX",
+                    "EnableX",
+                    "App.Flags",
+                    "enum-member",
+                    "Flags/Toggles.cs",
+                    5,
+                ),
+                def(
+                    "App.Flags.Toggles.EnableY",
+                    "EnableY",
+                    "App.Flags",
+                    "enum-member",
+                    "Flags/Toggles.cs",
+                    6,
+                ),
+                def(
+                    "App.Flags.Toggles.EnableZ",
+                    "EnableZ",
+                    "App.Flags",
+                    "enum-member",
+                    "Flags/Toggles.cs",
+                    7,
+                ),
+                def(
+                    "App.Run.Runner",
+                    "Runner",
+                    "App.Run",
+                    "class",
+                    "Run/Runner.cs",
+                    3,
+                ),
             ],
             vec![
                 uses_type("Run/Runner.cs", 5, "App.Flags.Toggles", "Flags/Toggles.cs"),
-                uses_member("Run/Runner.cs", 6, "App.Flags.Toggles.EnableY", "Flags/Toggles.cs"),
-                uses_member("Run/Runner.cs", 7, "App.Flags.Toggles.EnableX", "Flags/Toggles.cs"),
-                uses_member("Run/Runner.cs", 8, "App.Flags.Toggles.EnableX", "Flags/Toggles.cs"),
+                uses_member(
+                    "Run/Runner.cs",
+                    6,
+                    "App.Flags.Toggles.EnableY",
+                    "Flags/Toggles.cs",
+                ),
+                uses_member(
+                    "Run/Runner.cs",
+                    7,
+                    "App.Flags.Toggles.EnableX",
+                    "Flags/Toggles.cs",
+                ),
+                uses_member(
+                    "Run/Runner.cs",
+                    8,
+                    "App.Flags.Toggles.EnableX",
+                    "Flags/Toggles.cs",
+                ),
             ],
         );
         let root = temp_repo_root("enum-member-refs");
         write_manifest_fixture(&root, &["Flags/Toggles.cs", "Run/Runner.cs"]);
         let index = load_graph_index(&graph, &root);
 
-        let model = match build_refs_model(&index, "Toggles", false, DEFAULT_CAP, INBOUND_CAP, OUTBOUND_CAP, false) {
+        let model = match build_refs_model(
+            &index,
+            "Toggles",
+            false,
+            DEFAULT_CAP,
+            INBOUND_CAP,
+            OUTBOUND_CAP,
+            false,
+        ) {
             RefsResult::Resolved(m) => m,
             other => panic!("expected Resolved, got {other:?}"),
         };
@@ -3970,29 +6255,77 @@ mod tests {
             }),
             "declaration order, never count order, and a member nothing references is left out entirely"
         );
-        assert_eq!(model.inbound.uses_member.total, 3, "the existing union is unchanged by the split");
+        assert_eq!(
+            model.inbound.uses_member.total, 3,
+            "the existing union is unchanged by the split"
+        );
 
-        let other = match build_refs_model(&index, "Runner", false, DEFAULT_CAP, INBOUND_CAP, OUTBOUND_CAP, false) {
+        let other = match build_refs_model(
+            &index,
+            "Runner",
+            false,
+            DEFAULT_CAP,
+            INBOUND_CAP,
+            OUTBOUND_CAP,
+            false,
+        ) {
             RefsResult::Resolved(m) => m,
             other => panic!("expected Resolved, got {other:?}"),
         };
-        assert_eq!(other.member_refs, None, "nothing but an enum carries the field");
+        assert_eq!(
+            other.member_refs, None,
+            "nothing but an enum carries the field"
+        );
     }
 
     #[test]
     fn build_impact_model_on_an_enum_file_reaches_files_that_use_only_its_members() {
         let graph = make_graph(
             vec![
-                def("App.Flags.Toggles", "Toggles", "App.Flags", "enum", "Flags/Toggles.cs", 3),
-                def("App.Flags.Toggles.EnableX", "EnableX", "App.Flags", "enum-member", "Flags/Toggles.cs", 5),
-                def("App.Run.Runner", "Runner", "App.Run", "class", "Run/Runner.cs", 3),
+                def(
+                    "App.Flags.Toggles",
+                    "Toggles",
+                    "App.Flags",
+                    "enum",
+                    "Flags/Toggles.cs",
+                    3,
+                ),
+                def(
+                    "App.Flags.Toggles.EnableX",
+                    "EnableX",
+                    "App.Flags",
+                    "enum-member",
+                    "Flags/Toggles.cs",
+                    5,
+                ),
+                def(
+                    "App.Run.Runner",
+                    "Runner",
+                    "App.Run",
+                    "class",
+                    "Run/Runner.cs",
+                    3,
+                ),
             ],
-            vec![uses_member("Run/Runner.cs", 6, "App.Flags.Toggles.EnableX", "Flags/Toggles.cs")],
+            vec![uses_member(
+                "Run/Runner.cs",
+                6,
+                "App.Flags.Toggles.EnableX",
+                "Flags/Toggles.cs",
+            )],
         );
         let root = temp_repo_root("enum-member-impact");
         write_manifest_fixture(&root, &["Flags/Toggles.cs", "Run/Runner.cs"]);
         let index = load_graph_index(&graph, &root);
-        let model = match build_impact_model(&index, "Flags/Toggles.cs", 2, DEFAULT_CAP, true, DEFAULT_IFACE_MAX_FANIN, DEFAULT_HUB_MAX_INDEGREE) {
+        let model = match build_impact_model(
+            &index,
+            "Flags/Toggles.cs",
+            2,
+            DEFAULT_CAP,
+            true,
+            DEFAULT_IFACE_MAX_FANIN,
+            DEFAULT_HUB_MAX_INDEGREE,
+        ) {
             ImpactResult::Resolved(m) => m,
             other => panic!("expected Resolved, got {other:?}"),
         };
@@ -4010,14 +6343,31 @@ mod tests {
         let graph = enum_fixture_graph();
         let root = enum_fixture_root();
         let index = load_graph_index(&graph, &root);
-        let model = match build_refs_model(&index, "Question", true, DEFAULT_CAP, INBOUND_CAP, OUTBOUND_CAP, false) {
+        let model = match build_refs_model(
+            &index,
+            "Question",
+            true,
+            DEFAULT_CAP,
+            INBOUND_CAP,
+            OUTBOUND_CAP,
+            false,
+        ) {
             RefsResult::Resolved(m) => m,
             other => panic!("expected Resolved, got {other:?}"),
         };
         assert_eq!(model.kind, "enum-member");
-        assert_eq!(model.sites, vec![DefSite { file: "Enums/PostType.cs".into(), line: 6 }]);
+        assert_eq!(
+            model.sites,
+            vec![DefSite {
+                file: "Enums/PostType.cs".into(),
+                line: 6
+            }]
+        );
         assert_eq!(model.inbound.uses_member.total, 1);
-        assert_eq!(model.inbound.uses_member.rows[0].file, "Consumers/Reader.cs");
+        assert_eq!(
+            model.inbound.uses_member.rows[0].file,
+            "Consumers/Reader.cs"
+        );
         assert_eq!(model.inbound.uses_member.rows[0].line, 8);
     }
 
@@ -4028,13 +6378,27 @@ mod tests {
         let graph = enum_fixture_graph();
         let root = enum_fixture_root();
         let index = load_graph_index(&graph, &root);
-        let model = match build_refs_model(&index, "PostType", true, DEFAULT_CAP, INBOUND_CAP, OUTBOUND_CAP, false) {
+        let model = match build_refs_model(
+            &index,
+            "PostType",
+            true,
+            DEFAULT_CAP,
+            INBOUND_CAP,
+            OUTBOUND_CAP,
+            false,
+        ) {
             RefsResult::Resolved(m) => m,
             other => panic!("expected Resolved, got {other:?}"),
         };
         assert_eq!(model.kind, "enum");
-        assert_eq!(model.inbound.uses_member.total, 1, "member-level access must surface on the enum query");
-        assert_eq!(model.inbound.uses_member.rows[0].file, "Consumers/Reader.cs");
+        assert_eq!(
+            model.inbound.uses_member.total, 1,
+            "member-level access must surface on the enum query"
+        );
+        assert_eq!(
+            model.inbound.uses_member.rows[0].file,
+            "Consumers/Reader.cs"
+        );
         assert_eq!(model.inbound.uses_member.rows[0].line, 8);
     }
 
@@ -4044,10 +6408,38 @@ mod tests {
     fn two_enums_with_same_named_member_resolve_ambiguous_both_sites_surfaced() {
         let graph = make_graph(
             vec![
-                def("App.One.StatusEnum", "StatusEnum", "App.One", "enum", "One/StatusEnum.cs", 1),
-                def("App.One.StatusEnum.Changed", "Changed", "App.One", "enum-member", "One/StatusEnum.cs", 2),
-                def("App.Two.OtherEnum", "OtherEnum", "App.Two", "enum", "Two/OtherEnum.cs", 1),
-                def("App.Two.OtherEnum.Changed", "Changed", "App.Two", "enum-member", "Two/OtherEnum.cs", 2),
+                def(
+                    "App.One.StatusEnum",
+                    "StatusEnum",
+                    "App.One",
+                    "enum",
+                    "One/StatusEnum.cs",
+                    1,
+                ),
+                def(
+                    "App.One.StatusEnum.Changed",
+                    "Changed",
+                    "App.One",
+                    "enum-member",
+                    "One/StatusEnum.cs",
+                    2,
+                ),
+                def(
+                    "App.Two.OtherEnum",
+                    "OtherEnum",
+                    "App.Two",
+                    "enum",
+                    "Two/OtherEnum.cs",
+                    1,
+                ),
+                def(
+                    "App.Two.OtherEnum.Changed",
+                    "Changed",
+                    "App.Two",
+                    "enum-member",
+                    "Two/OtherEnum.cs",
+                    2,
+                ),
             ],
             vec![],
         );
@@ -4058,15 +6450,35 @@ mod tests {
         match resolve_symbol(&index, "Changed") {
             Resolution::Ambiguous(mut ids) => {
                 ids.sort();
-                assert_eq!(ids, vec!["App.One.StatusEnum.Changed".to_string(), "App.Two.OtherEnum.Changed".to_string()]);
+                assert_eq!(
+                    ids,
+                    vec![
+                        "App.One.StatusEnum.Changed".to_string(),
+                        "App.Two.OtherEnum.Changed".to_string()
+                    ]
+                );
             }
             other => panic!("expected Ambiguous, got {other:?}"),
         }
 
-        match build_refs_model(&index, "Changed", true, DEFAULT_CAP, INBOUND_CAP, OUTBOUND_CAP, false) {
+        match build_refs_model(
+            &index,
+            "Changed",
+            true,
+            DEFAULT_CAP,
+            INBOUND_CAP,
+            OUTBOUND_CAP,
+            false,
+        ) {
             RefsResult::Ambiguous(mut ids) => {
                 ids.sort();
-                assert_eq!(ids, vec!["App.One.StatusEnum.Changed".to_string(), "App.Two.OtherEnum.Changed".to_string()]);
+                assert_eq!(
+                    ids,
+                    vec![
+                        "App.One.StatusEnum.Changed".to_string(),
+                        "App.Two.OtherEnum.Changed".to_string()
+                    ]
+                );
             }
             other => panic!("expected Ambiguous, got {other:?}"),
         }
@@ -4079,11 +6491,26 @@ mod tests {
         let graph = enum_fixture_graph();
         let root = enum_fixture_root();
         let index = load_graph_index(&graph, &root);
-        let model = match build_impact_model(&index, "Question", 1, DEFAULT_CAP, true, DEFAULT_IFACE_MAX_FANIN, DEFAULT_HUB_MAX_INDEGREE) {
+        let model = match build_impact_model(
+            &index,
+            "Question",
+            1,
+            DEFAULT_CAP,
+            true,
+            DEFAULT_IFACE_MAX_FANIN,
+            DEFAULT_HUB_MAX_INDEGREE,
+        ) {
             ImpactResult::Resolved(m) => m,
             other => panic!("expected Resolved, got {other:?}"),
         };
-        assert_eq!(model.rows.iter().map(|r| r.file.clone()).collect::<Vec<_>>(), vec!["Consumers/Reader.cs".to_string()]);
+        assert_eq!(
+            model
+                .rows
+                .iter()
+                .map(|r| r.file.clone())
+                .collect::<Vec<_>>(),
+            vec!["Consumers/Reader.cs".to_string()]
+        );
         assert_eq!(model.rows[0].hop, 1);
     }
 
@@ -4094,14 +6521,30 @@ mod tests {
         let graph = enum_fixture_graph();
         let root = enum_fixture_root();
         let index = load_graph_index(&graph, &root);
-        let model = match build_impact_model(&index, "Question", 2, DEFAULT_CAP, true, DEFAULT_IFACE_MAX_FANIN, DEFAULT_HUB_MAX_INDEGREE) {
+        let model = match build_impact_model(
+            &index,
+            "Question",
+            2,
+            DEFAULT_CAP,
+            true,
+            DEFAULT_IFACE_MAX_FANIN,
+            DEFAULT_HUB_MAX_INDEGREE,
+        ) {
             ImpactResult::Resolved(m) => m,
             other => panic!("expected Resolved, got {other:?}"),
         };
         let mut files: Vec<&str> = model.rows.iter().map(|r| r.file.as_str()).collect();
         files.sort();
         assert_eq!(files, vec!["Consumers/Reader.cs", "Consumers/TwoHop.cs"]);
-        assert_eq!(model.rows.iter().find(|r| r.file == "Consumers/TwoHop.cs").unwrap().hop, 2);
+        assert_eq!(
+            model
+                .rows
+                .iter()
+                .find(|r| r.file == "Consumers/TwoHop.cs")
+                .unwrap()
+                .hop,
+            2
+        );
     }
 
     // --- 20: impact_walk + personalized_page_rank -- finite, non-negative, never NaN ---
@@ -4111,7 +6554,14 @@ mod tests {
         let graph = base_fixture_graph();
         let root = base_fixture_root();
         let index = load_graph_index(&graph, &root);
-        let walk = impact_walk(&index, &["App.Widgets.IWidget".to_string()], 2, true, DEFAULT_IFACE_MAX_FANIN, DEFAULT_HUB_MAX_INDEGREE);
+        let walk = impact_walk(
+            &index,
+            &["App.Widgets.IWidget".to_string()],
+            2,
+            true,
+            DEFAULT_IFACE_MAX_FANIN,
+            DEFAULT_HUB_MAX_INDEGREE,
+        );
         let mut nodes: SeqSet<String> = SeqSet::new();
         for f in walk.seed_files.iter() {
             nodes.insert(f.clone());
@@ -4120,9 +6570,18 @@ mod tests {
             nodes.insert(f.clone());
         }
         let seeds: Vec<String> = walk.seed_files.iter().cloned().collect();
-        let rank = personalized_page_rank(&nodes.into_vec(), &walk.fwd_adj, &seeds, DEFAULT_DAMPING, DEFAULT_ITERATIONS);
+        let rank = personalized_page_rank(
+            &nodes.into_vec(),
+            &walk.fwd_adj,
+            &seeds,
+            DEFAULT_DAMPING,
+            DEFAULT_ITERATIONS,
+        );
         for v in rank.values() {
-            assert!(v.is_finite() && *v >= 0.0, "every rank must be a finite, non-negative number, got {v}");
+            assert!(
+                v.is_finite() && *v >= 0.0,
+                "every rank must be a finite, non-negative number, got {v}"
+            );
         }
     }
 
@@ -4134,9 +6593,18 @@ mod tests {
         assert!(looks_like_file_path("Widgets/IWidget.cs"));
         assert!(looks_like_file_path("IWidget.cs"));
         assert!(!looks_like_file_path("IWidget"));
-        assert!(looks_like_file_path("App.Widgets.IWidget"), "qualified id with alnum trailing segment matches the regex, same as JS");
-        assert!(!looks_like_file_path("Foo."), "trailing dot with nothing after it does not match (empty extension)");
-        assert!(!looks_like_file_path("Foo!"), "no dot-then-alnum-to-end anywhere");
+        assert!(
+            looks_like_file_path("App.Widgets.IWidget"),
+            "qualified id with alnum trailing segment matches the regex, same as JS"
+        );
+        assert!(
+            !looks_like_file_path("Foo."),
+            "trailing dot with nothing after it does not match (empty extension)"
+        );
+        assert!(
+            !looks_like_file_path("Foo!"),
+            "no dot-then-alnum-to-end anywhere"
+        );
     }
 
     // ========================================================================
@@ -4189,90 +6657,195 @@ mod tests {
     }
 
     #[test]
-    fn stage4_cli_refs_lists_every_precise_row_before_any_heuristic_row_and_suffixes_only_the_guesses() {
+    fn stage4_cli_refs_lists_every_precise_row_before_any_heuristic_row_and_suffixes_only_the_guesses(
+    ) {
         // Alphabetically Guess.cs sorts BEFORE Precise.cs, so a single
         // by-location sort over the union would interleave them. The split is
         // what puts the facts first, not the sort.
         let defs = vec![widget_def()];
         let edges = vec![
-            uses_member("Consumers/Precise.cs", 10, "App.Core.Widget", "Core/Widget.cs"),
+            uses_member(
+                "Consumers/Precise.cs",
+                10,
+                "App.Core.Widget",
+                "Core/Widget.cs",
+            ),
             heuristic_uses_member("Consumers/Guess.cs", 7, "App.Core.Widget", "Core/Widget.cs"),
         ];
         let root = stage4_root(&defs, &edges, "stage4-order");
         let g = make_graph(defs, edges);
         let index = load_graph_index(&g, &root);
-        let model = match build_refs_model(&index, "Widget", true, DEFAULT_CAP, INBOUND_CAP, OUTBOUND_CAP, false) {
+        let model = match build_refs_model(
+            &index,
+            "Widget",
+            true,
+            DEFAULT_CAP,
+            INBOUND_CAP,
+            OUTBOUND_CAP,
+            false,
+        ) {
             RefsResult::Resolved(m) => m,
             other => panic!("expected a resolved model, got {other:?}"),
         };
 
         let out = crate::render::render_refs_text(&model);
         let lines: Vec<&str> = out.lines().collect();
-        let start = lines.iter().position(|l| *l == "  uses-member (2):").expect("a uses-member block counting both rows");
+        let start = lines
+            .iter()
+            .position(|l| *l == "  uses-member (2):")
+            .expect("a uses-member block counting both rows");
         assert_eq!(
             &lines[start + 1..start + 3],
-            ["    Consumers/Precise.cs:10  uses-member", "    Consumers/Guess.cs:7  uses-member (heuristic)"]
+            [
+                "    Consumers/Precise.cs:10  uses-member",
+                "    Consumers/Guess.cs:7  uses-member (heuristic)"
+            ]
         );
 
         // --compact marks the same row with the one-character form.
         let compact = crate::render::render_refs_compact(&model);
-        assert!(compact.contains("in:uses-member (2):\n  Consumers/Precise.cs:10\n  Consumers/Guess.cs:7h"), "{compact}");
+        assert!(
+            compact.contains(
+                "in:uses-member (2):\n  Consumers/Precise.cs:10\n  Consumers/Guess.cs:7h"
+            ),
+            "{compact}"
+        );
     }
 
     #[test]
     fn stage4_cli_refs_precise_rows_filling_the_cap_leave_no_room_for_heuristic_rows() {
         let defs = vec![widget_def()];
         let mut edges: Vec<graph::Edge> = (0..31)
-            .map(|i| uses_member(&format!("Consumers/C{i:02}.cs"), 4, "App.Core.Widget", "Core/Widget.cs"))
+            .map(|i| {
+                uses_member(
+                    &format!("Consumers/C{i:02}.cs"),
+                    4,
+                    "App.Core.Widget",
+                    "Core/Widget.cs",
+                )
+            })
             .collect();
-        edges.push(heuristic_uses_member("Consumers/Zzz.cs", 9, "App.Core.Widget", "Core/Widget.cs"));
+        edges.push(heuristic_uses_member(
+            "Consumers/Zzz.cs",
+            9,
+            "App.Core.Widget",
+            "Core/Widget.cs",
+        ));
         let root = stage4_root(&defs, &edges, "stage4-cap");
         let g = make_graph(defs, edges);
         let index = load_graph_index(&g, &root);
-        let model = match build_refs_model(&index, "Widget", true, DEFAULT_CAP, INBOUND_CAP, OUTBOUND_CAP, false) {
+        let model = match build_refs_model(
+            &index,
+            "Widget",
+            true,
+            DEFAULT_CAP,
+            INBOUND_CAP,
+            OUTBOUND_CAP,
+            false,
+        ) {
             RefsResult::Resolved(m) => m,
             other => panic!("expected a resolved model, got {other:?}"),
         };
 
         let out = crate::render::render_refs_text(&model);
-        assert!(out.contains("  uses-member (32, 2 dropped):"), "the cap is shared: 32 rows, 30 shown, 2 dropped\n{out}");
-        assert!(out.contains("\n  +2 more\n"), "one trailer carries the exact count the call did not return\n{out}");
-        assert!(!out.contains("(heuristic)"), "precise rows have priority -- a full cap shows zero guesses");
-        assert_eq!(out.lines().filter(|l| l.starts_with("    Consumers/")).count(), 30);
+        assert!(
+            out.contains("  uses-member (32, 2 dropped):"),
+            "the cap is shared: 32 rows, 30 shown, 2 dropped\n{out}"
+        );
+        assert!(
+            out.contains("\n  +2 more\n"),
+            "one trailer carries the exact count the call did not return\n{out}"
+        );
+        assert!(
+            !out.contains("(heuristic)"),
+            "precise rows have priority -- a full cap shows zero guesses"
+        );
+        assert_eq!(
+            out.lines()
+                .filter(|l| l.starts_with("    Consumers/"))
+                .count(),
+            30
+        );
     }
 
     fn stage4_impact_defs() -> Vec<graph::Def> {
         vec![
             widget_def(),
-            def("App.Direct.Direct", "Direct", "App.Direct", "class", "Consumers/Direct.cs", 3),
-            def("App.Guessed.Guessed", "Guessed", "App.Guessed", "class", "Consumers/Guessed.cs", 3),
+            def(
+                "App.Direct.Direct",
+                "Direct",
+                "App.Direct",
+                "class",
+                "Consumers/Direct.cs",
+                3,
+            ),
+            def(
+                "App.Guessed.Guessed",
+                "Guessed",
+                "App.Guessed",
+                "class",
+                "Consumers/Guessed.cs",
+                3,
+            ),
         ]
     }
 
     #[test]
-    fn stage4_cli_impact_declares_heuristic_reached_files_beside_the_affected_count_only_when_there_are_some() {
-        let precise = uses_type("Consumers/Direct.cs", 4, "App.Core.Widget", "Core/Widget.cs");
+    fn stage4_cli_impact_declares_heuristic_reached_files_beside_the_affected_count_only_when_there_are_some(
+    ) {
+        let precise = uses_type(
+            "Consumers/Direct.cs",
+            4,
+            "App.Core.Widget",
+            "Core/Widget.cs",
+        );
 
         let defs = stage4_impact_defs();
-        let edges = vec![precise.clone(), heuristic_uses_member("Consumers/Guessed.cs", 8, "App.Core.Widget", "Core/Widget.cs")];
+        let edges = vec![
+            precise.clone(),
+            heuristic_uses_member(
+                "Consumers/Guessed.cs",
+                8,
+                "App.Core.Widget",
+                "Core/Widget.cs",
+            ),
+        ];
         let root = stage4_root(&defs, &edges, "stage4-impact-with");
         let g = make_graph(defs, edges);
         let index = load_graph_index(&g, &root);
-        let model = match build_impact_model(&index, "Core/Widget.cs", DEFAULT_HOPS, DEFAULT_CAP, true, DEFAULT_IFACE_MAX_FANIN, DEFAULT_HUB_MAX_INDEGREE) {
+        let model = match build_impact_model(
+            &index,
+            "Core/Widget.cs",
+            DEFAULT_HOPS,
+            DEFAULT_CAP,
+            true,
+            DEFAULT_IFACE_MAX_FANIN,
+            DEFAULT_HUB_MAX_INDEGREE,
+        ) {
             ImpactResult::Resolved(m) => m,
             other => panic!("expected a resolved model, got {other:?}"),
         };
         let out = crate::render::render_impact_text("Core/Widget.cs", &model);
-        assert!(out.contains("affected files: 1 (+1 heuristic)  shown: 2  dropped: 0"), "{out}");
+        assert!(
+            out.contains("affected files: 1 (+1 heuristic)  shown: 2  dropped: 0"),
+            "{out}"
+        );
         let lines: Vec<&str> = out.lines().collect();
-        let header = lines.iter().position(|l| *l == "file  hops  via  top-symbols").expect("row header present");
+        let header = lines
+            .iter()
+            .position(|l| *l == "file  hops  via  top-symbols")
+            .expect("row header present");
         assert_eq!(
             &lines[header + 1..header + 3],
-            ["Consumers/Direct.cs  1  1  Widget", "Consumers/Guessed.cs  1  1  Widget (heuristic)"],
+            [
+                "Consumers/Direct.cs  1  1  Widget",
+                "Consumers/Guessed.cs  1  1  Widget (heuristic)"
+            ],
             "heuristic-reached files are listed after every precise one, never ranked among them"
         );
         assert!(
-            crate::render::render_impact_compact("Core/Widget.cs", &model).contains("Consumers/Guessed.cs via=1h"),
+            crate::render::render_impact_compact("Core/Widget.cs", &model)
+                .contains("Consumers/Guessed.cs via=1h"),
             "compact reports the guess count, never `via=0`"
         );
 
@@ -4284,14 +6857,27 @@ mod tests {
         let root = stage4_root(&defs, &edges, "stage4-impact-without");
         let g = make_graph(defs, edges);
         let index = load_graph_index(&g, &root);
-        let model = match build_impact_model(&index, "Core/Widget.cs", DEFAULT_HOPS, DEFAULT_CAP, true, DEFAULT_IFACE_MAX_FANIN, DEFAULT_HUB_MAX_INDEGREE) {
+        let model = match build_impact_model(
+            &index,
+            "Core/Widget.cs",
+            DEFAULT_HOPS,
+            DEFAULT_CAP,
+            true,
+            DEFAULT_IFACE_MAX_FANIN,
+            DEFAULT_HUB_MAX_INDEGREE,
+        ) {
             ImpactResult::Resolved(m) => m,
             other => panic!("expected a resolved model, got {other:?}"),
         };
         let out = crate::render::render_impact_text("Core/Widget.cs", &model);
-        assert!(out.contains("affected files: 1  shown: 1  dropped: 0"), "{out}");
+        assert!(
+            out.contains("affected files: 1  shown: 1  dropped: 0"),
+            "{out}"
+        );
         assert!(!out.contains("heuristic"), "{out}");
-        assert!(!crate::render::render_impact_compact("Core/Widget.cs", &model).contains("heuristic"));
+        assert!(
+            !crate::render::render_impact_compact("Core/Widget.cs", &model).contains("heuristic")
+        );
     }
 
     #[test]
@@ -4303,7 +6889,14 @@ mod tests {
         let impact_out = |heuristic: bool, label: &str| {
             let defs = vec![
                 widget_def(),
-                def("App.Mid.Middle", "Middle", "App.Mid", "class", "Mid/Middle.cs", 3),
+                def(
+                    "App.Mid.Middle",
+                    "Middle",
+                    "App.Mid",
+                    "class",
+                    "Mid/Middle.cs",
+                    3,
+                ),
                 def("App.Far.Far", "Far", "App.Far", "class", "Far/Far.cs", 3),
             ];
             let first = if heuristic {
@@ -4311,11 +6904,22 @@ mod tests {
             } else {
                 uses_member("Mid/Middle.cs", 8, "App.Core.Widget", "Core/Widget.cs")
             };
-            let edges = vec![first, uses_type("Far/Far.cs", 4, "App.Mid.Middle", "Mid/Middle.cs")];
+            let edges = vec![
+                first,
+                uses_type("Far/Far.cs", 4, "App.Mid.Middle", "Mid/Middle.cs"),
+            ];
             let root = stage4_root(&defs, &edges, label);
             let g = make_graph(defs, edges);
             let index = load_graph_index(&g, &root);
-            let model = match build_impact_model(&index, "Core/Widget.cs", 2, DEFAULT_CAP, true, DEFAULT_IFACE_MAX_FANIN, DEFAULT_HUB_MAX_INDEGREE) {
+            let model = match build_impact_model(
+                &index,
+                "Core/Widget.cs",
+                2,
+                DEFAULT_CAP,
+                true,
+                DEFAULT_IFACE_MAX_FANIN,
+                DEFAULT_HUB_MAX_INDEGREE,
+            ) {
                 ImpactResult::Resolved(m) => m,
                 other => panic!("expected a resolved model, got {other:?}"),
             };
@@ -4323,16 +6927,25 @@ mod tests {
         };
 
         let control = impact_out(false, "stage4-walk-control");
-        assert!(control.contains("Far/Far.cs"), "control: with a precise first link the walk reaches the second hop\n{control}");
+        assert!(
+            control.contains("Far/Far.cs"),
+            "control: with a precise first link the walk reaches the second hop\n{control}"
+        );
         assert!(control.contains("affected files: 2  "), "{control}");
 
         let guessed = impact_out(true, "stage4-walk-guess");
-        assert!(guessed.contains("Mid/Middle.cs  1  1  Widget (heuristic)"), "the guessed file itself is still reported\n{guessed}");
+        assert!(
+            guessed.contains("Mid/Middle.cs  1  1  Widget (heuristic)"),
+            "the guessed file itself is still reported\n{guessed}"
+        );
         assert!(
             !guessed.contains("Far/Far.cs"),
             "a guess may reach a file and must never become the premise of the next hop -- compounding guesses is how blast radius turns into fiction\n{guessed}"
         );
-        assert!(guessed.contains("affected files: 0 (+1 heuristic)  shown: 1  dropped: 0"), "{guessed}");
+        assert!(
+            guessed.contains("affected files: 0 (+1 heuristic)  shown: 1  dropped: 0"),
+            "{guessed}"
+        );
     }
 
     /// The heuristic adjacency really is SEPARATE: a graph whose only
@@ -4341,18 +6954,35 @@ mod tests {
     #[test]
     fn stage4_heuristic_edges_never_enter_the_precise_adjacency() {
         let defs = vec![widget_def()];
-        let edges = vec![heuristic_uses_type("Consumers/Guess.cs", 7, "App.Core.Widget", "Core/Widget.cs")];
+        let edges = vec![heuristic_uses_type(
+            "Consumers/Guess.cs",
+            7,
+            "App.Core.Widget",
+            "Core/Widget.cs",
+        )];
         let root = stage4_root(&defs, &edges, "stage4-adjacency");
         let g = make_graph(defs, edges);
         let index = load_graph_index(&g, &root);
-        assert!(index.inbound.get("App.Core.Widget").is_none(), "the precise inbound table never sees a tagged edge");
+        assert!(
+            index.inbound.get("App.Core.Widget").is_none(),
+            "the precise inbound table never sees a tagged edge"
+        );
         assert_eq!(
-            index.heuristic_inbound.get("App.Core.Widget").map(|e| e.uses_type.len()),
+            index
+                .heuristic_inbound
+                .get("App.Core.Widget")
+                .map(|e| e.uses_type.len()),
             Some(1),
             "and the heuristic one holds it, keyed by the same def id"
         );
         assert!(index.outbound_by_file.get("Consumers/Guess.cs").is_none());
-        assert_eq!(index.heuristic_outbound_by_file.get("Consumers/Guess.cs").map(|e| e.uses_type.len()), Some(1));
+        assert_eq!(
+            index
+                .heuristic_outbound_by_file
+                .get("Consumers/Guess.cs")
+                .map(|e| e.uses_type.len()),
+            Some(1)
+        );
     }
 
     // ========================================================================
@@ -4360,7 +6990,13 @@ mod tests {
     // ========================================================================
 
     /// `def()` carrying a test-method list -- what makes its file a TEST file.
-    fn test_def(id: &str, name: &str, file: &str, line: usize, test_methods: &[&str]) -> graph::Def {
+    fn test_def(
+        id: &str,
+        name: &str,
+        file: &str,
+        line: usize,
+        test_methods: &[&str],
+    ) -> graph::Def {
         graph::Def {
             test_methods: test_methods.iter().map(|s| s.to_string()).collect(),
             ..def(id, name, "App.Orders.Tests", "class", file, line)
@@ -4380,22 +7016,83 @@ mod tests {
     /// non-test neighbour, and once by a GUESS from a partial test class's
     /// second declaring file -- the four cases the model has to tell apart.
     fn tests_fixture_graph() -> graph::Graph {
-        let mut partial = test_def("App.Orders.Tests.PartialTests", "PartialTests", "tests/Partial.cs", 3, &["Scales"]);
-        partial.also_in = vec![graph::AlsoIn { file: "tests/Partial.Extra.cs".into(), line: 3 }];
+        let mut partial = test_def(
+            "App.Orders.Tests.PartialTests",
+            "PartialTests",
+            "tests/Partial.cs",
+            3,
+            &["Scales"],
+        );
+        partial.also_in = vec![graph::AlsoIn {
+            file: "tests/Partial.Extra.cs".into(),
+            line: 3,
+        }];
         make_graph(
             vec![
-                def("App.Orders.OrderService", "OrderService", "App.Orders", "class", "src/OrderService.cs", 3),
-                def("App.Orders.Untested", "Untested", "App.Orders", "class", "src/Untested.cs", 3),
-                test_def("App.Orders.Tests.OrderServiceTests", "OrderServiceTests", "tests/OrderServiceTests.cs", 5, &["Totals"]),
-                def("App.Orders.Tests.Fakes", "Fakes", "App.Orders.Tests", "class", "tests/Fakes.cs", 3),
+                def(
+                    "App.Orders.OrderService",
+                    "OrderService",
+                    "App.Orders",
+                    "class",
+                    "src/OrderService.cs",
+                    3,
+                ),
+                def(
+                    "App.Orders.Untested",
+                    "Untested",
+                    "App.Orders",
+                    "class",
+                    "src/Untested.cs",
+                    3,
+                ),
+                test_def(
+                    "App.Orders.Tests.OrderServiceTests",
+                    "OrderServiceTests",
+                    "tests/OrderServiceTests.cs",
+                    5,
+                    &["Totals"],
+                ),
+                def(
+                    "App.Orders.Tests.Fakes",
+                    "Fakes",
+                    "App.Orders.Tests",
+                    "class",
+                    "tests/Fakes.cs",
+                    3,
+                ),
                 partial,
             ],
             vec![
-                uses_type("tests/OrderServiceTests.cs", 11, "App.Orders.OrderService", "src/OrderService.cs"),
-                uses_type("tests/OrderServiceTests.cs", 10, "App.Orders.OrderService", "src/OrderService.cs"),
-                uses_type("tests/OrderServiceTests.cs", 10, "App.Orders.OrderService", "src/OrderService.cs"),
-                uses_type("tests/Fakes.cs", 7, "App.Orders.OrderService", "src/OrderService.cs"),
-                heuristic_uses_member("tests/Partial.Extra.cs", 9, "App.Orders.OrderService", "src/OrderService.cs"),
+                uses_type(
+                    "tests/OrderServiceTests.cs",
+                    11,
+                    "App.Orders.OrderService",
+                    "src/OrderService.cs",
+                ),
+                uses_type(
+                    "tests/OrderServiceTests.cs",
+                    10,
+                    "App.Orders.OrderService",
+                    "src/OrderService.cs",
+                ),
+                uses_type(
+                    "tests/OrderServiceTests.cs",
+                    10,
+                    "App.Orders.OrderService",
+                    "src/OrderService.cs",
+                ),
+                uses_type(
+                    "tests/Fakes.cs",
+                    7,
+                    "App.Orders.OrderService",
+                    "src/OrderService.cs",
+                ),
+                heuristic_uses_member(
+                    "tests/Partial.Extra.cs",
+                    9,
+                    "App.Orders.OrderService",
+                    "src/OrderService.cs",
+                ),
             ],
         )
     }
@@ -4417,12 +7114,19 @@ mod tests {
     fn test_defs_by_file_registers_every_declaring_site_and_never_a_file_without_a_test_def() {
         let g = tests_fixture_graph();
         let index = load_graph_index(&g, &tests_fixture_root());
-        assert!(index.test_defs_by_file.contains_key("tests/OrderServiceTests.cs"));
+        assert!(index
+            .test_defs_by_file
+            .contains_key("tests/OrderServiceTests.cs"));
         assert!(
-            index.test_defs_by_file.contains_key("tests/Partial.Extra.cs"),
+            index
+                .test_defs_by_file
+                .contains_key("tests/Partial.Extra.cs"),
             "a partial test class registers its second declaring file too"
         );
-        assert!(!index.test_defs_by_file.contains_key("tests/Fakes.cs"), "a file is a test file only because of the attribute");
+        assert!(
+            !index.test_defs_by_file.contains_key("tests/Fakes.cs"),
+            "a file is a test file only because of the attribute"
+        );
         assert!(!index.test_defs_by_file.contains_key("src/OrderService.cs"));
     }
 
@@ -4434,14 +7138,27 @@ mod tests {
 
         assert_eq!(m.symbol, "App.Orders.OrderService");
         assert_eq!(m.def_files, vec!["src/OrderService.cs".to_string()]);
-        assert_eq!(m.test_file_count, 1, "the non-test neighbour is not a test file");
-        assert_eq!(m.ref_count, 3, "lines keep duplicates -- refCount is the reference count, not the distinct-line count");
+        assert_eq!(
+            m.test_file_count, 1,
+            "the non-test neighbour is not a test file"
+        );
+        assert_eq!(
+            m.ref_count, 3,
+            "lines keep duplicates -- refCount is the reference count, not the distinct-line count"
+        );
         assert_eq!(m.rows.len(), 2, "one precise row, then the heuristic one");
 
         let precise = &m.rows[0];
         assert_eq!(precise.file, "tests/OrderServiceTests.cs");
-        assert_eq!(precise.test_defs, vec!["App.Orders.Tests.OrderServiceTests".to_string()]);
-        assert_eq!(precise.lines, vec![10, 10, 11], "ascending, duplicates kept");
+        assert_eq!(
+            precise.test_defs,
+            vec!["App.Orders.Tests.OrderServiceTests".to_string()]
+        );
+        assert_eq!(
+            precise.lines,
+            vec![10, 10, 11],
+            "ascending, duplicates kept"
+        );
         assert_eq!(precise.ref_count, 3);
         assert!(!precise.heuristic);
     }
@@ -4453,9 +7170,15 @@ mod tests {
         let m = resolved_tests(build_tests_model(&index, "OrderService"));
 
         let guessed = &m.rows[1];
-        assert!(guessed.heuristic, "a guess never sits inside the list of facts");
+        assert!(
+            guessed.heuristic,
+            "a guess never sits inside the list of facts"
+        );
         assert_eq!(guessed.file, "tests/Partial.Extra.cs");
-        assert_eq!(guessed.test_defs, vec!["App.Orders.Tests.PartialTests".to_string()]);
+        assert_eq!(
+            guessed.test_defs,
+            vec!["App.Orders.Tests.PartialTests".to_string()]
+        );
         assert_eq!(guessed.lines, vec![9]);
         assert_eq!(m.heuristic_file_count, 1);
         assert_eq!(m.heuristic_ref_count, 1);
@@ -4469,14 +7192,25 @@ mod tests {
         let m = resolved_tests(build_tests_model(&index, "Untested"));
         assert_eq!(m.symbol, "App.Orders.Untested");
         assert!(m.rows.is_empty());
-        assert_eq!((m.test_file_count, m.ref_count, m.heuristic_file_count, m.heuristic_ref_count), (0, 0, 0, 0));
+        assert_eq!(
+            (
+                m.test_file_count,
+                m.ref_count,
+                m.heuristic_file_count,
+                m.heuristic_ref_count
+            ),
+            (0, 0, 0, 0)
+        );
     }
 
     #[test]
     fn build_tests_model_uses_the_same_resolve_symbol_ladder_refs_does() {
         let g = tests_fixture_graph();
         let index = load_graph_index(&g, &tests_fixture_root());
-        assert_eq!(build_tests_model(&index, "NoSuchSymbol"), TestsResult::NotFound);
+        assert_eq!(
+            build_tests_model(&index, "NoSuchSymbol"),
+            TestsResult::NotFound
+        );
         assert_eq!(
             resolved_tests(build_tests_model(&index, "orderservice")).symbol,
             "App.Orders.OrderService",
@@ -4487,7 +7221,10 @@ mod tests {
         let ambiguous_index = load_graph_index(&ambiguous_graph, &base_fixture_root());
         assert_eq!(
             build_tests_model(&ambiguous_index, "Config"),
-            TestsResult::Ambiguous(vec!["App.One.Config".to_string(), "App.Two.Config".to_string()])
+            TestsResult::Ambiguous(vec![
+                "App.One.Config".to_string(),
+                "App.Two.Config".to_string()
+            ])
         );
     }
 
@@ -4496,20 +7233,48 @@ mod tests {
         let g = tests_fixture_graph();
         let index = load_graph_index(&g, &tests_fixture_root());
 
-        let ImpactResult::Resolved(covered) = build_impact_model(&index, "src/OrderService.cs", 2, DEFAULT_CAP, true, DEFAULT_IFACE_MAX_FANIN, DEFAULT_HUB_MAX_INDEGREE) else {
+        let ImpactResult::Resolved(covered) = build_impact_model(
+            &index,
+            "src/OrderService.cs",
+            2,
+            DEFAULT_CAP,
+            true,
+            DEFAULT_IFACE_MAX_FANIN,
+            DEFAULT_HUB_MAX_INDEGREE,
+        ) else {
             panic!("file seed resolves");
         };
-        assert_eq!(covered.tests_affected, 1, "the guessed test file is not coverage; the non-test neighbour is not a test file");
+        assert_eq!(
+            covered.tests_affected, 1,
+            "the guessed test file is not coverage; the non-test neighbour is not a test file"
+        );
 
-        let ImpactResult::Resolved(untouched) = build_impact_model(&index, "src/Untested.cs", 2, DEFAULT_CAP, true, DEFAULT_IFACE_MAX_FANIN, DEFAULT_HUB_MAX_INDEGREE) else {
+        let ImpactResult::Resolved(untouched) = build_impact_model(
+            &index,
+            "src/Untested.cs",
+            2,
+            DEFAULT_CAP,
+            true,
+            DEFAULT_IFACE_MAX_FANIN,
+            DEFAULT_HUB_MAX_INDEGREE,
+        ) else {
             panic!("file seed resolves");
         };
-        assert_eq!(untouched.tests_affected, 0, "zero is the interesting answer -- a blast radius reaching no test file at all");
+        assert_eq!(
+            untouched.tests_affected, 0,
+            "zero is the interesting answer -- a blast radius reaching no test file at all"
+        );
     }
     // --- a bare member name, resolved by verifying edges at their line ---
 
     fn name_row(name: &str, kind: &str, file: &str, line: usize, owner: &str) -> graph::GraphName {
-        graph::GraphName { name: name.into(), kind: kind.into(), file: file.into(), line, owner: owner.into() }
+        graph::GraphName {
+            name: name.into(),
+            kind: kind.into(),
+            file: file.into(),
+            line,
+            owner: owner.into(),
+        }
     }
 
     /// `Ledger` carries three inbound member edges (two of them one line
@@ -4520,28 +7285,90 @@ mod tests {
     fn member_fixture() -> (graph::Graph, PathBuf) {
         let mut g = make_graph(
             vec![
-                def("App.Books.Ledger", "Ledger", "App.Books", "class", "Books/Ledger.cs", 3),
-                def("App.Books.Journal", "Journal", "App.Books", "class", "Books/Journal.cs", 3),
-                def("App.Books.Consumer", "Consumer", "App.Books", "class", "Books/Consumer.cs", 1),
+                def(
+                    "App.Books.Ledger",
+                    "Ledger",
+                    "App.Books",
+                    "class",
+                    "Books/Ledger.cs",
+                    3,
+                ),
+                def(
+                    "App.Books.Journal",
+                    "Journal",
+                    "App.Books",
+                    "class",
+                    "Books/Journal.cs",
+                    3,
+                ),
+                def(
+                    "App.Books.Consumer",
+                    "Consumer",
+                    "App.Books",
+                    "class",
+                    "Books/Consumer.cs",
+                    1,
+                ),
             ],
             vec![
-                uses_member("Books/Consumer.cs", 1, "App.Books.Ledger", "Books/Ledger.cs"),
-                uses_member("Books/Consumer.cs", 2, "App.Books.Ledger", "Books/Ledger.cs"),
-                uses_member("Books/Consumer.cs", 3, "App.Books.Ledger", "Books/Ledger.cs"),
-                uses_member("Books/Consumer.cs", 4, "App.Books.Journal", "Books/Journal.cs"),
+                uses_member(
+                    "Books/Consumer.cs",
+                    1,
+                    "App.Books.Ledger",
+                    "Books/Ledger.cs",
+                ),
+                uses_member(
+                    "Books/Consumer.cs",
+                    2,
+                    "App.Books.Ledger",
+                    "Books/Ledger.cs",
+                ),
+                uses_member(
+                    "Books/Consumer.cs",
+                    3,
+                    "App.Books.Ledger",
+                    "Books/Ledger.cs",
+                ),
+                uses_member(
+                    "Books/Consumer.cs",
+                    4,
+                    "App.Books.Journal",
+                    "Books/Journal.cs",
+                ),
             ],
         );
         g.names = vec![
             name_row("Ledger", "class", "Books/Ledger.cs", 3, ""),
             name_row("Post", "method", "Books/Ledger.cs", 5, "App.Books.Ledger"),
             name_row("PostEx", "method", "Books/Ledger.cs", 7, "App.Books.Ledger"),
-            name_row("Reconcile", "method", "Books/Ledger.cs", 9, "App.Books.Ledger"),
-            name_row("Approve", "method", "Books/Ledger.cs", 11, "App.Books.Ledger"),
+            name_row(
+                "Reconcile",
+                "method",
+                "Books/Ledger.cs",
+                9,
+                "App.Books.Ledger",
+            ),
+            name_row(
+                "Approve",
+                "method",
+                "Books/Ledger.cs",
+                11,
+                "App.Books.Ledger",
+            ),
             name_row("Journal", "class", "Books/Journal.cs", 3, ""),
-            name_row("Approve", "method", "Books/Journal.cs", 5, "App.Books.Journal"),
+            name_row(
+                "Approve",
+                "method",
+                "Books/Journal.cs",
+                5,
+                "App.Books.Journal",
+            ),
         ];
         let root = temp_repo_root("bare-member");
-        write_manifest_fixture(&root, &["Books/Ledger.cs", "Books/Journal.cs", "Books/Consumer.cs"]);
+        write_manifest_fixture(
+            &root,
+            &["Books/Ledger.cs", "Books/Journal.cs", "Books/Consumer.cs"],
+        );
         fs::create_dir_all(root.join("Books")).expect("fixture dir");
         fs::write(
             root.join("Books/Consumer.cs"),
@@ -4552,7 +7379,15 @@ mod tests {
     }
 
     fn member_models(index: &GraphIndex, query: &str, inbound_cap: usize) -> Vec<RefsModel> {
-        match build_refs_model(index, query, false, DEFAULT_CAP, inbound_cap, OUTBOUND_CAP, false) {
+        match build_refs_model(
+            index,
+            query,
+            false,
+            DEFAULT_CAP,
+            inbound_cap,
+            OUTBOUND_CAP,
+            false,
+        ) {
             RefsResult::Members(models) => models,
             other => panic!("expected Members, got {other:?}"),
         }
@@ -4583,14 +7418,31 @@ mod tests {
         let m = &models[0];
         assert_eq!(m.id, "App.Books.Ledger.PostEx");
         assert_eq!(m.kind, "member");
-        assert_eq!(m.sites, vec![DefSite { file: "Books/Ledger.cs".into(), line: 7 }]);
-        assert_eq!(m.inbound.uses_member.total, 1, "the type has three inbound member edges; one names PostEx");
+        assert_eq!(
+            m.sites,
+            vec![DefSite {
+                file: "Books/Ledger.cs".into(),
+                line: 7
+            }]
+        );
+        assert_eq!(
+            m.inbound.uses_member.total, 1,
+            "the type has three inbound member edges; one names PostEx"
+        );
         assert_eq!(
             m.inbound.uses_member.rows,
-            vec![InboundRow { file: "Books/Consumer.cs".into(), line: 2, heuristic: false, source: "Ledger.PostEx(2);".into() }]
+            vec![InboundRow {
+                file: "Books/Consumer.cs".into(),
+                line: 2,
+                heuristic: false,
+                source: "Ledger.PostEx(2);".into()
+            }]
         );
         assert_eq!(m.inbound.inherits.total, 0);
-        assert!(m.outbound.is_none(), "a member answer never carries the outbound tables");
+        assert!(
+            m.outbound.is_none(),
+            "a member answer never carries the outbound tables"
+        );
     }
 
     #[test]
@@ -4598,10 +7450,19 @@ mod tests {
         let (g, root) = member_fixture();
         let index = load_graph_index(&g, &root);
         let models = member_models(&index, "Post", INBOUND_CAP);
-        let ledger = models.iter().find(|m| m.id == "App.Books.Ledger.Post").expect("Ledger declares Post");
+        let ledger = models
+            .iter()
+            .find(|m| m.id == "App.Books.Ledger.Post")
+            .expect("Ledger declares Post");
 
         assert_eq!(
-            ledger.inbound.uses_member.rows.iter().map(|r| r.line).collect::<Vec<_>>(),
+            ledger
+                .inbound
+                .uses_member
+                .rows
+                .iter()
+                .map(|r| r.line)
+                .collect::<Vec<_>>(),
             vec![1],
             "line 2 is `Ledger.PostEx(2);` -- a substring hit, not a token hit"
         );
@@ -4616,23 +7477,46 @@ mod tests {
     fn build_refs_model_bare_member_verified_on_several_types_answers_ambiguous_not_members() {
         let (g, root) = member_fixture();
         let index = load_graph_index(&g, &root);
-        let model = build_refs_model(&index, "Approve", false, DEFAULT_CAP, INBOUND_CAP, OUTBOUND_CAP, false);
+        let model = build_refs_model(
+            &index,
+            "Approve",
+            false,
+            DEFAULT_CAP,
+            INBOUND_CAP,
+            OUTBOUND_CAP,
+            false,
+        );
 
         assert_eq!(
             model,
-            RefsResult::Ambiguous(vec!["App.Books.Ledger".to_string(), "App.Books.Journal".to_string()])
+            RefsResult::Ambiguous(vec![
+                "App.Books.Ledger".to_string(),
+                "App.Books.Journal".to_string()
+            ])
         );
     }
 
     #[test]
-    fn build_refs_model_bare_member_ambiguous_across_types_answers_the_same_regardless_of_inbound_cap() {
+    fn build_refs_model_bare_member_ambiguous_across_types_answers_the_same_regardless_of_inbound_cap(
+    ) {
         let (g, root) = member_fixture();
         let index = load_graph_index(&g, &root);
-        let model = build_refs_model(&index, "Approve", false, DEFAULT_CAP, 1, OUTBOUND_CAP, false);
+        let model = build_refs_model(
+            &index,
+            "Approve",
+            false,
+            DEFAULT_CAP,
+            1,
+            OUTBOUND_CAP,
+            false,
+        );
 
         assert_eq!(
             model,
-            RefsResult::Ambiguous(vec!["App.Books.Ledger".to_string(), "App.Books.Journal".to_string()])
+            RefsResult::Ambiguous(vec![
+                "App.Books.Ledger".to_string(),
+                "App.Books.Journal".to_string()
+            ])
         );
     }
 
@@ -4641,8 +7525,30 @@ mod tests {
         let (g, root) = member_fixture();
         let index = load_graph_index(&g, &root);
 
-        assert_eq!(build_refs_model(&index, "Reconcile", false, DEFAULT_CAP, INBOUND_CAP, OUTBOUND_CAP, false), RefsResult::NotFound);
-        assert_eq!(build_refs_model(&index, "NoSuchMemberAnywhere", false, DEFAULT_CAP, INBOUND_CAP, OUTBOUND_CAP, false), RefsResult::NotFound);
+        assert_eq!(
+            build_refs_model(
+                &index,
+                "Reconcile",
+                false,
+                DEFAULT_CAP,
+                INBOUND_CAP,
+                OUTBOUND_CAP,
+                false
+            ),
+            RefsResult::NotFound
+        );
+        assert_eq!(
+            build_refs_model(
+                &index,
+                "NoSuchMemberAnywhere",
+                false,
+                DEFAULT_CAP,
+                INBOUND_CAP,
+                OUTBOUND_CAP,
+                false
+            ),
+            RefsResult::NotFound
+        );
     }
 
     #[test]
@@ -4650,7 +7556,15 @@ mod tests {
         let (g, root) = member_fixture();
         let index = load_graph_index(&g, &root);
 
-        let RefsResult::Resolved(model) = build_refs_model(&index, "Ledger", false, DEFAULT_CAP, INBOUND_CAP, OUTBOUND_CAP, false) else {
+        let RefsResult::Resolved(model) = build_refs_model(
+            &index,
+            "Ledger",
+            false,
+            DEFAULT_CAP,
+            INBOUND_CAP,
+            OUTBOUND_CAP,
+            false,
+        ) else {
             panic!("Ledger is a type and must resolve as one");
         };
         assert_eq!(model.id, "App.Books.Ledger");
@@ -4661,29 +7575,52 @@ mod tests {
         let root = temp_repo_root("read-self-inbound");
         fs::create_dir_all(root.join("Core")).unwrap();
         fs::create_dir_all(root.join("Consumers")).unwrap();
-        fs::write(root.join("Core/Widget.cs"), "namespace App;\npublic class Widget\n{\n    Widget Again() => new Widget();\n}\n").unwrap();
-        fs::write(root.join("Consumers/Reader.cs"), "namespace App;\npublic class Reader { Widget Value; }\n").unwrap();
+        fs::write(
+            root.join("Core/Widget.cs"),
+            "namespace App;\npublic class Widget\n{\n    Widget Again() => new Widget();\n}\n",
+        )
+        .unwrap();
+        fs::write(
+            root.join("Consumers/Reader.cs"),
+            "namespace App;\npublic class Reader { Widget Value; }\n",
+        )
+        .unwrap();
         write_manifest_fixture(&root, &["Core/Widget.cs", "Consumers/Reader.cs"]);
         let mut target = def("App.Widget", "Widget", "App", "class", "Core/Widget.cs", 2);
         target.end_line = 5;
-        let graph = make_graph(vec![target], vec![
-            uses_type("Core/Widget.cs", 4, "App.Widget", "Core/Widget.cs"),
-            uses_type("Consumers/Reader.cs", 2, "App.Widget", "Core/Widget.cs"),
-        ]);
+        let graph = make_graph(
+            vec![target],
+            vec![
+                uses_type("Core/Widget.cs", 4, "App.Widget", "Core/Widget.cs"),
+                uses_type("Consumers/Reader.cs", 2, "App.Widget", "Core/Widget.cs"),
+            ],
+        );
         let index = load_graph_index(&graph, &root);
-        let ReadResult::Resolved(model) = build_read_model(&index, "Widget") else { panic!("Widget must resolve") };
+        let ReadResult::Resolved(model) = build_read_model(&index, "Widget") else {
+            panic!("Widget must resolve")
+        };
         assert_eq!(model.refs.inbound.uses_type.total, 1);
-        assert_eq!(model.refs.inbound.uses_type.rows[0].file, "Consumers/Reader.cs");
+        assert_eq!(
+            model.refs.inbound.uses_type.rows[0].file,
+            "Consumers/Reader.cs"
+        );
     }
 
     // --- the per-file first-declaration line find's manifest-pool block reads ---
 
     fn graph_name(name: &str, kind: &str, file: &str, line: usize) -> graph::GraphName {
-        graph::GraphName { name: name.to_string(), kind: kind.to_string(), file: file.to_string(), line, owner: String::new() }
+        graph::GraphName {
+            name: name.to_string(),
+            kind: kind.to_string(),
+            file: file.to_string(),
+            line,
+            owner: String::new(),
+        }
     }
 
     #[test]
-    fn first_decl_line_by_file_keeps_the_minimum_line_per_file_across_the_whole_name_index_not_just_the_last_one_seen() {
+    fn first_decl_line_by_file_keeps_the_minimum_line_per_file_across_the_whole_name_index_not_just_the_last_one_seen(
+    ) {
         let mut graph = make_graph(vec![], vec![]);
         graph.names = vec![
             graph_name("Widget", "class", "a.cs", 5),

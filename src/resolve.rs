@@ -36,8 +36,8 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use crate::graph::{
-    AlsoIn, Candidate, Def, Edge, EdgesByKind, FragExtensionMethod, FragFact, FragRef, FragUsing, Fragment, Graph, GraphName,
-    OrderedMap, Percent1, Stats,
+    AlsoIn, Candidate, Def, Edge, EdgesByKind, FragExtensionMethod, FragFact, FragRef, FragUsing,
+    Fragment, Graph, GraphName, OrderedMap, Percent1, Stats,
 };
 use crate::manifest;
 
@@ -61,6 +61,7 @@ const SCORED_EMIT_CAP: usize = 3;
 /// `simple_name_to_defs` (bare name -> indexes, EVERY def EXCEPT enum members
 /// -- the asymmetry described in the module header).
 pub struct DefIndex {
+    /// The defs value.
     pub defs: Vec<Def>,
     /// Parallel to `defs` (same indexes), NOT fields on `Def`: a def's
     /// property/field lists are RESOLUTION inputs only. No graph.json reader
@@ -69,8 +70,11 @@ pub struct DefIndex {
     /// impact` read for nothing. Keeping them off `Def` keeps the on-disk def
     /// rows to exactly the serialized fields.
     pub member_lists: Vec<MemberLists>,
+    /// The qualified name to def value.
     pub qualified_name_to_def: HashMap<String, usize>,
+    /// The qualified name and arity to def value.
     pub qualified_name_and_arity_to_def: HashMap<(String, usize), usize>,
+    /// The simple name to defs value.
     pub simple_name_to_defs: HashMap<String, Vec<usize>>,
     /// The extension tier's own lookup: "<method_name> <this_type>" (one ASCII
     /// space) -> every candidate declaring that PAIR, as (def index, entry).
@@ -107,7 +111,9 @@ pub struct DefIndex {
 /// One bucket slot: which def declares the entry, and the entry itself (the
 /// range + generic-argument facts the tier filters on).
 pub struct ExtCandidate {
+    /// The def idx value.
     pub def_idx: usize,
+    /// The entry value.
     pub entry: FragExtensionMethod,
 }
 
@@ -115,7 +121,9 @@ pub struct ExtCandidate {
 /// (it IS serialized).
 #[derive(Default)]
 pub struct MemberLists {
+    /// The properties value.
     pub properties: Vec<String>,
+    /// The fields value.
     pub fields: Vec<String>,
     /// Kept here for the same reason as `properties`/`fields`: a resolution
     /// input, never a serialized def field. Holds the (name, this_type,
@@ -166,7 +174,12 @@ fn build_def_index(fragments_by_file: &[(String, Fragment)]) -> DefIndex {
         if member_lists[idx]
             .extension_methods
             .iter()
-            .any(|(n, t, lo, hi)| *n == entry.name && *t == entry.this_type && *lo == entry.arity_min && *hi == entry.arity_max)
+            .any(|(n, t, lo, hi)| {
+                *n == entry.name
+                    && *t == entry.this_type
+                    && *lo == entry.arity_min
+                    && *hi == entry.arity_max
+            })
         {
             return;
         }
@@ -179,7 +192,10 @@ fn build_def_index(fragments_by_file: &[(String, Fragment)]) -> DefIndex {
         extension_index
             .entry(format!("{} {}", entry.name, entry.this_type))
             .or_default()
-            .push(ExtCandidate { def_idx: idx, entry: entry.clone() });
+            .push(ExtCandidate {
+                def_idx: idx,
+                entry: entry.clone(),
+            });
     }
 
     for (file, frag) in fragments_by_file {
@@ -206,7 +222,11 @@ fn build_def_index(fragments_by_file: &[(String, Fragment)]) -> DefIndex {
                         extension_methods: Vec::new(),
                         bases: d.bases.clone(),
                         type_params: d.type_params.clone(),
-                        base_generic_args: d.base_generic_args.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+                        base_generic_args: d
+                            .base_generic_args
+                            .iter()
+                            .map(|(k, v)| (k.clone(), v.clone()))
+                            .collect(),
                         method_returns: d.method_returns.clone(),
                         property_types: d.property_types.clone(),
                     });
@@ -219,14 +239,20 @@ fn build_def_index(fragments_by_file: &[(String, Fragment)]) -> DefIndex {
                     // qualified_name_to_def) but deliberately excluded from
                     // simple_name_to_defs -- see module header.
                     if d.kind != "enum-member" {
-                        simple_name_to_defs.entry(d.name.clone()).or_default().push(idx);
+                        simple_name_to_defs
+                            .entry(d.name.clone())
+                            .or_default()
+                            .push(idx);
                     }
                 }
                 Some(&idx) => {
                     // A partial class contributes its own members to the same
                     // record; first declaring file wins the order, later ones
                     // append what is new.
-                    defs[idx].also_in.push(AlsoIn { file: file.clone(), line: d.line });
+                    defs[idx].also_in.push(AlsoIn {
+                        file: file.clone(),
+                        line: d.line,
+                    });
                     for m in &d.methods {
                         if !defs[idx].methods.contains(m) {
                             defs[idx].methods.push(m.clone());
@@ -265,12 +291,16 @@ fn build_def_index(fragments_by_file: &[(String, Fragment)]) -> DefIndex {
                     // one declaration.
                     for (name, returns) in d.method_returns.iter() {
                         if member_lists[idx].method_returns.get(name).is_none() {
-                            member_lists[idx].method_returns.insert(name.clone(), returns.clone());
+                            member_lists[idx]
+                                .method_returns
+                                .insert(name.clone(), returns.clone());
                         }
                     }
                     for (name, fact) in d.property_types.iter() {
                         if member_lists[idx].property_types.get(name).is_none() {
-                            member_lists[idx].property_types.insert(name.clone(), fact.clone());
+                            member_lists[idx]
+                                .property_types
+                                .insert(name.clone(), fact.clone());
                         }
                     }
                 }
@@ -306,11 +336,22 @@ fn build_def_index(fragments_by_file: &[(String, Fragment)]) -> DefIndex {
             }
         }
         for n in names {
-            member_name_to_defs.entry(n.to_string()).or_default().push(idx);
+            member_name_to_defs
+                .entry(n.to_string())
+                .or_default()
+                .push(idx);
         }
     }
 
-    DefIndex { defs, member_lists, qualified_name_to_def, qualified_name_and_arity_to_def, simple_name_to_defs, extension_index, member_name_to_defs }
+    DefIndex {
+        defs,
+        member_lists,
+        qualified_name_to_def,
+        qualified_name_and_arity_to_def,
+        simple_name_to_defs,
+        extension_index,
+        member_name_to_defs,
+    }
 }
 
 // A synthetic bare type reference, for re-running the ladder on a name the
@@ -345,7 +386,10 @@ fn name_probe(name: String, namespace: &str, outer_types: Vec<String>) -> FragRe
 fn declares_member(index: &DefIndex, idx: usize, member: Option<&str>) -> bool {
     let Some(member) = member else { return false };
     index.defs[idx].methods.iter().any(|m| m == member)
-        || index.member_lists[idx].properties.iter().any(|p| p == member)
+        || index.member_lists[idx]
+            .properties
+            .iter()
+            .any(|p| p == member)
         || index.member_lists[idx].fields.iter().any(|f| f == member)
 }
 
@@ -362,7 +406,10 @@ fn member_vouched(index: &DefIndex, idx: usize, member: Option<&str>) -> bool {
         return true;
     }
     let Some(member) = member else { return false };
-    index.member_lists[idx].extension_methods.iter().any(|(name, ..)| name == member)
+    index.member_lists[idx]
+        .extension_methods
+        .iter()
+        .any(|(name, ..)| name == member)
 }
 
 // The whole scoring function, deterministic by construction and with no tie
@@ -445,13 +492,17 @@ fn inherited_member_declared(
         if declares_member(index, cur, member) {
             return true;
         }
-        let Some(ctx) = file_contexts.get(&index.defs[cur].file) else { continue };
+        let Some(ctx) = file_contexts.get(&index.defs[cur].file) else {
+            continue;
+        };
         let ns = index.defs[cur].namespace.clone();
         for base in &index.member_lists[cur].bases {
             // The base-closure probe carries no stack: it walks BASE types,
             // not the lexical chain.
             let probe = name_probe(base.clone(), &ns, Vec::new());
-            if let Resolution::Resolved(bidx, _) = resolve_ref(&probe, &ctx.usings, &ns, index, &ctx.aliases) {
+            if let Resolution::Resolved(bidx, _) =
+                resolve_ref(&probe, &ctx.usings, &ns, index, &ctx.aliases)
+            {
                 if seen.insert(bidx) {
                     stack.push(bidx);
                 }
@@ -472,10 +523,15 @@ fn arity_accepts(entry: &crate::graph::FragExtensionMethod, arg_count: usize) ->
 // side absent is a genuine generic/non-generic mismatch and never binds.
 // Otherwise the lists unify position by position, where "*" -- a type parameter
 // neither side can resolve to a concrete type -- matches anything.
-fn generic_args_unify(this_args: Option<&Vec<String>>, receiver_args: Option<&Vec<String>>) -> bool {
+fn generic_args_unify(
+    this_args: Option<&Vec<String>>,
+    receiver_args: Option<&Vec<String>>,
+) -> bool {
     match (this_args, receiver_args) {
         (None, None) => true,
-        (Some(a), Some(b)) => a.len() == b.len() && a.iter().zip(b).all(|(x, y)| x == "*" || y == "*" || x == y),
+        (Some(a), Some(b)) => {
+            a.len() == b.len() && a.iter().zip(b).all(|(x, y)| x == "*" || y == "*" || x == y)
+        }
         _ => false,
     }
 }
@@ -484,18 +540,26 @@ fn generic_args_unify(this_args: Option<&Vec<String>>, receiver_args: Option<&Ve
 // Global usings/aliases.
 // ---------------------------------------------------------------------------
 
-fn collect_global_usings(fragments_by_file: &[(String, Fragment)]) -> (HashSet<String>, HashMap<String, String>) {
+fn collect_global_usings(
+    fragments_by_file: &[(String, Fragment)],
+) -> (HashSet<String>, HashMap<String, String>) {
     let mut global_usings: HashSet<String> = HashSet::new();
     let mut global_aliases: HashMap<String, String> = HashMap::new();
     for (_, frag) in fragments_by_file {
         for u in &frag.usings {
             match u {
-                FragUsing::Alias { alias, target, global } => {
+                FragUsing::Alias {
+                    alias,
+                    target,
+                    global,
+                } => {
                     if *global {
                         // First global alias for a given name wins -- NOT
                         // last-wins. `entry(..).or_insert(..)` only writes on a
                         // vacant slot.
-                        global_aliases.entry(alias.clone()).or_insert_with(|| target.clone());
+                        global_aliases
+                            .entry(alias.clone())
+                            .or_insert_with(|| target.clone());
                     }
                 }
                 FragUsing::Plain { text, global } => {
@@ -535,7 +599,10 @@ enum Resolution {
 
 fn type_candidate(index: &DefIndex, name: &str, arity: Option<usize>) -> Option<usize> {
     match arity {
-        Some(n) => index.qualified_name_and_arity_to_def.get(&(name.to_string(), n)).copied(),
+        Some(n) => index
+            .qualified_name_and_arity_to_def
+            .get(&(name.to_string(), n))
+            .copied(),
         None => index.qualified_name_to_def.get(name).copied(),
     }
 }
@@ -556,8 +623,15 @@ fn resolve_ref(
     // Every enclosing-namespace prefix of the reference site, innermost first
     // and ending with the empty prefix (the name as literally written).
     // Shared by steps 1, 2 and 3, all three of which walk it.
-    let segments: Vec<&str> = if ns.is_empty() { Vec::new() } else { ns.split('.').collect() };
-    let prefixes: Vec<String> = (0..=segments.len()).rev().map(|i| segments[..i].join(".")).collect();
+    let segments: Vec<&str> = if ns.is_empty() {
+        Vec::new()
+    } else {
+        ns.split('.').collect()
+    };
+    let prefixes: Vec<String> = (0..=segments.len())
+        .rev()
+        .map(|i| segments[..i].join("."))
+        .collect();
 
     // Step 0: alias short-circuit, bare names only.
     if ref_.qualified.is_none() {
@@ -574,8 +648,11 @@ fn resolve_ref(
         // ref, every fragment cached without a type stack -- skips it.
         for i in (1..=ref_.outer_types.len()).rev() {
             let stack = ref_.outer_types[..i].join("+");
-            let candidate =
-                if ns.is_empty() { format!("{stack}+{}", ref_.name) } else { format!("{ns}.{stack}+{}", ref_.name) };
+            let candidate = if ns.is_empty() {
+                format!("{stack}+{}", ref_.name)
+            } else {
+                format!("{ns}.{stack}+{}", ref_.name)
+            };
             if let Some(idx) = type_candidate(index, &candidate, ref_.type_arg_count) {
                 return Resolution::Resolved(idx, Via::Nested);
             }
@@ -586,7 +663,11 @@ fn resolve_ref(
     // first, only for dotted references.
     if let Some(qualified) = &ref_.qualified {
         for prefix in &prefixes {
-            let candidate = if prefix.is_empty() { qualified.clone() } else { format!("{prefix}.{qualified}") };
+            let candidate = if prefix.is_empty() {
+                qualified.clone()
+            } else {
+                format!("{prefix}.{qualified}")
+            };
             if let Some(idx) = type_candidate(index, &candidate, ref_.type_arg_count) {
                 return Resolution::Resolved(idx, Via::Qualified);
             }
@@ -605,8 +686,11 @@ fn resolve_ref(
     let mut seen_ids: HashSet<&str> = HashSet::new();
     for u in usings {
         for prefix in &prefixes {
-            let candidate =
-                if prefix.is_empty() { format!("{u}.{}", ref_.name) } else { format!("{prefix}.{u}.{}", ref_.name) };
+            let candidate = if prefix.is_empty() {
+                format!("{u}.{}", ref_.name)
+            } else {
+                format!("{prefix}.{u}.{}", ref_.name)
+            };
             if let Some(idx) = type_candidate(index, &candidate, ref_.type_arg_count) {
                 let id = index.defs[idx].id.as_str();
                 if seen_ids.insert(id) {
@@ -628,7 +712,11 @@ fn resolve_ref(
     // reaches `A.B.T` and `A.T`, not only `A.B.C.T`), which is C#'s
     // ancestor-namespace rule.
     for prefix in &prefixes {
-        let candidate = if prefix.is_empty() { ref_.name.clone() } else { format!("{prefix}.{}", ref_.name) };
+        let candidate = if prefix.is_empty() {
+            ref_.name.clone()
+        } else {
+            format!("{prefix}.{}", ref_.name)
+        };
         if let Some(idx) = type_candidate(index, &candidate, ref_.type_arg_count) {
             return Resolution::Resolved(idx, Via::Namespace);
         }
@@ -638,8 +726,16 @@ fn resolve_ref(
     // this pool (see build_def_index) -- a member named e.g. "Active"
     // sharing a simple name with an unrelated class must not turn that
     // class's previously-unambiguous references ambiguous.
-    let matches: Vec<usize> = index.simple_name_to_defs.get(&ref_.name).into_iter().flatten().copied()
-        .filter(|idx| ref_.type_arg_count.map_or(true, |n| index.member_lists[*idx].type_params.len() == n))
+    let matches: Vec<usize> = index
+        .simple_name_to_defs
+        .get(&ref_.name)
+        .into_iter()
+        .flatten()
+        .copied()
+        .filter(|idx| {
+            ref_.type_arg_count
+                .map_or(true, |n| index.member_lists[*idx].type_params.len() == n)
+        })
         .collect();
     match matches.as_slice() {
         [idx] => Resolution::Resolved(*idx, Via::Global),
@@ -666,7 +762,10 @@ fn capped_candidates(index: &DefIndex, mut candidate_indices: Vec<usize>) -> Vec
     candidate_indices
         .into_iter()
         .take(AMBIGUOUS_CAP)
-        .map(|i| Candidate { id: index.defs[i].id.clone(), file: index.defs[i].file.clone() })
+        .map(|i| Candidate {
+            id: index.defs[i].id.clone(),
+            file: index.defs[i].file.clone(),
+        })
         .collect()
 }
 
@@ -697,7 +796,10 @@ fn build_implementor_index(index: &DefIndex) -> HashMap<String, Vec<usize>> {
 // SITE's own usings (file-local ∪ global) rather than the unresolved type's
 // true origin -- a documented imprecision.
 fn is_infra_namespace(name: &str) -> bool {
-    name == "System" || name == "Microsoft" || name.starts_with("System.") || name.starts_with("Microsoft.")
+    name == "System"
+        || name == "Microsoft"
+        || name.starts_with("System.")
+        || name.starts_with("Microsoft.")
 }
 
 /// Outcome of resolving one 'ctor-param' ref, as a Rust enum -- the caller
@@ -746,7 +848,10 @@ fn resolve_ctor_param(
         }
         Resolution::Resolved(iface_idx, _) => {
             let base_name = &ref_.name;
-            let raw_candidates = implementors_by_base_name.get(base_name).cloned().unwrap_or_default();
+            let raw_candidates = implementors_by_base_name
+                .get(base_name)
+                .cloned()
+                .unwrap_or_default();
             let mut closed_or_plain: Vec<usize> = Vec::new();
             let mut open_generic: Vec<usize> = Vec::new();
             for cand in raw_candidates {
@@ -754,22 +859,38 @@ fn resolve_ctor_param(
                     continue;
                 }
                 let cand_def = &index.defs[cand];
-                let Some(cand_ctx) = file_contexts.get(&cand_def.file) else { continue };
+                let Some(cand_ctx) = file_contexts.get(&cand_def.file) else {
+                    continue;
+                };
                 // Re-resolve the SAME base name through the CANDIDATE's own
                 // file context -- exactly inherited_member_declared's own
                 // pattern.
                 let probe = name_probe(base_name.clone(), &cand_def.namespace, Vec::new());
-                let base_res = resolve_ref(&probe, &cand_ctx.usings, &cand_def.namespace, index, &cand_ctx.aliases);
-                let Resolution::Resolved(resolved_iface, _) = base_res else { continue };
+                let base_res = resolve_ref(
+                    &probe,
+                    &cand_ctx.usings,
+                    &cand_def.namespace,
+                    index,
+                    &cand_ctx.aliases,
+                );
+                let Resolution::Resolved(resolved_iface, _) = base_res else {
+                    continue;
+                };
                 if resolved_iface != iface_idx {
                     continue;
                 }
-                let cand_args =
-                    index.member_lists[cand].base_generic_args.iter().find(|(k, _)| k == base_name).map(|(_, v)| v);
+                let cand_args = index.member_lists[cand]
+                    .base_generic_args
+                    .iter()
+                    .find(|(k, _)| k == base_name)
+                    .map(|(_, v)| v);
                 if !generic_args_unify(cand_args, ref_.args.as_ref()) {
                     continue;
                 }
-                if cand_args.map(|a| a.iter().any(|x| x == "*")).unwrap_or(false) {
+                if cand_args
+                    .map(|a| a.iter().any(|x| x == "*"))
+                    .unwrap_or(false)
+                {
                     open_generic.push(cand);
                 } else {
                     closed_or_plain.push(cand);
@@ -805,8 +926,20 @@ fn type_edge(kind: &str, file: &str, line: usize, target: &Def) -> Edge {
     let to = target.id.clone();
     let to_file = target.file.clone();
     match kind {
-        "inherits" => Edge::Inherits { from_file, from_line: line, to, to_file, heuristic: false },
-        _ => Edge::UsesType { from_file, from_line: line, to, to_file, heuristic: false },
+        "inherits" => Edge::Inherits {
+            from_file,
+            from_line: line,
+            to,
+            to_file,
+            heuristic: false,
+        },
+        _ => Edge::UsesType {
+            from_file,
+            from_line: line,
+            to,
+            to_file,
+            heuristic: false,
+        },
     }
 }
 
@@ -816,15 +949,27 @@ fn type_edge(kind: &str, file: &str, line: usize, target: &Def) -> Edge {
 // serialize to the same bytes.
 fn heuristic_edge_key(e: &Edge) -> Option<String> {
     let (kind, from_file, from_line, to, to_file) = match e {
-        Edge::Inherits { from_file, from_line, to, to_file, heuristic: true } => {
-            ("inherits", from_file, from_line, to, to_file)
-        }
-        Edge::UsesType { from_file, from_line, to, to_file, heuristic: true } => {
-            ("uses-type", from_file, from_line, to, to_file)
-        }
-        Edge::UsesMember { from_file, from_line, to, to_file, heuristic: true } => {
-            ("uses-member", from_file, from_line, to, to_file)
-        }
+        Edge::Inherits {
+            from_file,
+            from_line,
+            to,
+            to_file,
+            heuristic: true,
+        } => ("inherits", from_file, from_line, to, to_file),
+        Edge::UsesType {
+            from_file,
+            from_line,
+            to,
+            to_file,
+            heuristic: true,
+        } => ("uses-type", from_file, from_line, to, to_file),
+        Edge::UsesMember {
+            from_file,
+            from_line,
+            to,
+            to_file,
+            heuristic: true,
+        } => ("uses-member", from_file, from_line, to, to_file),
         _ => return None,
     };
     Some(format!("{kind} {from_file} {from_line} {to} {to_file}"))
@@ -879,7 +1024,11 @@ pub fn resolve_graph_with_ts(
 
         for r in &frag.refs {
             if r.kind == "imports" {
-                edges.push(Edge::Imports { from_file: file.clone(), from_line: r.line, target: r.name.clone() });
+                edges.push(Edge::Imports {
+                    from_file: file.clone(),
+                    from_line: r.line,
+                    target: r.name.clone(),
+                });
                 edges_by_kind.imports += 1;
                 continue;
             }
@@ -921,12 +1070,22 @@ pub fn resolve_graph_with_ts(
                 if let Resolution::Resolved(idx, via) = &result {
                     let (idx, via) = (*idx, *via);
                     if index.defs[idx].kind == "enum" {
-                        let member_key = format!("{}.{}", index.defs[idx].id, r.member.as_deref().unwrap_or(""));
+                        let member_key = format!(
+                            "{}.{}",
+                            index.defs[idx].id,
+                            r.member.as_deref().unwrap_or("")
+                        );
                         let (to, to_file) = match index.qualified_name_to_def.get(&member_key) {
                             Some(&mi) => (index.defs[mi].id.clone(), index.defs[mi].file.clone()),
                             None => (index.defs[idx].id.clone(), index.defs[idx].file.clone()),
                         };
-                        edges.push(Edge::UsesMember { from_file: file.clone(), from_line: r.line, to, to_file, heuristic: false });
+                        edges.push(Edge::UsesMember {
+                            from_file: file.clone(),
+                            from_line: r.line,
+                            to,
+                            to_file,
+                            heuristic: false,
+                        });
                         edges_by_kind.uses_member += 1;
                         emitted = true;
                     } else {
@@ -990,10 +1149,15 @@ pub fn resolve_graph_with_ts(
                 // gave.
                 let mut receiver_type_name = r.receiver_type.clone();
                 if receiver_type_name.is_none() {
-                    if let (Some(owner), Some(member)) = (&r.receiver_call_owner, &r.receiver_call_member) {
+                    if let (Some(owner), Some(member)) =
+                        (&r.receiver_call_owner, &r.receiver_call_member)
+                    {
                         let probe = name_probe(owner.clone(), ns, r.outer_types.clone());
-                        if let Resolution::Resolved(oidx, _) = resolve_ref(&probe, usings, ns, &index, aliases) {
-                            receiver_type_name = index.member_lists[oidx].method_returns.get(member).cloned();
+                        if let Resolution::Resolved(oidx, _) =
+                            resolve_ref(&probe, usings, ns, &index, aliases)
+                        {
+                            receiver_type_name =
+                                index.member_lists[oidx].method_returns.get(member).cloned();
                         }
                     }
                 }
@@ -1049,10 +1213,16 @@ pub fn resolve_graph_with_ts(
                 if !emitted {
                     if let Some(owner) = &r.receiver_property_owner {
                         let probe = name_probe(owner.clone(), ns, r.outer_types.clone());
-                        if let Resolution::Resolved(oidx, _) = resolve_ref(&probe, usings, ns, &index, aliases) {
-                            if let Some(fact) = index.member_lists[oidx].property_types.get(&r.name) {
-                                let hop = name_probe(fact.type_name.clone(), ns, r.outer_types.clone());
-                                if let Resolution::Resolved(hidx, _) = resolve_ref(&hop, usings, ns, &index, aliases) {
+                        if let Resolution::Resolved(oidx, _) =
+                            resolve_ref(&probe, usings, ns, &index, aliases)
+                        {
+                            if let Some(fact) = index.member_lists[oidx].property_types.get(&r.name)
+                            {
+                                let hop =
+                                    name_probe(fact.type_name.clone(), ns, r.outer_types.clone());
+                                if let Resolution::Resolved(hidx, _) =
+                                    resolve_ref(&hop, usings, ns, &index, aliases)
+                                {
                                     if declares_member(&index, hidx, r.member.as_deref()) {
                                         edges.push(Edge::UsesMember {
                                             from_file: file.clone(),
@@ -1166,14 +1336,20 @@ pub fn resolve_graph_with_ts(
                         (&receiver_type_name, r.member.as_deref(), r.arg_count)
                     {
                         let key = format!("{member} {receiver_type}");
-                        let candidates: &[ExtCandidate] =
-                            index.extension_index.get(&key).map(Vec::as_slice).unwrap_or(&[]);
+                        let candidates: &[ExtCandidate] = index
+                            .extension_index
+                            .get(&key)
+                            .map(Vec::as_slice)
+                            .unwrap_or(&[]);
                         let mut distinct: Vec<usize> = Vec::new();
                         for c in candidates {
                             if !arity_accepts(&c.entry, arg_count) {
                                 continue;
                             }
-                            if !generic_args_unify(c.entry.this_args.as_ref(), r.receiver_args.as_ref()) {
+                            if !generic_args_unify(
+                                c.entry.this_args.as_ref(),
+                                r.receiver_args.as_ref(),
+                            ) {
                                 continue;
                             }
                             let def_ns = &index.defs[c.def_idx].namespace;
@@ -1185,7 +1361,12 @@ pub fn resolve_graph_with_ts(
                             }
                         }
                         let vetoed = match receiver_def {
-                            Some(ridx) => inherited_member_declared(&index, &file_contexts, ridx, r.member.as_deref()),
+                            Some(ridx) => inherited_member_declared(
+                                &index,
+                                &file_contexts,
+                                ridx,
+                                r.member.as_deref(),
+                            ),
                             None => false,
                         };
                         if distinct.len() == 1 && !vetoed {
@@ -1255,27 +1436,42 @@ pub fn resolve_graph_with_ts(
                         &result
                     };
                     let pool: Option<Vec<usize>> = match source {
-                        Resolution::Ambiguous(candidates) => {
-                            Some(candidates.iter().copied().filter(|&d| member_vouched(&index, d, r.member.as_deref())).collect())
-                        }
+                        Resolution::Ambiguous(candidates) => Some(
+                            candidates
+                                .iter()
+                                .copied()
+                                .filter(|&d| member_vouched(&index, d, r.member.as_deref()))
+                                .collect(),
+                        ),
                         Resolution::External => {
-                            let named: Vec<usize> = match r.member.as_deref().and_then(|m| index.member_name_to_defs.get(m)) {
+                            let named: Vec<usize> = match r
+                                .member
+                                .as_deref()
+                                .and_then(|m| index.member_name_to_defs.get(m))
+                            {
                                 Some(list) => list.clone(),
                                 None => Vec::new(),
                             };
-                            if named.len() <= SCORED_UNIQUENESS_CAP { Some(named) } else { None }
+                            if named.len() <= SCORED_UNIQUENESS_CAP {
+                                Some(named)
+                            } else {
+                                None
+                            }
                         }
                         Resolution::Resolved(..) => None,
                     };
                     if let Some(pool) = pool {
-                        let mut scored: Vec<(usize, u8)> =
-                            pool.into_iter().map(|d| (d, score_candidate(&index.defs[d].namespace, ns, usings))).collect();
-                        scored.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| index.defs[a.0].id.cmp(&index.defs[b.0].id)));
-                        for (d, _) in scored
+                        let mut scored: Vec<(usize, u8)> = pool
                             .into_iter()
-                            .take(SCORED_EMIT_CAP)
-                            .filter(|&(d, _)| !index.defs[d].id.contains('+') || index.defs[d].file == *file)
-                        {
+                            .map(|d| (d, score_candidate(&index.defs[d].namespace, ns, usings)))
+                            .collect();
+                        scored.sort_by(|a, b| {
+                            b.1.cmp(&a.1)
+                                .then_with(|| index.defs[a.0].id.cmp(&index.defs[b.0].id))
+                        });
+                        for (d, _) in scored.into_iter().take(SCORED_EMIT_CAP).filter(|&(d, _)| {
+                            !index.defs[d].id.contains('+') || index.defs[d].file == *file
+                        }) {
                             edges.push(Edge::UsesMember {
                                 from_file: file.clone(),
                                 from_line: r.line,
@@ -1297,16 +1493,32 @@ pub fn resolve_graph_with_ts(
             // This branch is the DI-specific resolution instead, and it always
             // emits (never silently drops, unlike unresolved_external below).
             if r.kind == "ctor-param" {
-                let classification =
-                    resolve_ctor_param(r, usings, ns, &index, aliases, &file_contexts, &implementors_by_base_name);
-                let (resolution, to, candidates): (&str, Option<String>, Vec<Candidate>) = match classification {
-                    CtorDiResolution::Plain(i) => ("plain", Some(index.defs[i].id.clone()), Vec::new()),
-                    CtorDiResolution::Closed(i) => ("closed", Some(index.defs[i].id.clone()), Vec::new()),
-                    CtorDiResolution::OpenGeneric(i) => ("open-generic", Some(index.defs[i].id.clone()), Vec::new()),
-                    CtorDiResolution::Ambiguous(idxs) => ("ambiguous", None, capped_candidates(&index, idxs)),
-                    CtorDiResolution::Infra => ("infra", None, Vec::new()),
-                    CtorDiResolution::Unresolved => ("unresolved", None, Vec::new()),
-                };
+                let classification = resolve_ctor_param(
+                    r,
+                    usings,
+                    ns,
+                    &index,
+                    aliases,
+                    &file_contexts,
+                    &implementors_by_base_name,
+                );
+                let (resolution, to, candidates): (&str, Option<String>, Vec<Candidate>) =
+                    match classification {
+                        CtorDiResolution::Plain(i) => {
+                            ("plain", Some(index.defs[i].id.clone()), Vec::new())
+                        }
+                        CtorDiResolution::Closed(i) => {
+                            ("closed", Some(index.defs[i].id.clone()), Vec::new())
+                        }
+                        CtorDiResolution::OpenGeneric(i) => {
+                            ("open-generic", Some(index.defs[i].id.clone()), Vec::new())
+                        }
+                        CtorDiResolution::Ambiguous(idxs) => {
+                            ("ambiguous", None, capped_candidates(&index, idxs))
+                        }
+                        CtorDiResolution::Infra => ("infra", None, Vec::new()),
+                        CtorDiResolution::Unresolved => ("unresolved", None, Vec::new()),
+                    };
                 edges.push(Edge::CtorDi {
                     from_file: file.clone(),
                     from_line: r.line,
@@ -1427,7 +1639,11 @@ pub fn resolve_graph_with_ts(
             // above it. Counts merged DEF ROWS, not fragment entries, so a
             // partial test class split across two files is one test def, not
             // two.
-            test_def_count: index.defs.iter().filter(|d| !d.test_methods.is_empty()).count(),
+            test_def_count: index
+                .defs
+                .iter()
+                .filter(|d| !d.test_methods.is_empty())
+                .count(),
             ts: None,
         },
         defs: index.defs,
@@ -1565,12 +1781,27 @@ mod tests {
     /// A bare-qualifier member ref carrying the receiver fact the extractor
     /// would have recorded for it. `arg_count` is the CALL shape: `Some(n)` for
     /// `x.M(<n args>)`, `None` for a property read.
-    fn receiver_ref(name: &str, member: &str, ns: &str, receiver_type: &str, arg_count: Option<usize>) -> FragRef {
-        FragRef { receiver_type: Some(receiver_type.into()), arg_count, ..member_ref(name, None, member, ns) }
+    fn receiver_ref(
+        name: &str,
+        member: &str,
+        ns: &str,
+        receiver_type: &str,
+        arg_count: Option<usize>,
+    ) -> FragRef {
+        FragRef {
+            receiver_type: Some(receiver_type.into()),
+            arg_count,
+            ..member_ref(name, None, member, ns)
+        }
     }
 
     fn frag(defs: Vec<FragDef>, usings: Vec<FragUsing>, refs: Vec<FragRef>) -> Fragment {
-        Fragment { defs, usings, refs, names: Vec::new() }
+        Fragment {
+            defs,
+            usings,
+            refs,
+            names: Vec::new(),
+        }
     }
 
     fn find_edge<'a>(g: &'a Graph, want: impl Fn(&Edge) -> bool) -> Option<&'a Edge> {
@@ -1583,11 +1814,19 @@ mod tests {
 
     #[test]
     fn resolve_graph_threads_the_real_head_hash_through_built_at_head() {
-        let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         let dir = std::env::temp_dir().join(format!("scout-resolve-head-test-{nanos}"));
         std::fs::create_dir_all(&dir).unwrap();
         let run = |args: &[&str]| {
-            assert!(std::process::Command::new("git").args(args).current_dir(&dir).status().unwrap().success());
+            assert!(std::process::Command::new("git")
+                .args(args)
+                .current_dir(&dir)
+                .status()
+                .unwrap()
+                .success());
         };
         run(&["init", "-q"]);
         run(&["config", "user.email", "test@example.com"]);
@@ -1615,19 +1854,30 @@ mod tests {
         // A bare reference to the ALIAS NAME must resolve cleanly even
         // though "Money" itself would be globally ambiguous.
         let files = vec![
-            ("A/Money.cs".to_string(), frag(vec![def("A.Money", "Money", "A", "class")], vec![], vec![])),
-            ("B/Money.cs".to_string(), frag(vec![def("B.Money", "Money", "B", "class")], vec![], vec![])),
+            (
+                "A/Money.cs".to_string(),
+                frag(vec![def("A.Money", "Money", "A", "class")], vec![], vec![]),
+            ),
+            (
+                "B/Money.cs".to_string(),
+                frag(vec![def("B.Money", "Money", "B", "class")], vec![], vec![]),
+            ),
             (
                 "C/Wallet.cs".to_string(),
                 frag(
                     vec![def("C.Wallet", "Wallet", "C", "class")],
-                    vec![FragUsing::Alias { alias: "Cash".into(), target: "A.Money".into(), global: false }],
+                    vec![FragUsing::Alias {
+                        alias: "Cash".into(),
+                        target: "A.Money".into(),
+                        global: false,
+                    }],
                     vec![type_ref("uses-type", "Cash", None, "C")],
                 ),
             ),
         ];
         let g = resolve_graph(&no_git_root(), &files);
-        let edge = find_edge(&g, |e| matches!(e, Edge::UsesType { .. })).expect("resolved edge present");
+        let edge =
+            find_edge(&g, |e| matches!(e, Edge::UsesType { .. })).expect("resolved edge present");
         match edge {
             Edge::UsesType { to, .. } => assert_eq!(to, "A.Money"),
             _ => unreachable!(),
@@ -1638,17 +1888,35 @@ mod tests {
     #[test]
     fn local_alias_shadows_a_same_named_global_alias() {
         let files = vec![
-            ("A/Money.cs".to_string(), frag(vec![def("A.Money", "Money", "A", "class")], vec![], vec![])),
-            ("B/Money.cs".to_string(), frag(vec![def("B.Money", "Money", "B", "class")], vec![], vec![])),
+            (
+                "A/Money.cs".to_string(),
+                frag(vec![def("A.Money", "Money", "A", "class")], vec![], vec![]),
+            ),
+            (
+                "B/Money.cs".to_string(),
+                frag(vec![def("B.Money", "Money", "B", "class")], vec![], vec![]),
+            ),
             (
                 "Globals.cs".to_string(),
-                frag(vec![], vec![FragUsing::Alias { alias: "Cash".into(), target: "A.Money".into(), global: true }], vec![]),
+                frag(
+                    vec![],
+                    vec![FragUsing::Alias {
+                        alias: "Cash".into(),
+                        target: "A.Money".into(),
+                        global: true,
+                    }],
+                    vec![],
+                ),
             ),
             (
                 "C/Wallet.cs".to_string(),
                 frag(
                     vec![def("C.Wallet", "Wallet", "C", "class")],
-                    vec![FragUsing::Alias { alias: "Cash".into(), target: "B.Money".into(), global: false }],
+                    vec![FragUsing::Alias {
+                        alias: "Cash".into(),
+                        target: "B.Money".into(),
+                        global: false,
+                    }],
                     vec![type_ref("uses-type", "Cash", None, "C")],
                 ),
             ),
@@ -1674,9 +1942,20 @@ mod tests {
             .find(|e| matches!(e, Edge::UsesType { from_file, .. } if from_file == "D/Ledger.cs"))
             .expect("global edge present");
         match (shadowed, global) {
-            (Edge::UsesType { to: shadowed_to, .. }, Edge::UsesType { to: global_to, .. }) => {
-                assert_eq!(shadowed_to, "B.Money", "local alias must win over the global one");
-                assert_eq!(global_to, "A.Money", "no local override -- global alias applies");
+            (
+                Edge::UsesType {
+                    to: shadowed_to, ..
+                },
+                Edge::UsesType { to: global_to, .. },
+            ) => {
+                assert_eq!(
+                    shadowed_to, "B.Money",
+                    "local alias must win over the global one"
+                );
+                assert_eq!(
+                    global_to, "A.Money",
+                    "no local override -- global alias applies"
+                );
             }
             _ => unreachable!(),
         }
@@ -1687,13 +1966,28 @@ mod tests {
     #[test]
     fn ambiguous_via_using_step_stops_before_reaching_global_uniqueness() {
         let files = vec![
-            ("A/Money.cs".to_string(), frag(vec![def("A.Money", "Money", "A", "class")], vec![], vec![])),
-            ("B/Money.cs".to_string(), frag(vec![def("B.Money", "Money", "B", "class")], vec![], vec![])),
+            (
+                "A/Money.cs".to_string(),
+                frag(vec![def("A.Money", "Money", "A", "class")], vec![], vec![]),
+            ),
+            (
+                "B/Money.cs".to_string(),
+                frag(vec![def("B.Money", "Money", "B", "class")], vec![], vec![]),
+            ),
             (
                 "C/Statement.cs".to_string(),
                 frag(
                     vec![def("C.Statement", "Statement", "C", "class")],
-                    vec![FragUsing::Plain { text: "A".into(), global: false }, FragUsing::Plain { text: "B".into(), global: false }],
+                    vec![
+                        FragUsing::Plain {
+                            text: "A".into(),
+                            global: false,
+                        },
+                        FragUsing::Plain {
+                            text: "B".into(),
+                            global: false,
+                        },
+                    ],
                     vec![type_ref("uses-type", "Money", None, "C")],
                 ),
             ),
@@ -1702,10 +1996,18 @@ mod tests {
         assert_eq!(g.stats.ambiguous_count, 1);
         let edge = find_edge(&g, |e| matches!(e, Edge::Ambiguous { .. })).unwrap();
         match edge {
-            Edge::Ambiguous { candidate_count, candidates, raw, .. } => {
+            Edge::Ambiguous {
+                candidate_count,
+                candidates,
+                raw,
+                ..
+            } => {
                 assert_eq!(*candidate_count, 2);
                 assert_eq!(raw, "Money");
-                assert_eq!(candidates.iter().map(|c| c.id.as_str()).collect::<Vec<_>>(), vec!["A.Money", "B.Money"]);
+                assert_eq!(
+                    candidates.iter().map(|c| c.id.as_str()).collect::<Vec<_>>(),
+                    vec!["A.Money", "B.Money"]
+                );
             }
             _ => unreachable!(),
         }
@@ -1714,11 +2016,21 @@ mod tests {
     #[test]
     fn ambiguous_via_global_uniqueness_step_when_no_usings_apply() {
         let files = vec![
-            ("A/Money.cs".to_string(), frag(vec![def("A.Money", "Money", "A", "class")], vec![], vec![])),
-            ("B/Money.cs".to_string(), frag(vec![def("B.Money", "Money", "B", "class")], vec![], vec![])),
+            (
+                "A/Money.cs".to_string(),
+                frag(vec![def("A.Money", "Money", "A", "class")], vec![], vec![]),
+            ),
+            (
+                "B/Money.cs".to_string(),
+                frag(vec![def("B.Money", "Money", "B", "class")], vec![], vec![]),
+            ),
             (
                 "C/Report.cs".to_string(),
-                frag(vec![def("C.Report", "Report", "C", "class")], vec![], vec![type_ref("uses-type", "Money", None, "C")]),
+                frag(
+                    vec![def("C.Report", "Report", "C", "class")],
+                    vec![],
+                    vec![type_ref("uses-type", "Money", None, "C")],
+                ),
             ),
         ];
         let g = resolve_graph(&no_git_root(), &files);
@@ -1732,17 +2044,33 @@ mod tests {
         for letter in ["E", "D", "C", "B", "A", "F", "G"] {
             files.push((
                 format!("{letter}/Widget.cs"),
-                frag(vec![def(&format!("{letter}.Widget"), "Widget", letter, "class")], vec![], vec![]),
+                frag(
+                    vec![def(&format!("{letter}.Widget"), "Widget", letter, "class")],
+                    vec![],
+                    vec![],
+                ),
             ));
         }
         files.push((
             "Z/Probe.cs".to_string(),
-            frag(vec![def("Z.Probe", "Probe", "Z", "class")], vec![], vec![type_ref("uses-type", "Widget", None, "Z")]),
+            frag(
+                vec![def("Z.Probe", "Probe", "Z", "class")],
+                vec![],
+                vec![type_ref("uses-type", "Widget", None, "Z")],
+            ),
         ));
         let g = resolve_graph(&no_git_root(), &files);
-        let edge = g.edges.iter().find(|e| matches!(e, Edge::Ambiguous { .. })).unwrap();
+        let edge = g
+            .edges
+            .iter()
+            .find(|e| matches!(e, Edge::Ambiguous { .. }))
+            .unwrap();
         match edge {
-            Edge::Ambiguous { candidate_count, candidates, .. } => {
+            Edge::Ambiguous {
+                candidate_count,
+                candidates,
+                ..
+            } => {
                 assert_eq!(*candidate_count, 7);
                 assert_eq!(candidates.len(), 5, "capped at AMBIGUOUS_CAP");
                 let ids: Vec<&str> = candidates.iter().map(|c| c.id.as_str()).collect();
@@ -1761,7 +2089,10 @@ mod tests {
         let files = vec![(
             "A/Status.cs".to_string(),
             frag(
-                vec![def("A.Status", "Status", "A", "enum"), def("A.Status.Active", "Active", "A", "enum-member")],
+                vec![
+                    def("A.Status", "Status", "A", "enum"),
+                    def("A.Status.Active", "Active", "A", "enum-member"),
+                ],
                 vec![],
                 vec![],
             ),
@@ -1780,19 +2111,34 @@ mod tests {
             (
                 "A/Status.cs".to_string(),
                 frag(
-                    vec![def("A.Status", "Status", "A", "enum"), def("A.Status.Active", "Active", "A", "enum-member")],
+                    vec![
+                        def("A.Status", "Status", "A", "enum"),
+                        def("A.Status.Active", "Active", "A", "enum-member"),
+                    ],
                     vec![],
                     vec![],
                 ),
             ),
-            ("B/Active.cs".to_string(), frag(vec![def("B.Active", "Active", "B", "class")], vec![], vec![])),
+            (
+                "B/Active.cs".to_string(),
+                frag(
+                    vec![def("B.Active", "Active", "B", "class")],
+                    vec![],
+                    vec![],
+                ),
+            ),
             (
                 "C/Toggle.cs".to_string(),
-                frag(vec![def("C.Toggle", "Toggle", "C", "class")], vec![], vec![type_ref("uses-type", "Active", None, "C")]),
+                frag(
+                    vec![def("C.Toggle", "Toggle", "C", "class")],
+                    vec![],
+                    vec![type_ref("uses-type", "Active", None, "C")],
+                ),
             ),
         ];
         let g = resolve_graph(&no_git_root(), &files);
-        let edge = find_edge(&g, |e| matches!(e, Edge::UsesType { .. })).expect("must resolve cleanly, not go ambiguous");
+        let edge = find_edge(&g, |e| matches!(e, Edge::UsesType { .. }))
+            .expect("must resolve cleanly, not go ambiguous");
         match edge {
             Edge::UsesType { to, .. } => assert_eq!(to, "B.Active"),
             _ => unreachable!(),
@@ -1806,7 +2152,10 @@ mod tests {
             (
                 "A/Status.cs".to_string(),
                 frag(
-                    vec![def("A.Status", "Status", "A", "enum"), def("A.Status.Active", "Active", "A", "enum-member")],
+                    vec![
+                        def("A.Status", "Status", "A", "enum"),
+                        def("A.Status.Active", "Active", "A", "enum-member"),
+                    ],
                     vec![],
                     vec![],
                 ),
@@ -1821,7 +2170,8 @@ mod tests {
             ),
         ];
         let g = resolve_graph(&no_git_root(), &files);
-        let edge = find_edge(&g, |e| matches!(e, Edge::UsesMember { .. })).expect("uses-member edge present");
+        let edge = find_edge(&g, |e| matches!(e, Edge::UsesMember { .. }))
+            .expect("uses-member edge present");
         match edge {
             Edge::UsesMember { to, to_file, .. } => {
                 assert_eq!(to, "A.Status.Active");
@@ -1837,19 +2187,29 @@ mod tests {
         let files = vec![
             (
                 "A/Constants.cs".to_string(),
-                frag(vec![def("A.Constants", "Constants", "A", "class")], vec![], vec![]),
+                frag(
+                    vec![def("A.Constants", "Constants", "A", "class")],
+                    vec![],
+                    vec![],
+                ),
             ),
             (
                 "B/View.cs".to_string(),
                 frag(
                     vec![def("B.View", "View", "B", "class")],
-                    vec![FragUsing::Plain { text: "A".into(), global: false }],
+                    vec![FragUsing::Plain {
+                        text: "A".into(),
+                        global: false,
+                    }],
                     vec![member_ref("Constants", None, "MaxRetries", "B")],
                 ),
             ),
         ];
         let g = resolve_graph(&no_git_root(), &files);
-        assert!(g.edges.iter().all(|e| !matches!(e, Edge::UsesMember { .. })));
+        assert!(g
+            .edges
+            .iter()
+            .all(|e| !matches!(e, Edge::UsesMember { .. })));
         // Silently dropped -- not counted as ambiguous or external.
         assert_eq!(g.stats.ambiguous_count, 0);
         assert_eq!(g.stats.unresolved_external_count, 0);
@@ -1865,7 +2225,12 @@ mod tests {
                 frag(
                     vec![
                         def("Some.Namespace.MyEnum", "MyEnum", "Some.Namespace", "enum"),
-                        def("Some.Namespace.MyEnum.Member", "Member", "Some.Namespace", "enum-member"),
+                        def(
+                            "Some.Namespace.MyEnum.Member",
+                            "Member",
+                            "Some.Namespace",
+                            "enum-member",
+                        ),
                     ],
                     vec![],
                     vec![],
@@ -1874,14 +2239,25 @@ mod tests {
             (
                 "Consumers/Reader.cs".to_string(),
                 frag(
-                    vec![def("App.Consumers.Reader", "Reader", "App.Consumers", "class")],
+                    vec![def(
+                        "App.Consumers.Reader",
+                        "Reader",
+                        "App.Consumers",
+                        "class",
+                    )],
                     vec![],
-                    vec![member_ref("MyEnum", Some("Some.Namespace.MyEnum"), "Member", "App.Consumers")],
+                    vec![member_ref(
+                        "MyEnum",
+                        Some("Some.Namespace.MyEnum"),
+                        "Member",
+                        "App.Consumers",
+                    )],
                 ),
             ),
         ];
         let g = resolve_graph(&no_git_root(), &files);
-        let edge = find_edge(&g, |e| matches!(e, Edge::UsesMember { .. })).expect("uses-member edge present");
+        let edge = find_edge(&g, |e| matches!(e, Edge::UsesMember { .. }))
+            .expect("uses-member edge present");
         match edge {
             Edge::UsesMember { to, to_file, .. } => {
                 assert_eq!(to, "Some.Namespace.MyEnum.Member");
@@ -1893,7 +2269,8 @@ mod tests {
     }
 
     #[test]
-    fn namespace_alias_qualified_member_ref_resolves_only_via_global_uniqueness_not_a_genuine_alias_walk() {
+    fn namespace_alias_qualified_member_ref_resolves_only_via_global_uniqueness_not_a_genuine_alias_walk(
+    ) {
         // Resolution-ladder subtlety: step 0 (the alias short-circuit) only
         // ever fires for a BARE, non-dotted ref. "Ns.MyEnum" is dotted the
         // moment it has 2+ segments, so "Ns" is never looked up in the alias
@@ -1905,7 +2282,12 @@ mod tests {
                 frag(
                     vec![
                         def("Some.Namespace.MyEnum", "MyEnum", "Some.Namespace", "enum"),
-                        def("Some.Namespace.MyEnum.Member", "Member", "Some.Namespace", "enum-member"),
+                        def(
+                            "Some.Namespace.MyEnum.Member",
+                            "Member",
+                            "Some.Namespace",
+                            "enum-member",
+                        ),
                     ],
                     vec![],
                     vec![],
@@ -1914,9 +2296,23 @@ mod tests {
             (
                 "Consumers/AliasNsUser.cs".to_string(),
                 frag(
-                    vec![def("App.Consumers.AliasNsUser", "AliasNsUser", "App.Consumers", "class")],
-                    vec![FragUsing::Alias { alias: "Ns".into(), target: "Some.Namespace".into(), global: false }],
-                    vec![member_ref("MyEnum", Some("Ns.MyEnum"), "Member", "App.Consumers")],
+                    vec![def(
+                        "App.Consumers.AliasNsUser",
+                        "AliasNsUser",
+                        "App.Consumers",
+                        "class",
+                    )],
+                    vec![FragUsing::Alias {
+                        alias: "Ns".into(),
+                        target: "Some.Namespace".into(),
+                        global: false,
+                    }],
+                    vec![member_ref(
+                        "MyEnum",
+                        Some("Ns.MyEnum"),
+                        "Member",
+                        "App.Consumers",
+                    )],
                 ),
             ),
         ];
@@ -1934,37 +2330,80 @@ mod tests {
     #[test]
     fn dotted_exact_qualified_member_access_to_a_static_class_emits_uses_member_edge() {
         let files = vec![
-            ("Other/Utils.cs".to_string(), frag(vec![def("App.Other.Utils", "Utils", "App.Other", "class")], vec![], vec![])),
+            (
+                "Other/Utils.cs".to_string(),
+                frag(
+                    vec![def("App.Other.Utils", "Utils", "App.Other", "class")],
+                    vec![],
+                    vec![],
+                ),
+            ),
             (
                 "Consumers/UsesNonEnum.cs".to_string(),
                 frag(
-                    vec![def("App.Consumers.UsesNonEnum", "UsesNonEnum", "App.Consumers", "class")],
+                    vec![def(
+                        "App.Consumers.UsesNonEnum",
+                        "UsesNonEnum",
+                        "App.Consumers",
+                        "class",
+                    )],
                     vec![],
-                    vec![member_ref("Utils", Some("App.Other.Utils"), "MaxRetries", "App.Consumers")],
+                    vec![member_ref(
+                        "Utils",
+                        Some("App.Other.Utils"),
+                        "MaxRetries",
+                        "App.Consumers",
+                    )],
                 ),
             ),
         ];
         let g = resolve_graph(&no_git_root(), &files);
-        let edge = find_edge(&g, |e| matches!(e, Edge::UsesMember { .. })).expect("exact-qualified static access emits");
+        let edge = find_edge(&g, |e| matches!(e, Edge::UsesMember { .. }))
+            .expect("exact-qualified static access emits");
         match edge {
-            Edge::UsesMember { to, .. } => assert_eq!(to, "App.Other.Utils", "targets the type def -- member defs exist only for enums"),
+            Edge::UsesMember { to, .. } => assert_eq!(
+                to, "App.Other.Utils",
+                "targets the type def -- member defs exist only for enums"
+            ),
             _ => unreachable!(),
         }
         assert_eq!(g.stats.edges_by_kind.uses_member, 1);
-        assert_eq!(g.stats.ambiguous_count, 0, "uses-member misses must never be reported as ambiguous");
+        assert_eq!(
+            g.stats.ambiguous_count, 0,
+            "uses-member misses must never be reported as ambiguous"
+        );
         assert_eq!(g.stats.unresolved_external_count, 0);
     }
 
     #[test]
     fn bare_qualifier_to_a_class_emits_only_when_the_member_is_a_recorded_method() {
-        let urn = def_with("App.Other.MessageUrn", "MessageUrn", "App.Other", "class", &["ForType"], &[], &[]);
+        let urn = def_with(
+            "App.Other.MessageUrn",
+            "MessageUrn",
+            "App.Other",
+            "class",
+            &["ForType"],
+            &[],
+            &[],
+        );
         let files = vec![
-            ("Other/MessageUrn.cs".to_string(), frag(vec![urn], vec![], vec![])),
+            (
+                "Other/MessageUrn.cs".to_string(),
+                frag(vec![urn], vec![], vec![]),
+            ),
             (
                 "Consumers/CallsStatic.cs".to_string(),
                 frag(
-                    vec![def("App.Consumers.CallsStatic", "CallsStatic", "App.Consumers", "class")],
-                    vec![FragUsing::Plain { text: "App.Other".into(), global: false }],
+                    vec![def(
+                        "App.Consumers.CallsStatic",
+                        "CallsStatic",
+                        "App.Consumers",
+                        "class",
+                    )],
+                    vec![FragUsing::Plain {
+                        text: "App.Other".into(),
+                        global: false,
+                    }],
                     vec![
                         member_ref("MessageUrn", None, "ForType", "App.Consumers"),
                         member_ref("MessageUrn", None, "SomeUnknownField", "App.Consumers"),
@@ -1988,18 +2427,41 @@ mod tests {
         let mut generic_ref = member_ref("TypeCache", None, "Cached", "App.Consumers");
         generic_ref.generic = true;
         let files = vec![
-            ("Other/TypeCache.cs".to_string(), frag(vec![def("App.Other.TypeCache", "TypeCache", "App.Other", "class")], vec![], vec![])),
+            (
+                "Other/TypeCache.cs".to_string(),
+                frag(
+                    vec![def(
+                        "App.Other.TypeCache",
+                        "TypeCache",
+                        "App.Other",
+                        "class",
+                    )],
+                    vec![],
+                    vec![],
+                ),
+            ),
             (
                 "Consumers/UsesCache.cs".to_string(),
                 frag(
-                    vec![def("App.Consumers.UsesCache", "UsesCache", "App.Consumers", "class")],
-                    vec![FragUsing::Plain { text: "App.Other".into(), global: false }],
+                    vec![def(
+                        "App.Consumers.UsesCache",
+                        "UsesCache",
+                        "App.Consumers",
+                        "class",
+                    )],
+                    vec![FragUsing::Plain {
+                        text: "App.Other".into(),
+                        global: false,
+                    }],
                     vec![generic_ref],
                 ),
             ),
         ];
         let g = resolve_graph(&no_git_root(), &files);
-        assert_eq!(g.stats.edges_by_kind.uses_member, 1, "a generic qualifier is type-certain even for a property member");
+        assert_eq!(
+            g.stats.edges_by_kind.uses_member, 1,
+            "a generic qualifier is type-certain even for a property member"
+        );
         match find_edge(&g, |e| matches!(e, Edge::UsesMember { .. })).unwrap() {
             Edge::UsesMember { to, .. } => assert_eq!(to, "App.Other.TypeCache"),
             _ => unreachable!(),
@@ -2012,34 +2474,80 @@ mod tests {
         // flattened qualifier "EqualityComparer.Default" carries generic=true
         // from its inner segment; its TAIL name "Default" happens to match a
         // real type. Gate-audit regression: no edge.
-        let mut chain_ref = member_ref("Default", Some("EqualityComparer.Default"), "GetHashCode", "App.Consumers");
+        let mut chain_ref = member_ref(
+            "Default",
+            Some("EqualityComparer.Default"),
+            "GetHashCode",
+            "App.Consumers",
+        );
         chain_ref.generic = true;
         let files = vec![
-            ("Other/Default.cs".to_string(), frag(vec![def("App.Other.Default", "Default", "App.Other", "class")], vec![], vec![])),
+            (
+                "Other/Default.cs".to_string(),
+                frag(
+                    vec![def("App.Other.Default", "Default", "App.Other", "class")],
+                    vec![],
+                    vec![],
+                ),
+            ),
             (
                 "Consumers/Chain.cs".to_string(),
-                frag(vec![def("App.Consumers.Chain", "Chain", "App.Consumers", "class")], vec![], vec![chain_ref]),
+                frag(
+                    vec![def(
+                        "App.Consumers.Chain",
+                        "Chain",
+                        "App.Consumers",
+                        "class",
+                    )],
+                    vec![],
+                    vec![chain_ref],
+                ),
             ),
         ];
         let g = resolve_graph(&no_git_root(), &files);
-        assert!(g.edges.iter().all(|e| !matches!(e, Edge::UsesMember { .. })), "chain-tail name match must not emit");
+        assert!(
+            g.edges
+                .iter()
+                .all(|e| !matches!(e, Edge::UsesMember { .. })),
+            "chain-tail name match must not emit"
+        );
     }
 
     #[test]
     fn bare_non_method_member_on_a_non_enum_qualifier_is_still_dropped_silently() {
         let files = vec![
-            ("Other/Widget.cs".to_string(), frag(vec![def("App.Other.Widget", "Widget", "App.Other", "class")], vec![], vec![])),
+            (
+                "Other/Widget.cs".to_string(),
+                frag(
+                    vec![def("App.Other.Widget", "Widget", "App.Other", "class")],
+                    vec![],
+                    vec![],
+                ),
+            ),
             (
                 "Consumers/PropLike.cs".to_string(),
                 frag(
-                    vec![def("App.Consumers.PropLike", "PropLike", "App.Consumers", "class")],
-                    vec![FragUsing::Plain { text: "App.Other".into(), global: false }],
+                    vec![def(
+                        "App.Consumers.PropLike",
+                        "PropLike",
+                        "App.Consumers",
+                        "class",
+                    )],
+                    vec![FragUsing::Plain {
+                        text: "App.Other".into(),
+                        global: false,
+                    }],
                     vec![member_ref("Widget", None, "Name", "App.Consumers")],
                 ),
             ),
         ];
         let g = resolve_graph(&no_git_root(), &files);
-        assert!(g.edges.iter().all(|e| !matches!(e, Edge::UsesMember { .. })), "no certainty signal -> no edge (could be an instance property named Widget)");
+        assert!(
+            g.edges
+                .iter()
+                .all(|e| !matches!(e, Edge::UsesMember { .. })),
+            "no certainty signal -> no edge (could be an instance property named Widget)"
+        );
         assert_eq!(g.stats.ambiguous_count, 0);
         assert_eq!(g.stats.unresolved_external_count, 0);
     }
@@ -2057,7 +2565,12 @@ mod tests {
                     vec![
                         def("App.Widgets.Outer", "Outer", "App.Widgets", "class"),
                         def("App.Widgets.Outer+Inner", "Inner", "App.Widgets", "enum"),
-                        def("App.Widgets.Outer+Inner.On", "On", "App.Widgets", "enum-member"),
+                        def(
+                            "App.Widgets.Outer+Inner.On",
+                            "On",
+                            "App.Widgets",
+                            "enum-member",
+                        ),
                     ],
                     vec![],
                     vec![],
@@ -2066,14 +2579,25 @@ mod tests {
             (
                 "Consumers/NestedUser.cs".to_string(),
                 frag(
-                    vec![def("App.Consumers.NestedUser", "NestedUser", "App.Consumers", "class")],
+                    vec![def(
+                        "App.Consumers.NestedUser",
+                        "NestedUser",
+                        "App.Consumers",
+                        "class",
+                    )],
                     vec![],
-                    vec![member_ref("Inner", Some("Outer.Inner"), "On", "App.Consumers")],
+                    vec![member_ref(
+                        "Inner",
+                        Some("Outer.Inner"),
+                        "On",
+                        "App.Consumers",
+                    )],
                 ),
             ),
         ];
         let g = resolve_graph(&no_git_root(), &files);
-        let edge = find_edge(&g, |e| matches!(e, Edge::UsesMember { .. })).expect("uses-member edge present");
+        let edge = find_edge(&g, |e| matches!(e, Edge::UsesMember { .. }))
+            .expect("uses-member edge present");
         match edge {
             Edge::UsesMember { to, to_file, .. } => {
                 assert_eq!(to, "App.Widgets.Outer+Inner.On");
@@ -2088,18 +2612,34 @@ mod tests {
     #[test]
     fn declaration_expression_type_ref_resolves_through_the_normal_uses_type_ladder() {
         let files = vec![
-            ("Enums/PostType.cs".to_string(), frag(vec![def("App.Enums.PostType", "PostType", "App.Enums", "enum")], vec![], vec![])),
+            (
+                "Enums/PostType.cs".to_string(),
+                frag(
+                    vec![def("App.Enums.PostType", "PostType", "App.Enums", "enum")],
+                    vec![],
+                    vec![],
+                ),
+            ),
             (
                 "Consumers/OutUser.cs".to_string(),
                 frag(
-                    vec![def("App.Consumers.OutUser", "OutUser", "App.Consumers", "class")],
-                    vec![FragUsing::Plain { text: "App.Enums".into(), global: false }],
+                    vec![def(
+                        "App.Consumers.OutUser",
+                        "OutUser",
+                        "App.Consumers",
+                        "class",
+                    )],
+                    vec![FragUsing::Plain {
+                        text: "App.Enums".into(),
+                        global: false,
+                    }],
                     vec![type_ref("uses-type", "PostType", None, "App.Consumers")],
                 ),
             ),
         ];
         let g = resolve_graph(&no_git_root(), &files);
-        let edge = find_edge(&g, |e| matches!(e, Edge::UsesType { .. })).expect("resolved edge present");
+        let edge =
+            find_edge(&g, |e| matches!(e, Edge::UsesType { .. })).expect("resolved edge present");
         match edge {
             Edge::UsesType { to, .. } => assert_eq!(to, "App.Enums.PostType"),
             _ => unreachable!(),
@@ -2109,21 +2649,46 @@ mod tests {
     #[test]
     fn declaration_expression_type_ref_with_ambiguous_simple_name_is_marked_ambiguous() {
         let files = vec![
-            ("A/Status.cs".to_string(), frag(vec![def("A.Status", "Status", "A", "class")], vec![], vec![])),
-            ("B/Status.cs".to_string(), frag(vec![def("B.Status", "Status", "B", "class")], vec![], vec![])),
+            (
+                "A/Status.cs".to_string(),
+                frag(
+                    vec![def("A.Status", "Status", "A", "class")],
+                    vec![],
+                    vec![],
+                ),
+            ),
+            (
+                "B/Status.cs".to_string(),
+                frag(
+                    vec![def("B.Status", "Status", "B", "class")],
+                    vec![],
+                    vec![],
+                ),
+            ),
             (
                 "Consumers/AmbiguousOutUser.cs".to_string(),
                 frag(
-                    vec![def("App.Consumers.AmbiguousOutUser", "AmbiguousOutUser", "App.Consumers", "class")],
+                    vec![def(
+                        "App.Consumers.AmbiguousOutUser",
+                        "AmbiguousOutUser",
+                        "App.Consumers",
+                        "class",
+                    )],
                     vec![],
                     vec![type_ref("uses-type", "Status", None, "App.Consumers")],
                 ),
             ),
         ];
         let g = resolve_graph(&no_git_root(), &files);
-        let edge = find_edge(&g, |e| matches!(e, Edge::Ambiguous { .. })).expect("ambiguous edge present");
+        let edge =
+            find_edge(&g, |e| matches!(e, Edge::Ambiguous { .. })).expect("ambiguous edge present");
         match edge {
-            Edge::Ambiguous { origin, raw, candidate_count, .. } => {
+            Edge::Ambiguous {
+                origin,
+                raw,
+                candidate_count,
+                ..
+            } => {
                 assert_eq!(origin, "uses-type");
                 assert_eq!(raw, "Status");
                 assert_eq!(*candidate_count, 2);
@@ -2144,19 +2709,39 @@ mod tests {
         let files = vec![
             (
                 "Common/IIdentifiable.cs".to_string(),
-                frag(vec![def("Fixtures.Common.IIdentifiable", "IIdentifiable", "Fixtures.Common", "interface")], vec![], vec![]),
+                frag(
+                    vec![def(
+                        "Fixtures.Common.IIdentifiable",
+                        "IIdentifiable",
+                        "Fixtures.Common",
+                        "interface",
+                    )],
+                    vec![],
+                    vec![],
+                ),
             ),
             (
                 "Billing/Invoice.cs".to_string(),
                 frag(
-                    vec![def("Fixtures.Billing.Invoice", "Invoice", "Fixtures.Billing", "class")],
+                    vec![def(
+                        "Fixtures.Billing.Invoice",
+                        "Invoice",
+                        "Fixtures.Billing",
+                        "class",
+                    )],
                     vec![],
-                    vec![type_ref("inherits", "IIdentifiable", Some("Common.IIdentifiable"), "Fixtures.Billing")],
+                    vec![type_ref(
+                        "inherits",
+                        "IIdentifiable",
+                        Some("Common.IIdentifiable"),
+                        "Fixtures.Billing",
+                    )],
                 ),
             ),
         ];
         let g = resolve_graph(&no_git_root(), &files);
-        let edge = find_edge(&g, |e| matches!(e, Edge::Inherits { .. })).expect("resolved via namespace walk");
+        let edge = find_edge(&g, |e| matches!(e, Edge::Inherits { .. }))
+            .expect("resolved via namespace walk");
         match edge {
             Edge::Inherits { to, .. } => assert_eq!(to, "Fixtures.Common.IIdentifiable"),
             _ => unreachable!(),
@@ -2167,7 +2752,11 @@ mod tests {
     fn qualified_reference_with_no_matching_prefix_and_no_literal_match_is_external() {
         let files = vec![(
             "A/Probe.cs".to_string(),
-            frag(vec![def("A.Probe", "Probe", "A", "class")], vec![], vec![type_ref("uses-type", "Y", Some("X.Y"), "A")]),
+            frag(
+                vec![def("A.Probe", "Probe", "A", "class")],
+                vec![],
+                vec![type_ref("uses-type", "Y", Some("X.Y"), "A")],
+            ),
         )];
         let g = resolve_graph(&no_git_root(), &files);
         assert_eq!(g.stats.unresolved_external_count, 1);
@@ -2178,10 +2767,21 @@ mod tests {
     #[test]
     fn same_namespace_reference_resolves_without_any_using() {
         let files = vec![
-            ("A/Widget.cs".to_string(), frag(vec![def("A.Widget", "Widget", "A", "class")], vec![], vec![])),
+            (
+                "A/Widget.cs".to_string(),
+                frag(
+                    vec![def("A.Widget", "Widget", "A", "class")],
+                    vec![],
+                    vec![],
+                ),
+            ),
             (
                 "A/Holder.cs".to_string(),
-                frag(vec![def("A.Holder", "Holder", "A", "class")], vec![], vec![type_ref("uses-type", "Widget", None, "A")]),
+                frag(
+                    vec![def("A.Holder", "Holder", "A", "class")],
+                    vec![],
+                    vec![type_ref("uses-type", "Widget", None, "A")],
+                ),
             ),
         ];
         let g = resolve_graph(&no_git_root(), &files);
@@ -2197,10 +2797,17 @@ mod tests {
         // step 3 -- an empty-string ns must behave as absent, not as a
         // matchable prefix.
         let files = vec![
-            ("Root.cs".to_string(), frag(vec![def("Anchor", "Anchor", "", "class")], vec![], vec![])),
+            (
+                "Root.cs".to_string(),
+                frag(vec![def("Anchor", "Anchor", "", "class")], vec![], vec![]),
+            ),
             (
                 "Probe.cs".to_string(),
-                frag(vec![def("Probe", "Probe", "", "class")], vec![], vec![type_ref("uses-type", "Anchor", None, "")]),
+                frag(
+                    vec![def("Probe", "Probe", "", "class")],
+                    vec![],
+                    vec![type_ref("uses-type", "Anchor", None, "")],
+                ),
             ),
         ];
         let g = resolve_graph(&no_git_root(), &files);
@@ -2213,18 +2820,37 @@ mod tests {
     #[test]
     fn global_using_resolves_a_bare_name_from_an_unrelated_namespace() {
         let files = vec![
-            ("Catalog/Status.cs".to_string(), frag(vec![def("Catalog.Status", "Status", "Catalog", "enum")], vec![], vec![])),
+            (
+                "Catalog/Status.cs".to_string(),
+                frag(
+                    vec![def("Catalog.Status", "Status", "Catalog", "enum")],
+                    vec![],
+                    vec![],
+                ),
+            ),
             (
                 "Globals.cs".to_string(),
-                frag(vec![], vec![FragUsing::Plain { text: "Catalog".into(), global: true }], vec![]),
+                frag(
+                    vec![],
+                    vec![FragUsing::Plain {
+                        text: "Catalog".into(),
+                        global: true,
+                    }],
+                    vec![],
+                ),
             ),
             (
                 "Ops/View.cs".to_string(),
-                frag(vec![def("Ops.View", "View", "Ops", "class")], vec![], vec![type_ref("uses-type", "Status", None, "Ops")]),
+                frag(
+                    vec![def("Ops.View", "View", "Ops", "class")],
+                    vec![],
+                    vec![type_ref("uses-type", "Status", None, "Ops")],
+                ),
             ),
         ];
         let g = resolve_graph(&no_git_root(), &files);
-        let edge = find_edge(&g, |e| matches!(e, Edge::UsesType { .. })).expect("resolved via global using");
+        let edge = find_edge(&g, |e| matches!(e, Edge::UsesType { .. }))
+            .expect("resolved via global using");
         match edge {
             Edge::UsesType { to, .. } => assert_eq!(to, "Catalog.Status"),
             _ => unreachable!(),
@@ -2241,7 +2867,11 @@ mod tests {
         g.edges
             .iter()
             .filter_map(|e| match e {
-                Edge::UsesMember { to, heuristic: false, .. } => Some(to.as_str()),
+                Edge::UsesMember {
+                    to,
+                    heuristic: false,
+                    ..
+                } => Some(to.as_str()),
                 _ => None,
             })
             .collect()
@@ -2251,7 +2881,11 @@ mod tests {
         g.edges
             .iter()
             .filter_map(|e| match e {
-                Edge::UsesMember { to, heuristic: true, .. } => Some(to.as_str()),
+                Edge::UsesMember {
+                    to,
+                    heuristic: true,
+                    ..
+                } => Some(to.as_str()),
                 _ => None,
             })
             .collect()
@@ -2266,12 +2900,29 @@ mod tests {
         let files = vec![
             (
                 "Other/MessageUrn.cs".to_string(),
-                frag(vec![def_with("App.Consumers.MessageUrn", "MessageUrn", "App.Consumers", "class", &[], &["Prefix"], &[])], vec![], vec![]),
+                frag(
+                    vec![def_with(
+                        "App.Consumers.MessageUrn",
+                        "MessageUrn",
+                        "App.Consumers",
+                        "class",
+                        &[],
+                        &["Prefix"],
+                        &[],
+                    )],
+                    vec![],
+                    vec![],
+                ),
             ),
             (
                 "Consumers/UsesProperty.cs".to_string(),
                 frag(
-                    vec![def("App.Consumers.UsesProperty", "UsesProperty", "App.Consumers", "class")],
+                    vec![def(
+                        "App.Consumers.UsesProperty",
+                        "UsesProperty",
+                        "App.Consumers",
+                        "class",
+                    )],
                     vec![],
                     vec![
                         member_ref("MessageUrn", None, "Prefix", "App.Consumers"),
@@ -2293,13 +2944,33 @@ mod tests {
         let files = vec![
             (
                 "Other/Limits.cs".to_string(),
-                frag(vec![def_with("App.Other.Limits", "Limits", "App.Other", "class", &[], &[], &["MaxRetries"])], vec![], vec![]),
+                frag(
+                    vec![def_with(
+                        "App.Other.Limits",
+                        "Limits",
+                        "App.Other",
+                        "class",
+                        &[],
+                        &[],
+                        &["MaxRetries"],
+                    )],
+                    vec![],
+                    vec![],
+                ),
             ),
             (
                 "Consumers/UsesField.cs".to_string(),
                 frag(
-                    vec![def("App.Consumers.UsesField", "UsesField", "App.Consumers", "class")],
-                    vec![FragUsing::Plain { text: "App.Other".into(), global: false }],
+                    vec![def(
+                        "App.Consumers.UsesField",
+                        "UsesField",
+                        "App.Consumers",
+                        "class",
+                    )],
+                    vec![FragUsing::Plain {
+                        text: "App.Other".into(),
+                        global: false,
+                    }],
                     vec![member_ref("Limits", None, "MaxRetries", "App.Consumers")],
                 ),
             ),
@@ -2313,17 +2984,49 @@ mod tests {
         let files = vec![
             (
                 "Other/Config.Part1.cs".to_string(),
-                frag(vec![def_with("App.Other.Config", "Config", "App.Other", "class", &[], &[], &["Retries"])], vec![], vec![]),
+                frag(
+                    vec![def_with(
+                        "App.Other.Config",
+                        "Config",
+                        "App.Other",
+                        "class",
+                        &[],
+                        &[],
+                        &["Retries"],
+                    )],
+                    vec![],
+                    vec![],
+                ),
             ),
             (
                 "Other/Config.Part2.cs".to_string(),
-                frag(vec![def_with("App.Other.Config", "Config", "App.Other", "class", &[], &["Name"], &[])], vec![], vec![]),
+                frag(
+                    vec![def_with(
+                        "App.Other.Config",
+                        "Config",
+                        "App.Other",
+                        "class",
+                        &[],
+                        &["Name"],
+                        &[],
+                    )],
+                    vec![],
+                    vec![],
+                ),
             ),
             (
                 "Consumers/UsesBoth.cs".to_string(),
                 frag(
-                    vec![def("App.Consumers.UsesBoth", "UsesBoth", "App.Consumers", "class")],
-                    vec![FragUsing::Plain { text: "App.Other".into(), global: false }],
+                    vec![def(
+                        "App.Consumers.UsesBoth",
+                        "UsesBoth",
+                        "App.Consumers",
+                        "class",
+                    )],
+                    vec![FragUsing::Plain {
+                        text: "App.Other".into(),
+                        global: false,
+                    }],
                     vec![
                         member_ref("Config", None, "Retries", "App.Consumers"),
                         member_ref("Config", None, "Name", "App.Consumers"),
@@ -2346,19 +3049,46 @@ mod tests {
         let files = vec![
             (
                 "Other/Widget.cs".to_string(),
-                frag(vec![def_with("App.Other.Widget", "Widget", "App.Other", "class", &["Render"], &[], &[])], vec![], vec![]),
+                frag(
+                    vec![def_with(
+                        "App.Other.Widget",
+                        "Widget",
+                        "App.Other",
+                        "class",
+                        &["Render"],
+                        &[],
+                        &[],
+                    )],
+                    vec![],
+                    vec![],
+                ),
             ),
             (
                 "Consumers/LocalReceiver.cs".to_string(),
                 frag(
-                    vec![def("App.Consumers.LocalReceiver", "LocalReceiver", "App.Consumers", "class")],
-                    vec![FragUsing::Plain { text: "App.Other".into(), global: false }],
-                    vec![receiver_ref("w", "Render", "App.Consumers", "Widget", Some(0))],
+                    vec![def(
+                        "App.Consumers.LocalReceiver",
+                        "LocalReceiver",
+                        "App.Consumers",
+                        "class",
+                    )],
+                    vec![FragUsing::Plain {
+                        text: "App.Other".into(),
+                        global: false,
+                    }],
+                    vec![receiver_ref(
+                        "w",
+                        "Render",
+                        "App.Consumers",
+                        "Widget",
+                        Some(0),
+                    )],
                 ),
             ),
         ];
         let g = resolve_graph(&no_git_root(), &files);
-        let edge = find_edge(&g, |e| matches!(e, Edge::UsesMember { .. })).expect("uses-member edge present");
+        let edge = find_edge(&g, |e| matches!(e, Edge::UsesMember { .. }))
+            .expect("uses-member edge present");
         match edge {
             Edge::UsesMember { to, to_file, .. } => {
                 assert_eq!(to, "App.Other.Widget");
@@ -2376,13 +3106,33 @@ mod tests {
         let files = vec![
             (
                 "Other/Widget.cs".to_string(),
-                frag(vec![def_with("App.Other.Widget", "Widget", "App.Other", "class", &[], &["Name"], &[])], vec![], vec![]),
+                frag(
+                    vec![def_with(
+                        "App.Other.Widget",
+                        "Widget",
+                        "App.Other",
+                        "class",
+                        &[],
+                        &["Name"],
+                        &[],
+                    )],
+                    vec![],
+                    vec![],
+                ),
             ),
             (
                 "Consumers/PropReceiver.cs".to_string(),
                 frag(
-                    vec![def("App.Consumers.PropReceiver", "PropReceiver", "App.Consumers", "class")],
-                    vec![FragUsing::Plain { text: "App.Other".into(), global: false }],
+                    vec![def(
+                        "App.Consumers.PropReceiver",
+                        "PropReceiver",
+                        "App.Consumers",
+                        "class",
+                    )],
+                    vec![FragUsing::Plain {
+                        text: "App.Other".into(),
+                        global: false,
+                    }],
                     vec![receiver_ref("w", "Name", "App.Consumers", "Widget", None)],
                 ),
             ),
@@ -2396,18 +3146,57 @@ mod tests {
         let files = vec![
             (
                 "One/Item.cs".to_string(),
-                frag(vec![def_with("App.One.Item", "Item", "App.One", "class", &["Go"], &[], &[])], vec![], vec![]),
+                frag(
+                    vec![def_with(
+                        "App.One.Item",
+                        "Item",
+                        "App.One",
+                        "class",
+                        &["Go"],
+                        &[],
+                        &[],
+                    )],
+                    vec![],
+                    vec![],
+                ),
             ),
             (
                 "Two/Item.cs".to_string(),
-                frag(vec![def_with("App.Two.Item", "Item", "App.Two", "class", &["Go"], &[], &[])], vec![], vec![]),
+                frag(
+                    vec![def_with(
+                        "App.Two.Item",
+                        "Item",
+                        "App.Two",
+                        "class",
+                        &["Go"],
+                        &[],
+                        &[],
+                    )],
+                    vec![],
+                    vec![],
+                ),
             ),
             (
                 "Consumers/AliasReceiver.cs".to_string(),
                 frag(
-                    vec![def("App.Consumers.AliasReceiver", "AliasReceiver", "App.Consumers", "class")],
-                    vec![FragUsing::Alias { alias: "AliasedItem".into(), target: "App.Two.Item".into(), global: false }],
-                    vec![receiver_ref("item", "Go", "App.Consumers", "AliasedItem", Some(0))],
+                    vec![def(
+                        "App.Consumers.AliasReceiver",
+                        "AliasReceiver",
+                        "App.Consumers",
+                        "class",
+                    )],
+                    vec![FragUsing::Alias {
+                        alias: "AliasedItem".into(),
+                        target: "App.Two.Item".into(),
+                        global: false,
+                    }],
+                    vec![receiver_ref(
+                        "item",
+                        "Go",
+                        "App.Consumers",
+                        "AliasedItem",
+                        Some(0),
+                    )],
                 ),
             ),
         ];
@@ -2424,19 +3213,48 @@ mod tests {
         let files = vec![
             (
                 "Other/Widget.cs".to_string(),
-                frag(vec![def_with("App.Other.Widget", "Widget", "App.Other", "class", &["Render"], &[], &[])], vec![], vec![]),
+                frag(
+                    vec![def_with(
+                        "App.Other.Widget",
+                        "Widget",
+                        "App.Other",
+                        "class",
+                        &["Render"],
+                        &[],
+                        &[],
+                    )],
+                    vec![],
+                    vec![],
+                ),
             ),
             (
                 "Consumers/UnknownMember.cs".to_string(),
                 frag(
-                    vec![def("App.Consumers.UnknownMember", "UnknownMember", "App.Consumers", "class")],
-                    vec![FragUsing::Plain { text: "App.Other".into(), global: false }],
-                    vec![receiver_ref("w", "Explode", "App.Consumers", "Widget", Some(0))],
+                    vec![def(
+                        "App.Consumers.UnknownMember",
+                        "UnknownMember",
+                        "App.Consumers",
+                        "class",
+                    )],
+                    vec![FragUsing::Plain {
+                        text: "App.Other".into(),
+                        global: false,
+                    }],
+                    vec![receiver_ref(
+                        "w",
+                        "Explode",
+                        "App.Consumers",
+                        "Widget",
+                        Some(0),
+                    )],
                 ),
             ),
         ];
         let g = resolve_graph(&no_git_root(), &files);
-        assert!(member_edge_targets(&g).is_empty(), "stage 3/4 territory, not an edge");
+        assert!(
+            member_edge_targets(&g).is_empty(),
+            "stage 3/4 territory, not an edge"
+        );
     }
 
     #[test]
@@ -2444,31 +3262,69 @@ mod tests {
         let files = vec![
             (
                 "One/Handler.cs".to_string(),
-                frag(vec![def_with("App.One.Handler", "Handler", "App.One", "class", &["Go"], &[], &[])], vec![], vec![]),
+                frag(
+                    vec![def_with(
+                        "App.One.Handler",
+                        "Handler",
+                        "App.One",
+                        "class",
+                        &["Go"],
+                        &[],
+                        &[],
+                    )],
+                    vec![],
+                    vec![],
+                ),
             ),
             (
                 "Two/Handler.cs".to_string(),
-                frag(vec![def_with("App.Two.Handler", "Handler", "App.Two", "class", &["Go"], &[], &[])], vec![], vec![]),
+                frag(
+                    vec![def_with(
+                        "App.Two.Handler",
+                        "Handler",
+                        "App.Two",
+                        "class",
+                        &["Go"],
+                        &[],
+                        &[],
+                    )],
+                    vec![],
+                    vec![],
+                ),
             ),
             (
                 "Consumers/AmbiguousReceiver.cs".to_string(),
                 frag(
-                    vec![def("App.Consumers.AmbiguousReceiver", "AmbiguousReceiver", "App.Consumers", "class")],
+                    vec![def(
+                        "App.Consumers.AmbiguousReceiver",
+                        "AmbiguousReceiver",
+                        "App.Consumers",
+                        "class",
+                    )],
                     vec![],
                     vec![receiver_ref("h", "Go", "App.Consumers", "Handler", Some(0))],
                 ),
             ),
         ];
         let g = resolve_graph(&no_git_root(), &files);
-        assert!(member_edge_targets(&g).is_empty(), "never pick a winner between two same-named receiver types");
-        assert_eq!(g.stats.ambiguous_count, 0, "a uses-member miss is still never reported as ambiguous");
+        assert!(
+            member_edge_targets(&g).is_empty(),
+            "never pick a winner between two same-named receiver types"
+        );
+        assert_eq!(
+            g.stats.ambiguous_count, 0,
+            "a uses-member miss is still never reported as ambiguous"
+        );
         assert_eq!(g.stats.unresolved_external_count, 0);
         // Refusing to PICK is not the same as having nothing to say. Both
         // candidates declare Go, so both are named as guesses -- the
         // strong scored case, where the right answer is provably one of the
         // two. Neither is same-namespace and the file has no usings, so both
         // score 1 and the def id breaks the tie.
-        assert_eq!(heuristic_member_edge_targets(&g), vec!["App.One.Handler", "App.Two.Handler"]);
+        assert_eq!(
+            heuristic_member_edge_targets(&g),
+            vec!["App.One.Handler", "App.Two.Handler"]
+        );
         assert_eq!(g.stats.heuristic_edge_count, 2);
     }
 
@@ -2477,14 +3333,28 @@ mod tests {
         let files = vec![(
             "Consumers/ExternalReceiver.cs".to_string(),
             frag(
-                vec![def("App.Consumers.ExternalReceiver", "ExternalReceiver", "App.Consumers", "class")],
+                vec![def(
+                    "App.Consumers.ExternalReceiver",
+                    "ExternalReceiver",
+                    "App.Consumers",
+                    "class",
+                )],
                 vec![],
-                vec![receiver_ref("s", "Trim", "App.Consumers", "StringBuilder", Some(0))],
+                vec![receiver_ref(
+                    "s",
+                    "Trim",
+                    "App.Consumers",
+                    "StringBuilder",
+                    Some(0),
+                )],
             ),
         )];
         let g = resolve_graph(&no_git_root(), &files);
         assert!(member_edge_targets(&g).is_empty());
-        assert_eq!(g.stats.unresolved_external_count, 0, "a uses-member miss is never counted as external either");
+        assert_eq!(
+            g.stats.unresolved_external_count, 0,
+            "a uses-member miss is never counted as external either"
+        );
     }
 
     #[test]
@@ -2497,19 +3367,42 @@ mod tests {
         let files = vec![
             (
                 "Other/Widget.cs".to_string(),
-                frag(vec![def_with("App.Other.Widget", "Widget", "App.Other", "class", &["Render"], &[], &[])], vec![], vec![]),
+                frag(
+                    vec![def_with(
+                        "App.Other.Widget",
+                        "Widget",
+                        "App.Other",
+                        "class",
+                        &["Render"],
+                        &[],
+                        &[],
+                    )],
+                    vec![],
+                    vec![],
+                ),
             ),
             (
                 "Consumers/NoFact.cs".to_string(),
                 frag(
-                    vec![def("App.Consumers.NoFact", "NoFact", "App.Consumers", "class")],
-                    vec![FragUsing::Plain { text: "App.Other".into(), global: false }],
+                    vec![def(
+                        "App.Consumers.NoFact",
+                        "NoFact",
+                        "App.Consumers",
+                        "class",
+                    )],
+                    vec![FragUsing::Plain {
+                        text: "App.Other".into(),
+                        global: false,
+                    }],
                     vec![member_ref("widget", None, "Render", "App.Consumers")],
                 ),
             ),
         ];
         let g = resolve_graph(&no_git_root(), &files);
-        assert!(member_edge_targets(&g).is_empty(), "no fact was recorded, so there is nothing to resolve");
+        assert!(
+            member_edge_targets(&g).is_empty(),
+            "no fact was recorded, so there is nothing to resolve"
+        );
         // With no fact of any kind the qualifier `widget` resolves to nothing
         // at all, which is the only door into the scored
         // tier's uniqueness fallback -- and Widget is the one def graph-wide
@@ -2525,25 +3418,67 @@ mod tests {
         let files = vec![
             (
                 "Other/Widget.cs".to_string(),
-                frag(vec![def_with("App.Other.Widget", "Widget", "App.Other", "class", &["Go"], &[], &[])], vec![], vec![]),
+                frag(
+                    vec![def_with(
+                        "App.Other.Widget",
+                        "Widget",
+                        "App.Other",
+                        "class",
+                        &["Go"],
+                        &[],
+                        &[],
+                    )],
+                    vec![],
+                    vec![],
+                ),
             ),
             (
                 "Other/Gadget.cs".to_string(),
-                frag(vec![def_with("App.Other.Gadget", "Gadget", "App.Other", "class", &["Go"], &[], &[])], vec![], vec![]),
+                frag(
+                    vec![def_with(
+                        "App.Other.Gadget",
+                        "Gadget",
+                        "App.Other",
+                        "class",
+                        &["Go"],
+                        &[],
+                        &[],
+                    )],
+                    vec![],
+                    vec![],
+                ),
             ),
             (
                 "Consumers/ShadowReceiver.cs".to_string(),
                 frag(
-                    vec![def("App.Consumers.ShadowReceiver", "ShadowReceiver", "App.Consumers", "class")],
-                    vec![FragUsing::Plain { text: "App.Other".into(), global: false }],
+                    vec![def(
+                        "App.Consumers.ShadowReceiver",
+                        "ShadowReceiver",
+                        "App.Consumers",
+                        "class",
+                    )],
+                    vec![FragUsing::Plain {
+                        text: "App.Other".into(),
+                        global: false,
+                    }],
                     // The parameter shadows the same-named field, so the
                     // extractor recorded Gadget (see extract.rs's own test).
-                    vec![receiver_ref("handler", "Go", "App.Consumers", "Gadget", Some(0))],
+                    vec![receiver_ref(
+                        "handler",
+                        "Go",
+                        "App.Consumers",
+                        "Gadget",
+                        Some(0),
+                    )],
                 ),
             ),
         ];
         let g = resolve_graph(&no_git_root(), &files);
-        assert_eq!(member_edge_targets(&g), vec!["App.Other.Gadget"], "the innermost declaration wins");
+        assert_eq!(
+            member_edge_targets(&g),
+            vec!["App.Other.Gadget"],
+            "the innermost declaration wins"
+        );
     }
 
     #[test]
@@ -2553,19 +3488,48 @@ mod tests {
         let files = vec![
             (
                 "Other/Widget.cs".to_string(),
-                frag(vec![def_with("App.Other.Widget", "Widget", "App.Other", "class", &["Render"], &[], &[])], vec![], vec![]),
+                frag(
+                    vec![def_with(
+                        "App.Other.Widget",
+                        "Widget",
+                        "App.Other",
+                        "class",
+                        &["Render"],
+                        &[],
+                        &[],
+                    )],
+                    vec![],
+                    vec![],
+                ),
             ),
             (
                 "Consumers/OneEdge.cs".to_string(),
                 frag(
-                    vec![def("App.Consumers.OneEdge", "OneEdge", "App.Consumers", "class")],
-                    vec![FragUsing::Plain { text: "App.Other".into(), global: false }],
-                    vec![receiver_ref("Widget", "Render", "App.Consumers", "Widget", Some(0))],
+                    vec![def(
+                        "App.Consumers.OneEdge",
+                        "OneEdge",
+                        "App.Consumers",
+                        "class",
+                    )],
+                    vec![FragUsing::Plain {
+                        text: "App.Other".into(),
+                        global: false,
+                    }],
+                    vec![receiver_ref(
+                        "Widget",
+                        "Render",
+                        "App.Consumers",
+                        "Widget",
+                        Some(0),
+                    )],
                 ),
             ),
         ];
         let g = resolve_graph(&no_git_root(), &files);
-        assert_eq!(g.stats.edges_by_kind.uses_member, 1, "still exactly one edge");
+        assert_eq!(
+            g.stats.edges_by_kind.uses_member, 1,
+            "still exactly one edge"
+        );
         assert_eq!(member_edge_targets(&g), vec!["App.Other.Widget"]);
     }
 
@@ -2578,7 +3542,15 @@ mod tests {
             (
                 "Other/Widget.cs".to_string(),
                 frag(
-                    vec![def_with("App.Other.Widget", "Widget", "App.Other", "class", &["Tail"], &["Inner"], &[])],
+                    vec![def_with(
+                        "App.Other.Widget",
+                        "Widget",
+                        "App.Other",
+                        "class",
+                        &["Tail"],
+                        &["Inner"],
+                        &[],
+                    )],
                     vec![],
                     vec![],
                 ),
@@ -2586,8 +3558,16 @@ mod tests {
             (
                 "Consumers/Chain.cs".to_string(),
                 frag(
-                    vec![def("App.Consumers.Chain", "Chain", "App.Consumers", "class")],
-                    vec![FragUsing::Plain { text: "App.Other".into(), global: false }],
+                    vec![def(
+                        "App.Consumers.Chain",
+                        "Chain",
+                        "App.Consumers",
+                        "class",
+                    )],
+                    vec![FragUsing::Plain {
+                        text: "App.Other".into(),
+                        global: false,
+                    }],
                     vec![
                         receiver_ref("w", "Inner", "App.Consumers", "Widget", None),
                         member_ref("Inner", Some("w.Inner"), "Tail", "App.Consumers"),
@@ -2596,7 +3576,11 @@ mod tests {
             ),
         ];
         let g = resolve_graph(&no_git_root(), &files);
-        assert_eq!(member_edge_targets(&g), vec!["App.Other.Widget"], "only the head access earns a PRECISE edge");
+        assert_eq!(
+            member_edge_targets(&g),
+            vec!["App.Other.Widget"],
+            "only the head access earns a PRECISE edge"
+        );
         // The tail's dotted qualifier ("w.Inner") resolves to nothing at all,
         // so the uniqueness fallback reaches it and -- Widget
         // being the only def declaring `Tail` -- names Widget as a GUESS. That
@@ -2617,7 +3601,12 @@ mod tests {
     fn fragments_for(files: &[(&str, &str)]) -> Vec<(String, Fragment)> {
         files
             .iter()
-            .map(|(rel, src)| ((*rel).to_string(), crate::graph::fragment_from_extraction(&crate::extract::extract(src))))
+            .map(|(rel, src)| {
+                (
+                    (*rel).to_string(),
+                    crate::graph::fragment_from_extraction(&crate::extract::extract(src)),
+                )
+            })
             .collect()
     }
 
@@ -2625,7 +3614,13 @@ mod tests {
         g.edges
             .iter()
             .filter_map(|e| match e {
-                Edge::UsesMember { from_file, from_line, to, heuristic: false, .. } if from_file == from => Some((to.as_str(), *from_line)),
+                Edge::UsesMember {
+                    from_file,
+                    from_line,
+                    to,
+                    heuristic: false,
+                    ..
+                } if from_file == from => Some((to.as_str(), *from_line)),
                 _ => None,
             })
             .collect()
@@ -2649,7 +3644,13 @@ mod tests {
         g.edges
             .iter()
             .filter_map(|e| match e {
-                Edge::UsesMember { from_file, from_line, to, heuristic: true, .. } if from_file == from => Some((to.as_str(), *from_line)),
+                Edge::UsesMember {
+                    from_file,
+                    from_line,
+                    to,
+                    heuristic: true,
+                    ..
+                } if from_file == from => Some((to.as_str(), *from_line)),
                 _ => None,
             })
             .collect()
@@ -2685,7 +3686,10 @@ mod tests {
             ),
         ]);
         let g = resolve_graph(&no_git_root(), &files);
-        assert_eq!(member_edges_from(&g, "Consumers/LocalReceiver.cs"), vec![("App.Other.Widget", 11)]);
+        assert_eq!(
+            member_edges_from(&g, "Consumers/LocalReceiver.cs"),
+            vec![("App.Other.Widget", 11)]
+        );
     }
 
     #[test]
@@ -2740,14 +3744,18 @@ mod tests {
     // Real fixtures run through this crate's own extractor, so an extension fact
     // that never gets recorded fails here rather than passing vacuously.
 
-    const WIDGET_SRC: (&str, &str) = ("Other/Widget.cs", "namespace App.Other { public class Widget { } }");
+    const WIDGET_SRC: (&str, &str) = (
+        "Other/Widget.cs",
+        "namespace App.Other { public class Widget { } }",
+    );
     const WIDGET_EXTENSIONS_SRC: (&str, &str) = (
         "Ext/WidgetExtensions.cs",
         "namespace App.Ext { public static class WidgetExtensions { public static void Render(this Widget w) { } } }",
     );
 
     #[test]
-    fn stage3_tier_f_an_extension_call_resolves_to_the_static_class_when_its_namespace_is_imported() {
+    fn stage3_tier_f_an_extension_call_resolves_to_the_static_class_when_its_namespace_is_imported()
+    {
         let files = fragments_for(&[
             WIDGET_SRC,
             WIDGET_EXTENSIONS_SRC,
@@ -2762,13 +3770,16 @@ mod tests {
             vec![("App.Ext.WidgetExtensions", 9)],
             "Widget does not declare Render -- only the extension tier can claim this call, and the edge targets the DECLARING static class"
         );
-        let edge = find_edge(&g, |e| matches!(e, Edge::UsesMember { .. })).expect("uses-member edge present");
+        let edge = find_edge(&g, |e| matches!(e, Edge::UsesMember { .. }))
+            .expect("uses-member edge present");
         match edge {
             // Tier (f) is a HEURISTIC tier: it emits exactly this one edge, and
             // the edge declares itself a guess, because the instance-member veto
             // that would disprove it cannot see members of an out-of-graph
             // receiver and never will without a build.
-            Edge::UsesMember { to_file, heuristic, .. } => {
+            Edge::UsesMember {
+                to_file, heuristic, ..
+            } => {
                 assert_eq!(to_file, "Ext/WidgetExtensions.cs");
                 assert!(*heuristic, "tier (f) emits heuristic edges");
             }
@@ -2783,11 +3794,15 @@ mod tests {
             g.stats.edges_by_kind.uses_member, 0,
             "edges_by_kind counts PRECISE edges only, so a heuristic tier cannot inflate it"
         );
-        assert_eq!(g.stats.heuristic_edge_count, 1, "guesses are counted in their own stat instead");
+        assert_eq!(
+            g.stats.heuristic_edge_count, 1,
+            "guesses are counted in their own stat instead"
+        );
     }
 
     #[test]
-    fn stage3_tier_f_an_extension_class_in_the_refs_own_namespace_is_admitted_with_no_using_at_all() {
+    fn stage3_tier_f_an_extension_class_in_the_refs_own_namespace_is_admitted_with_no_using_at_all()
+    {
         let files = fragments_for(&[
             WIDGET_SRC,
             (
@@ -2800,7 +3815,10 @@ mod tests {
             ),
         ]);
         let g = resolve_graph(&no_git_root(), &files);
-        assert_eq!(heuristic_member_edges_from(&g, "Consumers/SameNamespace.cs"), vec![("App.Consumers.WidgetExtensions", 8)]);
+        assert_eq!(
+            heuristic_member_edges_from(&g, "Consumers/SameNamespace.cs"),
+            vec![("App.Consumers.WidgetExtensions", 8)]
+        );
         assert!(
             member_edges_from(&g, "Consumers/SameNamespace.cs").is_empty(),
             "admission by own-namespace is still tier (f), so still a guess"
@@ -2825,7 +3843,9 @@ mod tests {
             "visibility is the admission rule -- an unimported extension class is not a candidate"
         );
         assert!(
-            !g.edges.iter().any(|e| matches!(e, Edge::Ambiguous { origin, .. } if origin == "uses-member")),
+            !g.edges
+                .iter()
+                .any(|e| matches!(e, Edge::Ambiguous { origin, .. } if origin == "uses-member")),
             "a declined extension lookup is still never ambiguous noise"
         );
     }
@@ -2852,7 +3872,10 @@ mod tests {
             member_edges_from(&g, "Consumers/TwoCandidates.cs").is_empty(),
             "never pick a winner between two visible extension classes"
         );
-        assert_eq!(g.stats.ambiguous_count, 0, "a refused extension lookup does not touch the ambiguous stats");
+        assert_eq!(
+            g.stats.ambiguous_count, 0,
+            "a refused extension lookup does not touch the ambiguous stats"
+        );
     }
 
     #[test]
@@ -2899,7 +3922,10 @@ mod tests {
         // ref is claimed, so the scored tier never runs on it either: one ref,
         // one answer.
         assert!(heuristic_member_edges_from(&g, "Consumers/Shadowed.cs").is_empty());
-        assert_eq!(g.stats.edges_by_kind.uses_member, 1, "a precise edge still counts in edges_by_kind");
+        assert_eq!(
+            g.stats.edges_by_kind.uses_member, 1,
+            "a precise edge still counts in edges_by_kind"
+        );
         assert_eq!(g.stats.heuristic_edge_count, 0);
     }
 
@@ -2937,7 +3963,8 @@ mod tests {
     }
 
     #[test]
-    fn stage3_tier_f_bound_this_type_matching_is_exact_so_a_base_class_param_never_claims_a_derived_receiver() {
+    fn stage3_tier_f_bound_this_type_matching_is_exact_so_a_base_class_param_never_claims_a_derived_receiver(
+    ) {
         let files = fragments_for(&[
             ("Other/BaseWidget.cs", "namespace App.Other { public class BaseWidget { } }"),
             ("Other/Widget.cs", "namespace App.Other { public class Widget : BaseWidget { } }"),
@@ -2982,7 +4009,10 @@ mod tests {
             vec![("App.Ext.WidgetExtensions", 10)],
             "corpus audit round 1 found 3/20 wrong edges of exactly this shape: an arity-blind index let a 3-argument call (line 9) claim a 1-parameter extension, stealing the edge from the real instance method. Only the arity-MATCHED call on line 10 survives"
         );
-        assert_eq!(g.stats.ambiguous_count, 0, "the refused arity mismatch is silent, like every other uses-member miss");
+        assert_eq!(
+            g.stats.ambiguous_count, 0,
+            "the refused arity mismatch is silent, like every other uses-member miss"
+        );
     }
 
     #[test]
@@ -3003,10 +4033,25 @@ mod tests {
                 "\nusing App.Other;\nusing App.Ext;\n\nnamespace App.Consumers;\n\npublic class PropertyRead\n{\n  public string Read(Widget w) => w.Slug;\n}\n",
             ),
         ]);
-        let consumer = &files.iter().find(|(rel, _)| rel == "Consumers/PropertyRead.cs").expect("consumer fragment").1;
-        let r = consumer.refs.iter().find(|r| r.member.as_deref() == Some("Slug")).expect("Slug ref present");
-        assert_eq!(r.receiver_type.as_deref(), Some("Widget"), "the receiver fact still fires -- it is the argCount that is absent");
-        assert_eq!(r.arg_count, None, "a property read is not an invocation, so it records no argCount");
+        let consumer = &files
+            .iter()
+            .find(|(rel, _)| rel == "Consumers/PropertyRead.cs")
+            .expect("consumer fragment")
+            .1;
+        let r = consumer
+            .refs
+            .iter()
+            .find(|r| r.member.as_deref() == Some("Slug"))
+            .expect("Slug ref present");
+        assert_eq!(
+            r.receiver_type.as_deref(),
+            Some("Widget"),
+            "the receiver fact still fires -- it is the argCount that is absent"
+        );
+        assert_eq!(
+            r.arg_count, None,
+            "a property read is not an invocation, so it records no argCount"
+        );
 
         let g = resolve_graph(&no_git_root(), &files);
         assert!(
@@ -3016,7 +4061,8 @@ mod tests {
     }
 
     #[test]
-    fn stage3_range_an_optional_parameter_makes_the_entry_a_range_and_every_count_inside_it_binds() {
+    fn stage3_range_an_optional_parameter_makes_the_entry_a_range_and_every_count_inside_it_binds()
+    {
         let files = fragments_for(&[
             WIDGET_SRC,
             (
@@ -3028,12 +4074,25 @@ mod tests {
                 "\nusing App.Other;\nusing App.Ext;\n\nnamespace App.Consumers;\n\npublic class OptionalRange\n{\n  public void One(Widget w) => w.Render(1);\n  public void Two(Widget w) => w.Render(1, \"a\");\n  public void Three(Widget w) => w.Render(1, \"a\", 3);\n}\n",
             ),
         ]);
-        let ext = &files.iter().find(|(rel, _)| rel == "Ext/OptExtensions.cs").expect("ext fragment").1;
-        let d = ext.defs.iter().find(|d| d.id == "App.Ext.OptExtensions").expect("OptExtensions def present");
+        let ext = &files
+            .iter()
+            .find(|(rel, _)| rel == "Ext/OptExtensions.cs")
+            .expect("ext fragment")
+            .1;
+        let d = ext
+            .defs
+            .iter()
+            .find(|d| d.id == "App.Ext.OptExtensions")
+            .expect("OptExtensions def present");
         assert_eq!(
             d.extension_methods
                 .iter()
-                .map(|e| (e.name.as_str(), e.this_type.as_str(), e.arity_min, e.arity_max))
+                .map(|e| (
+                    e.name.as_str(),
+                    e.this_type.as_str(),
+                    e.arity_min,
+                    e.arity_max
+                ))
                 .collect::<Vec<_>>(),
             vec![("Render", "Widget", 1, 2)],
             "arityMin skips the defaulted parameter; arityMax still counts every DECLARED one"
@@ -3048,7 +4107,8 @@ mod tests {
     }
 
     #[test]
-    fn stage3_tier_f_a_partial_static_class_declaring_the_same_quadruple_twice_stays_one_candidate() {
+    fn stage3_tier_f_a_partial_static_class_declaring_the_same_quadruple_twice_stays_one_candidate()
+    {
         // The Rust index stores def INDEXES in each bucket, so the per-def
         // dedup has to happen BEFORE the push -- otherwise a partial class
         // re-declaring the same (name, thisType, arityMin, arityMax) in a second
@@ -3057,11 +4117,24 @@ mod tests {
         let files = vec![
             (
                 "Ext/Widget.cs".to_string(),
-                frag(vec![def("App.Other.Widget", "Widget", "App.Other", "class")], vec![], vec![]),
+                frag(
+                    vec![def("App.Other.Widget", "Widget", "App.Other", "class")],
+                    vec![],
+                    vec![],
+                ),
             ),
             (
                 "Ext/Part1.cs".to_string(),
-                frag(vec![ext_def("App.Ext.Helpers", "Helpers", "App.Ext", &[("Render", "Widget", 0, 0)])], vec![], vec![]),
+                frag(
+                    vec![ext_def(
+                        "App.Ext.Helpers",
+                        "Helpers",
+                        "App.Ext",
+                        &[("Render", "Widget", 0, 0)],
+                    )],
+                    vec![],
+                    vec![],
+                ),
             ),
             (
                 "Ext/Part2.cs".to_string(),
@@ -3079,15 +4152,26 @@ mod tests {
             (
                 "Consumers/PartialExt.cs".to_string(),
                 frag(
-                    vec![def("App.Consumers.PartialExt", "PartialExt", "App.Consumers", "class")],
-                    vec![FragUsing::Plain { text: "App.Ext".into(), global: false }],
+                    vec![def(
+                        "App.Consumers.PartialExt",
+                        "PartialExt",
+                        "App.Consumers",
+                        "class",
+                    )],
+                    vec![FragUsing::Plain {
+                        text: "App.Ext".into(),
+                        global: false,
+                    }],
                     // Distinct LINES: the two calls guess the same static class,
                     // and the heuristic-side dedup collapses byte-identical
                     // guesses -- which a shared synthetic line would make these,
                     // hiding the second candidate this test exists to see.
                     vec![
                         receiver_ref("w", "Render", "App.Consumers", "Widget", Some(0)),
-                        FragRef { line: 2, ..receiver_ref("w", "Poke", "App.Consumers", "Widget", Some(0)) },
+                        FragRef {
+                            line: 2,
+                            ..receiver_ref("w", "Poke", "App.Consumers", "Widget", Some(0))
+                        },
                     ],
                 ),
             ),
@@ -3132,7 +4216,10 @@ mod tests {
             member_edges_from(&g, "Consumers/TwoSends.cs").is_empty(),
             "both classes accept two arguments once the range is honoured, so the tier sees TWO candidates and refuses -- the arity-keyed index saw one and picked the wrong class"
         );
-        assert_eq!(g.stats.ambiguous_count, 0, "honest ambiguity here is still silence, not an ambiguous edge");
+        assert_eq!(
+            g.stats.ambiguous_count, 0,
+            "honest ambiguity here is still silence, not an ambiguous edge"
+        );
     }
 
     #[test]
@@ -3148,10 +4235,21 @@ mod tests {
                 "\nusing App.Other;\nusing App.Ext;\n\nnamespace App.Consumers;\n\npublic class Spread\n{\n  public void None(Widget w) => w.All();\n  public void Five(Widget w) => w.All(1, 2, 3, 4, 5);\n}\n",
             ),
         ]);
-        let ext = &files.iter().find(|(rel, _)| rel == "Ext/ParamsExtensions.cs").expect("ext fragment").1;
-        let d = ext.defs.iter().find(|d| d.id == "App.Ext.ParamsExtensions").expect("ParamsExtensions def present");
+        let ext = &files
+            .iter()
+            .find(|(rel, _)| rel == "Ext/ParamsExtensions.cs")
+            .expect("ext fragment")
+            .1;
+        let d = ext
+            .defs
+            .iter()
+            .find(|d| d.id == "App.Ext.ParamsExtensions")
+            .expect("ParamsExtensions def present");
         assert_eq!(
-            d.extension_methods.iter().map(|e| (e.arity_min, e.arity_max)).collect::<Vec<_>>(),
+            d.extension_methods
+                .iter()
+                .map(|e| (e.arity_min, e.arity_max))
+                .collect::<Vec<_>>(),
             vec![(0, -1)],
             "a params array is optional AND unbounded: nothing forces it, nothing caps it"
         );
@@ -3159,7 +4257,10 @@ mod tests {
         let g = resolve_graph(&no_git_root(), &files);
         assert_eq!(
             heuristic_member_edges_from(&g, "Consumers/Spread.cs"),
-            vec![("App.Ext.ParamsExtensions", 9), ("App.Ext.ParamsExtensions", 10)],
+            vec![
+                ("App.Ext.ParamsExtensions", 9),
+                ("App.Ext.ParamsExtensions", 10)
+            ],
             "zero arguments and five both bind to the same unbounded entry"
         );
     }
@@ -3189,7 +4290,8 @@ mod tests {
     }
 
     #[test]
-    fn stage3_veto_a_member_declared_by_the_receivers_interface_beats_a_matching_visible_extension() {
+    fn stage3_veto_a_member_declared_by_the_receivers_interface_beats_a_matching_visible_extension()
+    {
         let files = fragments_for(&[
             ("Other/IWidget.cs", "namespace App.Other { public interface IWidget { void Render(int depth); } }"),
             ("Other/Widget.cs", "namespace App.Other { public class Widget : IWidget { } }"),
@@ -3340,7 +4442,10 @@ mod tests {
             ),
         ]);
         let g = resolve_graph(&no_git_root(), &files);
-        assert_eq!(heuristic_member_edges_from(&g, "Consumers/RightArgs.cs"), vec![("App.Ext.DictExtensions", 9)]);
+        assert_eq!(
+            heuristic_member_edges_from(&g, "Consumers/RightArgs.cs"),
+            vec![("App.Ext.DictExtensions", 9)]
+        );
     }
 
     #[test]
@@ -3359,15 +4464,31 @@ mod tests {
                 "\nusing App.Other;\nusing App.Ext;\n\nnamespace App.Consumers;\n\npublic class Wildcards\n{\n  public void Run<T>(EventPipelineBinder<FutureState, T> b) => b.Then(1);\n}\n",
             ),
         ]);
-        let ext = &files.iter().find(|(rel, _)| rel == "Ext/BinderExtensions.cs").expect("ext fragment").1;
-        let d = ext.defs.iter().find(|d| d.id == "App.Ext.BinderExtensions").expect("BinderExtensions def present");
+        let ext = &files
+            .iter()
+            .find(|(rel, _)| rel == "Ext/BinderExtensions.cs")
+            .expect("ext fragment")
+            .1;
+        let d = ext
+            .defs
+            .iter()
+            .find(|d| d.id == "App.Ext.BinderExtensions")
+            .expect("BinderExtensions def present");
         assert_eq!(
             d.extension_methods[0].this_args,
             Some(vec!["*".to_string(), "*".to_string()]),
             "the extension's own type parameters are wildcards"
         );
-        let consumer = &files.iter().find(|(rel, _)| rel == "Consumers/Wildcards.cs").expect("consumer fragment").1;
-        let r = consumer.refs.iter().find(|r| r.member.as_deref() == Some("Then")).expect("Then ref present");
+        let consumer = &files
+            .iter()
+            .find(|(rel, _)| rel == "Consumers/Wildcards.cs")
+            .expect("consumer fragment")
+            .1;
+        let r = consumer
+            .refs
+            .iter()
+            .find(|r| r.member.as_deref() == Some("Then"))
+            .expect("Then ref present");
         assert_eq!(
             r.receiver_args,
             Some(vec!["FutureState".to_string(), "*".to_string()]),
@@ -3375,7 +4496,10 @@ mod tests {
         );
 
         let g = resolve_graph(&no_git_root(), &files);
-        assert_eq!(heuristic_member_edges_from(&g, "Consumers/Wildcards.cs"), vec![("App.Ext.BinderExtensions", 9)]);
+        assert_eq!(
+            heuristic_member_edges_from(&g, "Consumers/Wildcards.cs"),
+            vec![("App.Ext.BinderExtensions", 9)]
+        );
     }
 
     #[test]
@@ -3391,10 +4515,21 @@ mod tests {
                 "\nusing App.Other;\nusing App.Ext;\n\nnamespace App.Consumers;\n\npublic class Bare\n{\n  public void Run(Box b) => b.Open();\n}\n",
             ),
         ]);
-        let consumer = &files.iter().find(|(rel, _)| rel == "Consumers/Bare.cs").expect("consumer fragment").1;
-        let r = consumer.refs.iter().find(|r| r.member.as_deref() == Some("Open")).expect("Open ref present");
+        let consumer = &files
+            .iter()
+            .find(|(rel, _)| rel == "Consumers/Bare.cs")
+            .expect("consumer fragment")
+            .1;
+        let r = consumer
+            .refs
+            .iter()
+            .find(|r| r.member.as_deref() == Some("Open"))
+            .expect("Open ref present");
         assert_eq!(r.receiver_type.as_deref(), Some("Box"));
-        assert_eq!(r.receiver_args, None, "a non-generic declared type records no args at all");
+        assert_eq!(
+            r.receiver_args, None,
+            "a non-generic declared type records no args at all"
+        );
 
         let g = resolve_graph(&no_git_root(), &files);
         assert!(
@@ -3409,7 +4544,8 @@ mod tests {
     // gets recorded fails here rather than passing vacuously.
 
     #[test]
-    fn stage4_scored_an_ambiguous_qualifier_names_every_member_declaring_candidate_and_only_those() {
+    fn stage4_scored_an_ambiguous_qualifier_names_every_member_declaring_candidate_and_only_those()
+    {
         let files = fragments_for(&[
             ("One/Config.cs", "namespace App.One { public class Config { public void Load() { } } }"),
             ("Two/Config.cs", "namespace App.Two { public class Config { public void Load() { } } }"),
@@ -3436,7 +4572,8 @@ mod tests {
     }
 
     #[test]
-    fn stage4_scored_same_namespace_beats_usings_visible_beats_global_and_that_is_the_emitted_order() {
+    fn stage4_scored_same_namespace_beats_usings_visible_beats_global_and_that_is_the_emitted_order(
+    ) {
         let files = fragments_for(&[
             ("Consumers/LocalStore.cs", "namespace App.Consumers { public class LocalStore { public void Persist() { } } }"),
             ("Imported/ImportedStore.cs", "namespace App.Imported { public class ImportedStore { public void Persist() { } } }"),
@@ -3465,7 +4602,10 @@ mod tests {
             ),
         ]);
         let g = resolve_graph(&no_git_root(), &files);
-        assert_eq!(heuristic_member_edge_targets(&g), vec!["App.A.Counter", "App.B.Ledger"]);
+        assert_eq!(
+            heuristic_member_edge_targets(&g),
+            vec!["App.A.Counter", "App.B.Ledger"]
+        );
     }
 
     #[test]
@@ -3500,7 +4640,11 @@ mod tests {
         ]);
         let g = resolve_graph(&no_git_root(), &files);
         let guesses = heuristic_member_edges_from(&g, "Consumers/Many.cs");
-        assert_eq!(guesses.len(), 3, "the emit cap binds on the AMBIGUOUS pool, which has no size threshold of its own");
+        assert_eq!(
+            guesses.len(),
+            3,
+            "the emit cap binds on the AMBIGUOUS pool, which has no size threshold of its own"
+        );
         assert_eq!(
             guesses.iter().map(|(to, _)| *to).collect::<Vec<_>>(),
             vec!["App.A.Repo", "App.B.Repo", "App.C.Repo"],
@@ -3590,7 +4734,21 @@ mod tests {
         let precise: Vec<&Edge> = g
             .edges
             .iter()
-            .filter(|e| !matches!(e, Edge::Inherits { heuristic: true, .. } | Edge::UsesType { heuristic: true, .. } | Edge::UsesMember { heuristic: true, .. }))
+            .filter(|e| {
+                !matches!(
+                    e,
+                    Edge::Inherits {
+                        heuristic: true,
+                        ..
+                    } | Edge::UsesType {
+                        heuristic: true,
+                        ..
+                    } | Edge::UsesMember {
+                        heuristic: true,
+                        ..
+                    }
+                )
+            })
             .collect();
         assert_eq!(
             serde_json::to_string(&precise).unwrap(),
@@ -3602,7 +4760,11 @@ mod tests {
         // would pass just as well on a scored tier that emits nothing at all.
         assert_eq!(
             heuristic_member_edges_from(&g, "Consumers/Consumer.cs"),
-            vec![("App.Alpha.Config", 16), ("App.Beta.Config", 16), ("App.Solo.Counter", 18)]
+            vec![
+                ("App.Alpha.Config", 16),
+                ("App.Beta.Config", 16),
+                ("App.Solo.Counter", 18)
+            ]
         );
     }
 
@@ -3626,7 +4788,10 @@ mod tests {
         assert_eq!(g.stats.edges_by_kind.inherits, 1);
         assert_eq!(g.stats.edges_by_kind.uses_type, 1);
         assert_eq!(g.stats.edges_by_kind.imports, 4);
-        assert_eq!(g.stats.ambiguous_count, 0, "ambiguous_count semantics are untouched by this stage");
+        assert_eq!(
+            g.stats.ambiguous_count, 0,
+            "ambiguous_count semantics are untouched by this stage"
+        );
     }
 
     // --- partial classes: also_in accumulation + method union -------------
@@ -3637,7 +4802,18 @@ mod tests {
             (
                 "A/Product.cs".to_string(),
                 frag(
-                    vec![FragDef { line: 3, ..def_with("A.Product", "Product", "A", "class", &["Describe"], &["Name"], &["_cache"]) }],
+                    vec![FragDef {
+                        line: 3,
+                        ..def_with(
+                            "A.Product",
+                            "Product",
+                            "A",
+                            "class",
+                            &["Describe"],
+                            &["Name"],
+                            &["_cache"],
+                        )
+                    }],
                     vec![],
                     vec![],
                 ),
@@ -3645,7 +4821,18 @@ mod tests {
             (
                 "A/Product.Extra.cs".to_string(),
                 frag(
-                    vec![FragDef { line: 3, ..def_with("A.Product", "Product", "A", "class", &["Refresh"], &["Sku"], &["_extra"]) }],
+                    vec![FragDef {
+                        line: 3,
+                        ..def_with(
+                            "A.Product",
+                            "Product",
+                            "A",
+                            "class",
+                            &["Refresh"],
+                            &["Sku"],
+                            &["_extra"],
+                        )
+                    }],
                     vec![],
                     vec![],
                 ),
@@ -3654,9 +4841,22 @@ mod tests {
         let g = resolve_graph(&no_git_root(), &files);
         assert_eq!(g.defs.len(), 1, "one def entry, not two");
         let d = &g.defs[0];
-        assert_eq!(d.file, "A/Product.cs", "first-insertion file wins as the primary site");
-        assert_eq!(d.methods, vec!["Describe".to_string(), "Refresh".to_string()], "methods union in encounter order");
-        assert_eq!(d.also_in, vec![AlsoIn { file: "A/Product.Extra.cs".into(), line: 3 }]);
+        assert_eq!(
+            d.file, "A/Product.cs",
+            "first-insertion file wins as the primary site"
+        );
+        assert_eq!(
+            d.methods,
+            vec!["Describe".to_string(), "Refresh".to_string()],
+            "methods union in encounter order"
+        );
+        assert_eq!(
+            d.also_in,
+            vec![AlsoIn {
+                file: "A/Product.Extra.cs".into(),
+                line: 3
+            }]
+        );
     }
 
     // --- resolution ladder: enclosing-namespace walks at steps 2 and 3 ------
@@ -3679,7 +4879,9 @@ mod tests {
             "`using Configuration;` inside A.B.C reaches A.Configuration.Setting"
         );
         assert!(
-            !g.edges.iter().any(|e| matches!(e, Edge::Ambiguous { from_file, .. } if from_file == "A/B/C/Holder.cs")),
+            !g.edges.iter().any(
+                |e| matches!(e, Edge::Ambiguous { from_file, .. } if from_file == "A/B/C/Holder.cs")
+            ),
             "step 2 answers, so the ladder never reaches the ambiguous step-4 pool"
         );
     }
@@ -3690,8 +4892,14 @@ mod tests {
             ("A/Shared.cs", "namespace A { public class Shared { } }"),
             // Same role as above -- makes step 4 ambiguous, so only a step-3
             // walk can produce a resolved edge here.
-            ("Other/Shared.cs", "namespace Other { public class Shared { } }"),
-            ("A/B/C/Deep.cs", "\nnamespace A.B.C;\n\npublic class Deep\n{\n  private Shared _shared;\n}\n"),
+            (
+                "Other/Shared.cs",
+                "namespace Other { public class Shared { } }",
+            ),
+            (
+                "A/B/C/Deep.cs",
+                "\nnamespace A.B.C;\n\npublic class Deep\n{\n  private Shared _shared;\n}\n",
+            ),
         ]);
         let g = resolve_graph(&no_git_root(), &files);
         assert_eq!(
@@ -3700,13 +4908,16 @@ mod tests {
             "no usings at all -- the ancestor-namespace walk is the only step that can answer"
         );
         assert!(
-            !g.edges.iter().any(|e| matches!(e, Edge::Ambiguous { from_file, .. } if from_file == "A/B/C/Deep.cs")),
+            !g.edges.iter().any(
+                |e| matches!(e, Edge::Ambiguous { from_file, .. } if from_file == "A/B/C/Deep.cs")
+            ),
             "a walked step-3 hit resolves and never falls through to the ambiguous step-4 pool"
         );
     }
 
     #[test]
-    fn stage4_scored_a_nested_type_candidate_is_refused_from_outside_its_own_file_and_kept_inside_it() {
+    fn stage4_scored_a_nested_type_candidate_is_refused_from_outside_its_own_file_and_kept_inside_it(
+    ) {
         let files = fragments_for(&[
             // Cross-file nested candidate: unreachable from Holder.cs without
             // naming Remote first, so a guess landing on it could never be what
@@ -3767,7 +4978,10 @@ mod tests {
             vec![("App.Enums.Mode.On", 10), ("App.Enums.Mode.On", 10)],
             "the precise side is untouched: two identical rows are two occurrences, not a duplicate"
         );
-        assert_eq!(g.stats.heuristic_edge_count, 1, "the dropped guess leaves the counter too");
+        assert_eq!(
+            g.stats.heuristic_edge_count, 1,
+            "the dropped guess leaves the counter too"
+        );
     }
 
     // --- test coverage: test_methods on the merged row + the counter ---
@@ -3775,7 +4989,10 @@ mod tests {
     /// `def()` carrying a test-method list -- the one member fact that reaches
     /// graph.json's def rows.
     fn test_def(id: &str, name: &str, ns: &str, test_methods: &[&str]) -> FragDef {
-        FragDef { test_methods: test_methods.iter().map(|s| s.to_string()).collect(), ..def(id, name, ns, "class") }
+        FragDef {
+            test_methods: test_methods.iter().map(|s| s.to_string()).collect(),
+            ..def(id, name, ns, "class")
+        }
     }
 
     #[test]
@@ -3783,11 +5000,29 @@ mod tests {
         let files = vec![
             (
                 "Tests/WidgetTests.Part1.cs".to_string(),
-                frag(vec![test_def("App.Tests.WidgetTests", "WidgetTests", "App.Tests", &["Renders"])], vec![], vec![]),
+                frag(
+                    vec![test_def(
+                        "App.Tests.WidgetTests",
+                        "WidgetTests",
+                        "App.Tests",
+                        &["Renders"],
+                    )],
+                    vec![],
+                    vec![],
+                ),
             ),
             (
                 "Tests/WidgetTests.Part2.cs".to_string(),
-                frag(vec![test_def("App.Tests.WidgetTests", "WidgetTests", "App.Tests", &["Renders", "Scales"])], vec![], vec![]),
+                frag(
+                    vec![test_def(
+                        "App.Tests.WidgetTests",
+                        "WidgetTests",
+                        "App.Tests",
+                        &["Renders", "Scales"],
+                    )],
+                    vec![],
+                    vec![],
+                ),
             ),
         ];
         let g = resolve_graph(&no_git_root(), &files);
@@ -3809,17 +5044,51 @@ mod tests {
         let files = vec![
             (
                 "Tests/WidgetTests.Part1.cs".to_string(),
-                frag(vec![test_def("App.Tests.WidgetTests", "WidgetTests", "App.Tests", &["Renders"])], vec![], vec![]),
+                frag(
+                    vec![test_def(
+                        "App.Tests.WidgetTests",
+                        "WidgetTests",
+                        "App.Tests",
+                        &["Renders"],
+                    )],
+                    vec![],
+                    vec![],
+                ),
             ),
             (
                 "Tests/WidgetTests.Part2.cs".to_string(),
-                frag(vec![test_def("App.Tests.WidgetTests", "WidgetTests", "App.Tests", &["Scales"])], vec![], vec![]),
+                frag(
+                    vec![test_def(
+                        "App.Tests.WidgetTests",
+                        "WidgetTests",
+                        "App.Tests",
+                        &["Scales"],
+                    )],
+                    vec![],
+                    vec![],
+                ),
             ),
             (
                 "Tests/CartTests.cs".to_string(),
-                frag(vec![test_def("App.Tests.CartTests", "CartTests", "App.Tests", &["Places"])], vec![], vec![]),
+                frag(
+                    vec![test_def(
+                        "App.Tests.CartTests",
+                        "CartTests",
+                        "App.Tests",
+                        &["Places"],
+                    )],
+                    vec![],
+                    vec![],
+                ),
             ),
-            ("Src/Widget.cs".to_string(), frag(vec![def("App.Src.Widget", "Widget", "App.Src", "class")], vec![], vec![])),
+            (
+                "Src/Widget.cs".to_string(),
+                frag(
+                    vec![def("App.Src.Widget", "Widget", "App.Src", "class")],
+                    vec![],
+                    vec![],
+                ),
+            ),
         ];
         let g = resolve_graph(&no_git_root(), &files);
         assert_eq!(
@@ -3834,11 +5103,35 @@ mod tests {
     fn imports_edge_is_recorded_regardless_of_whether_the_target_is_known() {
         let files = vec![(
             "A/Widget.cs".to_string(),
-            frag(vec![], vec![], vec![FragRef { kind: "imports".into(), name: "System.Text".into(), qualified: None, member: None, line: 1, namespace: None, type_arg_count: None, generic: false, receiver_type: None, arg_count: None, receiver_args: None, outer_types: Vec::new(), args: None, receiver_property_owner: None, receiver_call_owner: None, receiver_call_member: None }]),
+            frag(
+                vec![],
+                vec![],
+                vec![FragRef {
+                    kind: "imports".into(),
+                    name: "System.Text".into(),
+                    qualified: None,
+                    member: None,
+                    line: 1,
+                    namespace: None,
+                    type_arg_count: None,
+                    generic: false,
+                    receiver_type: None,
+                    arg_count: None,
+                    receiver_args: None,
+                    outer_types: Vec::new(),
+                    args: None,
+                    receiver_property_owner: None,
+                    receiver_call_owner: None,
+                    receiver_call_member: None,
+                }],
+            ),
         )];
         let g = resolve_graph(&no_git_root(), &files);
         assert_eq!(g.stats.edges_by_kind.imports, 1);
-        assert_eq!(g.stats.unresolved_external_count, 0, "imports never counts toward unresolved");
+        assert_eq!(
+            g.stats.unresolved_external_count, 0,
+            "imports never counts toward unresolved"
+        );
     }
 
     // --- stats math ---------------------------------------------------------
@@ -3846,8 +5139,14 @@ mod tests {
     #[test]
     fn ambiguous_pct_only_counts_type_ref_attempts_not_uses_member_or_imports() {
         let files = vec![
-            ("A/Money.cs".to_string(), frag(vec![def("A.Money", "Money", "A", "class")], vec![], vec![])),
-            ("B/Money.cs".to_string(), frag(vec![def("B.Money", "Money", "B", "class")], vec![], vec![])),
+            (
+                "A/Money.cs".to_string(),
+                frag(vec![def("A.Money", "Money", "A", "class")], vec![], vec![]),
+            ),
+            (
+                "B/Money.cs".to_string(),
+                frag(vec![def("B.Money", "Money", "B", "class")], vec![], vec![]),
+            ),
             (
                 "C/Mixed.cs".to_string(),
                 frag(
@@ -3855,7 +5154,24 @@ mod tests {
                     vec![],
                     vec![
                         type_ref("uses-type", "Money", None, "C"), // ambiguous
-                        FragRef { kind: "imports".into(), name: "System".into(), qualified: None, member: None, line: 2, namespace: None, type_arg_count: None, generic: false, receiver_type: None, arg_count: None, receiver_args: None, outer_types: Vec::new(), args: None, receiver_property_owner: None, receiver_call_owner: None, receiver_call_member: None },
+                        FragRef {
+                            kind: "imports".into(),
+                            name: "System".into(),
+                            qualified: None,
+                            member: None,
+                            line: 2,
+                            namespace: None,
+                            type_arg_count: None,
+                            generic: false,
+                            receiver_type: None,
+                            arg_count: None,
+                            receiver_args: None,
+                            outer_types: Vec::new(),
+                            args: None,
+                            receiver_property_owner: None,
+                            receiver_call_owner: None,
+                            receiver_call_member: None,
+                        },
                     ],
                 ),
             ),
@@ -3863,7 +5179,10 @@ mod tests {
         let g = resolve_graph(&no_git_root(), &files);
         // type_ref_attempts = inherits(0) + uses-type(0) + ambiguous(1) = 1
         assert_eq!(g.stats.ambiguous_pct, Percent1::from_ratio(1, 1));
-        assert_eq!(serde_json::to_string(&g.stats.ambiguous_pct).unwrap(), "100");
+        assert_eq!(
+            serde_json::to_string(&g.stats.ambiguous_pct).unwrap(),
+            "100"
+        );
     }
 
     // --- the enclosing-type step ---
@@ -3871,7 +5190,10 @@ mod tests {
     /// A bare type ref carrying the enclosing-type stack the extractor would
     /// have recorded for it.
     fn nested_ref(kind: &str, name: &str, ns: &str, outer: &[&str]) -> FragRef {
-        FragRef { outer_types: outer.iter().map(|s| (*s).to_string()).collect(), ..type_ref(kind, name, None, ns) }
+        FragRef {
+            outer_types: outer.iter().map(|s| (*s).to_string()).collect(),
+            ..type_ref(kind, name, None, ns)
+        }
     }
 
     #[test]
@@ -3889,7 +5211,8 @@ mod tests {
             ),
         )];
         let g = resolve_graph(&no_git_root(), &files);
-        match find_edge(&g, |e| matches!(e, Edge::UsesType { .. })).expect("resolved edge present") {
+        match find_edge(&g, |e| matches!(e, Edge::UsesType { .. })).expect("resolved edge present")
+        {
             Edge::UsesType { to, .. } => assert_eq!(to, "App.Core.Outer+Nested"),
             _ => unreachable!(),
         }
@@ -3900,7 +5223,14 @@ mod tests {
     #[test]
     fn v8_nested_step_beats_the_namespace_and_usings_steps() {
         let files = vec![
-            ("Other/Beta.cs".to_string(), frag(vec![def("App.Other.Beta", "Beta", "App.Other", "class")], vec![], vec![])),
+            (
+                "Other/Beta.cs".to_string(),
+                frag(
+                    vec![def("App.Other.Beta", "Beta", "App.Other", "class")],
+                    vec![],
+                    vec![],
+                ),
+            ),
             (
                 "Core/Types.cs".to_string(),
                 frag(
@@ -3909,7 +5239,10 @@ mod tests {
                         def("App.Core.Outer+Alpha", "Alpha", "App.Core", "class"),
                         def("App.Core.Outer+Beta", "Beta", "App.Core", "class"),
                     ],
-                    vec![FragUsing::Plain { text: "App.Other".into(), global: false }],
+                    vec![FragUsing::Plain {
+                        text: "App.Other".into(),
+                        global: false,
+                    }],
                     vec![
                         nested_ref("uses-type", "Alpha", "App.Core", &["Outer"]),
                         nested_ref("uses-type", "Beta", "App.Core", &["Outer"]),
@@ -3934,18 +5267,30 @@ mod tests {
         // C# puts type scope above a using-alias; devscout keeps the alias first
         // by construction -- a documented deviation, pinned here.
         let files = vec![
-            ("Other/Gamma.cs".to_string(), frag(vec![def("App.Other.Gamma", "Gamma", "App.Other", "class")], vec![], vec![])),
+            (
+                "Other/Gamma.cs".to_string(),
+                frag(
+                    vec![def("App.Other.Gamma", "Gamma", "App.Other", "class")],
+                    vec![],
+                    vec![],
+                ),
+            ),
             (
                 "Core/Types.cs".to_string(),
                 frag(
                     vec![def("App.Core.Outer+Gamma", "Gamma", "App.Core", "class")],
-                    vec![FragUsing::Alias { alias: "Gamma".into(), target: "App.Other.Gamma".into(), global: false }],
+                    vec![FragUsing::Alias {
+                        alias: "Gamma".into(),
+                        target: "App.Other.Gamma".into(),
+                        global: false,
+                    }],
                     vec![nested_ref("uses-type", "Gamma", "App.Core", &["Outer"])],
                 ),
             ),
         ];
         let g = resolve_graph(&no_git_root(), &files);
-        match find_edge(&g, |e| matches!(e, Edge::UsesType { .. })).expect("resolved edge present") {
+        match find_edge(&g, |e| matches!(e, Edge::UsesType { .. })).expect("resolved edge present")
+        {
             Edge::UsesType { to, .. } => assert_eq!(to, "App.Other.Gamma"),
             _ => unreachable!(),
         }
@@ -3961,11 +5306,17 @@ mod tests {
                     def("App.Core.Outer+Inner+Target", "Target", "App.Core", "class"),
                 ],
                 vec![],
-                vec![nested_ref("uses-type", "Target", "App.Core", &["Outer", "Inner"])],
+                vec![nested_ref(
+                    "uses-type",
+                    "Target",
+                    "App.Core",
+                    &["Outer", "Inner"],
+                )],
             ),
         )];
         let g = resolve_graph(&no_git_root(), &files);
-        match find_edge(&g, |e| matches!(e, Edge::UsesType { .. })).expect("resolved edge present") {
+        match find_edge(&g, |e| matches!(e, Edge::UsesType { .. })).expect("resolved edge present")
+        {
             Edge::UsesType { to, .. } => assert_eq!(to, "App.Core.Outer+Inner+Target"),
             _ => unreachable!(),
         }
@@ -3998,18 +5349,29 @@ mod tests {
     #[test]
     fn v8_an_outer_types_naming_no_nested_id_falls_through_unchanged() {
         let files = vec![
-            ("Other/Marker.cs".to_string(), frag(vec![def("App.Other.Marker", "Marker", "App.Other", "class")], vec![], vec![])),
+            (
+                "Other/Marker.cs".to_string(),
+                frag(
+                    vec![def("App.Other.Marker", "Marker", "App.Other", "class")],
+                    vec![],
+                    vec![],
+                ),
+            ),
             (
                 "Core/Types.cs".to_string(),
                 frag(
                     vec![def("App.Core.Outer", "Outer", "App.Core", "class")],
-                    vec![FragUsing::Plain { text: "App.Other".into(), global: false }],
+                    vec![FragUsing::Plain {
+                        text: "App.Other".into(),
+                        global: false,
+                    }],
                     vec![nested_ref("uses-type", "Marker", "App.Core", &["Outer"])],
                 ),
             ),
         ];
         let g = resolve_graph(&no_git_root(), &files);
-        match find_edge(&g, |e| matches!(e, Edge::UsesType { .. })).expect("resolved edge present") {
+        match find_edge(&g, |e| matches!(e, Edge::UsesType { .. })).expect("resolved edge present")
+        {
             Edge::UsesType { to, .. } => assert_eq!(to, "App.Other.Marker"),
             _ => unreachable!(),
         }
@@ -4025,8 +5387,24 @@ mod tests {
             frag(
                 vec![
                     def("App.Core.Outer", "Outer", "App.Core", "class"),
-                    def_with("App.Core.Outer+Nested", "Nested", "App.Core", "class", &["Run"], &[], &[]),
-                    def_with("App.Core.Other+Nested", "Nested", "App.Core", "class", &["Run"], &[], &[]),
+                    def_with(
+                        "App.Core.Outer+Nested",
+                        "Nested",
+                        "App.Core",
+                        "class",
+                        &["Run"],
+                        &[],
+                        &[],
+                    ),
+                    def_with(
+                        "App.Core.Other+Nested",
+                        "Nested",
+                        "App.Core",
+                        "class",
+                        &["Run"],
+                        &[],
+                        &[],
+                    ),
                 ],
                 vec![],
                 vec![FragRef {
@@ -4040,7 +5418,11 @@ mod tests {
             .edges
             .iter()
             .filter_map(|e| match e {
-                Edge::UsesMember { to, heuristic: false, .. } => Some(to.as_str()),
+                Edge::UsesMember {
+                    to,
+                    heuristic: false,
+                    ..
+                } => Some(to.as_str()),
                 _ => None,
             })
             .collect();
@@ -4075,7 +5457,10 @@ mod tests {
     }
 
     fn ctor_param_ref(name: &str, ns: &str, args: Option<Vec<String>>) -> FragRef {
-        FragRef { args, ..type_ref("ctor-param", name, None, ns) }
+        FragRef {
+            args,
+            ..type_ref("ctor-param", name, None, ns)
+        }
     }
 
     fn ctor_di_edges<'a>(g: &'a Graph, iface: &str) -> Vec<&'a Edge> {
@@ -4086,12 +5471,21 @@ mod tests {
     }
 
     #[test]
-    fn ctor_di_a_closed_generic_ctor_param_resolves_to_the_open_generic_implementation_that_passes_its_type_argument_through()
-    {
+    fn ctor_di_a_closed_generic_ctor_param_resolves_to_the_open_generic_implementation_that_passes_its_type_argument_through(
+    ) {
         let files = vec![
             (
                 "Di/IRepository.cs".to_string(),
-                frag(vec![def("App.Di.IRepository", "IRepository", "App.Di", "interface")], vec![], vec![]),
+                frag(
+                    vec![def(
+                        "App.Di.IRepository",
+                        "IRepository",
+                        "App.Di",
+                        "interface",
+                    )],
+                    vec![],
+                    vec![],
+                ),
             ),
             (
                 "Di/MongoRepository.cs".to_string(),
@@ -4108,13 +5502,24 @@ mod tests {
                     vec![],
                 ),
             ),
-            ("Di/User.cs".to_string(), frag(vec![def("App.Di.User", "User", "App.Di", "class")], vec![], vec![])),
+            (
+                "Di/User.cs".to_string(),
+                frag(
+                    vec![def("App.Di.User", "User", "App.Di", "class")],
+                    vec![],
+                    vec![],
+                ),
+            ),
             (
                 "Di/Controller.cs".to_string(),
                 frag(
                     vec![def("App.Di.Controller", "Controller", "App.Di", "class")],
                     vec![],
-                    vec![ctor_param_ref("IRepository", "App.Di", Some(vec!["User".to_string()]))],
+                    vec![ctor_param_ref(
+                        "IRepository",
+                        "App.Di",
+                        Some(vec!["User".to_string()]),
+                    )],
                 ),
             ),
         ];
@@ -4122,7 +5527,13 @@ mod tests {
         let edges = ctor_di_edges(&g, "IRepository");
         assert_eq!(edges.len(), 1);
         match edges[0] {
-            Edge::CtorDi { resolution, args, to, candidates, .. } => {
+            Edge::CtorDi {
+                resolution,
+                args,
+                to,
+                candidates,
+                ..
+            } => {
                 assert_eq!(resolution, "open-generic");
                 assert_eq!(args.as_deref(), Some(&["User".to_string()][..]));
                 assert_eq!(to.as_deref(), Some("App.Di.MongoRepository"));
@@ -4137,11 +5548,31 @@ mod tests {
         let files = vec![
             (
                 "Di/IFooService.cs".to_string(),
-                frag(vec![def("App.Di.IFooService", "IFooService", "App.Di", "interface")], vec![], vec![]),
+                frag(
+                    vec![def(
+                        "App.Di.IFooService",
+                        "IFooService",
+                        "App.Di",
+                        "interface",
+                    )],
+                    vec![],
+                    vec![],
+                ),
             ),
             (
                 "Di/FooService.cs".to_string(),
-                frag(vec![def_with_bases_and_generics("App.Di.FooService", "FooService", "App.Di", &["IFooService"], &[], &[])], vec![], vec![]),
+                frag(
+                    vec![def_with_bases_and_generics(
+                        "App.Di.FooService",
+                        "FooService",
+                        "App.Di",
+                        &["IFooService"],
+                        &[],
+                        &[],
+                    )],
+                    vec![],
+                    vec![],
+                ),
             ),
             (
                 "Di/Controller.cs".to_string(),
@@ -4156,9 +5587,17 @@ mod tests {
         let edges = ctor_di_edges(&g, "IFooService");
         assert_eq!(edges.len(), 1);
         match edges[0] {
-            Edge::CtorDi { resolution, args, to, .. } => {
+            Edge::CtorDi {
+                resolution,
+                args,
+                to,
+                ..
+            } => {
                 assert_eq!(resolution, "plain");
-                assert_eq!(*args, None, "a non-generic ctor param carries no args field at all");
+                assert_eq!(
+                    *args, None,
+                    "a non-generic ctor param carries no args field at all"
+                );
                 assert_eq!(to.as_deref(), Some("App.Di.FooService"));
             }
             _ => unreachable!(),
@@ -4166,20 +5605,33 @@ mod tests {
     }
 
     #[test]
-    fn ctor_di_a_ctor_param_type_absent_from_the_corpus_is_classified_infra_when_the_file_imports_a_bcl_namespace() {
+    fn ctor_di_a_ctor_param_type_absent_from_the_corpus_is_classified_infra_when_the_file_imports_a_bcl_namespace(
+    ) {
         let files = vec![(
             "Di/Controller.cs".to_string(),
             frag(
                 vec![def("App.Di.Controller", "Controller", "App.Di", "class")],
-                vec![FragUsing::Plain { text: "Microsoft.Extensions.Logging".into(), global: false }],
-                vec![ctor_param_ref("ILogger", "App.Di", Some(vec!["Controller".to_string()]))],
+                vec![FragUsing::Plain {
+                    text: "Microsoft.Extensions.Logging".into(),
+                    global: false,
+                }],
+                vec![ctor_param_ref(
+                    "ILogger",
+                    "App.Di",
+                    Some(vec!["Controller".to_string()]),
+                )],
             ),
         )];
         let g = resolve_graph(&no_git_root(), &files);
         let edges = ctor_di_edges(&g, "ILogger");
         assert_eq!(edges.len(), 1);
         match edges[0] {
-            Edge::CtorDi { resolution, args, to, .. } => {
+            Edge::CtorDi {
+                resolution,
+                args,
+                to,
+                ..
+            } => {
                 assert_eq!(resolution, "infra");
                 assert_eq!(args.as_deref(), Some(&["Controller".to_string()][..]));
                 assert_eq!(*to, None);
@@ -4212,15 +5664,46 @@ mod tests {
         let files = vec![
             (
                 "Di/IFooService.cs".to_string(),
-                frag(vec![def("App.Di.IFooService", "IFooService", "App.Di", "interface")], vec![], vec![]),
+                frag(
+                    vec![def(
+                        "App.Di.IFooService",
+                        "IFooService",
+                        "App.Di",
+                        "interface",
+                    )],
+                    vec![],
+                    vec![],
+                ),
             ),
             (
                 "Di/FooServiceA.cs".to_string(),
-                frag(vec![def_with_bases_and_generics("App.Di.FooServiceA", "FooServiceA", "App.Di", &["IFooService"], &[], &[])], vec![], vec![]),
+                frag(
+                    vec![def_with_bases_and_generics(
+                        "App.Di.FooServiceA",
+                        "FooServiceA",
+                        "App.Di",
+                        &["IFooService"],
+                        &[],
+                        &[],
+                    )],
+                    vec![],
+                    vec![],
+                ),
             ),
             (
                 "Di/FooServiceB.cs".to_string(),
-                frag(vec![def_with_bases_and_generics("App.Di.FooServiceB", "FooServiceB", "App.Di", &["IFooService"], &[], &[])], vec![], vec![]),
+                frag(
+                    vec![def_with_bases_and_generics(
+                        "App.Di.FooServiceB",
+                        "FooServiceB",
+                        "App.Di",
+                        &["IFooService"],
+                        &[],
+                        &[],
+                    )],
+                    vec![],
+                    vec![],
+                ),
             ),
             (
                 "Di/Controller.cs".to_string(),
@@ -4235,7 +5718,11 @@ mod tests {
         let edges = ctor_di_edges(&g, "IFooService");
         assert_eq!(edges.len(), 1);
         match edges[0] {
-            Edge::CtorDi { resolution, candidates, .. } => {
+            Edge::CtorDi {
+                resolution,
+                candidates,
+                ..
+            } => {
                 assert_eq!(resolution, "ambiguous");
                 assert_eq!(
                     candidates.iter().map(|c| c.id.as_str()).collect::<Vec<_>>(),
@@ -4251,7 +5738,16 @@ mod tests {
         let files = vec![
             (
                 "Di/IRepository.cs".to_string(),
-                frag(vec![def("App.Di.IRepository", "IRepository", "App.Di", "interface")], vec![], vec![]),
+                frag(
+                    vec![def(
+                        "App.Di.IRepository",
+                        "IRepository",
+                        "App.Di",
+                        "interface",
+                    )],
+                    vec![],
+                    vec![],
+                ),
             ),
             (
                 "Di/MongoRepository.cs".to_string(),
@@ -4283,13 +5779,24 @@ mod tests {
                     vec![],
                 ),
             ),
-            ("Di/User.cs".to_string(), frag(vec![def("App.Di.User", "User", "App.Di", "class")], vec![], vec![])),
+            (
+                "Di/User.cs".to_string(),
+                frag(
+                    vec![def("App.Di.User", "User", "App.Di", "class")],
+                    vec![],
+                    vec![],
+                ),
+            ),
             (
                 "Di/Controller.cs".to_string(),
                 frag(
                     vec![def("App.Di.Controller", "Controller", "App.Di", "class")],
                     vec![],
-                    vec![ctor_param_ref("IRepository", "App.Di", Some(vec!["User".to_string()]))],
+                    vec![ctor_param_ref(
+                        "IRepository",
+                        "App.Di",
+                        Some(vec!["User".to_string()]),
+                    )],
                 ),
             ),
         ];
@@ -4309,16 +5816,30 @@ mod tests {
 
     /// The two member->type maps the hops read, on top of `def_with`'s member
     /// lists: (method, return type) and (property, declared type).
-    fn with_member_types(base: FragDef, method_returns: &[(&str, &str)], property_types: &[(&str, &str)]) -> FragDef {
+    fn with_member_types(
+        base: FragDef,
+        method_returns: &[(&str, &str)],
+        property_types: &[(&str, &str)],
+    ) -> FragDef {
         let mut returns = OrderedMap::new();
         for (name, ty) in method_returns {
             returns.insert((*name).to_string(), (*ty).to_string());
         }
         let mut properties = OrderedMap::new();
         for (name, ty) in property_types {
-            properties.insert((*name).to_string(), FragFact { type_name: (*ty).to_string(), args: None });
+            properties.insert(
+                (*name).to_string(),
+                FragFact {
+                    type_name: (*ty).to_string(),
+                    args: None,
+                },
+            );
         }
-        FragDef { method_returns: returns, property_types: properties, ..base }
+        FragDef {
+            method_returns: returns,
+            property_types: properties,
+            ..base
+        }
     }
 
     /// The TAIL window of a two-segment chain, carrying the head type the
@@ -4345,13 +5866,33 @@ mod tests {
         let files = vec![
             (
                 "Other/Settings.cs".to_string(),
-                frag(vec![def_with("App.Other.Settings", "Settings", "App.Other", "class", &["Reload"], &[], &[])], vec![], vec![]),
+                frag(
+                    vec![def_with(
+                        "App.Other.Settings",
+                        "Settings",
+                        "App.Other",
+                        "class",
+                        &["Reload"],
+                        &[],
+                        &[],
+                    )],
+                    vec![],
+                    vec![],
+                ),
             ),
             (
                 "Other/Widget.cs".to_string(),
                 frag(
                     vec![with_member_types(
-                        def_with("App.Other.Widget", "Widget", "App.Other", "class", &[], &["Config"], &[]),
+                        def_with(
+                            "App.Other.Widget",
+                            "Widget",
+                            "App.Other",
+                            "class",
+                            &[],
+                            &["Config"],
+                            &[],
+                        ),
                         &[],
                         &[("Config", "Settings")],
                     )],
@@ -4363,28 +5904,60 @@ mod tests {
                 "Consumers/Hop.cs".to_string(),
                 frag(
                     vec![def("App.Consumers.Hop", "Hop", "App.Consumers", "class")],
-                    vec![FragUsing::Plain { text: "App.Other".to_string(), global: false }],
-                    vec![property_hop_ref("Widget", "Config", "Reload", "App.Consumers")],
+                    vec![FragUsing::Plain {
+                        text: "App.Other".to_string(),
+                        global: false,
+                    }],
+                    vec![property_hop_ref(
+                        "Widget",
+                        "Config",
+                        "Reload",
+                        "App.Consumers",
+                    )],
                 ),
             ),
         ];
         let g = resolve_graph(&no_git_root(), &files);
         assert_eq!(member_edge_targets(&g), vec!["App.Other.Settings"]);
-        assert_eq!(g.stats.heuristic_edge_count, 0, "a precise hop leaves nothing for the scored tier");
+        assert_eq!(
+            g.stats.heuristic_edge_count, 0,
+            "a precise hop leaves nothing for the scored tier"
+        );
     }
 
     #[test]
-    fn ds0012_property_hop_stops_on_an_unrecorded_property_a_missing_member_and_an_ambiguous_type() {
+    fn ds0012_property_hop_stops_on_an_unrecorded_property_a_missing_member_and_an_ambiguous_type()
+    {
         let files = vec![
             (
                 "Other/Settings.cs".to_string(),
-                frag(vec![def_with("App.Other.Settings", "Settings", "App.Other", "class", &["Reload"], &[], &[])], vec![], vec![]),
+                frag(
+                    vec![def_with(
+                        "App.Other.Settings",
+                        "Settings",
+                        "App.Other",
+                        "class",
+                        &["Reload"],
+                        &[],
+                        &[],
+                    )],
+                    vec![],
+                    vec![],
+                ),
             ),
             (
                 "Other/Widget.cs".to_string(),
                 frag(
                     vec![with_member_types(
-                        def_with("App.Other.Widget", "Widget", "App.Other", "class", &[], &["Label", "Config", "Price"], &[]),
+                        def_with(
+                            "App.Other.Widget",
+                            "Widget",
+                            "App.Other",
+                            "class",
+                            &[],
+                            &["Label", "Config", "Price"],
+                            &[],
+                        ),
                         &[],
                         // `Label` is declared `string`: a predefined type
                         // records no fact at all, so it is absent here.
@@ -4396,20 +5969,58 @@ mod tests {
             ),
             (
                 "Money/A.cs".to_string(),
-                frag(vec![def_with("App.Money.A.Money", "Money", "App.Money.A", "class", &["Round"], &[], &[])], vec![], vec![]),
+                frag(
+                    vec![def_with(
+                        "App.Money.A.Money",
+                        "Money",
+                        "App.Money.A",
+                        "class",
+                        &["Round"],
+                        &[],
+                        &[],
+                    )],
+                    vec![],
+                    vec![],
+                ),
             ),
             (
                 "Money/B.cs".to_string(),
-                frag(vec![def_with("App.Money.B.Money", "Money", "App.Money.B", "class", &["Round"], &[], &[])], vec![], vec![]),
+                frag(
+                    vec![def_with(
+                        "App.Money.B.Money",
+                        "Money",
+                        "App.Money.B",
+                        "class",
+                        &["Round"],
+                        &[],
+                        &[],
+                    )],
+                    vec![],
+                    vec![],
+                ),
             ),
             (
                 "Consumers/Stops.cs".to_string(),
                 frag(
-                    vec![def("App.Consumers.Stops", "Stops", "App.Consumers", "class")],
+                    vec![def(
+                        "App.Consumers.Stops",
+                        "Stops",
+                        "App.Consumers",
+                        "class",
+                    )],
                     vec![
-                        FragUsing::Plain { text: "App.Other".to_string(), global: false },
-                        FragUsing::Plain { text: "App.Money.A".to_string(), global: false },
-                        FragUsing::Plain { text: "App.Money.B".to_string(), global: false },
+                        FragUsing::Plain {
+                            text: "App.Other".to_string(),
+                            global: false,
+                        },
+                        FragUsing::Plain {
+                            text: "App.Money.A".to_string(),
+                            global: false,
+                        },
+                        FragUsing::Plain {
+                            text: "App.Money.B".to_string(),
+                            global: false,
+                        },
                     ],
                     vec![
                         property_hop_ref("Widget", "Label", "Trim", "App.Consumers"),
@@ -4420,7 +6031,10 @@ mod tests {
             ),
         ];
         let g = resolve_graph(&no_git_root(), &files);
-        assert!(member_edge_targets(&g).is_empty(), "no recorded type, no declared member, and an ambiguous type each end the hop");
+        assert!(
+            member_edge_targets(&g).is_empty(),
+            "no recorded type, no declared member, and an ambiguous type each end the hop"
+        );
     }
 
     #[test]
@@ -4428,13 +6042,33 @@ mod tests {
         let files = vec![
             (
                 "Other/Widget.cs".to_string(),
-                frag(vec![def_with("App.Other.Widget", "Widget", "App.Other", "class", &["Render"], &[], &[])], vec![], vec![]),
+                frag(
+                    vec![def_with(
+                        "App.Other.Widget",
+                        "Widget",
+                        "App.Other",
+                        "class",
+                        &["Render"],
+                        &[],
+                        &[],
+                    )],
+                    vec![],
+                    vec![],
+                ),
             ),
             (
                 "Other/Factory.cs".to_string(),
                 frag(
                     vec![with_member_types(
-                        def_with("App.Other.Factory", "Factory", "App.Other", "class", &["Make"], &[], &[]),
+                        def_with(
+                            "App.Other.Factory",
+                            "Factory",
+                            "App.Other",
+                            "class",
+                            &["Make"],
+                            &[],
+                            &[],
+                        ),
                         &[("Make", "Widget")],
                         &[],
                     )],
@@ -4445,9 +6079,23 @@ mod tests {
             (
                 "Consumers/FromCall.cs".to_string(),
                 frag(
-                    vec![def("App.Consumers.FromCall", "FromCall", "App.Consumers", "class")],
-                    vec![FragUsing::Plain { text: "App.Other".to_string(), global: false }],
-                    vec![call_receiver_ref("made", "Factory", "Make", "Render", "App.Consumers")],
+                    vec![def(
+                        "App.Consumers.FromCall",
+                        "FromCall",
+                        "App.Consumers",
+                        "class",
+                    )],
+                    vec![FragUsing::Plain {
+                        text: "App.Other".to_string(),
+                        global: false,
+                    }],
+                    vec![call_receiver_ref(
+                        "made",
+                        "Factory",
+                        "Make",
+                        "Render",
+                        "App.Consumers",
+                    )],
                 ),
             ),
         ];
@@ -4460,13 +6108,33 @@ mod tests {
         let files = vec![
             (
                 "Other/Widget.cs".to_string(),
-                frag(vec![def_with("App.Other.Widget", "Widget", "App.Other", "class", &["Render"], &[], &[])], vec![], vec![]),
+                frag(
+                    vec![def_with(
+                        "App.Other.Widget",
+                        "Widget",
+                        "App.Other",
+                        "class",
+                        &["Render"],
+                        &[],
+                        &[],
+                    )],
+                    vec![],
+                    vec![],
+                ),
             ),
             (
                 "A/Factory.cs".to_string(),
                 frag(
                     vec![with_member_types(
-                        def_with("App.A.Factory", "Factory", "App.A", "class", &["Make"], &[], &[]),
+                        def_with(
+                            "App.A.Factory",
+                            "Factory",
+                            "App.A",
+                            "class",
+                            &["Make"],
+                            &[],
+                            &[],
+                        ),
                         &[("Make", "Widget")],
                         &[],
                     )],
@@ -4478,7 +6146,15 @@ mod tests {
                 "B/Factory.cs".to_string(),
                 frag(
                     vec![with_member_types(
-                        def_with("App.B.Factory", "Factory", "App.B", "class", &["Make"], &[], &[]),
+                        def_with(
+                            "App.B.Factory",
+                            "Factory",
+                            "App.B",
+                            "class",
+                            &["Make"],
+                            &[],
+                            &[],
+                        ),
                         &[("Make", "Widget")],
                         &[],
                     )],
@@ -4488,20 +6164,58 @@ mod tests {
             ),
             (
                 "Other/Silent.cs".to_string(),
-                frag(vec![def_with("App.Other.Silent", "Silent", "App.Other", "class", &["Make"], &[], &[])], vec![], vec![]),
+                frag(
+                    vec![def_with(
+                        "App.Other.Silent",
+                        "Silent",
+                        "App.Other",
+                        "class",
+                        &["Make"],
+                        &[],
+                        &[],
+                    )],
+                    vec![],
+                    vec![],
+                ),
             ),
             (
                 "Consumers/Unknowns.cs".to_string(),
                 frag(
-                    vec![def("App.Consumers.Unknowns", "Unknowns", "App.Consumers", "class")],
+                    vec![def(
+                        "App.Consumers.Unknowns",
+                        "Unknowns",
+                        "App.Consumers",
+                        "class",
+                    )],
                     vec![
-                        FragUsing::Plain { text: "App.Other".to_string(), global: false },
-                        FragUsing::Plain { text: "App.A".to_string(), global: false },
-                        FragUsing::Plain { text: "App.B".to_string(), global: false },
+                        FragUsing::Plain {
+                            text: "App.Other".to_string(),
+                            global: false,
+                        },
+                        FragUsing::Plain {
+                            text: "App.A".to_string(),
+                            global: false,
+                        },
+                        FragUsing::Plain {
+                            text: "App.B".to_string(),
+                            global: false,
+                        },
                     ],
                     vec![
-                        call_receiver_ref("ambiguous", "Factory", "Make", "Render", "App.Consumers"),
-                        call_receiver_ref("external", "ThirdParty", "Make", "Render", "App.Consumers"),
+                        call_receiver_ref(
+                            "ambiguous",
+                            "Factory",
+                            "Make",
+                            "Render",
+                            "App.Consumers",
+                        ),
+                        call_receiver_ref(
+                            "external",
+                            "ThirdParty",
+                            "Make",
+                            "Render",
+                            "App.Consumers",
+                        ),
                         // `Silent.Make` is declared but records no return type
                         // (a void method blocks its own name).
                         call_receiver_ref("silent", "Silent", "Make", "Render", "App.Consumers"),

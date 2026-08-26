@@ -27,7 +27,9 @@ pub(crate) fn resolve_path(path: &Path) -> PathBuf {
         // An unavailable cwd is effectively unreachable in practice, so this
         // falls back to `/` rather than propagating a nonexistent failure mode
         // into every caller's signature.
-        env::current_dir().unwrap_or_else(|_| PathBuf::from("/")).join(path)
+        env::current_dir()
+            .unwrap_or_else(|_| PathBuf::from("/"))
+            .join(path)
     };
     normalize(&base)
 }
@@ -59,7 +61,11 @@ fn normalize(path: &Path) -> PathBuf {
 /// absolute (callers pass a process cwd or an already-resolved directory),
 /// which is what lets this skip prefixing the cwd.
 pub fn resolve_from(base: &Path, path: &Path) -> PathBuf {
-    let joined = if path.is_absolute() { path.to_path_buf() } else { base.join(path) };
+    let joined = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        base.join(path)
+    };
     normalize(&joined)
 }
 
@@ -68,7 +74,9 @@ pub fn resolve_from(base: &Path, path: &Path) -> PathBuf {
 // point is what lets `climb`'s loop-termination check (`parent == current`)
 // terminate cleanly.
 fn dirname(p: &Path) -> PathBuf {
-    p.parent().map(Path::to_path_buf).unwrap_or_else(|| p.to_path_buf())
+    p.parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| p.to_path_buf())
 }
 
 // ---------------------------------------------------------------------------
@@ -137,7 +145,10 @@ pub fn rel_path(root: &Path, abs_path: &Path) -> String {
     let abs_s = resolve_path(abs_path).to_string_lossy().into_owned();
     let start = root_s.len() + 1;
     let sliced = abs_s.get(start..).unwrap_or("");
-    sliced.split(std::path::MAIN_SEPARATOR).collect::<Vec<_>>().join("/")
+    sliced
+        .split(std::path::MAIN_SEPARATOR)
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
 // ---------------------------------------------------------------------------
@@ -158,7 +169,9 @@ pub fn git_dir_for(root: &Path) -> Option<PathBuf> {
         return Some(resolve_path(&dot_git));
     }
     let contents = fs::read_to_string(&dot_git).ok()?;
-    let line = contents.split('\n').find(|l| l.trim().starts_with("gitdir:"))?;
+    let line = contents
+        .split('\n')
+        .find(|l| l.trim().starts_with("gitdir:"))?;
     let target = line.trim()["gitdir:".len()..].trim();
     if target.is_empty() {
         return None;
@@ -225,7 +238,10 @@ mod json {
     }
 
     fn peek(chars: &[char], pos: usize) -> Result<char, String> {
-        chars.get(pos).copied().ok_or_else(|| "unexpected end of input".to_string())
+        chars
+            .get(pos)
+            .copied()
+            .ok_or_else(|| "unexpected end of input".to_string())
     }
 
     fn parse_value(chars: &[char], pos: &mut usize) -> Result<Value, String> {
@@ -242,7 +258,12 @@ mod json {
         }
     }
 
-    fn parse_literal(chars: &[char], pos: &mut usize, lit: &str, value: Value) -> Result<Value, String> {
+    fn parse_literal(
+        chars: &[char],
+        pos: &mut usize,
+        lit: &str,
+        value: Value,
+    ) -> Result<Value, String> {
         for expected in lit.chars() {
             let c = peek(chars, *pos)?;
             if c != expected {
@@ -339,7 +360,9 @@ mod json {
                                     let low = parse_hex4(chars, pos)?;
                                     if (0xDC00..=0xDFFF).contains(&low) {
                                         let c32 = 0x10000 + ((cp - 0xD800) << 10) + (low - 0xDC00);
-                                        out.push(char::from_u32(c32).ok_or("invalid surrogate pair")?);
+                                        out.push(
+                                            char::from_u32(c32).ok_or("invalid surrogate pair")?,
+                                        );
                                     } else {
                                         return Err("invalid low surrogate".to_string());
                                     }
@@ -364,7 +387,9 @@ mod json {
         let mut value = 0u32;
         for _ in 0..4 {
             let c = peek(chars, *pos)?;
-            let digit = c.to_digit(16).ok_or_else(|| format!("invalid hex digit '{c}'"))?;
+            let digit = c
+                .to_digit(16)
+                .ok_or_else(|| format!("invalid hex digit '{c}'"))?;
             value = value * 16 + digit;
             *pos += 1;
         }
@@ -395,7 +420,9 @@ mod json {
             }
         }
         let text: String = chars[start..*pos].iter().collect();
-        text.parse::<f64>().map(Value::Number).map_err(|e| format!("invalid number '{text}': {e}"))
+        text.parse::<f64>()
+            .map(Value::Number)
+            .map_err(|e| format!("invalid number '{text}': {e}"))
     }
 }
 
@@ -410,11 +437,17 @@ mod json {
 /// rejecting the whole registry.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct RegistryEntry {
+    /// The root value.
     pub root: String,
+    /// The kind value.
     pub kind: String,
+    /// The label value.
     pub label: Option<String>,
+    /// The scope value.
     pub scope: Vec<String>,
+    /// The initialized value.
     pub initialized: String,
+    /// The last seen value.
     pub last_seen: String,
 }
 
@@ -423,6 +456,7 @@ pub struct RegistryEntry {
 /// field.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Registry {
+    /// The roots value.
     pub roots: Vec<RegistryEntry>,
 }
 
@@ -433,16 +467,28 @@ pub enum RegistryError {
     /// The registry file could not be read or is not valid JSON. Read failures
     /// (permission, or the file vanishing in a race after the existence check)
     /// are reported here too, not as a separate IO variant.
-    NotValidJson { path: PathBuf, detail: String },
+    NotValidJson {
+        /// The registry path.
+        path: PathBuf,
+        /// The read or parsing error text.
+        detail: String,
+    },
     /// The parsed value is not an object, or its `roots` field is not an array.
-    NoRootsArray { path: PathBuf },
+    NoRootsArray {
+        /// The registry path.
+        path: PathBuf,
+    },
 }
 
 impl fmt::Display for RegistryError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             RegistryError::NotValidJson { path, detail } => {
-                write!(f, "registry at {} is not valid JSON: {detail}", path.display())
+                write!(
+                    f,
+                    "registry at {} is not valid JSON: {detail}",
+                    path.display()
+                )
             }
             RegistryError::NoRootsArray { path } => {
                 write!(f, "registry at {} has no \"roots\" array", path.display())
@@ -481,7 +527,10 @@ pub fn registry_path() -> PathBuf {
 // degrades gracefully to a bare relative `repos.json` (cwd-relative).
 fn default_registry_path() -> PathBuf {
     match env::var("HOME") {
-        Ok(home) => PathBuf::from(home).join(".claude").join("scout").join("repos.json"),
+        Ok(home) => PathBuf::from(home)
+            .join(".claude")
+            .join("scout")
+            .join("repos.json"),
         Err(_) => PathBuf::from("repos.json"),
     }
 }
@@ -497,15 +546,25 @@ pub fn read_registry() -> Result<Registry, RegistryError> {
     }
     let text = match fs::read_to_string(&path) {
         Ok(t) => t,
-        Err(e) => return Err(RegistryError::NotValidJson { path, detail: e.to_string() }),
+        Err(e) => {
+            return Err(RegistryError::NotValidJson {
+                path,
+                detail: e.to_string(),
+            })
+        }
     };
-    let value = json::parse(&text).map_err(|detail| RegistryError::NotValidJson { path: path.clone(), detail })?;
+    let value = json::parse(&text).map_err(|detail| RegistryError::NotValidJson {
+        path: path.clone(),
+        detail,
+    })?;
     let roots_value = match &value {
         json::Value::Object(fields) => fields.iter().find(|(k, _)| k == "roots").map(|(_, v)| v),
         _ => None,
     };
     match roots_value {
-        Some(json::Value::Array(items)) => Ok(Registry { roots: items.iter().map(entry_from_json).collect() }),
+        Some(json::Value::Array(items)) => Ok(Registry {
+            roots: items.iter().map(entry_from_json).collect(),
+        }),
         _ => Err(RegistryError::NoRootsArray { path }),
     }
 }
@@ -567,7 +626,8 @@ mod tests {
 
     fn unique_temp_dir(prefix: &str) -> PathBuf {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-        let dir = env::temp_dir().join(format!("scout-repo-rs-{prefix}-{}-{n}", std::process::id()));
+        let dir =
+            env::temp_dir().join(format!("scout-repo-rs-{prefix}-{}-{n}", std::process::id()));
         test_fs::create_dir_all(&dir).expect("create temp dir");
         dir
     }
@@ -576,7 +636,10 @@ mod tests {
 
     #[test]
     fn resolve_path_collapses_dotdot_past_root() {
-        assert_eq!(resolve_path(Path::new("/a/b/../../../c")), PathBuf::from("/c"));
+        assert_eq!(
+            resolve_path(Path::new("/a/b/../../../c")),
+            PathBuf::from("/c")
+        );
     }
 
     #[test]
@@ -604,7 +667,10 @@ mod tests {
     fn climb_returns_none_without_a_match() {
         let root = unique_temp_dir("climb-miss");
         test_fs::create_dir_all(root.join("src/deep")).unwrap();
-        assert_eq!(climb(&root.join("src/deep"), ".nonexistent-marker-xyz"), None);
+        assert_eq!(
+            climb(&root.join("src/deep"), ".nonexistent-marker-xyz"),
+            None
+        );
     }
 
     // -- rel_path -----------------------------------------------------------

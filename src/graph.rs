@@ -165,7 +165,10 @@ static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 fn atomic_write_bytes(path: &Path, bytes: &[u8]) -> io::Result<()> {
     let dir = path.parent().unwrap_or_else(|| Path::new("."));
     fs::create_dir_all(dir)?;
-    let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("artifact");
+    let file_name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("artifact");
     let counter = TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
     let tmp_path = dir.join(format!(".{file_name}.tmp.{}.{counter}", std::process::id()));
     let write_result = fs::write(&tmp_path, bytes);
@@ -194,14 +197,19 @@ fn atomic_write_json<T: Serialize>(path: &Path, value: &T) -> io::Result<()> {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, PartialEq)]
+/// Represents `OrderedMap`.
 pub struct OrderedMap<V> {
     entries: Vec<(String, V)>,
     index: HashMap<String, usize>,
 }
 
 impl<V> OrderedMap<V> {
+    /// Creates an empty insertion-ordered map.
     pub fn new() -> Self {
-        Self { entries: Vec::new(), index: HashMap::new() }
+        Self {
+            entries: Vec::new(),
+            index: HashMap::new(),
+        }
     }
 
     /// Insert, or overwrite in place when the key already exists --
@@ -217,18 +225,22 @@ impl<V> OrderedMap<V> {
         }
     }
 
+    /// Returns the value associated with `key`, if present.
     pub fn get(&self, key: &str) -> Option<&V> {
         self.index.get(key).map(|&i| &self.entries[i].1)
     }
 
+    /// Returns the number of entries.
     pub fn len(&self) -> usize {
         self.entries.len()
     }
 
+    /// Returns whether the map contains no entries.
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
 
+    /// Iterates over entries in insertion order.
     pub fn iter(&self) -> impl Iterator<Item = (&String, &V)> {
         self.entries.iter().map(|(k, v)| (k, v))
     }
@@ -281,9 +293,11 @@ impl<'de, V: Deserialize<'de>> Deserialize<'de> for OrderedMap<V> {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Represents `Percent1`.
 pub struct Percent1(pub i64);
 
 impl Percent1 {
+    /// Returns a zero percentage value.
     pub fn zero() -> Self {
         Percent1(0)
     }
@@ -322,19 +336,30 @@ impl<'de> Deserialize<'de> for Percent1 {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Represents `AlsoIn`.
 pub struct AlsoIn {
+    /// The file value.
     pub file: String,
+    /// The line value.
     pub line: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Represents `Def`.
 pub struct Def {
+    /// The id value.
     pub id: String,
+    /// The name value.
     pub name: String,
+    /// The namespace value.
     pub namespace: String,
+    /// The kind value.
     pub kind: String,
+    /// The file value.
     pub file: String,
+    /// The line value.
     pub line: usize,
+    /// The methods value.
     pub methods: Vec<String>,
     /// Test-coverage stage -- the one member fact that SURVIVES onto disk
     /// (`properties`/`fields`/`extensionMethods`/`bases` are resolution inputs
@@ -345,14 +370,19 @@ pub struct Def {
     #[serde(default, rename = "testMethods", skip_serializing_if = "Vec::is_empty")]
     pub test_methods: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    /// The also in value.
     pub also_in: Vec<AlsoIn>,
     #[serde(default, rename = "endLine", skip_serializing_if = "is_zero")]
+    /// The end line value.
     pub end_line: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Represents `Candidate`.
 pub struct Candidate {
+    /// The id value.
     pub id: String,
+    /// The file value.
     pub file: String,
 }
 
@@ -369,41 +399,74 @@ pub struct Candidate {
 #[serde(tag = "kind")]
 pub enum Edge {
     #[serde(rename = "inherits")]
+    /// Represents `Inherits`.
     Inherits {
+        /// The value value.
         from_file: String,
+        /// The value value.
         from_line: usize,
+        /// The value value.
         to: String,
+        /// The value value.
         to_file: String,
         #[serde(default, skip_serializing_if = "is_false")]
+        /// The value value.
         heuristic: bool,
     },
     #[serde(rename = "uses-type")]
+    /// Represents `UsesType`.
     UsesType {
+        /// The value value.
         from_file: String,
+        /// The value value.
         from_line: usize,
+        /// The value value.
         to: String,
+        /// The value value.
         to_file: String,
         #[serde(default, skip_serializing_if = "is_false")]
+        /// The value value.
         heuristic: bool,
     },
     #[serde(rename = "uses-member")]
+    /// Represents `UsesMember`.
     UsesMember {
+        /// The value value.
         from_file: String,
+        /// The value value.
         from_line: usize,
+        /// The value value.
         to: String,
+        /// The value value.
         to_file: String,
         #[serde(default, skip_serializing_if = "is_false")]
+        /// The value value.
         heuristic: bool,
     },
     #[serde(rename = "imports")]
-    Imports { from_file: String, from_line: usize, target: String },
-    #[serde(rename = "ambiguous")]
-    Ambiguous {
-        origin: String,
+    /// The value value.
+    Imports {
+        /// The source file.
         from_file: String,
+        /// The source line.
         from_line: usize,
+        /// The imported target.
+        target: String,
+    },
+    #[serde(rename = "ambiguous")]
+    /// Represents `Ambiguous`.
+    Ambiguous {
+        /// The value value.
+        origin: String,
+        /// The value value.
+        from_file: String,
+        /// The value value.
+        from_line: usize,
+        /// The value value.
         raw: String,
+        /// The value value.
         candidates: Vec<Candidate>,
+        /// The value value.
         candidate_count: usize,
     },
     /// Constructor-parameter DI resolution (see resolve.rs's
@@ -417,15 +480,22 @@ pub enum Edge {
     /// for 'ambiguous'.
     #[serde(rename = "ctor-di")]
     CtorDi {
+        /// The value value.
         from_file: String,
+        /// The value value.
         from_line: usize,
+        /// The value value.
         iface: String,
+        /// The value value.
         resolution: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        /// The value value.
         args: Option<Vec<String>>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        /// The value value.
         to: Option<String>,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        /// The value value.
         candidates: Vec<Candidate>,
     },
     /// A TS/TSX module import. Distinct from `imports` (C#'s
@@ -436,33 +506,73 @@ pub enum Edge {
     /// so a reader can tell the routing table apart from the dependency.
     #[serde(rename = "import")]
     Import {
+        /// The value value.
         from_file: String,
+        /// The value value.
         from_line: usize,
+        /// The value value.
         target: String,
+        /// The value value.
         to_file: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        /// The value value.
         via: Option<String>,
     },
     /// A call or `new` naming an imported or locally-exported
     /// declaration.
     #[serde(rename = "call")]
-    Call { from_file: String, from_line: usize, to: String, to_file: String },
+    /// The value value.
+    Call {
+        /// The source file.
+        from_file: String,
+        /// The source line.
+        from_line: usize,
+        /// The target definition identifier.
+        to: String,
+        /// The target file.
+        to_file: String,
+    },
     /// A JSX tag naming a component declaration.
     #[serde(rename = "jsx-use")]
-    JsxUse { from_file: String, from_line: usize, to: String, to_file: String },
+    /// The value value.
+    JsxUse {
+        /// The source file.
+        from_file: String,
+        /// The source line.
+        from_line: usize,
+        /// The target definition identifier.
+        to: String,
+        /// The target file.
+        to_file: String,
+    },
     /// An action creator or thunk handed to a dispatching call
     /// (`dispatch(...)`, `ofType(...)`).
     #[serde(rename = "dispatch")]
-    Dispatch { from_file: String, from_line: usize, to: String, to_file: String },
+    /// The value value.
+    Dispatch {
+        /// The source file.
+        from_file: String,
+        /// The source line.
+        from_line: usize,
+        /// The target definition identifier.
+        to: String,
+        /// The target file.
+        to_file: String,
+    },
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+/// Represents `EdgesByKind`.
 pub struct EdgesByKind {
+    /// The inherits value.
     pub inherits: usize,
     #[serde(rename = "uses-type")]
+    /// The uses type value.
     pub uses_type: usize,
+    /// The imports value.
     pub imports: usize,
     #[serde(rename = "uses-member")]
+    /// The uses member value.
     pub uses_member: usize,
     /// Appended LAST, matching the `ctor-di` slot in the fixed key order.
     #[serde(rename = "ctor-di")]
@@ -474,20 +584,30 @@ pub struct EdgesByKind {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub import: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// The call value.
     pub call: Option<usize>,
     #[serde(rename = "jsx-use", default, skip_serializing_if = "Option::is_none")]
+    /// The jsx use value.
     pub jsx_use: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// The dispatch value.
     pub dispatch: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Represents `Stats`.
 pub struct Stats {
+    /// The def count value.
     pub def_count: usize,
+    /// The file count value.
     pub file_count: usize,
+    /// The edges by kind value.
     pub edges_by_kind: EdgesByKind,
+    /// The ambiguous count value.
     pub ambiguous_count: usize,
+    /// The ambiguous pct value.
     pub ambiguous_pct: Percent1,
+    /// The unresolved external count value.
     pub unresolved_external_count: usize,
     /// Appended LAST, and always serialized (unlike the edge flag above): the
     /// key is written unconditionally, so a graph with no guesses still
@@ -514,20 +634,31 @@ pub struct Stats {
 /// member, and every markup or resource key.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GraphName {
+    /// The name value.
     pub name: String,
+    /// The kind value.
     pub kind: String,
+    /// The file value.
     pub file: String,
+    /// The line value.
     pub line: usize,
     #[serde(default, skip_serializing_if = "String::is_empty")]
+    /// The owner value.
     pub owner: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Represents `Graph`.
 pub struct Graph {
+    /// The schema version value.
     pub schema_version: u32,
+    /// The built at head value.
     pub built_at_head: Option<String>,
+    /// The defs value.
     pub defs: Vec<Def>,
+    /// The edges value.
     pub edges: Vec<Edge>,
+    /// The stats value.
     pub stats: Stats,
     /// Appended LAST, after `stats`, and omitted when empty: the
     /// house rule for every added field, and what keeps a graph built over a
@@ -536,6 +667,7 @@ pub struct Graph {
     pub names: Vec<GraphName>,
 }
 
+/// Reads and deserializes the repository graph, returning `None` on failure.
 pub fn read_graph(root: &Path) -> Option<Graph> {
     let text = fs::read_to_string(graph_json_path(root)).ok()?;
     serde_json::from_str(&text).ok()
@@ -559,27 +691,43 @@ fn write_graph(root: &Path, graph: &Graph) -> io::Result<()> {
 /// exactly as it did before those additions.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FragDef {
+    /// The id value.
     pub id: String,
+    /// The name value.
     pub name: String,
+    /// The namespace value.
     pub namespace: String,
+    /// The kind value.
     pub kind: String,
+    /// The line value.
     pub line: usize,
+    /// The methods value.
     pub methods: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    /// The properties value.
     pub properties: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    /// The fields value.
     pub fields: Vec<String>,
     /// Member name -> declared return type NAME, in FIRST-DECLARATION SOURCE
     /// ORDER -- deliberately `OrderedMap`, never a `BTreeMap`: this is an
     /// ordered pair list, and sorting the keys here would break the
     /// serialized bytes.
-    #[serde(default, rename = "methodReturns", skip_serializing_if = "OrderedMap::is_empty")]
+    #[serde(
+        default,
+        rename = "methodReturns",
+        skip_serializing_if = "OrderedMap::is_empty"
+    )]
     pub method_returns: OrderedMap<String>,
     /// The extension methods this type declares, in source
     /// order, deduped by (name, thisType, arityMin, arityMax). Appended after
     /// `method_returns`, and omitted entirely when empty, so a type declaring
     /// none keeps its exact prior bytes.
-    #[serde(default, rename = "extensionMethods", skip_serializing_if = "Vec::is_empty")]
+    #[serde(
+        default,
+        rename = "extensionMethods",
+        skip_serializing_if = "Vec::is_empty"
+    )]
     pub extension_methods: Vec<FragExtensionMethod>,
     /// DIRECT base-type identifiers, source
     /// order, deduped. Appended LAST, after `extension_methods`, omitted when
@@ -599,7 +747,11 @@ pub struct FragDef {
     /// for the same reason `method_returns` is one: the serialized key order
     /// is significant). Appended after `type_params`, omitted when
     /// empty.
-    #[serde(default, rename = "baseGenericArgs", skip_serializing_if = "OrderedMap::is_empty")]
+    #[serde(
+        default,
+        rename = "baseGenericArgs",
+        skip_serializing_if = "OrderedMap::is_empty"
+    )]
     pub base_generic_args: OrderedMap<Vec<String>>,
     /// The methods a test framework would DISCOVER as
     /// tests, source order, deduped. Appended LAST, after `baseGenericArgs`,
@@ -612,9 +764,14 @@ pub struct FragDef {
     /// reason `method_returns` is one: the serialized key order is significant.
     /// Appended LAST, after `test_methods`, omitted when empty. A
     /// resolution input only, like `properties`/`fields`.
-    #[serde(default, rename = "propertyTypes", skip_serializing_if = "OrderedMap::is_empty")]
+    #[serde(
+        default,
+        rename = "propertyTypes",
+        skip_serializing_if = "OrderedMap::is_empty"
+    )]
     pub property_types: OrderedMap<FragFact>,
     #[serde(default, rename = "endLine", skip_serializing_if = "is_zero")]
+    /// The end line value.
     pub end_line: usize,
 }
 
@@ -624,8 +781,10 @@ pub struct FragDef {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FragFact {
     #[serde(rename = "type")]
+    /// The type name value.
     pub type_name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// The args value.
     pub args: Option<Vec<String>>,
 }
 
@@ -637,12 +796,16 @@ pub struct FragFact {
 /// sentinel.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FragExtensionMethod {
+    /// The name value.
     pub name: String,
     #[serde(rename = "thisType")]
+    /// The this type value.
     pub this_type: String,
     #[serde(rename = "arityMin")]
+    /// The arity min value.
     pub arity_min: usize,
     #[serde(rename = "arityMax")]
+    /// The arity max value.
     pub arity_max: i64,
     /// Present only when the this-parameter type is generic (the key is omitted
     /// key otherwise), so a non-generic entry keeps four fields exactly.
@@ -652,25 +815,51 @@ pub struct FragExtensionMethod {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
+/// Represents `FragUsing`.
 pub enum FragUsing {
-    Alias { alias: String, target: String, global: bool },
-    Plain { text: String, global: bool },
+    /// The value value.
+    Alias {
+        /// The alias name.
+        alias: String,
+        /// The aliased target.
+        target: String,
+        /// Whether the directive is global.
+        global: bool,
+    },
+    /// The value value.
+    Plain {
+        /// The imported namespace text.
+        text: String,
+        /// Whether the directive is global.
+        global: bool,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Represents `FragRef`.
 pub struct FragRef {
+    /// The kind value.
     pub kind: String,
+    /// The name value.
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// The qualified value.
     pub qualified: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// The member value.
     pub member: Option<String>,
+    /// The line value.
     pub line: usize,
     /// Always serialized, including when `null` (imports refs) -- NOT
     /// `skip_serializing_if`, unlike `qualified`/`member` which are omitted
     /// entirely when absent. See extract.rs's RefRecord doc comment.
     pub namespace: Option<String>,
-    #[serde(default, rename = "typeArgCount", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        rename = "typeArgCount",
+        skip_serializing_if = "Option::is_none"
+    )]
+    /// The type arg count value.
     pub type_arg_count: Option<usize>,
     /// Type-certainty flag (see extract.rs's RefRecord). Serialized last and
     /// only when `true`; an absent key reads back as false, which also makes
@@ -681,7 +870,11 @@ pub struct FragRef {
     /// and set only when a fact actually fired -- so it serializes last and
     /// only when present, and an absent key reads back as "no fact", the safe
     /// default.
-    #[serde(default, rename = "receiverType", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        rename = "receiverType",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub receiver_type: Option<String>,
     /// The callee arg count (see extract.rs's RefRecord). Appended AFTER
     /// `receiverType`, set only when the member access was the callee of an
@@ -694,7 +887,11 @@ pub struct FragRef {
     /// LAST, after `argCount`, set only when the receiver's DECLARED type was
     /// generic -- an absent key reads back as "not generic", which is what
     /// makes a generic-vs-non-generic pairing fail to unify.
-    #[serde(default, rename = "receiverArgs", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        rename = "receiverArgs",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub receiver_args: Option<Vec<String>>,
     /// Enclosing-type stack (see extract.rs's RefRecord). Appended LAST, after
     /// `receiverArgs`, and set only when non-empty. A Vec rather than an Option
@@ -712,16 +909,29 @@ pub struct FragRef {
     /// qualifier's last segment is, for a two-segment chain whose head the
     /// enclosing scope could type. Appended after `args`, and never present
     /// alongside `receiverType`.
-    #[serde(default, rename = "receiverPropertyOwner", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        rename = "receiverPropertyOwner",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub receiver_property_owner: Option<String>,
     /// (See extract.rs's RefRecord.) The type whose METHOD a
     /// `var x = Q.M(...)` initializer called, and that method's name. Appended
     /// LAST of all, always as a pair, and never alongside `receiverType`: an
     /// absent pair reads back as "no call fact", which is what leaves the local
     /// taken-but-unknown.
-    #[serde(default, rename = "receiverCallOwner", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        rename = "receiverCallOwner",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub receiver_call_owner: Option<String>,
-    #[serde(default, rename = "receiverCallMember", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        rename = "receiverCallMember",
+        skip_serializing_if = "Option::is_none"
+    )]
+    /// The receiver call member value.
     pub receiver_call_member: Option<String>,
 }
 
@@ -739,17 +949,25 @@ fn is_zero(n: &usize) -> bool {
 /// a markup or resource key, owned by no C# type, serializes with three fields.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FragName {
+    /// The name value.
     pub name: String,
+    /// The kind value.
     pub kind: String,
+    /// The line value.
     pub line: usize,
     #[serde(default, skip_serializing_if = "String::is_empty")]
+    /// The owner value.
     pub owner: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Represents `Fragment`.
 pub struct Fragment {
+    /// The defs value.
     pub defs: Vec<FragDef>,
+    /// The usings value.
     pub usings: Vec<FragUsing>,
+    /// The refs value.
     pub refs: Vec<FragRef>,
     /// Appended LAST, after `refs`. Always serialized, like its
     /// three siblings: a fragment's top-level arrays are a fixed shape, and
@@ -768,7 +986,9 @@ pub struct Fragment {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum AnyFragment {
+    /// Represents `Ts`.
     Ts(extract::TsFragment),
+    /// Represents `Cs`.
     Cs(Fragment),
 }
 
@@ -832,7 +1052,13 @@ pub fn fragment_from_extraction(e: &extract::Extraction) -> Fragment {
                 property_types: {
                     let mut m = OrderedMap::new();
                     for (name, fact) in &d.property_types {
-                        m.insert(name.clone(), FragFact { type_name: fact.type_name.clone(), args: fact.args.clone() });
+                        m.insert(
+                            name.clone(),
+                            FragFact {
+                                type_name: fact.type_name.clone(),
+                                args: fact.args.clone(),
+                            },
+                        );
                     }
                     m
                 },
@@ -843,10 +1069,19 @@ pub fn fragment_from_extraction(e: &extract::Extraction) -> Fragment {
             .usings
             .iter()
             .map(|u| match u {
-                extract::UsingRecord::Alias { alias, target, global } => {
-                    FragUsing::Alias { alias: alias.clone(), target: target.clone(), global: *global }
-                }
-                extract::UsingRecord::Plain { text, global } => FragUsing::Plain { text: text.clone(), global: *global },
+                extract::UsingRecord::Alias {
+                    alias,
+                    target,
+                    global,
+                } => FragUsing::Alias {
+                    alias: alias.clone(),
+                    target: target.clone(),
+                    global: *global,
+                },
+                extract::UsingRecord::Plain { text, global } => FragUsing::Plain {
+                    text: text.clone(),
+                    global: *global,
+                },
             })
             .collect(),
         refs: e
@@ -874,7 +1109,12 @@ pub fn fragment_from_extraction(e: &extract::Extraction) -> Fragment {
         names: e
             .names
             .iter()
-            .map(|n| FragName { name: n.name.clone(), kind: n.kind.clone(), line: n.line, owner: n.owner.clone() })
+            .map(|n| FragName {
+                name: n.name.clone(),
+                kind: n.kind.clone(),
+                line: n.line,
+                owner: n.owner.clone(),
+            })
             .collect(),
     }
 }
@@ -943,14 +1183,22 @@ pub fn markup_fragment(root: &Path, rel: &str) -> Option<Fragment> {
         names: facts
             .names
             .into_iter()
-            .map(|n| FragName { name: n.name, kind: n.kind, line: n.line, owner: n.owner })
+            .map(|n| FragName {
+                name: n.name,
+                kind: n.kind,
+                line: n.line,
+                owner: n.owner,
+            })
             .collect(),
     })
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Represents `FragmentCacheEntry`.
 pub struct FragmentCacheEntry {
+    /// The mtime value.
     pub mtime: i64,
+    /// The fragment value.
     pub fragment: AnyFragment,
 }
 
@@ -985,7 +1233,10 @@ fn write_fragments_index(root: &Path, cache: &OrderedMap<FragmentCacheEntry>) ->
 /// Whether the fragments index is stale for the given graph files (any mtime
 /// mismatch, or a differing file count).
 pub fn index_is_stale(index: &OrderedMap<i64>, graph_files: &[GraphFile]) -> bool {
-    graph_files.iter().any(|f| index.get(&f.rel) != Some(&f.mtime)) || index.len() != graph_files.len()
+    graph_files
+        .iter()
+        .any(|f| index.get(&f.rel) != Some(&f.mtime))
+        || index.len() != graph_files.len()
 }
 
 // ---------------------------------------------------------------------------
@@ -997,13 +1248,18 @@ pub fn index_is_stale(index: &OrderedMap<i64>, graph_files: &[GraphFile]) -> boo
 /// (imports, exported declarations, call/JSX/dispatch references).
 #[derive(Debug, Clone)]
 pub struct GraphFile {
+    /// The rel value.
     pub rel: String,
+    /// The mtime value.
     pub mtime: i64,
 }
 
 #[derive(Debug)]
+/// Represents `RebuildOutcome`.
 pub enum RebuildOutcome {
+    /// Represents `NotRebuilt`.
     NotRebuilt,
+    /// Represents `Rebuilt`.
     Rebuilt(Graph),
 }
 
@@ -1041,7 +1297,13 @@ pub fn rebuild_graph(
             AnyFragment::Cs(c) => merged_cs.push((f.rel.clone(), c.clone())),
             AnyFragment::Ts(t) => merged_ts.push((f.rel.clone(), t.clone())),
         }
-        new_cache.insert(f.rel.clone(), FragmentCacheEntry { mtime: f.mtime, fragment });
+        new_cache.insert(
+            f.rel.clone(),
+            FragmentCacheEntry {
+                mtime: f.mtime,
+                fragment,
+            },
+        );
     }
 
     let graph = crate::resolve::resolve_graph_with_ts(root, &merged_cs, &merged_ts);
@@ -1058,7 +1320,10 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn temp_dir(label: &str) -> PathBuf {
-        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         let dir = std::env::temp_dir().join(format!("scout-graph-test-{label}-{nanos}"));
         fs::create_dir_all(&dir).unwrap();
         dir
@@ -1120,7 +1385,14 @@ mod tests {
         method_returns: &[(&str, &str)],
         extension_methods: &[(&str, &str, usize, i64)],
     ) -> FragDef {
-        frag_def_with_bases(methods, properties, fields, method_returns, extension_methods, &[])
+        frag_def_with_bases(
+            methods,
+            properties,
+            fields,
+            method_returns,
+            extension_methods,
+            &[],
+        )
     }
 
     fn frag_def_with_bases(
@@ -1166,7 +1438,14 @@ mod tests {
 
     #[test]
     fn frag_def_appends_properties_fields_and_method_returns_last_in_that_order() {
-        let json = serde_json::to_string(&frag_def(&["GetAsync"], &["Prefix"], &["_log"], &[("GetAsync", "Task")], &[])).unwrap();
+        let json = serde_json::to_string(&frag_def(
+            &["GetAsync"],
+            &["Prefix"],
+            &["_log"],
+            &[("GetAsync", "Task")],
+            &[],
+        ))
+        .unwrap();
         assert_eq!(
             json,
             r#"{"id":"App.Facts.Widget","name":"Widget","namespace":"App.Facts","kind":"class","line":3,"methods":["GetAsync"],"properties":["Prefix"],"fields":["_log"],"methodReturns":{"GetAsync":"Task"}}"#
@@ -1194,7 +1473,11 @@ mod tests {
             &["Prefix"],
             &["_log"],
             &[("Go", "Task")],
-            &[("Render", "Widget", 0, 0), ("Render", "Widget", 2, 3), ("Trim", "string", 0, -1)],
+            &[
+                ("Render", "Widget", 0, 0),
+                ("Render", "Widget", 2, 3),
+                ("Trim", "string", 0, -1),
+            ],
         ))
         .unwrap();
         assert_eq!(
@@ -1205,7 +1488,14 @@ mod tests {
 
     #[test]
     fn frag_def_this_args_lands_after_arity_max_and_bases_after_extension_methods() {
-        let mut d = frag_def_with_bases(&["Go"], &[], &[], &[], &[("Each", "List", 0, 0)], &["BaseWidget", "IWidget"]);
+        let mut d = frag_def_with_bases(
+            &["Go"],
+            &[],
+            &[],
+            &[],
+            &[("Each", "List", 0, 0)],
+            &["BaseWidget", "IWidget"],
+        );
         d.extension_methods[0].this_args = Some(vec!["Widget".into()]);
         let json = serde_json::to_string(&d).unwrap();
         assert_eq!(
@@ -1213,16 +1503,28 @@ mod tests {
             r#"{"id":"App.Facts.Widget","name":"Widget","namespace":"App.Facts","kind":"class","line":3,"methods":["Go"],"extensionMethods":[{"name":"Each","thisType":"List","arityMin":0,"arityMax":0,"thisArgs":["Widget"]}],"bases":["BaseWidget","IWidget"]}"#
         );
         let reparsed: FragDef = serde_json::from_str(&json).unwrap();
-        assert_eq!(reparsed.bases, vec!["BaseWidget".to_string(), "IWidget".to_string()]);
-        assert_eq!(reparsed.extension_methods[0].this_args, Some(vec!["Widget".to_string()]));
+        assert_eq!(
+            reparsed.bases,
+            vec!["BaseWidget".to_string(), "IWidget".to_string()]
+        );
+        assert_eq!(
+            reparsed.extension_methods[0].this_args,
+            Some(vec!["Widget".to_string()])
+        );
     }
 
     #[test]
     fn frag_def_omits_bases_when_the_type_lists_none() {
         let json = serde_json::to_string(&frag_def(&["Go"], &[], &[], &[], &[])).unwrap();
-        assert!(!json.contains("bases"), "an empty base list must be omitted entirely: {json}");
+        assert!(
+            !json.contains("bases"),
+            "an empty base list must be omitted entirely: {json}"
+        );
         let reparsed: FragDef = serde_json::from_str(&json).unwrap();
-        assert!(reparsed.bases.is_empty(), "an absent key reads back as \"lists none\"");
+        assert!(
+            reparsed.bases.is_empty(),
+            "an absent key reads back as \"lists none\""
+        );
     }
 
     // --- test-coverage stage: testMethods lands AFTER bases, omitted when
@@ -1238,34 +1540,67 @@ mod tests {
             r#"{"id":"App.Facts.Widget","name":"Widget","namespace":"App.Facts","kind":"class","line":3,"methods":["Go"],"bases":["BaseWidget"],"testMethods":["TotalsAnEmptyOrder","TotalsALineItem"]}"#
         );
         let reparsed: FragDef = serde_json::from_str(&json).unwrap();
-        assert_eq!(reparsed.test_methods, vec!["TotalsAnEmptyOrder".to_string(), "TotalsALineItem".to_string()]);
+        assert_eq!(
+            reparsed.test_methods,
+            vec![
+                "TotalsAnEmptyOrder".to_string(),
+                "TotalsALineItem".to_string()
+            ]
+        );
     }
 
     #[test]
     fn frag_def_omits_test_methods_when_the_type_declares_no_tests() {
         let json = serde_json::to_string(&frag_def(&["Go"], &[], &[], &[], &[])).unwrap();
-        assert!(!json.contains("testMethods"), "pre-stage bytes preserved exactly: {json}");
+        assert!(
+            !json.contains("testMethods"),
+            "pre-stage bytes preserved exactly: {json}"
+        );
         let reparsed: FragDef = serde_json::from_str(&json).unwrap();
-        assert!(reparsed.test_methods.is_empty(), "an absent key reads back as \"declares no tests\"");
+        assert!(
+            reparsed.test_methods.is_empty(),
+            "an absent key reads back as \"declares no tests\""
+        );
     }
 
     #[test]
     fn frag_def_omits_extension_methods_when_the_type_declares_none() {
-        let json = serde_json::to_string(&frag_def(&["Go"], &[], &[], &[("Go", "Task")], &[])).unwrap();
-        assert!(!json.contains("extensionMethods"), "pre-stage-3 bytes preserved exactly: {json}");
+        let json =
+            serde_json::to_string(&frag_def(&["Go"], &[], &[], &[("Go", "Task")], &[])).unwrap();
+        assert!(
+            !json.contains("extensionMethods"),
+            "pre-stage-3 bytes preserved exactly: {json}"
+        );
         let reparsed: FragDef = serde_json::from_str(&json).unwrap();
-        assert!(reparsed.extension_methods.is_empty(), "an absent key reads back as \"declares none\"");
+        assert!(
+            reparsed.extension_methods.is_empty(),
+            "an absent key reads back as \"declares none\""
+        );
     }
 
     #[test]
     fn frag_def_method_returns_serializes_in_first_declaration_order_not_sorted() {
         // A BTreeMap here would emit Alpha before Zebra -- the required order
         // is insertion (first-declaration) order.
-        let json = serde_json::to_string(&frag_def(&[], &[], &[], &[("Zebra", "Z"), ("Alpha", "A")], &[])).unwrap();
-        assert!(json.ends_with(r#""methodReturns":{"Zebra":"Z","Alpha":"A"}}"#), "insertion order, not sorted: {json}");
+        let json = serde_json::to_string(&frag_def(
+            &[],
+            &[],
+            &[],
+            &[("Zebra", "Z"), ("Alpha", "A")],
+            &[],
+        ))
+        .unwrap();
+        assert!(
+            json.ends_with(r#""methodReturns":{"Zebra":"Z","Alpha":"A"}}"#),
+            "insertion order, not sorted: {json}"
+        );
         let reparsed: FragDef = serde_json::from_str(&json).unwrap();
         let keys: Vec<&String> = reparsed.method_returns.iter().map(|(k, _)| k).collect();
-        assert_eq!(keys, vec!["Zebra", "Alpha"], "and the order survives a round trip");
+        assert_eq!(
+            keys,
+            vec!["Zebra", "Alpha"],
+            "and the order survives a round trip"
+        );
     }
 
     // --- propertyTypes lands AFTER testMethods, omitted when the
@@ -1273,10 +1608,23 @@ mod tests {
 
     #[test]
     fn frag_def_appends_property_types_last_after_test_methods() {
-        let mut d = frag_def_with_bases(&["Go"], &["Dial", "Slots"], &[], &[], &[], &["BaseWidget"]);
+        let mut d =
+            frag_def_with_bases(&["Go"], &["Dial", "Slots"], &[], &[], &[], &["BaseWidget"]);
         d.test_methods = vec!["TotalsALineItem".into()];
-        d.property_types.insert("Dial".into(), FragFact { type_name: "Gauge".into(), args: None });
-        d.property_types.insert("Slots".into(), FragFact { type_name: "Toolbox".into(), args: Some(vec!["Gadget".into()]) });
+        d.property_types.insert(
+            "Dial".into(),
+            FragFact {
+                type_name: "Gauge".into(),
+                args: None,
+            },
+        );
+        d.property_types.insert(
+            "Slots".into(),
+            FragFact {
+                type_name: "Toolbox".into(),
+                args: Some(vec!["Gadget".into()]),
+            },
+        );
         let json = serde_json::to_string(&d).unwrap();
         assert_eq!(
             json,
@@ -1284,15 +1632,25 @@ mod tests {
         );
         let reparsed: FragDef = serde_json::from_str(&json).unwrap();
         let keys: Vec<&String> = reparsed.property_types.iter().map(|(k, _)| k).collect();
-        assert_eq!(keys, vec!["Dial", "Slots"], "source order survives a round trip, like methodReturns");
+        assert_eq!(
+            keys,
+            vec!["Dial", "Slots"],
+            "source order survives a round trip, like methodReturns"
+        );
     }
 
     #[test]
     fn frag_def_omits_property_types_when_no_property_carries_a_fact() {
         let json = serde_json::to_string(&frag_def(&["Go"], &["Label"], &[], &[], &[])).unwrap();
-        assert!(!json.contains("propertyTypes"), "pre-propertyTypes bytes preserved exactly: {json}");
+        assert!(
+            !json.contains("propertyTypes"),
+            "pre-propertyTypes bytes preserved exactly: {json}"
+        );
         let reparsed: FragDef = serde_json::from_str(&json).unwrap();
-        assert!(reparsed.property_types.is_empty(), "an absent key reads back as \"no property vouches for a type\"");
+        assert!(
+            reparsed.property_types.is_empty(),
+            "an absent key reads back as \"no property vouches for a type\""
+        );
     }
 
     // --- FragRef's receiverType then argCount, appended
@@ -1321,14 +1679,20 @@ mod tests {
 
     #[test]
     fn frag_ref_receiver_args_is_appended_last_after_arg_count() {
-        let r = FragRef { receiver_args: Some(vec!["FutureState".into(), "*".into()]), ..frag_ref(false, Some("Binder"), Some(1)) };
+        let r = FragRef {
+            receiver_args: Some(vec!["FutureState".into(), "*".into()]),
+            ..frag_ref(false, Some("Binder"), Some(1))
+        };
         let json = serde_json::to_string(&r).unwrap();
         assert_eq!(
             json,
             r#"{"kind":"uses-member","name":"repo","member":"Save","line":7,"namespace":"App.Shape","receiverType":"Binder","argCount":1,"receiverArgs":["FutureState","*"]}"#
         );
         let reparsed: FragRef = serde_json::from_str(&json).unwrap();
-        assert_eq!(reparsed.receiver_args, Some(vec!["FutureState".to_string(), "*".to_string()]));
+        assert_eq!(
+            reparsed.receiver_args,
+            Some(vec!["FutureState".to_string(), "*".to_string()])
+        );
     }
 
     #[test]
@@ -1346,17 +1710,32 @@ mod tests {
         // zero-argument call is a real call and its 0 is what matches an
         // arity-0 extension.
         let json = serde_json::to_string(&frag_ref(false, Some("IRepo"), Some(0))).unwrap();
-        assert!(json.ends_with(r#""receiverType":"IRepo","argCount":0}"#), "argCount 0 must survive: {json}");
+        assert!(
+            json.ends_with(r#""receiverType":"IRepo","argCount":0}"#),
+            "argCount 0 must survive: {json}"
+        );
     }
 
     #[test]
     fn frag_ref_without_a_fact_keeps_its_pre_stage_2_bytes() {
         let json = serde_json::to_string(&frag_ref(false, None, None)).unwrap();
-        assert_eq!(json, r#"{"kind":"uses-member","name":"repo","member":"Save","line":7,"namespace":"App.Shape"}"#);
+        assert_eq!(
+            json,
+            r#"{"kind":"uses-member","name":"repo","member":"Save","line":7,"namespace":"App.Shape"}"#
+        );
         let reparsed: FragRef = serde_json::from_str(&json).unwrap();
-        assert_eq!(reparsed.receiver_type, None, "an absent key reads back as no fact");
-        assert_eq!(reparsed.arg_count, None, "and an absent argCount reads back as \"not a call\"");
-        assert_eq!(reparsed.receiver_args, None, "and an absent receiverArgs reads back as \"not generic\"");
+        assert_eq!(
+            reparsed.receiver_type, None,
+            "an absent key reads back as no fact"
+        );
+        assert_eq!(
+            reparsed.arg_count, None,
+            "and an absent argCount reads back as \"not a call\""
+        );
+        assert_eq!(
+            reparsed.receiver_args, None,
+            "and an absent receiverArgs reads back as \"not generic\""
+        );
     }
 
     // --- Def: also_in omission ------------------------------------------
@@ -1376,15 +1755,31 @@ mod tests {
             end_line: 0,
         };
         let json = serde_json::to_string(&d).unwrap();
-        assert!(!json.contains("also_in"), "empty also_in must be omitted: {json}");
+        assert!(
+            !json.contains("also_in"),
+            "empty also_in must be omitted: {json}"
+        );
     }
 
     #[test]
     fn def_end_line_serializes_last_and_defaults_when_absent() {
-        let mut d = Def { id: "Ns.Type".into(), name: "Type".into(), namespace: "Ns".into(), kind: "class".into(), file: "Ns/Type.cs".into(), line: 3, methods: vec![], test_methods: vec![], also_in: vec![], end_line: 0 };
+        let mut d = Def {
+            id: "Ns.Type".into(),
+            name: "Type".into(),
+            namespace: "Ns".into(),
+            kind: "class".into(),
+            file: "Ns/Type.cs".into(),
+            line: 3,
+            methods: vec![],
+            test_methods: vec![],
+            also_in: vec![],
+            end_line: 0,
+        };
         assert!(!serde_json::to_string(&d).unwrap().contains("endLine"));
         d.end_line = 9;
-        assert!(serde_json::to_string(&d).unwrap().ends_with(",\"endLine\":9}"));
+        assert!(serde_json::to_string(&d)
+            .unwrap()
+            .ends_with(",\"endLine\":9}"));
     }
 
     #[test]
@@ -1398,13 +1793,19 @@ mod tests {
             line: 3,
             methods: vec!["M".into()],
             test_methods: vec![],
-            also_in: vec![AlsoIn { file: "Ns/Type.Extra.cs".into(), line: 5 }],
+            also_in: vec![AlsoIn {
+                file: "Ns/Type.Extra.cs".into(),
+                line: 5,
+            }],
             end_line: 0,
         };
         let json = serde_json::to_string(&d).unwrap();
         let methods_pos = json.find("\"methods\"").unwrap();
         let also_in_pos = json.find("\"also_in\"").unwrap();
-        assert!(methods_pos < also_in_pos, "also_in must come after methods: {json}");
+        assert!(
+            methods_pos < also_in_pos,
+            "also_in must come after methods: {json}"
+        );
     }
 
     // --- test-coverage stage: the def ROW keeps testMethods, between
@@ -1421,7 +1822,10 @@ mod tests {
             line: 3,
             methods: vec!["M".into()],
             test_methods: vec!["Fact1".into()],
-            also_in: vec![AlsoIn { file: "Ns/TypeTests.Extra.cs".into(), line: 5 }],
+            also_in: vec![AlsoIn {
+                file: "Ns/TypeTests.Extra.cs".into(),
+                line: 5,
+            }],
             end_line: 0,
         };
         let json = serde_json::to_string(&d).unwrap();
@@ -1446,7 +1850,10 @@ mod tests {
             end_line: 0,
         };
         let json = serde_json::to_string(&d).unwrap();
-        assert!(!json.contains("testMethods"), "empty testMethods must be omitted: {json}");
+        assert!(
+            !json.contains("testMethods"),
+            "empty testMethods must be omitted: {json}"
+        );
     }
 
     // --- test-coverage stage: stats gains test_def_count, LAST -------------
@@ -1465,23 +1872,42 @@ mod tests {
             ts: None,
         };
         let json = serde_json::to_string(&stats).unwrap();
-        assert!(json.ends_with(r#""heuristic_edge_count":0,"test_def_count":0}"#), "test_def_count is LAST: {json}");
+        assert!(
+            json.ends_with(r#""heuristic_edge_count":0,"test_def_count":0}"#),
+            "test_def_count is LAST: {json}"
+        );
     }
 
     // --- Edge: shape-per-kind, tag first ---------------------------------
 
     #[test]
     fn imports_edge_has_target_not_to() {
-        let e = Edge::Imports { from_file: "F.cs".into(), from_line: 1, target: "System".into() };
+        let e = Edge::Imports {
+            from_file: "F.cs".into(),
+            from_line: 1,
+            target: "System".into(),
+        };
         let json = serde_json::to_string(&e).unwrap();
-        assert_eq!(json, r#"{"kind":"imports","from_file":"F.cs","from_line":1,"target":"System"}"#);
+        assert_eq!(
+            json,
+            r#"{"kind":"imports","from_file":"F.cs","from_line":1,"target":"System"}"#
+        );
     }
 
     #[test]
     fn uses_type_edge_shape() {
-        let e = Edge::UsesType { from_file: "F.cs".into(), from_line: 1, to: "Ns.T".into(), to_file: "Ns/T.cs".into(), heuristic: false };
+        let e = Edge::UsesType {
+            from_file: "F.cs".into(),
+            from_line: 1,
+            to: "Ns.T".into(),
+            to_file: "Ns/T.cs".into(),
+            heuristic: false,
+        };
         let json = serde_json::to_string(&e).unwrap();
-        assert_eq!(json, r#"{"kind":"uses-type","from_file":"F.cs","from_line":1,"to":"Ns.T","to_file":"Ns/T.cs"}"#);
+        assert_eq!(
+            json,
+            r#"{"kind":"uses-type","from_file":"F.cs","from_line":1,"to":"Ns.T","to_file":"Ns/T.cs"}"#
+        );
     }
 
     // The serialized shape in one assertion: `heuristic` is the LAST key, it
@@ -1489,22 +1915,38 @@ mod tests {
     // byte-for-byte what it was before the tag existed.
     #[test]
     fn heuristic_flag_is_appended_last_and_omitted_when_false() {
-        let precise =
-            Edge::UsesMember { from_file: "F.cs".into(), from_line: 1, to: "Ns.T".into(), to_file: "Ns/T.cs".into(), heuristic: false };
+        let precise = Edge::UsesMember {
+            from_file: "F.cs".into(),
+            from_line: 1,
+            to: "Ns.T".into(),
+            to_file: "Ns/T.cs".into(),
+            heuristic: false,
+        };
         assert_eq!(
             serde_json::to_string(&precise).unwrap(),
             r#"{"kind":"uses-member","from_file":"F.cs","from_line":1,"to":"Ns.T","to_file":"Ns/T.cs"}"#
         );
-        let guess =
-            Edge::UsesMember { from_file: "F.cs".into(), from_line: 1, to: "Ns.T".into(), to_file: "Ns/T.cs".into(), heuristic: true };
+        let guess = Edge::UsesMember {
+            from_file: "F.cs".into(),
+            from_line: 1,
+            to: "Ns.T".into(),
+            to_file: "Ns/T.cs".into(),
+            heuristic: true,
+        };
         assert_eq!(
             serde_json::to_string(&guess).unwrap(),
             r#"{"kind":"uses-member","from_file":"F.cs","from_line":1,"to":"Ns.T","to_file":"Ns/T.cs","heuristic":true}"#
         );
         // And it reads back: an edge written by either runtime round-trips
         // with the flag intact, absent meaning precise.
-        assert_eq!(serde_json::from_str::<Edge>(&serde_json::to_string(&guess).unwrap()).unwrap(), guess);
-        assert_eq!(serde_json::from_str::<Edge>(&serde_json::to_string(&precise).unwrap()).unwrap(), precise);
+        assert_eq!(
+            serde_json::from_str::<Edge>(&serde_json::to_string(&guess).unwrap()).unwrap(),
+            guess
+        );
+        assert_eq!(
+            serde_json::from_str::<Edge>(&serde_json::to_string(&precise).unwrap()).unwrap(),
+            precise
+        );
     }
 
     #[test]
@@ -1514,7 +1956,10 @@ mod tests {
             from_file: "F.cs".into(),
             from_line: 4,
             raw: "Money".into(),
-            candidates: vec![Candidate { id: "A.Money".into(), file: "A/Money.cs".into() }],
+            candidates: vec![Candidate {
+                id: "A.Money".into(),
+                file: "A/Money.cs".into(),
+            }],
             candidate_count: 2,
         };
         let json = serde_json::to_string(&e).unwrap();
@@ -1528,9 +1973,19 @@ mod tests {
 
     #[test]
     fn edges_by_kind_field_order_is_fixed_not_alphabetical() {
-        let s = EdgesByKind { inherits: 1, uses_type: 2, imports: 3, uses_member: 4, ctor_di: 5, ..Default::default() };
+        let s = EdgesByKind {
+            inherits: 1,
+            uses_type: 2,
+            imports: 3,
+            uses_member: 4,
+            ctor_di: 5,
+            ..Default::default()
+        };
         let json = serde_json::to_string(&s).unwrap();
-        assert_eq!(json, r#"{"inherits":1,"uses-type":2,"imports":3,"uses-member":4,"ctor-di":5}"#);
+        assert_eq!(
+            json,
+            r#"{"inherits":1,"uses-type":2,"imports":3,"uses-member":4,"ctor-di":5}"#
+        );
     }
 
     // --- The cache holds two fragment shapes -------------------
@@ -1549,20 +2004,38 @@ mod tests {
         });
         let cs_json = serde_json::to_string(&cs).unwrap();
         assert_eq!(cs_json, r#"{"defs":[],"usings":[],"refs":[],"names":[]}"#);
-        assert!(matches!(serde_json::from_str::<AnyFragment>(&cs_json).unwrap(), AnyFragment::Cs(_)));
+        assert!(matches!(
+            serde_json::from_str::<AnyFragment>(&cs_json).unwrap(),
+            AnyFragment::Cs(_)
+        ));
 
         let ts = AnyFragment::Ts(extract::TsFragment {
             ts: 1,
-            defs: vec![extract::TsFragmentDef { name: "x".into(), kind: "const".into(), line: 1, end_line: 1 }],
+            defs: vec![extract::TsFragmentDef {
+                name: "x".into(),
+                kind: "const".into(),
+                line: 1,
+                end_line: 1,
+            }],
             imports: Vec::new(),
             reexports: Vec::new(),
             refs: Vec::new(),
             default: None,
         });
         let ts_json = serde_json::to_string(&ts).unwrap();
-        assert_eq!(ts_json, r#"{"ts":1,"defs":[{"name":"x","kind":"const","line":1,"endLine":1}],"imports":[],"reexports":[],"refs":[]}"#);
-        assert!(matches!(serde_json::from_str::<AnyFragment>(&ts_json).unwrap(), AnyFragment::Ts(_)));
-        assert_eq!(serde_json::from_str::<AnyFragment>(&ts_json).unwrap(), ts, "and round-trips to the same value");
+        assert_eq!(
+            ts_json,
+            r#"{"ts":1,"defs":[{"name":"x","kind":"const","line":1,"endLine":1}],"imports":[],"reexports":[],"refs":[]}"#
+        );
+        assert!(matches!(
+            serde_json::from_str::<AnyFragment>(&ts_json).unwrap(),
+            AnyFragment::Ts(_)
+        ));
+        assert_eq!(
+            serde_json::from_str::<AnyFragment>(&ts_json).unwrap(),
+            ts,
+            "and round-trips to the same value"
+        );
     }
 
     // The four TS counts land AFTER `ctor-di`, in this order, and
@@ -1614,7 +2087,10 @@ mod tests {
             .filter_map(|e| e.ok())
             .filter(|e| e.file_name().to_string_lossy().contains(".tmp."))
             .collect();
-        assert!(leftover.is_empty(), "no tmp file should remain: {leftover:?}");
+        assert!(
+            leftover.is_empty(),
+            "no tmp file should remain: {leftover:?}"
+        );
     }
 
     #[test]
@@ -1640,7 +2116,24 @@ mod tests {
     fn rebuild_graph_reuses_a_cached_fragment_at_matching_mtime() {
         let dir = temp_dir("rebuild-cache-hit");
         let fragment = Fragment {
-            defs: vec![FragDef { id: "A".into(), name: "A".into(), namespace: "".into(), kind: "class".into(), line: 1, methods: vec![], properties: vec![], fields: vec![], method_returns: OrderedMap::new(), extension_methods: vec![], bases: vec![], type_params: vec![], base_generic_args: OrderedMap::new(), test_methods: vec![], property_types: OrderedMap::new(), end_line: 1 }],
+            defs: vec![FragDef {
+                id: "A".into(),
+                name: "A".into(),
+                namespace: "".into(),
+                kind: "class".into(),
+                line: 1,
+                methods: vec![],
+                properties: vec![],
+                fields: vec![],
+                method_returns: OrderedMap::new(),
+                extension_methods: vec![],
+                bases: vec![],
+                type_params: vec![],
+                base_generic_args: OrderedMap::new(),
+                test_methods: vec![],
+                property_types: OrderedMap::new(),
+                end_line: 1,
+            }],
             usings: vec![],
             refs: vec![],
             names: vec![],
@@ -1648,7 +2141,10 @@ mod tests {
         // First build: nothing cached, comes from fresh_fragments.
         let mut fresh = HashMap::new();
         fresh.insert("A.cs".to_string(), AnyFragment::Cs(fragment.clone()));
-        let graph_files = vec![GraphFile { rel: "A.cs".to_string(), mtime: 111 }];
+        let graph_files = vec![GraphFile {
+            rel: "A.cs".to_string(),
+            mtime: 111,
+        }];
         let first = rebuild_graph(&dir, &graph_files, &fresh, true).unwrap();
         assert!(matches!(first, RebuildOutcome::Rebuilt(_)));
 
@@ -1657,7 +2153,9 @@ mod tests {
         let empty: HashMap<String, AnyFragment> = HashMap::new();
         let second = rebuild_graph(&dir, &graph_files, &empty, true).unwrap();
         match second {
-            RebuildOutcome::Rebuilt(g) => assert_eq!(g.defs.len(), 1, "cached fragment must still be used"),
+            RebuildOutcome::Rebuilt(g) => {
+                assert_eq!(g.defs.len(), 1, "cached fragment must still be used")
+            }
             RebuildOutcome::NotRebuilt => panic!("changed=true must always rebuild"),
         }
     }
@@ -1686,11 +2184,7 @@ mod tests {
         // receiverCallMember pair, so a v12 fragment read back carries none and
         // every property hop and every var-from-invocation receiver would
         // silently stay unresolved.
-        assert_eq!(
-            SUPERSEDED_CACHE_FILES.len(),
-            28,
-            "v1..v14 pairs"
-        );
+        assert_eq!(SUPERSEDED_CACHE_FILES.len(), 28, "v1..v14 pairs");
         for stale in SUPERSEDED_CACHE_FILES {
             fs::write(graph_dir(&dir).join(stale), b"{}").unwrap();
         }
@@ -1720,11 +2214,20 @@ mod tests {
         };
         let mut fresh = HashMap::new();
         fresh.insert("src/A.cs".to_string(), AnyFragment::Cs(fragment));
-        let graph_files = vec![GraphFile { rel: "src/A.cs".to_string(), mtime: 222 }];
+        let graph_files = vec![GraphFile {
+            rel: "src/A.cs".to_string(),
+            mtime: 222,
+        }];
         rebuild_graph(&dir, &graph_files, &fresh, true).unwrap();
 
-        assert!(graph_dir(&dir).join("fragments-v15.json").exists(), "the v15 payload cache is what gets written");
-        assert!(graph_dir(&dir).join("fragments-index-v15.json").exists(), "and its mtime-only index alongside it");
+        assert!(
+            graph_dir(&dir).join("fragments-v15.json").exists(),
+            "the v15 payload cache is what gets written"
+        );
+        assert!(
+            graph_dir(&dir).join("fragments-index-v15.json").exists(),
+            "and its mtime-only index alongside it"
+        );
         for stale in SUPERSEDED_CACHE_FILES {
             assert!(
                 !graph_dir(&dir).join(stale).exists(),
@@ -1748,7 +2251,10 @@ mod tests {
             r#"{"kind":"uses-member","name":"repo","member":"Save","line":7,"namespace":"App.Shape","receiverType":"Binder","argCount":1,"receiverArgs":["FutureState"],"outerTypes":["Outer","Inner"]}"#
         );
         let reparsed: FragRef = serde_json::from_str(&json).unwrap();
-        assert_eq!(reparsed.outer_types, vec!["Outer".to_string(), "Inner".to_string()]);
+        assert_eq!(
+            reparsed.outer_types,
+            vec!["Outer".to_string(), "Inner".to_string()]
+        );
     }
 
     // --- The two chain facts, appended after outerTypes ----
@@ -1780,7 +2286,10 @@ mod tests {
         // read back as "no chain fact" -- which is what leaves such a ref
         // exactly where it was before this generation.
         let plain = serde_json::to_string(&frag_ref(false, Some("Binder"), Some(1))).unwrap();
-        assert!(!plain.contains("receiverPropertyOwner") && !plain.contains("receiverCall"), "{plain}");
+        assert!(
+            !plain.contains("receiverPropertyOwner") && !plain.contains("receiverCall"),
+            "{plain}"
+        );
         let reparsed: FragRef = serde_json::from_str(&plain).unwrap();
         assert_eq!(reparsed.receiver_property_owner, None);
         assert_eq!(reparsed.receiver_call_owner, None);
@@ -1790,12 +2299,16 @@ mod tests {
     #[test]
     fn frag_ref_an_empty_or_absent_outer_types_serializes_to_nothing_and_reads_back_empty() {
         let json = serde_json::to_string(&frag_ref(false, None, None)).unwrap();
-        assert!(!json.contains("outerTypes"), "a namespace-level ref keeps its exact pre-v8 bytes: {json}");
+        assert!(
+            !json.contains("outerTypes"),
+            "a namespace-level ref keeps its exact pre-v8 bytes: {json}"
+        );
         // A pre-v8 cached fragment has no key at all, and absent must mean the
         // same thing as empty -- which is what keeps it off the nested step.
-        let pre_v8: FragRef =
-            serde_json::from_str(r#"{"kind":"uses-type","name":"Widget","line":3,"namespace":"App.Core"}"#).unwrap();
+        let pre_v8: FragRef = serde_json::from_str(
+            r#"{"kind":"uses-type","name":"Widget","line":3,"namespace":"App.Core"}"#,
+        )
+        .unwrap();
         assert!(pre_v8.outer_types.is_empty());
     }
-
 }

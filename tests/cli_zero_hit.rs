@@ -1,3 +1,5 @@
+//! Integration tests for command-line queries with no matches.
+
 // Zero-hit exits: a query that ran and found nothing leaves on its own code,
 // distinct from the environment (1) and usage (2) codes, and says so on stderr
 // in one fixed line per verb.
@@ -29,13 +31,20 @@ static COUNTER: AtomicU64 = AtomicU64::new(0);
 
 fn temp_dir(prefix: &str) -> PathBuf {
     let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-    let dir = env::temp_dir().join(format!("scout-zero-hit-{prefix}-{}-{n}", std::process::id()));
+    let dir = env::temp_dir().join(format!(
+        "scout-zero-hit-{prefix}-{}-{n}",
+        std::process::id()
+    ));
     fs::create_dir_all(&dir).expect("create temp dir");
     fs::canonicalize(&dir).expect("canonicalize temp dir")
 }
 
 fn run_git(dir: &Path, args: &[&str]) {
-    let status = Command::new("git").args(args).current_dir(dir).status().expect("git binary must be on PATH");
+    let status = Command::new("git")
+        .args(args)
+        .current_dir(dir)
+        .status()
+        .expect("git binary must be on PATH");
     assert!(status.success(), "git {args:?} failed in {}", dir.display());
 }
 
@@ -44,12 +53,19 @@ fn run_git(dir: &Path, args: &[&str]) {
 fn bootstrap_initial_commit(dir: &Path) {
     const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
     let output = Command::new("git")
-        .args(["commit-tree", EMPTY_TREE, "-m", "init"]).env("GIT_AUTHOR_NAME", "devscout-test").env("GIT_AUTHOR_EMAIL", "devscout-test@example.com").env("GIT_COMMITTER_NAME", "devscout-test").env("GIT_COMMITTER_EMAIL", "devscout-test@example.com")
+        .args(["commit-tree", EMPTY_TREE, "-m", "init"])
+        .env("GIT_AUTHOR_NAME", "devscout-test")
+        .env("GIT_AUTHOR_EMAIL", "devscout-test@example.com")
+        .env("GIT_COMMITTER_NAME", "devscout-test")
+        .env("GIT_COMMITTER_EMAIL", "devscout-test@example.com")
         .current_dir(dir)
         .stdin(Stdio::null())
         .output()
         .expect("git commit-tree must run");
-    assert!(output.status.success(), "git commit-tree failed: {output:?}");
+    assert!(
+        output.status.success(),
+        "git commit-tree failed: {output:?}"
+    );
     let sha = String::from_utf8(output.stdout).unwrap().trim().to_string();
     run_git(dir, &["update-ref", "refs/heads/master", &sha]);
     run_git(dir, &["symbolic-ref", "HEAD", "refs/heads/master"]);
@@ -129,9 +145,21 @@ fn every_verb_exits_3_on_a_zero_hit_with_its_own_fixed_line_on_stderr() {
             "no matches for \"zzz123nosuchpurpose\" (run 'devscout map' if manifest is missing)\n",
             ZERO_HIT_FIND,
         ),
-        (&["refs", "ThereIsNoSuchType"], "no symbol matches \"ThereIsNoSuchType\"\n", ZERO_HIT_REFS),
-        (&["impact", "ThereIsNoSuchType"], "no symbol match for \"ThereIsNoSuchType\"\n", ZERO_HIT_IMPACT),
-        (&["tests", "ThereIsNoSuchType"], "no symbol matches \"ThereIsNoSuchType\"\n", ZERO_HIT_TESTS),
+        (
+            &["refs", "ThereIsNoSuchType"],
+            "no symbol matches \"ThereIsNoSuchType\"\n",
+            ZERO_HIT_REFS,
+        ),
+        (
+            &["impact", "ThereIsNoSuchType"],
+            "no symbol match for \"ThereIsNoSuchType\"\n",
+            ZERO_HIT_IMPACT,
+        ),
+        (
+            &["tests", "ThereIsNoSuchType"],
+            "no symbol matches \"ThereIsNoSuchType\"\n",
+            ZERO_HIT_TESTS,
+        ),
     ];
     for (args, want_stdout, want_stderr) in cases {
         let out = fx.run(args);
@@ -147,12 +175,19 @@ fn a_resolved_seed_that_reaches_nothing_is_a_zero_hit_and_a_reached_one_is_not()
 
     let island = fx.run(&["impact", "src/Island.cs"]);
     assert_eq!(island.status.code(), Some(3), "{island:?}");
-    assert!(stdout_of(&island).contains("affected files: 0  shown: 0  dropped: 0"), "{island:?}");
+    assert!(
+        stdout_of(&island).contains("affected files: 0  shown: 0  dropped: 0"),
+        "{island:?}"
+    );
     assert_eq!(stderr_of(&island), format!("{ZERO_HIT_IMPACT}\n"));
 
     let reached = fx.run(&["impact", "src/IThing.cs"]);
     assert_eq!(reached.status.code(), Some(0), "{reached:?}");
-    assert_eq!(stderr_of(&reached), "", "a non-empty blast radius prints no zero-hit line");
+    assert_eq!(
+        stderr_of(&reached),
+        "",
+        "a non-empty blast radius prints no zero-hit line"
+    );
 }
 
 #[test]
@@ -180,7 +215,10 @@ fn a_zero_hit_keeps_the_stdout_shape_under_every_output_flag() {
         }
         let out = fx.run(&args);
         assert_eq!(out.status.code(), Some(3), "{args:?}: {out:?}");
-        assert!(!stdout_of(&out).is_empty(), "{args:?}: stdout still carries the rendered answer");
+        assert!(
+            !stdout_of(&out).is_empty(),
+            "{args:?}: stdout still carries the rendered answer"
+        );
         assert_eq!(stderr_of(&out), format!("{ZERO_HIT_IMPACT}\n"), "{args:?}");
     }
 }
@@ -197,7 +235,10 @@ fn a_zero_hit_refs_appends_the_nearest_names_up_to_the_cap() {
     let fx = Fixture::build("suggestions");
     let out = fx.run(&["refs", "PopulateToolbarItem"]);
     assert_eq!(out.status.code(), Some(3), "{out:?}");
-    assert_eq!(stdout_of(&out), "no symbol matches \"PopulateToolbarItem\"\n");
+    assert_eq!(
+        stdout_of(&out),
+        "no symbol matches \"PopulateToolbarItem\"\n"
+    );
     assert_eq!(
         stderr_of(&out),
         format!(
@@ -216,8 +257,14 @@ fn a_zero_hit_find_appends_the_same_block_and_stops_below_the_cap_when_the_index
     let fx = Fixture::build("suggestions-find");
     let out = fx.run(&["find", "Islnad"]);
     assert_eq!(out.status.code(), Some(3), "{out:?}");
-    assert_eq!(stdout_of(&out), "no matches for \"Islnad\" (run 'devscout map' if manifest is missing)\n");
-    assert_eq!(stderr_of(&out), format!("{ZERO_HIT_FIND}\ndid you mean:\n  Island  class  src/Island.cs:3\n"));
+    assert_eq!(
+        stdout_of(&out),
+        "no matches for \"Islnad\" (run 'devscout map' if manifest is missing)\n"
+    );
+    assert_eq!(
+        stderr_of(&out),
+        format!("{ZERO_HIT_FIND}\ndid you mean:\n  Island  class  src/Island.cs:3\n")
+    );
 }
 
 #[test]

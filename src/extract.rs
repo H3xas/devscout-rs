@@ -45,7 +45,10 @@ const TYPE_KINDS: &[(&str, &str)] = &[
 const NAMESPACE_NODES: &[&str] = &["namespace_declaration", "file_scoped_namespace_declaration"];
 
 fn type_kind_label(kind: &str) -> Option<&'static str> {
-    TYPE_KINDS.iter().find(|(k, _)| *k == kind).map(|(_, label)| *label)
+    TYPE_KINDS
+        .iter()
+        .find(|(k, _)| *k == kind)
+        .map(|(_, label)| *label)
 }
 
 fn new_parser() -> Parser {
@@ -95,7 +98,10 @@ fn collect_types<'a>(node: Node<'a>, types: &mut Vec<Node<'a>>) {
 }
 
 fn base_list_text(node: Node, src: &[u8]) -> String {
-    let Some(bases) = named_children(node).into_iter().find(|c| c.kind() == "base_list") else {
+    let Some(bases) = named_children(node)
+        .into_iter()
+        .find(|c| c.kind() == "base_list")
+    else {
         return String::new();
     };
     let raw = text(bases, src);
@@ -231,12 +237,19 @@ fn truncate(s: &str) -> String {
 // call-graph resolution.
 // ---------------------------------------------------------------------------
 
+/// Represents `DefRecord`.
 pub struct DefRecord {
+    /// The id value.
     pub id: String,
+    /// The name value.
     pub name: String,
+    /// The namespace value.
     pub namespace: String,
+    /// The kind value.
     pub kind: String,
+    /// The line value.
     pub line: usize,
+    /// The methods value.
     pub methods: Vec<String>,
     /// Declared property names, source order, deduped
     /// (indexers excluded by construction: `indexer_declaration` is a
@@ -318,7 +331,9 @@ pub struct DefRecord {
 /// order.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExtensionMethod {
+    /// The name value.
     pub name: String,
+    /// The this type value.
     pub this_type: String,
     /// Non-this parameters a caller cannot
     /// leave out: no default value AND no `params` modifier.
@@ -334,17 +349,24 @@ pub struct ExtensionMethod {
     pub this_args: Option<Vec<String>>,
 }
 
+/// Represents `RefRecord`.
 pub struct RefRecord {
+    /// The kind value.
     pub kind: String,
+    /// The name value.
     pub name: String,
+    /// The qualified value.
     pub qualified: Option<String>,
+    /// The member value.
     pub member: Option<String>,
+    /// The line value.
     pub line: usize,
     /// `None` only for 'imports' refs -- a using directive is not
     /// namespace-scoped, so `ns` is deliberately `null`. Every other ref
     /// carries `Some(ns)`, where `ns`
     /// may itself be the empty string at file scope.
     pub namespace: Option<String>,
+    /// The type arg count value.
     pub type_arg_count: Option<usize>,
     /// `true` when a uses-member qualifier carried a
     /// type-argument list anywhere (`Cache<T>.x`, `Ns.Cache<T>.x`): syntax
@@ -401,18 +423,39 @@ pub struct RefRecord {
     /// alongside `receiver_type`: the local's type is whatever `M` returns, a
     /// lookup only the resolver can do. Appended LAST of all.
     pub receiver_call_owner: Option<String>,
+    /// The receiver call member value.
     pub receiver_call_member: Option<String>,
 }
 
+/// Represents `UsingRecord`.
 pub enum UsingRecord {
-    Alias { alias: String, target: String, global: bool },
-    Plain { text: String, global: bool },
+    /// The value value.
+    Alias {
+        /// The alias name.
+        alias: String,
+        /// The aliased target.
+        target: String,
+        /// Whether the directive is global.
+        global: bool,
+    },
+    /// The value value.
+    Plain {
+        /// The imported namespace text.
+        text: String,
+        /// Whether the directive is global.
+        global: bool,
+    },
 }
 
+/// Represents `Extraction`.
 pub struct Extraction {
+    /// The purpose value.
     pub purpose: Option<String>,
+    /// The defs value.
     pub defs: Vec<DefRecord>,
+    /// The usings value.
     pub usings: Vec<UsingRecord>,
+    /// The refs value.
     pub refs: Vec<RefRecord>,
     /// Every member the file's types declare, appended LAST after
     /// `refs` in both the fragment and the `extract-dump` shape.
@@ -430,9 +473,13 @@ pub struct Extraction {
 /// fields.
 #[derive(Debug, Clone, PartialEq)]
 pub struct NameRecord {
+    /// The name value.
     pub name: String,
+    /// The kind value.
     pub kind: String,
+    /// The line value.
     pub line: usize,
+    /// The owner value.
     pub owner: String,
 }
 
@@ -457,7 +504,8 @@ fn outer_type_name(node: Node, src: &[u8]) -> Option<String> {
             let full = text(node, src);
             let tail_text = text(tail, src);
             let normalized_tail = outer_type_name(tail, src)?;
-            full.strip_suffix(&tail_text).map(|prefix| format!("{prefix}{normalized_tail}"))
+            full.strip_suffix(&tail_text)
+                .map(|prefix| format!("{prefix}{normalized_tail}"))
         }
         "alias_qualified_name" => match node.child_by_field_name("name") {
             Some(n) => outer_type_name(n, src),
@@ -487,12 +535,16 @@ fn outer_type_name(node: Node, src: &[u8]) -> Option<String> {
 fn base_type_identifier(node: Option<Node>, src: &[u8], keep_predefined: bool) -> Option<String> {
     let node = node?;
     let name = match node.kind() {
-        "nullable_type" | "array_type" => base_type_identifier(node.child_by_field_name("type"), src, keep_predefined),
+        "nullable_type" | "array_type" => {
+            base_type_identifier(node.child_by_field_name("type"), src, keep_predefined)
+        }
         "generic_name" => named_children(node)
             .into_iter()
             .find(|c| c.kind() == "identifier")
             .map(|id| text(id, src)),
-        "qualified_name" | "alias_qualified_name" => base_type_identifier(node.child_by_field_name("name"), src, keep_predefined),
+        "qualified_name" | "alias_qualified_name" => {
+            base_type_identifier(node.child_by_field_name("name"), src, keep_predefined)
+        }
         "identifier" => Some(text(node, src)),
         "predefined_type" => {
             if keep_predefined {
@@ -516,7 +568,9 @@ fn top_level_generic_name(node: Option<Node>) -> Option<Node> {
     let node = node?;
     match node.kind() {
         "nullable_type" | "array_type" => top_level_generic_name(node.child_by_field_name("type")),
-        "qualified_name" | "alias_qualified_name" => top_level_generic_name(node.child_by_field_name("name")),
+        "qualified_name" | "alias_qualified_name" => {
+            top_level_generic_name(node.child_by_field_name("name"))
+        }
         "generic_name" => Some(node),
         _ => None,
     }
@@ -524,7 +578,9 @@ fn top_level_generic_name(node: Option<Node>) -> Option<Node> {
 
 fn type_argument_arity(node: Option<Node>, src: &[u8]) -> Option<usize> {
     let generic = top_level_generic_name(node)?;
-    let list = named_children(generic).into_iter().find(|c| c.kind() == "type_argument_list")?;
+    let list = named_children(generic)
+        .into_iter()
+        .find(|c| c.kind() == "type_argument_list")?;
     Some(text(list, src).bytes().filter(|b| *b == b',').count() + 1)
 }
 
@@ -539,9 +595,15 @@ fn type_argument_arity(node: Option<Node>, src: &[u8]) -> Option<usize> {
 // A single argument that yields NO base identifier at all (a tuple type, a
 // pointer) drops the WHOLE list: the match rule compares positions by index,
 // so a partial list would silently shift every argument after the hole.
-fn generic_arg_descriptors(node: Option<Node>, src: &[u8], type_params: &HashSet<String>) -> Option<Vec<String>> {
+fn generic_arg_descriptors(
+    node: Option<Node>,
+    src: &[u8],
+    type_params: &HashSet<String>,
+) -> Option<Vec<String>> {
     let generic = top_level_generic_name(node)?;
-    let list = named_children(generic).into_iter().find(|c| c.kind() == "type_argument_list")?;
+    let list = named_children(generic)
+        .into_iter()
+        .find(|c| c.kind() == "type_argument_list")?;
     let args = named_children(list);
     if args.is_empty() {
         return None;
@@ -549,7 +611,11 @@ fn generic_arg_descriptors(node: Option<Node>, src: &[u8], type_params: &HashSet
     let mut descriptors = Vec::with_capacity(args.len());
     for arg in args {
         let base = base_type_identifier(Some(arg), src, true)?;
-        descriptors.push(if type_params.contains(&base) { "*".to_string() } else { base });
+        descriptors.push(if type_params.contains(&base) {
+            "*".to_string()
+        } else {
+            base
+        });
     }
     Some(descriptors)
 }
@@ -558,7 +624,10 @@ fn generic_arg_descriptors(node: Option<Node>, src: &[u8], type_params: &HashSet
 // `void Then<TSaga, TData>(...)`). Empty for every non-generic declaration.
 fn type_parameter_names(node: Node, src: &[u8]) -> HashSet<String> {
     let mut names = HashSet::new();
-    let Some(list) = named_children(node).into_iter().find(|c| c.kind() == "type_parameter_list") else {
+    let Some(list) = named_children(node)
+        .into_iter()
+        .find(|c| c.kind() == "type_parameter_list")
+    else {
         return names;
     };
     for p in named_children(list) {
@@ -584,7 +653,10 @@ fn type_parameter_names(node: Node, src: &[u8]) -> HashSet<String> {
 // bytes to be stable.
 fn type_parameter_names_ordered(node: Node, src: &[u8]) -> Vec<String> {
     let mut names: Vec<String> = Vec::new();
-    let Some(list) = named_children(node).into_iter().find(|c| c.kind() == "type_parameter_list") else {
+    let Some(list) = named_children(node)
+        .into_iter()
+        .find(|c| c.kind() == "type_parameter_list")
+    else {
         return names;
     };
     for p in named_children(list) {
@@ -718,7 +790,14 @@ fn push_ref(
 // "constructor_declaration" walk arm). Kept separate from push_ref, like
 // push_member_ref is, rather than overloading it with a slot every other
 // caller would pass as None.
-fn push_ctor_param_ref(refs: &mut Vec<RefRecord>, name: String, line: usize, ns: String, args: Option<Vec<String>>, type_stack: &[String]) {
+fn push_ctor_param_ref(
+    refs: &mut Vec<RefRecord>,
+    name: String,
+    line: usize,
+    ns: String,
+    args: Option<Vec<String>>,
+    type_stack: &[String],
+) {
     refs.push(RefRecord {
         kind: "ctor-param".to_string(),
         name,
@@ -776,8 +855,16 @@ fn push_member_ref(
     // the two are mutually exclusive on one ref, which is what lets every
     // reader tell a recorded type from a lookup the resolver still owes.
     let (receiver_type, receiver_args, receiver_call_owner, receiver_call_member) = match receiver {
-        Some(Fact { type_name, call: Some(member), .. }) => (None, None, Some(type_name), Some(member)),
-        Some(Fact { type_name, args, call: None }) => (Some(type_name), args, None, None),
+        Some(Fact {
+            type_name,
+            call: Some(member),
+            ..
+        }) => (None, None, Some(type_name), Some(member)),
+        Some(Fact {
+            type_name,
+            args,
+            call: None,
+        }) => (Some(type_name), args, None, None),
         None => (None, None, None, None),
     };
     match qualifier_text.rfind('.') {
@@ -824,7 +911,14 @@ fn push_member_ref(
 // declaration's own span starts at its attribute list when it has one,
 // which would otherwise point a reader at the attribute line instead of
 // the line the type reference is actually on.
-fn record_single_type(node: Option<Node>, kind: &str, ns: &str, type_stack: &[String], src: &[u8], refs: &mut Vec<RefRecord>) {
+fn record_single_type(
+    node: Option<Node>,
+    kind: &str,
+    ns: &str,
+    type_stack: &[String],
+    src: &[u8],
+    refs: &mut Vec<RefRecord>,
+) {
     let Some(node) = node else {
         return;
     };
@@ -833,7 +927,14 @@ fn record_single_type(node: Option<Node>, kind: &str, ns: &str, type_stack: &[St
             if el.kind() != "tuple_element" {
                 continue;
             }
-            record_single_type(el.child_by_field_name("type"), kind, ns, type_stack, src, refs);
+            record_single_type(
+                el.child_by_field_name("type"),
+                kind,
+                ns,
+                type_stack,
+                src,
+                refs,
+            );
         }
         return;
     }
@@ -843,16 +944,41 @@ fn record_single_type(node: Option<Node>, kind: &str, ns: &str, type_stack: &[St
     let line = node.start_position().row + 1;
     let arity = Some(type_argument_arity(Some(node), src).unwrap_or(0));
     match raw.rfind('.') {
-        Some(dot) => push_ref(refs, kind, raw[dot + 1..].to_string(), line, Some(ns.to_string()), Some(raw.clone()), type_stack),
-        None => push_ref(refs, kind, raw.clone(), line, Some(ns.to_string()), None, type_stack),
+        Some(dot) => push_ref(
+            refs,
+            kind,
+            raw[dot + 1..].to_string(),
+            line,
+            Some(ns.to_string()),
+            Some(raw.clone()),
+            type_stack,
+        ),
+        None => push_ref(
+            refs,
+            kind,
+            raw.clone(),
+            line,
+            Some(ns.to_string()),
+            None,
+            type_stack,
+        ),
     }
     if let Some(last) = refs.last_mut() {
         last.type_arg_count = arity;
     }
 }
 
-fn record_base_list(node: Node, ns: &str, type_stack: &[String], src: &[u8], refs: &mut Vec<RefRecord>) {
-    let Some(bl) = named_children(node).into_iter().find(|c| c.kind() == "base_list") else {
+fn record_base_list(
+    node: Node,
+    ns: &str,
+    type_stack: &[String],
+    src: &[u8],
+    refs: &mut Vec<RefRecord>,
+) {
+    let Some(bl) = named_children(node)
+        .into_iter()
+        .find(|c| c.kind() == "base_list")
+    else {
         return;
     };
     for child in named_children(bl) {
@@ -860,7 +986,14 @@ fn record_base_list(node: Node, ns: &str, type_stack: &[String], src: &[u8], ref
             continue;
         }
         if child.kind() == "primary_constructor_base_type" {
-            record_single_type(child.child_by_field_name("type"), "inherits", ns, type_stack, src, refs);
+            record_single_type(
+                child.child_by_field_name("type"),
+                "inherits",
+                ns,
+                type_stack,
+                src,
+                refs,
+            );
             continue;
         }
         record_single_type(Some(child), "inherits", ns, type_stack, src, refs);
@@ -918,7 +1051,11 @@ fn raw_property_names(node: Node, src: &[u8]) -> Vec<String> {
 // whose declared type yields no fact simply has no entry. The fact is the SAME
 // shape a receiver fact carries, which is what lets resolution treat a property
 // hop exactly like a field- or local-typed one.
-fn raw_property_types(node: Node, src: &[u8], type_params: &HashSet<String>) -> Vec<(String, Fact)> {
+fn raw_property_types(
+    node: Node,
+    src: &[u8],
+    type_params: &HashSet<String>,
+) -> Vec<(String, Fact)> {
     let Some(body) = node.child_by_field_name("body") else {
         return Vec::new();
     };
@@ -953,7 +1090,10 @@ fn raw_field_names(node: Node, src: &[u8]) -> Vec<String> {
         if c.kind() != "field_declaration" {
             continue;
         }
-        let Some(vd) = named_children(c).into_iter().find(|k| k.kind() == "variable_declaration") else {
+        let Some(vd) = named_children(c)
+            .into_iter()
+            .find(|k| k.kind() == "variable_declaration")
+        else {
             continue;
         };
         for decl in named_children(vd) {
@@ -1041,7 +1181,9 @@ fn extension_arity_range(parameters: Node, src: &[u8]) -> (usize, i64) {
             continue;
         }
         total += 1;
-        let is_params = named_children(c).iter().any(|m| m.kind() == "modifier" && text(*m, src) == "params");
+        let is_params = named_children(c)
+            .iter()
+            .any(|m| m.kind() == "modifier" && text(*m, src) == "params");
         if is_params {
             unbounded = true;
         } else if !has_default_value(c) {
@@ -1108,7 +1250,10 @@ fn raw_extension_methods(node: Node, src: &[u8]) -> Vec<ExtensionMethod> {
         if first.kind() != "parameter" {
             continue;
         }
-        if !named_children(first).iter().any(|m| m.kind() == "modifier" && text(*m, src) == "this") {
+        if !named_children(first)
+            .iter()
+            .any(|m| m.kind() == "modifier" && text(*m, src) == "this")
+        {
             continue;
         }
         let name = declared_name(c, src);
@@ -1130,7 +1275,13 @@ fn raw_extension_methods(node: Node, src: &[u8]) -> Vec<ExtensionMethod> {
         let mut type_params = class_type_params.clone();
         type_params.extend(type_parameter_names(c, src));
         let this_args = generic_arg_descriptors(type_node, src, &type_params);
-        entries.push(ExtensionMethod { name, this_type, arity_min, arity_max, this_args });
+        entries.push(ExtensionMethod {
+            name,
+            this_type,
+            arity_min,
+            arity_max,
+            this_args,
+        });
     }
     entries
 }
@@ -1148,7 +1299,10 @@ fn raw_extension_methods(node: Node, src: &[u8]) -> Vec<ExtensionMethod> {
 // reduce to nothing on their own (a predefined type yields no identifier), so
 // the extra generality costs no bytes and needs no per-kind branch.
 fn raw_base_names(node: Node, src: &[u8]) -> Vec<String> {
-    let Some(bl) = named_children(node).into_iter().find(|c| c.kind() == "base_list") else {
+    let Some(bl) = named_children(node)
+        .into_iter()
+        .find(|c| c.kind() == "base_list")
+    else {
         return Vec::new();
     };
     let mut names: Vec<String> = Vec::new();
@@ -1156,8 +1310,11 @@ fn raw_base_names(node: Node, src: &[u8]) -> Vec<String> {
         if child.kind() == "argument_list" {
             continue;
         }
-        let type_node =
-            if child.kind() == "primary_constructor_base_type" { child.child_by_field_name("type") } else { Some(child) };
+        let type_node = if child.kind() == "primary_constructor_base_type" {
+            child.child_by_field_name("type")
+        } else {
+            Some(child)
+        };
         if let Some(name) = base_type_identifier(type_node, src, false) {
             if !names.contains(&name) {
                 names.push(name);
@@ -1176,8 +1333,15 @@ fn raw_base_names(node: Node, src: &[u8]) -> Vec<String> {
 // this is an OPEN-generic implementation -- while `class SpecificRepo :
 // IRepository<User>` records `[("IRepository", ["User"])]`, a closed one. A
 // base with no type-argument list at all contributes no entry.
-fn raw_base_generic_args(node: Node, src: &[u8], type_params: &HashSet<String>) -> Vec<(String, Vec<String>)> {
-    let Some(bl) = named_children(node).into_iter().find(|c| c.kind() == "base_list") else {
+fn raw_base_generic_args(
+    node: Node,
+    src: &[u8],
+    type_params: &HashSet<String>,
+) -> Vec<(String, Vec<String>)> {
+    let Some(bl) = named_children(node)
+        .into_iter()
+        .find(|c| c.kind() == "base_list")
+    else {
         return Vec::new();
     };
     let mut out: Vec<(String, Vec<String>)> = Vec::new();
@@ -1185,8 +1349,11 @@ fn raw_base_generic_args(node: Node, src: &[u8], type_params: &HashSet<String>) 
         if child.kind() == "argument_list" {
             continue;
         }
-        let type_node =
-            if child.kind() == "primary_constructor_base_type" { child.child_by_field_name("type") } else { Some(child) };
+        let type_node = if child.kind() == "primary_constructor_base_type" {
+            child.child_by_field_name("type")
+        } else {
+            Some(child)
+        };
         let Some(name) = base_type_identifier(type_node, src, false) else {
             continue;
         };
@@ -1284,7 +1451,8 @@ fn raw_test_methods(node: Node, src: &[u8], kind: &str) -> Vec<String> {
         }
         let attrs = attribute_names(c, src);
         let marked = attrs.iter().any(|a| {
-            DIRECT_TEST_ATTRIBUTES.contains(&a.as_str()) || (mstest && MSTEST_TEST_ATTRIBUTES.contains(&a.as_str()))
+            DIRECT_TEST_ATTRIBUTES.contains(&a.as_str())
+                || (mstest && MSTEST_TEST_ATTRIBUTES.contains(&a.as_str()))
         });
         if !marked {
             continue;
@@ -1305,7 +1473,11 @@ fn raw_test_methods(node: Node, src: &[u8], kind: &str) -> Vec<String> {
 // enclosing type chain, never `.`.
 fn type_id(name: &str, ns: &str, type_stack: &[String]) -> String {
     if !type_stack.is_empty() {
-        let prefix = if ns.is_empty() { String::new() } else { format!("{ns}.") };
+        let prefix = if ns.is_empty() {
+            String::new()
+        } else {
+            format!("{ns}.")
+        };
         format!("{prefix}{}+{name}", type_stack.join("+"))
     } else if !ns.is_empty() {
         format!("{ns}.{name}")
@@ -1324,9 +1496,23 @@ fn record_declared_members(node: Node, owner_id: &str, src: &[u8], names: &mut V
     };
     for c in named_children(body) {
         match c.kind() {
-            "method_declaration" => push_declared_name(c.child_by_field_name("name"), "method", owner_id, src, names),
-            "property_declaration" => push_declared_name(c.child_by_field_name("name"), "property", owner_id, src, names),
-            "event_declaration" => push_declared_name(c.child_by_field_name("name"), "event", owner_id, src, names),
+            "method_declaration" => push_declared_name(
+                c.child_by_field_name("name"),
+                "method",
+                owner_id,
+                src,
+                names,
+            ),
+            "property_declaration" => push_declared_name(
+                c.child_by_field_name("name"),
+                "property",
+                owner_id,
+                src,
+                names,
+            ),
+            "event_declaration" => {
+                push_declared_name(c.child_by_field_name("name"), "event", owner_id, src, names)
+            }
             "field_declaration" => push_declarators(c, "field", owner_id, src, names),
             "event_field_declaration" => push_declarators(c, "event", owner_id, src, names),
             _ => {}
@@ -1334,7 +1520,13 @@ fn record_declared_members(node: Node, owner_id: &str, src: &[u8], names: &mut V
     }
 }
 
-fn push_declared_name(name_node: Option<Node>, kind: &str, owner_id: &str, src: &[u8], names: &mut Vec<NameRecord>) {
+fn push_declared_name(
+    name_node: Option<Node>,
+    kind: &str,
+    owner_id: &str,
+    src: &[u8],
+    names: &mut Vec<NameRecord>,
+) {
     let Some(name_node) = name_node else {
         return;
     };
@@ -1350,8 +1542,17 @@ fn push_declared_name(name_node: Option<Node>, kind: &str, owner_id: &str, src: 
     });
 }
 
-fn push_declarators(node: Node, kind: &str, owner_id: &str, src: &[u8], names: &mut Vec<NameRecord>) {
-    let Some(vd) = named_children(node).into_iter().find(|k| k.kind() == "variable_declaration") else {
+fn push_declarators(
+    node: Node,
+    kind: &str,
+    owner_id: &str,
+    src: &[u8],
+    names: &mut Vec<NameRecord>,
+) {
+    let Some(vd) = named_children(node)
+        .into_iter()
+        .find(|k| k.kind() == "variable_declaration")
+    else {
         return;
     };
     for decl in named_children(vd) {
@@ -1413,7 +1614,13 @@ fn record_type_def(
 // its own def, id'd as "<EnumId>.<Member>" -- appending with "." even when
 // EnumId itself carries a "+"-joined nested-type suffix, so a member id can
 // never collide with the "+"-joined nested-type scheme.
-fn record_enum_members(node: Node, ns: &str, type_stack: &[String], src: &[u8], defs: &mut Vec<DefRecord>) {
+fn record_enum_members(
+    node: Node,
+    ns: &str,
+    type_stack: &[String],
+    src: &[u8],
+    defs: &mut Vec<DefRecord>,
+) {
     let name = declared_name(node, src);
     if name.is_empty() {
         return;
@@ -1484,7 +1691,15 @@ fn record_using(node: Node, src: &[u8], usings: &mut Vec<UsingRecord>, refs: &mu
             global: is_global,
         });
     }
-    push_ref(refs, "imports", text_val, node.start_position().row + 1, None, None, &[]);
+    push_ref(
+        refs,
+        "imports",
+        text_val,
+        node.start_position().row + 1,
+        None,
+        None,
+        &[],
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -1512,7 +1727,9 @@ fn record_using(node: Node, src: &[u8], usings: &mut Vec<UsingRecord>, refs: &mu
 /// conflict exactly like two different type names would.
 #[derive(Clone, PartialEq, Eq)]
 pub struct Fact {
+    /// The type name value.
     pub type_name: String,
+    /// The args value.
     pub args: Option<Vec<String>>,
     /// When set, the name's type is whatever the method of this name returns
     /// on the type `type_name` stands for, a lookup only the resolver can do.
@@ -1548,15 +1765,25 @@ fn add_fact(table: &mut FactTable, name: Option<String>, fact: Option<Fact>) {
 fn type_fact(type_node: Option<Node>, src: &[u8], type_params: &HashSet<String>) -> Option<Fact> {
     let type_name = base_type_identifier(type_node, src, false)?;
     let args = generic_arg_descriptors(type_node, src, type_params);
-    Some(Fact { type_name, args, call: None })
+    Some(Fact {
+        type_name,
+        args,
+        call: None,
+    })
 }
 
 // `var x = new T(...)` -- the ONLY shape where an initializer is consulted.
 // An explicitly typed declaration is answered by its own type node, so
 // `object o = new Widget()` records `object` (a predefined type: no fact),
 // never `Widget`.
-fn new_expression_fact(declarator: Node, src: &[u8], type_params: &HashSet<String>) -> Option<Fact> {
-    let init = named_children(declarator).into_iter().find(|c| c.kind() == "object_creation_expression")?;
+fn new_expression_fact(
+    declarator: Node,
+    src: &[u8],
+    type_params: &HashSet<String>,
+) -> Option<Fact> {
+    let init = named_children(declarator)
+        .into_iter()
+        .find(|c| c.kind() == "object_creation_expression")?;
     type_fact(init.child_by_field_name("type"), src, type_params)
 }
 
@@ -1593,17 +1820,29 @@ fn collect_type_facts(node: Node, src: &[u8], type_params: &HashSet<String>) -> 
 // wrapped them. A property's declared type vouches for its own name
 // exactly like a field's does: one table, one conflict rule, and an indexer is
 // a different grammar node so it is excluded by construction.
-fn collect_declared_member_facts(members: &[Node], src: &[u8], type_params: &HashSet<String>, table: &mut FactTable) {
+fn collect_declared_member_facts(
+    members: &[Node],
+    src: &[u8],
+    type_params: &HashSet<String>,
+    table: &mut FactTable,
+) {
     for c in members {
         if c.kind() == "property_declaration" {
             let name = declared_name(*c, src);
-            add_fact(table, Some(name), type_fact(c.child_by_field_name("type"), src, type_params));
+            add_fact(
+                table,
+                Some(name),
+                type_fact(c.child_by_field_name("type"), src, type_params),
+            );
             continue;
         }
         if c.kind() != "field_declaration" {
             continue;
         }
-        let Some(vd) = named_children(*c).into_iter().find(|k| k.kind() == "variable_declaration") else {
+        let Some(vd) = named_children(*c)
+            .into_iter()
+            .find(|k| k.kind() == "variable_declaration")
+        else {
             continue;
         };
         let fact = type_fact(vd.child_by_field_name("type"), src, type_params);
@@ -1611,7 +1850,11 @@ fn collect_declared_member_facts(members: &[Node], src: &[u8], type_params: &Has
             if decl.kind() != "variable_declarator" {
                 continue;
             }
-            add_fact(table, decl.child_by_field_name("name").map(|n| text(n, src)), fact.clone());
+            add_fact(
+                table,
+                decl.child_by_field_name("name").map(|n| text(n, src)),
+                fact.clone(),
+            );
         }
     }
 }
@@ -1647,7 +1890,14 @@ fn collect_member_facts(
     // the collection may be a local declared anywhere in this same flat
     // table, including one declared AFTER this foreach in source order.
     let mut deferred_foreach: Vec<DeferredForeach> = Vec::new();
-    visit_member_facts(node, src, &type_params, &mut table, &mut deferred, &mut deferred_foreach);
+    visit_member_facts(
+        node,
+        src,
+        &type_params,
+        &mut table,
+        &mut deferred,
+        &mut deferred_foreach,
+    );
     if !deferred.is_empty() {
         let pending: HashSet<&str> = deferred.iter().map(|d| d.name.as_str()).collect();
         for d in &deferred {
@@ -1660,7 +1910,11 @@ fn collect_member_facts(
             } else {
                 qualifier_type_name(&table, type_facts, &d.qualifier)
             };
-            let fact = owner.map(|type_name| Fact { type_name, args: None, call: Some(d.member.clone()) });
+            let fact = owner.map(|type_name| Fact {
+                type_name,
+                args: None,
+                call: Some(d.member.clone()),
+            });
             add_fact(&mut table, Some(d.name.clone()), fact);
         }
     }
@@ -1712,21 +1966,31 @@ fn visit_member_facts(
     } else if n.kind() == "variable_declaration" {
         let type_node = n.child_by_field_name("type");
         let is_var = type_node.map(|t| t.kind()) == Some("implicit_type");
-        let declared = if is_var { None } else { type_fact(type_node, src, type_params) };
+        let declared = if is_var {
+            None
+        } else {
+            type_fact(type_node, src, type_params)
+        };
         for decl in named_children(n) {
             if decl.kind() != "variable_declarator" {
                 continue;
             }
             let name = decl.child_by_field_name("name").map(|x| text(x, src));
-            let fact = if is_var { new_expression_fact(decl, src, type_params) } else { declared.clone() };
+            let fact = if is_var {
+                new_expression_fact(decl, src, type_params)
+            } else {
+                declared.clone()
+            };
             let call = match (is_var && fact.is_none(), name.as_deref()) {
                 (true, Some(n)) if !n.is_empty() => invocation_call(decl, src),
                 _ => None,
             };
             match call {
-                Some((qualifier, member)) => {
-                    deferred.push(DeferredCall { name: name.unwrap_or_default(), qualifier, member })
-                }
+                Some((qualifier, member)) => deferred.push(DeferredCall {
+                    name: name.unwrap_or_default(),
+                    qualifier,
+                    member,
+                }),
                 None => add_fact(table, name, fact),
             }
         }
@@ -1741,16 +2005,23 @@ fn visit_member_facts(
         // `foreach (var (a, b) in ...)` has no single name to record and is
         // left alone entirely -- neither a fact nor a taken slot.
         let left = n.child_by_field_name("left");
-        let name = left.filter(|l| l.kind() == "identifier").map(|l| text(l, src));
+        let name = left
+            .filter(|l| l.kind() == "identifier")
+            .map(|l| text(l, src));
         if let Some(name) = name {
             let type_node = n.child_by_field_name("type");
-            let is_var = type_node.map(|t| t.kind() == "implicit_type").unwrap_or(true);
+            let is_var = type_node
+                .map(|t| t.kind() == "implicit_type")
+                .unwrap_or(true);
             if !is_var {
                 add_fact(table, Some(name), type_fact(type_node, src, type_params));
             } else {
                 let right = n.child_by_field_name("right");
                 match right.filter(|r| r.kind() == "identifier") {
-                    Some(r) => deferred_foreach.push(DeferredForeach { name, collection: text(r, src) }),
+                    Some(r) => deferred_foreach.push(DeferredForeach {
+                        name,
+                        collection: text(r, src),
+                    }),
                     None => add_fact(table, Some(name), None),
                 }
             }
@@ -1767,18 +2038,24 @@ fn visit_member_facts(
 // qualifier is not a name the ladder can put a type behind. A bare call
 // (`var x = M()`) has no qualifier at all and is deliberately not covered.
 fn invocation_call(declarator: Node, src: &[u8]) -> Option<(String, String)> {
-    let init = named_children(declarator).into_iter().find(|c| c.kind() == "invocation_expression")?;
+    let init = named_children(declarator)
+        .into_iter()
+        .find(|c| c.kind() == "invocation_expression")?;
     let function = init.child_by_field_name("function")?;
     if function.kind() != "member_access_expression" {
         return None;
     }
-    let (qualifier, generic) = member_qualifier_info(function.child_by_field_name("expression"), src)?;
+    let (qualifier, generic) =
+        member_qualifier_info(function.child_by_field_name("expression"), src)?;
     if generic || qualifier.contains('.') {
         return None;
     }
     let name_node = function.child_by_field_name("name")?;
     let member = if name_node.kind() == "generic_name" {
-        named_children(name_node).into_iter().find(|c| c.kind() == "identifier").map(|id| text(id, src))?
+        named_children(name_node)
+            .into_iter()
+            .find(|c| c.kind() == "identifier")
+            .map(|id| text(id, src))?
     } else {
         text(name_node, src)
     };
@@ -1812,7 +2089,11 @@ fn qualifier_type_name(locals: &FactTable, type_facts: &FactTable, name: &str) -
 fn collection_element_fact(locals: &FactTable, type_facts: &FactTable, name: &str) -> Option<Fact> {
     match locals.get(name).or_else(|| type_facts.get(name)) {
         Some(Some(fact)) => match fact.args.as_deref() {
-            Some([arg]) if arg != "*" => Some(Fact { type_name: arg.clone(), args: None, call: None }),
+            Some([arg]) if arg != "*" => Some(Fact {
+                type_name: arg.clone(),
+                args: None,
+                call: None,
+            }),
             _ => None,
         },
         _ => None,
@@ -1885,10 +2166,10 @@ impl<'a> Scope<'a> {
     // value is `None` -- a local whose type nothing vouches for must NOT
     // fall through to a same-named field of a different type.
     fn receiver_fact_for(&self, name: &str, src: &[u8]) -> Option<Fact> {
-        let locals =
-            self.member_facts.get_or_init(|| {
-                self.node.map(|n| collect_member_facts(n, src, &self.type_params, &self.type_facts))
-            });
+        let locals = self.member_facts.get_or_init(|| {
+            self.node
+                .map(|n| collect_member_facts(n, src, &self.type_params, &self.type_facts))
+        });
         if let Some(table) = locals {
             if let Some(found) = table.get(name) {
                 return found.clone();
@@ -1905,11 +2186,25 @@ impl<'a> Scope<'a> {
 // switch happens while iterating a sibling list, updating ns for the
 // remaining siblings in that same list -- a per-node match arm can't
 // express that, hence walk_list and walk staying separate functions.
-fn walk_list<'a>(nodes: Vec<Node<'a>>, mut ns: String, type_stack: &[String], src: &[u8], out: &mut Extraction, scope: &Scope<'a>) {
+fn walk_list<'a>(
+    nodes: Vec<Node<'a>>,
+    mut ns: String,
+    type_stack: &[String],
+    src: &[u8],
+    out: &mut Extraction,
+    scope: &Scope<'a>,
+) {
     for node in nodes {
         if node.kind() == "file_scoped_namespace_declaration" {
-            let name = node.child_by_field_name("name").map(|n| text(n, src)).unwrap_or_default();
-            ns = if ns.is_empty() { name } else { format!("{ns}.{name}") };
+            let name = node
+                .child_by_field_name("name")
+                .map(|n| text(n, src))
+                .unwrap_or_default();
+            ns = if ns.is_empty() {
+                name
+            } else {
+                format!("{ns}.{name}")
+            };
             continue;
         }
         walk(node, &ns, type_stack, src, out, scope);
@@ -1919,7 +2214,14 @@ fn walk_list<'a>(nodes: Vec<Node<'a>>, mut ns: String, type_stack: &[String], sr
 // type_stack (see type_id) also doubles as the "am I inside a type" signal
 // for nothing else -- ref extraction runs at every depth regardless of
 // nesting.
-fn walk<'a>(node: Node<'a>, ns: &str, type_stack: &[String], src: &[u8], out: &mut Extraction, scope: &Scope<'a>) {
+fn walk<'a>(
+    node: Node<'a>,
+    ns: &str,
+    type_stack: &[String],
+    src: &[u8],
+    out: &mut Extraction,
+    scope: &Scope<'a>,
+) {
     // Entering a member declaration installs a fresh (lazily built)
     // local/param table over the enclosing type's field table, for this
     // subtree only.
@@ -1932,21 +2234,40 @@ fn walk<'a>(node: Node<'a>, ns: &str, type_stack: &[String], src: &[u8], out: &m
     };
     match node.kind() {
         "namespace_declaration" => {
-            let name = node.child_by_field_name("name").map(|n| text(n, src)).unwrap_or_default();
-            let new_ns = if ns.is_empty() { name } else { format!("{ns}.{name}") };
+            let name = node
+                .child_by_field_name("name")
+                .map(|n| text(n, src))
+                .unwrap_or_default();
+            let new_ns = if ns.is_empty() {
+                name
+            } else {
+                format!("{ns}.{name}")
+            };
             walk_list(named_children(node), new_ns, type_stack, src, out, scope);
         }
         "using_directive" => {
             record_using(node, src, &mut out.usings, &mut out.refs);
         }
-        "class_declaration" | "interface_declaration" | "struct_declaration" | "record_declaration" => {
+        "class_declaration"
+        | "interface_declaration"
+        | "struct_declaration"
+        | "record_declaration" => {
             let kind = type_kind_label(node.kind()).expect("matched TYPE_KINDS arm");
             // Computed before record_type_def (Scope::for_type
             // below recomputes its own copy for the type-facts table; cheap
             // and kept separate rather than threading one instance through
             // both call sites).
             let type_params = type_parameter_names(node, src);
-            record_type_def(node, ns, kind, type_stack, src, &mut out.defs, &mut out.names, &type_params);
+            record_type_def(
+                node,
+                ns,
+                kind,
+                type_stack,
+                src,
+                &mut out.defs,
+                &mut out.names,
+                &type_params,
+            );
             record_base_list(node, ns, type_stack, src, &mut out.refs);
             let name = declared_name(node, src);
             let new_stack: Vec<String> = if name.is_empty() {
@@ -1960,31 +2281,114 @@ fn walk<'a>(node: Node<'a>, ns: &str, type_stack: &[String], src: &[u8], out: &m
             // closes any enclosing member scope (`node: None` -- a type body
             // is not a member body).
             let type_scope = Scope::for_type(node, src);
-            walk_list(named_children(node), ns.to_string(), &new_stack, src, out, &type_scope);
+            walk_list(
+                named_children(node),
+                ns.to_string(),
+                &new_stack,
+                src,
+                out,
+                &type_scope,
+            );
         }
         "enum_declaration" => {
-            record_type_def(node, ns, "enum", type_stack, src, &mut out.defs, &mut out.names, &HashSet::new());
+            record_type_def(
+                node,
+                ns,
+                "enum",
+                type_stack,
+                src,
+                &mut out.defs,
+                &mut out.names,
+                &HashSet::new(),
+            );
             record_enum_members(node, ns, type_stack, src, &mut out.defs);
             // No recursion into the enum body: enum member initializer
             // expressions are not walked.
         }
         "delegate_declaration" => {
-            record_type_def(node, ns, "delegate", type_stack, src, &mut out.defs, &mut out.names, &HashSet::new());
-            record_single_type(node.child_by_field_name("type"), "uses-type", ns, type_stack, src, &mut out.refs);
-            walk_list(named_children(node), ns.to_string(), type_stack, src, out, scope);
+            record_type_def(
+                node,
+                ns,
+                "delegate",
+                type_stack,
+                src,
+                &mut out.defs,
+                &mut out.names,
+                &HashSet::new(),
+            );
+            record_single_type(
+                node.child_by_field_name("type"),
+                "uses-type",
+                ns,
+                type_stack,
+                src,
+                &mut out.refs,
+            );
+            walk_list(
+                named_children(node),
+                ns.to_string(),
+                type_stack,
+                src,
+                out,
+                scope,
+            );
         }
         "field_declaration" => {
-            let vd = named_children(node).into_iter().find(|c| c.kind() == "variable_declaration");
-            record_single_type(vd.and_then(|v| v.child_by_field_name("type")), "uses-type", ns, type_stack, src, &mut out.refs);
-            walk_list(named_children(node), ns.to_string(), type_stack, src, out, scope);
+            let vd = named_children(node)
+                .into_iter()
+                .find(|c| c.kind() == "variable_declaration");
+            record_single_type(
+                vd.and_then(|v| v.child_by_field_name("type")),
+                "uses-type",
+                ns,
+                type_stack,
+                src,
+                &mut out.refs,
+            );
+            walk_list(
+                named_children(node),
+                ns.to_string(),
+                type_stack,
+                src,
+                out,
+                scope,
+            );
         }
         "property_declaration" => {
-            record_single_type(node.child_by_field_name("type"), "uses-type", ns, type_stack, src, &mut out.refs);
-            walk_list(named_children(node), ns.to_string(), type_stack, src, out, scope);
+            record_single_type(
+                node.child_by_field_name("type"),
+                "uses-type",
+                ns,
+                type_stack,
+                src,
+                &mut out.refs,
+            );
+            walk_list(
+                named_children(node),
+                ns.to_string(),
+                type_stack,
+                src,
+                out,
+                scope,
+            );
         }
         "parameter" => {
-            record_single_type(node.child_by_field_name("type"), "uses-type", ns, type_stack, src, &mut out.refs);
-            walk_list(named_children(node), ns.to_string(), type_stack, src, out, scope);
+            record_single_type(
+                node.child_by_field_name("type"),
+                "uses-type",
+                ns,
+                type_stack,
+                src,
+                &mut out.refs,
+            );
+            walk_list(
+                named_children(node),
+                ns.to_string(),
+                type_stack,
+                src,
+                out,
+                scope,
+            );
         }
         // One 'ctor-param' fact per constructor parameter,
         // ALONGSIDE (never instead of) the plain 'uses-type' ref the
@@ -2006,11 +2410,25 @@ fn walk<'a>(node: Node<'a>, ns: &str, type_stack: &[String], src: &[u8], out: &m
                     let type_node = p.child_by_field_name("type");
                     if let Some(fact) = type_fact(type_node, src, &scope.type_params) {
                         let line = type_node.map(|t| t.start_position().row + 1).unwrap_or(0);
-                        push_ctor_param_ref(&mut out.refs, fact.type_name, line, ns.to_string(), fact.args, type_stack);
+                        push_ctor_param_ref(
+                            &mut out.refs,
+                            fact.type_name,
+                            line,
+                            ns.to_string(),
+                            fact.args,
+                            type_stack,
+                        );
                     }
                 }
             }
-            walk_list(named_children(node), ns.to_string(), type_stack, src, out, scope);
+            walk_list(
+                named_children(node),
+                ns.to_string(),
+                type_stack,
+                src,
+                out,
+                scope,
+            );
         }
         // `Method(out SomeEnum x)` / `obj is SomeEnum x` inline-declaration
         // sites -- a `type` + `name` pair, same shape as `parameter`, just in
@@ -2018,20 +2436,76 @@ fn walk<'a>(node: Node<'a>, ns: &str, type_stack: &[String], src: &[u8], out: &m
         // record_single_type pipeline, so it goes through the normal ladder
         // including ambiguous marking, exactly like an ordinary type usage.
         "declaration_expression" => {
-            record_single_type(node.child_by_field_name("type"), "uses-type", ns, type_stack, src, &mut out.refs);
-            walk_list(named_children(node), ns.to_string(), type_stack, src, out, scope);
+            record_single_type(
+                node.child_by_field_name("type"),
+                "uses-type",
+                ns,
+                type_stack,
+                src,
+                &mut out.refs,
+            );
+            walk_list(
+                named_children(node),
+                ns.to_string(),
+                type_stack,
+                src,
+                out,
+                scope,
+            );
         }
         "method_declaration" => {
-            record_single_type(node.child_by_field_name("returns"), "uses-type", ns, type_stack, src, &mut out.refs);
-            walk_list(named_children(node), ns.to_string(), type_stack, src, out, scope);
+            record_single_type(
+                node.child_by_field_name("returns"),
+                "uses-type",
+                ns,
+                type_stack,
+                src,
+                &mut out.refs,
+            );
+            walk_list(
+                named_children(node),
+                ns.to_string(),
+                type_stack,
+                src,
+                out,
+                scope,
+            );
         }
         "object_creation_expression" => {
-            record_single_type(node.child_by_field_name("type"), "uses-type", ns, type_stack, src, &mut out.refs);
-            walk_list(named_children(node), ns.to_string(), type_stack, src, out, scope);
+            record_single_type(
+                node.child_by_field_name("type"),
+                "uses-type",
+                ns,
+                type_stack,
+                src,
+                &mut out.refs,
+            );
+            walk_list(
+                named_children(node),
+                ns.to_string(),
+                type_stack,
+                src,
+                out,
+                scope,
+            );
         }
         "typeof_expression" => {
-            record_single_type(node.child_by_field_name("type"), "uses-type", ns, type_stack, src, &mut out.refs);
-            walk_list(named_children(node), ns.to_string(), type_stack, src, out, scope);
+            record_single_type(
+                node.child_by_field_name("type"),
+                "uses-type",
+                ns,
+                type_stack,
+                src,
+                &mut out.refs,
+            );
+            walk_list(
+                named_children(node),
+                ns.to_string(),
+                type_stack,
+                src,
+                out,
+                scope,
+            );
         }
         // Covers every position a member access can appear in -- cast-to-int
         // values over a work-type enum, argument lists, switch/pattern arms,
@@ -2063,7 +2537,11 @@ fn walk<'a>(node: Node<'a>, ns: &str, type_stack: &[String], src: &[u8], out: &m
                     // is syntax no local, parameter, or field can carry.
                     let dot_at = if *generic { None } else { qt.find('.') };
                     let bare = dot_at.is_none() && !*generic;
-                    let receiver = if bare { scope.receiver_fact_for(qt, src) } else { None };
+                    let receiver = if bare {
+                        scope.receiver_fact_for(qt, src)
+                    } else {
+                        None
+                    };
                     // The head of a TWO-segment chain, and only when
                     // the scope vouches for its type: "a.Settings" asks what
                     // `a` is, while "x.y.Settings" and a namespace path ask
@@ -2090,16 +2568,37 @@ fn walk<'a>(node: Node<'a>, ns: &str, type_stack: &[String], src: &[u8], out: &m
                     );
                 }
             }
-            walk_list(named_children(node), ns.to_string(), type_stack, src, out, scope);
+            walk_list(
+                named_children(node),
+                ns.to_string(),
+                type_stack,
+                src,
+                out,
+                scope,
+            );
         }
         "type_argument_list" => {
             for arg in named_children(node) {
                 record_single_type(Some(arg), "uses-type", ns, type_stack, src, &mut out.refs);
             }
-            walk_list(named_children(node), ns.to_string(), type_stack, src, out, scope);
+            walk_list(
+                named_children(node),
+                ns.to_string(),
+                type_stack,
+                src,
+                out,
+                scope,
+            );
         }
         _ => {
-            walk_list(named_children(node), ns.to_string(), type_stack, src, out, scope);
+            walk_list(
+                named_children(node),
+                ns.to_string(),
+                type_stack,
+                src,
+                out,
+                scope,
+            );
         }
     }
 }
@@ -2114,12 +2613,16 @@ pub fn extract(source: &str) -> Extraction {
     let mut parser = new_parser();
     let units = crate::parse::utf16_units(source);
     let utf16 = crate::parse::utf16_bytes(&units);
-    let tree = parser.parse_utf16_le(&units, None).expect("parse returned no tree");
+    let tree = parser
+        .parse_utf16_le(&units, None)
+        .expect("parse returned no tree");
     let root = tree.root_node();
     let src = &utf16[..];
 
-    let purpose_parts: Vec<SegmentParts> =
-        namespace_level_types(root).into_iter().filter_map(|n| type_segment_parts(n, src)).collect();
+    let purpose_parts: Vec<SegmentParts> = namespace_level_types(root)
+        .into_iter()
+        .filter_map(|n| type_segment_parts(n, src))
+        .collect();
 
     let mut out = Extraction {
         purpose: None,
@@ -2128,7 +2631,14 @@ pub fn extract(source: &str) -> Extraction {
         refs: Vec::new(),
         names: Vec::new(),
     };
-    walk_list(named_children(root), String::new(), &[], src, &mut out, &Scope::root());
+    walk_list(
+        named_children(root),
+        String::new(),
+        &[],
+        src,
+        &mut out,
+        &Scope::root(),
+    );
 
     out.purpose = format_segments(purpose_parts);
 
@@ -2139,6 +2649,7 @@ pub fn extract(source: &str) -> Extraction {
 // `extract-dump` subcommand -- canonical JSON for one file.
 // ---------------------------------------------------------------------------
 
+/// Extracts the C# file at `path` and prints the extraction as JSON.
 pub fn run_extract_dump(path: &str) {
     let source = fs::read_to_string(path).unwrap_or_else(|err| {
         eprintln!("failed to read {path}: {err}");
@@ -2155,8 +2666,14 @@ pub fn run_extract_dump(path: &str) {
         // `devscout map` uses, not the pure extractor -- so the dump exercises
         // the leading-comment prefix, off one single parse.
         let file_path = Path::new(path);
-        let root = file_path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or_else(|| Path::new("."));
-        let rel = file_path.file_name().and_then(|n| n.to_str()).unwrap_or(path);
+        let root = file_path
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
+        let rel = file_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(path);
         match extract_ts_file(root, rel, &source, grammar) {
             Some(ts) => println!("{}", ts_extraction_to_json(&ts.purpose, &ts.fragment)),
             // A parse failure leaves the file out of both outputs, so its
@@ -2237,7 +2754,11 @@ impl Json {
     }
 }
 
-fn write_object<'a>(out: &mut String, indent: usize, fields: impl ExactSizeIterator<Item = (&'a str, &'a Json)>) {
+fn write_object<'a>(
+    out: &mut String,
+    indent: usize,
+    fields: impl ExactSizeIterator<Item = (&'a str, &'a Json)>,
+) {
     if fields.len() == 0 {
         out.push_str("{}");
         return;
@@ -2284,19 +2805,33 @@ fn def_to_json(d: &DefRecord) -> Json {
         ("namespace", Json::Str(d.namespace.clone())),
         ("kind", Json::Str(d.kind.clone())),
         ("line", Json::Num(d.line)),
-        ("methods", Json::Arr(d.methods.iter().map(|m| Json::Str(m.clone())).collect())),
+        (
+            "methods",
+            Json::Arr(d.methods.iter().map(|m| Json::Str(m.clone())).collect()),
+        ),
     ];
     // Appended last, in declaration order, each only when non-empty.
     if !d.properties.is_empty() {
-        fields.push(("properties", Json::Arr(d.properties.iter().map(|p| Json::Str(p.clone())).collect())));
+        fields.push((
+            "properties",
+            Json::Arr(d.properties.iter().map(|p| Json::Str(p.clone())).collect()),
+        ));
     }
     if !d.fields.is_empty() {
-        fields.push(("fields", Json::Arr(d.fields.iter().map(|f| Json::Str(f.clone())).collect())));
+        fields.push((
+            "fields",
+            Json::Arr(d.fields.iter().map(|f| Json::Str(f.clone())).collect()),
+        ));
     }
     if !d.method_returns.is_empty() {
         fields.push((
             "methodReturns",
-            Json::Map(d.method_returns.iter().map(|(k, v)| (k.clone(), Json::Str(v.clone()))).collect()),
+            Json::Map(
+                d.method_returns
+                    .iter()
+                    .map(|(k, v)| (k.clone(), Json::Str(v.clone())))
+                    .collect(),
+            ),
         ));
     }
     // Appended after the properties/fields/methodReturns trio, entry keys in
@@ -2317,7 +2852,10 @@ fn def_to_json(d: &DefRecord) -> Json {
                             ("arityMax", Json::Int(e.arity_max)),
                         ];
                         if let Some(args) = &e.this_args {
-                            kv.push(("thisArgs", Json::Arr(args.iter().map(|a| Json::Str(a.clone())).collect())));
+                            kv.push((
+                                "thisArgs",
+                                Json::Arr(args.iter().map(|a| Json::Str(a.clone())).collect()),
+                            ));
                         }
                         Json::Obj(kv)
                     })
@@ -2327,11 +2865,17 @@ fn def_to_json(d: &DefRecord) -> Json {
     }
     // Appended after extensionMethods.
     if !d.bases.is_empty() {
-        fields.push(("bases", Json::Arr(d.bases.iter().map(|b| Json::Str(b.clone())).collect())));
+        fields.push((
+            "bases",
+            Json::Arr(d.bases.iter().map(|b| Json::Str(b.clone())).collect()),
+        ));
     }
     // Appended after bases, before testMethods, each only when non-empty.
     if !d.type_params.is_empty() {
-        fields.push(("typeParams", Json::Arr(d.type_params.iter().map(|t| Json::Str(t.clone())).collect())));
+        fields.push((
+            "typeParams",
+            Json::Arr(d.type_params.iter().map(|t| Json::Str(t.clone())).collect()),
+        ));
     }
     if !d.base_generic_args.is_empty() {
         fields.push((
@@ -2339,20 +2883,38 @@ fn def_to_json(d: &DefRecord) -> Json {
             Json::Map(
                 d.base_generic_args
                     .iter()
-                    .map(|(k, v)| (k.clone(), Json::Arr(v.iter().map(|a| Json::Str(a.clone())).collect())))
+                    .map(|(k, v)| {
+                        (
+                            k.clone(),
+                            Json::Arr(v.iter().map(|a| Json::Str(a.clone())).collect()),
+                        )
+                    })
                     .collect(),
             ),
         ));
     }
     // Appended after baseGenericArgs.
     if !d.test_methods.is_empty() {
-        fields.push(("testMethods", Json::Arr(d.test_methods.iter().map(|t| Json::Str(t.clone())).collect())));
+        fields.push((
+            "testMethods",
+            Json::Arr(
+                d.test_methods
+                    .iter()
+                    .map(|t| Json::Str(t.clone()))
+                    .collect(),
+            ),
+        ));
     }
     // Appended LAST, after testMethods, entry keys in source order.
     if !d.property_types.is_empty() {
         fields.push((
             "propertyTypes",
-            Json::Map(d.property_types.iter().map(|(name, fact)| (name.clone(), fact_to_json(fact))).collect()),
+            Json::Map(
+                d.property_types
+                    .iter()
+                    .map(|(name, fact)| (name.clone(), fact_to_json(fact)))
+                    .collect(),
+            ),
         ));
     }
     Json::Obj(fields)
@@ -2364,24 +2926,37 @@ fn def_to_json(d: &DefRecord) -> Json {
 fn fact_to_json(fact: &Fact) -> Json {
     let mut fields: Vec<(&'static str, Json)> = vec![("type", Json::Str(fact.type_name.clone()))];
     if let Some(args) = &fact.args {
-        fields.push(("args", Json::Arr(args.iter().map(|a| Json::Str(a.clone())).collect())));
+        fields.push((
+            "args",
+            Json::Arr(args.iter().map(|a| Json::Str(a.clone())).collect()),
+        ));
     }
     Json::Obj(fields)
 }
 
 fn using_to_json(u: &UsingRecord) -> Json {
     match u {
-        UsingRecord::Alias { alias, target, global } => Json::Obj(vec![
+        UsingRecord::Alias {
+            alias,
+            target,
+            global,
+        } => Json::Obj(vec![
             ("alias", Json::Str(alias.clone())),
             ("target", Json::Str(target.clone())),
             ("global", Json::Bool(*global)),
         ]),
-        UsingRecord::Plain { text, global } => Json::Obj(vec![("text", Json::Str(text.clone())), ("global", Json::Bool(*global))]),
+        UsingRecord::Plain { text, global } => Json::Obj(vec![
+            ("text", Json::Str(text.clone())),
+            ("global", Json::Bool(*global)),
+        ]),
     }
 }
 
 fn ref_to_json(r: &RefRecord) -> Json {
-    let mut fields: Vec<(&'static str, Json)> = vec![("kind", Json::Str(r.kind.clone())), ("name", Json::Str(r.name.clone()))];
+    let mut fields: Vec<(&'static str, Json)> = vec![
+        ("kind", Json::Str(r.kind.clone())),
+        ("name", Json::Str(r.name.clone())),
+    ];
     if let Some(q) = &r.qualified {
         fields.push(("qualified", Json::Str(q.clone())));
     }
@@ -2414,17 +2989,26 @@ fn ref_to_json(r: &RefRecord) -> Json {
     // Appended LAST, after argCount, and only
     // when the receiver's DECLARED type was generic.
     if let Some(args) = &r.receiver_args {
-        fields.push(("receiverArgs", Json::Arr(args.iter().map(|a| Json::Str(a.clone())).collect())));
+        fields.push((
+            "receiverArgs",
+            Json::Arr(args.iter().map(|a| Json::Str(a.clone())).collect()),
+        ));
     }
     // Appended LAST of all, after receiverArgs, and only when the ref sits
     // inside a type.
     if !r.outer_types.is_empty() {
-        fields.push(("outerTypes", Json::Arr(r.outer_types.iter().map(|t| Json::Str(t.clone())).collect())));
+        fields.push((
+            "outerTypes",
+            Json::Arr(r.outer_types.iter().map(|t| Json::Str(t.clone())).collect()),
+        ));
     }
     // Appended LAST of all, after outerTypes, and only set for a 'ctor-param'
     // ref whose type was generic.
     if let Some(args) = &r.args {
-        fields.push(("args", Json::Arr(args.iter().map(|a| Json::Str(a.clone())).collect())));
+        fields.push((
+            "args",
+            Json::Arr(args.iter().map(|a| Json::Str(a.clone())).collect()),
+        ));
     }
     // Appended after args, and only for a two-segment chain whose
     // head the enclosing scope could type.
@@ -2455,6 +3039,7 @@ fn name_to_json(n: &NameRecord) -> Json {
     Json::Obj(fields)
 }
 
+/// Serializes a C# extraction as JSON.
 pub fn extraction_to_json(e: &Extraction) -> String {
     let purpose_json = match &e.purpose {
         Some(p) => Json::Str(p.clone()),
@@ -2463,9 +3048,15 @@ pub fn extraction_to_json(e: &Extraction) -> String {
     let root = Json::Obj(vec![
         ("purpose", purpose_json),
         ("defs", Json::Arr(e.defs.iter().map(def_to_json).collect())),
-        ("usings", Json::Arr(e.usings.iter().map(using_to_json).collect())),
+        (
+            "usings",
+            Json::Arr(e.usings.iter().map(using_to_json).collect()),
+        ),
         ("refs", Json::Arr(e.refs.iter().map(ref_to_json).collect())),
-        ("names", Json::Arr(e.names.iter().map(name_to_json).collect())),
+        (
+            "names",
+            Json::Arr(e.names.iter().map(name_to_json).collect()),
+        ),
     ]);
     root.to_pretty_string()
 }
@@ -2505,7 +3096,10 @@ fn ts_declared_name(node: Node, src: &[u8]) -> String {
 }
 
 fn ts_accessibility(node: Node, src: &[u8]) -> Option<String> {
-    named_children(node).into_iter().find(|c| c.kind() == "accessibility_modifier").map(|m| text(m, src))
+    named_children(node)
+        .into_iter()
+        .find(|c| c.kind() == "accessibility_modifier")
+        .map(|m| text(m, src))
 }
 
 // No accessibility_modifier, or an explicit public one -- an absent modifier
@@ -2520,16 +3114,25 @@ fn ts_member_is_public(node: Node, src: &[u8]) -> bool {
 }
 
 fn class_bases(node: Node, src: &[u8]) -> String {
-    let Some(heritage) = named_children(node).into_iter().find(|c| c.kind() == "class_heritage") else {
+    let Some(heritage) = named_children(node)
+        .into_iter()
+        .find(|c| c.kind() == "class_heritage")
+    else {
         return String::new();
     };
     let mut parts: Vec<String> = Vec::new();
-    if let Some(extends_clause) = named_children(heritage).into_iter().find(|c| c.kind() == "extends_clause") {
+    if let Some(extends_clause) = named_children(heritage)
+        .into_iter()
+        .find(|c| c.kind() == "extends_clause")
+    {
         if let Some(value) = extends_clause.child_by_field_name("value") {
             parts.push(text(value, src));
         }
     }
-    if let Some(implements_clause) = named_children(heritage).into_iter().find(|c| c.kind() == "implements_clause") {
+    if let Some(implements_clause) = named_children(heritage)
+        .into_iter()
+        .find(|c| c.kind() == "implements_clause")
+    {
         for t in named_children(implements_clause) {
             parts.push(text(t, src));
         }
@@ -2550,10 +3153,17 @@ fn class_method_names(node: Node, src: &[u8]) -> Vec<String> {
 }
 
 fn interface_bases(node: Node, src: &[u8]) -> String {
-    let Some(ext) = named_children(node).into_iter().find(|c| c.kind() == "extends_type_clause") else {
+    let Some(ext) = named_children(node)
+        .into_iter()
+        .find(|c| c.kind() == "extends_type_clause")
+    else {
         return String::new();
     };
-    named_children(ext).into_iter().map(|c| text(c, src)).collect::<Vec<_>>().join(", ")
+    named_children(ext)
+        .into_iter()
+        .map(|c| text(c, src))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn interface_method_names(node: Node, src: &[u8]) -> Vec<String> {
@@ -2584,15 +3194,24 @@ fn ts_pattern_names(node: Option<Node>, src: &[u8]) -> Vec<String> {
             for c in named_children(node) {
                 match c.kind() {
                     "shorthand_property_identifier_pattern" => names.push(text(c, src)),
-                    "pair_pattern" => names.extend(ts_pattern_names(c.child_by_field_name("value"), src)),
-                    "rest_pattern" => names.extend(ts_pattern_names(named_children(c).into_iter().next(), src)),
-                    "object_assignment_pattern" => names.extend(ts_pattern_names(c.child_by_field_name("left"), src)),
+                    "pair_pattern" => {
+                        names.extend(ts_pattern_names(c.child_by_field_name("value"), src))
+                    }
+                    "rest_pattern" => {
+                        names.extend(ts_pattern_names(named_children(c).into_iter().next(), src))
+                    }
+                    "object_assignment_pattern" => {
+                        names.extend(ts_pattern_names(c.child_by_field_name("left"), src))
+                    }
                     _ => {}
                 }
             }
             names
         }
-        "array_pattern" => named_children(node).into_iter().flat_map(|c| ts_pattern_names(Some(c), src)).collect(),
+        "array_pattern" => named_children(node)
+            .into_iter()
+            .flat_map(|c| ts_pattern_names(Some(c), src))
+            .collect(),
         "rest_pattern" => ts_pattern_names(named_children(node).into_iter().next(), src),
         _ => Vec::new(),
     }
@@ -2605,8 +3224,17 @@ fn ts_pattern_names(node: Option<Node>, src: &[u8]) -> Vec<String> {
 // anonymous function/class expression, member/call expression, object/array
 // literal) is the literal name "(anonymous)".
 fn ts_default_expression_entry(value_node: Node, src: &[u8]) -> TsEntry {
-    let name = if value_node.kind() == "identifier" { text(value_node, src) } else { "(anonymous)".to_string() };
-    TsEntry { kind: "default", name, bases: String::new(), methods: Vec::new() }
+    let name = if value_node.kind() == "identifier" {
+        text(value_node, src)
+    } else {
+        "(anonymous)".to_string()
+    };
+    TsEntry {
+        kind: "default",
+        name,
+        bases: String::new(),
+        methods: Vec::new(),
+    }
 }
 
 fn ts_entries_for_declaration(decl_node: Node, is_default: bool, src: &[u8]) -> Vec<TsEntry> {
@@ -2629,7 +3257,12 @@ fn ts_entries_for_declaration(decl_node: Node, is_default: bool, src: &[u8]) -> 
             if name.is_empty() {
                 Vec::new()
             } else {
-                vec![TsEntry { kind: if is_default { "default" } else { "function" }, name, bases: String::new(), methods: Vec::new() }]
+                vec![TsEntry {
+                    kind: if is_default { "default" } else { "function" },
+                    name,
+                    bases: String::new(),
+                    methods: Vec::new(),
+                }]
             }
         }
         "interface_declaration" => {
@@ -2637,7 +3270,12 @@ fn ts_entries_for_declaration(decl_node: Node, is_default: bool, src: &[u8]) -> 
             if name.is_empty() {
                 Vec::new()
             } else {
-                vec![TsEntry { kind: "interface", name, bases: interface_bases(decl_node, src), methods: interface_method_names(decl_node, src) }]
+                vec![TsEntry {
+                    kind: "interface",
+                    name,
+                    bases: interface_bases(decl_node, src),
+                    methods: interface_method_names(decl_node, src),
+                }]
             }
         }
         "type_alias_declaration" => {
@@ -2645,7 +3283,12 @@ fn ts_entries_for_declaration(decl_node: Node, is_default: bool, src: &[u8]) -> 
             if name.is_empty() {
                 Vec::new()
             } else {
-                vec![TsEntry { kind: "type", name, bases: String::new(), methods: Vec::new() }]
+                vec![TsEntry {
+                    kind: "type",
+                    name,
+                    bases: String::new(),
+                    methods: Vec::new(),
+                }]
             }
         }
         "enum_declaration" => {
@@ -2653,7 +3296,12 @@ fn ts_entries_for_declaration(decl_node: Node, is_default: bool, src: &[u8]) -> 
             if name.is_empty() {
                 Vec::new()
             } else {
-                vec![TsEntry { kind: "enum", name, bases: String::new(), methods: Vec::new() }]
+                vec![TsEntry {
+                    kind: "enum",
+                    name,
+                    bases: String::new(),
+                    methods: Vec::new(),
+                }]
             }
         }
         // `export default const x = 1;` is not legal syntax, so a
@@ -2666,7 +3314,12 @@ fn ts_entries_for_declaration(decl_node: Node, is_default: bool, src: &[u8]) -> 
                     continue;
                 }
                 for name in ts_pattern_names(decl.child_by_field_name("name"), src) {
-                    entries.push(TsEntry { kind: "const", name, bases: String::new(), methods: Vec::new() });
+                    entries.push(TsEntry {
+                        kind: "const",
+                        name,
+                        bases: String::new(),
+                        methods: Vec::new(),
+                    });
                 }
             }
             entries
@@ -2688,7 +3341,11 @@ fn ts_esm_entries(export_stmts: &[Node], src: &[u8]) -> Vec<TsEntry> {
     let mut entries = Vec::new();
     for stmt in export_stmts {
         if let Some(decl_node) = stmt.child_by_field_name("declaration") {
-            entries.extend(ts_entries_for_declaration(decl_node, is_default_export_statement(*stmt), src));
+            entries.extend(ts_entries_for_declaration(
+                decl_node,
+                is_default_export_statement(*stmt),
+                src,
+            ));
             continue;
         }
         if let Some(value_node) = stmt.child_by_field_name("value") {
@@ -2727,7 +3384,8 @@ fn common_js_export_target(left: Option<Node>, src: &[u8]) -> Option<CjsTarget> 
         let outer_obj = obj.child_by_field_name("object");
         let outer_prop = obj.child_by_field_name("property");
         if let (Some(oo), Some(op)) = (outer_obj, outer_prop) {
-            if oo.kind() == "identifier" && text(oo, src) == "module" && text(op, src) == "exports" {
+            if oo.kind() == "identifier" && text(oo, src) == "module" && text(op, src) == "exports"
+            {
                 return Some(CjsTarget::Prop(text(prop, src)));
             }
         }
@@ -2753,13 +3411,27 @@ fn ts_local_declaration_kinds(program_node: Node, src: &[u8]) -> HashMap<String,
             "function_declaration" => {
                 let name = ts_declared_name(c, src);
                 if !name.is_empty() {
-                    kinds.insert(name, LocalKind { kind: "function", bases: String::new(), methods: Vec::new() });
+                    kinds.insert(
+                        name,
+                        LocalKind {
+                            kind: "function",
+                            bases: String::new(),
+                            methods: Vec::new(),
+                        },
+                    );
                 }
             }
             "class_declaration" => {
                 let name = ts_declared_name(c, src);
                 if !name.is_empty() {
-                    kinds.insert(name, LocalKind { kind: "class", bases: class_bases(c, src), methods: class_method_names(c, src) });
+                    kinds.insert(
+                        name,
+                        LocalKind {
+                            kind: "class",
+                            bases: class_bases(c, src),
+                            methods: class_method_names(c, src),
+                        },
+                    );
                 }
             }
             "lexical_declaration" | "variable_declaration" => {
@@ -2769,7 +3441,14 @@ fn ts_local_declaration_kinds(program_node: Node, src: &[u8]) -> HashMap<String,
                     }
                     if let Some(name_node) = decl.child_by_field_name("name") {
                         if name_node.kind() == "identifier" {
-                            kinds.insert(text(name_node, src), LocalKind { kind: "const", bases: String::new(), methods: Vec::new() });
+                            kinds.insert(
+                                text(name_node, src),
+                                LocalKind {
+                                    kind: "const",
+                                    bases: String::new(),
+                                    methods: Vec::new(),
+                                },
+                            );
                         }
                     }
                 }
@@ -2782,16 +3461,32 @@ fn ts_local_declaration_kinds(program_node: Node, src: &[u8]) -> HashMap<String,
 
 fn property_export_entry(name: String, local_kinds: &HashMap<String, LocalKind>) -> TsEntry {
     match local_kinds.get(&name) {
-        Some(local) => TsEntry { kind: local.kind, name, bases: local.bases.clone(), methods: local.methods.clone() },
-        None => TsEntry { kind: "const", name, bases: String::new(), methods: Vec::new() },
+        Some(local) => TsEntry {
+            kind: local.kind,
+            name,
+            bases: local.bases.clone(),
+            methods: local.methods.clone(),
+        },
+        None => TsEntry {
+            kind: "const",
+            name,
+            bases: String::new(),
+            methods: Vec::new(),
+        },
     }
 }
 
-fn object_literal_export_entries(obj_node: Node, local_kinds: &HashMap<String, LocalKind>, src: &[u8]) -> Vec<TsEntry> {
+fn object_literal_export_entries(
+    obj_node: Node,
+    local_kinds: &HashMap<String, LocalKind>,
+    src: &[u8],
+) -> Vec<TsEntry> {
     let mut entries = Vec::new();
     for c in named_children(obj_node) {
         match c.kind() {
-            "shorthand_property_identifier" => entries.push(property_export_entry(text(c, src), local_kinds)),
+            "shorthand_property_identifier" => {
+                entries.push(property_export_entry(text(c, src), local_kinds))
+            }
             "pair" => {
                 let Some(key) = c.child_by_field_name("key") else {
                     continue;
@@ -2818,7 +3513,10 @@ fn ts_cjs_entries(program_node: Node, src: &[u8]) -> Vec<TsEntry> {
         if stmt.kind() != "expression_statement" {
             continue;
         }
-        let Some(assign) = named_children(stmt).into_iter().find(|n| n.kind() == "assignment_expression") else {
+        let Some(assign) = named_children(stmt)
+            .into_iter()
+            .find(|n| n.kind() == "assignment_expression")
+        else {
             continue;
         };
         let Some(target) = common_js_export_target(assign.child_by_field_name("left"), src) else {
@@ -2827,7 +3525,9 @@ fn ts_cjs_entries(program_node: Node, src: &[u8]) -> Vec<TsEntry> {
         let right = assign.child_by_field_name("right");
         match target {
             CjsTarget::Whole => match right {
-                Some(r) if r.kind() == "object" => entries.extend(object_literal_export_entries(r, &local_kinds, src)),
+                Some(r) if r.kind() == "object" => {
+                    entries.extend(object_literal_export_entries(r, &local_kinds, src))
+                }
                 Some(r) => entries.push(ts_default_expression_entry(r, src)),
                 // An assignment_expression with no `right` field is not
                 // producible by valid JS syntax -- never guess, skip.
@@ -2844,7 +3544,10 @@ fn ts_cjs_entries(program_node: Node, src: &[u8]) -> Vec<TsEntry> {
 // export_statements falls to the CommonJS path: a file with no `export`
 // keyword at all is treated as CommonJS.
 fn ts_export_entries(program_node: Node, src: &[u8]) -> Vec<TsEntry> {
-    let export_stmts: Vec<Node> = named_children(program_node).into_iter().filter(|c| c.kind() == "export_statement").collect();
+    let export_stmts: Vec<Node> = named_children(program_node)
+        .into_iter()
+        .filter(|c| c.kind() == "export_statement")
+        .collect();
     if export_stmts.is_empty() {
         ts_cjs_entries(program_node, src)
     } else {
@@ -2880,13 +3583,22 @@ fn ts_reexport_names(program_node: Node, src: &[u8]) -> Vec<String> {
         if stmt.child_by_field_name("source").is_none() {
             continue; // not a re-export (local `export { A };`, or a declaration/default export)
         }
-        if let Some(ns_export) = named_children(stmt).into_iter().find(|c| c.kind() == "namespace_export") {
-            if let Some(id) = named_children(ns_export).into_iter().find(|c| c.kind() == "identifier") {
+        if let Some(ns_export) = named_children(stmt)
+            .into_iter()
+            .find(|c| c.kind() == "namespace_export")
+        {
+            if let Some(id) = named_children(ns_export)
+                .into_iter()
+                .find(|c| c.kind() == "identifier")
+            {
                 push_reexport_name(text(id, src), &mut names, &mut seen);
             }
             continue;
         }
-        if let Some(clause) = named_children(stmt).into_iter().find(|c| c.kind() == "export_clause") {
+        if let Some(clause) = named_children(stmt)
+            .into_iter()
+            .find(|c| c.kind() == "export_clause")
+        {
             for spec in named_children(clause) {
                 if spec.kind() != "export_specifier" {
                     continue;
@@ -2914,7 +3626,15 @@ fn reexports_bucket_segment(program_node: Node, src: &[u8]) -> Option<String> {
     }
 }
 
-const TS_BUCKET_ORDER: &[&str] = &["class", "function", "const", "interface", "type", "enum", "default"];
+const TS_BUCKET_ORDER: &[&str] = &[
+    "class",
+    "function",
+    "const",
+    "interface",
+    "type",
+    "enum",
+    "default",
+];
 
 // Raw (pre-truncation) purpose segments, joined with " | " -- the SAME
 // join `compose_ts_purpose` truncates, exposed separately so the hybrid
@@ -2949,8 +3669,16 @@ fn ts_purpose_segments(program_node: Node, src: &[u8]) -> Option<String> {
             seen_methods.insert(m.clone());
             methods.push(m.clone());
         }
-        let header = if e.bases.is_empty() { format!("{} {}", e.kind, e.name) } else { format!("{} {} : {}", e.kind, e.name, e.bases) };
-        segments.push(if methods.is_empty() { header } else { format!("{header}; {}", methods.join(", ")) });
+        let header = if e.bases.is_empty() {
+            format!("{} {}", e.kind, e.name)
+        } else {
+            format!("{} {} : {}", e.kind, e.name, e.bases)
+        };
+        segments.push(if methods.is_empty() {
+            header
+        } else {
+            format!("{header}; {}", methods.join(", "))
+        });
     }
     // Reexports is the final bucket, after default -- appended
     // once, never bucket-sorted alongside the TsEntry-derived segments above
@@ -2995,12 +3723,21 @@ pub fn extract_ts_purpose(source: &str, grammar: crate::parse::TsGrammar) -> Opt
 /// branch; if so, the comment text is prefixed via `compose_hybrid_ts_purpose`
 /// before the final truncate, else the plain (unprefixed) purpose is returned
 /// exactly as `extract_ts_purpose` would produce it.
-pub fn extract_ts_purpose_with_heuristic(root: &Path, rel: &str, source: &str, grammar: crate::parse::TsGrammar) -> Option<String> {
+pub fn extract_ts_purpose_with_heuristic(
+    root: &Path,
+    rel: &str,
+    source: &str,
+    grammar: crate::parse::TsGrammar,
+) -> Option<String> {
     let units = crate::parse::utf16_units(source);
     let tree = crate::parse::parse_ts_js(&units, grammar)?;
     let raw = ts_purpose_segments(tree.root_node(), &crate::parse::utf16_bytes(&units))?;
     let detail = crate::walk::default_purpose_detailed(root, rel);
-    Some(if detail.is_comment { compose_hybrid_ts_purpose(&detail.text, &raw) } else { truncate(&raw) })
+    Some(if detail.is_comment {
+        compose_hybrid_ts_purpose(&detail.text, &raw)
+    } else {
+        truncate(&raw)
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -3026,10 +3763,14 @@ pub fn extract_ts_purpose_with_heuristic(root: &Path, rel: &str, source: &str, g
 /// `name`, `kind`, `line`, in that order.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TsFragmentDef {
+    /// The name value.
     pub name: String,
+    /// The kind value.
     pub kind: String,
+    /// The line value.
     pub line: usize,
     #[serde(rename = "endLine")]
+    /// The end line value.
     pub end_line: usize,
 }
 
@@ -3038,14 +3779,20 @@ pub struct TsFragmentDef {
 /// for a namespace clause (or a whole-module `require`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TsBinding {
+    /// The local value.
     pub local: String,
+    /// The imported value.
     pub imported: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Represents `TsImport`.
 pub struct TsImport {
+    /// The spec value.
     pub spec: String,
+    /// The line value.
     pub line: usize,
+    /// The bindings value.
     pub bindings: Vec<TsBinding>,
 }
 
@@ -3054,15 +3801,22 @@ pub struct TsImport {
 /// declares.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TsReexportName {
+    /// The exported value.
     pub exported: String,
+    /// The imported value.
     pub imported: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Represents `TsReexport`.
 pub struct TsReexport {
+    /// The spec value.
     pub spec: String,
+    /// The line value.
     pub line: usize,
+    /// The star value.
     pub star: bool,
+    /// The names value.
     pub names: Vec<TsReexportName>,
 }
 
@@ -3070,13 +3824,16 @@ pub struct TsReexport {
 /// `line`) is significant.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TsRef {
+    /// The kind value.
     pub kind: String,
+    /// The name value.
     pub name: String,
     /// Present only on a qualified reference (`ns.member(...)`,
     /// `<Ns.Thing />`), and serialized between `name` and `line` exactly
     /// where the JS object literal writes it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub member: Option<String>,
+    /// The line value.
     pub line: usize,
 }
 
@@ -3093,9 +3850,13 @@ pub struct TsFragment {
     /// fragment carries no `ts` key at all, which is what makes the untagged
     /// discrimination total.
     pub ts: u8,
+    /// The defs value.
     pub defs: Vec<TsFragmentDef>,
+    /// The imports value.
     pub imports: Vec<TsImport>,
+    /// The reexports value.
     pub reexports: Vec<TsReexport>,
+    /// The refs value.
     pub refs: Vec<TsRef>,
     /// Appended LAST and only when the file has one -- the house rule for
     /// every added fact.
@@ -3105,7 +3866,14 @@ pub struct TsFragment {
 
 impl Default for TsFragment {
     fn default() -> Self {
-        TsFragment { ts: 1, defs: Vec::new(), imports: Vec::new(), reexports: Vec::new(), refs: Vec::new(), default: None }
+        TsFragment {
+            ts: 1,
+            defs: Vec::new(),
+            imports: Vec::new(),
+            reexports: Vec::new(),
+            refs: Vec::new(),
+            default: None,
+        }
     }
 }
 
@@ -3119,8 +3887,12 @@ const TS_DISPATCH_CALLEES: &[&str] = &["dispatch", "ofType"];
 
 // The four node kinds a reference can be spelled as. The traversal below is
 // cursor-driven and materialises a `Node` ONLY for these.
-const TS_REFERENCE_NODES: &[&str] =
-    &["call_expression", "new_expression", "jsx_opening_element", "jsx_self_closing_element"];
+const TS_REFERENCE_NODES: &[&str] = &[
+    "call_expression",
+    "new_expression",
+    "jsx_opening_element",
+    "jsx_self_closing_element",
+];
 
 // `None` for anything that is not a `string` node, and the empty string for
 // a string with no `string_fragment` child.
@@ -3129,10 +3901,15 @@ fn ts_string_literal(node: Option<Node>, src: &[u8]) -> Option<String> {
     if node.kind() != "string" {
         return None;
     }
-    Some(match named_children(node).into_iter().find(|c| c.kind() == "string_fragment") {
-        Some(frag) => text(frag, src),
-        None => String::new(),
-    })
+    Some(
+        match named_children(node)
+            .into_iter()
+            .find(|c| c.kind() == "string_fragment")
+        {
+            Some(frag) => text(frag, src),
+            None => String::new(),
+        },
+    )
 }
 
 fn ts_line(node: Node) -> usize {
@@ -3148,16 +3925,28 @@ fn is_component_tag_name(name: &str) -> bool {
 }
 
 fn ts_import_bindings(stmt: Node, src: &[u8]) -> Vec<TsBinding> {
-    let Some(clause) = named_children(stmt).into_iter().find(|c| c.kind() == "import_clause") else {
+    let Some(clause) = named_children(stmt)
+        .into_iter()
+        .find(|c| c.kind() == "import_clause")
+    else {
         return Vec::new();
     };
     let mut out = Vec::new();
     for c in named_children(clause) {
         match c.kind() {
-            "identifier" => out.push(TsBinding { local: text(c, src), imported: "default".to_string() }),
+            "identifier" => out.push(TsBinding {
+                local: text(c, src),
+                imported: "default".to_string(),
+            }),
             "namespace_import" => {
-                if let Some(id) = named_children(c).into_iter().find(|n| n.kind() == "identifier") {
-                    out.push(TsBinding { local: text(id, src), imported: "*".to_string() });
+                if let Some(id) = named_children(c)
+                    .into_iter()
+                    .find(|n| n.kind() == "identifier")
+                {
+                    out.push(TsBinding {
+                        local: text(id, src),
+                        imported: "*".to_string(),
+                    });
                 }
             }
             "named_imports" => {
@@ -3165,9 +3954,14 @@ fn ts_import_bindings(stmt: Node, src: &[u8]) -> Vec<TsBinding> {
                     if spec.kind() != "import_specifier" {
                         continue;
                     }
-                    let Some(name) = spec.child_by_field_name("name") else { continue };
+                    let Some(name) = spec.child_by_field_name("name") else {
+                        continue;
+                    };
                     let alias = spec.child_by_field_name("alias");
-                    out.push(TsBinding { local: text(alias.unwrap_or(name), src), imported: text(name, src) });
+                    out.push(TsBinding {
+                        local: text(alias.unwrap_or(name), src),
+                        imported: text(name, src),
+                    });
                 }
             }
             _ => {}
@@ -3184,22 +3978,48 @@ fn ts_import_bindings(stmt: Node, src: &[u8]) -> Vec<TsBinding> {
 fn ts_reexport_entry(stmt: Node, src: &[u8]) -> Option<TsReexport> {
     let spec = ts_string_literal(stmt.child_by_field_name("source"), src)?;
     let line = ts_line(stmt);
-    if named_children(stmt).iter().any(|c| c.kind() == "namespace_export") {
-        return Some(TsReexport { spec, line, star: false, names: Vec::new() });
+    if named_children(stmt)
+        .iter()
+        .any(|c| c.kind() == "namespace_export")
+    {
+        return Some(TsReexport {
+            spec,
+            line,
+            star: false,
+            names: Vec::new(),
+        });
     }
-    let Some(clause) = named_children(stmt).into_iter().find(|c| c.kind() == "export_clause") else {
-        return Some(TsReexport { spec, line, star: true, names: Vec::new() });
+    let Some(clause) = named_children(stmt)
+        .into_iter()
+        .find(|c| c.kind() == "export_clause")
+    else {
+        return Some(TsReexport {
+            spec,
+            line,
+            star: true,
+            names: Vec::new(),
+        });
     };
     let mut names = Vec::new();
     for s in named_children(clause) {
         if s.kind() != "export_specifier" {
             continue;
         }
-        let Some(name) = s.child_by_field_name("name") else { continue };
+        let Some(name) = s.child_by_field_name("name") else {
+            continue;
+        };
         let alias = s.child_by_field_name("alias");
-        names.push(TsReexportName { exported: text(alias.unwrap_or(name), src), imported: text(name, src) });
+        names.push(TsReexportName {
+            exported: text(alias.unwrap_or(name), src),
+            imported: text(name, src),
+        });
     }
-    Some(TsReexport { spec, line, star: false, names })
+    Some(TsReexport {
+        spec,
+        line,
+        star: false,
+        names,
+    })
 }
 
 // The kind vocabulary is `TS_BUCKET_ORDER` so a TS def row reads
@@ -3230,14 +4050,26 @@ struct TsDecl {
 // without the keyword, and a CommonJS file exports by name only.
 fn ts_top_level_decls(program_node: Node, src: &[u8]) -> HashMap<String, TsDecl> {
     let mut decls: HashMap<String, TsDecl> = HashMap::new();
-    fn add(decls: &mut HashMap<String, TsDecl>, name: String, kind: &'static str, line: usize, end_line: usize) {
+    fn add(
+        decls: &mut HashMap<String, TsDecl>,
+        name: String,
+        kind: &'static str,
+        line: usize,
+        end_line: usize,
+    ) {
         if name.is_empty() {
             return;
         }
-        decls.entry(name).or_insert(TsDecl { kind, line, end_line });
+        decls.entry(name).or_insert(TsDecl {
+            kind,
+            line,
+            end_line,
+        });
     }
     fn from_declaration(node: Node, src: &[u8], decls: &mut HashMap<String, TsDecl>) {
-        let Some(kind) = ts_decl_kind(node) else { return };
+        let Some(kind) = ts_decl_kind(node) else {
+            return;
+        };
         if kind == "const" {
             for d in named_children(node) {
                 if d.kind() != "variable_declarator" {
@@ -3251,7 +4083,13 @@ fn ts_top_level_decls(program_node: Node, src: &[u8]) -> HashMap<String, TsDecl>
             }
             return;
         }
-        add(decls, ts_declared_name(node, src), kind, ts_line(node), node.end_position().row + 1);
+        add(
+            decls,
+            ts_declared_name(node, src),
+            kind,
+            ts_line(node),
+            node.end_position().row + 1,
+        );
     }
     for c in named_children(program_node) {
         if c.kind() == "export_statement" {
@@ -3290,7 +4128,11 @@ fn ts_default_export_name(program_node: Node, src: &[u8]) -> Option<String> {
 // declaration it names. A name with no matching declaration in this file
 // contributes nothing: there is no line to point a caller at, and inventing
 // one is a guess.
-fn ts_exported_names(program_node: Node, decls: &HashMap<String, TsDecl>, src: &[u8]) -> Vec<String> {
+fn ts_exported_names(
+    program_node: Node,
+    decls: &HashMap<String, TsDecl>,
+    src: &[u8],
+) -> Vec<String> {
     let mut names: Vec<String> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
     macro_rules! add {
@@ -3301,8 +4143,10 @@ fn ts_exported_names(program_node: Node, decls: &HashMap<String, TsDecl>, src: &
             }
         }};
     }
-    let export_stmts: Vec<Node> =
-        named_children(program_node).into_iter().filter(|c| c.kind() == "export_statement").collect();
+    let export_stmts: Vec<Node> = named_children(program_node)
+        .into_iter()
+        .filter(|c| c.kind() == "export_statement")
+        .collect();
     if !export_stmts.is_empty() {
         for stmt in export_stmts {
             if stmt.child_by_field_name("source").is_some() {
@@ -3323,7 +4167,10 @@ fn ts_exported_names(program_node: Node, decls: &HashMap<String, TsDecl>, src: &
                 }
                 continue;
             }
-            if let Some(clause) = named_children(stmt).into_iter().find(|c| c.kind() == "export_clause") {
+            if let Some(clause) = named_children(stmt)
+                .into_iter()
+                .find(|c| c.kind() == "export_clause")
+            {
                 for s in named_children(clause) {
                     if s.kind() != "export_specifier" {
                         continue;
@@ -3345,10 +4192,15 @@ fn ts_exported_names(program_node: Node, decls: &HashMap<String, TsDecl>, src: &
         if stmt.kind() != "expression_statement" {
             continue;
         }
-        let Some(assign) = named_children(stmt).into_iter().find(|n| n.kind() == "assignment_expression") else {
+        let Some(assign) = named_children(stmt)
+            .into_iter()
+            .find(|n| n.kind() == "assignment_expression")
+        else {
             continue;
         };
-        let Some(target) = common_js_export_target(assign.child_by_field_name("left"), src) else { continue };
+        let Some(target) = common_js_export_target(assign.child_by_field_name("left"), src) else {
+            continue;
+        };
         let right = assign.child_by_field_name("right");
         match target {
             CjsTarget::Prop(prop) => {
@@ -3388,54 +4240,88 @@ fn ts_require_import(decl_node: Node, src: &[u8]) -> Vec<TsImport> {
         if d.kind() != "variable_declarator" {
             continue;
         }
-        let Some(value) = d.child_by_field_name("value") else { continue };
+        let Some(value) = d.child_by_field_name("value") else {
+            continue;
+        };
         if value.kind() != "call_expression" {
             continue;
         }
-        let Some(fnode) = value.child_by_field_name("function") else { continue };
+        let Some(fnode) = value.child_by_field_name("function") else {
+            continue;
+        };
         if fnode.kind() != "identifier" || text(fnode, src) != "require" {
             continue;
         }
         let args = value.child_by_field_name("arguments");
         let first = args.and_then(|a| named_children(a).into_iter().next());
-        let Some(spec) = ts_string_literal(first, src) else { continue };
+        let Some(spec) = ts_string_literal(first, src) else {
+            continue;
+        };
         let name_node = d.child_by_field_name("name");
         let bindings = match name_node {
             Some(n) if n.kind() == "identifier" => {
-                vec![TsBinding { local: text(n, src), imported: "*".to_string() }]
+                vec![TsBinding {
+                    local: text(n, src),
+                    imported: "*".to_string(),
+                }]
             }
             _ => ts_pattern_names(name_node, src)
                 .into_iter()
-                .map(|n| TsBinding { local: n.clone(), imported: n })
+                .map(|n| TsBinding {
+                    local: n.clone(),
+                    imported: n,
+                })
                 .collect(),
         };
-        out.push(TsImport { spec, line: ts_line(d), bindings });
+        out.push(TsImport {
+            spec,
+            line: ts_line(d),
+            bindings,
+        });
     }
     out
 }
 
-fn ts_record_ref(node: Node, src: &[u8], refs: &mut Vec<TsRef>, consumed: &mut HashSet<usize>, known: &HashSet<String>) {
+fn ts_record_ref(
+    node: Node,
+    src: &[u8],
+    refs: &mut Vec<TsRef>,
+    consumed: &mut HashSet<usize>,
+    known: &HashSet<String>,
+) {
     match node.kind() {
         "call_expression" => {
             let fnode = node.child_by_field_name("function");
             let callee = match fnode {
                 Some(f) if f.kind() == "identifier" => Some(text(f, src)),
-                Some(f) if f.kind() == "member_expression" => f.child_by_field_name("property").map(|p| text(p, src)),
+                Some(f) if f.kind() == "member_expression" => {
+                    f.child_by_field_name("property").map(|p| text(p, src))
+                }
                 _ => None,
             };
-            let dispatching = callee.as_deref().is_some_and(|c| TS_DISPATCH_CALLEES.contains(&c));
+            let dispatching = callee
+                .as_deref()
+                .is_some_and(|c| TS_DISPATCH_CALLEES.contains(&c));
             if dispatching {
                 // `dispatch(loadThings())` names loadThings, not the inner
                 // call's own callee: the argument IS the action creator or
                 // thunk, and marking it consumed is what stops the walk from
                 // ALSO recording it as a plain call. `dispatch(clearCart)` (an
                 // already-built action object) names it directly.
-                let args = node.child_by_field_name("arguments").map(named_children).unwrap_or_default();
+                let args = node
+                    .child_by_field_name("arguments")
+                    .map(named_children)
+                    .unwrap_or_default();
                 for arg in args {
                     if arg.kind() == "identifier" {
                         let name = text(arg, src);
                         if known.contains(&name) {
-                            refs.push(TsRef { kind: "dispatch".to_string(), name, member: None, line: ts_line(arg) });
+                            refs.push(TsRef {
+                                kind: "dispatch".to_string(),
+                                name,
+                                member: None,
+                                line: ts_line(arg),
+                            });
                         }
                         consumed.insert(arg.id());
                     } else if arg.kind() == "call_expression" {
@@ -3443,7 +4329,12 @@ fn ts_record_ref(node: Node, src: &[u8], refs: &mut Vec<TsRef>, consumed: &mut H
                             if inner.kind() == "identifier" {
                                 let name = text(inner, src);
                                 if known.contains(&name) {
-                                    refs.push(TsRef { kind: "dispatch".to_string(), name, member: None, line: ts_line(inner) });
+                                    refs.push(TsRef {
+                                        kind: "dispatch".to_string(),
+                                        name,
+                                        member: None,
+                                        line: ts_line(inner),
+                                    });
                                 }
                                 consumed.insert(arg.id());
                             }
@@ -3455,7 +4346,12 @@ fn ts_record_ref(node: Node, src: &[u8], refs: &mut Vec<TsRef>, consumed: &mut H
                     Some(f) if f.kind() == "identifier" => {
                         let name = text(f, src);
                         if known.contains(&name) {
-                            refs.push(TsRef { kind: "call".to_string(), name, member: None, line: ts_line(f) });
+                            refs.push(TsRef {
+                                kind: "call".to_string(),
+                                name,
+                                member: None,
+                                line: ts_line(f),
+                            });
                         }
                     }
                     Some(f) if f.kind() == "member_expression" => {
@@ -3485,7 +4381,12 @@ fn ts_record_ref(node: Node, src: &[u8], refs: &mut Vec<TsRef>, consumed: &mut H
             if let Some(ctor) = node.child_by_field_name("constructor") {
                 let name = text(ctor, src);
                 if ctor.kind() == "identifier" && known.contains(&name) {
-                    refs.push(TsRef { kind: "call".to_string(), name, member: None, line: ts_line(ctor) });
+                    refs.push(TsRef {
+                        kind: "call".to_string(),
+                        name,
+                        member: None,
+                        line: ts_line(ctor),
+                    });
                 }
             }
         }
@@ -3495,7 +4396,12 @@ fn ts_record_ref(node: Node, src: &[u8], refs: &mut Vec<TsRef>, consumed: &mut H
                 Some(n) if n.kind() == "identifier" => {
                     let name = text(n, src);
                     if is_component_tag_name(&name) && known.contains(&name) {
-                        refs.push(TsRef { kind: "jsx-use".to_string(), name, member: None, line: ts_line(n) });
+                        refs.push(TsRef {
+                            kind: "jsx-use".to_string(),
+                            name,
+                            member: None,
+                            line: ts_line(n),
+                        });
                     }
                 }
                 Some(n) if n.kind() == "member_expression" || n.kind() == "nested_identifier" => {
@@ -3503,7 +4409,10 @@ fn ts_record_ref(node: Node, src: &[u8], refs: &mut Vec<TsRef>, consumed: &mut H
                     let prop = n.child_by_field_name("property");
                     if let (Some(obj), Some(prop)) = (obj, prop) {
                         let name = text(obj, src);
-                        if obj.kind() == "identifier" && is_component_tag_name(&name) && known.contains(&name) {
+                        if obj.kind() == "identifier"
+                            && is_component_tag_name(&name)
+                            && known.contains(&name)
+                        {
                             refs.push(TsRef {
                                 kind: "jsx-use".to_string(),
                                 name,
@@ -3558,9 +4467,16 @@ pub fn extract_ts_fragment(program_node: Node, src: &[u8]) -> TsFragment {
     let mut reexports: Vec<TsReexport> = Vec::new();
     for stmt in named_children(program_node) {
         if stmt.kind() == "import_statement" {
-            let Some(spec) = ts_string_literal(stmt.child_by_field_name("source"), src) else { continue };
-            imports.push(TsImport { spec, line: ts_line(stmt), bindings: ts_import_bindings(stmt, src) });
-        } else if stmt.kind() == "export_statement" && stmt.child_by_field_name("source").is_some() {
+            let Some(spec) = ts_string_literal(stmt.child_by_field_name("source"), src) else {
+                continue;
+            };
+            imports.push(TsImport {
+                spec,
+                line: ts_line(stmt),
+                bindings: ts_import_bindings(stmt, src),
+            });
+        } else if stmt.kind() == "export_statement" && stmt.child_by_field_name("source").is_some()
+        {
             if let Some(entry) = ts_reexport_entry(stmt, src) {
                 reexports.push(entry);
             }
@@ -3572,7 +4488,12 @@ pub fn extract_ts_fragment(program_node: Node, src: &[u8]) -> TsFragment {
         .into_iter()
         .map(|name| {
             let d = &decls[&name];
-            TsFragmentDef { name, kind: d.kind.to_string(), line: d.line, end_line: d.end_line }
+            TsFragmentDef {
+                name,
+                kind: d.kind.to_string(),
+                line: d.line,
+                end_line: d.end_line,
+            }
         })
         .collect();
     // The only local names a cross-file resolver could ever land on: something
@@ -3591,18 +4512,35 @@ pub fn extract_ts_fragment(program_node: Node, src: &[u8]) -> TsFragment {
     // Appended LAST and only when the file has one, the house rule for every
     // added fact -- a file with no default export keeps the shorter shape.
     let default = ts_default_export_name(program_node, src).filter(|d| decls.contains_key(d));
-    TsFragment { ts: 1, defs, imports, reexports, refs, default }
+    TsFragment {
+        ts: 1,
+        defs,
+        imports,
+        reexports,
+        refs,
+        default,
+    }
 }
 
 /// One TS/JS file's whole contribution, off ONE parse: its purpose (when the
 /// file exports anything) and its reference fragment (always), from the same
 /// tree. A parse failure yields `None`, leaving the file out of BOTH outputs.
 pub struct TsFileExtraction {
+    /// The purpose value.
     pub purpose: Option<String>,
+    /// The fragment value.
     pub fragment: TsFragment,
 }
 
-pub fn extract_ts_file(root: &Path, rel: &str, source: &str, grammar: crate::parse::TsGrammar) -> Option<TsFileExtraction> {
+/// Parses TypeScript-family source into its optional purpose and graph fragment.
+///
+/// Returns `None` when the selected grammar cannot parse the source.
+pub fn extract_ts_file(
+    root: &Path,
+    rel: &str,
+    source: &str,
+    grammar: crate::parse::TsGrammar,
+) -> Option<TsFileExtraction> {
     let units = crate::parse::utf16_units(source);
     let tree = crate::parse::parse_ts_js(&units, grammar)?;
     let src = crate::parse::utf16_bytes(&units);
@@ -3615,7 +4553,10 @@ pub fn extract_ts_file(root: &Path, rel: &str, source: &str, grammar: crate::par
             truncate(&raw)
         }
     });
-    Some(TsFileExtraction { purpose, fragment: extract_ts_fragment(root_node, &src) })
+    Some(TsFileExtraction {
+        purpose,
+        fragment: extract_ts_fragment(root_node, &src),
+    })
 }
 
 /// Render a TS/JS file's dump-extract JSON. The reader expects
@@ -3652,7 +4593,10 @@ pub fn ts_extraction_to_json(purpose: &Option<String>, fragment: &TsFragment) ->
                     .refs
                     .iter()
                     .map(|r| {
-                        let mut fields = vec![("kind", Json::Str(r.kind.clone())), ("name", Json::Str(r.name.clone()))];
+                        let mut fields = vec![
+                            ("kind", Json::Str(r.kind.clone())),
+                            ("name", Json::Str(r.name.clone())),
+                        ];
                         if let Some(m) = &r.member {
                             fields.push(("member", Json::Str(m.clone())));
                         }
@@ -3747,15 +4691,39 @@ mod tests {
     #[test]
     fn enum_member_end_line_is_its_own_single_line() {
         let e = extract_src("public enum State\n{\n    Off,\n    On,\n}\n");
-        assert_eq!((find_def(&e, "State.Off").unwrap().line, find_def(&e, "State.Off").unwrap().end_line), (3, 3));
-        assert_eq!((find_def(&e, "State.On").unwrap().line, find_def(&e, "State.On").unwrap().end_line), (4, 4));
+        assert_eq!(
+            (
+                find_def(&e, "State.Off").unwrap().line,
+                find_def(&e, "State.Off").unwrap().end_line
+            ),
+            (3, 3)
+        );
+        assert_eq!(
+            (
+                find_def(&e, "State.On").unwrap().line,
+                find_def(&e, "State.On").unwrap().end_line
+            ),
+            (4, 4)
+        );
     }
 
     #[test]
     fn nested_type_span_stays_within_its_own_node() {
         let e = extract_src("public class Outer\n{\n    public class Inner { }\n}\n");
-        assert_eq!((find_def(&e, "Outer").unwrap().line, find_def(&e, "Outer").unwrap().end_line), (1, 4));
-        assert_eq!((find_def(&e, "Outer+Inner").unwrap().line, find_def(&e, "Outer+Inner").unwrap().end_line), (3, 3));
+        assert_eq!(
+            (
+                find_def(&e, "Outer").unwrap().line,
+                find_def(&e, "Outer").unwrap().end_line
+            ),
+            (1, 4)
+        );
+        assert_eq!(
+            (
+                find_def(&e, "Outer+Inner").unwrap().line,
+                find_def(&e, "Outer+Inner").unwrap().end_line
+            ),
+            (3, 3)
+        );
     }
 
     #[test]
@@ -3802,7 +4770,11 @@ mod tests {
         let e = extract_src("using Widgets = Fixtures.Widgets.Catalog;\n");
         assert_eq!(e.usings.len(), 1);
         match &e.usings[0] {
-            UsingRecord::Alias { alias, target, global } => {
+            UsingRecord::Alias {
+                alias,
+                target,
+                global,
+            } => {
                 assert_eq!(alias, "Widgets");
                 assert_eq!(target, "Fixtures.Widgets.Catalog");
                 assert!(!global);
@@ -3852,7 +4824,11 @@ mod tests {
     #[test]
     fn using_directive_also_pushes_an_imports_ref_with_null_namespace() {
         let e = extract_src("using System.Collections.Generic;\n");
-        let import_ref = e.refs.iter().find(|r| r.kind == "imports").expect("imports ref present");
+        let import_ref = e
+            .refs
+            .iter()
+            .find(|r| r.kind == "imports")
+            .expect("imports ref present");
         assert_eq!(import_ref.name, "System.Collections.Generic");
         assert!(import_ref.namespace.is_none());
     }
@@ -3894,8 +4870,19 @@ mod tests {
             .filter(|r| r.kind == "uses-member")
             .map(|r| (r.name.as_str(), r.member.as_deref().unwrap_or("")))
             .collect();
-        assert_eq!(members, vec![("Priority", "High"), ("Orders", "Priority"), ("Fixtures", "Orders")]);
-        let outer = e.refs.iter().find(|r| r.member.as_deref() == Some("High")).expect("outer window present");
+        assert_eq!(
+            members,
+            vec![
+                ("Priority", "High"),
+                ("Orders", "Priority"),
+                ("Fixtures", "Orders")
+            ]
+        );
+        let outer = e
+            .refs
+            .iter()
+            .find(|r| r.member.as_deref() == Some("High"))
+            .expect("outer window present");
         assert_eq!(outer.qualified.as_deref(), Some("Fixtures.Orders.Priority"));
     }
 
@@ -3927,8 +4914,16 @@ mod tests {
         let e = extract_src(
             "namespace Fixtures.Orders { public class Probe { public void F() { TryGet(out SomeEnum x); } } }",
         );
-        let uses_type: Vec<&str> = e.refs.iter().filter(|r| r.kind == "uses-type").map(|r| r.name.as_str()).collect();
-        assert!(uses_type.contains(&"SomeEnum"), "expected a uses-type ref for the out-declared type, got {uses_type:?}");
+        let uses_type: Vec<&str> = e
+            .refs
+            .iter()
+            .filter(|r| r.kind == "uses-type")
+            .map(|r| r.name.as_str())
+            .collect();
+        assert!(
+            uses_type.contains(&"SomeEnum"),
+            "expected a uses-type ref for the out-declared type, got {uses_type:?}"
+        );
     }
 
     #[test]
@@ -3946,7 +4941,10 @@ mod tests {
         let e = extract_src(
             "namespace Fixtures.Orders { public interface IReader { int Count { get; } } public class Order : IReader { public int Count { get; set; } public void SaveAsync() {} private void Hidden() {} } }",
         );
-        assert_eq!(e.purpose.as_deref(), Some("interface IReader | class Order : IReader; Save"));
+        assert_eq!(
+            e.purpose.as_deref(),
+            Some("interface IReader | class Order : IReader; Save")
+        );
     }
 
     #[test]
@@ -3957,7 +4955,10 @@ mod tests {
 
     #[test]
     fn purpose_signature_truncates_at_200_utf16_units() {
-        let long_bases = (0..40).map(|i| format!("IFace{i}")).collect::<Vec<_>>().join(", ");
+        let long_bases = (0..40)
+            .map(|i| format!("IFace{i}"))
+            .collect::<Vec<_>>()
+            .join(", ");
         let src = format!("public class Wide : {long_bases} {{}}");
         let e = extract_src(&src);
         let p = e.purpose.expect("purpose present");
@@ -3972,7 +4973,12 @@ mod tests {
         let e = extract_src(
             "namespace Fixtures.Misc { public class GadgetBase { public GadgetBase(string name) {} } public record GadgetRecord(string Name) : GadgetBase(Name); }",
         );
-        let inherits: Vec<&str> = e.refs.iter().filter(|r| r.kind == "inherits").map(|r| r.name.as_str()).collect();
+        let inherits: Vec<&str> = e
+            .refs
+            .iter()
+            .filter(|r| r.kind == "inherits")
+            .map(|r| r.name.as_str())
+            .collect();
         assert!(inherits.contains(&"GadgetBase"));
     }
 
@@ -3983,7 +4989,12 @@ mod tests {
         let e = extract_src(
             "namespace Fixtures.Misc { public class GadgetBase {} public class Gadget { public (Gadget Primary, GadgetBase Fallback) Describe() { return (this, null); } } }",
         );
-        let uses_type_names: Vec<&str> = e.refs.iter().filter(|r| r.kind == "uses-type").map(|r| r.name.as_str()).collect();
+        let uses_type_names: Vec<&str> = e
+            .refs
+            .iter()
+            .filter(|r| r.kind == "uses-type")
+            .map(|r| r.name.as_str())
+            .collect();
         assert!(uses_type_names.contains(&"Gadget"));
         assert!(uses_type_names.contains(&"GadgetBase"));
     }
@@ -4010,11 +5021,14 @@ mod tests {
     // broken error-recovery path instead, so trimming these fixtures down is
     // NOT safe without re-verifying against the expected output.
 
-    const IF_DIRECTIVE_CHAIN: &str = include_str!("../fixtures/preproc/preproc_chain_interrupt_if.cs");
-    const IFELSE_DIRECTIVE_CHAIN: &str = include_str!("../fixtures/preproc/preproc_chain_interrupt_ifelse.cs");
+    const IF_DIRECTIVE_CHAIN: &str =
+        include_str!("../fixtures/preproc/preproc_chain_interrupt_if.cs");
+    const IFELSE_DIRECTIVE_CHAIN: &str =
+        include_str!("../fixtures/preproc/preproc_chain_interrupt_ifelse.cs");
     const NESTED_IF_DIRECTIVE_CHAIN_CONTROL: &str =
         include_str!("../fixtures/preproc/preproc_chain_interrupt_nested_control.cs");
-    const WHOLESTMT_DIRECTIVE_CONTROL: &str = include_str!("../fixtures/preproc/preproc_chain_wholestmt_control.cs");
+    const WHOLESTMT_DIRECTIVE_CONTROL: &str =
+        include_str!("../fixtures/preproc/preproc_chain_wholestmt_control.cs");
 
     fn uses_member_refs(e: &Extraction) -> Vec<(&str, &str, usize)> {
         e.refs
@@ -4039,9 +5053,14 @@ mod tests {
     fn preproc_if_interrupting_chain_places_promoted_ref_after_the_original_chains_own_arguments() {
         let e = extract_src(IF_DIRECTIVE_CHAIN);
         let refs = uses_member_refs(&e);
-        let debug_pos = refs.iter().position(|r| *r == ("WriteTo", "Debug", 31)).expect("promoted ref present");
-        let interval_day_pos =
-            refs.iter().position(|r| *r == ("Interval", "Day", 26)).expect("Interval/Day ref present");
+        let debug_pos = refs
+            .iter()
+            .position(|r| *r == ("WriteTo", "Debug", 31))
+            .expect("promoted ref present");
+        let interval_day_pos = refs
+            .iter()
+            .position(|r| *r == ("Interval", "Day", 26))
+            .expect("Interval/Day ref present");
         let minimum_level_pos = refs
             .iter()
             .position(|r| *r == ("Level", "Information", 33))
@@ -4053,7 +5072,10 @@ mod tests {
         // Native tree-sitter has no such split -- without the deferred
         // (post-recursion) push in the walk's member_access_expression arm,
         // the promoted ref lands far too early in this array instead.
-        assert!(interval_day_pos < debug_pos, "Interval/Day ({interval_day_pos}) should precede WriteTo/Debug ({debug_pos})");
+        assert!(
+            interval_day_pos < debug_pos,
+            "Interval/Day ({interval_day_pos}) should precede WriteTo/Debug ({debug_pos})"
+        );
         assert!(debug_pos < minimum_level_pos, "WriteTo/Debug ({debug_pos}) should precede the first MinimumLevel.Override argument ref ({minimum_level_pos})");
     }
 
@@ -4083,7 +5105,9 @@ mod tests {
         let e = extract_src(NESTED_IF_DIRECTIVE_CHAIN_CONTROL);
         let refs = uses_member_refs(&e);
         assert!(refs.contains(&("WriteTo", "Trace", 25)));
-        assert!(!refs.iter().any(|(name, member, _)| *name == "WriteTo" && *member == "Debug"));
+        assert!(!refs
+            .iter()
+            .any(|(name, member, _)| *name == "WriteTo" && *member == "Debug"));
     }
 
     #[test]
@@ -4095,7 +5119,10 @@ mod tests {
         // untouched by the directive between them.
         let e = extract_src(WHOLESTMT_DIRECTIVE_CONTROL);
         let refs = uses_member_refs(&e);
-        assert_eq!(refs, vec![("registry", "Attach", 15), ("registry", "Attach", 17)]);
+        assert_eq!(
+            refs,
+            vec![("registry", "Attach", 15), ("registry", "Attach", 17)]
+        );
     }
 
     // --- TS/JS purposes (acceptance cases) -------
@@ -4118,20 +5145,28 @@ mod tests {
     const STRING_UTILS_TS: &str = include_str!("../fixtures/ts-grammar/stringUtils.ts");
     const ARTICLE_TYPES_TS: &str = include_str!("../fixtures/ts-grammar/articleTypes.ts");
     const FORMAT_CURRENCY_TS: &str = include_str!("../fixtures/ts-grammar/formatCurrency.ts");
-    const NOTIFICATION_DIGEST_TS: &str = include_str!("../fixtures/ts-grammar/notificationDigest.ts");
+    const NOTIFICATION_DIGEST_TS: &str =
+        include_str!("../fixtures/ts-grammar/notificationDigest.ts");
     const PATH_HELPERS_JS: &str = include_str!("../fixtures/ts-grammar/pathHelpers.js");
     // New fixtures.
     const REEXPORT_BARREL_TS: &str = include_str!("../fixtures/ts-grammar/reexportBarrel.ts");
-    const WIDGET_PANEL_WITH_NOTE_TS: &str = include_str!("../fixtures/ts-grammar/widgetPanelWithNote.ts");
+    const WIDGET_PANEL_WITH_NOTE_TS: &str =
+        include_str!("../fixtures/ts-grammar/widgetPanelWithNote.ts");
 
     #[test]
     fn ts_grammar_fixture_article_card_tsx() {
-        assert_eq!(ts_purpose(ARTICLE_CARD_TSX, TsGrammar::Tsx).as_deref(), Some("function ArticleCard | interface ArticleCardProps"));
+        assert_eq!(
+            ts_purpose(ARTICLE_CARD_TSX, TsGrammar::Tsx).as_deref(),
+            Some("function ArticleCard | interface ArticleCardProps")
+        );
     }
 
     #[test]
     fn ts_grammar_fixture_use_widget_data_ts() {
-        assert_eq!(ts_purpose(USE_WIDGET_DATA_TS, TsGrammar::Typescript).as_deref(), Some("function useWidgetData"));
+        assert_eq!(
+            ts_purpose(USE_WIDGET_DATA_TS, TsGrammar::Typescript).as_deref(),
+            Some("function useWidgetData")
+        );
     }
 
     #[test]
@@ -4168,7 +5203,10 @@ mod tests {
 
     #[test]
     fn ts_grammar_fixture_format_currency_ts() {
-        assert_eq!(ts_purpose(FORMAT_CURRENCY_TS, TsGrammar::Typescript).as_deref(), Some("default (anonymous)"));
+        assert_eq!(
+            ts_purpose(FORMAT_CURRENCY_TS, TsGrammar::Typescript).as_deref(),
+            Some("default (anonymous)")
+        );
     }
 
     #[test]
@@ -4181,7 +5219,10 @@ mod tests {
 
     #[test]
     fn ts_grammar_fixture_path_helpers_js() {
-        assert_eq!(ts_purpose(PATH_HELPERS_JS, TsGrammar::Javascript).as_deref(), Some("function joinSafe | function isAbsolute"));
+        assert_eq!(
+            ts_purpose(PATH_HELPERS_JS, TsGrammar::Javascript).as_deref(),
+            Some("function joinSafe | function isAbsolute")
+        );
     }
 
     // --- reexportBarrel.ts fixture + edge cases -----------
@@ -4197,7 +5238,10 @@ mod tests {
     #[test]
     fn reexport_bucket_mixes_with_a_real_export_and_lands_last() {
         let src = "export function real() {}\nexport { A, B } from './m';\n";
-        assert_eq!(ts_purpose(src, TsGrammar::Typescript).as_deref(), Some("function real | reexports A, B"));
+        assert_eq!(
+            ts_purpose(src, TsGrammar::Typescript).as_deref(),
+            Some("function real | reexports A, B")
+        );
     }
 
     #[test]
@@ -4209,7 +5253,10 @@ mod tests {
     #[test]
     fn bare_star_reexports_dedupe_to_one_token_regardless_of_statement_count() {
         let src = "export * from './a';\nexport * from './b';\n";
-        assert_eq!(ts_purpose(src, TsGrammar::Typescript).as_deref(), Some("reexports *"));
+        assert_eq!(
+            ts_purpose(src, TsGrammar::Typescript).as_deref(),
+            Some("reexports *")
+        );
     }
 
     // --- Leading-comment hybrid: widgetPanelWithNote.ts fixture (pure vs hybrid) ---
@@ -4230,8 +5277,14 @@ mod tests {
     }
 
     fn scratch_root(label: &str) -> std::path::PathBuf {
-        let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
-        let dir = std::env::temp_dir().join(format!("scout-extract-hybrid-test-{label}-{}-{nanos}", std::process::id()));
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "scout-extract-hybrid-test-{label}-{}-{nanos}",
+            std::process::id()
+        ));
         fs::create_dir_all(&dir).expect("create scratch dir");
         dir
     }
@@ -4240,7 +5293,12 @@ mod tests {
     fn extract_ts_purpose_with_heuristic_prefixes_a_leading_comment() {
         let root = scratch_root("comment");
         fs::write(root.join("widget.ts"), WIDGET_PANEL_WITH_NOTE_TS).unwrap();
-        let purpose = extract_ts_purpose_with_heuristic(&root, "widget.ts", WIDGET_PANEL_WITH_NOTE_TS, TsGrammar::Typescript);
+        let purpose = extract_ts_purpose_with_heuristic(
+            &root,
+            "widget.ts",
+            WIDGET_PANEL_WITH_NOTE_TS,
+            TsGrammar::Typescript,
+        );
         assert_eq!(
             purpose.as_deref(),
             Some("Renders the widget summary panel and its retry action — function WidgetPanel | interface WidgetPanelProps")
@@ -4253,7 +5311,8 @@ mod tests {
         let root = scratch_root("code-first");
         let src = "export function plain() { return 1; }\n";
         fs::write(root.join("plain.ts"), src).unwrap();
-        let purpose = extract_ts_purpose_with_heuristic(&root, "plain.ts", src, TsGrammar::Typescript);
+        let purpose =
+            extract_ts_purpose_with_heuristic(&root, "plain.ts", src, TsGrammar::Typescript);
         assert_eq!(purpose.as_deref(), Some("function plain"));
         fs::remove_dir_all(&root).ok();
     }
@@ -4266,7 +5325,8 @@ mod tests {
         let root = scratch_root("comment-zero-export");
         let src = "// just notes, nothing exported\nfunction internalOnly() { return 1; }\n";
         fs::write(root.join("notesOnly.ts"), src).unwrap();
-        let purpose = extract_ts_purpose_with_heuristic(&root, "notesOnly.ts", src, TsGrammar::Typescript);
+        let purpose =
+            extract_ts_purpose_with_heuristic(&root, "notesOnly.ts", src, TsGrammar::Typescript);
         assert!(purpose.is_none());
         fs::remove_dir_all(&root).ok();
     }
@@ -4279,7 +5339,10 @@ mod tests {
         // error recovery, so compose_ts_purpose yields no entries -> None,
         // same signal that routes mapcmd.rs's per-file dispatch to the
         // heuristic purpose (broken-syntax TS degrades to the heuristic).
-        let purpose = ts_purpose("export class {{{ not valid typescript at all @@@", TsGrammar::Typescript);
+        let purpose = ts_purpose(
+            "export class {{{ not valid typescript at all @@@",
+            TsGrammar::Typescript,
+        );
         assert!(purpose.is_none());
     }
 
@@ -4288,7 +5351,11 @@ mod tests {
         // The zero-export shape follows the established C# convention (no
         // namespace-level types -> None -> heuristic fallback) rather than
         // inventing new behaviour.
-        assert!(ts_purpose("function internalOnly() { return 1; }\nconst alsoInternal = 2;\n", TsGrammar::Typescript).is_none());
+        assert!(ts_purpose(
+            "function internalOnly() { return 1; }\nconst alsoInternal = 2;\n",
+            TsGrammar::Typescript
+        )
+        .is_none());
         assert!(ts_purpose("// just a comment, no code\n", TsGrammar::Typescript).is_none());
     }
 
@@ -4357,20 +5424,30 @@ namespace Fixtures.Preproc
 
         assert!(find_def(&e, "Fixtures.Preproc.WidgetCompiler").is_some());
 
-        let slot_info =
-            find_def(&e, "Fixtures.Preproc.WidgetCompiler+SlotInfo").expect("SlotInfo kept, nested under its type");
+        let slot_info = find_def(&e, "Fixtures.Preproc.WidgetCompiler+SlotInfo")
+            .expect("SlotInfo kept, nested under its type");
         assert_eq!(slot_info.kind, "struct");
         assert_eq!(slot_info.namespace, "Fixtures.Preproc");
 
-        let slot_status = find_def(&e, "Fixtures.Preproc.WidgetCompiler+SlotStatus").expect("SlotStatus kept");
+        let slot_status =
+            find_def(&e, "Fixtures.Preproc.WidgetCompiler+SlotStatus").expect("SlotStatus kept");
         assert_eq!(slot_status.kind, "enum");
         assert!(find_def(&e, "Fixtures.Preproc.WidgetCompiler+SlotStatus.Empty").is_some());
         assert!(find_def(&e, "Fixtures.Preproc.WidgetCompiler+SlotStatus.Filled").is_some());
 
         // Both arms' parameter types are recorded; neither arm's refs are lost.
-        assert!(e.refs.iter().any(|r| r.kind == "uses-type" && r.name == "IWidgetProvider"));
-        assert!(e.refs.iter().any(|r| r.kind == "uses-type" && r.name == "IReadOnlyList"));
-        assert!(e.refs.iter().any(|r| r.kind == "uses-type" && r.name == "Widget"));
+        assert!(e
+            .refs
+            .iter()
+            .any(|r| r.kind == "uses-type" && r.name == "IWidgetProvider"));
+        assert!(e
+            .refs
+            .iter()
+            .any(|r| r.kind == "uses-type" && r.name == "IReadOnlyList"));
+        assert!(e
+            .refs
+            .iter()
+            .any(|r| r.kind == "uses-type" && r.name == "Widget"));
     }
 
     #[test]
@@ -4381,12 +5458,18 @@ namespace Fixtures.Preproc
         let def_lines: Vec<usize> = e.defs.iter().map(|d| d.line).collect();
         let mut sorted = def_lines.clone();
         sorted.sort();
-        assert_eq!(def_lines, sorted, "defs must already be in ascending line order");
+        assert_eq!(
+            def_lines, sorted,
+            "defs must already be in ascending line order"
+        );
 
         let ref_lines: Vec<usize> = e.refs.iter().map(|r| r.line).collect();
         let mut sorted_refs = ref_lines.clone();
         sorted_refs.sort();
-        assert_eq!(ref_lines, sorted_refs, "refs must already be in ascending line order");
+        assert_eq!(
+            ref_lines, sorted_refs,
+            "refs must already be in ascending line order"
+        );
     }
 
     #[test]
@@ -4473,11 +5556,13 @@ namespace Fixtures.Preproc
 
         // The refs inside the innermost body still come through, at that
         // same flat ambient scope.
-        assert!(e.refs.iter().any(|r| r.kind == "uses-type" && r.name == "Sink"));
         assert!(e
             .refs
             .iter()
-            .any(|r| r.kind == "uses-member" && r.name == "sink" && r.member.as_deref() == Some("Write")));
+            .any(|r| r.kind == "uses-type" && r.name == "Sink"));
+        assert!(e.refs.iter().any(|r| r.kind == "uses-member"
+            && r.name == "sink"
+            && r.member.as_deref() == Some("Write")));
     }
 
     // --- Def member facts -------------------------------------------------------
@@ -4486,7 +5571,12 @@ namespace Fixtures.Preproc
         e.refs
             .iter()
             .filter(|r| r.kind == "uses-member")
-            .map(|r| (r.member.as_deref().unwrap_or(""), r.receiver_type.as_deref()))
+            .map(|r| {
+                (
+                    r.member.as_deref().unwrap_or(""),
+                    r.receiver_type.as_deref(),
+                )
+            })
             .collect()
     }
 
@@ -4515,7 +5605,11 @@ public class Widget
 "#,
         );
         let d = find_def(&e, "App.Facts.Widget").expect("Widget def present");
-        assert_eq!(d.properties, vec!["Prefix", "Name"], "source order; the indexer is not a property");
+        assert_eq!(
+            d.properties,
+            vec!["Prefix", "Name"],
+            "source order; the indexer is not a property"
+        );
         assert_eq!(
             d.fields,
             vec!["_log", "a", "b", "Max"],
@@ -4526,7 +5620,10 @@ public class Widget
             vec![("GetAsync".to_string(), "Task".to_string()), ("Qualified".to_string(), "Thing".to_string())],
             "generic args stripped to the base identifier, a qualified return reduced to its last segment, void/int omitted, FIRST-declaration order"
         );
-        assert!(!d.methods.contains(&"Secret".to_string()), "methodReturns stays parallel to methods: a private method is in neither");
+        assert!(
+            !d.methods.contains(&"Secret".to_string()),
+            "methodReturns stays parallel to methods: a private method is in neither"
+        );
         assert!(d.method_returns.iter().all(|(n, _)| n != "Secret"));
     }
 
@@ -4537,11 +5634,15 @@ public class Widget
         assert_eq!(d.methods, vec!["Go"]);
         assert!(d.properties.is_empty());
         assert!(d.fields.is_empty());
-        assert!(d.method_returns.is_empty(), "empty means OMITTED at serialization -- pre-stage-2 bytes preserved");
+        assert!(
+            d.method_returns.is_empty(),
+            "empty means OMITTED at serialization -- pre-stage-2 bytes preserved"
+        );
     }
 
     #[test]
-    fn stage2a_method_returns_keeps_the_first_overload_and_never_backfills_a_void_first_declaration() {
+    fn stage2a_method_returns_keeps_the_first_overload_and_never_backfills_a_void_first_declaration(
+    ) {
         let e = extract_src(
             r#"
 namespace App.Overloads;
@@ -4578,7 +5679,10 @@ public interface IRepo
         );
         let d = find_def(&e, "App.Contracts.IRepo").expect("IRepo def present");
         assert_eq!(d.properties, vec!["Name"]);
-        assert_eq!(d.method_returns, vec![("Find".to_string(), "Widget".to_string())]);
+        assert_eq!(
+            d.method_returns,
+            vec![("Find".to_string(), "Widget".to_string())]
+        );
         assert!(d.fields.is_empty());
     }
 
@@ -4631,7 +5735,11 @@ public class Host
 }
 "#,
         );
-        let r = e.refs.iter().find(|r| r.kind == "uses-member").expect("member ref present");
+        let r = e
+            .refs
+            .iter()
+            .find(|r| r.kind == "uses-member")
+            .expect("member ref present");
         assert_eq!(r.name, "repo");
         assert_eq!(r.qualified, None);
         assert!(!r.generic);
@@ -4662,7 +5770,12 @@ public class Host
             .refs
             .iter()
             .filter(|r| r.kind == "uses-member")
-            .map(|r| (format!("{}.{}", r.name, r.member.as_deref().unwrap_or("")), r.receiver_type.as_deref()))
+            .map(|r| {
+                (
+                    format!("{}.{}", r.name, r.member.as_deref().unwrap_or("")),
+                    r.receiver_type.as_deref(),
+                )
+            })
             .collect();
         assert_eq!(
             facts,
@@ -4697,7 +5810,11 @@ public class Host
 }
 "#,
         );
-        assert_eq!(member_facts(&e), vec![("Go", None), ("Go", None)], "the method-level flat table is conflicted for \"x\"");
+        assert_eq!(
+            member_facts(&e),
+            vec![("Go", None), ("Go", None)],
+            "the method-level flat table is conflicted for \"x\""
+        );
     }
 
     #[test]
@@ -4716,7 +5833,10 @@ public class Host
 }
 "#,
         );
-        assert_eq!(member_facts(&e), vec![("Go", Some("Widget")), ("Go", Some("Widget"))]);
+        assert_eq!(
+            member_facts(&e),
+            vec![("Go", Some("Widget")), ("Go", Some("Widget"))]
+        );
     }
 
     #[test]
@@ -4765,7 +5885,11 @@ public class Outer
 }
 "#,
         );
-        assert_eq!(member_facts(&e), vec![("Go", None)], "a nested type cannot reach an outer instance field");
+        assert_eq!(
+            member_facts(&e),
+            vec![("Go", None)],
+            "a nested type cannot reach an outer instance field"
+        );
     }
 
     #[test]
@@ -4787,11 +5911,30 @@ public class Chain
 }
 "#,
         );
-        let head = e.refs.iter().find(|r| r.member.as_deref() == Some("Inner")).expect("head ref present");
-        let tail = e.refs.iter().find(|r| r.member.as_deref() == Some("Tail")).expect("tail ref present");
-        assert_eq!(head.receiver_type.as_deref(), Some("Widget"), "the head is the ref the local declaration vouches for");
-        assert_eq!(tail.qualified.as_deref(), Some("w.Inner"), "the tail's qualifier is the flattened chain window");
-        assert_eq!(tail.receiver_type, None, "the tail must NOT inherit the head's receiverType");
+        let head = e
+            .refs
+            .iter()
+            .find(|r| r.member.as_deref() == Some("Inner"))
+            .expect("head ref present");
+        let tail = e
+            .refs
+            .iter()
+            .find(|r| r.member.as_deref() == Some("Tail"))
+            .expect("tail ref present");
+        assert_eq!(
+            head.receiver_type.as_deref(),
+            Some("Widget"),
+            "the head is the ref the local declaration vouches for"
+        );
+        assert_eq!(
+            tail.qualified.as_deref(),
+            Some("w.Inner"),
+            "the tail's qualifier is the flattened chain window"
+        );
+        assert_eq!(
+            tail.receiver_type, None,
+            "the tail must NOT inherit the head's receiverType"
+        );
     }
 
     #[test]
@@ -4813,7 +5956,11 @@ public class Host
 }
 "#,
         );
-        let r = e.refs.iter().find(|r| r.member.as_deref() == Some("Go")).expect("member ref present");
+        let r = e
+            .refs
+            .iter()
+            .find(|r| r.member.as_deref() == Some("Go"))
+            .expect("member ref present");
         assert!(r.generic);
         assert_eq!(r.receiver_type, None);
     }
@@ -4834,7 +5981,10 @@ public class Host
 }
 "#,
         );
-        assert_eq!(member_facts(&e), vec![("Read", Some("Stream")), ("Tick", Some("Counter"))]);
+        assert_eq!(
+            member_facts(&e),
+            vec![("Read", Some("Stream")), ("Tick", Some("Counter"))]
+        );
     }
 
     #[test]
@@ -4857,7 +6007,11 @@ public class Host
 }
 "#,
         );
-        let go = e.refs.iter().find(|r| r.member.as_deref() == Some("Go")).expect("member ref present");
+        let go = e
+            .refs
+            .iter()
+            .find(|r| r.member.as_deref() == Some("Go"))
+            .expect("member ref present");
         assert_eq!(go.receiver_type.as_deref(), Some("Widget"));
     }
 
@@ -4877,8 +6031,16 @@ public class Host
 }
 "#,
         );
-        let go = e.refs.iter().find(|r| r.member.as_deref() == Some("Go")).expect("member ref present");
-        assert_eq!(go.receiver_type.as_deref(), Some("Widget"), "a local function sees the enclosing method's locals");
+        let go = e
+            .refs
+            .iter()
+            .find(|r| r.member.as_deref() == Some("Go"))
+            .expect("member ref present");
+        assert_eq!(
+            go.receiver_type.as_deref(),
+            Some("Widget"),
+            "a local function sees the enclosing method's locals"
+        );
     }
 
     #[test]
@@ -4897,8 +6059,15 @@ public class Host
 }
 "#,
         );
-        let go = e.refs.iter().find(|r| r.member.as_deref() == Some("Go")).expect("member ref present");
-        assert_eq!(go.receiver_type, None, "`object` is a predefined type: no fact, and Widget is never substituted for it");
+        let go = e
+            .refs
+            .iter()
+            .find(|r| r.member.as_deref() == Some("Go"))
+            .expect("member ref present");
+        assert_eq!(
+            go.receiver_type, None,
+            "`object` is a predefined type: no fact, and Widget is never substituted for it"
+        );
     }
 
     #[test]
@@ -4955,7 +6124,14 @@ public static class WidgetExtensions
         let pairs: Vec<(&str, &str, usize, i64)> = d
             .extension_methods
             .iter()
-            .map(|x| (x.name.as_str(), x.this_type.as_str(), x.arity_min, x.arity_max))
+            .map(|x| {
+                (
+                    x.name.as_str(),
+                    x.this_type.as_str(),
+                    x.arity_min,
+                    x.arity_max,
+                )
+            })
             .collect();
         assert_eq!(
             pairs,
@@ -4981,12 +6157,28 @@ public static class WidgetExtensions
         // ...and the generic amendment records the stripped arguments alongside
         // the base identifier rather than discarding them.
         assert_eq!(
-            d.extension_methods.iter().map(|x| x.this_args.clone()).collect::<Vec<_>>(),
-            vec![None, None, None, None, Some(vec!["Widget".to_string()]), None],
+            d.extension_methods
+                .iter()
+                .map(|x| x.this_args.clone())
+                .collect::<Vec<_>>(),
+            vec![
+                None,
+                None,
+                None,
+                None,
+                Some(vec!["Widget".to_string()]),
+                None
+            ],
             "thisArgs is present ONLY on the generic this-parameter"
         );
-        assert!(!pairs.iter().any(|(n, ..)| *n == "Plain"), "a static method with no this-parameter is not an extension method");
-        assert!(!pairs.iter().any(|(n, ..)| *n == "Late"), "`this` on a NON-first parameter is not an extension method");
+        assert!(
+            !pairs.iter().any(|(n, ..)| *n == "Plain"),
+            "a static method with no this-parameter is not an extension method"
+        );
+        assert!(
+            !pairs.iter().any(|(n, ..)| *n == "Late"),
+            "`this` on a NON-first parameter is not an extension method"
+        );
         // The accessibility asymmetry is deliberate and worth pinning:
         // `methods` stays public-only, so `Hidden` is reachable ONLY through
         // the extension tier.
@@ -5003,7 +6195,10 @@ public static class WidgetExtensions
             .filter(|r| r.kind == "uses-member")
             .map(|r| {
                 let qualifier = r.qualified.as_deref().unwrap_or(r.name.as_str());
-                (format!("{qualifier}.{}", r.member.as_deref().unwrap_or("")), r.arg_count)
+                (
+                    format!("{qualifier}.{}", r.member.as_deref().unwrap_or("")),
+                    r.arg_count,
+                )
             })
             .collect()
     }
@@ -5071,7 +6266,11 @@ public class Chain
             e.refs
                 .iter()
                 .filter(|r| r.kind == "uses-member")
-                .map(|r| (r.name.as_str(), r.member.as_deref().unwrap_or(""), r.arg_count))
+                .map(|r| (
+                    r.name.as_str(),
+                    r.member.as_deref().unwrap_or(""),
+                    r.arg_count
+                ))
                 .collect::<Vec<_>>(),
             vec![
                 ("e", "Level", None),
@@ -5089,7 +6288,10 @@ public class Chain
         let e = extract_src("namespace App.Plain { public static class Utils { public static void Go(Widget w) { } } }");
         let d = find_def(&e, "App.Plain.Utils").expect("Utils def present");
         assert_eq!(d.methods, vec!["Go"]);
-        assert!(d.extension_methods.is_empty(), "empty means OMITTED at serialization -- pre-stage-3 bytes preserved");
+        assert!(
+            d.extension_methods.is_empty(),
+            "empty means OMITTED at serialization -- pre-stage-3 bytes preserved"
+        );
     }
 
     #[test]
@@ -5107,8 +6309,15 @@ public static class Shapes
 "#,
         );
         let d = find_def(&e, "App.Ext.Shapes").expect("Shapes def present");
-        let pairs: Vec<(&str, &str)> = d.extension_methods.iter().map(|x| (x.name.as_str(), x.this_type.as_str())).collect();
-        assert_eq!(pairs, vec![("Each", "Widget"), ("Maybe", "Widget"), ("Deep", "Gadget")]);
+        let pairs: Vec<(&str, &str)> = d
+            .extension_methods
+            .iter()
+            .map(|x| (x.name.as_str(), x.this_type.as_str()))
+            .collect();
+        assert_eq!(
+            pairs,
+            vec![("Each", "Widget"), ("Maybe", "Widget"), ("Deep", "Gadget")]
+        );
     }
 
     #[test]
@@ -5117,7 +6326,11 @@ public static class Shapes
         // not "the first modifier is `this`".
         let e = extract_src("namespace App.Ext { public static class R { public static void Bump(this ref Counter c) { } } }");
         let d = find_def(&e, "App.Ext.R").expect("R def present");
-        let pairs: Vec<(&str, &str)> = d.extension_methods.iter().map(|x| (x.name.as_str(), x.this_type.as_str())).collect();
+        let pairs: Vec<(&str, &str)> = d
+            .extension_methods
+            .iter()
+            .map(|x| (x.name.as_str(), x.this_type.as_str()))
+            .collect();
         assert_eq!(pairs, vec![("Bump", "Counter")]);
     }
 
@@ -5128,8 +6341,17 @@ public static class Shapes
         // methodReturns fact -- the keep_predefined flag is per-call-site.
         let e = extract_src("namespace App.Ext { public static class S { public static string Trim(this string s) => s; } }");
         let d = find_def(&e, "App.Ext.S").expect("S def present");
-        assert_eq!(d.extension_methods.iter().map(|x| x.this_type.as_str()).collect::<Vec<_>>(), vec!["string"]);
-        assert!(d.method_returns.is_empty(), "every stage-2 call site passes keep_predefined=false and is unchanged");
+        assert_eq!(
+            d.extension_methods
+                .iter()
+                .map(|x| x.this_type.as_str())
+                .collect::<Vec<_>>(),
+            vec!["string"]
+        );
+        assert!(
+            d.method_returns.is_empty(),
+            "every stage-2 call site passes keep_predefined=false and is unchanged"
+        );
     }
 
     // The `extract-dump` JSON is a byte-exact surface, so its KEY ORDER is
@@ -5149,15 +6371,33 @@ public static class Shapes
         let d = find_def(&e, "App.Ext.W").expect("W def present");
         assert_eq!(
             def_json_keys(d),
-            vec!["id", "name", "namespace", "kind", "line", "methods", "methodReturns", "extensionMethods"],
+            vec![
+                "id",
+                "name",
+                "namespace",
+                "kind",
+                "line",
+                "methods",
+                "methodReturns",
+                "extensionMethods"
+            ],
             "extensionMethods lands AFTER the stage-2 additions, not among them"
         );
-        let Json::Obj(fields) = def_to_json(d) else { panic!("object") };
-        let (_, ext) = fields.into_iter().find(|(k, _)| *k == "extensionMethods").expect("extensionMethods present");
-        let Json::Arr(entries) = ext else { panic!("extensionMethods is an array") };
+        let Json::Obj(fields) = def_to_json(d) else {
+            panic!("object")
+        };
+        let (_, ext) = fields
+            .into_iter()
+            .find(|(k, _)| *k == "extensionMethods")
+            .expect("extensionMethods present");
+        let Json::Arr(entries) = ext else {
+            panic!("extensionMethods is an array")
+        };
         assert_eq!(entries.len(), 3);
         for entry in &entries[..2] {
-            let Json::Obj(kv) = entry else { panic!("each entry is an object") };
+            let Json::Obj(kv) = entry else {
+                panic!("each entry is an object")
+            };
             assert_eq!(
                 kv.iter().map(|(k, _)| *k).collect::<Vec<_>>(),
                 vec!["name", "thisType", "arityMin", "arityMax"],
@@ -5167,9 +6407,13 @@ public static class Shapes
         // The two arity halves are NUMBERS, not strings: a byte-diff would
         // catch a quoted one. arityMax is
         // SIGNED: -1 is the unbounded-`params` sentinel.
-        let Json::Obj(kv) = &entries[1] else { panic!("object") };
+        let Json::Obj(kv) = &entries[1] else {
+            panic!("object")
+        };
         match kv.iter().find(|(k, _)| *k == "arityMin").map(|(_, v)| v) {
-            Some(Json::Num(n)) => assert_eq!(*n, 1, "Trim(this string s, int n) requires one argument"),
+            Some(Json::Num(n)) => {
+                assert_eq!(*n, 1, "Trim(this string s, int n) requires one argument")
+            }
             _ => panic!("arityMin must serialize as a JSON number"),
         }
         match kv.iter().find(|(k, _)| *k == "arityMax").map(|(_, v)| v) {
@@ -5178,14 +6422,19 @@ public static class Shapes
         }
         // The generic entry carries thisArgs, LAST, and its params tail makes
         // arityMax the -1 sentinel.
-        let Json::Obj(kv) = &entries[2] else { panic!("object") };
+        let Json::Obj(kv) = &entries[2] else {
+            panic!("object")
+        };
         assert_eq!(
             kv.iter().map(|(k, _)| *k).collect::<Vec<_>>(),
             vec!["name", "thisType", "arityMin", "arityMax", "thisArgs"],
             "thisArgs lands after arityMax, and only on a generic this-parameter"
         );
         assert!(
-            matches!(kv.iter().find(|(k, _)| *k == "arityMax").map(|(_, v)| v), Some(Json::Int(-1))),
+            matches!(
+                kv.iter().find(|(k, _)| *k == "arityMax").map(|(_, v)| v),
+                Some(Json::Int(-1))
+            ),
             "a params tail serializes arityMax as the number -1"
         );
     }
@@ -5198,11 +6447,22 @@ public static class Shapes
         // point this fixture was chosen to cover: both keys' relative order
         // still holds (bases before baseGenericArgs, both before the absent
         // testMethods).
-        let e = extract_src("namespace App.Other { public class Widget : Ns.BaseWidget<int>, IWidget { } }");
+        let e = extract_src(
+            "namespace App.Other { public class Widget : Ns.BaseWidget<int>, IWidget { } }",
+        );
         let d = find_def(&e, "App.Other.Widget").expect("Widget def present");
         assert_eq!(
             def_json_keys(d),
-            vec!["id", "name", "namespace", "kind", "line", "methods", "bases", "baseGenericArgs"],
+            vec![
+                "id",
+                "name",
+                "namespace",
+                "kind",
+                "line",
+                "methods",
+                "bases",
+                "baseGenericArgs"
+            ],
             "bases lands after methods, baseGenericArgs immediately after bases"
         );
         assert_eq!(
@@ -5218,7 +6478,10 @@ public static class Shapes
 
         let plain = extract_src("namespace App.Other { public class Bare { } }");
         let pd = find_def(&plain, "App.Other.Bare").expect("Bare def present");
-        assert_eq!(def_json_keys(pd), vec!["id", "name", "namespace", "kind", "line", "methods"]);
+        assert_eq!(
+            def_json_keys(pd),
+            vec!["id", "name", "namespace", "kind", "line", "methods"]
+        );
     }
 
     #[test]
@@ -5246,7 +6509,16 @@ public static class Shapes
         );
         assert_eq!(
             def_json_keys(d),
-            vec!["id", "name", "namespace", "kind", "line", "methods", "bases", "testMethods"],
+            vec![
+                "id",
+                "name",
+                "namespace",
+                "kind",
+                "line",
+                "methods",
+                "bases",
+                "testMethods"
+            ],
             "testMethods lands LAST -- after bases, which was the final fact before this stage"
         );
     }
@@ -5305,7 +6577,12 @@ public static class Shapes
         );
 
         let gated = extract_src(&source("[TestClass]\n"));
-        assert_eq!(find_def(&gated, "App.Tests.CartTests").expect("CartTests def present").test_methods, vec!["Places", "Prices"]);
+        assert_eq!(
+            find_def(&gated, "App.Tests.CartTests")
+                .expect("CartTests def present")
+                .test_methods,
+            vec!["Places", "Prices"]
+        );
     }
 
     #[test]
@@ -5313,9 +6590,17 @@ public static class Shapes
         let e = extract_src(
             "namespace App.Tests;\n\n[TestClass]\npublic class OuterTests\n{\n  [TestMethod]\n  public void Outer() { }\n\n  public class Inner\n  {\n    [TestMethod]\n    public void Nested() { }\n  }\n}\n",
         );
-        assert_eq!(find_def(&e, "App.Tests.OuterTests").expect("OuterTests def present").test_methods, vec!["Outer"]);
+        assert_eq!(
+            find_def(&e, "App.Tests.OuterTests")
+                .expect("OuterTests def present")
+                .test_methods,
+            vec!["Outer"]
+        );
         assert!(
-            find_def(&e, "App.Tests.OuterTests+Inner").expect("Inner def present").test_methods.is_empty(),
+            find_def(&e, "App.Tests.OuterTests+Inner")
+                .expect("Inner def present")
+                .test_methods
+                .is_empty(),
             "each type computes its own list from its OWN attribute_list"
         );
     }
@@ -5325,19 +6610,36 @@ public static class Shapes
         let e = extract_src(
             "namespace App.Tests;\n\npublic interface ITestContract\n{\n  [Fact]\n  void Runs();\n}\n\npublic enum Speed\n{\n  Fast,\n  Slow,\n}\n",
         );
-        assert!(find_def(&e, "App.Tests.ITestContract").expect("interface def present").test_methods.is_empty());
-        assert!(find_def(&e, "App.Tests.Speed").expect("enum def present").test_methods.is_empty());
-        assert!(find_def(&e, "App.Tests.Speed.Fast").expect("enum-member def present").test_methods.is_empty());
+        assert!(find_def(&e, "App.Tests.ITestContract")
+            .expect("interface def present")
+            .test_methods
+            .is_empty());
+        assert!(find_def(&e, "App.Tests.Speed")
+            .expect("enum def present")
+            .test_methods
+            .is_empty());
+        assert!(find_def(&e, "App.Tests.Speed.Fast")
+            .expect("enum-member def present")
+            .test_methods
+            .is_empty());
     }
 
     #[test]
-    fn test_coverage_a_struct_and_a_record_carry_test_methods_too_and_a_local_function_never_does() {
+    fn test_coverage_a_struct_and_a_record_carry_test_methods_too_and_a_local_function_never_does()
+    {
         let e = extract_src(
             "namespace App.Tests;\n\npublic struct ValueTests\n{\n  [Fact]\n  public void Holds() { }\n}\n\npublic record RecordTests\n{\n  [Fact]\n  public void Keeps()\n  {\n    [Fact]\n    void Inner() { }\n  }\n}\n",
         );
-        assert_eq!(find_def(&e, "App.Tests.ValueTests").expect("struct def present").test_methods, vec!["Holds"]);
         assert_eq!(
-            find_def(&e, "App.Tests.RecordTests").expect("record def present").test_methods,
+            find_def(&e, "App.Tests.ValueTests")
+                .expect("struct def present")
+                .test_methods,
+            vec!["Holds"]
+        );
+        assert_eq!(
+            find_def(&e, "App.Tests.RecordTests")
+                .expect("record def present")
+                .test_methods,
             vec!["Keeps"],
             "a local function is not a method_declaration at type body level"
         );
@@ -5357,14 +6659,25 @@ public static class Shapes
         let r = find_ref(&e, "uses-type", "Marker").expect("the field type ref is recorded");
         // Outermost first is the order type_id joins with "+", so the resolver
         // rebuilds a nested id by prefix rather than by reversing.
-        assert_eq!(r.outer_types, vec!["Outer".to_string(), "Inner".to_string()]);
+        assert_eq!(
+            r.outer_types,
+            vec!["Outer".to_string(), "Inner".to_string()]
+        );
     }
 
     #[test]
     fn v8_a_namespace_level_ref_and_an_imports_ref_carry_no_outer_types() {
-        let e = extract_src("using App.Other;\n\nnamespace App.Core;\n\npublic class Widget : Marker { }\n");
-        assert!(find_ref(&e, "imports", "App.Other").expect("using ref").outer_types.is_empty());
-        assert!(find_ref(&e, "inherits", "Marker").expect("base ref").outer_types.is_empty());
+        let e = extract_src(
+            "using App.Other;\n\nnamespace App.Core;\n\npublic class Widget : Marker { }\n",
+        );
+        assert!(find_ref(&e, "imports", "App.Other")
+            .expect("using ref")
+            .outer_types
+            .is_empty());
+        assert!(find_ref(&e, "inherits", "Marker")
+            .expect("base ref")
+            .outer_types
+            .is_empty());
     }
 
     #[test]
@@ -5372,15 +6685,29 @@ public static class Shapes
         let e = extract_src(
             "namespace App.Core;\n\npublic class Outer\n{\n  public class Inner\n  {\n    private Store<int> _s;\n\n    public void Go()\n    {\n      _s.Add(1);\n      Box<int>.Make();\n    }\n  }\n}\n",
         );
-        let with_receiver = e.refs.iter().find(|r| r.member.as_deref() == Some("Add")).expect("receiver-fact ref");
+        let with_receiver = e
+            .refs
+            .iter()
+            .find(|r| r.member.as_deref() == Some("Add"))
+            .expect("receiver-fact ref");
         assert_eq!(with_receiver.receiver_type.as_deref(), Some("Store"));
         assert_eq!(with_receiver.receiver_args, Some(vec!["int".to_string()]));
-        assert_eq!(with_receiver.outer_types, vec!["Outer".to_string(), "Inner".to_string()]);
+        assert_eq!(
+            with_receiver.outer_types,
+            vec!["Outer".to_string(), "Inner".to_string()]
+        );
         // A generic qualifier earns no receiver fact; the stack lands on it all
         // the same.
-        let generic = e.refs.iter().find(|r| r.member.as_deref() == Some("Make")).expect("generic-qualifier ref");
+        let generic = e
+            .refs
+            .iter()
+            .find(|r| r.member.as_deref() == Some("Make"))
+            .expect("generic-qualifier ref");
         assert!(generic.generic);
-        assert_eq!(generic.outer_types, vec!["Outer".to_string(), "Inner".to_string()]);
+        assert_eq!(
+            generic.outer_types,
+            vec!["Outer".to_string(), "Inner".to_string()]
+        );
     }
 
     #[test]
@@ -5389,7 +6716,12 @@ public static class Shapes
             "namespace App.Core;\n\npublic class Outer\n{\n  public class Inner : Marker\n  {\n  }\n}\n",
         );
         // The same stack record_type_def used to build Inner's own id.
-        assert_eq!(find_ref(&e, "inherits", "Marker").expect("base ref").outer_types, vec!["Outer".to_string()]);
+        assert_eq!(
+            find_ref(&e, "inherits", "Marker")
+                .expect("base ref")
+                .outer_types,
+            vec!["Outer".to_string()]
+        );
     }
 
     #[test]
@@ -5397,15 +6729,25 @@ public static class Shapes
         let e = extract_src(
             "namespace App.Core;\n\npublic class Outer\n{\n  public class Inner\n  {\n    public void Go() { Alpha.Beta.Gamma(); }\n  }\n}\n",
         );
-        let tail = e.refs.iter().find(|r| r.qualified.as_deref() == Some("Alpha.Beta")).expect("chain-tail ref");
+        let tail = e
+            .refs
+            .iter()
+            .find(|r| r.qualified.as_deref() == Some("Alpha.Beta"))
+            .expect("chain-tail ref");
         // Positional: the stack of the SITE, never inherited from the head.
-        assert_eq!(tail.outer_types, vec!["Outer".to_string(), "Inner".to_string()]);
+        assert_eq!(
+            tail.outer_types,
+            vec!["Outer".to_string(), "Inner".to_string()]
+        );
     }
 
     // --- The per-file `names` list -------------------------------
 
     fn names_of(e: &Extraction) -> Vec<(&str, &str, usize, &str)> {
-        e.names.iter().map(|n| (n.name.as_str(), n.kind.as_str(), n.line, n.owner.as_str())).collect()
+        e.names
+            .iter()
+            .map(|n| (n.name.as_str(), n.kind.as_str(), n.line, n.owner.as_str()))
+            .collect()
     }
 
     #[test]
@@ -5428,8 +6770,14 @@ public static class Shapes
 
     #[test]
     fn a_names_line_is_the_name_token_row_not_the_attribute_the_declaration_starts_at() {
-        let e = extract_src("namespace Ns;\npublic class Ledger\n{\n\t[Obsolete]\n\tpublic int Total { get; }\n}\n");
-        assert_eq!(names_of(&e), vec![("Total", "property", 5, "Ns.Ledger")], "line 5 is the name, line 4 is the attribute");
+        let e = extract_src(
+            "namespace Ns;\npublic class Ledger\n{\n\t[Obsolete]\n\tpublic int Total { get; }\n}\n",
+        );
+        assert_eq!(
+            names_of(&e),
+            vec![("Total", "property", 5, "Ns.Ledger")],
+            "line 5 is the name, line 4 is the attribute"
+        );
     }
 
     #[test]
@@ -5451,7 +6799,11 @@ public static class Shapes
     #[test]
     fn an_interface_body_and_an_enum_body_contribute_what_they_declare_and_nothing_else() {
         let e = extract_src("namespace Ns;\npublic interface ISink\n{\n\tvoid Accept();\n}\npublic enum Mode\n{\n\tOn,\n}\n");
-        assert_eq!(names_of(&e), vec![("Accept", "method", 4, "Ns.ISink")], "an enum's members are defs already, never names rows");
+        assert_eq!(
+            names_of(&e),
+            vec![("Accept", "method", 4, "Ns.ISink")],
+            "an enum's members are defs already, never names rows"
+        );
     }
 
     // -----------------------------------------------------------------
@@ -5467,7 +6819,17 @@ public static class Shapes
     }
 
     fn ref_tuples(f: &TsFragment) -> Vec<(&str, &str, Option<&str>, usize)> {
-        f.refs.iter().map(|r| (r.kind.as_str(), r.name.as_str(), r.member.as_deref(), r.line)).collect()
+        f.refs
+            .iter()
+            .map(|r| {
+                (
+                    r.kind.as_str(),
+                    r.name.as_str(),
+                    r.member.as_deref(),
+                    r.line,
+                )
+            })
+            .collect()
     }
 
     #[test]
@@ -5479,12 +6841,25 @@ public static class Shapes
         assert_eq!(f.imports.len(), 2);
         assert_eq!(f.imports[0].spec, "./m");
         assert_eq!(f.imports[0].line, 1);
-        let first: Vec<(&str, &str)> =
-            f.imports[0].bindings.iter().map(|b| (b.local.as_str(), b.imported.as_str())).collect();
-        assert_eq!(first, vec![("Thing", "default"), ("one", "one"), ("alias", "two")]);
-        let second: Vec<(&str, &str)> =
-            f.imports[1].bindings.iter().map(|b| (b.local.as_str(), b.imported.as_str())).collect();
-        assert_eq!(second, vec![("ns", "*")], "a namespace clause binds '*', never a name of its own");
+        let first: Vec<(&str, &str)> = f.imports[0]
+            .bindings
+            .iter()
+            .map(|b| (b.local.as_str(), b.imported.as_str()))
+            .collect();
+        assert_eq!(
+            first,
+            vec![("Thing", "default"), ("one", "one"), ("alias", "two")]
+        );
+        let second: Vec<(&str, &str)> = f.imports[1]
+            .bindings
+            .iter()
+            .map(|b| (b.local.as_str(), b.imported.as_str()))
+            .collect();
+        assert_eq!(
+            second,
+            vec![("ns", "*")],
+            "a namespace clause binds '*', never a name of its own"
+        );
     }
 
     #[test]
@@ -5510,10 +6885,17 @@ public static class Shapes
             "export function run() {}\nconst helper = 1;\nexport { helper };\nexport { missing } from './elsewhere';\nexport default run;\n",
             crate::parse::TsGrammar::Typescript,
         );
-        let defs: Vec<(&str, &str, usize)> =
-            f.defs.iter().map(|d| (d.name.as_str(), d.kind.as_str(), d.line)).collect();
+        let defs: Vec<(&str, &str, usize)> = f
+            .defs
+            .iter()
+            .map(|d| (d.name.as_str(), d.kind.as_str(), d.line))
+            .collect();
         assert_eq!(defs, vec![("run", "function", 1), ("helper", "const", 2)]);
-        assert_eq!(f.default.as_deref(), Some("run"), "one def, two importable names -- never a second row");
+        assert_eq!(
+            f.default.as_deref(),
+            Some("run"),
+            "one def, two importable names -- never a second row"
+        );
     }
 
     #[test]
@@ -5522,13 +6904,23 @@ public static class Shapes
             "const { logInfo } = require('./logger');\nconst bag = require('./logger');\nfunction report() { return logInfo(1) + bag.logInfo(2); }\nmodule.exports = { report };\n",
             crate::parse::TsGrammar::Javascript,
         );
-        assert_eq!(f.defs.iter().map(|d| d.name.as_str()).collect::<Vec<_>>(), vec!["report"]);
-        let bindings: Vec<(&str, &str)> =
-            f.imports.iter().flat_map(|i| i.bindings.iter()).map(|b| (b.local.as_str(), b.imported.as_str())).collect();
+        assert_eq!(
+            f.defs.iter().map(|d| d.name.as_str()).collect::<Vec<_>>(),
+            vec!["report"]
+        );
+        let bindings: Vec<(&str, &str)> = f
+            .imports
+            .iter()
+            .flat_map(|i| i.bindings.iter())
+            .map(|b| (b.local.as_str(), b.imported.as_str()))
+            .collect();
         assert_eq!(bindings, vec![("logInfo", "logInfo"), ("bag", "*")]);
         assert_eq!(
             ref_tuples(&f),
-            vec![("call", "logInfo", None, 3), ("call", "bag", Some("logInfo"), 3)],
+            vec![
+                ("call", "logInfo", None, 3),
+                ("call", "bag", Some("logInfo"), 3)
+            ],
             "a member call records the QUALIFIER and its property, never the chain's tail alone"
         );
     }
@@ -5541,7 +6933,10 @@ public static class Shapes
         );
         assert_eq!(
             ref_tuples(&f),
-            vec![("dispatch", "load", None, 3), ("dispatch", "reset", None, 4)],
+            vec![
+                ("dispatch", "load", None, 3),
+                ("dispatch", "reset", None, 4)
+            ],
             "the argument is the action creator; the outer dispatch(...) is not itself a call ref"
         );
     }
@@ -5554,7 +6949,10 @@ public static class Shapes
         );
         assert_eq!(
             ref_tuples(&f),
-            vec![("jsx-use", "Card", None, 3), ("jsx-use", "Panel", Some("Header"), 3)],
+            vec![
+                ("jsx-use", "Card", None, 3),
+                ("jsx-use", "Panel", Some("Header"), 3)
+            ],
             "lowercase tags are intrinsic elements; an unbound capitalised one is not a known name"
         );
     }
@@ -5565,7 +6963,10 @@ public static class Shapes
             "export function go() {\n  const local = () => 1;\n  return local() + globalThing();\n}\n",
             crate::parse::TsGrammar::Typescript,
         );
-        assert!(ref_tuples(&f).is_empty(), "the known-name filter is the contract, not an optimisation");
+        assert!(
+            ref_tuples(&f).is_empty(),
+            "the known-name filter is the contract, not an optimisation"
+        );
     }
 
     #[test]
@@ -5582,12 +6983,18 @@ public static class Shapes
         let f = ts_fragment("export const x = 1;\n", crate::parse::TsGrammar::Typescript);
         assert_eq!(f.default, None);
         let json = serde_json::to_string(&f).unwrap();
-        assert_eq!(json, r#"{"ts":1,"defs":[{"name":"x","kind":"const","line":1,"endLine":1}],"imports":[],"reexports":[],"refs":[]}"#);
+        assert_eq!(
+            json,
+            r#"{"ts":1,"defs":[{"name":"x","kind":"const","line":1,"endLine":1}],"imports":[],"reexports":[],"refs":[]}"#
+        );
     }
 
     #[test]
     fn the_fragment_serializes_ts_first_and_default_last() {
-        let f = ts_fragment("export function run() {}\nexport default run;\n", crate::parse::TsGrammar::Typescript);
+        let f = ts_fragment(
+            "export function run() {}\nexport default run;\n",
+            crate::parse::TsGrammar::Typescript,
+        );
         let json = serde_json::to_string(&f).unwrap();
         assert_eq!(
             json,
@@ -5597,7 +7004,10 @@ public static class Shapes
 
     #[test]
     fn typescript_fragment_records_multiline_declaration_end_line() {
-        let f = ts_fragment("export interface Widget {\n  id: number;\n}\n", crate::parse::TsGrammar::Typescript);
+        let f = ts_fragment(
+            "export interface Widget {\n  id: number;\n}\n",
+            crate::parse::TsGrammar::Typescript,
+        );
         assert_eq!((f.defs[0].line, f.defs[0].end_line), (1, 3));
     }
 
@@ -5620,14 +7030,20 @@ public class Widget
         );
         let d = find_def(&e, "App.PropTypes.Widget").expect("Widget def present");
         assert_eq!(d.properties, vec!["Config", "Label", "Slots"]);
-        let recorded: Vec<_> =
-            d.property_types.iter().map(|(n, f)| (n.as_str(), f.type_name.as_str(), f.args.as_ref())).collect();
+        let recorded: Vec<_> = d
+            .property_types
+            .iter()
+            .map(|(n, f)| (n.as_str(), f.type_name.as_str(), f.args.as_ref()))
+            .collect();
         // A predefined type vouches for nothing, exactly as it does for a local
         // or a method return, so `Label` has no entry -- the map is parallel to
         // `properties` but not equal in length.
         assert_eq!(
             recorded,
-            vec![("Config", "Settings", None), ("Slots", "Box", Some(&vec!["Gadget".to_string()]))]
+            vec![
+                ("Config", "Settings", None),
+                ("Slots", "Box", Some(&vec!["Gadget".to_string()]))
+            ]
         );
     }
 
@@ -5654,7 +7070,14 @@ public class Host
         );
         // A predefined property type is still no fact, and the name stays
         // TAKEN: `Name` can never be read back as a TYPE named Name.
-        assert_eq!(member_facts(&e), vec![("Render", Some("Widget")), ("Render", Some("Widget")), ("Trim", None)]);
+        assert_eq!(
+            member_facts(&e),
+            vec![
+                ("Render", Some("Widget")),
+                ("Render", Some("Widget")),
+                ("Trim", None)
+            ]
+        );
     }
 
     #[test]
@@ -5685,7 +7108,10 @@ public class Host
             .iter()
             .filter(|r| r.kind == "uses-member")
             .map(|r| {
-                (r.qualified.as_deref().unwrap_or(r.name.as_str()), r.receiver_property_owner.as_deref())
+                (
+                    r.qualified.as_deref().unwrap_or(r.name.as_str()),
+                    r.receiver_property_owner.as_deref(),
+                )
             })
             .collect();
         assert_eq!(
@@ -5826,11 +7252,19 @@ public class Host
         // A field, a parameter and a local: the same lookup the call
         // hop uses for its qualifier, reading whichever table vouches for the
         // collection's name.
-        assert_eq!(member_facts(&e), vec![("Go", Some("Widget")), ("Go", Some("Widget")), ("Go", Some("Widget"))]);
+        assert_eq!(
+            member_facts(&e),
+            vec![
+                ("Go", Some("Widget")),
+                ("Go", Some("Widget")),
+                ("Go", Some("Widget"))
+            ]
+        );
     }
 
     #[test]
-    fn ds0011_a_var_foreach_stays_unknown_unless_the_collection_is_a_bare_identifier_with_one_type_argument() {
+    fn ds0011_a_var_foreach_stays_unknown_unless_the_collection_is_a_bare_identifier_with_one_type_argument(
+    ) {
         let e = extract_src(
             r#"
 namespace App.ForEachUnknown;
@@ -5863,8 +7297,12 @@ public class Host
         // `Go` alone: `map.Items` is itself an ordinary tier-(e) member
         // access on the FIELD `map` (declared type `Map`), unrelated to this
         // ticket, so it earns its own unaffected receiver fact.
-        let go_facts: Vec<_> =
-            e.refs.iter().filter(|r| r.member.as_deref() == Some("Go")).map(|r| r.receiver_type.as_deref()).collect();
+        let go_facts: Vec<_> = e
+            .refs
+            .iter()
+            .filter(|r| r.member.as_deref() == Some("Go"))
+            .map(|r| r.receiver_type.as_deref())
+            .collect();
         assert_eq!(go_facts, vec![None, None, None, None, None]);
     }
 

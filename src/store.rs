@@ -74,18 +74,43 @@ const CONTENT_SCHEMA: &str = "(
     )";
 
 const READS_COLS: [&str; 12] = [
-    "session_id", "agent_id", "rel_path", "sha256", "size", "mtime",
-    "first_seen_ts", "lines", "stub_count", "last_read_ts", "read_count", "bytes_delivered",
+    "session_id",
+    "agent_id",
+    "rel_path",
+    "sha256",
+    "size",
+    "mtime",
+    "first_seen_ts",
+    "lines",
+    "stub_count",
+    "last_read_ts",
+    "read_count",
+    "bytes_delivered",
 ];
 
 const BASH_COLS: [&str; 9] = [
-    "session_id", "agent_id", "cache_key", "sha256", "size", "lines",
-    "stub_count", "first_seen_ts", "last_read_ts",
+    "session_id",
+    "agent_id",
+    "cache_key",
+    "sha256",
+    "size",
+    "lines",
+    "stub_count",
+    "first_seen_ts",
+    "last_read_ts",
 ];
 
 const CONTENT_COLS: [&str; 10] = [
-    "session_id", "agent_id", "sha256", "root", "rel_path", "size", "lines",
-    "stub_count", "first_seen_ts", "last_read_ts",
+    "session_id",
+    "agent_id",
+    "sha256",
+    "root",
+    "rel_path",
+    "size",
+    "lines",
+    "stub_count",
+    "first_seen_ts",
+    "last_read_ts",
 ];
 
 // ---------------------------------------------------------------------------
@@ -166,7 +191,12 @@ fn columns(conn: &Connection, table: &str) -> rusqlite::Result<Vec<String>> {
 // pre-migration fixture. Existing rows predate agent scoping and therefore
 // belong to the main thread (`agent_id ''`). Deliberately NOT wrapped in
 // `with_busy_retry`: a one-time migration, not the hot write path.
-fn add_agent_scope(conn: &Connection, table: &str, schema: &str, cols: &[&str]) -> rusqlite::Result<()> {
+fn add_agent_scope(
+    conn: &Connection,
+    table: &str,
+    schema: &str,
+    cols: &[&str],
+) -> rusqlite::Result<()> {
     if columns(conn, table)?.iter().any(|c| c == "agent_id") {
         return Ok(());
     }
@@ -174,7 +204,13 @@ fn add_agent_scope(conn: &Connection, table: &str, schema: &str, cols: &[&str]) 
     let target = cols.join(", ");
     let source = cols
         .iter()
-        .map(|c| if *c == "agent_id" { "''".to_string() } else { (*c).to_string() })
+        .map(|c| {
+            if *c == "agent_id" {
+                "''".to_string()
+            } else {
+                (*c).to_string()
+            }
+        })
         .collect::<Vec<_>>()
         .join(", ");
     let sql = format!(
@@ -200,16 +236,24 @@ pub fn open_store(root: &Path) -> rusqlite::Result<Connection> {
     conn.execute_batch("PRAGMA journal_mode = WAL")?;
     conn.execute_batch("PRAGMA busy_timeout = 5000")?;
     conn.execute_batch(&format!("CREATE TABLE IF NOT EXISTS reads {READS_SCHEMA};"))?;
-    conn.execute_batch(&format!("CREATE TABLE IF NOT EXISTS bash_reads {BASH_SCHEMA};"))?;
+    conn.execute_batch(&format!(
+        "CREATE TABLE IF NOT EXISTS bash_reads {BASH_SCHEMA};"
+    ))?;
     for table in ["reads", "bash_reads"] {
         if !columns(&conn, table)?.iter().any(|c| c == "last_read_ts") {
-            conn.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN last_read_ts INTEGER"))?;
+            conn.execute_batch(&format!(
+                "ALTER TABLE {table} ADD COLUMN last_read_ts INTEGER"
+            ))?;
         }
     }
     if !columns(&conn, "reads")?.iter().any(|c| c == "read_count") {
         conn.execute_batch("ALTER TABLE reads ADD COLUMN read_count INTEGER NOT NULL DEFAULT 0")?;
-        conn.execute_batch("ALTER TABLE reads ADD COLUMN bytes_delivered INTEGER NOT NULL DEFAULT 0")?;
-        conn.execute_batch("UPDATE reads SET read_count = 1, bytes_delivered = size WHERE sha256 <> ''")?;
+        conn.execute_batch(
+            "ALTER TABLE reads ADD COLUMN bytes_delivered INTEGER NOT NULL DEFAULT 0",
+        )?;
+        conn.execute_batch(
+            "UPDATE reads SET read_count = 1, bytes_delivered = size WHERE sha256 <> ''",
+        )?;
     }
     add_agent_scope(&conn, "reads", READS_SCHEMA, &READS_COLS)?;
     add_agent_scope(&conn, "bash_reads", BASH_SCHEMA, &BASH_COLS)?;
@@ -220,13 +264,21 @@ pub fn open_store(root: &Path) -> rusqlite::Result<Connection> {
 /// `SELECT sha256, lines, stub_count FROM ... WHERE ...` result.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StubRow {
+    /// The sha256 value.
     pub sha256: String,
+    /// The lines value.
     pub lines: i64,
+    /// The stub count value.
     pub stub_count: i64,
 }
 
 /// The cached stub row for a bash command, or `None` if uncached.
-pub fn lookup_bash(conn: &Connection, session_id: &str, cache_key: &str, agent_id: &str) -> rusqlite::Result<Option<StubRow>> {
+pub fn lookup_bash(
+    conn: &Connection,
+    session_id: &str,
+    cache_key: &str,
+    agent_id: &str,
+) -> rusqlite::Result<Option<StubRow>> {
     conn.query_row(
         "SELECT sha256, lines, stub_count FROM bash_reads WHERE session_id = ? AND agent_id = ? AND cache_key = ?",
         params![session_id, agent_id, cache_key],
@@ -237,14 +289,21 @@ pub fn lookup_bash(conn: &Connection, session_id: &str, cache_key: &str, agent_i
 
 /// Arguments for `record_bash_fresh`: a freshly cached bash command result.
 pub struct RecordBashFresh<'a> {
+    /// The session id value.
     pub session_id: &'a str,
+    /// The agent id value.
     pub agent_id: &'a str,
+    /// The cache key value.
     pub cache_key: &'a str,
+    /// The sha256 value.
     pub sha256: &'a str,
+    /// The size value.
     pub size: i64,
+    /// The lines value.
     pub lines: i64,
 }
 
+/// Inserts or replaces the fresh shell-command row described by `p`.
 pub fn record_bash_fresh(conn: &Connection, p: &RecordBashFresh) -> rusqlite::Result<()> {
     let now = now_ms();
     with_busy_retry(|| {
@@ -261,7 +320,12 @@ pub fn record_bash_fresh(conn: &Connection, p: &RecordBashFresh) -> rusqlite::Re
 }
 
 /// Records another stubbed (cache-hit) read of a bash command.
-pub fn bump_bash_stub(conn: &Connection, session_id: &str, cache_key: &str, agent_id: &str) -> rusqlite::Result<()> {
+pub fn bump_bash_stub(
+    conn: &Connection,
+    session_id: &str,
+    cache_key: &str,
+    agent_id: &str,
+) -> rusqlite::Result<()> {
     let now = now_ms();
     with_busy_retry(|| {
         conn.execute(
@@ -275,11 +339,15 @@ pub fn bump_bash_stub(conn: &Connection, session_id: &str, cache_key: &str, agen
 /// Aggregate bash-cache statistics (`bash_stats_for`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BashStats {
+    /// The commands tracked value.
     pub commands_tracked: i64,
+    /// The total stubs value.
     pub total_stubs: i64,
+    /// The bytes saved value.
     pub bytes_saved: i64,
 }
 
+/// Returns aggregate shell-command freshness statistics.
 pub fn bash_stats_for(conn: &Connection) -> rusqlite::Result<BashStats> {
     conn.query_row(
         "SELECT COUNT(*) AS n, COALESCE(SUM(stub_count),0) AS stubs, COALESCE(SUM(size*stub_count),0) AS bytes_saved FROM bash_reads",
@@ -295,7 +363,12 @@ pub fn bash_stats_for(conn: &Connection) -> rusqlite::Result<BashStats> {
 }
 
 /// The cached stub row for a file read, or `None` if uncached.
-pub fn lookup_read(conn: &Connection, session_id: &str, rel_path: &str, agent_id: &str) -> rusqlite::Result<Option<StubRow>> {
+pub fn lookup_read(
+    conn: &Connection,
+    session_id: &str,
+    rel_path: &str,
+    agent_id: &str,
+) -> rusqlite::Result<Option<StubRow>> {
     conn.query_row(
         "SELECT sha256, lines, stub_count FROM reads WHERE session_id = ? AND agent_id = ? AND rel_path = ?",
         params![session_id, agent_id, rel_path],
@@ -308,16 +381,25 @@ pub fn lookup_read(conn: &Connection, session_id: &str, rel_path: &str, agent_id
 /// is the cross-repo content-stub caller: bytes never reached the model, so
 /// `bytes_delivered` must not move even though the row is written.
 pub struct RecordFresh<'a> {
+    /// The session id value.
     pub session_id: &'a str,
+    /// The agent id value.
     pub agent_id: &'a str,
+    /// The rel path value.
     pub rel_path: &'a str,
+    /// The sha256 value.
     pub sha256: &'a str,
+    /// The size value.
     pub size: i64,
+    /// The mtime value.
     pub mtime: i64,
+    /// The lines value.
     pub lines: i64,
+    /// The delivered value.
     pub delivered: bool,
 }
 
+/// Inserts or replaces the fresh file-read row described by `p`.
 pub fn record_fresh(conn: &Connection, p: &RecordFresh) -> rusqlite::Result<()> {
     let now = now_ms();
     let bytes_delivered = if p.delivered { p.size } else { 0 };
@@ -342,12 +424,17 @@ pub fn record_fresh(conn: &Connection, p: &RecordFresh) -> rusqlite::Result<()> 
 /// equality check can never treat it as a stub candidate. On conflict, only the
 /// spend columns move.
 pub struct RecordSpend<'a> {
+    /// The session id value.
     pub session_id: &'a str,
+    /// The agent id value.
     pub agent_id: &'a str,
+    /// The rel path value.
     pub rel_path: &'a str,
+    /// The size value.
     pub size: i64,
 }
 
+/// Adds a delivered read to an existing file-read row.
 pub fn record_spend(conn: &Connection, p: &RecordSpend) -> rusqlite::Result<()> {
     let now = now_ms();
     with_busy_retry(|| {
@@ -365,7 +452,12 @@ pub fn record_spend(conn: &Connection, p: &RecordSpend) -> rusqlite::Result<()> 
 }
 
 /// Records another stubbed (cache-hit) read of a file.
-pub fn bump_stub(conn: &Connection, session_id: &str, rel_path: &str, agent_id: &str) -> rusqlite::Result<()> {
+pub fn bump_stub(
+    conn: &Connection,
+    session_id: &str,
+    rel_path: &str,
+    agent_id: &str,
+) -> rusqlite::Result<()> {
     let now = now_ms();
     with_busy_retry(|| {
         conn.execute(
@@ -381,18 +473,29 @@ pub fn bump_stub(conn: &Connection, session_id: &str, rel_path: &str, agent_id: 
 /// excluded.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PathBreakdownRow {
+    /// The session id value.
     pub session_id: String,
+    /// The agent id value.
     pub agent_id: String,
+    /// The rel path value.
     pub rel_path: String,
+    /// The read count value.
     pub read_count: i64,
+    /// The bytes delivered value.
     pub bytes_delivered: i64,
+    /// The size value.
     pub size: i64,
+    /// The lines value.
     pub lines: i64,
+    /// The stub count value.
     pub stub_count: i64,
+    /// The first seen ts value.
     pub first_seen_ts: i64,
+    /// The last read ts value.
     pub last_read_ts: Option<i64>,
 }
 
+/// Returns file-read statistics grouped by session, agent, and path.
 pub fn path_breakdown(conn: &Connection) -> rusqlite::Result<Vec<PathBreakdownRow>> {
     let mut stmt = conn.prepare(
         "SELECT session_id, agent_id, rel_path, read_count, bytes_delivered,
@@ -421,33 +524,57 @@ pub fn path_breakdown(conn: &Connection) -> rusqlite::Result<Vec<PathBreakdownRo
 /// Aggregate read-cache statistics (`stats_for`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StatsFor {
+    /// The distinct files value.
     pub distinct_files: i64,
+    /// The total stubs value.
     pub total_stubs: i64,
+    /// The lines saved value.
     pub lines_saved: i64,
+    /// The bytes saved value.
     pub bytes_saved: i64,
 }
 
+/// Returns aggregate file-read freshness statistics.
 pub fn stats_for(conn: &Connection) -> rusqlite::Result<StatsFor> {
-    let distinct_files: i64 = conn.query_row("SELECT COUNT(DISTINCT rel_path) AS n FROM reads", [], |row| row.get(0))?;
-    let total_stubs: i64 = conn.query_row("SELECT COALESCE(SUM(stub_count),0) AS n FROM reads", [], |row| row.get(0))?;
+    let distinct_files: i64 = conn.query_row(
+        "SELECT COUNT(DISTINCT rel_path) AS n FROM reads",
+        [],
+        |row| row.get(0),
+    )?;
+    let total_stubs: i64 = conn.query_row(
+        "SELECT COALESCE(SUM(stub_count),0) AS n FROM reads",
+        [],
+        |row| row.get(0),
+    )?;
     let (lines_saved, bytes_saved): (i64, i64) = conn.query_row(
         "SELECT COALESCE(SUM(lines*stub_count),0) AS lines_saved, COALESCE(SUM(size*stub_count),0) AS bytes_saved FROM reads",
         [],
         |row| Ok((row.get(0)?, row.get(1)?)),
     )?;
-    Ok(StatsFor { distinct_files, total_stubs, lines_saved, bytes_saved })
+    Ok(StatsFor {
+        distinct_files,
+        total_stubs,
+        lines_saved,
+        bytes_saved,
+    })
 }
 
 /// Per-session read-cache statistics (`session_stats`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SessionStatsRow {
+    /// The session id value.
     pub session_id: String,
+    /// The files value.
     pub files: i64,
+    /// The stubs value.
     pub stubs: i64,
+    /// The lines saved value.
     pub lines_saved: i64,
+    /// The bytes saved value.
     pub bytes_saved: i64,
 }
 
+/// Returns file-read statistics grouped by session.
 pub fn session_stats(conn: &Connection) -> rusqlite::Result<Vec<SessionStatsRow>> {
     let mut stmt = conn.prepare(
         "SELECT session_id, COUNT(*) AS files, COALESCE(SUM(stub_count),0) AS stubs,
@@ -470,12 +597,17 @@ pub fn session_stats(conn: &Connection) -> rusqlite::Result<Vec<SessionStatsRow>
 /// One of the most-stubbed files (`top_stubbed`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TopStubbedRow {
+    /// The rel path value.
     pub rel_path: String,
+    /// The session id value.
     pub session_id: String,
+    /// The stub count value.
     pub stub_count: i64,
+    /// The lines value.
     pub lines: i64,
 }
 
+/// Returns at most `n` file-read rows ordered by descending stub count.
 pub fn top_stubbed(conn: &Connection, n: i64) -> rusqlite::Result<Vec<TopStubbedRow>> {
     let mut stmt = conn.prepare(
         "SELECT rel_path, session_id, stub_count, lines FROM reads WHERE stub_count > 0 ORDER BY stub_count DESC, rel_path LIMIT ?",
@@ -496,13 +628,20 @@ pub fn top_stubbed(conn: &Connection, n: i64) -> rusqlite::Result<Vec<TopStubbed
 /// `COALESCE(last_read_ts, first_seen_ts)`: legacy rows migrated without
 /// `last_read_ts` fall back to their insert time. Deliberately NOT wrapped in
 /// `with_busy_retry`.
-pub fn prune(conn: &Connection, older_than_days: Option<f64>, session_id: Option<&str>) -> rusqlite::Result<usize> {
+pub fn prune(
+    conn: &Connection,
+    older_than_days: Option<f64>,
+    session_id: Option<&str>,
+) -> rusqlite::Result<usize> {
     if let Some(sid) = session_id {
         return conn.execute("DELETE FROM reads WHERE session_id = ?", params![sid]);
     }
     if let Some(days) = older_than_days {
         let cutoff = now_ms() - (days * 86400.0 * 1000.0) as i64;
-        return conn.execute("DELETE FROM reads WHERE COALESCE(last_read_ts, first_seen_ts) < ?", params![cutoff]);
+        return conn.execute(
+            "DELETE FROM reads WHERE COALESCE(last_read_ts, first_seen_ts) < ?",
+            params![cutoff],
+        );
     }
     Ok(0)
 }
@@ -534,7 +673,10 @@ pub fn content_db_path() -> PathBuf {
 
 fn default_content_db_path() -> PathBuf {
     match env::var("HOME") {
-        Ok(home) => PathBuf::from(home).join(".claude").join("scout").join("content.db"),
+        Ok(home) => PathBuf::from(home)
+            .join(".claude")
+            .join("scout")
+            .join("content.db"),
         Err(_) => PathBuf::from("content.db"),
     }
 }
@@ -546,7 +688,9 @@ pub fn open_content_store() -> rusqlite::Result<Connection> {
     let conn = Connection::open(content_db_path())?;
     conn.execute_batch("PRAGMA journal_mode = WAL")?;
     conn.execute_batch("PRAGMA busy_timeout = 5000")?;
-    conn.execute_batch(&format!("CREATE TABLE IF NOT EXISTS content {CONTENT_SCHEMA};"))?;
+    conn.execute_batch(&format!(
+        "CREATE TABLE IF NOT EXISTS content {CONTENT_SCHEMA};"
+    ))?;
     add_agent_scope(&conn, "content", CONTENT_SCHEMA, &CONTENT_COLS)?;
     Ok(conn)
 }
@@ -554,17 +698,31 @@ pub fn open_content_store() -> rusqlite::Result<Connection> {
 /// A content-dedup row (`lookup_content`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContentRow {
+    /// The session id value.
     pub session_id: String,
+    /// The agent id value.
     pub agent_id: String,
+    /// The sha256 value.
     pub sha256: String,
+    /// The root value.
     pub root: String,
+    /// The rel path value.
     pub rel_path: String,
+    /// The size value.
     pub size: i64,
+    /// The lines value.
     pub lines: i64,
+    /// The stub count value.
     pub stub_count: i64,
 }
 
-pub fn lookup_content(conn: &Connection, session_id: &str, sha256: &str, agent_id: &str) -> rusqlite::Result<Option<ContentRow>> {
+/// Looks up content freshness for a session, digest, and agent.
+pub fn lookup_content(
+    conn: &Connection,
+    session_id: &str,
+    sha256: &str,
+    agent_id: &str,
+) -> rusqlite::Result<Option<ContentRow>> {
     conn.query_row(
         "SELECT session_id, agent_id, sha256, root, rel_path, size, lines, stub_count FROM content WHERE session_id = ? AND agent_id = ? AND sha256 = ?",
         params![session_id, agent_id, sha256],
@@ -587,15 +745,23 @@ pub fn lookup_content(conn: &Connection, session_id: &str, sha256: &str, agent_i
 /// Arguments for `record_content`. The first path to carry this content keeps
 /// the naming rights: `ON CONFLICT DO NOTHING`.
 pub struct RecordContent<'a> {
+    /// The session id value.
     pub session_id: &'a str,
+    /// The agent id value.
     pub agent_id: &'a str,
+    /// The sha256 value.
     pub sha256: &'a str,
+    /// The root value.
     pub root: &'a str,
+    /// The rel path value.
     pub rel_path: &'a str,
+    /// The size value.
     pub size: i64,
+    /// The lines value.
     pub lines: i64,
 }
 
+/// Inserts or replaces the content-freshness row described by `p`.
 pub fn record_content(conn: &Connection, p: &RecordContent) -> rusqlite::Result<()> {
     let now = now_ms();
     with_busy_retry(|| {
@@ -610,7 +776,12 @@ pub fn record_content(conn: &Connection, p: &RecordContent) -> rusqlite::Result<
 }
 
 /// Records another stubbed (cache-hit) read of content by digest.
-pub fn bump_content_stub(conn: &Connection, session_id: &str, sha256: &str, agent_id: &str) -> rusqlite::Result<()> {
+pub fn bump_content_stub(
+    conn: &Connection,
+    session_id: &str,
+    sha256: &str,
+    agent_id: &str,
+) -> rusqlite::Result<()> {
     let now = now_ms();
     with_busy_retry(|| {
         conn.execute(
@@ -624,11 +795,15 @@ pub fn bump_content_stub(conn: &Connection, session_id: &str, sha256: &str, agen
 /// Aggregate content-dedup statistics (`content_stats_for`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ContentStats {
+    /// The distinct contents value.
     pub distinct_contents: i64,
+    /// The total stubs value.
     pub total_stubs: i64,
+    /// The bytes saved value.
     pub bytes_saved: i64,
 }
 
+/// Returns aggregate content-freshness statistics.
 pub fn content_stats_for(conn: &Connection) -> rusqlite::Result<ContentStats> {
     conn.query_row(
         "SELECT COUNT(*) AS n, COALESCE(SUM(stub_count),0) AS stubs, COALESCE(SUM(size*stub_count),0) AS bytes_saved FROM content",
@@ -662,7 +837,10 @@ mod tests {
 
     fn unique_temp_dir(prefix: &str) -> PathBuf {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-        let dir = env::temp_dir().join(format!("scout-store-rs-{prefix}-{}-{n}", std::process::id()));
+        let dir = env::temp_dir().join(format!(
+            "scout-store-rs-{prefix}-{}-{n}",
+            std::process::id()
+        ));
         std::fs::create_dir_all(&dir).expect("create temp dir");
         dir
     }
@@ -677,21 +855,30 @@ mod tests {
 
     fn busy_err() -> rusqlite::Error {
         rusqlite::Error::SqliteFailure(
-            rusqlite::ffi::Error { code: ErrorCode::DatabaseBusy, extended_code: 5 },
+            rusqlite::ffi::Error {
+                code: ErrorCode::DatabaseBusy,
+                extended_code: 5,
+            },
             Some("database is locked".to_string()),
         )
     }
 
     fn locked_err() -> rusqlite::Error {
         rusqlite::Error::SqliteFailure(
-            rusqlite::ffi::Error { code: ErrorCode::DatabaseLocked, extended_code: 6 },
+            rusqlite::ffi::Error {
+                code: ErrorCode::DatabaseLocked,
+                extended_code: 6,
+            },
             Some("database is locked".to_string()),
         )
     }
 
     fn other_err() -> rusqlite::Error {
         rusqlite::Error::SqliteFailure(
-            rusqlite::ffi::Error { code: ErrorCode::Unknown, extended_code: 1 },
+            rusqlite::ffi::Error {
+                code: ErrorCode::Unknown,
+                extended_code: 1,
+            },
             Some("near \"SELCT\": syntax error".to_string()),
         )
     }
@@ -746,7 +933,9 @@ mod tests {
         });
         assert_eq!(calls.get(), 3);
         match result {
-            Err(rusqlite::Error::SqliteFailure(e, _)) => assert_eq!(e.code, ErrorCode::DatabaseBusy),
+            Err(rusqlite::Error::SqliteFailure(e, _)) => {
+                assert_eq!(e.code, ErrorCode::DatabaseBusy)
+            }
             other => panic!("expected a busy SqliteFailure, got {other:?}"),
         }
     }
@@ -756,9 +945,13 @@ mod tests {
     #[test]
     fn open_store_enables_wal_and_5s_busy_timeout() {
         let conn = open_store(&repo()).unwrap();
-        let journal_mode: String = conn.query_row("PRAGMA journal_mode", [], |r| r.get(0)).unwrap();
+        let journal_mode: String = conn
+            .query_row("PRAGMA journal_mode", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(journal_mode, "wal");
-        let timeout: i64 = conn.query_row("PRAGMA busy_timeout", [], |r| r.get(0)).unwrap();
+        let timeout: i64 = conn
+            .query_row("PRAGMA busy_timeout", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(timeout, 5000);
     }
 
@@ -768,9 +961,13 @@ mod tests {
         let dir = unique_temp_dir("content-pragma");
         env::set_var("SCOUT_CONTENT_DB", dir.join("content.db"));
         let conn = open_content_store().unwrap();
-        let journal_mode: String = conn.query_row("PRAGMA journal_mode", [], |r| r.get(0)).unwrap();
+        let journal_mode: String = conn
+            .query_row("PRAGMA journal_mode", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(journal_mode, "wal");
-        let timeout: i64 = conn.query_row("PRAGMA busy_timeout", [], |r| r.get(0)).unwrap();
+        let timeout: i64 = conn
+            .query_row("PRAGMA busy_timeout", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(timeout, 5000);
         env::remove_var("SCOUT_CONTENT_DB");
     }
@@ -819,7 +1016,9 @@ mod tests {
         assert!(cols.iter().any(|c| c == "read_count"));
         assert!(cols.iter().any(|c| c == "bytes_delivered"));
 
-        let row = lookup_read(&conn, "legacy-sess", "old.ts", "").unwrap().expect("migrated row present under agent_id ''");
+        let row = lookup_read(&conn, "legacy-sess", "old.ts", "")
+            .unwrap()
+            .expect("migrated row present under agent_id ''");
         assert_eq!(row.sha256, "deadbeef");
         assert_eq!(row.stub_count, 3);
 
@@ -830,8 +1029,14 @@ mod tests {
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .unwrap();
-        assert_eq!(read_count, 1, "backfilled to the provable floor, not left at 0");
-        assert_eq!(bytes_delivered, 42, "backfilled to size for a row with a real sha256");
+        assert_eq!(
+            read_count, 1,
+            "backfilled to the provable floor, not left at 0"
+        );
+        assert_eq!(
+            bytes_delivered, 42,
+            "backfilled to size for a row with a real sha256"
+        );
     }
 
     #[test]
@@ -867,7 +1072,9 @@ mod tests {
         let conn = open_content_store().unwrap();
         let cols = columns(&conn, "content").unwrap();
         assert!(cols.iter().any(|c| c == "agent_id"));
-        let row = lookup_content(&conn, "legacy-sess", "cafef00d", "").unwrap().expect("migrated row present under agent_id ''");
+        let row = lookup_content(&conn, "legacy-sess", "cafef00d", "")
+            .unwrap()
+            .expect("migrated row present under agent_id ''");
         assert_eq!(row.root, "/r1");
         assert_eq!(row.rel_path, "old.ts");
         env::remove_var("SCOUT_CONTENT_DB");
@@ -881,7 +1088,16 @@ mod tests {
         assert!(lookup_read(&conn, "s1", "a.ts", "").unwrap().is_none());
         record_fresh(
             &conn,
-            &RecordFresh { session_id: "s1", agent_id: "", rel_path: "a.ts", sha256: "abc", size: 3, mtime: 100, lines: 1, delivered: true },
+            &RecordFresh {
+                session_id: "s1",
+                agent_id: "",
+                rel_path: "a.ts",
+                sha256: "abc",
+                size: 3,
+                mtime: 100,
+                lines: 1,
+                delivered: true,
+            },
         )
         .unwrap();
         let row = lookup_read(&conn, "s1", "a.ts", "").unwrap().unwrap();
@@ -889,10 +1105,25 @@ mod tests {
         assert_eq!(row.stub_count, 0);
         bump_stub(&conn, "s1", "a.ts", "").unwrap();
         bump_stub(&conn, "s1", "a.ts", "").unwrap();
-        assert_eq!(lookup_read(&conn, "s1", "a.ts", "").unwrap().unwrap().stub_count, 2);
+        assert_eq!(
+            lookup_read(&conn, "s1", "a.ts", "")
+                .unwrap()
+                .unwrap()
+                .stub_count,
+            2
+        );
         record_fresh(
             &conn,
-            &RecordFresh { session_id: "s1", agent_id: "", rel_path: "a.ts", sha256: "def", size: 4, mtime: 200, lines: 1, delivered: true },
+            &RecordFresh {
+                session_id: "s1",
+                agent_id: "",
+                rel_path: "a.ts",
+                sha256: "def",
+                size: 4,
+                mtime: 200,
+                lines: 1,
+                delivered: true,
+            },
         )
         .unwrap();
         let row = lookup_read(&conn, "s1", "a.ts", "").unwrap().unwrap();
@@ -905,7 +1136,16 @@ mod tests {
         let conn = open_store(&repo()).unwrap();
         record_fresh(
             &conn,
-            &RecordFresh { session_id: "s1", agent_id: "", rel_path: "a.ts", sha256: "abc", size: 3, mtime: 100, lines: 1, delivered: true },
+            &RecordFresh {
+                session_id: "s1",
+                agent_id: "",
+                rel_path: "a.ts",
+                sha256: "abc",
+                size: 3,
+                mtime: 100,
+                lines: 1,
+                delivered: true,
+            },
         )
         .unwrap();
         assert!(lookup_read(&conn, "s2", "a.ts", "").unwrap().is_none());
@@ -914,8 +1154,34 @@ mod tests {
     #[test]
     fn stats_for_counts_distinct_files_and_total_stubs() {
         let conn = open_store(&repo()).unwrap();
-        record_fresh(&conn, &RecordFresh { session_id: "s1", agent_id: "", rel_path: "a.ts", sha256: "abc", size: 3, mtime: 100, lines: 1, delivered: true }).unwrap();
-        record_fresh(&conn, &RecordFresh { session_id: "s1", agent_id: "", rel_path: "b.ts", sha256: "xyz", size: 3, mtime: 100, lines: 1, delivered: true }).unwrap();
+        record_fresh(
+            &conn,
+            &RecordFresh {
+                session_id: "s1",
+                agent_id: "",
+                rel_path: "a.ts",
+                sha256: "abc",
+                size: 3,
+                mtime: 100,
+                lines: 1,
+                delivered: true,
+            },
+        )
+        .unwrap();
+        record_fresh(
+            &conn,
+            &RecordFresh {
+                session_id: "s1",
+                agent_id: "",
+                rel_path: "b.ts",
+                sha256: "xyz",
+                size: 3,
+                mtime: 100,
+                lines: 1,
+                delivered: true,
+            },
+        )
+        .unwrap();
         bump_stub(&conn, "s1", "a.ts", "").unwrap();
         let s = stats_for(&conn).unwrap();
         assert_eq!(s.distinct_files, 2);
@@ -925,7 +1191,16 @@ mod tests {
     #[test]
     fn record_spend_never_produces_a_matchable_sha_and_tracks_only_spend() {
         let conn = open_store(&repo()).unwrap();
-        record_spend(&conn, &RecordSpend { session_id: "s1", agent_id: "", rel_path: "big.ts", size: 500 }).unwrap();
+        record_spend(
+            &conn,
+            &RecordSpend {
+                session_id: "s1",
+                agent_id: "",
+                rel_path: "big.ts",
+                size: 500,
+            },
+        )
+        .unwrap();
         let row = lookup_read(&conn, "s1", "big.ts", "").unwrap().unwrap();
         assert_eq!(row.sha256, "");
         assert_eq!(row.stub_count, 0);
@@ -940,7 +1215,16 @@ mod tests {
         let conn = open_store(&repo()).unwrap();
         record_fresh(
             &conn,
-            &RecordFresh { session_id: "s1", agent_id: "", rel_path: "cross.ts", sha256: "abc", size: 999, mtime: 1, lines: 3, delivered: false },
+            &RecordFresh {
+                session_id: "s1",
+                agent_id: "",
+                rel_path: "cross.ts",
+                sha256: "abc",
+                size: 999,
+                mtime: 1,
+                lines: 3,
+                delivered: false,
+            },
         )
         .unwrap();
         let (read_count, bytes_delivered): (i64, i64) = conn
@@ -951,13 +1235,25 @@ mod tests {
             )
             .unwrap();
         assert_eq!(read_count, 1);
-        assert_eq!(bytes_delivered, 0, "delivered=false must never move bytes_delivered");
+        assert_eq!(
+            bytes_delivered, 0,
+            "delivered=false must never move bytes_delivered"
+        );
 
         // A subsequent delivered=true call accumulates on top, matching the
         // ON CONFLICT arithmetic used by every caller regardless of delivered.
         record_fresh(
             &conn,
-            &RecordFresh { session_id: "s1", agent_id: "", rel_path: "cross.ts", sha256: "abc", size: 999, mtime: 2, lines: 3, delivered: true },
+            &RecordFresh {
+                session_id: "s1",
+                agent_id: "",
+                rel_path: "cross.ts",
+                sha256: "abc",
+                size: 999,
+                mtime: 2,
+                lines: 3,
+                delivered: true,
+            },
         )
         .unwrap();
         let (read_count, bytes_delivered): (i64, i64) = conn
@@ -975,11 +1271,28 @@ mod tests {
     fn bash_round_trip() {
         let conn = open_store(&repo()).unwrap();
         assert!(lookup_bash(&conn, "s1", "cat f.ts", "").unwrap().is_none());
-        record_bash_fresh(&conn, &RecordBashFresh { session_id: "s1", agent_id: "", cache_key: "cat f.ts", sha256: "abc", size: 3, lines: 1 }).unwrap();
+        record_bash_fresh(
+            &conn,
+            &RecordBashFresh {
+                session_id: "s1",
+                agent_id: "",
+                cache_key: "cat f.ts",
+                sha256: "abc",
+                size: 3,
+                lines: 1,
+            },
+        )
+        .unwrap();
         let row = lookup_bash(&conn, "s1", "cat f.ts", "").unwrap().unwrap();
         assert_eq!(row.sha256, "abc");
         bump_bash_stub(&conn, "s1", "cat f.ts", "").unwrap();
-        assert_eq!(lookup_bash(&conn, "s1", "cat f.ts", "").unwrap().unwrap().stub_count, 1);
+        assert_eq!(
+            lookup_bash(&conn, "s1", "cat f.ts", "")
+                .unwrap()
+                .unwrap()
+                .stub_count,
+            1
+        );
         let stats = bash_stats_for(&conn).unwrap();
         assert_eq!(stats.commands_tracked, 1);
         assert_eq!(stats.total_stubs, 1);
@@ -993,8 +1306,32 @@ mod tests {
         env::set_var("SCOUT_CONTENT_DB", dir.join("content.db"));
         let conn = open_content_store().unwrap();
         assert!(lookup_content(&conn, "s", "dup", "").unwrap().is_none());
-        record_content(&conn, &RecordContent { session_id: "s", agent_id: "", sha256: "dup", root: "/r1", rel_path: "first.ts", size: 10, lines: 1 }).unwrap();
-        record_content(&conn, &RecordContent { session_id: "s", agent_id: "", sha256: "dup", root: "/r2", rel_path: "second.ts", size: 10, lines: 1 }).unwrap();
+        record_content(
+            &conn,
+            &RecordContent {
+                session_id: "s",
+                agent_id: "",
+                sha256: "dup",
+                root: "/r1",
+                rel_path: "first.ts",
+                size: 10,
+                lines: 1,
+            },
+        )
+        .unwrap();
+        record_content(
+            &conn,
+            &RecordContent {
+                session_id: "s",
+                agent_id: "",
+                sha256: "dup",
+                root: "/r2",
+                rel_path: "second.ts",
+                size: 10,
+                lines: 1,
+            },
+        )
+        .unwrap();
         let hit = lookup_content(&conn, "s", "dup", "").unwrap().unwrap();
         assert_eq!(hit.rel_path, "first.ts");
         assert_eq!(hit.root, "/r1");
@@ -1033,8 +1370,34 @@ mod tests {
     #[test]
     fn prune_by_session_and_by_age() {
         let conn = open_store(&repo()).unwrap();
-        record_fresh(&conn, &RecordFresh { session_id: "s1", agent_id: "", rel_path: "a.ts", sha256: "abc", size: 3, mtime: 100, lines: 1, delivered: true }).unwrap();
-        record_fresh(&conn, &RecordFresh { session_id: "s2", agent_id: "", rel_path: "b.ts", sha256: "def", size: 3, mtime: 100, lines: 1, delivered: true }).unwrap();
+        record_fresh(
+            &conn,
+            &RecordFresh {
+                session_id: "s1",
+                agent_id: "",
+                rel_path: "a.ts",
+                sha256: "abc",
+                size: 3,
+                mtime: 100,
+                lines: 1,
+                delivered: true,
+            },
+        )
+        .unwrap();
+        record_fresh(
+            &conn,
+            &RecordFresh {
+                session_id: "s2",
+                agent_id: "",
+                rel_path: "b.ts",
+                sha256: "def",
+                size: 3,
+                mtime: 100,
+                lines: 1,
+                delivered: true,
+            },
+        )
+        .unwrap();
         let deleted = prune(&conn, None, Some("s1")).unwrap();
         assert_eq!(deleted, 1);
         assert!(lookup_read(&conn, "s1", "a.ts", "").unwrap().is_none());
@@ -1051,9 +1414,48 @@ mod tests {
     #[test]
     fn session_ids_by_prefix_matches() {
         let conn = open_store(&repo()).unwrap();
-        record_fresh(&conn, &RecordFresh { session_id: "abc123", agent_id: "", rel_path: "a.ts", sha256: "x", size: 1, mtime: 1, lines: 1, delivered: true }).unwrap();
-        record_fresh(&conn, &RecordFresh { session_id: "abcxyz", agent_id: "", rel_path: "b.ts", sha256: "y", size: 1, mtime: 1, lines: 1, delivered: true }).unwrap();
-        record_fresh(&conn, &RecordFresh { session_id: "zzz999", agent_id: "", rel_path: "c.ts", sha256: "z", size: 1, mtime: 1, lines: 1, delivered: true }).unwrap();
+        record_fresh(
+            &conn,
+            &RecordFresh {
+                session_id: "abc123",
+                agent_id: "",
+                rel_path: "a.ts",
+                sha256: "x",
+                size: 1,
+                mtime: 1,
+                lines: 1,
+                delivered: true,
+            },
+        )
+        .unwrap();
+        record_fresh(
+            &conn,
+            &RecordFresh {
+                session_id: "abcxyz",
+                agent_id: "",
+                rel_path: "b.ts",
+                sha256: "y",
+                size: 1,
+                mtime: 1,
+                lines: 1,
+                delivered: true,
+            },
+        )
+        .unwrap();
+        record_fresh(
+            &conn,
+            &RecordFresh {
+                session_id: "zzz999",
+                agent_id: "",
+                rel_path: "c.ts",
+                sha256: "z",
+                size: 1,
+                mtime: 1,
+                lines: 1,
+                delivered: true,
+            },
+        )
+        .unwrap();
         let mut matches = session_ids_by_prefix(&conn, "abc").unwrap();
         matches.sort();
         assert_eq!(matches, vec!["abc123".to_string(), "abcxyz".to_string()]);
@@ -1062,8 +1464,34 @@ mod tests {
     #[test]
     fn top_stubbed_orders_by_stub_count_desc_then_path() {
         let conn = open_store(&repo()).unwrap();
-        record_fresh(&conn, &RecordFresh { session_id: "s1", agent_id: "", rel_path: "a.ts", sha256: "x", size: 1, mtime: 1, lines: 5, delivered: true }).unwrap();
-        record_fresh(&conn, &RecordFresh { session_id: "s1", agent_id: "", rel_path: "b.ts", sha256: "y", size: 1, mtime: 1, lines: 5, delivered: true }).unwrap();
+        record_fresh(
+            &conn,
+            &RecordFresh {
+                session_id: "s1",
+                agent_id: "",
+                rel_path: "a.ts",
+                sha256: "x",
+                size: 1,
+                mtime: 1,
+                lines: 5,
+                delivered: true,
+            },
+        )
+        .unwrap();
+        record_fresh(
+            &conn,
+            &RecordFresh {
+                session_id: "s1",
+                agent_id: "",
+                rel_path: "b.ts",
+                sha256: "y",
+                size: 1,
+                mtime: 1,
+                lines: 5,
+                delivered: true,
+            },
+        )
+        .unwrap();
         bump_stub(&conn, "s1", "a.ts", "").unwrap();
         bump_stub(&conn, "s1", "b.ts", "").unwrap();
         bump_stub(&conn, "s1", "b.ts", "").unwrap();
@@ -1086,7 +1514,20 @@ mod tests {
             [],
         )
         .unwrap();
-        record_fresh(&conn, &RecordFresh { session_id: "s1", agent_id: "", rel_path: "active.ts", sha256: "abc", size: 1, mtime: 1, lines: 1, delivered: true }).unwrap();
+        record_fresh(
+            &conn,
+            &RecordFresh {
+                session_id: "s1",
+                agent_id: "",
+                rel_path: "active.ts",
+                sha256: "abc",
+                size: 1,
+                mtime: 1,
+                lines: 1,
+                delivered: true,
+            },
+        )
+        .unwrap();
         let rows = path_breakdown(&conn).unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].rel_path, "active.ts");

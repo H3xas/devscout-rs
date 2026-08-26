@@ -1,3 +1,5 @@
+//! Integration tests for the command-line read operation.
+
 // The `read` verb: declaration span (start AND end line) plus the same
 // capped-and-ranked inbound answer `refs` gives, with refs' own ambiguity and
 // zero-hit discipline.

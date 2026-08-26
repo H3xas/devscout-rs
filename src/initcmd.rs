@@ -60,7 +60,10 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
 }
 
 fn today() -> String {
-    let secs = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
     let days = (secs / 86_400) as i64;
     let (y, m, d) = civil_from_days(days);
     format!("{y:04}-{m:02}-{d:02}")
@@ -130,9 +133,16 @@ fn ensure_scout_excluded(info_dir: &Path) -> io::Result<()> {
     };
     let already_listed = body.split('\n').any(|l| l.trim() == ".scout/");
     if !already_listed {
-        let prefix = if body.is_empty() || body.ends_with('\n') { "" } else { "\n" };
+        let prefix = if body.is_empty() || body.ends_with('\n') {
+            ""
+        } else {
+            "\n"
+        };
         use io::Write as _;
-        let mut f = fs::OpenOptions::new().create(true).append(true).open(&exclude_path)?;
+        let mut f = fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&exclude_path)?;
         write!(f, "{prefix}.scout/\n")?;
     }
     Ok(())
@@ -178,15 +188,22 @@ fn set_field(value: manifest::Value, key: &str, new_value: manifest::Value) -> m
 fn read_registry_value() -> Result<manifest::Value, String> {
     let path = repo::registry_path();
     if !path.exists() {
-        return Ok(manifest::Value::object(vec![("roots", manifest::Value::array(vec![]))]));
+        return Ok(manifest::Value::object(vec![(
+            "roots",
+            manifest::Value::array(vec![]),
+        )]));
     }
-    let bytes = fs::read(&path).map_err(|e| format!("registry at {} is not valid JSON: {e}", path.display()))?;
+    let bytes = fs::read(&path)
+        .map_err(|e| format!("registry at {} is not valid JSON: {e}", path.display()))?;
     let text = String::from_utf8_lossy(&bytes).into_owned();
     let value: manifest::Value = serde_json::from_str(&text)
         .map_err(|e| format!("registry at {} is not valid JSON: {e}", path.display()))?;
     match value.get("roots") {
         Some(manifest::Value::Array(_)) => Ok(value),
-        _ => Err(format!("registry at {} has no \"roots\" array", path.display())),
+        _ => Err(format!(
+            "registry at {} has no \"roots\" array",
+            path.display()
+        )),
     }
 }
 
@@ -206,9 +223,17 @@ fn write_registry_value(value: &manifest::Value) -> Result<(), String> {
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
-    let suffix = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
-    let tmp_name =
-        format!("{}.tmp.{}.{suffix}", path.file_name().and_then(|n| n.to_str()).unwrap_or("repos.json"), std::process::id());
+    let suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let tmp_name = format!(
+        "{}.tmp.{}.{suffix}",
+        path.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("repos.json"),
+        std::process::id()
+    );
     let tmp_path = path.with_file_name(tmp_name);
 
     if let Err(e) = fs::write(&tmp_path, body.as_bytes()) {
@@ -222,12 +247,31 @@ fn write_registry_value(value: &manifest::Value) -> Result<(), String> {
     Ok(())
 }
 
-fn new_entry_value(root_abs: &str, kind: &str, label: Option<&str>, scope: &[String], stamp: &str) -> manifest::Value {
+fn new_entry_value(
+    root_abs: &str,
+    kind: &str,
+    label: Option<&str>,
+    scope: &[String],
+    stamp: &str,
+) -> manifest::Value {
     manifest::Value::object(vec![
         ("root", manifest::Value::string(root_abs)),
         ("kind", manifest::Value::string(kind)),
-        ("label", label.map(manifest::Value::string).unwrap_or(manifest::Value::Null)),
-        ("scope", manifest::Value::array(scope.iter().map(|s| manifest::Value::string(s.clone())).collect())),
+        (
+            "label",
+            label
+                .map(manifest::Value::string)
+                .unwrap_or(manifest::Value::Null),
+        ),
+        (
+            "scope",
+            manifest::Value::array(
+                scope
+                    .iter()
+                    .map(|s| manifest::Value::string(s.clone()))
+                    .collect(),
+            ),
+        ),
         ("initialized", manifest::Value::string(stamp)),
         ("last_seen", manifest::Value::string(stamp)),
     ])
@@ -236,7 +280,13 @@ fn new_entry_value(root_abs: &str, kind: &str, label: Option<&str>, scope: &[Str
 // Updates an EXISTING registry entry: `kind` is set unconditionally;
 // `label`/`scope` overwrite only when non-empty (a `None`/empty label or empty
 // scope leaves the prior value in place); `last_seen` always bumps to today.
-fn update_entry_value(entry: manifest::Value, kind: &str, label: Option<&str>, scope: &[String], stamp: &str) -> manifest::Value {
+fn update_entry_value(
+    entry: manifest::Value,
+    kind: &str,
+    label: Option<&str>,
+    scope: &[String],
+    stamp: &str,
+) -> manifest::Value {
     let mut e = set_field(entry, "kind", manifest::Value::string(kind));
     if let Some(l) = label {
         if !l.is_empty() {
@@ -244,7 +294,16 @@ fn update_entry_value(entry: manifest::Value, kind: &str, label: Option<&str>, s
         }
     }
     if !scope.is_empty() {
-        e = set_field(e, "scope", manifest::Value::array(scope.iter().map(|s| manifest::Value::string(s.clone())).collect()));
+        e = set_field(
+            e,
+            "scope",
+            manifest::Value::array(
+                scope
+                    .iter()
+                    .map(|s| manifest::Value::string(s.clone()))
+                    .collect(),
+            ),
+        );
     }
     e = set_field(e, "last_seen", manifest::Value::string(stamp));
     e
@@ -253,7 +312,12 @@ fn update_entry_value(entry: manifest::Value, kind: &str, label: Option<&str>, s
 // Registers or updates `root_abs` in the registry. `root_abs` is already the
 // fully resolved absolute root (`cmd_init`'s `root`), so no further resolution
 // happens here.
-fn register_root(root_abs: &str, kind: &str, label: Option<&str>, scope: &[String]) -> Result<(), String> {
+fn register_root(
+    root_abs: &str,
+    kind: &str,
+    label: Option<&str>,
+    scope: &[String],
+) -> Result<(), String> {
     let registry = read_registry_value()?;
     let roots: Vec<manifest::Value> = match registry.get("roots") {
         Some(manifest::Value::Array(items)) => items.clone(),
@@ -308,7 +372,11 @@ pub fn cmd_init(cwd: &Path, args: &[String]) -> (i32, String) {
         }
     }
 
-    let scope_note = if scope.is_empty() { String::new() } else { format!(", scope {}", scope.join(", ")) };
+    let scope_note = if scope.is_empty() {
+        String::new()
+    } else {
+        format!(", scope {}", scope.join(", "))
+    };
     let scout_dir = repo::scout_dir(&root);
     let root_abs = root.to_string_lossy().into_owned();
 
@@ -322,7 +390,15 @@ pub fn cmd_init(cwd: &Path, args: &[String]) -> (i32, String) {
             // marker, so `git_common_dir` resolving it should never fail except
             // under a TOCTOU race (the marker vanishing between the two calls).
             // This aborts with an error rather than panicking.
-            None => return (1, format!("error: unable to resolve git common dir for {}", git_root.display())),
+            None => {
+                return (
+                    1,
+                    format!(
+                        "error: unable to resolve git common dir for {}",
+                        git_root.display()
+                    ),
+                )
+            }
         };
         if let Err(e) = ensure_scout_excluded(&common.join("info")) {
             return (1, format!("error: {e}"));
@@ -333,7 +409,13 @@ pub fn cmd_init(cwd: &Path, args: &[String]) -> (i32, String) {
         if let Err(e) = register_root(&root_abs, "git", label.as_deref(), &scope) {
             return (1, format!("error: {e}"));
         }
-        return (0, format!("devscout initialized at {}{scope_note}", scout_dir.display()));
+        return (
+            0,
+            format!(
+                "devscout initialized at {}{scope_note}",
+                scout_dir.display()
+            ),
+        );
     }
 
     if let Err(e) = fs::create_dir_all(&scout_dir) {
@@ -342,7 +424,14 @@ pub fn cmd_init(cwd: &Path, args: &[String]) -> (i32, String) {
     if let Err(e) = register_root(&root_abs, "plain", label.as_deref(), &scope) {
         return (1, format!("error: {e}"));
     }
-    (0, format!("devscout initialized at {} (non-git root: {}){scope_note}", scout_dir.display(), root.display()))
+    (
+        0,
+        format!(
+            "devscout initialized at {} (non-git root: {}){scope_note}",
+            scout_dir.display(),
+            root.display()
+        ),
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -399,7 +488,12 @@ pub fn cmd_init_full(cwd: &Path, args: &[String]) -> (i32, String) {
     let git_root = repo::find_repo_root(cwd);
     let root = git_root.unwrap_or_else(|| repo::resolve_path(cwd));
 
-    let lines = [out, census_line(&root), hooks_line(no_hooks), map_line(&root, no_map)];
+    let lines = [
+        out,
+        census_line(&root),
+        hooks_line(no_hooks),
+        map_line(&root, no_map),
+    ];
     (0, lines.join("\n"))
 }
 
@@ -433,14 +527,35 @@ fn census_line(root: &Path) -> String {
         }
     }
     counts.sort();
-    let (fully_supported, other): (Vec<_>, Vec<_>) = counts.into_iter().partition(|(e, _)| FULLY_SUPPORTED_EXT.contains(&e.as_str()));
-    let (indexed_and_graphed, not_indexed): (Vec<_>, Vec<_>) = other.into_iter().partition(|(e, _)| INDEXED_AND_GRAPHED_EXT.contains(&e.as_str()));
-    let fmt_group = |g: &[(String, usize)]| g.iter().map(|(e, c)| format!("{c} {e}")).collect::<Vec<_>>().join(", ");
+    let (fully_supported, other): (Vec<_>, Vec<_>) = counts
+        .into_iter()
+        .partition(|(e, _)| FULLY_SUPPORTED_EXT.contains(&e.as_str()));
+    let (indexed_and_graphed, not_indexed): (Vec<_>, Vec<_>) = other
+        .into_iter()
+        .partition(|(e, _)| INDEXED_AND_GRAPHED_EXT.contains(&e.as_str()));
+    let fmt_group = |g: &[(String, usize)]| {
+        g.iter()
+            .map(|(e, c)| format!("{c} {e}"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
 
     let mut groups = Vec::new();
-    if !fully_supported.is_empty() { groups.push(format!("{} (fully supported)", fmt_group(&fully_supported))); }
-    if !indexed_and_graphed.is_empty() { groups.push(format!("{} (indexed and graphed, narrower edge coverage)", fmt_group(&indexed_and_graphed))); }
-    if !not_indexed.is_empty() { groups.push(format!("{} (present, not indexed)", fmt_group(&not_indexed))); }
+    if !fully_supported.is_empty() {
+        groups.push(format!("{} (fully supported)", fmt_group(&fully_supported)));
+    }
+    if !indexed_and_graphed.is_empty() {
+        groups.push(format!(
+            "{} (indexed and graphed, narrower edge coverage)",
+            fmt_group(&indexed_and_graphed)
+        ));
+    }
+    if !not_indexed.is_empty() {
+        groups.push(format!(
+            "{} (present, not indexed)",
+            fmt_group(&not_indexed)
+        ));
+    }
     format!("languages: {}", groups.join("; "))
 }
 
@@ -458,8 +573,14 @@ fn census_line(root: &Path) -> String {
 
 enum HookOutcome {
     AlreadyInstalled,
-    Installed { added: Vec<&'static str>, backup: PathBuf },
-    NeedsManualInsert { reason: String, snippet: String },
+    Installed {
+        added: Vec<&'static str>,
+        backup: PathBuf,
+    },
+    NeedsManualInsert {
+        reason: String,
+        snippet: String,
+    },
 }
 
 fn hooks_line(no_hooks: bool) -> String {
@@ -469,9 +590,15 @@ fn hooks_line(no_hooks: bool) -> String {
     match install_hooks() {
         Ok(HookOutcome::AlreadyInstalled) => "hooks: already installed (idempotent)".to_string(),
         Ok(HookOutcome::Installed { added, backup }) => {
-            format!("hooks: installed ({}); backup {}", added.join(", "), backup.display())
+            format!(
+                "hooks: installed ({}); backup {}",
+                added.join(", "),
+                backup.display()
+            )
         }
-        Ok(HookOutcome::NeedsManualInsert { reason, snippet }) => format!("hooks: {reason} -- add manually:\n{snippet}"),
+        Ok(HookOutcome::NeedsManualInsert { reason, snippet }) => {
+            format!("hooks: {reason} -- add manually:\n{snippet}")
+        }
         Err(e) => format!("hooks: error: {e}"),
     }
 }
@@ -501,7 +628,10 @@ fn install_hooks() -> Result<HookOutcome, String> {
     let path = settings_path()?;
 
     if !path.exists() {
-        return Ok(HookOutcome::NeedsManualInsert { reason: format!("no settings file at {}", path.display()), snippet: hook_snippet(&bin) });
+        return Ok(HookOutcome::NeedsManualInsert {
+            reason: format!("no settings file at {}", path.display()),
+            snippet: hook_snippet(&bin),
+        });
     }
 
     let bytes = fs::read(&path).map_err(|e| e.to_string())?;
@@ -518,7 +648,10 @@ fn install_hooks() -> Result<HookOutcome, String> {
 
     if !matches!(value, manifest::Value::Object(_)) || !hooks_shape_ok(&value) {
         return Ok(HookOutcome::NeedsManualInsert {
-            reason: format!("settings file at {} has an unexpected shape", path.display()),
+            reason: format!(
+                "settings file at {} has an unexpected shape",
+                path.display()
+            ),
             snippet: hook_snippet(&bin),
         });
     }
@@ -543,10 +676,18 @@ fn install_hooks() -> Result<HookOutcome, String> {
 // created fresh by `merge_hooks`); anything PRESENT but not the expected shape is
 // not.
 fn hooks_shape_ok(value: &manifest::Value) -> bool {
-    let Some(hooks) = value.get("hooks") else { return true };
-    let manifest::Value::Object(_) = hooks else { return false };
-    let Some(post_tool_use) = hooks.get("PostToolUse") else { return true };
-    let manifest::Value::Array(entries) = post_tool_use else { return false };
+    let Some(hooks) = value.get("hooks") else {
+        return true;
+    };
+    let manifest::Value::Object(_) = hooks else {
+        return false;
+    };
+    let Some(post_tool_use) = hooks.get("PostToolUse") else {
+        return true;
+    };
+    let manifest::Value::Array(entries) = post_tool_use else {
+        return false;
+    };
     entries.iter().all(entry_shape_ok)
 }
 
@@ -564,8 +705,12 @@ fn entry_shape_ok(entry: &manifest::Value) -> bool {
             return false;
         }
     }
-    let Some(hooks) = entry.get("hooks") else { return true };
-    let manifest::Value::Array(items) = hooks else { return false };
+    let Some(hooks) = entry.get("hooks") else {
+        return true;
+    };
+    let manifest::Value::Array(items) = hooks else {
+        return false;
+    };
     items.iter().all(|item| {
         if !matches!(item, manifest::Value::Object(_)) {
             return false;
@@ -591,8 +736,14 @@ fn entry_shape_ok(entry: &manifest::Value) -> bool {
 // stated rather than narrowing it.
 fn already_has_hook_command(entries: &[manifest::Value], marker: &str) -> bool {
     entries.iter().any(|entry| {
-        let Some(manifest::Value::Array(items)) = entry.get("hooks") else { return false };
-        items.iter().any(|item| item.get("command").and_then(manifest::Value::as_str).is_some_and(|c| c.contains("scout") && c.contains(marker)))
+        let Some(manifest::Value::Array(items)) = entry.get("hooks") else {
+            return false;
+        };
+        items.iter().any(|item| {
+            item.get("command")
+                .and_then(manifest::Value::as_str)
+                .is_some_and(|c| c.contains("scout") && c.contains(marker))
+        })
     })
 }
 
@@ -603,7 +754,10 @@ fn hook_entry(matcher: &str, bin: &str, subcmd: &str) -> manifest::Value {
             "hooks",
             manifest::Value::array(vec![manifest::Value::object(vec![
                 ("type", manifest::Value::string("command")),
-                ("command", manifest::Value::string(format!("{bin} hook {subcmd}"))),
+                (
+                    "command",
+                    manifest::Value::string(format!("{bin} hook {subcmd}")),
+                ),
             ])]),
         ),
     ])
@@ -616,8 +770,14 @@ fn hook_entry(matcher: &str, bin: &str, subcmd: &str) -> manifest::Value {
 // uses on the registry). Never removes or reorders anything that was already
 // there.
 fn merge_hooks(value: manifest::Value, bin: &str) -> (manifest::Value, Vec<&'static str>) {
-    let hooks_val = value.get("hooks").cloned().unwrap_or_else(|| manifest::Value::object(vec![]));
-    let ptu_val = hooks_val.get("PostToolUse").cloned().unwrap_or_else(|| manifest::Value::array(vec![]));
+    let hooks_val = value
+        .get("hooks")
+        .cloned()
+        .unwrap_or_else(|| manifest::Value::object(vec![]));
+    let ptu_val = hooks_val
+        .get("PostToolUse")
+        .cloned()
+        .unwrap_or_else(|| manifest::Value::array(vec![]));
     let mut entries = match ptu_val {
         manifest::Value::Array(items) => items,
         _ => Vec::new(),
@@ -646,7 +806,13 @@ fn merge_hooks(value: manifest::Value, bin: &str) -> (manifest::Value, Vec<&'sta
 fn hook_snippet(bin: &str) -> String {
     let v = manifest::Value::object(vec![(
         "hooks",
-        manifest::Value::object(vec![("PostToolUse", manifest::Value::array(vec![hook_entry("Read", bin, "read"), hook_entry("Bash", bin, "bash")]))]),
+        manifest::Value::object(vec![(
+            "PostToolUse",
+            manifest::Value::array(vec![
+                hook_entry("Read", bin, "read"),
+                hook_entry("Bash", bin, "bash"),
+            ]),
+        )]),
     )]);
     serde_json::to_string_pretty(&v).unwrap_or_default()
 }
@@ -655,13 +821,18 @@ fn hook_snippet(bin: &str) -> String {
 // rapid successive installs within the same test process). Reuses
 // `civil_from_days` rather than pulling in a date/time crate.
 fn now_stamp() -> String {
-    let dur = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
+    let dur = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
     let secs = dur.as_secs();
     let days = (secs / 86_400) as i64;
     let (y, m, d) = civil_from_days(days);
     let sod = secs % 86_400;
     let (h, mi, s) = (sod / 3600, (sod % 3600) / 60, sod % 60);
-    format!("{y:04}{m:02}{d:02}-{h:02}{mi:02}{s:02}-{:09}", dur.subsec_nanos())
+    format!(
+        "{y:04}{m:02}{d:02}-{h:02}{mi:02}{s:02}-{:09}",
+        dur.subsec_nanos()
+    )
 }
 
 // Copies the ORIGINAL bytes (pre-parse, pre-modification) next to the settings
@@ -670,7 +841,10 @@ fn now_stamp() -> String {
 // impossible; on the vanishingly unlikely collision `fs::write` just overwrites
 // it, which is still strictly safer than skipping the backup).
 fn backup_settings(path: &Path, original_bytes: &[u8]) -> Result<PathBuf, String> {
-    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("settings.json");
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("settings.json");
     let backup_path = path.with_file_name(format!("{name}.bak.{}", now_stamp()));
     fs::write(&backup_path, original_bytes).map_err(|e| e.to_string())?;
     Ok(backup_path)
@@ -683,8 +857,17 @@ fn write_settings(path: &Path, value: &manifest::Value) -> Result<(), String> {
     let json = serde_json::to_string_pretty(value).map_err(|e| e.to_string())?;
     let body = format!("{json}\n");
 
-    let suffix = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
-    let tmp_name = format!("{}.tmp.{}.{suffix}", path.file_name().and_then(|n| n.to_str()).unwrap_or("settings.json"), std::process::id());
+    let suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let tmp_name = format!(
+        "{}.tmp.{}.{suffix}",
+        path.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("settings.json"),
+        std::process::id()
+    );
     let tmp_path = path.with_file_name(tmp_name);
 
     if let Err(e) = fs::write(&tmp_path, body.as_bytes()) {
@@ -742,7 +925,10 @@ mod tests {
 
     fn temp_dir(prefix: &str) -> PathBuf {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-        let dir = std::env::temp_dir().join(format!("scout-initcmd-rs-{prefix}-{}-{n}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!(
+            "scout-initcmd-rs-{prefix}-{}-{n}",
+            std::process::id()
+        ));
         fs::create_dir_all(&dir).expect("create temp dir");
         dir
     }
@@ -758,7 +944,10 @@ mod tests {
 
     #[test]
     fn label_flag_consumes_its_value() {
-        let args: Vec<String> = ["--label", "backend-cs"].iter().map(|s| s.to_string()).collect();
+        let args: Vec<String> = ["--label", "backend-cs"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
         let (label, scope) = parse_init_args(&args);
         assert_eq!(label, Some("backend-cs".to_string()));
         assert!(scope.is_empty());
@@ -774,10 +963,16 @@ mod tests {
 
     #[test]
     fn scope_dirs_collected_in_order_around_label() {
-        let args: Vec<String> = ["src", "--label", "l", "lib", "app"].iter().map(|s| s.to_string()).collect();
+        let args: Vec<String> = ["src", "--label", "l", "lib", "app"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
         let (label, scope) = parse_init_args(&args);
         assert_eq!(label, Some("l".to_string()));
-        assert_eq!(scope, vec!["src".to_string(), "lib".to_string(), "app".to_string()]);
+        assert_eq!(
+            scope,
+            vec!["src".to_string(), "lib".to_string(), "app".to_string()]
+        );
     }
 
     // -- civil_from_days / today ------------------------------------------
@@ -865,14 +1060,20 @@ mod tests {
         fs::write(info_dir.join("exclude"), "  .scout/  \n").unwrap();
         ensure_scout_excluded(&info_dir).unwrap();
         let body = fs::read_to_string(info_dir.join("exclude")).unwrap();
-        assert_eq!(body, "  .scout/  \n", "already-listed (after trim) must not append again");
+        assert_eq!(
+            body, "  .scout/  \n",
+            "already-listed (after trim) must not append again"
+        );
     }
 
     // -- set_field -----------------------------------------------------
 
     #[test]
     fn set_field_overwrites_in_place_preserving_position() {
-        let v = manifest::Value::object(vec![("a", manifest::Value::string("1")), ("b", manifest::Value::string("2"))]);
+        let v = manifest::Value::object(vec![
+            ("a", manifest::Value::string("1")),
+            ("b", manifest::Value::string("2")),
+        ]);
         let out = set_field(v, "a", manifest::Value::string("9"));
         let fields = out.as_object().unwrap();
         assert_eq!(fields[0].0, "a");
@@ -899,7 +1100,11 @@ mod tests {
         fs::create_dir_all(root.join("repo-a/nested-repo/.git")).unwrap(); // NOT immediate -- must not count
 
         let found = nested_git_repos(&root).unwrap();
-        assert_eq!(found, vec!["repo-a".to_string(), "repo-b".to_string()], "sorted, immediate subdirs only");
+        assert_eq!(
+            found,
+            vec!["repo-a".to_string(), "repo-b".to_string()],
+            "sorted, immediate subdirs only"
+        );
     }
 
     #[test]
@@ -913,19 +1118,50 @@ mod tests {
 
     #[test]
     fn update_entry_ignores_falsy_label_and_empty_scope() {
-        let entry = new_entry_value("/x", "git", Some("orig"), &["src".to_string()], "2026-01-01");
+        let entry = new_entry_value(
+            "/x",
+            "git",
+            Some("orig"),
+            &["src".to_string()],
+            "2026-01-01",
+        );
         let updated = update_entry_value(entry, "git", None, &[], "2026-01-02");
-        assert_eq!(updated.get("label").and_then(manifest::Value::as_str), Some("orig"), "no label given -- keeps existing");
+        assert_eq!(
+            updated.get("label").and_then(manifest::Value::as_str),
+            Some("orig"),
+            "no label given -- keeps existing"
+        );
         let scope = updated.get("scope").unwrap();
-        assert!(matches!(scope, manifest::Value::Array(items) if items.len() == 1), "empty scope given -- keeps existing");
-        assert_eq!(updated.get("last_seen").and_then(manifest::Value::as_str), Some("2026-01-02"));
+        assert!(
+            matches!(scope, manifest::Value::Array(items) if items.len() == 1),
+            "empty scope given -- keeps existing"
+        );
+        assert_eq!(
+            updated.get("last_seen").and_then(manifest::Value::as_str),
+            Some("2026-01-02")
+        );
     }
 
     #[test]
     fn update_entry_overwrites_truthy_label_and_nonempty_scope() {
-        let entry = new_entry_value("/x", "git", Some("orig"), &["src".to_string()], "2026-01-01");
-        let updated = update_entry_value(entry, "git", Some("fresh"), &["lib".to_string(), "app".to_string()], "2026-01-02");
-        assert_eq!(updated.get("label").and_then(manifest::Value::as_str), Some("fresh"));
+        let entry = new_entry_value(
+            "/x",
+            "git",
+            Some("orig"),
+            &["src".to_string()],
+            "2026-01-01",
+        );
+        let updated = update_entry_value(
+            entry,
+            "git",
+            Some("fresh"),
+            &["lib".to_string(), "app".to_string()],
+            "2026-01-02",
+        );
+        assert_eq!(
+            updated.get("label").and_then(manifest::Value::as_str),
+            Some("fresh")
+        );
         let scope = updated.get("scope").unwrap();
         assert!(matches!(scope, manifest::Value::Array(items) if items.len() == 2));
     }
@@ -938,16 +1174,26 @@ mod tests {
 
     #[test]
     fn extract_rust_only_flags_strips_no_hooks_and_no_map_only() {
-        let args: Vec<String> = ["--no-hooks", "src", "--no-map", "--label", "l"].iter().map(|s| s.to_string()).collect();
+        let args: Vec<String> = ["--no-hooks", "src", "--no-map", "--label", "l"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
         let (no_hooks, no_map, rest) = extract_rust_only_flags(&args);
         assert!(no_hooks);
         assert!(no_map);
-        assert_eq!(rest, vec!["src".to_string(), "--label".to_string(), "l".to_string()], "everything else passes through untouched, in order");
+        assert_eq!(
+            rest,
+            vec!["src".to_string(), "--label".to_string(), "l".to_string()],
+            "everything else passes through untouched, in order"
+        );
     }
 
     #[test]
     fn extract_rust_only_flags_defaults_false_when_absent() {
-        let args: Vec<String> = ["--label", "l", "src"].iter().map(|s| s.to_string()).collect();
+        let args: Vec<String> = ["--label", "l", "src"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
         let (no_hooks, no_map, rest) = extract_rust_only_flags(&args);
         assert!(!no_hooks);
         assert!(!no_map);
@@ -1012,7 +1258,10 @@ mod tests {
                             "hooks",
                             manifest::Value::array(vec![manifest::Value::object(vec![
                                 ("type", manifest::Value::string("command")),
-                                ("command", manifest::Value::string("node scout-read-hook.js")),
+                                (
+                                    "command",
+                                    manifest::Value::string("node scout-read-hook.js"),
+                                ),
                             ])]),
                         ),
                     ]),
@@ -1031,14 +1280,23 @@ mod tests {
 
     #[test]
     fn hooks_shape_rejects_post_tool_use_as_non_array() {
-        let v = manifest::Value::object(vec![("hooks", manifest::Value::object(vec![("PostToolUse", manifest::Value::string("nope"))]))]);
+        let v = manifest::Value::object(vec![(
+            "hooks",
+            manifest::Value::object(vec![("PostToolUse", manifest::Value::string("nope"))]),
+        )]);
         assert!(!hooks_shape_ok(&v));
     }
 
     #[test]
     fn hooks_shape_rejects_entry_with_wrong_typed_matcher() {
-        let entries = manifest::Value::array(vec![manifest::Value::object(vec![("matcher", manifest::Value::number(1))])]);
-        let v = manifest::Value::object(vec![("hooks", manifest::Value::object(vec![("PostToolUse", entries)]))]);
+        let entries = manifest::Value::array(vec![manifest::Value::object(vec![(
+            "matcher",
+            manifest::Value::number(1),
+        )])]);
+        let v = manifest::Value::object(vec![(
+            "hooks",
+            manifest::Value::object(vec![("PostToolUse", entries)]),
+        )]);
         assert!(!hooks_shape_ok(&v));
     }
 
@@ -1054,10 +1312,16 @@ mod tests {
     fn already_has_hook_command_matches_scout_plus_marker() {
         let entries = vec![manifest::Value::object(vec![(
             "hooks",
-            manifest::Value::array(vec![manifest::Value::object(vec![("command", manifest::Value::string("/abs/devscout hook read"))])]),
+            manifest::Value::array(vec![manifest::Value::object(vec![(
+                "command",
+                manifest::Value::string("/abs/devscout hook read"),
+            )])]),
         )])];
         assert!(already_has_hook_command(&entries, "hook read"));
-        assert!(!already_has_hook_command(&entries, "hook bash"), "different marker must not match");
+        assert!(
+            !already_has_hook_command(&entries, "hook bash"),
+            "different marker must not match"
+        );
     }
 
     #[test]
@@ -1084,10 +1348,17 @@ mod tests {
 
     #[test]
     fn merge_hooks_adds_both_entries_and_preserves_other_top_level_keys() {
-        let v = manifest::Value::object(vec![("model", manifest::Value::string("x")), ("hooks", manifest::Value::object(vec![]))]);
+        let v = manifest::Value::object(vec![
+            ("model", manifest::Value::string("x")),
+            ("hooks", manifest::Value::object(vec![])),
+        ]);
         let (updated, added) = merge_hooks(v, "/abs/devscout");
         assert_eq!(added, vec!["Read", "Bash"]);
-        assert_eq!(updated.get("model").and_then(manifest::Value::as_str), Some("x"), "unrelated top-level key preserved");
+        assert_eq!(
+            updated.get("model").and_then(manifest::Value::as_str),
+            Some("x"),
+            "unrelated top-level key preserved"
+        );
         let ptu = updated.get("hooks").unwrap().get("PostToolUse").unwrap();
         assert!(matches!(ptu, manifest::Value::Array(items) if items.len() == 2));
     }
@@ -1098,20 +1369,36 @@ mod tests {
         let (once, added1) = merge_hooks(v, "/abs/devscout");
         assert_eq!(added1, vec!["Read", "Bash"]);
         let (twice, added2) = merge_hooks(once.clone(), "/abs/devscout");
-        assert!(added2.is_empty(), "second merge over its own output must add nothing");
+        assert!(
+            added2.is_empty(),
+            "second merge over its own output must add nothing"
+        );
         assert_eq!(once, twice, "no-op merge must not alter the value at all");
     }
 
     #[test]
     fn merge_hooks_preserves_existing_post_tool_use_entries() {
-        let existing = manifest::Value::array(vec![manifest::Value::object(vec![("matcher", manifest::Value::string("Write"))])]);
-        let v = manifest::Value::object(vec![("hooks", manifest::Value::object(vec![("PostToolUse", existing)]))]);
+        let existing = manifest::Value::array(vec![manifest::Value::object(vec![(
+            "matcher",
+            manifest::Value::string("Write"),
+        )])]);
+        let v = manifest::Value::object(vec![(
+            "hooks",
+            manifest::Value::object(vec![("PostToolUse", existing)]),
+        )]);
         let (updated, added) = merge_hooks(v, "/abs/devscout");
         assert_eq!(added, vec!["Read", "Bash"]);
         let ptu = updated.get("hooks").unwrap().get("PostToolUse").unwrap();
-        assert!(matches!(ptu, manifest::Value::Array(items) if items.len() == 3), "1 existing + 2 new");
+        assert!(
+            matches!(ptu, manifest::Value::Array(items) if items.len() == 3),
+            "1 existing + 2 new"
+        );
         if let manifest::Value::Array(items) = ptu {
-            assert_eq!(items[0].get("matcher").and_then(manifest::Value::as_str), Some("Write"), "existing entry stays first, untouched");
+            assert_eq!(
+                items[0].get("matcher").and_then(manifest::Value::as_str),
+                Some("Write"),
+                "existing entry stays first, untouched"
+            );
         }
     }
 
@@ -1120,7 +1407,8 @@ mod tests {
     #[test]
     fn hook_snippet_is_valid_json_containing_both_subcommands() {
         let snippet = hook_snippet("/abs/devscout");
-        let parsed: manifest::Value = serde_json::from_str(&snippet).expect("snippet must be valid JSON");
+        let parsed: manifest::Value =
+            serde_json::from_str(&snippet).expect("snippet must be valid JSON");
         let ptu = parsed.get("hooks").unwrap().get("PostToolUse").unwrap();
         assert!(matches!(ptu, manifest::Value::Array(items) if items.len() == 2));
         assert!(snippet.contains("/abs/devscout hook read"));
@@ -1134,7 +1422,14 @@ mod tests {
         let s = now_stamp();
         // YYYYMMDD-HHMMSS-nnnnnnnnn
         assert_eq!(s.len(), 8 + 1 + 6 + 1 + 9);
-        assert!(s.chars().enumerate().all(|(i, c)| if i == 8 || i == 15 { c == '-' } else { c.is_ascii_digit() }), "got {s:?}");
+        assert!(
+            s.chars().enumerate().all(|(i, c)| if i == 8 || i == 15 {
+                c == '-'
+            } else {
+                c.is_ascii_digit()
+            }),
+            "got {s:?}"
+        );
     }
 
     #[test]
@@ -1143,7 +1438,11 @@ mod tests {
         let path = dir.join("settings.json");
         let original = b"{\"a\":1}";
         let backup = backup_settings(&path, original).unwrap();
-        assert!(backup.file_name().unwrap().to_string_lossy().starts_with("settings.json.bak."));
+        assert!(backup
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .starts_with("settings.json.bak."));
         assert_eq!(fs::read(&backup).unwrap(), original);
     }
 

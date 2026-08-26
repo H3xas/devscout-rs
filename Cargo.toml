@@ -43,7 +43,7 @@ lto = true
 strip = true
 
 [lints.rust]
-missing_docs = "allow" # raise to "warn" after the public-API docs pass
+missing_docs = "warn"
 
 [lints.rustdoc]
 broken_intra_doc_links = "deny"

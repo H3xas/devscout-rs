@@ -50,12 +50,14 @@ const MIN_STDOUT_BYTES: usize = 256;
 // empty output -- the exit-0, tool-result-untouched contract.
 // ---------------------------------------------------------------------------
 
+/// Processes a read-hook JSON payload and returns the replacement payload.
 pub fn run_read(raw: &[u8]) -> Vec<u8> {
     std::panic::catch_unwind(|| decode_and_handle(raw, handle_read))
         .unwrap_or_default()
         .into_bytes()
 }
 
+/// Processes a shell-hook JSON payload and returns the replacement payload.
 pub fn run_bash(raw: &[u8]) -> Vec<u8> {
     std::panic::catch_unwind(|| decode_and_handle(raw, handle_bash))
         .unwrap_or_default()
@@ -82,7 +84,10 @@ fn decode_and_handle(raw: &[u8], handler: fn(&JVal) -> HookResult<String>) -> St
 // present-but-non-string session_id is also treated as missing; not reachable
 // with a real harness payload (session_id is always a string), so not chased.
 fn session_id_of(input: &JVal) -> &str {
-    input.get("session_id").and_then(JVal::as_str).unwrap_or("unknown")
+    input
+        .get("session_id")
+        .and_then(JVal::as_str)
+        .unwrap_or("unknown")
 }
 
 // `input.agent_id` when it is a string, else `""`: a non-string agent_id
@@ -136,7 +141,10 @@ fn nullish_or(obj: &JVal, key: &str, default: JVal) -> JVal {
 // Wraps `value` in the hook output envelope:
 // `{ hookSpecificOutput: { hookEventName: "PostToolUse", <field>: value } }`.
 fn envelope(field: &str, value: JVal) -> String {
-    let inner = JVal::object(vec![("hookEventName", JVal::string("PostToolUse")), (field, value)]);
+    let inner = JVal::object(vec![
+        ("hookEventName", JVal::string("PostToolUse")),
+        (field, value),
+    ]);
     let outer = JVal::object(vec![("hookSpecificOutput", inner)]);
     serde_json::to_string(&outer).unwrap_or_default()
 }
@@ -184,19 +192,28 @@ mod sha256 {
 
         #[test]
         fn empty_string_vector() {
-            assert_eq!(digest_hex(b""), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+            assert_eq!(
+                digest_hex(b""),
+                "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            );
         }
 
         #[test]
         fn abc_vector() {
-            assert_eq!(digest_hex(b"abc"), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+            assert_eq!(
+                digest_hex(b"abc"),
+                "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+            );
         }
 
         #[test]
         fn two_block_vector() {
             // NIST's standard 448-bit multi-block vector.
             let input = b"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq";
-            assert_eq!(digest_hex(input), "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1");
+            assert_eq!(
+                digest_hex(input),
+                "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1"
+            );
         }
     }
 }
@@ -220,15 +237,21 @@ fn debug_log(root: &Path, event: &str, fields: Vec<(&str, JVal)>) {
     if !debug_enabled(root) {
         return;
     }
-    let mut entries: Vec<(String, JVal)> =
-        vec![("ts".to_string(), JVal::string(iso8601_now())), ("event".to_string(), JVal::string(event))];
+    let mut entries: Vec<(String, JVal)> = vec![
+        ("ts".to_string(), JVal::string(iso8601_now())),
+        ("event".to_string(), JVal::string(event)),
+    ];
     entries.extend(fields.into_iter().map(|(k, v)| (k.to_string(), v)));
     let line = match serde_json::to_string(&JVal::Object(entries)) {
         Ok(s) => s,
         Err(_) => return,
     };
     let log_path = repo::scout_dir(root).join("debug.log");
-    if let Ok(mut f) = fs::OpenOptions::new().create(true).append(true).open(&log_path) {
+    if let Ok(mut f) = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+    {
         use std::io::Write;
         let _ = writeln!(f, "{line}");
     }
@@ -239,7 +262,9 @@ fn debug_log(root: &Path, event: &str, fields: Vec<(&str, JVal)>) {
 // constant-time algorithm. `pub(crate)`: manifest.rs's `write_index_state`
 // reuses it rather than hand-rolling a second copy.
 pub(crate) fn iso8601_now() -> String {
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
     let secs = now.as_secs() as i64;
     let millis = now.subsec_millis();
     let days = secs.div_euclid(86400);
@@ -288,7 +313,11 @@ mod civil_tests {
 // The file/text content out of a tool response, if any.
 fn extract_text<'a>(tool_response: Option<&'a JVal>) -> Option<&'a str> {
     let tr = tool_response?;
-    if let Some(s) = tr.get("file").and_then(|f| f.get("content")).and_then(JVal::as_str) {
+    if let Some(s) = tr
+        .get("file")
+        .and_then(|f| f.get("content"))
+        .and_then(JVal::as_str)
+    {
         return Some(s);
     }
     tr.get("text").and_then(JVal::as_str)
@@ -296,15 +325,20 @@ fn extract_text<'a>(tool_response: Option<&'a JVal>) -> Option<&'a str> {
 
 // Whether the read covered only part of the file (offset > 1, or numLines < totalLines).
 fn is_partial_read(input: &JVal) -> bool {
-    if let Some(offset) = input.get("tool_input").and_then(|t| t.get("offset")).and_then(jval_f64) {
+    if let Some(offset) = input
+        .get("tool_input")
+        .and_then(|t| t.get("offset"))
+        .and_then(jval_f64)
+    {
         if offset > 1.0 {
             return true;
         }
     }
     if let Some(file) = input.get("tool_response").and_then(|r| r.get("file")) {
-        if let (Some(num_lines), Some(total_lines)) =
-            (file.get("numLines").and_then(jval_f64), file.get("totalLines").and_then(jval_f64))
-        {
+        if let (Some(num_lines), Some(total_lines)) = (
+            file.get("numLines").and_then(jval_f64),
+            file.get("totalLines").and_then(jval_f64),
+        ) {
             return num_lines < total_lines;
         }
     }
@@ -317,16 +351,25 @@ fn stub_envelope(stub_text: &str, orig_file: Option<&JVal>, file_path: &str, lin
     if has_orig {
         let of = orig_file.expect("has_orig guarantees Some");
         let file_obj = JVal::object(vec![
-            ("filePath", nullish_or(of, "filePath", JVal::string(file_path))),
+            (
+                "filePath",
+                nullish_or(of, "filePath", JVal::string(file_path)),
+            ),
             ("content", JVal::string(stub_text)),
             ("numLines", JVal::number(1i64)),
             ("startLine", nullish_or(of, "startLine", JVal::number(1i64))),
-            ("totalLines", nullish_or(of, "totalLines", JVal::number(lines))),
+            (
+                "totalLines",
+                nullish_or(of, "totalLines", JVal::number(lines)),
+            ),
         ]);
         let inner = JVal::object(vec![("type", JVal::string("text")), ("file", file_obj)]);
         envelope("updatedToolOutput", inner)
     } else {
-        let inner = JVal::object(vec![("type", JVal::string("text")), ("text", JVal::string(stub_text))]);
+        let inner = JVal::object(vec![
+            ("type", JVal::string("text")),
+            ("text", JVal::string(stub_text)),
+        ]);
         envelope("updatedToolOutput", inner)
     }
 }
@@ -335,7 +378,15 @@ fn stub_envelope(stub_text: &str, orig_file: Option<&JVal>, file_path: &str, lin
 // (its own try/catch) instead of using `?` -- a content-store failure must fall
 // through to the fresh-record path, not abort the whole hook.
 #[allow(clippy::too_many_arguments)]
-fn content_dedup(session_id: &str, agent_id: &str, hash: &str, root: &str, rel: &str, size: i64, lines: i64) -> Option<String> {
+fn content_dedup(
+    session_id: &str,
+    agent_id: &str,
+    hash: &str,
+    root: &str,
+    rel: &str,
+    size: i64,
+    lines: i64,
+) -> Option<String> {
     let attempt = || -> HookResult<Option<String>> {
         let cdb = store::open_content_store()?;
         if let Some(hit) = store::lookup_content(&cdb, session_id, hash, agent_id)? {
@@ -351,7 +402,15 @@ fn content_dedup(session_id: &str, agent_id: &str, hash: &str, root: &str, rel: 
         }
         store::record_content(
             &cdb,
-            &store::RecordContent { session_id, agent_id, sha256: hash, root, rel_path: rel, size, lines },
+            &store::RecordContent {
+                session_id,
+                agent_id,
+                sha256: hash,
+                root,
+                rel_path: rel,
+                size,
+                lines,
+            },
         )?;
         Ok(None)
     };
@@ -360,7 +419,10 @@ fn content_dedup(session_id: &str, agent_id: &str, hash: &str, root: &str, rel: 
 
 // The read hook's decision: stub, cross-repo stub, fresh record, or stale-manifest note.
 fn handle_read(input: &JVal) -> HookResult<String> {
-    let file_path = input.get("tool_input").and_then(|t| t.get("file_path")).and_then(JVal::as_str);
+    let file_path = input
+        .get("tool_input")
+        .and_then(|t| t.get("file_path"))
+        .and_then(JVal::as_str);
     let text = extract_text(input.get("tool_response"));
     let (file_path, text) = match (file_path, text) {
         (Some(fp), Some(t)) => (fp, t),
@@ -379,7 +441,15 @@ fn handle_read(input: &JVal) -> HookResult<String> {
 
     if is_partial_read(input) {
         let db = store::open_store(&root)?;
-        store::record_spend(&db, &store::RecordSpend { session_id, agent_id, rel_path: &rel, size })?;
+        store::record_spend(
+            &db,
+            &store::RecordSpend {
+                session_id,
+                agent_id,
+                rel_path: &rel,
+                size,
+            },
+        )?;
         debug_log(
             &root,
             "skip-partial",
@@ -395,7 +465,9 @@ fn handle_read(input: &JVal) -> HookResult<String> {
             if jval_truthy(built_at_head) {
                 let head = manifest::git_head(&root);
                 let equal = matches!((head.as_deref(), built_at_head), (Some(h), Some(JVal::String(s))) if h == s);
-                if !equal { return Ok(String::new()); }
+                if !equal {
+                    return Ok(String::new());
+                }
             }
         }
         if !repo::scout_dir(&root).join("refresh-needed").exists() {
@@ -408,7 +480,10 @@ fn handle_read(input: &JVal) -> HookResult<String> {
 
     let hash = sha256_hex(text.as_bytes());
     let orig_file = input.get("tool_response").and_then(|r| r.get("file"));
-    let lines = orig_file.and_then(|f| f.get("numLines")).and_then(jval_i64).unwrap_or_else(|| count_lines(text));
+    let lines = orig_file
+        .and_then(|f| f.get("numLines"))
+        .and_then(jval_i64)
+        .unwrap_or_else(|| count_lines(text));
     let mtime = fs::metadata(file_path)
         .ok()
         .and_then(|m| m.modified().ok())
@@ -447,7 +522,16 @@ fn handle_read(input: &JVal) -> HookResult<String> {
     if let Some(stub_text) = cross_stub {
         store::record_fresh(
             &db,
-            &store::RecordFresh { session_id, agent_id, rel_path: &rel, sha256: &hash, size, mtime, lines, delivered: false },
+            &store::RecordFresh {
+                session_id,
+                agent_id,
+                rel_path: &rel,
+                sha256: &hash,
+                size,
+                mtime,
+                lines,
+                delivered: false,
+            },
         )?;
         debug_log(
             &root,
@@ -464,7 +548,16 @@ fn handle_read(input: &JVal) -> HookResult<String> {
 
     store::record_fresh(
         &db,
-        &store::RecordFresh { session_id, agent_id, rel_path: &rel, sha256: &hash, size, mtime, lines, delivered: true },
+        &store::RecordFresh {
+            session_id,
+            agent_id,
+            rel_path: &rel,
+            sha256: &hash,
+            size,
+            mtime,
+            lines,
+            delivered: true,
+        },
     )?;
     debug_log(
         &root,
@@ -685,7 +778,8 @@ fn match_cat(command: &str) -> Option<&str> {
 
 // Whether `s` contains any shell metacharacter (`* ? [ ] | & ; < >`).
 fn has_forbidden_chars(s: &str) -> bool {
-    s.chars().any(|c| matches!(c, '*' | '?' | '[' | ']' | '|' | '&' | ';' | '<' | '>'))
+    s.chars()
+        .any(|c| matches!(c, '*' | '?' | '[' | ']' | '|' | '&' | ';' | '<' | '>'))
 }
 
 // Matches `read <token>...`. Unlike `match_cat` this is NOT end-anchored: it
@@ -718,7 +812,10 @@ fn resolve_against(base: &str, target: &str) -> PathBuf {
     if base_path.is_absolute() {
         base_path.join(target_path)
     } else {
-        env::current_dir().unwrap_or_else(|_| PathBuf::from("/")).join(base_path).join(target_path)
+        env::current_dir()
+            .unwrap_or_else(|_| PathBuf::from("/"))
+            .join(base_path)
+            .join(target_path)
     }
 }
 
@@ -730,7 +827,9 @@ fn classify_bash(command: &str, cwd: Option<&str>) -> Option<BashTarget> {
             Some(dir) => resolve_against(cwd.unwrap_or("."), dir),
             None => PathBuf::from(cwd.unwrap_or(".")),
         };
-        return Some(BashTarget { anchor_path: base.join(git_path) });
+        return Some(BashTarget {
+            anchor_path: base.join(git_path),
+        });
     }
     if let Some(path) = match_cat(command) {
         if !has_forbidden_chars(path) {
@@ -770,7 +869,13 @@ fn mirror_with_stdout(resp: &JVal, stub_text: &str) -> JVal {
         JVal::Object(entries) => JVal::Object(
             entries
                 .iter()
-                .map(|(k, v)| if k == "stdout" { (k.clone(), JVal::string(stub_text)) } else { (k.clone(), v.clone()) })
+                .map(|(k, v)| {
+                    if k == "stdout" {
+                        (k.clone(), JVal::string(stub_text))
+                    } else {
+                        (k.clone(), v.clone())
+                    }
+                })
                 .collect(),
         ),
         other => other.clone(),
@@ -779,7 +884,10 @@ fn mirror_with_stdout(resp: &JVal, stub_text: &str) -> JVal {
 
 // The bash hook's decision: stub the output on a repeat, else record it fresh.
 fn handle_bash(input: &JVal) -> HookResult<String> {
-    let command = input.get("tool_input").and_then(|t| t.get("command")).and_then(JVal::as_str);
+    let command = input
+        .get("tool_input")
+        .and_then(|t| t.get("command"))
+        .and_then(JVal::as_str);
     let resp = input.get("tool_response");
     let stdout = resp.and_then(|r| r.get("stdout")).and_then(JVal::as_str);
     let (command, resp, stdout) = match (command, resp, stdout) {
@@ -844,7 +952,14 @@ fn handle_bash(input: &JVal) -> HookResult<String> {
 
     store::record_bash_fresh(
         &db,
-        &store::RecordBashFresh { session_id, agent_id, cache_key: &normalized, sha256: &hash, size: stdout.len() as i64, lines },
+        &store::RecordBashFresh {
+            session_id,
+            agent_id,
+            cache_key: &normalized,
+            sha256: &hash,
+            size: stdout.len() as i64,
+            lines,
+        },
     )?;
     debug_log(
         &root,
@@ -879,7 +994,10 @@ mod tests {
 
     fn unique_temp_dir(prefix: &str) -> PathBuf {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-        env::temp_dir().join(format!("scout-hookio-rs-{prefix}-{}-{n}", std::process::id()))
+        env::temp_dir().join(format!(
+            "scout-hookio-rs-{prefix}-{}-{n}",
+            std::process::id()
+        ))
     }
 
     fn bash_repo() -> PathBuf {
@@ -914,11 +1032,26 @@ mod tests {
     fn rtk_read_dedupes_glob_or_pipe_forms_do_not() {
         let root = bash_repo();
         let big = big_stdout();
-        assert_eq!(run_bash_str(&bash_payload(&root, "rtk read src/a.ts", &big, "b1")), "");
-        assert!(run_bash_str(&bash_payload(&root, "rtk read src/a.ts", &big, "b1")).contains("devscout: identical output"));
-        assert_eq!(run_bash_str(&bash_payload(&root, "rtk read src/*.ts", &big, "b1")), "");
-        assert_eq!(run_bash_str(&bash_payload(&root, "rtk read src/*.ts", &big, "b1")), "");
-        assert_eq!(run_bash_str(&bash_payload(&root, "rtk read a.ts | head", &big, "b1")), "");
+        assert_eq!(
+            run_bash_str(&bash_payload(&root, "rtk read src/a.ts", &big, "b1")),
+            ""
+        );
+        assert!(
+            run_bash_str(&bash_payload(&root, "rtk read src/a.ts", &big, "b1"))
+                .contains("devscout: identical output")
+        );
+        assert_eq!(
+            run_bash_str(&bash_payload(&root, "rtk read src/*.ts", &big, "b1")),
+            ""
+        );
+        assert_eq!(
+            run_bash_str(&bash_payload(&root, "rtk read src/*.ts", &big, "b1")),
+            ""
+        );
+        assert_eq!(
+            run_bash_str(&bash_payload(&root, "rtk read a.ts | head", &big, "b1")),
+            ""
+        );
     }
 
     // rtk read --max-lines is a distinct cache key from the full read.
@@ -926,12 +1059,26 @@ mod tests {
     fn rtk_read_max_lines_is_distinct_cache_key_from_full_read() {
         let root = bash_repo();
         let big = big_stdout();
-        assert_eq!(run_bash_str(&bash_payload(&root, "rtk read src/a.ts --max-lines 50", &big, "b1")), "");
-        assert_eq!(run_bash_str(&bash_payload(&root, "rtk read src/a.ts", &big, "b1")), "");
-        assert!(
-            run_bash_str(&bash_payload(&root, "rtk read src/a.ts --max-lines 50", &big, "b1"))
-                .contains("devscout: identical output")
+        assert_eq!(
+            run_bash_str(&bash_payload(
+                &root,
+                "rtk read src/a.ts --max-lines 50",
+                &big,
+                "b1"
+            )),
+            ""
         );
+        assert_eq!(
+            run_bash_str(&bash_payload(&root, "rtk read src/a.ts", &big, "b1")),
+            ""
+        );
+        assert!(run_bash_str(&bash_payload(
+            &root,
+            "rtk read src/a.ts --max-lines 50",
+            &big,
+            "b1"
+        ))
+        .contains("devscout: identical output"));
     }
 
     // -- count_lines ------------------------------------------------------
@@ -1008,7 +1155,11 @@ mod tests {
 
     #[test]
     fn classify_git_c_anchors_to_dash_c_dir_ignoring_cwd() {
-        let target = classify_bash("git -C /repo-root show HEAD:src/a.ts", Some("/somewhere/else")).unwrap();
+        let target = classify_bash(
+            "git -C /repo-root show HEAD:src/a.ts",
+            Some("/somewhere/else"),
+        )
+        .unwrap();
         assert_eq!(target.anchor_path, Path::new("/repo-root/src/a.ts"));
     }
 
@@ -1029,7 +1180,10 @@ mod tests {
     fn rtk_read_matches_and_excludes_trailing_flags_from_capture() {
         // The read pattern is not end-anchored -- flags after the first token
         // are tolerated but not part of the captured path.
-        assert_eq!(match_rtk_read("read src/a.ts --max-lines 50"), Some("src/a.ts"));
+        assert_eq!(
+            match_rtk_read("read src/a.ts --max-lines 50"),
+            Some("src/a.ts")
+        );
     }
 
     #[test]
@@ -1075,7 +1229,8 @@ mod tests {
     }
 
     #[test]
-    fn classify_rtk_read_flags_stay_out_of_anchor_path_but_flagged_and_bare_forms_are_still_distinct_commands() {
+    fn classify_rtk_read_flags_stay_out_of_anchor_path_but_flagged_and_bare_forms_are_still_distinct_commands(
+    ) {
         // classify() only ever sees the anchor path; the cache key distinction
         // between `read FILE` and `read FILE --max-lines 50` lives one layer up
         // (handle_bash keys on the full normalized string) -- covered by the
@@ -1090,7 +1245,10 @@ mod tests {
     #[test]
     fn envelope_field_order_matches_node() {
         let out = envelope("additionalContext", JVal::string("hi"));
-        assert_eq!(out, r#"{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":"hi"}}"#);
+        assert_eq!(
+            out,
+            r#"{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":"hi"}}"#
+        );
     }
 
     #[test]

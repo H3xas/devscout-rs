@@ -35,7 +35,9 @@ fn print_out(out: &str) {
     use std::io::Write;
     let stdout = std::io::stdout();
     let mut lock = stdout.lock();
-    let _ = lock.write_all(out.as_bytes()).and_then(|()| lock.write_all(b"\n"));
+    let _ = lock
+        .write_all(out.as_bytes())
+        .and_then(|()| lock.write_all(b"\n"));
 }
 
 // A zero-hit answer is neither success nor failure: the index was read and the
@@ -72,7 +74,9 @@ fn emit_zero_hit_note(code: i32, note: &str, cwd: &Path, query: Option<&str>) {
     }
     let stderr = std::io::stderr();
     let mut lock = stderr.lock();
-    let _ = lock.write_all(text.as_bytes()).and_then(|()| lock.write_all(b"\n"));
+    let _ = lock
+        .write_all(text.as_bytes())
+        .and_then(|()| lock.write_all(b"\n"));
 }
 
 // Query-time index freshness, `find`/`refs`/`impact` only: `map` just rebuilt
@@ -84,7 +88,8 @@ fn emit_zero_hit_note(code: i32, note: &str, cwd: &Path, query: Option<&str>) {
 // stderr in a fixed order when both fire for the same query. Never touches
 // stdout, never changes the exit code.
 fn emit_freshness_warning(cwd: &Path) {
-    let Some(root) = crate::repo::find_scout_root(cwd).or_else(|| crate::repo::find_repo_root(cwd)) else {
+    let Some(root) = crate::repo::find_scout_root(cwd).or_else(|| crate::repo::find_repo_root(cwd))
+    else {
         return;
     };
     let Some(warning) = manifest::freshness_warning(&root) else {
@@ -92,7 +97,9 @@ fn emit_freshness_warning(cwd: &Path) {
     };
     let stderr = std::io::stderr();
     let mut lock = stderr.lock();
-    let _ = lock.write_all(warning.as_bytes()).and_then(|()| lock.write_all(b"\n"));
+    let _ = lock
+        .write_all(warning.as_bytes())
+        .and_then(|()| lock.write_all(b"\n"));
 }
 
 // The nearest names a zero-hit `find`/`refs` offers, never substituted for the
@@ -100,8 +107,12 @@ fn emit_freshness_warning(cwd: &Path) {
 // command that just ran: this path is reached only once that command has decided
 // it has nothing to print.
 fn nearest_names(cwd: &Path, query: &str) -> Vec<String> {
-    let Ok(root) = require_repo(cwd) else { return Vec::new() };
-    let Some(g) = graph::read_graph(&root) else { return Vec::new() };
+    let Ok(root) = require_repo(cwd) else {
+        return Vec::new();
+    };
+    let Some(g) = graph::read_graph(&root) else {
+        return Vec::new();
+    };
     suggest::suggestion_lines(&g.names, query)
 }
 
@@ -109,7 +120,9 @@ fn nearest_names(cwd: &Path, query: &str) -> Vec<String> {
 // `dispatch`, which needs the same string to build the suggestion block for a
 // query `cmd_refs` has already reported as a zero hit.
 fn first_positional(args: &[String]) -> Option<&str> {
-    args.iter().find(|a| !a.starts_with("--")).map(String::as_str)
+    args.iter()
+        .find(|a| !a.starts_with("--"))
+        .map(String::as_str)
 }
 
 // `devscout help` / `--help`. Written to stdout with exit 0 so a shell
@@ -147,6 +160,7 @@ plumbing
   -V, --version              show the version
 ";
 
+/// Parses and executes a `devscout` command from its argument vector.
 pub fn dispatch(args: Vec<String>) {
     let (cwd, args) = match apply_global_options(&current_dir(), &args) {
         Ok(v) => v,
@@ -226,7 +240,12 @@ pub fn dispatch(args: Vec<String>) {
             // the subcommand becomes one space-joined query, same as before the
             // flag existed.
             let resources = args[2..].iter().any(|a| a == "--resources");
-            let query_str = args[2..].iter().filter(|a| a.as_str() != "--resources").cloned().collect::<Vec<_>>().join(" ");
+            let query_str = args[2..]
+                .iter()
+                .filter(|a| a.as_str() != "--resources")
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(" ");
             let (code, out) = cmd_find(&cwd, &query_str, resources);
             print_out(&out);
             emit_freshness_warning(&cwd);
@@ -303,7 +322,10 @@ fn require_repo_for_path(cwd: &Path, arg_path: Option<&str>) -> Result<PathBuf, 
     crate::repo::find_scout_root(cwd)
         .or_else(|| crate::repo::find_repo_root(cwd))
         .or_else(|| root_from_arg(cwd, arg_path))
-        .ok_or_else(|| "no .scout or .git ancestor; run 'devscout init' from the repo or directory root".to_string())
+        .ok_or_else(|| {
+            "no .scout or .git ancestor; run 'devscout init' from the repo or directory root"
+                .to_string()
+        })
 }
 
 // Only a path-shaped argument naming something that is actually on disk is
@@ -381,7 +403,9 @@ fn ambiguous_candidates_out(index: &query::GraphIndex, q: &str, ids: &[String]) 
             // `by_lower_name`, both built from `index.by_id`'s own keys during
             // construction -- `index.def(id)` cannot miss. `.expect` fails loud
             // if that invariant ever broke.
-            let d = index.def(id).expect("ambiguous candidate id must resolve to a graph def");
+            let d = index
+                .def(id)
+                .expect("ambiguous candidate id must resolve to a graph def");
             format!("{id}  {}:{}  {}", d.file, d.line, d.kind)
         })
         .collect();
@@ -389,7 +413,10 @@ fn ambiguous_candidates_out(index: &query::GraphIndex, q: &str, ids: &[String]) 
     // identifier/path/kind text these rows are built from is a stable, total
     // order (the same seam resolve.rs's candidate sort documents).
     rows.sort();
-    let mut out = vec![format!("ambiguous symbol \"{q}\" — {} candidates:", rows.len())];
+    let mut out = vec![format!(
+        "ambiguous symbol \"{q}\" — {} candidates:",
+        rows.len()
+    )];
     out.append(&mut rows);
     (1, out.join("\n"))
 }
@@ -424,10 +451,16 @@ fn cmd_refs(cwd: &Path, args: &[String]) -> (i32, String) {
     let json = args.iter().any(|a| a == "--json");
     let compact = args.iter().any(|a| a == "--compact");
     if json && compact {
-        return (1, "devscout refs: --compact and --json are mutually exclusive".to_string());
+        return (
+            1,
+            "devscout refs: --compact and --json are mutually exclusive".to_string(),
+        );
     }
     let Some(q) = first_positional(args) else {
-        return (2, "usage: devscout refs <symbol> [--out] [--all] [--json|--compact]".to_string());
+        return (
+            2,
+            "usage: devscout refs <symbol> [--out] [--all] [--json|--compact]".to_string(),
+        );
     };
     let out = args.iter().any(|a| a == "--out");
     // `--all` lifts only `query::OUTBOUND_CAP`; it is otherwise inert without
@@ -438,11 +471,22 @@ fn cmd_refs(cwd: &Path, args: &[String]) -> (i32, String) {
         Err(e) => return (1, format!("error: {e}")),
     };
     let Some(g) = graph::read_graph(&root) else {
-        return (1, "no graph.json for this repo — run `devscout map` on a C# scope first".to_string());
+        return (
+            1,
+            "no graph.json for this repo — run `devscout map` on a C# scope first".to_string(),
+        );
     };
     let index = query::load_graph_index(&g, &root);
 
-    match query::build_refs_model(&index, q, out, query::DEFAULT_CAP, query::INBOUND_CAP, query::OUTBOUND_CAP, all_out) {
+    match query::build_refs_model(
+        &index,
+        q,
+        out,
+        query::DEFAULT_CAP,
+        query::INBOUND_CAP,
+        query::OUTBOUND_CAP,
+        all_out,
+    ) {
         query::RefsResult::NotFound => (EXIT_NO_RESULT, format!("no symbol matches \"{q}\"")),
         query::RefsResult::Ambiguous(ids) => ambiguous_candidates_out(&index, q, &ids),
         // A bare member answers with one ordinary refs model per declaring type,
@@ -453,9 +497,23 @@ fn cmd_refs(cwd: &Path, args: &[String]) -> (i32, String) {
             if json {
                 (0, member_refs_to_json(q, &models))
             } else if compact {
-                (0, models.iter().map(render::render_refs_compact).collect::<Vec<_>>().join("\n"))
+                (
+                    0,
+                    models
+                        .iter()
+                        .map(render::render_refs_compact)
+                        .collect::<Vec<_>>()
+                        .join("\n"),
+                )
             } else {
-                (0, models.iter().map(render::render_refs_text).collect::<Vec<_>>().join("\n"))
+                (
+                    0,
+                    models
+                        .iter()
+                        .map(render::render_refs_text)
+                        .collect::<Vec<_>>()
+                        .join("\n"),
+                )
             }
         }
         query::RefsResult::Resolved(model) => {
@@ -552,7 +610,10 @@ fn cmd_impact(cwd: &Path, args: &[String]) -> (i32, String) {
     let json = args.iter().any(|a| a == "--json");
     let compact = args.iter().any(|a| a == "--compact");
     if json && compact {
-        return (1, "devscout impact: --compact and --json are mutually exclusive".to_string());
+        return (
+            1,
+            "devscout impact: --compact and --json are mutually exclusive".to_string(),
+        );
     }
 
     let mut hops: u32 = query::DEFAULT_HOPS;
@@ -595,7 +656,9 @@ fn cmd_impact(cwd: &Path, args: &[String]) -> (i32, String) {
             continue;
         }
         if i > 0
-            && (args[i - 1] == "--hops" || args[i - 1] == "--iface-max-fanin" || args[i - 1] == "--hub-max-indegree")
+            && (args[i - 1] == "--hops"
+                || args[i - 1] == "--iface-max-fanin"
+                || args[i - 1] == "--hub-max-indegree")
         {
             continue;
         }
@@ -613,7 +676,10 @@ fn cmd_impact(cwd: &Path, args: &[String]) -> (i32, String) {
     let q = repo_relative_arg(cwd, &root, q);
     let q = q.as_str();
     let Some(g) = graph::read_graph(&root) else {
-        return (1, "no graph.json for this repo — run `devscout map` on a C# scope first".to_string());
+        return (
+            1,
+            "no graph.json for this repo — run `devscout map` on a C# scope first".to_string(),
+        );
     };
     let index = query::load_graph_index(&g, &root);
 
@@ -626,9 +692,10 @@ fn cmd_impact(cwd: &Path, args: &[String]) -> (i32, String) {
         iface_max_fanin,
         hub_max_indegree,
     ) {
-        query::ImpactResult::NotFound { kind } => {
-            (EXIT_NO_RESULT, format!("no {} match for \"{q}\"", render::seed_kind_str(kind)))
-        }
+        query::ImpactResult::NotFound { kind } => (
+            EXIT_NO_RESULT,
+            format!("no {} match for \"{q}\"", render::seed_kind_str(kind)),
+        ),
         query::ImpactResult::Ambiguous { ids, .. } => ambiguous_candidates_out(&index, q, &ids),
         query::ImpactResult::Resolved(model) => {
             let out = if json {
@@ -641,7 +708,11 @@ fn cmd_impact(cwd: &Path, args: &[String]) -> (i32, String) {
             // A resolved seed that reaches nothing beyond its own files is the
             // same answer as an unresolved one -- empty -- and gets the same
             // signal.
-            if model.rows.is_empty() { (EXIT_NO_RESULT, out) } else { (0, out) }
+            if model.rows.is_empty() {
+                (EXIT_NO_RESULT, out)
+            } else {
+                (0, out)
+            }
         }
     }
 }
@@ -652,17 +723,26 @@ fn cmd_tests(cwd: &Path, args: &[String]) -> (i32, String) {
     let json = args.iter().any(|a| a == "--json");
     let compact = args.iter().any(|a| a == "--compact");
     if json && compact {
-        return (1, "devscout tests: --compact and --json are mutually exclusive".to_string());
+        return (
+            1,
+            "devscout tests: --compact and --json are mutually exclusive".to_string(),
+        );
     }
     let Some(q) = args.iter().find(|a| !a.starts_with("--")) else {
-        return (2, "usage: devscout tests <symbol> [--json|--compact]".to_string());
+        return (
+            2,
+            "usage: devscout tests <symbol> [--json|--compact]".to_string(),
+        );
     };
     let root = match require_repo(cwd) {
         Ok(r) => r,
         Err(e) => return (1, format!("error: {e}")),
     };
     let Some(g) = graph::read_graph(&root) else {
-        return (1, "no graph.json for this repo — run `devscout map` on a C# scope first".to_string());
+        return (
+            1,
+            "no graph.json for this repo — run `devscout map` on a C# scope first".to_string(),
+        );
     };
     let index = query::load_graph_index(&g, &root);
 
@@ -725,7 +805,10 @@ fn cmd_find(cwd: &Path, query_str: &str, resources: bool) -> (i32, String) {
     // declaration block uses. No graph file (never mapped) reads as an empty
     // map -- every entry ranks at 0 inbound and the manifest answers in its
     // on-disk order, exactly as it did before this existed.
-    let inbound_counts = graph.as_ref().map(query::file_inbound_counts).unwrap_or_default();
+    let inbound_counts = graph
+        .as_ref()
+        .map(query::file_inbound_counts)
+        .unwrap_or_default();
     let (decl_lines, resource_count): (Vec<String>, usize) = match graph.as_ref() {
         None => (Vec::new(), 0),
         Some(g) => {
@@ -753,39 +836,48 @@ fn cmd_find(cwd: &Path, query_str: &str, resources: bool) -> (i32, String) {
                 })
                 .collect();
             if pool.len() > FIND_NAMES_CAP {
-                out.push(format!("… +{} more declarations (refine query)", pool.len() - FIND_NAMES_CAP));
+                out.push(format!(
+                    "… +{} more declarations (refine query)",
+                    pool.len() - FIND_NAMES_CAP
+                ));
             }
             (out, resource_count)
         }
     };
     match manifest::find_in_manifest_detailed(&root, query_str, &inbound_counts) {
-        Ok(r) if r.hits.is_empty() && decl_lines.is_empty() => {
-            (EXIT_NO_RESULT, format!("no matches for \"{query_str}\" (run 'devscout map' if manifest is missing)"))
-        }
+        Ok(r) if r.hits.is_empty() && decl_lines.is_empty() => (
+            EXIT_NO_RESULT,
+            format!("no matches for \"{query_str}\" (run 'devscout map' if manifest is missing)"),
+        ),
         Ok(r) => {
-            let cap = if r.fallback { FIND_FALLBACK_CAP } else { FIND_FULL_CAP };
+            let cap = if r.fallback {
+                FIND_FALLBACK_CAP
+            } else {
+                FIND_FULL_CAP
+            };
             let mut lines: Vec<String> = decl_lines;
             if !resources && resource_count > 0 {
-                lines.push(format!("+{resource_count} resource-key hits, use --resources"));
+                lines.push(format!(
+                    "+{resource_count} resource-key hits, use --resources"
+                ));
             }
             // Every manifest-pool row carries a line too, same as the declaration
             // block above it: the file's own first declaration where the name
             // index has one, line 1 (an always-valid "open the file" anchor) for a
             // file the index carries no declared symbol for at all.
-            let decl_line_by_file = graph.as_ref().map(query::first_decl_line_by_file).unwrap_or_default();
-            lines.extend(r
-                .hits
-                .iter()
-                .take(cap)
-                .map(|h| {
-                    // An absent purpose renders as the literal text "undefined"
-                    // -- not an empty string. See manifest.rs's `FindHit::purpose`
-                    // doc comment.
-                    let purpose = h.purpose.as_deref().unwrap_or("undefined");
-                    let agent = if h.source == "agent" { " [agent]" } else { "" };
-                    let line = decl_line_by_file.get(&h.path).copied().unwrap_or(1);
-                    format!("{}:{line}: {purpose}{agent}", h.path)
-                }));
+            let decl_line_by_file = graph
+                .as_ref()
+                .map(query::first_decl_line_by_file)
+                .unwrap_or_default();
+            lines.extend(r.hits.iter().take(cap).map(|h| {
+                // An absent purpose renders as the literal text "undefined"
+                // -- not an empty string. See manifest.rs's `FindHit::purpose`
+                // doc comment.
+                let purpose = h.purpose.as_deref().unwrap_or("undefined");
+                let agent = if h.source == "agent" { " [agent]" } else { "" };
+                let line = decl_line_by_file.get(&h.path).copied().unwrap_or(1);
+                format!("{}:{line}: {purpose}{agent}", h.path)
+            }));
             if r.hits.len() > cap {
                 lines.push(format!("… +{} more (refine query)", r.hits.len() - cap));
             }
@@ -806,7 +898,11 @@ fn cmd_map(cwd: &Path, args: &[String]) -> (i32, String) {
         Ok(r) => r,
         Err(e) => return (1, format!("error: {e}")),
     };
-    let dirs: Vec<String> = args.iter().filter(|a| a.as_str() != "--refresh").cloned().collect();
+    let dirs: Vec<String> = args
+        .iter()
+        .filter(|a| a.as_str() != "--refresh")
+        .cloned()
+        .collect();
     match mapcmd::map_repo(&root, &dirs, mapcmd::MapOptions::from_env()) {
         Ok(report) => (0, report.summary_line()),
         Err(e) => (1, format!("error: {e}")),
@@ -838,7 +934,10 @@ fn cmd_stats(cwd: &Path) -> (i32, String) {
         format!("  reads deduped (stubs): {}", s.total_stubs),
         format!("  lines saved: {}", s.lines_saved),
         format!("  bytes saved: {}", s.bytes_saved),
-        format!("  est tokens saved: {}", js_math_round(s.bytes_saved as f64 / 4.0)),
+        format!(
+            "  est tokens saved: {}",
+            js_math_round(s.bytes_saved as f64 / 4.0)
+        ),
     ];
 
     let b = match store::bash_stats_for(&db) {
@@ -848,15 +947,24 @@ fn cmd_stats(cwd: &Path) -> (i32, String) {
     if b.commands_tracked > 0 {
         lines.push(format!("  bash commands tracked: {}", b.commands_tracked));
         lines.push(format!("  bash dedups (stubs): {}", b.total_stubs));
-        lines.push(format!("  bash est tokens saved: {}", js_math_round(b.bytes_saved as f64 / 4.0)));
+        lines.push(format!(
+            "  bash est tokens saved: {}",
+            js_math_round(b.bytes_saved as f64 / 4.0)
+        ));
     }
 
     // Fail open on EITHER the content-store open or the stats query.
     if let Ok(cs_conn) = store::open_content_store() {
         if let Ok(cs) = store::content_stats_for(&cs_conn) {
             if cs.total_stubs > 0 {
-                lines.push(format!("  cross-repo dedups (all roots, this machine): {}", cs.total_stubs));
-                lines.push(format!("  cross-repo est tokens saved: {}", js_math_round(cs.bytes_saved as f64 / 4.0)));
+                lines.push(format!(
+                    "  cross-repo dedups (all roots, this machine): {}",
+                    cs.total_stubs
+                ));
+                lines.push(format!(
+                    "  cross-repo est tokens saved: {}",
+                    js_math_round(cs.bytes_saved as f64 / 4.0)
+                ));
             }
         }
     }
@@ -891,7 +999,10 @@ fn cmd_stats(cwd: &Path) -> (i32, String) {
         lines.push("  top stubbed files:".to_string());
         for r in &top {
             let sid: String = r.session_id.chars().take(8).collect();
-            lines.push(format!("    {}x  {} ({} lines, session {sid})", r.stub_count, r.rel_path, r.lines));
+            lines.push(format!(
+                "    {}x  {} ({} lines, session {sid})",
+                r.stub_count, r.rel_path, r.lines
+            ));
         }
     }
 
@@ -927,13 +1038,19 @@ fn cmd_clear(cwd: &Path, args: &[String]) -> (i32, String) {
             Err(e) => return (1, format!("error: {e}")),
         };
         let suffix = if deleted == 1 { "" } else { "s" };
-        return (0, format!("deleted {deleted} row{suffix} older than {days}d"));
+        return (
+            0,
+            format!("deleted {deleted} row{suffix} older than {days}d"),
+        );
     }
 
     if let Some(idx) = args.iter().position(|a| a == "--session") {
         let prefix = args.get(idx + 1).map(String::as_str).unwrap_or("");
         if prefix.is_empty() {
-            return (2, "usage: devscout clear --session <id-or-prefix>".to_string());
+            return (
+                2,
+                "usage: devscout clear --session <id-or-prefix>".to_string(),
+            );
         }
         let db = match store::open_store(&root) {
             Ok(c) => c,
@@ -947,7 +1064,13 @@ fn cmd_clear(cwd: &Path, args: &[String]) -> (i32, String) {
             return (0, format!("no sessions match \"{prefix}\""));
         }
         if matches.len() > 1 {
-            return (2, format!("ambiguous session prefix \"{prefix}\": {}", matches.join(", ")));
+            return (
+                2,
+                format!(
+                    "ambiguous session prefix \"{prefix}\": {}",
+                    matches.join(", ")
+                ),
+            );
         }
         let deleted = match store::prune(&db, None, Some(matches[0].as_str())) {
             Ok(n) => n,
@@ -955,7 +1078,10 @@ fn cmd_clear(cwd: &Path, args: &[String]) -> (i32, String) {
         };
         let suffix = if deleted == 1 { "" } else { "s" };
         let session = &matches[0];
-        return (0, format!("deleted {deleted} row{suffix} for session {session}"));
+        return (
+            0,
+            format!("deleted {deleted} row{suffix} for session {session}"),
+        );
     }
 
     let db_path = crate::repo::scout_dir(&root).join("cache.db");
@@ -1004,7 +1130,9 @@ enum J {
 impl J {
     fn write(&self, out: &mut String) {
         match self {
-            J::Str(s) => out.push_str(&serde_json::to_string(s).expect("string JSON encoding cannot fail")),
+            J::Str(s) => {
+                out.push_str(&serde_json::to_string(s).expect("string JSON encoding cannot fail"))
+            }
             J::UInt(n) => out.push_str(&n.to_string()),
             J::RawNum(s) => out.push_str(s),
             J::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
@@ -1057,7 +1185,9 @@ fn js_float_string(v: f64) -> String {
     if v == 0.0 {
         return "0".to_string();
     }
-    let s = serde_json::Number::from_f64(v).expect("finite, checked above").to_string();
+    let s = serde_json::Number::from_f64(v)
+        .expect("finite, checked above")
+        .to_string();
     if !s.contains('e') && s.ends_with(".0") {
         s[..s.len() - 2].to_string()
     } else {
@@ -1066,7 +1196,11 @@ fn js_float_string(v: f64) -> String {
 }
 
 fn j_table<R>(t: &query::Table<R>, row: impl Fn(&R) -> J) -> J {
-    J::Obj(vec![("total", J::UInt(t.total as u64)), ("dropped", J::UInt(t.dropped as u64)), ("rows", J::Arr(t.rows.iter().map(row).collect()))])
+    J::Obj(vec![
+        ("total", J::UInt(t.total as u64)),
+        ("dropped", J::UInt(t.dropped as u64)),
+        ("rows", J::Arr(t.rows.iter().map(row).collect())),
+    ])
 }
 
 // `heuristic: true` is appended LAST on a guessed row and the key is ABSENT on a
@@ -1079,7 +1213,10 @@ fn push_heuristic(fields: &mut Vec<(&'static str, J)>, heuristic: bool) {
 }
 
 fn j_inbound_row(r: &query::InboundRow) -> J {
-    let mut fields = vec![("file", J::Str(r.file.clone())), ("line", J::UInt(r.line as u64))];
+    let mut fields = vec![
+        ("file", J::Str(r.file.clone())),
+        ("line", J::UInt(r.line as u64)),
+    ];
     push_heuristic(&mut fields, r.heuristic);
     // `source` is appended after `heuristic` and omitted when the line could not
     // be read -- an absent key, never an empty string.
@@ -1183,14 +1320,31 @@ fn refs_model_fields(model: &query::RefsModel) -> Vec<(&'static str, J)> {
         ("kind", J::Str(model.kind.clone())),
         (
             "sites",
-            J::Arr(model.sites.iter().map(|s| J::Obj(vec![("file", J::Str(s.file.clone())), ("line", J::UInt(s.line as u64))])).collect()),
+            J::Arr(
+                model
+                    .sites
+                    .iter()
+                    .map(|s| {
+                        J::Obj(vec![
+                            ("file", J::Str(s.file.clone())),
+                            ("line", J::UInt(s.line as u64)),
+                        ])
+                    })
+                    .collect(),
+            ),
         ),
         (
             "inbound",
             J::Obj(vec![
                 ("inherits", j_table(&model.inbound.inherits, j_inbound_row)),
-                ("uses-type", j_table(&model.inbound.uses_type, j_inbound_row)),
-                ("uses-member", j_table(&model.inbound.uses_member, j_inbound_row)),
+                (
+                    "uses-type",
+                    j_table(&model.inbound.uses_type, j_inbound_row),
+                ),
+                (
+                    "uses-member",
+                    j_table(&model.inbound.uses_member, j_inbound_row),
+                ),
             ]),
         ),
     ];
@@ -1208,8 +1362,14 @@ fn refs_model_fields(model: &query::RefsModel) -> Vec<(&'static str, J)> {
     fields.push((
         "ambiguous",
         J::Obj(vec![
-            ("inbound", j_table(&model.ambiguous.inbound, j_ambiguous_row)),
-            ("outbound", j_table(&model.ambiguous.outbound, j_ambiguous_row)),
+            (
+                "inbound",
+                j_table(&model.ambiguous.inbound, j_ambiguous_row),
+            ),
+            (
+                "outbound",
+                j_table(&model.ambiguous.outbound, j_ambiguous_row),
+            ),
         ]),
     ));
     fields.push(("manifestGap", J::UInt(model.manifest_gap as u64)));
@@ -1227,7 +1387,12 @@ fn refs_model_fields(model: &query::RefsModel) -> Vec<(&'static str, J)> {
                     J::Arr(
                         m.members
                             .iter()
-                            .map(|e| J::Obj(vec![("name", J::Str(e.name.clone())), ("count", J::UInt(e.count as u64))]))
+                            .map(|e| {
+                                J::Obj(vec![
+                                    ("name", J::Str(e.name.clone())),
+                                    ("count", J::UInt(e.count as u64)),
+                                ])
+                            })
                             .collect(),
                     ),
                 ),
@@ -1244,7 +1409,10 @@ fn j_impact_row(r: &query::ImpactRow) -> J {
         ("hop", J::UInt(r.hop as u64)),
         ("viaCount", J::UInt(r.via_count as u64)),
         ("ambiguousCount", J::UInt(r.ambiguous_count as u64)),
-        ("topSymbols", J::Arr(r.top_symbols.iter().map(|s| J::Str(s.clone())).collect())),
+        (
+            "topSymbols",
+            J::Arr(r.top_symbols.iter().map(|s| J::Str(s.clone())).collect()),
+        ),
         ("topSymbolsMore", J::UInt(r.top_symbols_more as u64)),
         ("score", J::RawNum(js_float_string(r.score))),
     ];
@@ -1257,7 +1425,10 @@ fn j_impact_row(r: &query::ImpactRow) -> J {
     }
     // Appended LAST, present only on a row the interface hop actually reached.
     if !r.iface_via.is_empty() {
-        fields.push(("ifaceVia", J::Arr(r.iface_via.iter().map(|s| J::Str(s.clone())).collect())));
+        fields.push((
+            "ifaceVia",
+            J::Arr(r.iface_via.iter().map(|s| J::Str(s.clone())).collect()),
+        ));
     }
     // Appended after `ifaceVia`, present only when at least one edge kind could
     // attribute a line to this row. Key order inside the object is the walk's own
@@ -1265,7 +1436,12 @@ fn j_impact_row(r: &query::ImpactRow) -> J {
     if !r.from_lines.is_empty() {
         fields.push((
             "fromLines",
-            J::Obj(r.from_lines.iter().map(|(kind, line)| (*kind, J::UInt(*line as u64))).collect()),
+            J::Obj(
+                r.from_lines
+                    .iter()
+                    .map(|(kind, line)| (*kind, J::UInt(*line as u64)))
+                    .collect(),
+            ),
         ));
     }
     // Appended LAST and only on a hub file, so every other row keeps the key
@@ -1281,46 +1457,70 @@ fn j_impact_row(r: &query::ImpactRow) -> J {
 // totalAffected, rows, dropped, manifestGap, heuristicAffected}`, in that key
 // order.
 fn impact_model_to_json(query_str: &str, model: &query::ImpactModel) -> String {
-    J::Obj(vec![
-        ("query", J::Str(query_str.to_string())),
-        ("status", J::Str("resolved".to_string())),
-        ("kind", J::Str(render::seed_kind_str(model.kind).to_string())),
-        ("seedFiles", J::Arr(model.seed_files.iter().map(|f| J::Str(f.clone())).collect())),
-        ("hops", J::UInt(model.hops as u64)),
-        ("totalAffected", J::UInt(model.total_affected as u64)),
-        ("rows", J::Arr(model.rows.iter().map(j_impact_row).collect())),
-        ("dropped", J::UInt(model.dropped as u64)),
-        ("manifestGap", J::UInt(model.manifest_gap as u64)),
-        // Appended LAST after `manifestGap` -- always present, unlike the
-        // per-row flags.
-        ("heuristicAffected", J::UInt(model.heuristic_affected as u64)),
-        // Test-coverage stage, appended after it -- also always present.
-        ("testsAffected", J::UInt(model.tests_affected as u64)),
-    ]
-    .into_iter()
-    // Appended LAST and only when the brake actually fired, so every answer it
-    // never touched keeps the exact key order it had before. The file entries
-    // ride in the SAME array, after every interface entry, rather than in a
-    // second top-level key: a consumer already reading `braked` sees both brakes
-    // without a schema change.
-    .chain(if model.braked.is_empty() && model.braked_files.is_empty() {
-        None
-    } else {
-        Some((
-            "braked",
-            J::Arr(
-                model
-                    .braked
-                    .iter()
-                    .map(|b| J::Obj(vec![("iface", J::Str(b.iface.clone())), ("fanin", J::UInt(b.fanin as u64))]))
-                    .chain(model.braked_files.iter().map(|b| {
-                        J::Obj(vec![("file", J::Str(b.file.clone())), ("indegree", J::UInt(b.indegree as u64))])
-                    }))
-                    .collect(),
+    J::Obj(
+        vec![
+            ("query", J::Str(query_str.to_string())),
+            ("status", J::Str("resolved".to_string())),
+            (
+                "kind",
+                J::Str(render::seed_kind_str(model.kind).to_string()),
             ),
-        ))
-    })
-    .collect::<Vec<_>>())
+            (
+                "seedFiles",
+                J::Arr(model.seed_files.iter().map(|f| J::Str(f.clone())).collect()),
+            ),
+            ("hops", J::UInt(model.hops as u64)),
+            ("totalAffected", J::UInt(model.total_affected as u64)),
+            (
+                "rows",
+                J::Arr(model.rows.iter().map(j_impact_row).collect()),
+            ),
+            ("dropped", J::UInt(model.dropped as u64)),
+            ("manifestGap", J::UInt(model.manifest_gap as u64)),
+            // Appended LAST after `manifestGap` -- always present, unlike the
+            // per-row flags.
+            (
+                "heuristicAffected",
+                J::UInt(model.heuristic_affected as u64),
+            ),
+            // Test-coverage stage, appended after it -- also always present.
+            ("testsAffected", J::UInt(model.tests_affected as u64)),
+        ]
+        .into_iter()
+        // Appended LAST and only when the brake actually fired, so every answer it
+        // never touched keeps the exact key order it had before. The file entries
+        // ride in the SAME array, after every interface entry, rather than in a
+        // second top-level key: a consumer already reading `braked` sees both brakes
+        // without a schema change.
+        .chain(
+            if model.braked.is_empty() && model.braked_files.is_empty() {
+                None
+            } else {
+                Some((
+                    "braked",
+                    J::Arr(
+                        model
+                            .braked
+                            .iter()
+                            .map(|b| {
+                                J::Obj(vec![
+                                    ("iface", J::Str(b.iface.clone())),
+                                    ("fanin", J::UInt(b.fanin as u64)),
+                                ])
+                            })
+                            .chain(model.braked_files.iter().map(|b| {
+                                J::Obj(vec![
+                                    ("file", J::Str(b.file.clone())),
+                                    ("indegree", J::UInt(b.indegree as u64)),
+                                ])
+                            }))
+                            .collect(),
+                    ),
+                ))
+            },
+        )
+        .collect::<Vec<_>>(),
+    )
     .to_json_string()
 }
 
@@ -1333,7 +1533,10 @@ fn tests_model_to_json(model: &query::TestsModel) -> String {
         ("status", J::Str("resolved".to_string())),
         ("query", J::Str(model.query.clone())),
         ("symbol", J::Str(model.symbol.clone())),
-        ("defFiles", J::Arr(model.def_files.iter().map(|f| J::Str(f.clone())).collect())),
+        (
+            "defFiles",
+            J::Arr(model.def_files.iter().map(|f| J::Str(f.clone())).collect()),
+        ),
         (
             "rows",
             J::Arr(
@@ -1343,8 +1546,14 @@ fn tests_model_to_json(model: &query::TestsModel) -> String {
                     .map(|r| {
                         let mut fields = vec![
                             ("file", J::Str(r.file.clone())),
-                            ("testDefs", J::Arr(r.test_defs.iter().map(|d| J::Str(d.clone())).collect())),
-                            ("lines", J::Arr(r.lines.iter().map(|l| J::UInt(*l as u64)).collect())),
+                            (
+                                "testDefs",
+                                J::Arr(r.test_defs.iter().map(|d| J::Str(d.clone())).collect()),
+                            ),
+                            (
+                                "lines",
+                                J::Arr(r.lines.iter().map(|l| J::UInt(*l as u64)).collect()),
+                            ),
                             ("refCount", J::UInt(r.ref_count as u64)),
                         ];
                         push_heuristic(&mut fields, r.heuristic);
@@ -1355,8 +1564,14 @@ fn tests_model_to_json(model: &query::TestsModel) -> String {
         ),
         ("testFileCount", J::UInt(model.test_file_count as u64)),
         ("refCount", J::UInt(model.ref_count as u64)),
-        ("heuristicFileCount", J::UInt(model.heuristic_file_count as u64)),
-        ("heuristicRefCount", J::UInt(model.heuristic_ref_count as u64)),
+        (
+            "heuristicFileCount",
+            J::UInt(model.heuristic_file_count as u64),
+        ),
+        (
+            "heuristicRefCount",
+            J::UInt(model.heuristic_ref_count as u64),
+        ),
     ])
     .to_json_string()
 }
@@ -1407,7 +1622,10 @@ mod tests {
 
     #[test]
     fn j_object_and_array_serialize_with_no_extra_whitespace_like_json_stringify() {
-        let j = J::Obj(vec![("a", J::UInt(1)), ("b", J::Arr(vec![J::Str("x".to_string()), J::UInt(2)]))]);
+        let j = J::Obj(vec![
+            ("a", J::UInt(1)),
+            ("b", J::Arr(vec![J::Str("x".to_string()), J::UInt(2)])),
+        ]);
         assert_eq!(j.to_json_string(), r#"{"a":1,"b":["x",2]}"#);
     }
 
@@ -1425,27 +1643,54 @@ mod tests {
     // model itself.
 
     fn json_refs_model(rows: Vec<query::InboundRow>, out: bool) -> query::RefsModel {
-        let empty_in = || query::Table { total: 0, dropped: 0, rows: Vec::<query::InboundRow>::new() };
-        let empty_out = || query::Table { total: 0, dropped: 0, rows: Vec::<query::OutboundRow>::new() };
+        let empty_in = || query::Table {
+            total: 0,
+            dropped: 0,
+            rows: Vec::<query::InboundRow>::new(),
+        };
+        let empty_out = || query::Table {
+            total: 0,
+            dropped: 0,
+            rows: Vec::<query::OutboundRow>::new(),
+        };
         query::RefsModel {
             query: "Widget".to_string(),
             id: "App.Widget".to_string(),
             kind: "class".to_string(),
-            sites: vec![query::DefSite { file: "src/Widget.cs".to_string(), line: 3 }],
+            sites: vec![query::DefSite {
+                file: "src/Widget.cs".to_string(),
+                line: 3,
+            }],
             inbound: query::InboundTables {
                 inherits: empty_in(),
                 uses_type: empty_in(),
-                uses_member: query::Table { total: rows.len(), dropped: 0, rows },
+                uses_member: query::Table {
+                    total: rows.len(),
+                    dropped: 0,
+                    rows,
+                },
             },
             outbound: out.then(|| query::OutboundTables {
                 inherits: empty_out(),
                 uses_type: empty_out(),
                 uses_member: empty_out(),
-                imports: query::Table { total: 0, dropped: 0, rows: Vec::new() },
+                imports: query::Table {
+                    total: 0,
+                    dropped: 0,
+                    rows: Vec::new(),
+                },
             }),
             ambiguous: query::AmbiguousTables {
-                inbound: query::Table { total: 0, dropped: 0, rows: Vec::new() },
-                outbound: query::Table { total: 0, dropped: 0, rows: Vec::new() },
+                inbound: query::Table {
+                    total: 0,
+                    dropped: 0,
+                    rows: Vec::new(),
+                },
+                outbound: query::Table {
+                    total: 0,
+                    dropped: 0,
+                    rows: Vec::new(),
+                },
             },
             manifest_gap: 0,
             member_refs: None,
@@ -1456,8 +1701,18 @@ mod tests {
     fn refs_json_appends_heuristic_then_source_last_and_omits_each_when_it_has_no_value() {
         let model = json_refs_model(
             vec![
-                query::InboundRow { file: "src/Fact.cs".into(), line: 4, heuristic: false, source: String::new() },
-                query::InboundRow { file: "src/Guess.cs".into(), line: 9, heuristic: true, source: "var w = new Widget();".into() },
+                query::InboundRow {
+                    file: "src/Fact.cs".into(),
+                    line: 4,
+                    heuristic: false,
+                    source: String::new(),
+                },
+                query::InboundRow {
+                    file: "src/Guess.cs".into(),
+                    line: 9,
+                    heuristic: true,
+                    source: "var w = new Widget();".into(),
+                },
             ],
             true,
         );
@@ -1472,30 +1727,65 @@ mod tests {
 
     #[test]
     fn refs_json_omits_the_outbound_key_entirely_without_out_and_keeps_its_slot_with_it() {
-        let row = || vec![query::InboundRow { file: "src/Fact.cs".into(), line: 4, heuristic: false, source: String::new() }];
+        let row = || {
+            vec![query::InboundRow {
+                file: "src/Fact.cs".into(),
+                line: 4,
+                heuristic: false,
+                source: String::new(),
+            }]
+        };
         let without = refs_model_to_json(&json_refs_model(row(), false));
-        assert!(!without.contains(r#""outbound":{"inherits""#), "the default model must carry no outbound tables: {without}");
+        assert!(
+            !without.contains(r#""outbound":{"inherits""#),
+            "the default model must carry no outbound tables: {without}"
+        );
         assert!(without.contains(r#""ambiguous":{"inbound""#), "{without}");
 
         let with = refs_model_to_json(&json_refs_model(row(), true));
-        let outbound_at = with.find(r#""outbound":{"inherits""#).expect("--out must emit the outbound tables");
-        let inbound_at = with.find(r#""inbound":{"inherits""#).expect("inbound is always emitted");
-        let ambiguous_at = with.find(r#""ambiguous":{"inbound""#).expect("ambiguous is always emitted");
-        assert!(inbound_at < outbound_at && outbound_at < ambiguous_at, "outbound keeps JS's key slot: {with}");
+        let outbound_at = with
+            .find(r#""outbound":{"inherits""#)
+            .expect("--out must emit the outbound tables");
+        let inbound_at = with
+            .find(r#""inbound":{"inherits""#)
+            .expect("inbound is always emitted");
+        let ambiguous_at = with
+            .find(r#""ambiguous":{"inbound""#)
+            .expect("ambiguous is always emitted");
+        assert!(
+            inbound_at < outbound_at && outbound_at < ambiguous_at,
+            "outbound keeps JS's key slot: {with}"
+        );
     }
 
     #[test]
     fn member_refs_json_wraps_unchanged_resolved_models_under_status_query_members() {
-        let row = || vec![query::InboundRow { file: "src/Fact.cs".into(), line: 4, heuristic: false, source: String::new() }];
+        let row = || {
+            vec![query::InboundRow {
+                file: "src/Fact.cs".into(),
+                line: 4,
+                heuristic: false,
+                source: String::new(),
+            }]
+        };
         let one = json_refs_model(row(), false);
         let json = member_refs_to_json("Widget", std::slice::from_ref(&one));
-        assert!(json.starts_with(r#"{"status":"members","query":"Widget","members":[{"status":"resolved""#), "{json}");
+        assert!(
+            json.starts_with(
+                r#"{"status":"members","query":"Widget","members":[{"status":"resolved""#
+            ),
+            "{json}"
+        );
         assert!(json.ends_with("]}"), "{json}");
-        assert!(json.contains(&refs_model_to_json(&one)), "a member entry is the resolved object unchanged: {json}");
+        assert!(
+            json.contains(&refs_model_to_json(&one)),
+            "a member entry is the resolved object unchanged: {json}"
+        );
     }
 
     #[test]
-    fn impact_json_appends_heuristic_count_then_heuristic_after_score_and_heuristic_affected_after_manifest_gap() {
+    fn impact_json_appends_heuristic_count_then_heuristic_after_score_and_heuristic_affected_after_manifest_gap(
+    ) {
         let row = |file: &str, heuristic: bool| query::ImpactRow {
             file: file.to_string(),
             hop: 1,
@@ -1536,7 +1826,12 @@ mod tests {
             ),
             "{json}"
         );
-        assert!(json.ends_with(r#","dropped":0,"manifestGap":0,"heuristicAffected":1,"testsAffected":0}"#), "{json}");
+        assert!(
+            json.ends_with(
+                r#","dropped":0,"manifestGap":0,"heuristicAffected":1,"testsAffected":0}"#
+            ),
+            "{json}"
+        );
     }
 
     // The expected strings below pin the find output caps; the integration suite
@@ -1547,7 +1842,11 @@ mod tests {
         let scout = root.join(".scout");
         std::fs::create_dir_all(&scout).unwrap();
         let entries: Vec<String> = (0..entry_count)
-            .map(|i| format!(r#""src/widget-{i:02}.cs": {{ "purpose": "widget number {i}", "mtime": {i} }}"#))
+            .map(|i| {
+                format!(
+                    r#""src/widget-{i:02}.cs": {{ "purpose": "widget number {i}", "mtime": {i} }}"#
+                )
+            })
             .collect();
         let json = format!(r#"{{ "entries": {{ {} }} }}"#, entries.join(", "));
         std::fs::write(scout.join("manifest.json"), json).unwrap();
@@ -1583,7 +1882,10 @@ mod tests {
         let root = find_cap_root("findcap-zero", 5);
         let (code, out) = cmd_find(&root, "zzz123nosuchpurpose", false);
         assert_eq!(code, EXIT_NO_RESULT);
-        assert_eq!(out, "no matches for \"zzz123nosuchpurpose\" (run 'devscout map' if manifest is missing)");
+        assert_eq!(
+            out,
+            "no matches for \"zzz123nosuchpurpose\" (run 'devscout map' if manifest is missing)"
+        );
     }
 
     #[test]
@@ -1613,16 +1915,33 @@ mod tests {
         std::fs::write(root.join("src").join("Panel.xaml"), PANEL_XAML).unwrap();
         std::fs::write(root.join("src").join("Strings.resw"), STRINGS_RESW).unwrap();
         std::fs::create_dir_all(root.join(".scout")).unwrap();
-        std::fs::write(root.join(".scout").join("manifest.json"), r#"{ "entries": {} }"#).unwrap();
+        std::fs::write(
+            root.join(".scout").join("manifest.json"),
+            r#"{ "entries": {} }"#,
+        )
+        .unwrap();
 
         let fragments = vec![
-            ("src/WidgetLedger.cs".to_string(), graph::fragment_from_extraction(&crate::extract::extract(LEDGER_CS))),
-            ("src/Panel.xaml".to_string(), graph::markup_fragment(&root, "src/Panel.xaml").unwrap()),
-            ("src/Strings.resw".to_string(), graph::markup_fragment(&root, "src/Strings.resw").unwrap()),
+            (
+                "src/WidgetLedger.cs".to_string(),
+                graph::fragment_from_extraction(&crate::extract::extract(LEDGER_CS)),
+            ),
+            (
+                "src/Panel.xaml".to_string(),
+                graph::markup_fragment(&root, "src/Panel.xaml").unwrap(),
+            ),
+            (
+                "src/Strings.resw".to_string(),
+                graph::markup_fragment(&root, "src/Strings.resw").unwrap(),
+            ),
         ];
         let g = crate::resolve::resolve_graph(&root, &fragments);
         std::fs::create_dir_all(root.join(".scout").join("graph")).unwrap();
-        std::fs::write(root.join(".scout").join("graph").join("graph.json"), serde_json::to_string(&g).unwrap()).unwrap();
+        std::fs::write(
+            root.join(".scout").join("graph").join("graph.json"),
+            serde_json::to_string(&g).unwrap(),
+        )
+        .unwrap();
         root
     }
 
@@ -1633,11 +1952,26 @@ mod tests {
         // separately below.
         let root = name_index_root("findnames");
         for (query, expected) in [
-            ("PopulateSlots", "src/WidgetLedger.cs:11  private void PopulateSlots() { }"),
-            ("Label", "src/WidgetLedger.cs:7  public string Label { get; set; }"),
-            ("_entryCount", "src/WidgetLedger.cs:5  private int _entryCount;"),
-            ("Retired", "src/WidgetLedger.cs:9  public event EventHandler Retired;"),
-            ("Gadgets.PanelView", "src/Panel.xaml:2  x:Class=\"Gadgets.PanelView\">"),
+            (
+                "PopulateSlots",
+                "src/WidgetLedger.cs:11  private void PopulateSlots() { }",
+            ),
+            (
+                "Label",
+                "src/WidgetLedger.cs:7  public string Label { get; set; }",
+            ),
+            (
+                "_entryCount",
+                "src/WidgetLedger.cs:5  private int _entryCount;",
+            ),
+            (
+                "Retired",
+                "src/WidgetLedger.cs:9  public event EventHandler Retired;",
+            ),
+            (
+                "Gadgets.PanelView",
+                "src/Panel.xaml:2  x:Class=\"Gadgets.PanelView\">",
+            ),
         ] {
             let (code, out) = cmd_find(&root, query, false);
             assert_eq!(code, 0, "{query} should be a hit");
@@ -1648,7 +1982,8 @@ mod tests {
     // --- kind tiering --------------------------------------------------------
 
     #[test]
-    fn cmd_find_a_resource_key_only_query_brakes_correctly_by_default_and_is_a_hit_under_resources() {
+    fn cmd_find_a_resource_key_only_query_brakes_correctly_by_default_and_is_a_hit_under_resources()
+    {
         // `ShipButton.Content` matches ONLY the resource-key row -- no
         // markup-name row contains the full stop, and the manifest is empty -- so
         // this is the drowned-query case: a query that would otherwise return
@@ -1656,16 +1991,26 @@ mod tests {
         // of looking like a hit.
         let root = name_index_root("findnames-resource-only");
         let (code, out) = cmd_find(&root, "ShipButton.Content", false);
-        assert_eq!(code, EXIT_NO_RESULT, "a resource-key-only match is a zero hit by default");
-        assert_eq!(out, "no matches for \"ShipButton.Content\" (run 'devscout map' if manifest is missing)");
+        assert_eq!(
+            code, EXIT_NO_RESULT,
+            "a resource-key-only match is a zero hit by default"
+        );
+        assert_eq!(
+            out,
+            "no matches for \"ShipButton.Content\" (run 'devscout map' if manifest is missing)"
+        );
 
         let (code, out) = cmd_find(&root, "ShipButton.Content", true);
         assert_eq!(code, 0, "--resources lifts the demotion");
-        assert_eq!(out, "src/Strings.resw:3  <data name=\"ShipButton.Content\" xml:space=\"preserve\" />");
+        assert_eq!(
+            out,
+            "src/Strings.resw:3  <data name=\"ShipButton.Content\" xml:space=\"preserve\" />"
+        );
     }
 
     #[test]
-    fn cmd_find_default_view_hides_resource_keys_behind_a_trailer_and_resources_shows_them_inline() {
+    fn cmd_find_default_view_hides_resource_keys_behind_a_trailer_and_resources_shows_them_inline()
+    {
         // `ShipButton` matches BOTH the tier-2 markup-name `ShipButton` and
         // the tier-3 resource key `ShipButton.Content` (substring). Default:
         // the tier-2 row shows, the tier-3 row is a one-line trailer. Under
@@ -1720,8 +2065,14 @@ mod tests {
         let (code, out) = cmd_find(&root, "WidgetLedger", false);
         assert_eq!(code, 0);
         let lines: Vec<&str> = out.split('\n').collect();
-        let manifest_row = lines.iter().find(|l| l.starts_with("src/WidgetLedger.cs:") && l.contains("; Ship"));
-        assert_eq!(manifest_row, Some(&"src/WidgetLedger.cs:3: class WidgetLedger; Ship"), "{out}");
+        let manifest_row = lines
+            .iter()
+            .find(|l| l.starts_with("src/WidgetLedger.cs:") && l.contains("; Ship"));
+        assert_eq!(
+            manifest_row,
+            Some(&"src/WidgetLedger.cs:3: class WidgetLedger; Ship"),
+            "{out}"
+        );
     }
 
     // A manifest hit whose file the name index carries NO declaration for at all
@@ -1746,7 +2097,10 @@ mod tests {
         let root = name_index_root("findnames-zero");
         let (code, out) = cmd_find(&root, "Zzzznomatch", false);
         assert_eq!(code, EXIT_NO_RESULT);
-        assert_eq!(out, "no matches for \"Zzzznomatch\" (run 'devscout map' if manifest is missing)");
+        assert_eq!(
+            out,
+            "no matches for \"Zzzznomatch\" (run 'devscout map' if manifest is missing)"
+        );
     }
 
     // --- `clear` --------------------------------------------------------------
@@ -1764,7 +2118,16 @@ mod tests {
     fn seed_row(conn: &rusqlite::Connection, session_id: &str, rel_path: &str) {
         store::record_fresh(
             conn,
-            &store::RecordFresh { session_id, agent_id: "", rel_path, sha256: "sha", size: 10, mtime: 1, lines: 1, delivered: true },
+            &store::RecordFresh {
+                session_id,
+                agent_id: "",
+                rel_path,
+                sha256: "sha",
+                size: 10,
+                mtime: 1,
+                lines: 1,
+                delivered: true,
+            },
         )
         .unwrap();
     }
@@ -1789,13 +2152,19 @@ mod tests {
         for bad in ["-5", "abc", ""] {
             let (code, out) = cmd_clear(&root, &["--older-than".to_string(), bad.to_string()]);
             assert_eq!(code, 2, "arg {bad:?}");
-            assert_eq!(out, "usage: devscout clear --older-than <days>", "arg {bad:?}");
+            assert_eq!(
+                out, "usage: devscout clear --older-than <days>",
+                "arg {bad:?}"
+            );
         }
         // A bare `--older-than` with nothing after it (missing value entirely).
         let (code, out) = cmd_clear(&root, &["--older-than".to_string()]);
         assert_eq!(code, 2);
         assert_eq!(out, "usage: devscout clear --older-than <days>");
-        assert!(!root.join(".scout").join("cache.db").exists(), "a rejected flag must not create a store");
+        assert!(
+            !root.join(".scout").join("cache.db").exists(),
+            "a rejected flag must not create a store"
+        );
     }
 
     #[test]
@@ -1811,8 +2180,12 @@ mod tests {
         assert_eq!(out, "deleted 1 row for session abc-1111");
 
         let conn = store::open_store(&root).unwrap();
-        assert!(store::lookup_read(&conn, "abc-1111", "a.ts", "").unwrap().is_none());
-        assert!(store::lookup_read(&conn, "abc-2222", "b.ts", "").unwrap().is_some());
+        assert!(store::lookup_read(&conn, "abc-1111", "a.ts", "")
+            .unwrap()
+            .is_none());
+        assert!(store::lookup_read(&conn, "abc-2222", "b.ts", "")
+            .unwrap()
+            .is_some());
     }
 
     // The ambiguous-prefix refusal: two sessions share the "abc" prefix; asking
@@ -1832,8 +2205,12 @@ mod tests {
 
         // Refused, so read-only: both sessions' rows still stand.
         let conn = store::open_store(&root).unwrap();
-        assert!(store::lookup_read(&conn, "abc-1111", "a.ts", "").unwrap().is_some());
-        assert!(store::lookup_read(&conn, "abc-2222", "b.ts", "").unwrap().is_some());
+        assert!(store::lookup_read(&conn, "abc-1111", "a.ts", "")
+            .unwrap()
+            .is_some());
+        assert!(store::lookup_read(&conn, "abc-2222", "b.ts", "")
+            .unwrap()
+            .is_some());
     }
 
     #[test]
@@ -1867,9 +2244,17 @@ mod tests {
         }
         let (code, out) = cmd_clear(
             &root,
-            &["--session".to_string(), "abc-1111".to_string(), "--older-than".to_string(), "9999".to_string()],
+            &[
+                "--session".to_string(),
+                "abc-1111".to_string(),
+                "--older-than".to_string(),
+                "9999".to_string(),
+            ],
         );
         assert_eq!(code, 0);
-        assert_eq!(out, "deleted 0 rows older than 9999d", "the --older-than branch must win");
+        assert_eq!(
+            out, "deleted 0 rows older than 9999d",
+            "the --older-than branch must win"
+        );
     }
 }

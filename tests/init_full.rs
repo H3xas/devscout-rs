@@ -1,3 +1,5 @@
+//! Integration tests for full repository initialization.
+
 // End-to-end coverage of the out-of-the-box steps `devscout init` layers on
 // top of registering the repo -- language census, hook install, first map.
 // This file drives `cmd_init_full` (initcmd.rs, wired in cli.rs) through the
@@ -25,7 +27,10 @@ static COUNTER: AtomicU64 = AtomicU64::new(0);
 
 fn temp_dir(prefix: &str) -> PathBuf {
     let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-    let dir = env::temp_dir().join(format!("scout-init-full-{prefix}-{}-{n}", std::process::id()));
+    let dir = env::temp_dir().join(format!(
+        "scout-init-full-{prefix}-{}-{n}",
+        std::process::id()
+    ));
     fs::create_dir_all(&dir).expect("create temp dir");
     // macOS's `env::temp_dir()` is itself a symlink (`/var` ->
     // `/private/var`), and `git` internally realpaths directories it manages
@@ -36,7 +41,11 @@ fn temp_dir(prefix: &str) -> PathBuf {
 }
 
 fn run_git(dir: &Path, args: &[&str]) {
-    let status = Command::new("git").args(args).current_dir(dir).status().expect("git binary must be on PATH");
+    let status = Command::new("git")
+        .args(args)
+        .current_dir(dir)
+        .status()
+        .expect("git binary must be on PATH");
     assert!(status.success(), "git {args:?} failed in {}", dir.display());
 }
 
@@ -44,9 +53,20 @@ fn run_git(dir: &Path, args: &[&str]) {
 /// even for a throwaway temp-dir fixture.
 fn bootstrap_initial_commit(dir: &Path) {
     const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
-    let output =
-        Command::new("git").args(["commit-tree", EMPTY_TREE, "-m", "init"]).env("GIT_AUTHOR_NAME", "devscout-test").env("GIT_AUTHOR_EMAIL", "devscout-test@example.com").env("GIT_COMMITTER_NAME", "devscout-test").env("GIT_COMMITTER_EMAIL", "devscout-test@example.com").current_dir(dir).stdin(Stdio::null()).output().expect("git commit-tree must run");
-    assert!(output.status.success(), "git commit-tree failed: {output:?}");
+    let output = Command::new("git")
+        .args(["commit-tree", EMPTY_TREE, "-m", "init"])
+        .env("GIT_AUTHOR_NAME", "devscout-test")
+        .env("GIT_AUTHOR_EMAIL", "devscout-test@example.com")
+        .env("GIT_COMMITTER_NAME", "devscout-test")
+        .env("GIT_COMMITTER_EMAIL", "devscout-test@example.com")
+        .current_dir(dir)
+        .stdin(Stdio::null())
+        .output()
+        .expect("git commit-tree must run");
+    assert!(
+        output.status.success(),
+        "git commit-tree failed: {output:?}"
+    );
     let sha = String::from_utf8(output.stdout).unwrap().trim().to_string();
     run_git(dir, &["update-ref", "refs/heads/master", &sha]);
     run_git(dir, &["symbolic-ref", "HEAD", "refs/heads/master"]);
@@ -70,7 +90,11 @@ fn fresh_env(prefix: &str) -> Env {
     let base = temp_dir(&format!("{prefix}-env"));
     let home = base.join("home");
     fs::create_dir_all(&home).unwrap();
-    Env { registry: base.join("repos.json"), content_db: base.join("content.db"), home }
+    Env {
+        registry: base.join("repos.json"),
+        content_db: base.join("content.db"),
+        home,
+    }
 }
 
 fn settings_path(env_vars: &Env) -> PathBuf {
@@ -88,7 +112,11 @@ fn backup_files(env_vars: &Env) -> Vec<PathBuf> {
     fs::read_dir(&dir)
         .map(|rd| {
             rd.filter_map(|e| e.ok())
-                .filter(|e| e.file_name().to_string_lossy().starts_with("settings.json.bak."))
+                .filter(|e| {
+                    e.file_name()
+                        .to_string_lossy()
+                        .starts_with("settings.json.bak.")
+                })
                 .map(|e| e.path())
                 .collect()
         })
@@ -121,7 +149,10 @@ fn run_find(cwd: &Path, query: &str, env_vars: &Env) -> (String, i32) {
         .env("HOME", &env_vars.home)
         .output()
         .expect("devscout binary must be built");
-    (String::from_utf8_lossy(&output.stdout).into_owned(), output.status.code().unwrap_or(-1))
+    (
+        String::from_utf8_lossy(&output.stdout).into_owned(),
+        output.status.code().unwrap_or(-1),
+    )
 }
 
 /// A synthetic git repo with one AST-supported (`.cs`) and one
@@ -175,13 +206,34 @@ fn hooks_install_adds_both_entries_with_correct_shape_and_creates_backup() {
     assert_eq!(code, 0, "stdout: {out}\nstderr: {err}");
     assert!(out.contains("hooks: installed"), "got: {out}");
 
-    let updated: serde_json::Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
-    let ptu = updated["hooks"]["PostToolUse"].as_array().expect("PostToolUse must be an array");
-    assert_eq!(ptu.len(), 4, "2 pre-existing (unrelated) + 2 new (devscout hook read/bash)");
+    let updated: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    let ptu = updated["hooks"]["PostToolUse"]
+        .as_array()
+        .expect("PostToolUse must be an array");
+    assert_eq!(
+        ptu.len(),
+        4,
+        "2 pre-existing (unrelated) + 2 new (devscout hook read/bash)"
+    );
 
-    let commands: Vec<&str> = ptu.iter().flat_map(|e| e["hooks"].as_array().unwrap()).map(|h| h["command"].as_str().unwrap()).collect();
-    assert!(commands.iter().any(|c| c.ends_with(" hook read") && c.starts_with('/')), "commands: {commands:?}");
-    assert!(commands.iter().any(|c| c.ends_with(" hook bash") && c.starts_with('/')), "commands: {commands:?}");
+    let commands: Vec<&str> = ptu
+        .iter()
+        .flat_map(|e| e["hooks"].as_array().unwrap())
+        .map(|h| h["command"].as_str().unwrap())
+        .collect();
+    assert!(
+        commands
+            .iter()
+            .any(|c| c.ends_with(" hook read") && c.starts_with('/')),
+        "commands: {commands:?}"
+    );
+    assert!(
+        commands
+            .iter()
+            .any(|c| c.ends_with(" hook bash") && c.starts_with('/')),
+        "commands: {commands:?}"
+    );
     // The pre-existing, unrelated entries must survive untouched.
     assert!(commands.contains(&"node /somewhere/scout-read-hook.js"));
     assert!(commands.contains(&"node /somewhere/scout-bash-hook.js"));
@@ -199,7 +251,11 @@ fn hooks_install_adds_both_entries_with_correct_shape_and_creates_backup() {
 
     let backups = backup_files(&env_vars);
     assert_eq!(backups.len(), 1, "exactly one backup created");
-    assert_eq!(fs::read(&backups[0]).unwrap(), original_bytes, "backup preserves the ORIGINAL bytes verbatim, pre-modification");
+    assert_eq!(
+        fs::read(&backups[0]).unwrap(),
+        original_bytes,
+        "backup preserves the ORIGINAL bytes verbatim, pre-modification"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -223,8 +279,15 @@ fn hooks_install_is_idempotent_on_rerun() {
     assert!(out2.contains("hooks: already installed"), "got: {out2}");
     let after_second = fs::read_to_string(&path).unwrap();
 
-    assert_eq!(after_first, after_second, "re-run must leave settings.json byte-identical");
-    assert_eq!(backup_files(&env_vars).len(), 1, "idempotent re-run must not create a second backup");
+    assert_eq!(
+        after_first, after_second,
+        "re-run must leave settings.json byte-identical"
+    );
+    assert_eq!(
+        backup_files(&env_vars).len(),
+        1,
+        "idempotent re-run must not create a second backup"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -244,8 +307,14 @@ fn no_hooks_flag_leaves_settings_byte_untouched() {
     assert!(out.contains("hooks: skipped (--no-hooks)"), "got: {out}");
 
     let after = fs::read(&path).unwrap();
-    assert_eq!(before, after, "settings.json must be byte-identical when --no-hooks is passed");
-    assert!(backup_files(&env_vars).is_empty(), "no backup when the hooks step never runs");
+    assert_eq!(
+        before, after,
+        "settings.json must be byte-identical when --no-hooks is passed"
+    );
+    assert!(
+        backup_files(&env_vars).is_empty(),
+        "no backup when the hooks step never runs"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -265,12 +334,24 @@ fn unexpected_shape_settings_left_untouched_and_snippet_printed() {
     let (out, err, code) = run_init(&root, &[], &env_vars);
     assert_eq!(code, 0, "core init must still succeed even though the hooks step declines; stdout: {out}\nstderr: {err}");
     assert!(out.contains("unexpected shape"), "got: {out}");
-    assert!(out.contains("\"PostToolUse\""), "the exact JSON snippet must be printed inline; got: {out}");
-    assert!(out.contains("hook read") && out.contains("hook bash"), "got: {out}");
+    assert!(
+        out.contains("\"PostToolUse\""),
+        "the exact JSON snippet must be printed inline; got: {out}"
+    );
+    assert!(
+        out.contains("hook read") && out.contains("hook bash"),
+        "got: {out}"
+    );
 
     let after = fs::read(&path).unwrap();
-    assert_eq!(before, after, "unexpected-shape settings file must be left byte-untouched");
-    assert!(backup_files(&env_vars).is_empty(), "no write attempted -- no backup either");
+    assert_eq!(
+        before, after,
+        "unexpected-shape settings file must be left byte-untouched"
+    );
+    assert!(
+        backup_files(&env_vars).is_empty(),
+        "no write attempted -- no backup either"
+    );
 }
 
 #[test]
@@ -286,7 +367,11 @@ fn invalid_json_settings_left_untouched_and_snippet_printed() {
     assert!(out.contains("not valid JSON"), "got: {out}");
     assert!(out.contains("\"PostToolUse\""), "got: {out}");
 
-    assert_eq!(fs::read(&path).unwrap(), before, "invalid-JSON settings file must be left byte-untouched");
+    assert_eq!(
+        fs::read(&path).unwrap(),
+        before,
+        "invalid-JSON settings file must be left byte-untouched"
+    );
     assert!(backup_files(&env_vars).is_empty());
 }
 
@@ -295,15 +380,24 @@ fn missing_settings_file_prints_snippet_and_writes_nothing() {
     let root = init_git_repo_with_source("missing-settings");
     let env_vars = fresh_env("missing-settings");
     let path = settings_path(&env_vars);
-    assert!(!path.exists(), "fixture precondition: no .claude dir at all under this HOME");
+    assert!(
+        !path.exists(),
+        "fixture precondition: no .claude dir at all under this HOME"
+    );
 
     let (out, err, code) = run_init(&root, &[], &env_vars);
     assert_eq!(code, 0, "stdout: {out}\nstderr: {err}");
     assert!(out.contains("no settings file"), "got: {out}");
     assert!(out.contains("\"PostToolUse\""), "got: {out}");
-    assert!(out.contains("hook read") && out.contains("hook bash"), "got: {out}");
+    assert!(
+        out.contains("hook read") && out.contains("hook bash"),
+        "got: {out}"
+    );
 
-    assert!(!path.exists(), "must not create a settings.json out of thin air");
+    assert!(
+        !path.exists(),
+        "must not create a settings.json out of thin air"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -326,17 +420,33 @@ fn first_map_runs_and_find_answers() {
     assert!(out.contains("no settings file"), "got: {out}");
 
     let manifest_path = root.join(".git/scout/manifest.json");
-    assert!(manifest_path.is_file(), "first map must have written the manifest");
-    let manifest: serde_json::Value = serde_json::from_str(&fs::read_to_string(&manifest_path).unwrap()).unwrap();
-    assert!(manifest["entries"].as_object().unwrap().contains_key("src/Widget.cs"));
-    assert!(manifest["entries"].as_object().unwrap().contains_key("src/notes.md"));
+    assert!(
+        manifest_path.is_file(),
+        "first map must have written the manifest"
+    );
+    let manifest: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&manifest_path).unwrap()).unwrap();
+    assert!(manifest["entries"]
+        .as_object()
+        .unwrap()
+        .contains_key("src/Widget.cs"));
+    assert!(manifest["entries"]
+        .as_object()
+        .unwrap()
+        .contains_key("src/notes.md"));
 
     let graph_path = root.join(".git/scout/graph/graph.json");
-    assert!(graph_path.is_file(), "graph.json must exist after the first map (a .cs file was present)");
+    assert!(
+        graph_path.is_file(),
+        "graph.json must exist after the first map (a .cs file was present)"
+    );
 
     let (find_out, find_code) = run_find(&root, "Widget", &env_vars);
     assert_eq!(find_code, 0, "{find_out}");
-    assert!(!find_out.starts_with("no matches"), "expected a hit for \"Widget\", got: {find_out}");
+    assert!(
+        !find_out.starts_with("no matches"),
+        "expected a hit for \"Widget\", got: {find_out}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -352,8 +462,14 @@ fn no_map_flag_skips_the_first_map() {
     assert_eq!(code, 0, "stdout: {out}\nstderr: {err}");
     assert!(out.contains("map: skipped (--no-map)"), "got: {out}");
 
-    assert!(!root.join(".git/scout/manifest.json").exists(), "no manifest should be written when --no-map is passed");
-    assert!(!root.join(".git/scout/graph").exists(), "no graph dir should be created when --no-map is passed");
+    assert!(
+        !root.join(".git/scout/manifest.json").exists(),
+        "no manifest should be written when --no-map is passed"
+    );
+    assert!(
+        !root.join(".git/scout/graph").exists(),
+        "no graph dir should be created when --no-map is passed"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -363,7 +479,11 @@ fn no_map_flag_skips_the_first_map() {
 #[test]
 fn both_flags_together_skip_hooks_and_map_but_census_still_runs() {
     let root = init_git_repo_with_source("both-flags");
-    fs::write(root.join("src/component.ts"), "export const component = true;\n").unwrap();
+    fs::write(
+        root.join("src/component.ts"),
+        "export const component = true;\n",
+    )
+    .unwrap();
     let env_vars = fresh_env("both-flags");
     seed_settings(&env_vars, WELL_FORMED_SETTINGS);
     let path = settings_path(&env_vars);
@@ -375,7 +495,11 @@ fn both_flags_together_skip_hooks_and_map_but_census_still_runs() {
     assert!(out.contains("map: skipped (--no-map)"), "got: {out}");
     assert!(out.contains("languages: 1 .cs (fully supported); 1 .ts (indexed and graphed, narrower edge coverage); 1 .md (present, not indexed)"), "got: {out}");
 
-    assert_eq!(fs::read(&path).unwrap(), before, "settings untouched when both flags skip the only step that would touch it");
+    assert_eq!(
+        fs::read(&path).unwrap(),
+        before,
+        "settings untouched when both flags skip the only step that would touch it"
+    );
     assert!(!root.join(".git/scout/manifest.json").exists());
 }
 
@@ -401,8 +525,15 @@ fn core_failure_short_circuits_before_any_follow_on_step_runs() {
     let (out, err, code) = run_init(&parent, &[], &env_vars);
     assert_eq!(code, 2, "stdout: {out}\nstderr: {err}");
     assert!(out.starts_with("refusing to init"), "got: {out}");
-    assert!(!out.contains("languages:") && !out.contains("hooks:") && !out.contains("map:"), "no follow-on step lines on a core failure; got: {out}");
+    assert!(
+        !out.contains("languages:") && !out.contains("hooks:") && !out.contains("map:"),
+        "no follow-on step lines on a core failure; got: {out}"
+    );
 
-    assert_eq!(fs::read(&path).unwrap(), before, "a core failure must never touch settings.json");
+    assert_eq!(
+        fs::read(&path).unwrap(),
+        before,
+        "a core failure must never touch settings.json"
+    );
     assert!(backup_files(&env_vars).is_empty());
 }
