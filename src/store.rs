@@ -521,14 +521,10 @@ pub fn session_ids_by_prefix(conn: &Connection, prefix: &str) -> rusqlite::Resul
 
 /// The content database path: the `SCOUT_CONTENT_DB` env var when set, otherwise
 /// `default_content_db_path()`. Only an entirely *unset* var falls back; an
-/// explicitly empty value is used verbatim. The fallback is
-/// `CARGO_MANIFEST_DIR`'s parent, baked in at COMPILE time, and is NOT
-/// relocation-safe: a binary built here and installed elsewhere still points
-/// back at this build's source tree, and for a crates.io install it points into
-/// the registry checkout. Set `SCOUT_CONTENT_DB` to pick the path explicitly;
-/// treat the fallback as a development convenience only.
-// TODO: derive from the runtime `$HOME` the way `repo::default_registry_path`
-// now does.
+/// explicitly empty value is used verbatim. The fallback is derived at runtime
+/// from `$HOME` as `$HOME/.claude/scout/content.db`; when `HOME` is unset it
+/// degrades to a bare cwd-relative `content.db`. Set `SCOUT_CONTENT_DB` to pick
+/// the path explicitly.
 pub fn content_db_path() -> PathBuf {
     match env::var("SCOUT_CONTENT_DB") {
         Ok(v) => PathBuf::from(v),
@@ -537,10 +533,10 @@ pub fn content_db_path() -> PathBuf {
 }
 
 fn default_content_db_path() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .map(|p| p.join("content.db"))
-        .unwrap_or_else(|| PathBuf::from("content.db"))
+    match env::var("HOME") {
+        Ok(home) => PathBuf::from(home).join(".claude").join("scout").join("content.db"),
+        Err(_) => PathBuf::from("content.db"),
+    }
 }
 
 /// Opens the content database with the same WAL + busy_timeout=5000 treatment
@@ -659,8 +655,10 @@ pub fn content_stats_for(conn: &Connection) -> rusqlite::Result<ContentStats> {
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::Mutex;
 
     static COUNTER: AtomicU64 = AtomicU64::new(0);
+    static CONTENT_ENV_LOCK: Mutex<()> = Mutex::new(());
 
     fn unique_temp_dir(prefix: &str) -> PathBuf {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
@@ -766,6 +764,7 @@ mod tests {
 
     #[test]
     fn open_content_store_enables_wal_and_5s_busy_timeout() {
+        let _guard = CONTENT_ENV_LOCK.lock().unwrap();
         let dir = unique_temp_dir("content-pragma");
         env::set_var("SCOUT_CONTENT_DB", dir.join("content.db"));
         let conn = open_content_store().unwrap();
@@ -837,6 +836,7 @@ mod tests {
 
     #[test]
     fn open_content_store_migrates_a_pre_agent_scope_fixture() {
+        let _guard = CONTENT_ENV_LOCK.lock().unwrap();
         let dir = unique_temp_dir("content-migrate");
         let db_path = dir.join("content.db");
         {
@@ -988,6 +988,7 @@ mod tests {
 
     #[test]
     fn content_round_trip_and_conflict_keeps_first_path() {
+        let _guard = CONTENT_ENV_LOCK.lock().unwrap();
         let dir = unique_temp_dir("content-roundtrip");
         env::set_var("SCOUT_CONTENT_DB", dir.join("content.db"));
         let conn = open_content_store().unwrap();
@@ -1005,12 +1006,28 @@ mod tests {
     }
 
     #[test]
-    fn content_db_path_honours_scout_content_db() {
+    fn content_db_path_uses_runtime_home_and_honours_override() {
+        let _guard = CONTENT_ENV_LOCK.lock().unwrap();
+        let old_home = env::var_os("HOME");
+        let old_override = env::var_os("SCOUT_CONTENT_DB");
         let dir = unique_temp_dir("content-path");
         let target = dir.join("content.db");
+
+        env::remove_var("SCOUT_CONTENT_DB");
+        env::set_var("HOME", &dir);
+        assert_eq!(content_db_path(), dir.join(".claude/scout/content.db"));
+
         env::set_var("SCOUT_CONTENT_DB", &target);
         assert_eq!(content_db_path(), target);
-        env::remove_var("SCOUT_CONTENT_DB");
+
+        match old_override {
+            Some(value) => env::set_var("SCOUT_CONTENT_DB", value),
+            None => env::remove_var("SCOUT_CONTENT_DB"),
+        }
+        match old_home {
+            Some(value) => env::set_var("HOME", value),
+            None => env::remove_var("HOME"),
+        }
     }
 
     #[test]
