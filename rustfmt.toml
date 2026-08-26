@@ -1,0 +1,2 @@
+# Default rustfmt configuration. The presence of this file opts the project into the
+# formatting convention and enables the CI format gate (see .github/workflows/ci.yml).
