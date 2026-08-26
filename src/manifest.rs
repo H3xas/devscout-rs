@@ -9,11 +9,11 @@
 // Deserializer / Serializer traits but keeps object-key insertion order in a
 // `Vec` instead of the default `Value`'s (unordered, `BTreeMap`-backed without
 // the `preserve_order` cargo feature) map type. Order is not cosmetic:
-// `find_in_manifest`'s OR-pool tie-break sorts by hit count only, so ties
-// resolve by manifest on-disk key order -- see `find_in_manifest`'s doc comment
-// for the full chain.
+// `find_in_manifest`'s pools sort by tokens matched, then inbound-edge count,
+// so full ties resolve by manifest on-disk key order -- see
+// `find_in_manifest_detailed`'s doc comment for the full chain.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::fs;
 use std::io;
@@ -350,24 +350,21 @@ struct Scored {
     purpose: Option<String>,
     source: String,
     hits: usize,
+    /// The entry's file's precise inbound-edge count, from the ranking map the
+    /// caller passes (see `query::file_inbound_counts` for what feeds it). A
+    /// caller without a graph passes an empty map, so every entry reads 0 and
+    /// the sort below degrades to today's order.
+    inbound: usize,
 }
 
 /// AND across whitespace-split, lowercased tokens over `path + ' ' + purpose`;
 /// when no entry matches every token, fall back to entries matching ANY token,
 /// ranked by hit count descending.
 ///
-/// Tie stability: `sort_by` is documented stable, and `scored` is built by
-/// iterating `entries` -- this module's ordered `Value::Object` `Vec`, populated
-/// by `Value`'s `Deserialize` impl above in exactly the JSON text's key order
-/// (see its `visit_map` doc comment) -- via a single `.map()` that does not
-/// reorder. So JSON text order flows through to `scored` order and, because the
-/// sort preserves ties, to pool order: equal-`hits` entries keep manifest
-/// on-disk key order.
-///
-/// Returns `Ok(vec![])` for no manifest or no tokens; `Err` on a corrupt
-/// manifest file or a missing `entries`.
+/// Reads every entry's inbound-edge count at 0 -- see
+/// `find_in_manifest_detailed` for the ranked variant.
 pub fn find_in_manifest(root: &Path, query: &str) -> Result<Vec<FindHit>, FindError> {
-    Ok(find_in_manifest_detailed(root, query)?.hits)
+    Ok(find_in_manifest_detailed(root, query, &HashMap::new())?.hits)
 }
 
 /// `find_in_manifest_detailed`'s return shape: the hits plus which pool
@@ -381,7 +378,28 @@ pub struct FindResult {
 /// means no entry matched every token and the OR pool is speaking. The CLI caps
 /// the two pools differently (`cmd_find`); the flat `find_in_manifest` stays for
 /// callers that only want hits.
-pub fn find_in_manifest_detailed(root: &Path, query: &str) -> Result<FindResult, FindError> {
+///
+/// Ranking, applied to WHICHEVER pool answers and BEFORE either cap: by tokens
+/// matched descending, then by the entry's file's inbound-edge count
+/// (`inbound`) descending. No third sort key -- `sort_by` is documented stable,
+/// so a full tie keeps the manifest's on-disk key order, which is already
+/// deterministic (see the module header). In the AND pool the primary key is
+/// constant by construction (every entry there matched every token), so the
+/// inbound tie-break does all the ranking work; in the OR pool it breaks the
+/// hit-count ties the old sort left in manifest order. An empty `inbound` map
+/// (no graph available) reads 0 everywhere and returns today's order byte for
+/// byte.
+///
+/// Tie stability of the input order itself: `scored` is built by iterating
+/// `entries` -- this module's ordered `Value::Object` `Vec`, populated by
+/// `Value`'s `Deserialize` impl above in exactly the JSON text's key order (see
+/// its `visit_map` doc comment) -- via a single `.map()` that does not reorder.
+/// So JSON text order flows through to `scored` order and, because the sort
+/// preserves ties, to pool order.
+///
+/// Returns `Ok(FindResult{..})` with no hits for no manifest or no tokens;
+/// `Err` on a corrupt manifest file or a missing `entries`.
+pub fn find_in_manifest_detailed(root: &Path, query: &str, inbound: &HashMap<String, usize>) -> Result<FindResult, FindError> {
     let manifest = match read_manifest(root)? {
         Some(m) => m,
         None => return Ok(FindResult { hits: Vec::new(), fallback: false }),
@@ -402,19 +420,16 @@ pub fn find_in_manifest_detailed(root: &Path, query: &str) -> Result<FindResult,
                 e.get("source").and_then(Value::as_str).map(String::from).unwrap_or_else(|| "heuristic".to_string());
             let hay = format!("{path} {}", purpose.as_deref().unwrap_or("")).to_lowercase();
             let hits = tokens.iter().filter(|t| hay.contains(t.as_str())).count();
-            Scored { path: path.clone(), purpose, source, hits }
+            Scored { path: path.clone(), purpose, source, hits, inbound: inbound.get(path).copied().unwrap_or(0) }
         })
         .collect();
 
     let full: Vec<&Scored> = scored.iter().filter(|s| s.hits == tokens.len()).collect();
     let fallback = full.is_empty();
-    let pool: Vec<&Scored> = if !full.is_empty() {
-        full
-    } else {
-        let mut nonzero: Vec<&Scored> = scored.iter().filter(|s| s.hits > 0).collect();
-        nonzero.sort_by(|a, b| b.hits.cmp(&a.hits));
-        nonzero
-    };
+    let mut pool: Vec<&Scored> = if !full.is_empty() { full } else { scored.iter().filter(|s| s.hits > 0).collect() };
+    // Both pools rank identically: tokens first, inbound second, stability
+    // third. One comparator, applied once, keeps that rule in exactly one place.
+    pool.sort_by(|a, b| b.hits.cmp(&a.hits).then_with(|| b.inbound.cmp(&a.inbound)));
 
     let hits =
         pool.into_iter().map(|s| FindHit { path: s.path.clone(), purpose: s.purpose.clone(), source: s.source.clone() }).collect();
@@ -834,6 +849,130 @@ mod tests {
         // order is second.ts then third.ts -- stable sort must keep it.
         let paths: Vec<&str> = hits2.iter().map(|h| h.path.as_str()).collect();
         assert_eq!(paths, vec!["second.ts", "third.ts"]);
+    }
+
+    fn find_ranked(root: &Path, query: &str, inbound: &[(&str, usize)]) -> Vec<String> {
+        let map: HashMap<String, usize> = inbound.iter().map(|(p, n)| (p.to_string(), *n)).collect();
+        find_in_manifest_detailed(root, query, &map).unwrap().hits.into_iter().map(|h| h.path).collect()
+    }
+
+    #[test]
+    fn find_and_pool_ranks_by_inbound_count_on_the_constant_token_key() {
+        // Both entries match BOTH tokens of the query -- the AND pool's primary
+        // key is constant by construction -- so the inbound tie-break does all
+        // the work: the widely referenced file outranks the island despite its
+        // later manifest position.
+        let root = unique_temp_dir("find-and-inbound");
+        let m = Value::object(vec![(
+            "entries",
+            Value::object(vec![
+                ("src/Island.cs", Value::object(vec![("purpose", Value::string("widget ledger store"))])),
+                ("src/Hub.cs", Value::object(vec![("purpose", Value::string("widget ledger hub"))])),
+            ]),
+        )]);
+        write_manifest(&root, &m).unwrap();
+        let paths = find_ranked(&root, "widget ledger", &[("src/Hub.cs", 7)]);
+        assert_eq!(paths, vec!["src/Hub.cs", "src/Island.cs"]);
+
+        // The ranking reads the map, not the manifest: flipping which file
+        // carries the references flips the order.
+        let flipped = find_ranked(&root, "widget ledger", &[("src/Island.cs", 3)]);
+        assert_eq!(flipped, vec!["src/Island.cs", "src/Hub.cs"]);
+    }
+
+    #[test]
+    fn find_or_pool_ranks_tokens_matched_before_inbound_count() {
+        // OR pool: a three-token query no entry matches completely.
+        // "rich.cs" matched TWO tokens but carries zero references;
+        // "hub.cs" matched one token but is referenced 99 times. Tokens are
+        // the primary key, so the extra text match wins and popularity cannot
+        // buy the weaker text match the top row.
+        let root = unique_temp_dir("find-or-tokens-first");
+        let m = Value::object(vec![(
+            "entries",
+            Value::object(vec![
+                ("src/hub.cs", Value::object(vec![("purpose", Value::string("alpha only"))])),
+                ("src/rich.cs", Value::object(vec![("purpose", Value::string("alpha beta"))])),
+            ]),
+        )]);
+        write_manifest(&root, &m).unwrap();
+        let r =
+            find_in_manifest_detailed(&root, "alpha beta zeta", &[("src/hub.cs".to_string(), 99)].into_iter().collect()).unwrap();
+        assert!(r.fallback, "no entry matches every token: the OR pool answers");
+        let paths: Vec<&str> = r.hits.iter().map(|h| h.path.as_str()).collect();
+        assert_eq!(paths, vec!["src/rich.cs", "src/hub.cs"], "tokens primary");
+
+        // Same pool, equal hit counts: NOW inbound decides.
+        let m2 = Value::object(vec![(
+            "entries",
+            Value::object(vec![
+                ("src/plain.cs", Value::object(vec![("purpose", Value::string("alpha here"))])),
+                ("src/popular.cs", Value::object(vec![("purpose", Value::string("alpha too"))])),
+            ]),
+        )]);
+        write_manifest(&root, &m2).unwrap();
+        let paths2 = find_ranked(&root, "alpha zeta", &[("src/popular.cs", 9), ("src/plain.cs", 1)]);
+        assert_eq!(paths2, vec!["src/popular.cs", "src/plain.cs"]);
+    }
+
+    #[test]
+    fn find_full_tie_keeps_manifest_order() {
+        // Every key equal -- tokens AND a populated inbound map reading the
+        // same count everywhere -- so the comparator returns Equal throughout
+        // and stability must hand back exactly the manifest's on-disk order.
+        let root = unique_temp_dir("find-full-tie");
+        let m = Value::object(vec![(
+            "entries",
+            Value::object(vec![
+                ("src/first.cs", Value::object(vec![("purpose", Value::string("twin widget"))])),
+                ("src/second.cs", Value::object(vec![("purpose", Value::string("twin widget"))])),
+                ("src/third.cs", Value::object(vec![("purpose", Value::string("twin widget"))])),
+            ]),
+        )]);
+        write_manifest(&root, &m).unwrap();
+        let tied = [("src/first.cs", 4usize), ("src/second.cs", 4), ("src/third.cs", 4)];
+        let paths = find_ranked(&root, "twin widget", &tied);
+        assert_eq!(paths, vec!["src/first.cs", "src/second.cs", "src/third.cs"]);
+    }
+
+    #[test]
+    fn find_with_an_empty_map_returns_todays_order() {
+        // No graph, no ranking: the AND pool keeps manifest iteration order,
+        // and the OR pool still sorts by hits alone with manifest-order ties --
+        // byte for byte what `find_in_manifest` answered before the map
+        // existed.
+        let root = unique_temp_dir("find-empty-map");
+
+        // AND pool: both full matches sit on equal keys (every count reads 0),
+        // so stability hands back manifest order -- "second" stays ahead of
+        // "first", as on disk.
+        let m = Value::object(vec![(
+            "entries",
+            Value::object(vec![
+                ("src/second.cs", Value::object(vec![("purpose", Value::string("alpha beta"))])),
+                ("src/first.cs", Value::object(vec![("purpose", Value::string("beta alpha"))])),
+                ("src/partial.cs", Value::object(vec![("purpose", Value::string("alpha only"))])),
+            ]),
+        )]);
+        write_manifest(&root, &m).unwrap();
+        assert_eq!(find_ranked(&root, "alpha beta", &[]), vec!["src/second.cs", "src/first.cs"]);
+
+        // OR pool: no entry matches every token of the three-token query.
+        // Hits primary: the two-hit entry leads; the one-hit ties keep
+        // manifest order behind it; the zero-hit entry stays out. Paths carry
+        // no token substrings -- the haystack includes the path, and this
+        // test wants the PURPOSE text deciding every hit count.
+        let m2 = Value::object(vec![(
+            "entries",
+            Value::object(vec![
+                ("src/a.cs", Value::object(vec![("purpose", Value::string("alpha four"))])),
+                ("src/b.cs", Value::object(vec![("purpose", Value::string("beta five"))])),
+                ("src/c.cs", Value::object(vec![("purpose", Value::string("alpha beta six"))])),
+                ("src/d.cs", Value::object(vec![("purpose", Value::string("seven"))])),
+            ]),
+        )]);
+        write_manifest(&root, &m2).unwrap();
+        assert_eq!(find_ranked(&root, "alpha beta gamma", &[]), vec!["src/c.cs", "src/a.cs", "src/b.cs"]);
     }
 
     // -- git_head -----------------------------------------------------
