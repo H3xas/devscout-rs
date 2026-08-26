@@ -3,7 +3,7 @@
 // a mismatch makes reuse break silently.
 //
 // This module owns every serde struct for graph.json + the fragments-cache
-// pair (fragments-v14.json, fragments-index-v14.json), plus their path resolution,
+// pair (fragments-v15.json, fragments-index-v15.json), plus their path resolution,
 // atomic I/O, and the cache-then-resolve-then-write orchestration
 // (`rebuild_graph`). The pure resolution ladder that
 // turns fragments into `defs`/`edges` lives in `resolve.rs` and returns the
@@ -86,7 +86,7 @@ pub fn graph_json_path(root: &Path) -> PathBuf {
     graph_dir(root).join("graph.json")
 }
 
-// The `-v13` in both cache filenames is the fragment SCHEMA version, bumped
+// The version in both cache filenames is the fragment SCHEMA version, bumped
 // whenever the extractor starts recording something old cached fragments
 // lack -- v10 added def `type_params`/`base_generic_args` and the new
 // `ctor-param` ref kind (with its `args` field), v11 added markup graph
@@ -103,11 +103,11 @@ pub fn graph_json_path(root: &Path) -> PathBuf {
 // once, no reader carries version-compat logic. Writers delete every
 // superseded generation (see `remove_superseded_caches`).
 fn fragments_cache_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-v14.json")
+    graph_dir(root).join("fragments-v15.json")
 }
 
 fn fragments_index_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-index-v14.json")
+    graph_dir(root).join("fragments-index-v15.json")
 }
 
 // Every generation below the current one, not just the immediately previous:
@@ -140,6 +140,8 @@ const SUPERSEDED_CACHE_FILES: &[&str] = &[
     "fragments-index-v12.json",
     "fragments-v13.json",
     "fragments-index-v13.json",
+    "fragments-v14.json",
+    "fragments-index-v14.json",
 ];
 
 fn remove_superseded_caches(root: &Path) {
@@ -668,6 +670,8 @@ pub struct FragRef {
     /// `skip_serializing_if`, unlike `qualified`/`member` which are omitted
     /// entirely when absent. See extract.rs's RefRecord doc comment.
     pub namespace: Option<String>,
+    #[serde(default, rename = "typeArgCount", skip_serializing_if = "Option::is_none")]
+    pub type_arg_count: Option<usize>,
     /// Type-certainty flag (see extract.rs's RefRecord). Serialized last and
     /// only when `true`; an absent key reads back as false, which also makes
     /// an older fragment JSON parse safely.
@@ -855,6 +859,7 @@ pub fn fragment_from_extraction(e: &extract::Extraction) -> Fragment {
                 member: r.member.clone(),
                 line: r.line,
                 namespace: r.namespace.clone(),
+                type_arg_count: r.type_arg_count,
                 generic: r.generic,
                 receiver_type: r.receiver_type.clone(),
                 arg_count: r.arg_count,
@@ -923,6 +928,7 @@ pub fn markup_fragment(root: &Path, rel: &str) -> Option<Fragment> {
                 // the empty string is what a C# ref at file scope carries too --
                 // never `None`, which is the 'imports' spelling.
                 namespace: Some(String::new()),
+                type_arg_count: Some(0),
                 generic: false,
                 receiver_type: None,
                 arg_count: None,
@@ -1300,6 +1306,7 @@ mod tests {
             member: Some("Save".into()),
             line: 7,
             namespace: Some("App.Shape".into()),
+            type_arg_count: None,
             generic,
             receiver_type: receiver_type.map(String::from),
             arg_count,
@@ -1681,8 +1688,8 @@ mod tests {
         // silently stay unresolved.
         assert_eq!(
             SUPERSEDED_CACHE_FILES.len(),
-            26,
-            "v1..v13 pairs"
+            28,
+            "v1..v14 pairs"
         );
         for stale in SUPERSEDED_CACHE_FILES {
             fs::write(graph_dir(&dir).join(stale), b"{}").unwrap();
@@ -1716,8 +1723,8 @@ mod tests {
         let graph_files = vec![GraphFile { rel: "src/A.cs".to_string(), mtime: 222 }];
         rebuild_graph(&dir, &graph_files, &fresh, true).unwrap();
 
-        assert!(graph_dir(&dir).join("fragments-v14.json").exists(), "the v14 payload cache is what gets written");
-        assert!(graph_dir(&dir).join("fragments-index-v14.json").exists(), "and its mtime-only index alongside it");
+        assert!(graph_dir(&dir).join("fragments-v15.json").exists(), "the v15 payload cache is what gets written");
+        assert!(graph_dir(&dir).join("fragments-index-v15.json").exists(), "and its mtime-only index alongside it");
         for stale in SUPERSEDED_CACHE_FILES {
             assert!(
                 !graph_dir(&dir).join(stale).exists(),

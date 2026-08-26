@@ -70,6 +70,7 @@ pub struct DefIndex {
     /// rows to exactly the serialized fields.
     pub member_lists: Vec<MemberLists>,
     pub qualified_name_to_def: HashMap<String, usize>,
+    pub qualified_name_and_arity_to_def: HashMap<(String, usize), usize>,
     pub simple_name_to_defs: HashMap<String, Vec<usize>>,
     /// The extension tier's own lookup: "<method_name> <this_type>" (one ASCII
     /// space) -> every candidate declaring that PAIR, as (def index, entry).
@@ -150,6 +151,7 @@ fn build_def_index(fragments_by_file: &[(String, Fragment)]) -> DefIndex {
     let mut defs: Vec<Def> = Vec::new();
     let mut member_lists: Vec<MemberLists> = Vec::new();
     let mut qualified_name_to_def: HashMap<String, usize> = HashMap::new();
+    let mut qualified_name_and_arity_to_def: HashMap<(String, usize), usize> = HashMap::new();
     let mut simple_name_to_defs: HashMap<String, Vec<usize>> = HashMap::new();
     let mut extension_index: HashMap<String, Vec<ExtCandidate>> = HashMap::new();
 
@@ -182,7 +184,8 @@ fn build_def_index(fragments_by_file: &[(String, Fragment)]) -> DefIndex {
 
     for (file, frag) in fragments_by_file {
         for d in &frag.defs {
-            match qualified_name_to_def.get(&d.id) {
+            let def_key = (d.id.clone(), d.type_params.len());
+            match qualified_name_and_arity_to_def.get(&def_key) {
                 None => {
                     let idx = defs.len();
                     defs.push(Def {
@@ -210,7 +213,8 @@ fn build_def_index(fragments_by_file: &[(String, Fragment)]) -> DefIndex {
                     for e in &d.extension_methods {
                         add_extension_method(&mut member_lists, &mut extension_index, idx, e);
                     }
-                    qualified_name_to_def.insert(d.id.clone(), idx);
+                    qualified_name_to_def.entry(d.id.clone()).or_insert(idx);
+                    qualified_name_and_arity_to_def.insert(def_key, idx);
                     // Enum members are reachable by exact id (below, via
                     // qualified_name_to_def) but deliberately excluded from
                     // simple_name_to_defs -- see module header.
@@ -306,7 +310,7 @@ fn build_def_index(fragments_by_file: &[(String, Fragment)]) -> DefIndex {
         }
     }
 
-    DefIndex { defs, member_lists, qualified_name_to_def, simple_name_to_defs, extension_index, member_name_to_defs }
+    DefIndex { defs, member_lists, qualified_name_to_def, qualified_name_and_arity_to_def, simple_name_to_defs, extension_index, member_name_to_defs }
 }
 
 // A synthetic bare type reference, for re-running the ladder on a name the
@@ -322,6 +326,7 @@ fn name_probe(name: String, namespace: &str, outer_types: Vec<String>) -> FragRe
         member: None,
         line: 0,
         namespace: Some(namespace.to_string()),
+        type_arg_count: None,
         generic: false,
         receiver_type: None,
         arg_count: None,
@@ -528,6 +533,13 @@ enum Resolution {
     External,
 }
 
+fn type_candidate(index: &DefIndex, name: &str, arity: Option<usize>) -> Option<usize> {
+    match arity {
+        Some(n) => index.qualified_name_and_arity_to_def.get(&(name.to_string(), n)).copied(),
+        None => index.qualified_name_to_def.get(name).copied(),
+    }
+}
+
 // Resolve one ref (a type reference OR a uses-member qualifier -- same shape,
 // same ladder) against the current file's using/alias context. `ns` is
 // `ref.namespace` with `None` folded to `""`: an EMPTY namespace is treated the
@@ -550,8 +562,8 @@ fn resolve_ref(
     // Step 0: alias short-circuit, bare names only.
     if ref_.qualified.is_none() {
         if let Some(alias_target) = aliases.get(&ref_.name) {
-            return match index.qualified_name_to_def.get(alias_target) {
-                Some(&idx) => Resolution::Resolved(idx, Via::Alias),
+            return match type_candidate(index, alias_target, ref_.type_arg_count) {
+                Some(idx) => Resolution::Resolved(idx, Via::Alias),
                 None => Resolution::External,
             };
         }
@@ -564,7 +576,7 @@ fn resolve_ref(
             let stack = ref_.outer_types[..i].join("+");
             let candidate =
                 if ns.is_empty() { format!("{stack}+{}", ref_.name) } else { format!("{ns}.{stack}+{}", ref_.name) };
-            if let Some(&idx) = index.qualified_name_to_def.get(&candidate) {
+            if let Some(idx) = type_candidate(index, &candidate, ref_.type_arg_count) {
                 return Resolution::Resolved(idx, Via::Nested);
             }
         }
@@ -575,7 +587,7 @@ fn resolve_ref(
     if let Some(qualified) = &ref_.qualified {
         for prefix in &prefixes {
             let candidate = if prefix.is_empty() { qualified.clone() } else { format!("{prefix}.{qualified}") };
-            if let Some(&idx) = index.qualified_name_to_def.get(&candidate) {
+            if let Some(idx) = type_candidate(index, &candidate, ref_.type_arg_count) {
                 return Resolution::Resolved(idx, Via::Qualified);
             }
         }
@@ -595,7 +607,7 @@ fn resolve_ref(
         for prefix in &prefixes {
             let candidate =
                 if prefix.is_empty() { format!("{u}.{}", ref_.name) } else { format!("{prefix}.{u}.{}", ref_.name) };
-            if let Some(&idx) = index.qualified_name_to_def.get(&candidate) {
+            if let Some(idx) = type_candidate(index, &candidate, ref_.type_arg_count) {
                 let id = index.defs[idx].id.as_str();
                 if seen_ids.insert(id) {
                     using_matches.push(idx);
@@ -617,7 +629,7 @@ fn resolve_ref(
     // ancestor-namespace rule.
     for prefix in &prefixes {
         let candidate = if prefix.is_empty() { ref_.name.clone() } else { format!("{prefix}.{}", ref_.name) };
-        if let Some(&idx) = index.qualified_name_to_def.get(&candidate) {
+        if let Some(idx) = type_candidate(index, &candidate, ref_.type_arg_count) {
             return Resolution::Resolved(idx, Via::Namespace);
         }
     }
@@ -626,9 +638,12 @@ fn resolve_ref(
     // this pool (see build_def_index) -- a member named e.g. "Active"
     // sharing a simple name with an unrelated class must not turn that
     // class's previously-unambiguous references ambiguous.
-    match index.simple_name_to_defs.get(&ref_.name) {
-        Some(list) if list.len() == 1 => Resolution::Resolved(list[0], Via::Global),
-        Some(list) if list.len() >= 2 => Resolution::Ambiguous(list.clone()),
+    let matches: Vec<usize> = index.simple_name_to_defs.get(&ref_.name).into_iter().flatten().copied()
+        .filter(|idx| ref_.type_arg_count.map_or(true, |n| index.member_lists[*idx].type_params.len() == n))
+        .collect();
+    match matches.as_slice() {
+        [idx] => Resolution::Resolved(*idx, Via::Global),
+        [_, _, ..] => Resolution::Ambiguous(matches),
         _ => Resolution::External,
     }
 }
@@ -1513,6 +1528,7 @@ mod tests {
             member: None,
             line: 1,
             namespace: Some(ns.into()),
+            type_arg_count: Some(0),
             generic: false,
             receiver_type: None,
             arg_count: None,
@@ -1533,6 +1549,7 @@ mod tests {
             member: Some(member.into()),
             line: 1,
             namespace: Some(ns.into()),
+            type_arg_count: None,
             generic: false,
             receiver_type: None,
             arg_count: None,
@@ -3817,7 +3834,7 @@ mod tests {
     fn imports_edge_is_recorded_regardless_of_whether_the_target_is_known() {
         let files = vec![(
             "A/Widget.cs".to_string(),
-            frag(vec![], vec![], vec![FragRef { kind: "imports".into(), name: "System.Text".into(), qualified: None, member: None, line: 1, namespace: None, generic: false, receiver_type: None, arg_count: None, receiver_args: None, outer_types: Vec::new(), args: None, receiver_property_owner: None, receiver_call_owner: None, receiver_call_member: None }]),
+            frag(vec![], vec![], vec![FragRef { kind: "imports".into(), name: "System.Text".into(), qualified: None, member: None, line: 1, namespace: None, type_arg_count: None, generic: false, receiver_type: None, arg_count: None, receiver_args: None, outer_types: Vec::new(), args: None, receiver_property_owner: None, receiver_call_owner: None, receiver_call_member: None }]),
         )];
         let g = resolve_graph(&no_git_root(), &files);
         assert_eq!(g.stats.edges_by_kind.imports, 1);
@@ -3838,7 +3855,7 @@ mod tests {
                     vec![],
                     vec![
                         type_ref("uses-type", "Money", None, "C"), // ambiguous
-                        FragRef { kind: "imports".into(), name: "System".into(), qualified: None, member: None, line: 2, namespace: None, generic: false, receiver_type: None, arg_count: None, receiver_args: None, outer_types: Vec::new(), args: None, receiver_property_owner: None, receiver_call_owner: None, receiver_call_member: None },
+                        FragRef { kind: "imports".into(), name: "System".into(), qualified: None, member: None, line: 2, namespace: None, type_arg_count: None, generic: false, receiver_type: None, arg_count: None, receiver_args: None, outer_types: Vec::new(), args: None, receiver_property_owner: None, receiver_call_owner: None, receiver_call_member: None },
                     ],
                 ),
             ),

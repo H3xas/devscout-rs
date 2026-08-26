@@ -345,6 +345,7 @@ pub struct RefRecord {
     /// carries `Some(ns)`, where `ns`
     /// may itself be the empty string at file scope.
     pub namespace: Option<String>,
+    pub type_arg_count: Option<usize>,
     /// `true` when a uses-member qualifier carried a
     /// type-argument list anywhere (`Cache<T>.x`, `Ns.Cache<T>.x`): syntax
     /// only a TYPE can carry, so the resolver treats it as type-certainty
@@ -451,7 +452,13 @@ fn outer_type_name(node: Node, src: &[u8]) -> Option<String> {
             .into_iter()
             .find(|c| c.kind() == "identifier")
             .map(|id| text(id, src)),
-        "qualified_name" => Some(text(node, src)),
+        "qualified_name" => {
+            let tail = node.child_by_field_name("name")?;
+            let full = text(node, src);
+            let tail_text = text(tail, src);
+            let normalized_tail = outer_type_name(tail, src)?;
+            full.strip_suffix(&tail_text).map(|prefix| format!("{prefix}{normalized_tail}"))
+        }
         "alias_qualified_name" => match node.child_by_field_name("name") {
             Some(n) => outer_type_name(n, src),
             None => None,
@@ -513,6 +520,12 @@ fn top_level_generic_name(node: Option<Node>) -> Option<Node> {
         "generic_name" => Some(node),
         _ => None,
     }
+}
+
+fn type_argument_arity(node: Option<Node>, src: &[u8]) -> Option<usize> {
+    let generic = top_level_generic_name(node)?;
+    let list = named_children(generic).into_iter().find(|c| c.kind() == "type_argument_list")?;
+    Some(text(list, src).bytes().filter(|b| *b == b',').count() + 1)
 }
 
 // The TOP-LEVEL generic argument descriptors of a type node, or None when it
@@ -688,6 +701,7 @@ fn push_ref(
         member: None,
         line,
         namespace: ns,
+        type_arg_count: None,
         generic: false,
         receiver_type: None,
         arg_count: None,
@@ -712,6 +726,7 @@ fn push_ctor_param_ref(refs: &mut Vec<RefRecord>, name: String, line: usize, ns:
         member: None,
         line,
         namespace: Some(ns),
+        type_arg_count: Some(args.as_ref().map_or(0, Vec::len)),
         generic: false,
         receiver_type: None,
         arg_count: None,
@@ -773,6 +788,7 @@ fn push_member_ref(
             member: Some(member),
             line,
             namespace: Some(ns),
+            type_arg_count: None,
             generic,
             receiver_type,
             arg_count,
@@ -790,6 +806,7 @@ fn push_member_ref(
             member: Some(member),
             line,
             namespace: Some(ns),
+            type_arg_count: None,
             generic,
             receiver_type,
             arg_count,
@@ -824,9 +841,13 @@ fn record_single_type(node: Option<Node>, kind: &str, ns: &str, type_stack: &[St
         return;
     };
     let line = node.start_position().row + 1;
+    let arity = Some(type_argument_arity(Some(node), src).unwrap_or(0));
     match raw.rfind('.') {
         Some(dot) => push_ref(refs, kind, raw[dot + 1..].to_string(), line, Some(ns.to_string()), Some(raw.clone()), type_stack),
         None => push_ref(refs, kind, raw.clone(), line, Some(ns.to_string()), None, type_stack),
+    }
+    if let Some(last) = refs.last_mut() {
+        last.type_arg_count = arity;
     }
 }
 
@@ -2008,6 +2029,10 @@ fn walk<'a>(node: Node<'a>, ns: &str, type_stack: &[String], src: &[u8], out: &m
             record_single_type(node.child_by_field_name("type"), "uses-type", ns, type_stack, src, &mut out.refs);
             walk_list(named_children(node), ns.to_string(), type_stack, src, out, scope);
         }
+        "typeof_expression" => {
+            record_single_type(node.child_by_field_name("type"), "uses-type", ns, type_stack, src, &mut out.refs);
+            walk_list(named_children(node), ns.to_string(), type_stack, src, out, scope);
+        }
         // Covers every position a member access can appear in -- cast-to-int
         // values over a work-type enum, argument lists, switch/pattern arms,
         // initializers -- because none of those container node types are
@@ -2371,6 +2396,9 @@ fn ref_to_json(r: &RefRecord) -> Json {
             None => Json::Null,
         },
     ));
+    if let Some(arity) = r.type_arg_count {
+        fields.push(("typeArgCount", Json::Num(arity)));
+    }
     // Both appended last, in that order, and only when set.
     if r.generic {
         fields.push(("generic", Json::Bool(true)));
