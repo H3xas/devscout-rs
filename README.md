@@ -125,7 +125,7 @@ untracked files and are shared correctly by worktrees:
 <git-common-dir>/scout/manifest.json              file -> purpose + symbol index
 <git-common-dir>/scout/index-state.json           HEAD + timestamp the index was built at
 <git-common-dir>/scout/graph/graph.json           definitions and edges
-<git-common-dir>/scout/graph/fragments-v13.json   per-file extraction cache (incremental map)
+<git-common-dir>/scout/graph/fragments-v15.json   per-file extraction cache (incremental map)
 ```
 
 Outside a git repository the same tree is written to `<root>/.scout/` instead. `devscout init`
