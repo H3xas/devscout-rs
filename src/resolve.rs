@@ -195,6 +195,7 @@ fn build_def_index(fragments_by_file: &[(String, Fragment)]) -> DefIndex {
                         methods: d.methods.clone(),
                         test_methods: d.test_methods.clone(),
                         also_in: Vec::new(),
+                        end_line: d.end_line,
                     });
                     member_lists.push(MemberLists {
                         properties: d.properties.clone(),
@@ -1461,6 +1462,7 @@ mod tests {
             base_generic_args: crate::graph::OrderedMap::new(),
             test_methods: vec![],
             property_types: crate::graph::OrderedMap::new(),
+            end_line: 0,
         }
     }
 

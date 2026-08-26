@@ -1440,6 +1440,20 @@ pub fn build_refs_model(
     outbound_cap: usize,
     all_out: bool,
 ) -> RefsResult {
+    build_refs_model_inner(index, query, out, cap, inbound_cap, outbound_cap, all_out, false)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_refs_model_inner(
+    index: &GraphIndex,
+    query: &str,
+    out: bool,
+    cap: usize,
+    inbound_cap: usize,
+    outbound_cap: usize,
+    all_out: bool,
+    exclude_self_inbound: bool,
+) -> RefsResult {
     let id = match resolve_symbol(index, query) {
         Resolution::Resolved(id) => id,
         Resolution::Ambiguous(ids) => return RefsResult::Ambiguous(ids),
@@ -1471,6 +1485,13 @@ pub fn build_refs_model(
     let def_project = project_of(&def.file);
     let mut ranked: Vec<RankedInbound> = Vec::new();
     let mut totals = [0usize; 3];
+    let is_self_inbound = |edge: usize| {
+        let (file, line) = edge_loc(&edges[edge]);
+        exclude_self_inbound
+            && def.end_line >= def.line
+            && file == def.file
+            && (def.line..=def.end_line).contains(&line)
+    };
     for (kind, (precise, heuristic)) in [
         (&refs.inbound_inherits, &refs.heuristic_inbound_inherits),
         (&refs.inbound_uses_type, &refs.heuristic_inbound_uses_type),
@@ -1480,12 +1501,15 @@ pub fn build_refs_model(
     .enumerate()
     {
         for &e in precise {
+            if is_self_inbound(e) { continue; }
             ranked.push(RankedInbound { kind, edge: e, heuristic: false });
+            totals[kind] += 1;
         }
         for &e in heuristic {
+            if is_self_inbound(e) { continue; }
             ranked.push(RankedInbound { kind, edge: e, heuristic: true });
+            totals[kind] += 1;
         }
-        totals[kind] = precise.len() + heuristic.len();
     }
     let foreign = |e: usize| usize::from(project_of(edge_loc(&edges[e]).0) != def_project);
     ranked.sort_by(|a, b| {
@@ -1535,6 +1559,111 @@ pub fn build_refs_model(
         manifest_gap: index.flagged_files.len(),
         member_refs,
     })
+}
+
+// ============================================================================
+// build_read_model -- the declaration span plus the same inbound answer.
+// ============================================================================
+
+/// The declaration span of a resolved def: the file, its 1-based start and
+/// end lines, and the VERBATIM source text of those lines (no trim, no clip
+///
+/// -- a span is quoted, not summarized). `end_line` is what tree-sitter
+/// delimited as the whole declaration node; when the file has changed since
+/// the map, `end_line` is clamped to the file's current last line rather
+/// than guessed upward, and a file that shrank below the span's start yields
+/// no span at all.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ReadSpan {
+    pub file: String,
+    pub start_line: usize,
+    pub end_line: usize,
+    pub source: String,
+}
+
+/// The resolved `read` result for one symbol: everything `refs` answers,
+///
+/// plus the declaration span when one is on record. `span` is `None` for a
+/// def with no recorded end (TS defs, a graph written before end lines were
+/// extracted) and never faked from a start line alone.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ReadModel {
+    pub refs: RefsModel,
+    pub span: Option<ReadSpan>,
+}
+
+/// The outcome of a `read` query -- the `refs` outcome set unchanged, so the
+/// ambiguity and zero-hit discipline are literally the same code path's.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ReadResult {
+    Resolved(Box<ReadModel>),
+    /// A bare-member answer: one resolved-shaped model per declaring type.
+    Members(Vec<RefsModel>),
+    Ambiguous(Vec<String>),
+    NotFound,
+}
+
+// Slices the mapped span out of the current file text. Fails closed: an
+// unreadable file or a span past EOF degrades to "no span", which the
+// renderer shows as a start-line-only answer, never as invented text.
+fn read_span(root: &Path, model: &RefsModel, end_line: usize) -> Option<ReadSpan> {
+    let site = model.sites.first()?;
+    if end_line < site.line {
+        return None;
+    }
+    let body = std::fs::read_to_string(root.join(&site.file)).ok()?;
+    let lines: Vec<&str> = body.split('\n').collect();
+    if site.line < 1 || site.line > lines.len() {
+        return None;
+    }
+    // The map may be behind the working tree; quoting past EOF would invent
+    // lines, so the end clamps to what the file actually has.
+    let end = end_line.min(lines.len());
+    let mut start_text = lines[site.line - 1];
+    if site.line == 1 {
+        start_text = start_text.strip_prefix('\u{feff}').unwrap_or(start_text);
+    }
+    let mut source = String::from(start_text);
+    for line in &lines[site.line..end] {
+        source.push('\n');
+        source.push_str(line);
+    }
+    Some(ReadSpan {
+        file: site.file.clone(),
+        start_line: site.line,
+        end_line: end,
+        source,
+    })
+}
+
+/// `read` = `refs` resolution + capped-and-ranked inbound machinery, reused
+///
+/// wholesale (`out` stays off -- the verb answers "what declares this and
+/// what points at it"), plus the one new fact: the declaration span.
+pub fn build_read_model(index: &GraphIndex, query: &str) -> ReadResult {
+    match build_refs_model_inner(
+        index,
+        query,
+        false,
+        DEFAULT_CAP,
+        INBOUND_CAP,
+        OUTBOUND_CAP,
+        false,
+        true,
+    ) {
+        RefsResult::Resolved(m) => {
+            let end_line = index.def(&m.id).map(|d| d.end_line).unwrap_or(0);
+            let span = if end_line > 0 {
+                read_span(&index.root, &m, end_line)
+            } else {
+                None
+            };
+            ReadResult::Resolved(Box::new(ReadModel { refs: m, span }))
+        }
+        RefsResult::Members(models) => ReadResult::Members(models),
+        RefsResult::Ambiguous(ids) => ReadResult::Ambiguous(ids),
+        RefsResult::NotFound => ReadResult::NotFound,
+    }
 }
 
 // ============================================================================
@@ -2416,7 +2545,7 @@ mod tests {
     }
 
     fn def(id: &str, name: &str, namespace: &str, kind: &str, file: &str, line: usize) -> graph::Def {
-        graph::Def { id: id.into(), name: name.into(), namespace: namespace.into(), kind: kind.into(), file: file.into(), line, methods: vec![], test_methods: vec![], also_in: vec![] }
+        graph::Def { id: id.into(), name: name.into(), namespace: namespace.into(), kind: kind.into(), file: file.into(), line, methods: vec![], test_methods: vec![], also_in: vec![], end_line: 0 }
     }
 
     fn def_also(id: &str, name: &str, namespace: &str, kind: &str, file: &str, line: usize, also_in: Vec<(&str, usize)>) -> graph::Def {
@@ -2430,6 +2559,7 @@ mod tests {
             methods: vec![],
             test_methods: vec![],
             also_in: also_in.into_iter().map(|(f, l)| graph::AlsoIn { file: f.into(), line: l }).collect(),
+            end_line: 0,
         }
     }
 
@@ -3891,6 +4021,7 @@ mod tests {
             methods: vec!["Render".to_string()],
             test_methods: vec![],
             also_in: vec![],
+            end_line: 0,
         }
     }
 
@@ -4381,6 +4512,26 @@ mod tests {
             panic!("Ledger is a type and must resolve as one");
         };
         assert_eq!(model.id, "App.Books.Ledger");
+    }
+
+    #[test]
+    fn read_excludes_references_inside_the_target_declaration_span() {
+        let root = temp_repo_root("read-self-inbound");
+        fs::create_dir_all(root.join("Core")).unwrap();
+        fs::create_dir_all(root.join("Consumers")).unwrap();
+        fs::write(root.join("Core/Widget.cs"), "namespace App;\npublic class Widget\n{\n    Widget Again() => new Widget();\n}\n").unwrap();
+        fs::write(root.join("Consumers/Reader.cs"), "namespace App;\npublic class Reader { Widget Value; }\n").unwrap();
+        write_manifest_fixture(&root, &["Core/Widget.cs", "Consumers/Reader.cs"]);
+        let mut target = def("App.Widget", "Widget", "App", "class", "Core/Widget.cs", 2);
+        target.end_line = 5;
+        let graph = make_graph(vec![target], vec![
+            uses_type("Core/Widget.cs", 4, "App.Widget", "Core/Widget.cs"),
+            uses_type("Consumers/Reader.cs", 2, "App.Widget", "Core/Widget.cs"),
+        ]);
+        let index = load_graph_index(&graph, &root);
+        let ReadResult::Resolved(model) = build_read_model(&index, "Widget") else { panic!("Widget must resolve") };
+        assert_eq!(model.refs.inbound.uses_type.total, 1);
+        assert_eq!(model.refs.inbound.uses_type.rows[0].file, "Consumers/Reader.cs");
     }
 
     // --- the per-file first-declaration line find's manifest-pool block reads ---
