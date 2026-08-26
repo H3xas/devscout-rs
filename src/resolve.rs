@@ -480,16 +480,16 @@ fn build_file_contexts(
 // walked: an external base -- a BCL type, a NuGet type -- cannot be inspected,
 // so a member it declares cannot veto. That is the documented bound, and it is
 // the same one tier (e) already lives with.
-fn inherited_member_declared(
+fn inheritance_walk_matches(
     index: &DefIndex,
     file_contexts: &HashMap<String, FileContext>,
     start: usize,
-    member: Option<&str>,
+    mut matches: impl FnMut(usize) -> bool,
 ) -> bool {
     let mut seen: HashSet<usize> = HashSet::from([start]);
     let mut stack: Vec<usize> = vec![start];
     while let Some(cur) = stack.pop() {
-        if declares_member(index, cur, member) {
+        if matches(cur) {
             return true;
         }
         let Some(ctx) = file_contexts.get(&index.defs[cur].file) else {
@@ -501,12 +501,53 @@ fn inherited_member_declared(
             // not the lexical chain.
             let probe = name_probe(base.clone(), &ns, Vec::new());
             if let Resolution::Resolved(bidx, _) =
-                resolve_ref(&probe, &ctx.usings, &ns, index, &ctx.aliases)
+                resolve_ref(&probe, &ctx.usings, &ns, index, &ctx.aliases, file_contexts)
             {
                 if seen.insert(bidx) {
                     stack.push(bidx);
                 }
             }
+        }
+    }
+    false
+}
+
+fn inherited_member_declared(
+    index: &DefIndex,
+    file_contexts: &HashMap<String, FileContext>,
+    start: usize,
+    member: Option<&str>,
+) -> bool {
+    inheritance_walk_matches(index, file_contexts, start, |idx| {
+        declares_member(index, idx, member)
+    })
+}
+
+fn nested_candidate_visible_from_site(
+    ref_: &FragRef,
+    ns: &str,
+    candidate: usize,
+    index: &DefIndex,
+    file_contexts: &HashMap<String, FileContext>,
+) -> bool {
+    let Some((enclosing_id, _)) = index.defs[candidate].id.rsplit_once('+') else {
+        return true;
+    };
+    let Some(&enclosing_candidate) = index.qualified_name_to_def.get(enclosing_id) else {
+        return false;
+    };
+
+    for depth in (1..=ref_.outer_types.len()).rev() {
+        let enclosing_site = ref_.outer_types[..depth].join("+");
+        let enclosing_site = if ns.is_empty() {
+            enclosing_site
+        } else {
+            format!("{ns}.{enclosing_site}")
+        };
+        if let Some(&site_idx) = index.qualified_name_to_def.get(&enclosing_site) {
+            return inheritance_walk_matches(index, file_contexts, site_idx, |idx| {
+                idx == enclosing_candidate
+            });
         }
     }
     false
@@ -619,6 +660,7 @@ fn resolve_ref(
     ns: &str,
     index: &DefIndex,
     aliases: &HashMap<String, String>,
+    file_contexts: &HashMap<String, FileContext>,
 ) -> Resolution {
     // Every enclosing-namespace prefix of the reference site, innermost first
     // and ending with the empty prefix (the name as literally written).
@@ -725,7 +767,9 @@ fn resolve_ref(
     // Step 4: globally unique simple name. Enum members are excluded from
     // this pool (see build_def_index) -- a member named e.g. "Active"
     // sharing a simple name with an unrelated class must not turn that
-    // class's previously-unambiguous references ambiguous.
+    // class's previously-unambiguous references ambiguous. Nested definitions
+    // remain in the pool, but a bare reference can see one only when its
+    // enclosing type inherits from the nested definition's enclosing type.
     let matches: Vec<usize> = index
         .simple_name_to_defs
         .get(&ref_.name)
@@ -735,6 +779,10 @@ fn resolve_ref(
         .filter(|idx| {
             ref_.type_arg_count
                 .map_or(true, |n| index.member_lists[*idx].type_params.len() == n)
+        })
+        .filter(|idx| {
+            ref_.qualified.is_some()
+                || nested_candidate_visible_from_site(ref_, ns, *idx, index, file_contexts)
         })
         .collect();
     match matches.as_slice() {
@@ -837,7 +885,7 @@ fn resolve_ctor_param(
     file_contexts: &HashMap<String, FileContext>,
     implementors_by_base_name: &HashMap<String, Vec<usize>>,
 ) -> CtorDiResolution {
-    match resolve_ref(ref_, usings, ns, index, aliases) {
+    match resolve_ref(ref_, usings, ns, index, aliases, file_contexts) {
         Resolution::Ambiguous(candidate_indices) => CtorDiResolution::Ambiguous(candidate_indices),
         Resolution::External => {
             if usings.iter().any(|u| is_infra_namespace(u)) {
@@ -872,6 +920,7 @@ fn resolve_ctor_param(
                     &cand_def.namespace,
                     index,
                     &cand_ctx.aliases,
+                    file_contexts,
                 );
                 let Resolution::Resolved(resolved_iface, _) = base_res else {
                     continue;
@@ -1065,7 +1114,7 @@ pub fn resolve_graph_with_ts(
                 // nothing-at-all) to decide which candidate pool it may draw
                 // from, and re-walking the ladder there would be a second
                 // resolution of the same name in the same file context.
-                let result = resolve_ref(r, usings, ns, &index, aliases);
+                let result = resolve_ref(r, usings, ns, &index, aliases, &file_contexts);
                 let mut emitted = false;
                 if let Resolution::Resolved(idx, via) = &result {
                     let (idx, via) = (*idx, *via);
@@ -1154,7 +1203,7 @@ pub fn resolve_graph_with_ts(
                     {
                         let probe = name_probe(owner.clone(), ns, r.outer_types.clone());
                         if let Resolution::Resolved(oidx, _) =
-                            resolve_ref(&probe, usings, ns, &index, aliases)
+                            resolve_ref(&probe, usings, ns, &index, aliases, &file_contexts)
                         {
                             receiver_type_name =
                                 index.member_lists[oidx].method_returns.get(member).cloned();
@@ -1164,7 +1213,7 @@ pub fn resolve_graph_with_ts(
                 if !emitted {
                     if let Some(receiver_type) = &receiver_type_name {
                         let probe = name_probe(receiver_type.clone(), ns, r.outer_types.clone());
-                        let rr = resolve_ref(&probe, usings, ns, &index, aliases);
+                        let rr = resolve_ref(&probe, usings, ns, &index, aliases, &file_contexts);
                         if let Resolution::Resolved(ridx, _) = &rr {
                             let ridx = *ridx;
                             receiver_def = Some(ridx);
@@ -1214,14 +1263,14 @@ pub fn resolve_graph_with_ts(
                     if let Some(owner) = &r.receiver_property_owner {
                         let probe = name_probe(owner.clone(), ns, r.outer_types.clone());
                         if let Resolution::Resolved(oidx, _) =
-                            resolve_ref(&probe, usings, ns, &index, aliases)
+                            resolve_ref(&probe, usings, ns, &index, aliases, &file_contexts)
                         {
                             if let Some(fact) = index.member_lists[oidx].property_types.get(&r.name)
                             {
                                 let hop =
                                     name_probe(fact.type_name.clone(), ns, r.outer_types.clone());
                                 if let Resolution::Resolved(hidx, _) =
-                                    resolve_ref(&hop, usings, ns, &index, aliases)
+                                    resolve_ref(&hop, usings, ns, &index, aliases, &file_contexts)
                                 {
                                     if declares_member(&index, hidx, r.member.as_deref()) {
                                         edges.push(Edge::UsesMember {
@@ -1532,7 +1581,7 @@ pub fn resolve_graph_with_ts(
                 continue;
             }
 
-            match resolve_ref(r, usings, ns, &index, aliases) {
+            match resolve_ref(r, usings, ns, &index, aliases, &file_contexts) {
                 Resolution::Resolved(idx, _) => {
                     edges.push(type_edge(&r.kind, file, r.line, &index.defs[idx]));
                     match r.kind.as_str() {
