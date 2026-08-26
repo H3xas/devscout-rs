@@ -363,6 +363,7 @@ fn no_map_flag_skips_the_first_map() {
 #[test]
 fn both_flags_together_skip_hooks_and_map_but_census_still_runs() {
     let root = init_git_repo_with_source("both-flags");
+    fs::write(root.join("src/component.ts"), "export const component = true;\n").unwrap();
     let env_vars = fresh_env("both-flags");
     seed_settings(&env_vars, WELL_FORMED_SETTINGS);
     let path = settings_path(&env_vars);
@@ -372,7 +373,7 @@ fn both_flags_together_skip_hooks_and_map_but_census_still_runs() {
     assert_eq!(code, 0, "stdout: {out}\nstderr: {err}");
     assert!(out.contains("hooks: skipped (--no-hooks)"), "got: {out}");
     assert!(out.contains("map: skipped (--no-map)"), "got: {out}");
-    assert!(out.contains("languages: 1 .cs (supported); 1 .md (present, not yet supported)"), "got: {out}");
+    assert!(out.contains("languages: 1 .cs (fully supported); 1 .ts (indexed and graphed, narrower edge coverage); 1 .md (present, not indexed)"), "got: {out}");
 
     assert_eq!(fs::read(&path).unwrap(), before, "settings untouched when both flags skip the only step that would touch it");
     assert!(!root.join(".git/scout/manifest.json").exists());
