@@ -3,7 +3,7 @@
 // a mismatch makes reuse break silently.
 //
 // This module owns every serde struct for graph.json + the fragments-cache
-// pair (fragments-v13.json, fragments-index-v13.json), plus their path resolution,
+// pair (fragments-v14.json, fragments-index-v14.json), plus their path resolution,
 // atomic I/O, and the cache-then-resolve-then-write orchestration
 // (`rebuild_graph`). The pure resolution ladder that
 // turns fragments into `defs`/`edges` lives in `resolve.rs` and returns the
@@ -103,11 +103,11 @@ pub fn graph_json_path(root: &Path) -> PathBuf {
 // once, no reader carries version-compat logic. Writers delete every
 // superseded generation (see `remove_superseded_caches`).
 fn fragments_cache_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-v13.json")
+    graph_dir(root).join("fragments-v14.json")
 }
 
 fn fragments_index_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-index-v13.json")
+    graph_dir(root).join("fragments-index-v14.json")
 }
 
 // Every generation below the current one, not just the immediately previous:
@@ -138,6 +138,8 @@ const SUPERSEDED_CACHE_FILES: &[&str] = &[
     "fragments-index-v11.json",
     "fragments-v12.json",
     "fragments-index-v12.json",
+    "fragments-v13.json",
+    "fragments-index-v13.json",
 ];
 
 fn remove_superseded_caches(root: &Path) {
@@ -342,6 +344,8 @@ pub struct Def {
     pub test_methods: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub also_in: Vec<AlsoIn>,
+    #[serde(default, rename = "endLine", skip_serializing_if = "is_zero")]
+    pub end_line: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -608,6 +612,8 @@ pub struct FragDef {
     /// resolution input only, like `properties`/`fields`.
     #[serde(default, rename = "propertyTypes", skip_serializing_if = "OrderedMap::is_empty")]
     pub property_types: OrderedMap<FragFact>,
+    #[serde(default, rename = "endLine", skip_serializing_if = "is_zero")]
+    pub end_line: usize,
 }
 
 /// One declared type fact: the type NAME, plus its top-level
@@ -719,6 +725,10 @@ fn is_false(b: &bool) -> bool {
     !*b
 }
 
+fn is_zero(n: &usize) -> bool {
+    *n == 0
+}
+
 /// One declared member, with the line its own NAME token sits on.
 /// Field order (`name`, `kind`, `line`, `owner`) is significant, and `owner`
 /// is omitted when empty -- which is how
@@ -822,6 +832,7 @@ pub fn fragment_from_extraction(e: &extract::Extraction) -> Fragment {
                     }
                     m
                 },
+                end_line: d.end_line,
             })
             .collect(),
         usings: e
@@ -895,6 +906,7 @@ pub fn markup_fragment(root: &Path, rel: &str) -> Option<Fragment> {
                 base_generic_args: OrderedMap::new(),
                 test_methods: Vec::new(),
                 property_types: OrderedMap::new(),
+                end_line: d.line,
             })
             .collect(),
         usings: Vec::new(),
@@ -1142,6 +1154,7 @@ mod tests {
             base_generic_args: OrderedMap::new(),
             property_types: OrderedMap::new(),
             test_methods: Vec::new(),
+            end_line: 0,
         }
     }
 
@@ -1353,9 +1366,18 @@ mod tests {
             methods: vec![],
             test_methods: vec![],
             also_in: vec![],
+            end_line: 0,
         };
         let json = serde_json::to_string(&d).unwrap();
         assert!(!json.contains("also_in"), "empty also_in must be omitted: {json}");
+    }
+
+    #[test]
+    fn def_end_line_serializes_last_and_defaults_when_absent() {
+        let mut d = Def { id: "Ns.Type".into(), name: "Type".into(), namespace: "Ns".into(), kind: "class".into(), file: "Ns/Type.cs".into(), line: 3, methods: vec![], test_methods: vec![], also_in: vec![], end_line: 0 };
+        assert!(!serde_json::to_string(&d).unwrap().contains("endLine"));
+        d.end_line = 9;
+        assert!(serde_json::to_string(&d).unwrap().ends_with(",\"endLine\":9}"));
     }
 
     #[test]
@@ -1370,6 +1392,7 @@ mod tests {
             methods: vec!["M".into()],
             test_methods: vec![],
             also_in: vec![AlsoIn { file: "Ns/Type.Extra.cs".into(), line: 5 }],
+            end_line: 0,
         };
         let json = serde_json::to_string(&d).unwrap();
         let methods_pos = json.find("\"methods\"").unwrap();
@@ -1392,6 +1415,7 @@ mod tests {
             methods: vec!["M".into()],
             test_methods: vec!["Fact1".into()],
             also_in: vec![AlsoIn { file: "Ns/TypeTests.Extra.cs".into(), line: 5 }],
+            end_line: 0,
         };
         let json = serde_json::to_string(&d).unwrap();
         assert_eq!(
@@ -1412,6 +1436,7 @@ mod tests {
             methods: vec!["M".into()],
             test_methods: vec![],
             also_in: vec![],
+            end_line: 0,
         };
         let json = serde_json::to_string(&d).unwrap();
         assert!(!json.contains("testMethods"), "empty testMethods must be omitted: {json}");
@@ -1521,14 +1546,14 @@ mod tests {
 
         let ts = AnyFragment::Ts(extract::TsFragment {
             ts: 1,
-            defs: vec![extract::TsFragmentDef { name: "x".into(), kind: "const".into(), line: 1 }],
+            defs: vec![extract::TsFragmentDef { name: "x".into(), kind: "const".into(), line: 1, end_line: 1 }],
             imports: Vec::new(),
             reexports: Vec::new(),
             refs: Vec::new(),
             default: None,
         });
         let ts_json = serde_json::to_string(&ts).unwrap();
-        assert_eq!(ts_json, r#"{"ts":1,"defs":[{"name":"x","kind":"const","line":1}],"imports":[],"reexports":[],"refs":[]}"#);
+        assert_eq!(ts_json, r#"{"ts":1,"defs":[{"name":"x","kind":"const","line":1,"endLine":1}],"imports":[],"reexports":[],"refs":[]}"#);
         assert!(matches!(serde_json::from_str::<AnyFragment>(&ts_json).unwrap(), AnyFragment::Ts(_)));
         assert_eq!(serde_json::from_str::<AnyFragment>(&ts_json).unwrap(), ts, "and round-trips to the same value");
     }
@@ -1608,7 +1633,7 @@ mod tests {
     fn rebuild_graph_reuses_a_cached_fragment_at_matching_mtime() {
         let dir = temp_dir("rebuild-cache-hit");
         let fragment = Fragment {
-            defs: vec![FragDef { id: "A".into(), name: "A".into(), namespace: "".into(), kind: "class".into(), line: 1, methods: vec![], properties: vec![], fields: vec![], method_returns: OrderedMap::new(), extension_methods: vec![], bases: vec![], type_params: vec![], base_generic_args: OrderedMap::new(), test_methods: vec![], property_types: OrderedMap::new() }],
+            defs: vec![FragDef { id: "A".into(), name: "A".into(), namespace: "".into(), kind: "class".into(), line: 1, methods: vec![], properties: vec![], fields: vec![], method_returns: OrderedMap::new(), extension_methods: vec![], bases: vec![], type_params: vec![], base_generic_args: OrderedMap::new(), test_methods: vec![], property_types: OrderedMap::new(), end_line: 1 }],
             usings: vec![],
             refs: vec![],
             names: vec![],
@@ -1656,8 +1681,8 @@ mod tests {
         // silently stay unresolved.
         assert_eq!(
             SUPERSEDED_CACHE_FILES.len(),
-            24,
-            "v1..v12 pairs -- the v12 pair joined the list at the propertyTypes/receiver fact additions"
+            26,
+            "v1..v13 pairs"
         );
         for stale in SUPERSEDED_CACHE_FILES {
             fs::write(graph_dir(&dir).join(stale), b"{}").unwrap();
@@ -1680,6 +1705,7 @@ mod tests {
                 base_generic_args: OrderedMap::new(),
                 test_methods: vec![],
                 property_types: OrderedMap::new(),
+                end_line: 1,
             }],
             usings: vec![],
             refs: vec![],
@@ -1690,8 +1716,8 @@ mod tests {
         let graph_files = vec![GraphFile { rel: "src/A.cs".to_string(), mtime: 222 }];
         rebuild_graph(&dir, &graph_files, &fresh, true).unwrap();
 
-        assert!(graph_dir(&dir).join("fragments-v13.json").exists(), "the v13 payload cache is what gets written");
-        assert!(graph_dir(&dir).join("fragments-index-v13.json").exists(), "and its mtime-only index alongside it");
+        assert!(graph_dir(&dir).join("fragments-v14.json").exists(), "the v14 payload cache is what gets written");
+        assert!(graph_dir(&dir).join("fragments-index-v14.json").exists(), "and its mtime-only index alongside it");
         for stale in SUPERSEDED_CACHE_FILES {
             assert!(
                 !graph_dir(&dir).join(stale).exists(),

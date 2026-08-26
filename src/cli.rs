@@ -48,6 +48,7 @@ const EXIT_NO_RESULT: i32 = 3;
 // the note is advice for a human reader.
 const ZERO_HIT_FIND: &str = "devscout find: zero hits — the manifest was searched and nothing matched. Not an error; fall back to text search (rg/grep) rather than rephrasing.";
 const ZERO_HIT_REFS: &str = "devscout refs: zero hits — the graph was searched and no symbol matched. Not an error; fall back to text search (rg/grep) rather than rephrasing.";
+const ZERO_HIT_READ: &str = "devscout read: zero hits — the graph was searched and no symbol matched. Not an error; fall back to text search (rg/grep) rather than rephrasing.";
 const ZERO_HIT_IMPACT: &str = "devscout impact: zero hits — the graph was searched and no affected file came back. Not an error; fall back to text search (rg/grep) rather than rephrasing.";
 const ZERO_HIT_TESTS: &str = "devscout tests: zero hits — the graph was searched and no symbol matched. Not an error; fall back to text search (rg/grep) rather than rephrasing.";
 
@@ -129,6 +130,7 @@ index
 query
   find <query> [--resources] search the manifest by name or purpose
   refs <symbol>              references to a symbol   [--out --all --json|--compact]
+  read <symbol>              decl span + inbound refs [--json|--compact]
   impact <file|symbol>       blast radius             [--hops N --json|--compact]
   tests <symbol>             tests reaching a symbol  [--json|--compact]
   stats                      index + cache summary for this repo
@@ -199,6 +201,13 @@ pub fn dispatch(args: Vec<String>) {
             emit_zero_hit_note(code, ZERO_HIT_REFS, &cwd, first_positional(&args[2..]));
             process::exit(code);
         }
+        Some("read") => {
+            let (code, out) = cmd_read(&cwd, &args[2..]);
+            print_out(&out);
+            emit_freshness_warning(&cwd);
+            emit_zero_hit_note(code, ZERO_HIT_READ, &cwd, first_positional(&args[2..]));
+            process::exit(code);
+        }
         Some("impact") => {
             let (code, out) = cmd_impact(&cwd, &args[2..]);
             print_out(&out);
@@ -245,7 +254,7 @@ pub fn dispatch(args: Vec<String>) {
             process::exit(code);
         }
         _ => {
-            eprintln!("usage: devscout <noop|parse|spans|extract-dump|hook|refs|impact|tests|find|map|stats|clear|init> [args]");
+            eprintln!("usage: devscout <noop|parse|spans|extract-dump|hook|refs|read|impact|tests|find|map|stats|clear|init> [args]");
             process::exit(1);
         }
     }
@@ -456,6 +465,81 @@ fn cmd_refs(cwd: &Path, args: &[String]) -> (i32, String) {
                 (0, render::render_refs_compact(&model))
             } else {
                 (0, render::render_refs_text(&model))
+            }
+        }
+    }
+}
+
+// `read`. Check order is `refs`' own: flag conflict, missing query,
+// `require_repo`, graph-present. The resolution IS refs' --
+// `build_read_model` wraps `build_refs_model` and changes nothing about how
+// a name becomes an answer -- so the ambiguity and zero-hit discipline
+// cannot drift between the two verbs; only the resolved arm grows the
+// declaration span.
+fn cmd_read(cwd: &Path, args: &[String]) -> (i32, String) {
+    let json = args.iter().any(|a| a == "--json");
+    let compact = args.iter().any(|a| a == "--compact");
+    if json && compact {
+        return (
+            1,
+            "devscout read: --compact and --json are mutually exclusive".to_string(),
+        );
+    }
+    let Some(q) = first_positional(args) else {
+        return (
+            2,
+            "usage: devscout read <symbol> [--json|--compact]".to_string(),
+        );
+    };
+    let root = match require_repo(cwd) {
+        Ok(r) => r,
+        Err(e) => return (1, format!("error: {e}")),
+    };
+    let Some(g) = graph::read_graph(&root) else {
+        return (
+            1,
+            "no graph.json for this repo — run `devscout map` on a C# scope first".to_string(),
+        );
+    };
+    let index = query::load_graph_index(&g, &root);
+
+    match query::build_read_model(&index, q) {
+        query::ReadResult::NotFound => (EXIT_NO_RESULT, format!("no symbol matches \"{q}\"")),
+        query::ReadResult::Ambiguous(ids) => ambiguous_candidates_out(&index, q, &ids),
+        // A bare member answers through refs' own member rendering in all
+        // three forms: the member answer carries no declaration-span fact to
+        // add, so reshaping it here would only create a second shape to keep
+        // in step.
+        query::ReadResult::Members(models) => {
+            if json {
+                (0, member_refs_to_json(q, &models))
+            } else if compact {
+                (
+                    0,
+                    models
+                        .iter()
+                        .map(render::render_refs_compact)
+                        .collect::<Vec<_>>()
+                        .join("\n"),
+                )
+            } else {
+                (
+                    0,
+                    models
+                        .iter()
+                        .map(render::render_refs_text)
+                        .collect::<Vec<_>>()
+                        .join("\n"),
+                )
+            }
+        }
+        query::ReadResult::Resolved(model) => {
+            if json {
+                (0, read_model_to_json(&model))
+            } else if compact {
+                (0, render::render_read_compact(&model))
+            } else {
+                (0, render::render_read_text(&model))
             }
         }
     }
@@ -1040,6 +1124,32 @@ fn refs_model_to_json(model: &query::RefsModel) -> String {
     refs_model_j(model).to_json_string()
 }
 
+// The resolved `read` JSON shape: exactly the refs shape with ONE key
+// inserted -- `"span"` sits between `kind` and `sites`, carrying `{file,
+// startLine, endLine, source}`. The key is ABSENT when no span is on record
+// (a def whose end line was never extracted), the same honest-absence rule
+// `outbound` follows; a caller cannot mistake a start-only answer for a
+// span.
+fn read_model_to_json(model: &query::ReadModel) -> String {
+    let mut fields = refs_model_fields(&model.refs);
+    // `split_off(4)` lifts everything after the first four keys
+    // (status/query/id/kind) so `span` can take their place in line.
+    let tail = fields.split_off(4);
+    if let Some(sp) = &model.span {
+        fields.push((
+            "span",
+            J::Obj(vec![
+                ("file", J::Str(sp.file.clone())),
+                ("startLine", J::UInt(sp.start_line as u64)),
+                ("endLine", J::UInt(sp.end_line as u64)),
+                ("source", J::Str(sp.source.clone())),
+            ]),
+        ));
+    }
+    fields.extend(tail);
+    J::Obj(fields).to_json_string()
+}
+
 // The bare-member `refs` JSON: `{status:'members', query, members}`, where each
 // member is `refs_model_j`'s object unchanged -- the bare-member answer reshapes
 // nothing, it only says how many declaring types answered.
@@ -1053,6 +1163,10 @@ fn member_refs_to_json(query_str: &str, models: &[query::RefsModel]) -> String {
 }
 
 fn refs_model_j(model: &query::RefsModel) -> J {
+    J::Obj(refs_model_fields(model))
+}
+
+fn refs_model_fields(model: &query::RefsModel) -> Vec<(&'static str, J)> {
     let mut fields = vec![
         ("status", J::Str("resolved".to_string())),
         ("query", J::Str(model.query.clone())),
@@ -1112,7 +1226,7 @@ fn refs_model_j(model: &query::RefsModel) -> J {
             ]),
         ));
     }
-    J::Obj(fields)
+    fields
 }
 
 fn j_impact_row(r: &query::ImpactRow) -> J {

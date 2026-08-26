@@ -511,6 +511,7 @@ pub fn resolve_ts_graph(fragments: &[(String, TsFragment)], alias: &TsPathAliase
                 methods: Vec::new(),
                 test_methods: Vec::new(),
                 also_in: Vec::new(),
+                end_line: d.end_line,
             });
         }
         // `export default Foo` makes the SAME declaration importable under the
@@ -708,7 +709,7 @@ mod tests {
     fn frag(defs: Vec<(&str, &str, usize)>, imports: Vec<TsImport>, reexports: Vec<TsReexport>, refs: Vec<TsRef>) -> TsFragment {
         TsFragment {
             ts: 1,
-            defs: defs.into_iter().map(|(n, k, l)| TsFragmentDef { name: n.into(), kind: k.into(), line: l }).collect(),
+            defs: defs.into_iter().map(|(n, k, l)| TsFragmentDef { name: n.into(), kind: k.into(), line: l, end_line: l }).collect(),
             imports,
             reexports,
             refs,

@@ -309,6 +309,8 @@ pub struct DefRecord {
     /// `method_returns` is one: the serialized key order is significant.
     /// Appended LAST, after `test_methods`.
     pub property_types: Vec<(String, Fact)>,
+    /// 1-based last line of the complete declaration node.
+    pub end_line: usize,
 }
 
 /// One `extensionMethods` entry. Field order (`name`, `thisType`, `arityMin`,
@@ -1382,6 +1384,7 @@ fn record_type_def(
         base_generic_args: raw_base_generic_args(node, src, type_params),
         test_methods: raw_test_methods(node, src, kind),
         property_types: raw_property_types(node, src, type_params),
+        end_line: node.end_position().row + 1,
     });
 }
 
@@ -1422,6 +1425,7 @@ fn record_enum_members(node: Node, ns: &str, type_stack: &[String], src: &[u8], 
             base_generic_args: Vec::new(),
             test_methods: Vec::new(),
             property_types: Vec::new(),
+            end_line: member.end_position().row + 1,
         });
     }
 }
@@ -2997,6 +3001,8 @@ pub struct TsFragmentDef {
     pub name: String,
     pub kind: String,
     pub line: usize,
+    #[serde(rename = "endLine")]
+    pub end_line: usize,
 }
 
 /// One local name an import statement binds, and the export it names in the
@@ -3188,6 +3194,7 @@ fn ts_decl_kind(node: Node) -> Option<&'static str> {
 struct TsDecl {
     kind: &'static str,
     line: usize,
+    end_line: usize,
 }
 
 // Every top-level declaration with the line its NAME is declared on, whether
@@ -3195,11 +3202,11 @@ struct TsDecl {
 // without the keyword, and a CommonJS file exports by name only.
 fn ts_top_level_decls(program_node: Node, src: &[u8]) -> HashMap<String, TsDecl> {
     let mut decls: HashMap<String, TsDecl> = HashMap::new();
-    fn add(decls: &mut HashMap<String, TsDecl>, name: String, kind: &'static str, line: usize) {
+    fn add(decls: &mut HashMap<String, TsDecl>, name: String, kind: &'static str, line: usize, end_line: usize) {
         if name.is_empty() {
             return;
         }
-        decls.entry(name).or_insert(TsDecl { kind, line });
+        decls.entry(name).or_insert(TsDecl { kind, line, end_line });
     }
     fn from_declaration(node: Node, src: &[u8], decls: &mut HashMap<String, TsDecl>) {
         let Some(kind) = ts_decl_kind(node) else { return };
@@ -3211,12 +3218,12 @@ fn ts_top_level_decls(program_node: Node, src: &[u8]) -> HashMap<String, TsDecl>
                 let name_node = d.child_by_field_name("name");
                 let line = ts_line(name_node.unwrap_or(d));
                 for n in ts_pattern_names(name_node, src) {
-                    add(decls, n, "const", line);
+                    add(decls, n, "const", line, d.end_position().row + 1);
                 }
             }
             return;
         }
-        add(decls, ts_declared_name(node, src), kind, ts_line(node));
+        add(decls, ts_declared_name(node, src), kind, ts_line(node), node.end_position().row + 1);
     }
     for c in named_children(program_node) {
         if c.kind() == "export_statement" {
@@ -3537,7 +3544,7 @@ pub fn extract_ts_fragment(program_node: Node, src: &[u8]) -> TsFragment {
         .into_iter()
         .map(|name| {
             let d = &decls[&name];
-            TsFragmentDef { name, kind: d.kind.to_string(), line: d.line }
+            TsFragmentDef { name, kind: d.kind.to_string(), line: d.line, end_line: d.end_line }
         })
         .collect();
     // The only local names a cross-file resolver could ever land on: something
@@ -3701,6 +3708,27 @@ mod tests {
     }
 
     // --- generic arity (type_argument_list -> one uses-type ref per arg) --
+
+    #[test]
+    fn type_def_end_line_is_the_closing_brace_line_of_the_whole_declaration() {
+        let e = extract_src("namespace N;\npublic class Widget\n{\n    int n;\n}\n");
+        let d = find_def(&e, "N.Widget").unwrap();
+        assert_eq!((d.line, d.end_line), (2, 5));
+    }
+
+    #[test]
+    fn enum_member_end_line_is_its_own_single_line() {
+        let e = extract_src("public enum State\n{\n    Off,\n    On,\n}\n");
+        assert_eq!((find_def(&e, "State.Off").unwrap().line, find_def(&e, "State.Off").unwrap().end_line), (3, 3));
+        assert_eq!((find_def(&e, "State.On").unwrap().line, find_def(&e, "State.On").unwrap().end_line), (4, 4));
+    }
+
+    #[test]
+    fn nested_type_span_stays_within_its_own_node() {
+        let e = extract_src("public class Outer\n{\n    public class Inner { }\n}\n");
+        assert_eq!((find_def(&e, "Outer").unwrap().line, find_def(&e, "Outer").unwrap().end_line), (1, 4));
+        assert_eq!((find_def(&e, "Outer+Inner").unwrap().line, find_def(&e, "Outer+Inner").unwrap().end_line), (3, 3));
+    }
 
     #[test]
     fn generic_name_records_base_and_each_type_argument() {
@@ -5526,7 +5554,7 @@ public static class Shapes
         let f = ts_fragment("export const x = 1;\n", crate::parse::TsGrammar::Typescript);
         assert_eq!(f.default, None);
         let json = serde_json::to_string(&f).unwrap();
-        assert_eq!(json, r#"{"ts":1,"defs":[{"name":"x","kind":"const","line":1}],"imports":[],"reexports":[],"refs":[]}"#);
+        assert_eq!(json, r#"{"ts":1,"defs":[{"name":"x","kind":"const","line":1,"endLine":1}],"imports":[],"reexports":[],"refs":[]}"#);
     }
 
     #[test]
@@ -5535,8 +5563,14 @@ public static class Shapes
         let json = serde_json::to_string(&f).unwrap();
         assert_eq!(
             json,
-            r#"{"ts":1,"defs":[{"name":"run","kind":"function","line":1}],"imports":[],"reexports":[],"refs":[],"default":"run"}"#
+            r#"{"ts":1,"defs":[{"name":"run","kind":"function","line":1,"endLine":1}],"imports":[],"reexports":[],"refs":[],"default":"run"}"#
         );
+    }
+
+    #[test]
+    fn typescript_fragment_records_multiline_declaration_end_line() {
+        let f = ts_fragment("export interface Widget {\n  id: number;\n}\n", crate::parse::TsGrammar::Typescript);
+        assert_eq!((f.defs[0].line, f.defs[0].end_line), (1, 3));
     }
 
     // --- Property types and var-from-invocation ----------
