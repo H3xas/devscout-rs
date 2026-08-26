@@ -30,45 +30,13 @@
 
 use std::fs;
 use std::io;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::manifest;
 use crate::mapcmd;
 use crate::repo;
 use crate::walk;
-
-// ---------------------------------------------------------------------------
-// Path resolution -- a minimal, local `resolve(p)`: absolutize against cwd if
-// relative, then lexically normalize; never touches symlinks. repo.rs keeps an
-// identical helper private, so this is a local duplicate rather than a shared
-// import.
-// ---------------------------------------------------------------------------
-
-fn resolve_abs(path: &Path) -> PathBuf {
-    let base = if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/")).join(path)
-    };
-    normalize_abs(&base)
-}
-
-fn normalize_abs(path: &Path) -> PathBuf {
-    let mut out = PathBuf::new();
-    for component in path.components() {
-        match component {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                if matches!(out.components().next_back(), Some(Component::Normal(_))) {
-                    out.pop();
-                }
-            }
-            other => out.push(other.as_os_str()),
-        }
-    }
-    out
-}
 
 // ---------------------------------------------------------------------------
 // calendar date as `YYYY-MM-DD`. No date/time crate is used --
@@ -321,7 +289,7 @@ fn register_root(root_abs: &str, kind: &str, label: Option<&str>, scope: &[Strin
 pub fn cmd_init(cwd: &Path, args: &[String]) -> (i32, String) {
     let (label, scope) = parse_init_args(args);
     let git_root = repo::find_repo_root(cwd);
-    let root = git_root.clone().unwrap_or_else(|| resolve_abs(cwd));
+    let root = git_root.clone().unwrap_or_else(|| repo::resolve_path(cwd));
 
     if git_root.is_none() {
         match nested_git_repos(&root) {
@@ -429,7 +397,7 @@ pub fn cmd_init_full(cwd: &Path, args: &[String]) -> (i32, String) {
     // function, so re-derived here rather than plumbed through a changed
     // signature (keeping `cmd_init`'s signature untouched is deliberate).
     let git_root = repo::find_repo_root(cwd);
-    let root = git_root.unwrap_or_else(|| resolve_abs(cwd));
+    let root = git_root.unwrap_or_else(|| repo::resolve_path(cwd));
 
     let lines = [out, census_line(&root), hooks_line(no_hooks), map_line(&root, no_map)];
     (0, lines.join("\n"))
