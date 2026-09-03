@@ -30,5 +30,11 @@ bench/state/
 
 # Local release tooling, not published.
 scripts/preflight.sh
-bin/
-obj/
+
+# .NET build output. Scoped to the two trees that hold C# projects rather than
+# ignored by bare name: `bin/`/`obj/` anywhere would also swallow a source
+# directory legitimately named `bin` or `obj` (a Rust `src/bin/` among them).
+fixtures/**/bin/
+fixtures/**/obj/
+tools/**/bin/
+tools/**/obj/

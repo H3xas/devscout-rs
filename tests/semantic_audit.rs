@@ -208,4 +208,36 @@ fn audit_assert_passes_the_fixture_thresholds_and_fails_a_violated_one() {
         failing_stdout.contains("assert:"),
         "a violated threshold appends an `assert:` line: {failing_stdout}"
     );
+
+    // The same violated threshold with `--json`: stdout must stay ONE parseable
+    // JSON object so a CI step can assert and pipe the report into `jq` in the
+    // same run. The violation lines move to stderr instead of being appended
+    // after the object, and the exit code is still 1.
+    let failing_json = fx.run(&[
+        "audit",
+        "--semantic",
+        refs.to_str().unwrap(),
+        "--units",
+        units.to_str().unwrap(),
+        "--assert",
+        violated.to_str().unwrap(),
+        "--json",
+    ]);
+    assert_eq!(failing_json.status.code(), Some(1), "{failing_json:?}");
+    let json_stdout = stdout_of(&failing_json);
+    let json_stderr = String::from_utf8(failing_json.stderr.clone()).expect("stderr is utf-8");
+    assert!(
+        !json_stdout.contains("assert:"),
+        "no violation line may reach stdout in --json mode: {json_stdout}"
+    );
+    assert!(
+        json_stderr.contains("assert: tiers.precise.tp"),
+        "the violation line goes to stderr instead: {json_stderr}"
+    );
+    let parsed: serde_json::Value = serde_json::from_str(json_stdout.trim())
+        .expect("--json --assert stdout must parse as JSON");
+    assert!(
+        parsed.get("tiers").is_some(),
+        "and it is the report object, not a fragment: {json_stdout}"
+    );
 }

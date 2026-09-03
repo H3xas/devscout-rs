@@ -91,7 +91,16 @@ internal static class Loader
             result.Projects.Add(new LoadedProject(chosen, name, tfm));
         }
 
-        result.Projects.Sort((a, b) => string.CompareOrdinal(a.Name, b.Name));
+        // List.Sort is unstable, so a name tie must be broken explicitly or the
+        // project order -- and with it every downstream record order -- can
+        // vary between runs. Two projects can legitimately share a name (the
+        // same .csproj name under two directories), and the project file path
+        // is the one field that is unique per project.
+        result.Projects.Sort((a, b) =>
+        {
+            var byName = string.CompareOrdinal(a.Name, b.Name);
+            return byName != 0 ? byName : string.CompareOrdinal(a.Project.FilePath, b.Project.FilePath);
+        });
         return result;
     }
 

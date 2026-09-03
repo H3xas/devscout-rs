@@ -310,7 +310,15 @@ internal static class Runner
             WriteJsonl(options.Out, sortedRefs);
             if (options.Units is not null)
             {
-                units.Sort((a, b) => string.CompareOrdinal(a.Name, b.Name));
+                // Same tie-break as Loader's project sort, and for the same
+                // reason: List.Sort is unstable, names are not unique, and
+                // units.jsonl is diffed byte-for-byte against a committed
+                // snapshot.
+                units.Sort((a, b) =>
+                {
+                    var byName = string.CompareOrdinal(a.Name, b.Name);
+                    return byName != 0 ? byName : string.CompareOrdinal(a.Path, b.Path);
+                });
                 WriteJsonl(options.Units, units);
             }
 

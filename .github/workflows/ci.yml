@@ -104,7 +104,10 @@ jobs:
 
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 9.0.x
+          # Pinned to the feature band the oracle is built and snapshotted
+          # against; `9.0.x` would float across bands and can change Roslyn
+          # behaviour under the committed oracle diff.
+          dotnet-version: 9.0.3xx
 
       - uses: actions/cache@v4
         with:

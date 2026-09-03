@@ -499,29 +499,31 @@ struct FileContext {
 //
 // "In scope" is a project-model question. A `global using` belongs to the
 // COMPILATION that declares it and does not flow across a `ProjectReference`,
-// so with a model in hand each file is seeded from its own unit's globals
-// (`by_unit`) and sees nothing another project declared. Without one -- and for
-// a file no project owns -- there are no boundaries to read, so the seed is the
-// repo-wide pool, the documented over-approximation this resolver has always
-// used.
+// so with a model in hand each file OWNED BY A UNIT is seeded from that unit's
+// globals (`by_unit`) and sees nothing another project declared -- an owned
+// unit that declared none seeds from nothing at all.
+//
+// A file NO unit owns is the separate case: there is no compilation to read
+// boundaries from, so it falls open to the repo-wide pool, exactly as a resolve
+// with no model at all does. That is the documented over-approximation this
+// resolver has always used, and it is the only answer that does not silently
+// strip a loose file of every global using in the tree.
 fn build_file_contexts(
     fragments_by_file: &[(String, Fragment)],
     repo_wide: &GlobalUsings,
     by_unit: Option<UnitGlobals<'_>>,
 ) -> HashMap<String, FileContext> {
     let mut contexts = HashMap::new();
-    // The seed for a file whose unit declared no `global using` at all (and
-    // for a file no unit owns): built once here so the match below can hand
-    // back a reference with the same lifetime as the real pools.
+    // The seed for a file whose OWNING unit declared no `global using` at all:
+    // built once here so the match below can hand back a reference with the
+    // same lifetime as the real pools.
     let empty: GlobalUsings = (HashSet::new(), HashMap::new());
     for (file, frag) in fragments_by_file {
         let seed = match by_unit {
-            Some((unit_of_file, by_unit)) => unit_of_file
-                .get(file)
-                .copied()
-                .flatten()
-                .and_then(|u| by_unit.get(&u))
-                .unwrap_or(&empty),
+            Some((unit_of_file, by_unit)) => match unit_of_file.get(file).copied().flatten() {
+                Some(u) => by_unit.get(&u).unwrap_or(&empty),
+                None => repo_wide,
+            },
             None => repo_wide,
         };
         let mut usings = seed.0.clone();
@@ -710,6 +712,12 @@ fn nominally_assignable_cached(
 // also an ordinary public static method, so the static class holding it
 // vouches through `methods` too -- requiring assignability of a candidate that
 // merely LOOKS instance-vouched would refuse every extension there is.
+//
+// Nine parameters, deliberately: every one is a distinct fact about the ONE
+// question asked here, and bundling them into a struct built per candidate
+// would add an allocation and a second name for each field without making any
+// caller shorter -- there is exactly one caller.
+#[allow(clippy::too_many_arguments)]
 fn receiver_admits_candidate(
     index: &DefIndex,
     file_contexts: &HashMap<String, FileContext>,
@@ -996,6 +1004,37 @@ fn narrow_by_reachability(
         [] => Resolution::External,
         [idx] => Resolution::Resolved(*idx, via),
         _ => Resolution::Ambiguous(reachable, via),
+    }
+}
+
+/// A narrowed resolution plus the one bit narrowing would otherwise destroy:
+/// whether an `External` means "the ladder never found this name" or "the
+/// ladder found candidates and the project model put every one of them out of
+/// reach".
+///
+/// The two are the same answer for a precise tier -- neither can produce an
+/// edge -- but they are opposite answers for the scored tier. A name the
+/// ladder never found may still be a member-name-uniqueness guess. A name
+/// whose every candidate was narrowed away has already been ANSWERED: the
+/// candidates were real, and the language rule says none of them is nameable
+/// here. Falling through to the graph-wide uniqueness pool there would answer
+/// a settled question with a stranger, so `narrowed_away` gets an empty pool
+/// and emits nothing.
+struct Narrowed {
+    res: Resolution,
+    narrowed_away: bool,
+}
+
+/// `narrow_by_reachability`, keeping the pre-narrowing shape as the flag
+/// `Narrowed` documents. Used at the two `uses-member` consumers, whose
+/// resolutions reach the scored tier; the plain type-reference consumer has no
+/// heuristic tier behind it and calls `narrow_by_reachability` directly.
+fn narrow_tracked(res: Resolution, site_unit: Option<usize>, admission: &Admission) -> Narrowed {
+    let was_ambiguous = matches!(res, Resolution::Ambiguous(..));
+    let res = narrow_by_reachability(res, site_unit, admission);
+    Narrowed {
+        narrowed_away: was_ambiguous && matches!(res, Resolution::External),
+        res,
     }
 }
 
@@ -1544,7 +1583,10 @@ pub fn resolve_graph_with_model(
                 // nothing-at-all) to decide which candidate pool it may draw
                 // from, and re-walking the ladder there would be a second
                 // resolution of the same name in the same file context.
-                let result = narrow_by_reachability(
+                let Narrowed {
+                    res: result,
+                    narrowed_away: result_narrowed_away,
+                } = narrow_tracked(
                     resolve_ref(r, usings, ns, &index, aliases, &file_contexts),
                     site_unit,
                     &admission,
@@ -1622,6 +1664,7 @@ pub fn resolve_graph_with_model(
                 // identifier itself.
                 let mut receiver_def: Option<usize> = None;
                 let mut receiver_result: Option<Resolution> = None;
+                let mut receiver_narrowed_away = false;
                 // A `var x = Q.M(...)` local carries the CALL, not a type: the
                 // extractor cannot know what `M` returns, and the def that can
                 // is in another file. Resolving the callee's owner through the
@@ -1649,11 +1692,15 @@ pub fn resolve_graph_with_model(
                 if !emitted {
                     if let Some(receiver_type) = &receiver_type_name {
                         let probe = name_probe(receiver_type.clone(), ns, r.outer_types.clone());
-                        let rr = narrow_by_reachability(
+                        let Narrowed {
+                            res: rr,
+                            narrowed_away,
+                        } = narrow_tracked(
                             resolve_ref(&probe, usings, ns, &index, aliases, &file_contexts),
                             site_unit,
                             &admission,
                         );
+                        receiver_narrowed_away = narrowed_away;
                         if let Resolution::Resolved(ridx, _) = &rr {
                             let ridx = *ridx;
                             receiver_def = Some(ridx);
@@ -1920,6 +1967,14 @@ pub fn resolve_graph_with_model(
                 //     name is common vocabulary (`Add`, `Name`, `Value`) and a
                 //     guess carries no information, so the tier refuses
                 //     outright rather than emitting its top three.
+                // A qualifier NARROWED AWAY -- the ladder DID find candidates
+                // and the project model put every one of them out of reach --
+                // is a third case and gets an EMPTY pool. It reaches this tier
+                // as an `External` like any other, but it is not an unanswered
+                // name: the answer is "none of the real candidates is nameable
+                // here", and reaching for a graph-wide stranger instead would
+                // contradict the language rule that produced it. `narrowed_away`
+                // is what tells the two apart (`Narrowed`).
                 // A qualifier that RESOLVED is deliberately in neither pool:
                 // the resolution is a fact, the precise tiers already had their
                 // chance at it, and a heuristic edge there would be a second
@@ -1948,6 +2003,13 @@ pub fn resolve_graph_with_model(
                     } else {
                         &result
                     };
+                    // The same choice, for the flag that rides alongside the
+                    // resolution the pool is drawn from.
+                    let source_narrowed_away = if receiver_type_name.is_some() {
+                        receiver_narrowed_away
+                    } else {
+                        result_narrowed_away
+                    };
                     // The ref's own call shape, read once and reused by both
                     // pools below: a property or field never vouches for a
                     // ref shaped like a call, no matter which pool it came
@@ -1961,6 +2023,8 @@ pub fn resolve_graph_with_model(
                                 .filter(|&d| member_vouched(&index, d, r.member.as_deref(), shape))
                                 .collect(),
                         ),
+                        // Narrowed to nothing: answered, not unanswered.
+                        Resolution::External if source_narrowed_away => Some(Vec::new()),
                         Resolution::External => {
                             let named: Vec<usize> = match r
                                 .member
@@ -1993,7 +2057,8 @@ pub fn resolve_graph_with_model(
                         Resolution::Resolved(..) => None,
                     };
                     // The RECEIVER rule, the pool's last filter and, like
-                    // every W1 rule, purely subtractive. It applies only where
+                    // every other filter here, purely subtractive -- it can
+                    // remove a candidate, never add one. It applies only where
                     // the ref carries a receiver type that resolved to nothing
                     // in-graph -- the shape that made the uniqueness pool a
                     // pool of same-named strangers. An AMBIGUOUS receiver
@@ -6086,6 +6151,60 @@ mod tests {
         );
     }
 
+    #[test]
+    fn stage6_global_usings_fall_open_to_the_repo_wide_pool_for_a_file_no_project_owns() {
+        // A file under no project directory has no compilation whose global
+        // usings could be read, so it is NOT an owned unit that happened to
+        // declare none -- it is the no-model case in miniature, and it falls
+        // open to the repo-wide pool. Seeding it from nothing instead would
+        // strip a loose file of every global using in the tree and silently
+        // demote a resolvable name to a guess.
+        let mut files: Vec<(&str, &str)> = SCOPED_GLOBAL_USING_FIXTURE.to_vec();
+        files.push((
+            "Loose/LooseConsumer.cs",
+            "\nnamespace Fixture.Loose;\n\npublic class LooseConsumer\n{\n  public void Run() => Config.Load();\n}\n",
+        ));
+        let files = fragments_for(&files);
+        // Every unit lives under `src/`; `Loose/` is under none of them, so
+        // `unit_of_file` answers `None` for the consumer and admission -- which
+        // needs a site unit to filter anything -- has nothing to say either.
+        let model = model_of(vec![
+            unit("src/Alpha/Alpha.csproj", &[], false),
+            unit("src/Beta/Beta.csproj", &[], false),
+            unit(
+                "src/App/App.csproj",
+                &["src/Alpha/Alpha.csproj", "src/Beta/Beta.csproj"],
+                false,
+            ),
+            unit(
+                "src/Other/Other.csproj",
+                &["src/Alpha/Alpha.csproj", "src/Beta/Beta.csproj"],
+                false,
+            ),
+        ]);
+        let g = resolve_graph_with_model(&no_git_root(), &files, &[], Some(&model));
+
+        assert_eq!(
+            model.unit_of_file("Loose/LooseConsumer.cs"),
+            None,
+            "the fixture only means anything while this file is owned by no unit"
+        );
+        assert_eq!(
+            member_edges_from(&g, "Loose/LooseConsumer.cs"),
+            vec![("Fixture.Alpha.Config", 6)],
+            "the App project's `global using Fixture.Alpha;` is in the repo-wide pool, and an unowned file draws from that pool"
+        );
+        assert!(
+            heuristic_member_edges_from(&g, "Loose/LooseConsumer.cs").is_empty(),
+            "the name resolved precisely, so no tier ever had a guess to make"
+        );
+        assert_eq!(
+            member_edges_from(&g, "src/Other/OtherConsumer.cs"),
+            Vec::new(),
+            "a file an OWNED project holds still sees only its own unit's globals -- the fall-open is for unowned files alone"
+        );
+    }
+
     // --- stage 6: narrowing an AMBIGUOUS resolution by reachability -------
     //
     // The ladder pools same-named defs and refuses to pick; the project model
@@ -6361,16 +6480,20 @@ mod tests {
     }
 
     #[test]
-    fn stage6_narrowing_to_zero_leaves_the_scored_tier_the_answer_an_external_would_have_got() {
+    fn stage6_narrowing_to_zero_gives_the_scored_tier_an_empty_pool_not_a_graph_wide_guess() {
         // Narrowing can also empty the candidate list, and the result is an
         // ordinary External -- not a silently-kept ambiguity and not an
         // invented pick. For the type ref that means the unresolved counter
-        // rather than the ambiguous one; for the qualifier it means the scored
-        // tier switches pools, from "the ladder's own candidates" to
-        // member-name uniqueness, and then admission takes the unreachable
-        // ones back out. `Ledger` is the proof the switch really happened: it
-        // is not a `Config` at all, so it can only ever be reached through the
-        // uniqueness pool.
+        // rather than the ambiguous one.
+        //
+        // For the QUALIFIER it means no heuristic edge at all. The ladder did
+        // find candidates here; the project model answered that none of them
+        // is nameable at this site. That is an answer, so the scored tier gets
+        // an empty pool rather than the graph-wide member-name uniqueness pool
+        // an unfound name would get. `Ledger` is the proof the tier really
+        // declines: it is not a `Config` at all, it is reachable from `App`,
+        // and it declares `Load` -- so it is exactly the stranger the
+        // uniqueness pool would have handed over.
         let mut files: Vec<(&str, &str)> = CROSS_PROJECT_AMBIGUITY_FIXTURE.to_vec();
         files.push((
             "src/Shared/Ledger.cs",
@@ -6406,10 +6529,65 @@ mod tests {
             member_edges_from(&g, "src/App/Runner.cs").is_empty(),
             "no precise edge is invented out of an empty candidate list"
         );
+        assert!(
+            heuristic_member_edges_from(&g, "src/App/Runner.cs").is_empty(),
+            "every real `Config` candidate was ruled unreachable, which is an ANSWER -- the tier must not answer it again with a reachable stranger that merely declares `Load`"
+        );
+        assert_eq!(
+            g.stats.heuristic_edge_count, 0,
+            "and nothing counted either: a declined guess is not a guess"
+        );
+    }
+
+    #[test]
+    fn stage6_a_bare_qualifier_narrowed_to_zero_declines_while_an_unfound_one_still_guesses() {
+        // The two `External`s the scored tier must tell apart, in one resolve
+        // and one file:
+        //   `Foo.Bar()`     -- two real `Foo` candidates, neither reachable
+        //                      from `App`. Narrowed to zero, so the tier
+        //                      declines even though reachable `Ledger`
+        //                      declares `Bar`.
+        //   `Missing.Bar()` -- a name the ladder never found at all. Nothing
+        //                      was ever narrowed, so the member-name
+        //                      uniqueness pool applies as it always has and
+        //                      `Ledger` IS the guess.
+        // Without the split, both lines would guess `Ledger`.
+        let files = fragments_for(&[
+            (
+                "src/Alpha/Foo.cs",
+                "namespace Fixture.Alpha { public class Foo { public void Bar() { } } }",
+            ),
+            (
+                "src/Beta/Foo.cs",
+                "namespace Fixture.Beta { public class Foo { public void Bar() { } } }",
+            ),
+            (
+                "src/Shared/Ledger.cs",
+                "namespace Fixture.Shared { public class Ledger { public void Bar() { } } }",
+            ),
+            (
+                "src/App/Runner.cs",
+                "\nnamespace Fixture.App;\n\npublic class Runner\n{\n  public void Run()\n  {\n    Foo.Bar();\n    Missing.Bar();\n  }\n}\n",
+            ),
+        ]);
+        let root = no_git_root();
+
+        let model = model_of(vec![
+            unit("src/Alpha/Alpha.csproj", &[], false),
+            unit("src/App/App.csproj", &["src/Shared/Shared.csproj"], false),
+            unit("src/Beta/Beta.csproj", &[], false),
+            unit("src/Shared/Shared.csproj", &[], false),
+        ]);
+        let g = resolve_graph_with_model(&root, &files, &[], Some(&model));
+
         assert_eq!(
             heuristic_member_edges_from(&g, "src/App/Runner.cs"),
-            vec![("Fixture.Shared.Ledger", 8)],
-            "the scored tier took the External path -- same pool, same filters, same answer it would give if the two Configs had never existed"
+            vec![("Fixture.Shared.Ledger", 9)],
+            "line 8's `Foo` was narrowed to zero and declines; line 9's `Missing` was never found and still reaches the uniqueness pool"
+        );
+        assert!(
+            member_edges_from(&g, "src/App/Runner.cs").is_empty(),
+            "no precise edge on either line"
         );
     }
 

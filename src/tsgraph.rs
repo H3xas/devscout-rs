@@ -506,8 +506,9 @@ pub struct TsEdgeCounts {
     pub dispatch: usize,
 }
 
-/// `stats.ts` -- appended LAST inside `stats`, and only when the repo carries
-/// a TS fragment at all.
+/// `stats.ts` -- appended inside `stats` after `test_def_count`, and only when
+/// the repo carries a TS fragment at all. `heuristic_by_tier` is the newer
+/// fact and follows it (see `graph::Stats`).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct TsStats {
     /// The ts file count value.

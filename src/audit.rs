@@ -1,6 +1,7 @@
 // `devscout audit --semantic <refs.jsonl>` -- scores this repo's `uses-member`
-// graph edges against a Roslyn-derived oracle (`tools/scout-semantic`,
-// documented in the W0 design note). The oracle emits one ground-truth record
+// graph edges against a Roslyn-derived oracle (`tools/scout-semantic`, whose
+// own README documents its record schema). The oracle emits one
+// ground-truth record
 // per member reference in a compiled solution; this command joins those
 // records to the graph's own `uses-member` edges on `(file, startLine)`, AND
 // on `member` when the edge names one (schema 2's `member` key, joined
@@ -21,8 +22,7 @@
 // requires no change to this file's load path, only to `tier_of`/`parse_graph`
 // below.
 //
-// `OracleRef` is trimmed to the fields the scoring rules in the design note
-// (plus this file's member-join refinement) actually consult
+// `OracleRef` is trimmed to the fields the scoring rules below actually consult
 // (file/startLine/shape/receiverKind/member/target/targetKind/targetFile/
 // external/ambiguous) -- `line`, `ext`, `receiver`, `receiverText`,
 // `memberKind`, `targetUnit` and `unit` are part of the oracle's on-disk
@@ -41,11 +41,10 @@ use crate::cli::J;
 // ---------------------------------------------------------------------------
 
 /// A `uses-member` edge's resolver tier. `Heuristic` is the legacy shape: a
-/// `heuristic: true` edge with no `tier` string at all, which is every
-/// non-precise edge the resolver emits today (the `tier` key, and the
-/// `Ext`/`Guess` split it carries, land in a later change -- see the W0
-/// design note's decision #3). `tier_of` below is the one place that maps
-/// either shape onto this enum.
+/// `heuristic: true` edge with no `tier` string at all, which is how every
+/// non-precise edge was written before the `tier` key and the `Ext`/`Guess`
+/// split it carries existed. Both shapes must keep scoring, so this enum
+/// spans them and `tier_of` below is the one place that maps either onto it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum Tier {
     Precise,
@@ -74,8 +73,9 @@ impl Tier {
 /// needs. `to_file`/`to` are the graph's own def id and its declaring file --
 /// `graph.rs`'s `Def.file` is the def's first-insertion file for a partial
 /// class, so a member declared in a second `also_in` file is joined on that
-/// first file here too (the design note's fact table: "audit joins on def id
-/// only"). `member` is schema 2's own member-name key (`graph.rs`'s
+/// first file here too -- the join is on def id alone, never on the declaring
+/// file, precisely so a partial class does not split into two answers.
+/// `member` is schema 2's own member-name key (`graph.rs`'s
 /// `Edge::UsesMember.member`) -- `None` for a schema-1 edge (no `member` key
 /// on disk at all) or the rare reference the extractor recorded no member
 /// name for; either way `None` makes this edge's second half of the match
@@ -100,10 +100,9 @@ struct EdgeRow {
 struct DefRow {
     id: String,
     file: String,
-    // Carried through for parity with the design note's struct shape and
-    // with the oracle's on-disk defs.jsonl record; no scoring rule below
-    // reads it back (grouping by kind uses the oracle ref's own
-    // `targetKind`, not this).
+    // Carried through for parity with the oracle's on-disk defs.jsonl
+    // record; no scoring rule below reads it back (grouping by kind uses the
+    // oracle ref's own `targetKind`, not this).
     #[allow(dead_code)]
     kind: String,
     #[serde(default)]
@@ -113,7 +112,7 @@ struct DefRow {
 /// One line of `refs.jsonl`, the oracle's ground-truth member-reference
 /// records -- reduced (see the module header) to what scoring reads.
 /// `target`/`targetKind`/`targetFile` are `Option` because the oracle writes
-/// `null` for an unknown value (its own §3.6 rule); `member` is not --
+/// `null` for an unknown value; `member` is not --
 /// `tools/scout-semantic`'s `Records.cs` declares it a non-nullable `string`,
 /// and every syntax shape the oracle walks (`a.M`, `?.M`, a bare `M(...)`)
 /// names a member by construction -- and every other field here is always
@@ -383,7 +382,7 @@ fn build_universe(root: &Path, graph_value: &serde_json::Value, units: &[Unit]) 
 // Scoring primitives -- pure, no I/O, shared by `score` and its tests.
 // ---------------------------------------------------------------------------
 
-/// The target-match rule (design note §5.3): an oracle record matches an
+/// The target-match rule: an oracle record matches an
 /// edge's `to` either literally, or -- for an enum-member record -- when the
 /// edge names the bare enum type (`to` == the record's target with its last
 /// `.member` segment dropped). The second arm is the "two-spelling" case:
@@ -446,8 +445,8 @@ fn target_known(defs_by_id: &HashMap<&str, &DefRow>, r: &OracleRef) -> bool {
 
 /// An id's short name -- its last `.`- or `+`-separated segment (`+` splits a
 /// nested type, e.g. `Ns.Outer+Inner` -> `Inner`) -- for the "top fp targets"
-/// table, which reports by short name rather than the full id (the design
-/// note's §5.4 example: `FilterConfig`, not `Fixture.Domain.FilterConfig`).
+/// table, which reports by short name rather than the full id, so a row reads
+/// `FilterConfig`, not `Fixture.Domain.FilterConfig`.
 fn short_name(id: &str) -> &str {
     id.rsplit(['.', '+']).next().unwrap_or(id)
 }
@@ -465,7 +464,7 @@ fn file_to_unit(units: &[Unit]) -> HashMap<String, String> {
 }
 
 /// `reach(unit)` for every unit: the transitive closure of `refs` plus the
-/// unit itself (design note §5.3: "transitive closure of refs ∪ self"). A
+/// unit itself -- a unit always reaches itself. A
 /// `refs` entry naming a unit this set has never heard of (a project
 /// reference the oracle could not resolve to one of its own units) is simply
 /// a dead end -- it counts as reached but contributes no further edges.
@@ -497,7 +496,7 @@ fn reach(units: &[Unit]) -> HashMap<String, HashSet<String>> {
 /// edge is excluded from both `checked` and `impossible`), else `Some(true)`
 /// when the edge is structurally impossible.
 ///
-/// `"units"` method (design note §5.3): impossible when `to_file`'s unit is
+/// `"units"` method: impossible when `to_file`'s unit is
 /// not in `from_file`'s unit's `reach` set. Either file failing to resolve to
 /// a unit at all (not listed in any unit's `files`) makes the edge
 /// unchecked.
@@ -507,7 +506,6 @@ fn reach(units: &[Unit]) -> HashMap<String, HashSet<String>> {
 /// test-attributed def of its own. The target def must be known (found in
 /// `test_by_id`) for the edge to be checked at all; an unknown target
 /// (`to` not in either def source) is unchecked, not "not impossible".
-#[allow(clippy::too_many_arguments)]
 fn is_structural(
     e: &EdgeRow,
     units_method: bool,
@@ -582,10 +580,10 @@ struct AuditReport {
     recall_precise: usize,
     recall_precise_ext: usize,
     recall_all: usize,
-    /// Fixed order: ident, qualified, this, base, call (design note §5.4's
-    /// example order) -- `None` when that receiver kind has no D-eligible
-    /// record at all (printed `-` in text, `null` in JSON), `Some(hits as a
-    /// fraction of that bucket's denominator)` otherwise.
+    /// Fixed order: ident, qualified, this, base, call -- the order the text
+    /// and JSON renderers both print. `None` when that receiver kind has no
+    /// D-eligible record at all (printed `-` in text, `null` in JSON),
+    /// `Some(hits as a fraction of that bucket's denominator)` otherwise.
     by_receiver: Vec<(&'static str, Option<f64>)>,
     recall_conditional: usize,
     recall_bare: usize,
@@ -720,14 +718,27 @@ fn score(inputs: Inputs) -> AuditReport {
     // layered on top (a later insert overwrites an earlier one for the same
     // id) -- an oracle def, when given, is the more authoritative "is this a
     // test-attributed def" signal (see `DefRow`'s doc comment).
+    //
+    // `test_files` is derived from the MERGED map afterwards rather than
+    // accumulated during the merge: a set only ever grows, so an oracle row
+    // saying `test:false` for a def the graph called a test def could never
+    // take its file back out again, and the file would stay marked a test file
+    // on the strength of a verdict the merge had already overruled. Deriving
+    // it at the end means the layering wins for the file exactly as it wins
+    // for the def.
     let mut test_by_id: HashMap<String, bool> = HashMap::new();
-    let mut test_files: HashSet<String> = HashSet::new();
+    let mut file_by_id: HashMap<String, String> = HashMap::new();
     for d in inputs.graph_defs.iter().chain(inputs.oracle_defs.iter()) {
         test_by_id.insert(d.id.clone(), d.test);
-        if d.test {
-            test_files.insert(d.file.clone());
-        }
+        file_by_id.insert(d.id.clone(), d.file.clone());
     }
+    // A file is a test file when ANY def the merged view still calls a test
+    // def is declared in it.
+    let test_files: HashSet<String> = test_by_id
+        .iter()
+        .filter(|&(_, &t)| t)
+        .filter_map(|(id, _)| file_by_id.get(id).cloned())
+        .collect();
     let mut structural_impossible = 0usize;
     let mut structural_checked = 0usize;
     let edge_structural: Vec<bool> = edges
@@ -793,25 +804,48 @@ fn score(inputs: Inputs) -> AuditReport {
                     }
                     true
                 } else {
-                    // The external-site/wrong-target split is scoped to the
-                    // SAME member as the edge, when it names one: a
-                    // different-member record sharing this source line (a
-                    // fluent chain's outer call, a lambda parameter access)
-                    // is not evidence of an in-tree answer for the exact
-                    // reference this edge represents -- the fixture's
-                    // `entity.Property(e => e.Name)` case
-                    // (`AppDbContext.cs`), where an unrelated `e.Name`
-                    // record on the same line used to make a guessed
-                    // `Property(...)` edge look like a "wrong target" miss
-                    // instead of the external-API leak it is. A no-member
-                    // edge (legacy path) is unconstrained here, exactly as
-                    // before.
+                    // Splitting this false positive into "the site really is
+                    // an external API and the edge leaked" vs "the site has an
+                    // in-tree answer and the edge picked the wrong one", in
+                    // two steps:
+                    //
+                    //  1. Scope to the records naming the edge's OWN member.
+                    //     A different-member record sharing this source line
+                    //     (a fluent chain's outer call, a lambda parameter
+                    //     access) is not evidence about the reference this
+                    //     edge represents -- the fixture's
+                    //     `entity.Property(e => e.Name)` case
+                    //     (`AppDbContext.cs`), where an unrelated `e.Name`
+                    //     record on the same line used to make a guessed
+                    //     `Property(...)` edge look like a wrong-target miss
+                    //     instead of the external-API leak it is. If any
+                    //     scoped record is in-tree the edge got a real answer
+                    //     wrong (`fp_wrong_target`); if every scoped record is
+                    //     external it is a leak (`fp_external_site`). A
+                    //     no-member edge (legacy path) is unconstrained, so
+                    //     its scoped set is every record at the site.
+                    //
+                    //  2. When the scoped set is EMPTY -- the edge names a
+                    //     member no record at this site names at all -- there
+                    //     is no same-member evidence to read, so fall back to
+                    //     the whole site: any in-tree record there makes it
+                    //     `fp_wrong_target`, and a site whose every record is
+                    //     external makes it `fp_external_site`. Falling back
+                    //     rather than letting a vacuous "all records are
+                    //     external" over an empty set call every such edge a
+                    //     leak, which is how an invented member at a
+                    //     thoroughly in-tree site used to be counted.
                     let scoped: Vec<&&OracleRef> = recs
                         .iter()
                         .filter(|r| member_matches(&e.member, &r.member))
                         .collect();
                     stats.fp += 1;
-                    if scoped.iter().all(|r| r.external) {
+                    let external_site = if scoped.is_empty() {
+                        recs.iter().all(|r| r.external)
+                    } else {
+                        scoped.iter().all(|r| r.external)
+                    };
+                    if external_site {
                         stats.fp_external_site += 1;
                     } else {
                         stats.fp_wrong_target += 1;
@@ -1342,8 +1376,15 @@ fn evaluate_assert(report_json: &str, assert_text: &str) -> Result<Vec<String>, 
 /// [--assert F]`. Exit 0 with the report (text, or one JSON object with
 /// `--json`); exit 1 on any error (bad arguments, an unreadable/malformed
 /// input file, no `.scout`/`.git` root, no graph.json) or on any `--assert`
-/// violation, in which case the violation lines are appended after the
-/// report.
+/// violation.
+///
+/// Where the violation lines go depends on the report format, and the rule is
+/// "stdout stays machine-readable": in TEXT mode they are appended after the
+/// report on stdout, where they read as part of it. In `--json` mode they go
+/// to STDERR instead, because stdout must remain exactly one JSON object a
+/// caller can pipe into `jq` -- a CI step that both asserts and parses the
+/// report is the whole point of the two flags together. Either way the exit
+/// code is 1 and the lines themselves are identical.
 pub(crate) fn cmd_audit(cwd: &Path, args: &[String]) -> (i32, String) {
     const USAGE: &str = "usage: devscout audit --semantic <refs.jsonl> [--units F] [--defs F] [--json] [--assert F]";
 
@@ -1419,8 +1460,14 @@ pub(crate) fn cmd_audit(cwd: &Path, args: &[String]) -> (i32, String) {
             Err(e) => return (1, format!("error: {e}")),
         };
         if !violations.is_empty() {
-            out.push('\n');
-            out.push_str(&violations.join("\n"));
+            if json {
+                // stdout keeps the bare JSON object; the violations are the
+                // diagnostic half and belong on the other stream.
+                eprintln!("{}", violations.join("\n"));
+            } else {
+                out.push('\n');
+                out.push_str(&violations.join("\n"));
+            }
             return (1, out);
         }
     }
@@ -1437,8 +1484,9 @@ mod tests {
     /// The same real-extractor/real-resolver technique `resolve.rs`'s own
     /// `fragments_for` test helper uses (not reusable from here -- it is
     /// private to that module's `#[cfg(test)]`), serialized and re-parsed
-    /// into a bare `Value` -- the design note's "serialise with
-    /// `serde_json::to_string`, feed the Value loader".
+    /// into a bare `Value`: the fixture serializes with
+    /// `serde_json::to_string` and feeds the result through the same `Value`
+    /// loader the real command uses, so no test bypasses the parse path.
     fn fragments_for(files: &[(&str, &str)]) -> Vec<(String, graph::Fragment)> {
         files
             .iter()
@@ -1805,6 +1853,105 @@ mod tests {
         );
     }
 
+    /// The other half of the same rule: when the member scope is EMPTY -- no
+    /// record at the site names the edge's member at all -- the split falls
+    /// back to the whole site rather than reading a vacuous "every scoped
+    /// record is external" off zero records. A site whose records are all
+    /// in-tree is not an external-API leak just because the edge invented a
+    /// member nobody wrote there, so it is `fp_wrong_target`.
+    #[test]
+    fn an_edge_naming_a_member_no_record_at_the_site_names_falls_back_to_the_whole_site() {
+        let edge = EdgeRow {
+            from_file: "F.cs".into(),
+            from_line: 24,
+            to: "Ns.FilterConfig".into(),
+            to_file: "F.cs".into(),
+            tier: Tier::Guess,
+            member: Some("Nowhere".to_string()),
+        };
+        // The only record at line 24, and it is IN-TREE -- so the site has a
+        // real answer, just not one for `Nowhere`.
+        let in_tree = oracle_ref(
+            "F.cs",
+            24,
+            "access",
+            "ident",
+            "Name",
+            Some("Ns.Order"),
+            Some("class"),
+            false,
+        );
+        let report = score(Inputs {
+            root: PathBuf::from("/repo"),
+            graph_defs: vec![DefRow {
+                id: "Ns.Order".into(),
+                file: "F.cs".into(),
+                kind: "class".into(),
+                test: false,
+            }],
+            oracle_defs: Vec::new(),
+            edges: vec![edge],
+            records: vec![in_tree],
+            units: Vec::new(),
+            universe: ["F.cs".to_string()].into_iter().collect(),
+        });
+
+        let (_, ts) = &report.tiers[0];
+        assert_eq!(ts.fp, 1);
+        assert_eq!(
+            ts.fp_wrong_target, 1,
+            "the site's only record is in-tree, so the edge is a wrong target, not a leak"
+        );
+        assert_eq!(
+            ts.fp_external_site, 0,
+            "an empty member scope must not be read as `every record here is external`"
+        );
+    }
+
+    /// And the same empty-member-scope path at a site whose records are ALL
+    /// external: there the fallback agrees with the old vacuous answer, and
+    /// the edge really is a leak.
+    #[test]
+    fn an_edge_naming_an_unwritten_member_at_an_all_external_site_is_still_a_leak() {
+        let edge = EdgeRow {
+            from_file: "F.cs".into(),
+            from_line: 24,
+            to: "Ns.FilterConfig".into(),
+            to_file: "F.cs".into(),
+            tier: Tier::Guess,
+            member: Some("Nowhere".to_string()),
+        };
+        let external_only = oracle_ref(
+            "F.cs",
+            24,
+            "access",
+            "call",
+            "HasMaxLength",
+            Some("Ext.PropertyBuilder"),
+            Some("class"),
+            true,
+        );
+        let report = score(Inputs {
+            root: PathBuf::from("/repo"),
+            graph_defs: vec![DefRow {
+                id: "Ns.FilterConfig".into(),
+                file: "F.cs".into(),
+                kind: "class".into(),
+                test: false,
+            }],
+            oracle_defs: Vec::new(),
+            edges: vec![edge],
+            records: vec![external_only],
+            units: Vec::new(),
+            universe: ["F.cs".to_string()].into_iter().collect(),
+        });
+
+        let (_, ts) = &report.tiers[0];
+        assert_eq!(ts.fp, 1);
+        assert_eq!(ts.fp_external_site, 1);
+        assert_eq!(ts.fp_wrong_target, 0);
+    }
+
     // --- enum member, both spellings ----------------------------------------
 
     #[test]
@@ -1891,8 +2038,8 @@ mod tests {
 
     // --- universe: an edge from a file outside units[].files is dropped ----
 
-    /// The MassTransit-run bug this refinement fixes (480 of 530 FPs, per
-    /// the design note): with `--units`, a `uses-member` edge whose
+    /// The MassTransit-run bug this refinement fixes (480 of 530 false
+    /// positives on that corpus): with `--units`, a `uses-member` edge whose
     /// `from_file` belongs to a project the compiled `.sln` never listed at
     /// all -- not `"ok"`, not `"failed"`, simply absent from `units.jsonl`
     /// -- carries no oracle ground truth either way. Before this
@@ -2065,6 +2212,64 @@ mod tests {
         assert_eq!(report.structural_method, "test-defs");
         assert_eq!(report.structural_checked, 2);
         assert_eq!(report.structural_impossible, 1);
+    }
+
+    /// The oracle's `--defs` view layers over the graph's for the FILE set as
+    /// well as the def set: a def the graph called test-attributed and the
+    /// oracle calls ordinary must stop making its file a test file. Otherwise
+    /// the caller keeps a clearance the merged view has withdrawn, and an edge
+    /// into a test-only def goes on being scored as legitimate.
+    #[test]
+    fn an_oracle_def_row_saying_test_false_un_marks_the_file_for_the_structural_fallback() {
+        let inputs = |oracle_defs: Vec<DefRow>| Inputs {
+            root: PathBuf::from("/repo"),
+            graph_defs: vec![
+                DefRow {
+                    id: "Tests.Helper".into(),
+                    file: "Tests/Helper.cs".into(),
+                    kind: "class".into(),
+                    test: true,
+                },
+                // The graph's own attribute scan called this a test def...
+                DefRow {
+                    id: "Tests.Caller".into(),
+                    file: "Tests/Caller.cs".into(),
+                    kind: "class".into(),
+                    test: true,
+                },
+            ],
+            oracle_defs,
+            edges: vec![EdgeRow {
+                from_file: "Tests/Caller.cs".into(),
+                from_line: 4,
+                to: "Tests.Helper".into(),
+                to_file: "Tests/Helper.cs".into(),
+                tier: Tier::Heuristic,
+                member: None,
+            }],
+            records: Vec::new(),
+            units: Vec::new(), // empty -> "test-defs" fallback
+            universe: HashSet::new(),
+        };
+
+        let without_oracle = score(inputs(Vec::new()));
+        assert_eq!(
+            without_oracle.structural_impossible, 0,
+            "with only the graph's view the caller declares a test def, so the edge is fine"
+        );
+
+        // ...and the oracle overrules it.
+        let with_oracle = score(inputs(vec![DefRow {
+            id: "Tests.Caller".into(),
+            file: "Tests/Caller.cs".into(),
+            kind: "class".into(),
+            test: false,
+        }]));
+        assert_eq!(with_oracle.structural_checked, 1);
+        assert_eq!(
+            with_oracle.structural_impossible, 1,
+            "the merged view has no test def in Tests/Caller.cs any more, so the file is not a test file and the edge into a test-only def is impossible"
+        );
     }
 
     // --- --assert: pass, fail, missing path ----------------------------------

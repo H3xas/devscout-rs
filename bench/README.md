@@ -76,8 +76,14 @@ and the target solution's own restore inputs (NuGet feeds reachable at restore t
 
 ```sh
 cargo build --release
-bench/semantic.sh bench/corpora/csharp MassTransit.sln -p:TargetFrameworks=net9.0
+./bench/clone-corpus.sh csharp bench/clones/csharp
+
+bench/semantic.sh bench/clones/csharp MassTransit.sln -p:TargetFrameworks=net9.0
 ```
+
+(The clone step is the same one under "Running a comparison" above, and to the same
+destination — `clone-corpus.sh` refuses a destination that already exists, so run it once and
+reuse that clone for both harnesses.)
 
 This restores `MassTransit.sln` inside the corpus, runs the oracle to produce
 `refs.jsonl`/`units.jsonl`, indexes the corpus with `devscout map`, and runs

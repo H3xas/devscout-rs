@@ -756,18 +756,23 @@ pub struct Stats {
     /// so a partial test class split across two files is one test def.
     #[serde(default)]
     pub test_def_count: usize,
-    /// The tier split of `heuristic_edge_count`, appended after
-    /// `test_def_count` and always serialized, like the two counters above
-    /// it. `default` is for the READ side only: a graph.json written before
-    /// the tiers existed has no such key and must read back as two zeros
-    /// rather than fail to parse.
-    #[serde(default)]
-    pub heuristic_by_tier: HeuristicByTier,
-    /// The TS resolver's own four counters, appended LAST inside
-    /// `stats` and omitted entirely when the repo carries no TS fragment (the
-    /// same omit-when-empty rule every other appended fact follows).
+    /// The TS resolver's own four counters, omitted entirely when the repo
+    /// carries no TS fragment (the same omit-when-empty rule every other
+    /// appended fact follows). Appended after `test_def_count`, and NOT last
+    /// any more: `heuristic_by_tier` below is the newer fact and takes the
+    /// tail, so a TS repo's stats block appends in the order the facts were
+    /// added rather than interleaving the newest one before an older key.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ts: Option<crate::tsgraph::TsStats>,
+    /// The tier split of `heuristic_edge_count`, appended LAST and always
+    /// serialized, like the two counters above it. `default` is for the READ
+    /// side only: a graph.json written before the tiers existed has no such
+    /// key and must read back as two zeros rather than fail to parse.
+    ///
+    /// A C#-only repo writes no `ts` key at all, so for such a tree this key
+    /// still follows `test_def_count` directly and the bytes are unchanged.
+    #[serde(default)]
+    pub heuristic_by_tier: HeuristicByTier,
 }
 
 /// One row of the full name index. Field order (`name`, `kind`,
@@ -2114,6 +2119,42 @@ mod tests {
                 r#""heuristic_edge_count":0,"test_def_count":0,"heuristic_by_tier":{"ext":0,"guess":0}}"#
             ),
             "heuristic_by_tier is LAST, after test_def_count, and both its keys are always written: {json}"
+        );
+    }
+
+    /// The same append-last rule for a TS repo, which is the only tree where
+    /// the two optional tail keys can both appear: `ts` was added first and
+    /// `heuristic_by_tier` after it, so `heuristic_by_tier` still ends the
+    /// block and `ts` sits between it and `test_def_count`. A reader diffing a
+    /// TS graph against an older one sees each new fact appended, never
+    /// inserted ahead of an older key.
+    #[test]
+    fn stats_keeps_heuristic_by_tier_last_even_when_a_ts_block_is_present() {
+        let stats = Stats {
+            def_count: 0,
+            file_count: 0,
+            edges_by_kind: EdgesByKind::default(),
+            ambiguous_count: 0,
+            ambiguous_pct: Percent1::zero(),
+            unresolved_external_count: 0,
+            heuristic_edge_count: 0,
+            test_def_count: 0,
+            heuristic_by_tier: HeuristicByTier::default(),
+            ts: Some(crate::tsgraph::TsStats {
+                ts_file_count: 1,
+                ts_def_count: 2,
+                external_import_count: 3,
+                unresolved_ref_count: 4,
+            }),
+        };
+        let json = serde_json::to_string(&stats).unwrap();
+        assert!(
+            json.ends_with(concat!(
+                r#""test_def_count":0,"#,
+                r#""ts":{"ts_file_count":1,"ts_def_count":2,"external_import_count":3,"unresolved_ref_count":4},"#,
+                r#""heuristic_by_tier":{"ext":0,"guess":0}}"#
+            )),
+            "key order must be test_def_count, ts, heuristic_by_tier: {json}"
         );
     }
 
