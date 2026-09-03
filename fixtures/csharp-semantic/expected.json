@@ -1,9 +1,11 @@
 {
   "tiers.precise.precision": { "min": 1.0 },
-  "tiers.precise.edges": { "min": 7 },
-  "recall.precise": { "min": 0.428 },
-  "recall.all": { "min": 0.865 },
-  "silent.leak": { "max": 4 },
-  "structural.impossible": { "max": 2 },
+  "tiers.precise.edges": { "min": 29 },
+  "tiers.ext.precision": { "min": 1.0 },
+  "tiers.guess.fp": { "max": 0 },
+  "recall.all": { "min": 1.0 },
+  "recall.precise": { "min": 0.805 },
+  "silent.leak": { "max": 0 },
+  "structural.impossible": { "max": 0 },
   "units.failed": { "max": 0 }
 }

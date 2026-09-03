@@ -6,8 +6,10 @@
 // into a structurally unreachable project.
 // Case g-chain: `response.StatusCode.ToString()` -- a nested member_access_expression qualifier
 // (StatusCode is itself a member access on response), probing chained-qualifier resolution.
-// Case g-cond: `_http?.Dispose()` -- a null-conditional receiver yields no ref per devscout's
-// extractor's accepted-qualifier list (src/extract.rs:697-720).
+// Case g-cond: `_http?.Dispose()` -- a `conditional_access_expression` qualifier, resolved to
+// the same target a plain `_http.Dispose()` access would name.
+// Case m: Fetch returns Order directly (no `await`); Worker.ProbeChainTail calls
+// `_client.Fetch().Validate()` as one expression -- probes the one-hop call-chain tail.
 using System.Net.Http;
 using Fixture.Domain;
 
@@ -30,6 +32,8 @@ public class ApiClient : IDisposable
         var order = Order.Load(response.StatusCode.ToString());
         return order;
     }
+
+    public Order Fetch() => Order.Load("f");
 
     public void Dispose() => _http?.Dispose();
 }

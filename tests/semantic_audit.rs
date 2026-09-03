@@ -130,33 +130,30 @@ fn audit_scores_the_fixture_against_the_committed_oracle_snapshot() {
     let stdout = stdout_of(&out);
     let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("valid JSON");
 
-    assert_eq!(v["tiers"]["precise"]["tp"], 7, "{stdout}");
+    assert_eq!(v["tiers"]["precise"]["tp"], 29, "{stdout}");
     assert_eq!(v["tiers"]["precise"]["fp"], 0, "{stdout}");
-    assert!(
-        v["tiers"]["ext"].is_object(),
-        "the extension tier is reported on its own now that every guess edge names its tier: {stdout}"
-    );
-    assert!(
-        v["tiers"]["guess"].is_object(),
-        "and so is the scored tier: {stdout}"
-    );
+    assert_eq!(v["tiers"]["ext"]["tp"], 3, "{stdout}");
+    assert_eq!(v["tiers"]["ext"]["fp"], 0, "{stdout}");
+    assert_eq!(v["tiers"]["guess"]["tp"], 4, "{stdout}");
+    assert_eq!(v["tiers"]["guess"]["fp"], 0, "{stdout}");
     assert!(
         v["tiers"]["heuristic"].is_null(),
         "the legacy umbrella tier is gone -- nothing untagged is left to fall into it: {stdout}"
     );
     let recall_all = v["recall"]["all"].as_f64().expect("recall.all is a number");
-    // The floor dropped from 0.9 alongside `expected.json`'s own
-    // `recall.all` threshold when the audit's match rule started requiring
-    // member equality (schema 2's `member` key): the fixture's chain-tail
-    // reference at `tests/App.Tests/WorkerTests.cs:18`
-    // (`Order.Load("x").Validate()`) no longer scores as a false hit
-    // borrowed from the `Load` edge sharing its site.
-    assert!(recall_all >= 0.865, "recall.all = {recall_all}: {stdout}");
+    // Every in-graph probe site in the fixture -- `this.`/`base.`/`?.`
+    // receivers, awaited locals, casts, patterns, `out` designations,
+    // cross-file field facts, one-hop chain tails, a single-parameter
+    // lambda's element type, and arity-gated call vouching alike -- now
+    // resolves through some tier, so the floor is 1.0 rather than a fraction
+    // short of it: a miss anywhere in the fixture would be a regression, not
+    // an accepted gap.
+    assert!(recall_all >= 1.0, "recall.all = {recall_all}: {stdout}");
     let structural_impossible = v["structural"]["impossible"]
         .as_u64()
         .expect("structural.impossible is a number");
     assert!(
-        structural_impossible <= 2,
+        structural_impossible == 0,
         "structural.impossible = {structural_impossible}: {stdout}"
     );
     assert_eq!(v["units"]["failed"], 0, "{stdout}");
