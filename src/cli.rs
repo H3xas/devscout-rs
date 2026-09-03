@@ -1577,7 +1577,10 @@ fn impact_model_to_json(query_str: &str, model: &query::ImpactModel) -> String {
 // The resolved `tests` JSON shape (`build_tests_model`'s resolved return):
 // `{status, query, symbol, defFiles, rows, testFileCount, refCount,
 // heuristicFileCount, heuristicRefCount}`, in that key order, with the heuristic
-// pair LAST.
+// pair LAST. Each row carries `via: "project"` as its own last key, appended
+// after `heuristic`/`tier`, ONLY when the row's vouch is the project model --
+// an attribute-vouched row emits no `via` key at all, so today's bytes for
+// every graph without a project model are unchanged.
 fn tests_model_to_json(model: &query::TestsModel) -> String {
     J::Obj(vec![
         ("status", J::Str("resolved".to_string())),
@@ -1607,6 +1610,12 @@ fn tests_model_to_json(model: &query::TestsModel) -> String {
                             ("refCount", J::UInt(r.ref_count as u64)),
                         ];
                         push_heuristic(&mut fields, r.heuristic, r.tier);
+                        // `via` is appended LAST, after `heuristic`/`tier`, and only
+                        // when the row's vouch is the project model: an
+                        // attribute-vouched row keeps today's exact bytes.
+                        if r.via == query::TestVia::Project {
+                            fields.push(("via", J::Str("project".to_string())));
+                        }
                         J::Obj(fields)
                     })
                     .collect(),
@@ -1657,6 +1666,51 @@ mod tests {
         assert_eq!(js_math_round(100.0 / 4.0), 25);
         assert_eq!(js_math_round(101.0 / 4.0), 25);
         assert_eq!(js_math_round(103.0 / 4.0), 26);
+    }
+
+    #[test]
+    fn tests_json_appends_via_project_last_and_omits_it_for_an_attribute_row() {
+        let attribute_row = query::TestRow {
+            file: "tests/OrderServiceTests.cs".to_string(),
+            test_defs: vec!["App.Orders.Tests.OrderServiceTests".to_string()],
+            lines: vec![10],
+            ref_count: 1,
+            heuristic: false,
+            tier: None,
+            via: query::TestVia::Attribute,
+        };
+        let project_row = query::TestRow {
+            file: "tests/App.Tests/FakeServer.cs".to_string(),
+            test_defs: vec![],
+            lines: vec![12, 34],
+            ref_count: 2,
+            heuristic: false,
+            tier: None,
+            via: query::TestVia::Project,
+        };
+        let model = query::TestsModel {
+            query: "Order".to_string(),
+            symbol: "App.Orders.Order".to_string(),
+            def_files: vec!["src/Order.cs".to_string()],
+            rows: vec![attribute_row, project_row],
+            test_file_count: 2,
+            ref_count: 3,
+            heuristic_file_count: 0,
+            heuristic_ref_count: 0,
+        };
+        let json = tests_model_to_json(&model);
+        assert!(
+            json.contains(
+                r#"{"file":"tests/OrderServiceTests.cs","testDefs":["App.Orders.Tests.OrderServiceTests"],"lines":[10],"refCount":1}"#
+            ),
+            "an attribute row carries no via key at all: {json}"
+        );
+        assert!(
+            json.contains(
+                r#"{"file":"tests/App.Tests/FakeServer.cs","testDefs":[],"lines":[12,34],"refCount":2,"via":"project"}"#
+            ),
+            "a project row appends via LAST (no heuristic/tier on this row): {json}"
+        );
     }
 
     #[test]

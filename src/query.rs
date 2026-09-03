@@ -539,6 +539,26 @@ impl<'g> GraphIndex<'g> {
     pub fn def(&self, id: &str) -> Option<&graph::Def> {
         self.by_id.get(id).map(|&i| &self.graph.defs[i])
     }
+
+    /// Whether `file` counts as a TEST file for `tests`/`impact`: either an
+    /// attribute-vouched def is declared in it (`test_defs_by_file`), or the
+    /// project model places it inside a unit marked `test`. The second vouch
+    /// fires even for a file that declares no attributed test method at all --
+    /// a harness or fixture file living in a test project is still part of
+    /// what a symbol's tests touch. Fails open exactly like the rest of the
+    /// project model: with no model at all, or a file no discovered project
+    /// owns, this half answers `false` and the attribute vouch alone decides.
+    pub fn is_test_file(&self, file: &str) -> bool {
+        if self.test_defs_by_file.contains_key(file) {
+            return true;
+        }
+        let Some(project) = &self.project else {
+            return false;
+        };
+        project
+            .unit_of_file(file)
+            .is_some_and(|u| project.units[u].test)
+    }
 }
 
 fn note_file(flagged: &mut HashSet<String>, manifest_paths: Option<&HashSet<String>>, file: &str) {
@@ -2267,9 +2287,25 @@ pub fn build_read_model(index: &GraphIndex, query: &str) -> ReadResult {
 // build_tests_model -- test coverage.
 // ============================================================================
 
+/// Which vouch earned a row in a tests model: an attribute-carrying def
+/// declared in the file (`Attribute`), or, absent that, the project model
+/// placing the file's unit inside a project marked `test` (`Project`). The
+/// two are checked in that order -- a file's own attributed def is always
+/// the more specific vouch, so `Attribute` wins whenever both would apply.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TestVia {
+    /// A def in the file carries a test-runner attribute.
+    Attribute,
+    /// No such def; the file's unit in the project model is a test project.
+    Project,
+}
+
 /// One row of a tests model: a test `file`, the test-carrying `test_defs` in
-/// it, the `lines` at which it references the symbol, the `ref_count`, and
-/// whether the reference was guessed (`heuristic`).
+/// it (possibly empty for a `Project`-vouched row -- a harness file in a test
+/// project need not declare any attributed method itself), the `lines` at
+/// which it references the symbol, the `ref_count`, whether the reference was
+/// guessed (`heuristic`), and which vouch (`via`) put the file in this model
+/// at all.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TestRow {
     /// The file value.
@@ -2286,6 +2322,8 @@ pub struct TestRow {
     /// every reference the file makes, so one extension edge among them names
     /// the whole row -- same rule as [`InboundRow::tier`], applied to a set.
     pub tier: Option<graph::HeuristicTier>,
+    /// Which vouch (attribute or project) put this file in the model.
+    pub via: TestVia,
 }
 
 /// The resolved `tests` result for one symbol.
@@ -2328,7 +2366,17 @@ fn collect_test_rows(index: &GraphIndex, kinds: [&[usize]; 3], heuristic: bool) 
     for idxs in kinds {
         for &i in idxs {
             let (from_file, from_line) = edge_loc(&index.graph.edges[i]);
-            let Some(test_defs) = index.test_defs_by_file.get(from_file) else {
+            let test_defs = index.test_defs_by_file.get(from_file);
+            // The attribute vouch wins when it is there. Absent it, the file
+            // still earns a row -- with an empty `test_defs` -- when
+            // `is_test_file` vouches for it through the project model alone;
+            // a file neither vouch reaches is not a test file and is skipped,
+            // same as before this vouch existed.
+            let via = if test_defs.is_some() {
+                TestVia::Attribute
+            } else if index.is_test_file(from_file) {
+                TestVia::Project
+            } else {
                 continue;
             };
             let slot = match by_file.get(from_file) {
@@ -2338,13 +2386,17 @@ fn collect_test_rows(index: &GraphIndex, kinds: [&[usize]; 3], heuristic: bool) 
                     rows.push(TestRow {
                         file: from_file.to_string(),
                         test_defs: test_defs
-                            .iter()
-                            .map(|&d| index.graph.defs[d].id.clone())
-                            .collect(),
+                            .map(|defs| {
+                                defs.iter()
+                                    .map(|&d| index.graph.defs[d].id.clone())
+                                    .collect()
+                            })
+                            .unwrap_or_default(),
                         lines: Vec::new(),
                         ref_count: 0,
                         heuristic,
                         tier: row_tier(heuristic, false),
+                        via,
                     });
                     by_file.insert(from_file.to_string(), slot);
                     slot
@@ -3251,7 +3303,7 @@ pub fn build_impact_model(
     let total_affected = rows.len() - heuristic_affected;
     let tests_affected = rows
         .iter()
-        .filter(|r| !r.heuristic && index.test_defs_by_file.contains_key(&r.file))
+        .filter(|r| !r.heuristic && index.is_test_file(&r.file))
         .count();
     let (shown, dropped) = cap_rows(rows, cap);
 
@@ -3346,6 +3398,21 @@ mod tests {
             names: Vec::new(),
             units: Vec::new(),
         }
+    }
+
+    /// `make_graph` plus a `.csproj` project model -- `load_graph_index`
+    /// rebuilds a `ProjectModel` from `graph.units` (via
+    /// `project::units_from_graph`/`ProjectModel::from_units`) exactly the
+    /// way it would from a real `graph.json`, so a test never has to reach
+    /// into `GraphIndex.project` by hand.
+    fn make_graph_with_units(
+        defs: Vec<graph::Def>,
+        edges: Vec<graph::Edge>,
+        units: Vec<graph::GraphUnit>,
+    ) -> graph::Graph {
+        let mut g = make_graph(defs, edges);
+        g.units = units;
+        g
     }
 
     fn def(
@@ -7511,6 +7578,132 @@ mod tests {
             "zero is the interesting answer -- a blast radius reaching no test file at all"
         );
     }
+
+    /// `OrderService` declared in production unit `App`; test unit
+    /// `App.Tests` (referencing `App`) holds one attribute-vouched test file
+    /// and one un-attributed harness file, both referencing `OrderService`
+    /// twice and once respectively.
+    fn project_tests_fixture_defs_and_edges() -> (Vec<graph::Def>, Vec<graph::Edge>) {
+        (
+            vec![
+                def(
+                    "App.Orders.OrderService",
+                    "OrderService",
+                    "App.Orders",
+                    "class",
+                    "src/App/OrderService.cs",
+                    3,
+                ),
+                test_def(
+                    "App.Orders.Tests.OrderServiceTests",
+                    "OrderServiceTests",
+                    "tests/App.Tests/OrderServiceTests.cs",
+                    5,
+                    &["Totals"],
+                ),
+            ],
+            vec![
+                uses_type(
+                    "tests/App.Tests/OrderServiceTests.cs",
+                    10,
+                    "App.Orders.OrderService",
+                    "src/App/OrderService.cs",
+                ),
+                uses_type(
+                    "tests/App.Tests/FakeServer.cs",
+                    12,
+                    "App.Orders.OrderService",
+                    "src/App/OrderService.cs",
+                ),
+                uses_type(
+                    "tests/App.Tests/FakeServer.cs",
+                    34,
+                    "App.Orders.OrderService",
+                    "src/App/OrderService.cs",
+                ),
+            ],
+        )
+    }
+
+    fn project_tests_fixture_units() -> Vec<graph::GraphUnit> {
+        vec![
+            graph::GraphUnit {
+                id: "src/App/App.csproj".to_string(),
+                name: "App".to_string(),
+                refs: Vec::new(),
+                test: false,
+            },
+            graph::GraphUnit {
+                id: "tests/App.Tests/App.Tests.csproj".to_string(),
+                name: "App.Tests".to_string(),
+                refs: vec!["src/App/App.csproj".to_string()],
+                test: true,
+            },
+        ]
+    }
+
+    #[test]
+    fn tests_lists_a_harness_file_in_a_test_project_with_a_project_via_and_no_test_defs() {
+        let (defs, edges) = project_tests_fixture_defs_and_edges();
+        let g = make_graph_with_units(defs, edges, project_tests_fixture_units());
+        let root = temp_repo_root("project-tests-model");
+        let index = load_graph_index(&g, &root);
+        assert!(
+            index.project.is_some(),
+            "a non-empty `graph.units` builds a project model"
+        );
+
+        let m = resolved_tests(build_tests_model(&index, "OrderService"));
+        assert_eq!(m.rows.len(), 2, "the harness file earns its own row too");
+
+        let attributed = m
+            .rows
+            .iter()
+            .find(|r| r.file == "tests/App.Tests/OrderServiceTests.cs")
+            .expect("the attribute-vouched file is listed");
+        assert_eq!(attributed.via, TestVia::Attribute);
+        assert_eq!(
+            attributed.test_defs,
+            vec!["App.Orders.Tests.OrderServiceTests".to_string()]
+        );
+
+        let harness = m
+            .rows
+            .iter()
+            .find(|r| r.file == "tests/App.Tests/FakeServer.cs")
+            .expect("a harness file in a test project is listed even with no attributed def");
+        assert_eq!(harness.via, TestVia::Project);
+        assert!(
+            harness.test_defs.is_empty(),
+            "no attribute vouches for this file -- test_defs stays empty"
+        );
+        assert_eq!(harness.lines, vec![12, 34]);
+        assert!(!harness.heuristic);
+
+        assert_eq!(
+            m.test_file_count, 2,
+            "the project-vouched harness counts toward the precise total"
+        );
+    }
+
+    #[test]
+    fn tests_without_a_project_model_is_unchanged() {
+        let (defs, edges) = project_tests_fixture_defs_and_edges();
+        let g = make_graph(defs, edges); // no `units` at all -- no project model
+        let root = temp_repo_root("project-tests-model-none");
+        let index = load_graph_index(&g, &root);
+        assert!(index.project.is_none());
+
+        let m = resolved_tests(build_tests_model(&index, "OrderService"));
+        assert_eq!(
+            m.rows.len(),
+            1,
+            "with no project model the un-attributed harness file stays invisible, exactly as before"
+        );
+        assert_eq!(m.rows[0].file, "tests/App.Tests/OrderServiceTests.cs");
+        assert_eq!(m.rows[0].via, TestVia::Attribute);
+    }
+
     // --- a bare member name, resolved by verifying edges at their line ---
 
     fn name_row(name: &str, kind: &str, file: &str, line: usize, owner: &str) -> graph::GraphName {

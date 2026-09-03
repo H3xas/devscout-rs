@@ -48,6 +48,12 @@ const GUESS_SUFFIX: &str = " (guess)";
 // position.
 const INFRA_SUFFIX: &str = " (infra)";
 
+// `tests`-only: marks a row whose file earned its place through the project
+// model alone (`TestVia::Project`) rather than an attributed test def in the
+// file itself. Composes after the heuristic suffix, never instead of it -- a
+// row can be both a guess AND project-vouched.
+const TEST_PROJECT_SUFFIX: &str = " (test project)";
+
 // The row's own tier word when the row is a guess, `""` otherwise. Applied
 // inside each row formatter rather than inside `ref_kind_block`, because the two
 // tables that can never hold a guess (imports, ambiguous) carry no flag to read
@@ -61,6 +67,18 @@ fn heuristic_suffix(heuristic: bool, tier: Option<HeuristicTier>) -> &'static st
         (true, Some(HeuristicTier::Ext)) => EXT_SUFFIX,
         (true, Some(HeuristicTier::Guess)) => GUESS_SUFFIX,
         (true, None) => HEURISTIC_SUFFIX,
+    }
+}
+
+// `tests`-only: the `TEST_PROJECT_SUFFIX` when the row's vouch is
+// `TestVia::Project`, `""` for `TestVia::Attribute`. Kept as its own function
+// (rather than folded into `heuristic_suffix`) because the two facts are
+// independent -- a row's vouch has nothing to do with whether its reference
+// was guessed.
+fn test_via_suffix(via: query::TestVia) -> &'static str {
+    match via {
+        query::TestVia::Attribute => "",
+        query::TestVia::Project => TEST_PROJECT_SUFFIX,
     }
 }
 
@@ -845,9 +863,10 @@ pub fn render_tests_text(model: &query::TestsModel) -> String {
     out.push(String::new());
     for r in &model.rows {
         out.push(format!(
-            "{}{}",
+            "{}{}{}",
             r.file,
-            heuristic_suffix(r.heuristic, r.tier)
+            heuristic_suffix(r.heuristic, r.tier),
+            test_via_suffix(r.via)
         ));
         let lines = r
             .lines
@@ -855,8 +874,15 @@ pub fn render_tests_text(model: &query::TestsModel) -> String {
             .map(|l| l.to_string())
             .collect::<Vec<_>>()
             .join(", ");
-        for def_id in &r.test_defs {
-            out.push(format!("  {def_id}  lines: {lines}"));
+        if r.test_defs.is_empty() {
+            // A `Project`-vouched row can carry no attributed def at all --
+            // still one line, so the file's referencing lines are never
+            // silently dropped.
+            out.push(format!("  lines: {lines}"));
+        } else {
+            for def_id in &r.test_defs {
+                out.push(format!("  {def_id}  lines: {lines}"));
+            }
         }
     }
     out.join("\n")
@@ -1685,6 +1711,7 @@ mod tests {
             ref_count: lines.len(),
             heuristic,
             tier: None,
+            via: query::TestVia::Attribute,
         }
     }
 
@@ -1766,6 +1793,36 @@ mod tests {
         assert_eq!(
             render_tests_compact(&model),
             "tests App.Orders.OrderService files=1 refs=1 heuristic=2\ntests/Precise.cs 9\ntests/Ext.cs 9x\ntests/Guess.cs 9h"
+        );
+    }
+
+    #[test]
+    fn tests_text_marks_a_project_vouched_row_with_the_test_project_suffix_and_lists_its_lines_without_a_def_id(
+    ) {
+        let harness = TestRow {
+            via: query::TestVia::Project,
+            ..test_row("tests/App.Tests/FakeServer.cs", &[], &[12, 34], false)
+        };
+        let model = tests_model(vec![
+            test_row(
+                "tests/OrderServiceTests.cs",
+                &["App.Orders.Tests.OrderServiceTests"],
+                &[10],
+                false,
+            ),
+            harness,
+        ]);
+        let out = render_tests_text(&model);
+        assert!(
+            out.ends_with("tests/App.Tests/FakeServer.cs (test project)\n  lines: 12, 34"),
+            "{out}"
+        );
+        // The attribute-vouched row above it carries no such suffix.
+        assert!(
+            out.contains(
+                "tests/OrderServiceTests.cs\n  App.Orders.Tests.OrderServiceTests  lines: 10\n"
+            ),
+            "{out}"
         );
     }
 
