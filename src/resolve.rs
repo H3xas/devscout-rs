@@ -1,5 +1,6 @@
 // The resolution ladder, including ambiguous marking: `build_def_index`,
-// `resolve_ref`, `collect_global_usings`, `capped_candidates`, `resolve_graph`.
+// `resolve_ref`, `collect_global_usings_by_unit`, `capped_candidates`,
+// `resolve_graph`.
 // Pure: no file I/O, no tree-sitter -- the only I/O this module performs is the
 // single `git rev-parse HEAD` shell-out inside `resolve_graph`, delegated to
 // `manifest::git_head`. Artifact load/save and the fragments cache live in
@@ -443,6 +444,30 @@ fn member_vouched(index: &DefIndex, idx: usize, member: Option<&str>, shape: Mem
         .any(|(name, ..)| name == member)
 }
 
+// The half of C#'s namespace visibility a `using` directive does NOT account
+// for: a type declared in an ENCLOSING namespace of the reference site is in
+// scope there with no import at all -- `App.Ext.LogExt` is nameable from
+// inside `namespace App.Ext.Deep`, and no file has to say so.
+//
+// Tier (f) needs this because its admission test is the only place in this
+// module that asks "is this def visible here" WITHOUT going through the
+// ladder (which has walked enclosing namespaces since step 3). Until the
+// project model arrived, the repo-wide `global using` pool papered over the
+// gap -- one file anywhere in the repo importing the namespace made it
+// visible everywhere, its own enclosing-namespace children included. Scoping
+// global usings per project removed that accident and left the real rule
+// missing, so here it is, stated.
+//
+// The global namespace is deliberately NOT treated as enclosing: a static
+// class declared with no namespace at all would otherwise become a candidate
+// at every ref site in the repo at once, which is a far wider change than the
+// lexical rule this implements.
+fn namespace_encloses(outer: &str, inner: &str) -> bool {
+    inner
+        .strip_prefix(outer)
+        .is_some_and(|rest| rest.starts_with('.'))
+}
+
 // The whole scoring function, deterministic by construction and with no tie
 // left to chance: same namespace as the ref site beats a namespace the file
 // merely imports, which beats anything else. The global namespace is `""` on
@@ -465,20 +490,42 @@ struct FileContext {
     aliases: HashMap<String, String>,
 }
 
-// Every file's own context (local ∪ every `global using`, with a local alias
-// shadowing a same-named global one), built once instead of once per ref. The
-// main loop needs it for the file it is walking; the instance-member veto needs
-// it for a DIFFERENT file -- the one that declares the base type it is resolving
-// -- which is why it is a map rather than two locals.
+// Every file's own context (local ∪ every `global using` IN SCOPE for it, with
+// a local alias shadowing a same-named global one), built once instead of once
+// per ref. The main loop needs it for the file it is walking; the
+// instance-member veto needs it for a DIFFERENT file -- the one that declares
+// the base type it is resolving -- which is why it is a map rather than two
+// locals.
+//
+// "In scope" is a project-model question. A `global using` belongs to the
+// COMPILATION that declares it and does not flow across a `ProjectReference`,
+// so with a model in hand each file is seeded from its own unit's globals
+// (`by_unit`) and sees nothing another project declared. Without one -- and for
+// a file no project owns -- there are no boundaries to read, so the seed is the
+// repo-wide pool, the documented over-approximation this resolver has always
+// used.
 fn build_file_contexts(
     fragments_by_file: &[(String, Fragment)],
-    global_usings: &HashSet<String>,
-    global_aliases: &HashMap<String, String>,
+    repo_wide: &GlobalUsings,
+    by_unit: Option<UnitGlobals<'_>>,
 ) -> HashMap<String, FileContext> {
     let mut contexts = HashMap::new();
+    // The seed for a file whose unit declared no `global using` at all (and
+    // for a file no unit owns): built once here so the match below can hand
+    // back a reference with the same lifetime as the real pools.
+    let empty: GlobalUsings = (HashSet::new(), HashMap::new());
     for (file, frag) in fragments_by_file {
-        let mut usings = global_usings.clone();
-        let mut aliases = global_aliases.clone();
+        let seed = match by_unit {
+            Some((unit_of_file, by_unit)) => unit_of_file
+                .get(file)
+                .copied()
+                .flatten()
+                .and_then(|u| by_unit.get(&u))
+                .unwrap_or(&empty),
+            None => repo_wide,
+        };
+        let mut usings = seed.0.clone();
+        let mut aliases = seed.1.clone();
         for u in &frag.usings {
             match u {
                 FragUsing::Alias { alias, target, .. } => {
@@ -760,12 +807,34 @@ fn generic_args_unify(
 // Global usings/aliases.
 // ---------------------------------------------------------------------------
 
-fn collect_global_usings(
+/// The per-unit half of the `global using` picture, as `build_file_contexts`
+/// takes it: which unit owns each file, and each unit's own pool.
+type UnitGlobals<'a> = (
+    &'a HashMap<String, Option<usize>>,
+    &'a HashMap<usize, GlobalUsings>,
+);
+
+/// One pool of `global using` facts: the plain namespaces, and the aliases
+/// keyed by alias name. Used both repo-wide and per project unit.
+type GlobalUsings = (HashSet<String>, HashMap<String, String>);
+
+// Every `global using` in the fragment set, collected twice over the same
+// single pass: once repo-wide (what a resolve with no project model uses, and
+// what a file no project owns falls back to) and once per owning unit (what a
+// resolve WITH a model uses, because a global using is a per-compilation fact).
+//
+// A file whose `unit_of_file` entry is absent or `None` contributes to the
+// repo-wide pool only: its globals are real, but there is no project to
+// attribute them to, and inventing one would leak them into whichever project
+// happened to be nearest.
+fn collect_global_usings_by_unit(
     fragments_by_file: &[(String, Fragment)],
-) -> (HashSet<String>, HashMap<String, String>) {
-    let mut global_usings: HashSet<String> = HashSet::new();
-    let mut global_aliases: HashMap<String, String> = HashMap::new();
-    for (_, frag) in fragments_by_file {
+    unit_of_file: &HashMap<String, Option<usize>>,
+) -> (GlobalUsings, HashMap<usize, GlobalUsings>) {
+    let mut repo_wide: GlobalUsings = (HashSet::new(), HashMap::new());
+    let mut by_unit: HashMap<usize, GlobalUsings> = HashMap::new();
+    for (file, frag) in fragments_by_file {
+        let unit = unit_of_file.get(file).copied().flatten();
         for u in &frag.usings {
             match u {
                 FragUsing::Alias {
@@ -776,21 +845,89 @@ fn collect_global_usings(
                     if *global {
                         // First global alias for a given name wins -- NOT
                         // last-wins. `entry(..).or_insert(..)` only writes on a
-                        // vacant slot.
-                        global_aliases
+                        // vacant slot. The per-unit pools apply the same rule
+                        // within their own scope, so a unit's own first
+                        // declaration wins there even if some other unit
+                        // declared that alias earlier in file order.
+                        repo_wide
+                            .1
                             .entry(alias.clone())
                             .or_insert_with(|| target.clone());
+                        if let Some(idx) = unit {
+                            by_unit
+                                .entry(idx)
+                                .or_default()
+                                .1
+                                .entry(alias.clone())
+                                .or_insert_with(|| target.clone());
+                        }
                     }
                 }
                 FragUsing::Plain { text, global } => {
                     if *global {
-                        global_usings.insert(text.clone());
+                        repo_wide.0.insert(text.clone());
+                        if let Some(idx) = unit {
+                            by_unit.entry(idx).or_default().0.insert(text.clone());
+                        }
                     }
                 }
             }
         }
     }
-    (global_usings, global_aliases)
+    (repo_wide, by_unit)
+}
+
+// ---------------------------------------------------------------------------
+// Admission: the project model's veto over the two HEURISTIC tiers.
+// ---------------------------------------------------------------------------
+
+/// The structural gate the two heuristic tiers consult before naming a def.
+///
+/// A heuristic tier guesses from a member NAME; the project model is the one
+/// fact available here that can disprove such a guess without reading a single
+/// line of the candidate's body -- the site's assembly could not reference the
+/// candidate's assembly, so the call the guess describes could not compile,
+/// whatever the name says.
+///
+/// Two refusals, both structural:
+///   - REACHABILITY: the candidate's project is not on the transitive
+///     `ProjectReference` closure of the site's project.
+///   - TEST DIRECTION: the candidate's project is a test project and the
+///     site's is not. Production code never calls into a test assembly, and
+///     this half catches the fixture/helper classes that carry no test
+///     attribute of their own and so are invisible to def-level test
+///     detection.
+///
+/// Everything else FAILS OPEN, deliberately and in three places: no model at
+/// all (a repo with no `.csproj`), a site file no project owns, and a
+/// candidate file no project owns. Ownership here is path-based and knows
+/// nothing about linked or globbed `Compile Include` items, so an ownership
+/// answer this resolver could not compute must never delete an edge it would
+/// otherwise have emitted.
+///
+/// Only the heuristic tiers consult it. The precise tiers resolve a type
+/// first and emit on a FACT, and the ctor-DI resolver picks an implementor
+/// from an interface the site demonstrably names -- neither is a guess the
+/// model is entitled to overrule.
+struct Admission<'m> {
+    model: Option<&'m crate::project::ProjectModel>,
+    /// `unit_of_def[i]` is the unit owning `index.defs[i]`'s declaring file,
+    /// computed once per resolve rather than per candidate. Always `None`
+    /// when there is no model.
+    unit_of_def: Vec<Option<usize>>,
+}
+
+impl Admission<'_> {
+    fn admits(&self, site_unit: Option<usize>, cand: usize) -> bool {
+        let Some(model) = self.model else {
+            return true;
+        };
+        let (Some(site), Some(cand)) = (site_unit, self.unit_of_def.get(cand).copied().flatten())
+        else {
+            return true;
+        };
+        model.reachable(site, cand) && !(model.units[cand].test && !model.units[site].test)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1265,8 +1402,27 @@ pub fn resolve_graph_with_model(
     model: Option<&crate::project::ProjectModel>,
 ) -> Graph {
     let index = build_def_index(fragments_by_file);
-    let (global_usings, global_aliases) = collect_global_usings(fragments_by_file);
-    let file_contexts = build_file_contexts(fragments_by_file, &global_usings, &global_aliases);
+    // Ownership, resolved once for every fragment file and then once for every
+    // def through its declaring file. `None` for every entry when there is no
+    // model, which is what makes every model-dependent rule below a no-op for
+    // a repo that declares no `.csproj`.
+    let unit_of_file: HashMap<String, Option<usize>> = fragments_by_file
+        .iter()
+        .map(|(file, _)| (file.clone(), model.and_then(|m| m.unit_of_file(file))))
+        .collect();
+    let unit_of_def: Vec<Option<usize>> = index
+        .defs
+        .iter()
+        .map(|d| unit_of_file.get(&d.file).copied().flatten())
+        .collect();
+    let admission = Admission { model, unit_of_def };
+    let (repo_wide_globals, globals_by_unit) =
+        collect_global_usings_by_unit(fragments_by_file, &unit_of_file);
+    let file_contexts = build_file_contexts(
+        fragments_by_file,
+        &repo_wide_globals,
+        model.map(|_| (&unit_of_file, &globals_by_unit)),
+    );
     // Built once, not per-ref: every ctor-param ref's implementor lookup shares
     // this one reverse index.
     let implementors_by_base_name = build_implementor_index(&index);
@@ -1294,6 +1450,9 @@ pub fn resolve_graph_with_model(
         // build_file_contexts, which builds every file's context once up front
         // so the veto walk can read a DIFFERENT file's context too.
         let FileContext { usings, aliases } = &file_contexts[file];
+        // The project this file belongs to, if any -- the left-hand side of
+        // every admission question the two heuristic tiers ask below.
+        let site_unit = unit_of_file.get(file).copied().flatten();
 
         for r in &frag.refs {
             if r.kind == "imports" {
@@ -1550,8 +1709,10 @@ pub fn resolve_graph_with_model(
                 //
                 // Admission is the LANGUAGE's rule, not a proximity heuristic: a
                 // candidate counts only when its declaring static class's
-                // namespace is imported by this file (local or global using) or
-                // IS this file's namespace. Exactly one admitted candidate
+                // namespace is imported by this file (local or global using),
+                // IS this file's namespace, or encloses it -- and, when a
+                // project model exists, only when that class's project is one
+                // this site could reference. Exactly one admitted candidate
                 // emits. Zero or two-or-more emit nothing and are NOT counted as
                 // ambiguous -- the same silence every other uses-member miss
                 // keeps, since counting them would swamp the type-ref-quality
@@ -1565,7 +1726,7 @@ pub fn resolve_graph_with_model(
                 // to fall inside the candidate's declared [arityMin, arityMax]
                 // range.
                 //
-                // Four filters, in this order. Every one of them can only ever
+                // Five filters, in this order. Every one of them can only ever
                 // REMOVE a candidate, and the tier emits only on exactly one
                 // survivor:
                 //   1. the bucket -- exact (member name, thisType) pair;
@@ -1576,9 +1737,12 @@ pub fn resolve_graph_with_model(
                 //      type arguments against the receiver's, with "*" (either
                 //      side's own type parameters) matching anything, and a
                 //      generic-vs-non-generic pairing never matching at all;
-                //   4. admission -- the declaring static class's namespace is
-                //      imported by this file (local or global using) or IS this
-                //      file's namespace.
+                //   4. visibility -- the declaring static class's namespace is
+                //      imported by this file (local or global using), IS this
+                //      file's namespace, or ENCLOSES it;
+                //   5. project admission -- when a project model exists, the
+                //      declaring static class's project is one the ref site's
+                //      project can reference (see `Admission`).
                 // Candidates are counted as DISTINCT DECLARING CLASSES, not as
                 // entries: an edge names the class, so two overloads of one
                 // class both accepting this call agree on the answer and are
@@ -1595,15 +1759,17 @@ pub fn resolve_graph_with_model(
                 // to the wrong def -- the base declares the member, the derived
                 // type is what the code names).
                 //
-                // Three documented bounds, each with a pinning negative test:
+                // Three documented bounds, each with a pinning test:
                 //   - thisType is matched by EXACT name. No base-class walk, no
                 //     interface widening on the POSITIVE side: `this
                 //     IEnumerable<T>` does not claim a receiver typed List,
                 //     `this BaseWidget` does not claim one typed Widget.
-                //   - the namespace test is exact too: a static class in an
-                //     ENCLOSING namespace of the ref site (App.Ext visible from
-                //     App.Ext.Deep) is not admitted, though real C# would.
-                //     Narrower than the language, never wider.
+                //   - the namespace test admits an ENCLOSING namespace of the
+                //     ref site as well as an imported one (App.Ext is visible
+                //     from App.Ext.Deep with no using at all, which is the
+                //     language's own rule -- see `namespace_encloses`), but
+                //     nothing wider: a SIBLING namespace still needs the
+                //     import, and the global namespace does not enclose.
                 //   - the veto can only see IN-GRAPH types. An external
                 //     receiver, or an external base of an in-graph receiver,
                 //     hides whatever members it declares, so no veto is
@@ -1630,7 +1796,20 @@ pub fn resolve_graph_with_model(
                                 continue;
                             }
                             let def_ns = &index.defs[c.def_idx].namespace;
-                            if !usings.contains(def_ns) && def_ns != ns {
+                            if !usings.contains(def_ns)
+                                && def_ns != ns
+                                && !namespace_encloses(def_ns, ns)
+                            {
+                                continue;
+                            }
+                            // Filter 5, the project model's: a static class in
+                            // an assembly this one cannot reference is not a
+                            // candidate at all. It runs BEFORE the distinct
+                            // count on purpose -- an unreachable duplicate that
+                            // merely counted would silence the tier on a
+                            // candidate that is otherwise the single right
+                            // answer.
+                            if !admission.admits(site_unit, c.def_idx) {
                                 continue;
                             }
                             if !distinct.contains(&c.def_idx) {
@@ -1791,6 +1970,20 @@ pub fn resolve_graph_with_model(
                         }
                         _ => pool,
                     };
+                    // The project model's filter, last and applying to BOTH
+                    // pools: the uniqueness pool because a same-named stranger
+                    // in an unreferenced assembly is exactly the guess it was
+                    // built to make, and the ambiguous pool because the ladder
+                    // pooled candidates by name too. Placed after the
+                    // uniqueness cap so that cap keeps measuring the name's
+                    // repo-wide commonness -- a name carried by five defs is
+                    // common vocabulary whether or not this project can see
+                    // four of them.
+                    let pool = pool.map(|c| {
+                        c.into_iter()
+                            .filter(|&d| admission.admits(site_unit, d))
+                            .collect::<Vec<usize>>()
+                    });
                     if let Some(pool) = pool {
                         let mut scored: Vec<(usize, u8)> = pool
                             .into_iter()
@@ -4212,6 +4405,47 @@ mod tests {
         );
     }
 
+    // The positive half of the same rule, and the one thing tier (f)'s
+    // namespace test learned in stage 6: an ENCLOSING namespace needs no
+    // using directive, because in C# it is already in scope. Until global
+    // usings became per-project this gap was invisible -- any `global using`
+    // for the namespace, declared in any file anywhere in the repo, admitted
+    // the class here by accident.
+    #[test]
+    fn stage6_tier_f_an_extension_class_in_an_enclosing_namespace_needs_no_using() {
+        let files = fragments_for(&[
+            WIDGET_SRC,
+            (
+                "Ext/Registration.cs",
+                "namespace App.Ext { public static class WidgetExtensions { public static void Render(this Widget w) { } } }",
+            ),
+            (
+                "Ext/Deep/DeepRunner.cs",
+                "\nusing App.Other;\n\nnamespace App.Ext.Deep;\n\npublic class DeepRunner\n{\n  public void Run(Widget w) => w.Render();\n}\n",
+            ),
+            (
+                "Sibling/SiblingRunner.cs",
+                "\nusing App.Other;\n\nnamespace App.Sibling;\n\npublic class SiblingRunner\n{\n  public void Run(Widget w) => w.Render();\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+
+        assert_eq!(
+            heuristic_member_edges_from(&g, "Ext/Deep/DeepRunner.cs"),
+            vec![("App.Ext.WidgetExtensions", 8)],
+            "App.Ext encloses App.Ext.Deep, so the extension class is in scope with no import"
+        );
+        assert_eq!(
+            heuristic_member_tiers_from(&g, "Ext/Deep/DeepRunner.cs"),
+            vec![Some(HeuristicTier::Ext)],
+            "and tier (f) is what claims it -- not the scored tier's weaker second look"
+        );
+        assert!(
+            heuristic_member_edges_from(&g, "Sibling/SiblingRunner.cs").is_empty(),
+            "nothing wider than the lexical rule: a SIBLING namespace still needs the import"
+        );
+    }
+
     #[test]
     fn stage3_tier_f_two_admitted_candidates_earn_no_edge_and_no_ambiguous_increment() {
         let files = fragments_for(&[
@@ -5428,6 +5662,368 @@ mod tests {
             !legacy.contains(r#""units""#),
             "no `.csproj`, no `units` key -- it is omit-when-empty precisely so a \
              csproj-less repo's graph.json is unchanged: {legacy}"
+        );
+    }
+
+    // --- stage 6: the admission gate on the two heuristic tiers -----------
+    //
+    // A heuristic tier guesses from NAMES; the project model is the one fact
+    // that can disprove such a guess structurally -- a def the site's assembly
+    // could not reference even if the name were right. The gate is a filter
+    // like every other heuristic-tier rule: purely subtractive, and it fails
+    // OPEN (a file or a def outside every project admits everything), because
+    // an ownership answer this resolver cannot compute must never delete an
+    // edge it would otherwise have emitted.
+
+    /// One hand-built `Unit`: `id` is the repo-relative `.csproj` path, `dir`
+    /// is derived from it exactly as discovery derives it, `name` is the file
+    /// stem, and `refs` are the ids this project references DIRECTLY (the
+    /// model closes over them).
+    fn unit(id: &str, refs: &[&str], test: bool) -> crate::project::Unit {
+        let (dir, file) = match id.rfind('/') {
+            Some(i) => (&id[..i], &id[i + 1..]),
+            None => ("", id),
+        };
+        crate::project::Unit {
+            id: id.to_string(),
+            name: file.trim_end_matches(".csproj").to_string(),
+            dir: dir.to_string(),
+            refs: refs.iter().map(|r| (*r).to_string()).collect(),
+            test,
+        }
+    }
+
+    fn model_of(units: Vec<crate::project::Unit>) -> crate::project::ProjectModel {
+        crate::project::ProjectModel::from_units(units)
+    }
+
+    /// The tiers carried by one file's heuristic uses-member edges, in edge
+    /// order -- what `heuristic_member_edges_from` cannot show.
+    fn heuristic_member_tiers_from(g: &Graph, from: &str) -> Vec<Option<HeuristicTier>> {
+        g.edges
+            .iter()
+            .filter_map(|e| match e {
+                Edge::UsesMember {
+                    from_file,
+                    heuristic: true,
+                    tier,
+                    ..
+                } if from_file == from => Some(*tier),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn stage6_admission_a_scored_guess_never_names_a_def_in_a_project_the_site_cannot_reach() {
+        // `Build()` resolves to nothing, so `q` has no recorded type: the ref
+        // carries no receiver fact at all and lands in the scored tier's
+        // uniqueness pool, where the only evidence is the member NAME. Two
+        // projects declare `Enqueue`; only one of them is on the site's
+        // reference closure.
+        let files = fragments_for(&[
+            (
+                "src/Domain/Order.cs",
+                "namespace Fixture.Domain { public class Order { public void Enqueue(string m) { } } }",
+            ),
+            (
+                "src/Unreachable/Mailer.cs",
+                "namespace Fixture.Unreachable { public class Mailer { public void Enqueue(string m) { } } }",
+            ),
+            (
+                "src/App/Runner.cs",
+                "\nnamespace Fixture.App;\n\npublic class Runner\n{\n  public void Run()\n  {\n    var q = Build();\n    q.Enqueue(\"x\");\n  }\n}\n",
+            ),
+        ]);
+        let root = no_git_root();
+
+        assert_eq!(
+            heuristic_member_edge_targets(&resolve_graph(&root, &files)),
+            vec!["Fixture.Domain.Order", "Fixture.Unreachable.Mailer"],
+            "without a model the tier has only the member name to go on, and both declarers are equally plausible"
+        );
+
+        let model = model_of(vec![
+            unit("src/App/App.csproj", &["src/Domain/Domain.csproj"], false),
+            unit("src/Domain/Domain.csproj", &[], false),
+            unit("src/Unreachable/Unreachable.csproj", &[], false),
+        ]);
+        let g = resolve_graph_with_model(&root, &files, &[], Some(&model));
+        assert_eq!(
+            heuristic_member_edge_targets(&g),
+            vec!["Fixture.Domain.Order"],
+            "App references Domain and nothing references Unreachable -- Mailer.Enqueue is not a call App could ever have made"
+        );
+        assert_eq!(
+            g.stats.heuristic_edge_count, 1,
+            "the refused guess is dropped, not retagged"
+        );
+    }
+
+    #[test]
+    fn stage6_admission_a_non_test_site_never_names_a_def_in_a_test_project_even_when_it_has_no_test_methods(
+    ) {
+        // The fixture-class shape: a helper in a test project carrying no
+        // `[Fact]`/`[Test]` attribute at all, so `test_def_count` cannot see
+        // it and no attribute-based rule would refuse it. Reachability cannot
+        // refuse it either -- this model deliberately lets the production
+        // project reference the test one, so the ONLY thing standing between
+        // the guess and the edge is the test-project half of the gate.
+        let files = fragments_for(&[
+            (
+                "tests/App.Tests/AdapterFixture.cs",
+                "namespace Fixture.App.Tests { public class AdapterFixture { public void Reset() { } } }",
+            ),
+            (
+                "src/App/Runner.cs",
+                "\nnamespace Fixture.App;\n\npublic class Runner\n{\n  public void Run()\n  {\n    var h = Build();\n    h.Reset();\n  }\n}\n",
+            ),
+        ]);
+        let root = no_git_root();
+
+        assert_eq!(
+            heuristic_member_edges_from(&resolve_graph(&root, &files), "src/App/Runner.cs"),
+            vec![("Fixture.App.Tests.AdapterFixture", 9)],
+            "without a model the guess stands -- nothing in the sources says AdapterFixture is test-only"
+        );
+
+        let model = model_of(vec![
+            unit(
+                "src/App/App.csproj",
+                &["tests/App.Tests/App.Tests.csproj"],
+                false,
+            ),
+            unit("tests/App.Tests/App.Tests.csproj", &[], true),
+        ]);
+        let g = resolve_graph_with_model(&root, &files, &[], Some(&model));
+        assert_eq!(
+            g.stats.test_def_count, 0,
+            "AdapterFixture declares no test method, so def-level test detection never marked it -- the UNIT is what makes it test-only"
+        );
+        assert!(
+            heuristic_member_edges_from(&g, "src/App/Runner.cs").is_empty(),
+            "production code calling into a test assembly is not a thing the build allows, whatever the name says"
+        );
+    }
+
+    #[test]
+    fn stage6_admission_a_test_site_may_name_a_def_in_a_referenced_test_utility_project() {
+        // The other side of the same rule: test -> test is an ordinary
+        // reference, so the gate must not turn "is a test project" into a
+        // blanket refusal.
+        let files = fragments_for(&[
+            (
+                "tests/Test.Utilities/FakeServer.cs",
+                "namespace Fixture.Test.Utilities { public class FakeServer { public void Reset() { } } }",
+            ),
+            (
+                "tests/App.Tests/WorkerTests.cs",
+                "\nnamespace Fixture.App.Tests;\n\npublic class WorkerTests\n{\n  public void Run()\n  {\n    var h = Build();\n    h.Reset();\n  }\n}\n",
+            ),
+        ]);
+        let model = model_of(vec![
+            unit(
+                "tests/App.Tests/App.Tests.csproj",
+                &["tests/Test.Utilities/Test.Utilities.csproj"],
+                true,
+            ),
+            unit("tests/Test.Utilities/Test.Utilities.csproj", &[], true),
+        ]);
+        let g = resolve_graph_with_model(&no_git_root(), &files, &[], Some(&model));
+        assert_eq!(
+            heuristic_member_edges_from(&g, "tests/App.Tests/WorkerTests.cs"),
+            vec![("Fixture.Test.Utilities.FakeServer", 9)],
+            "a test site reaching a referenced test-utility project is exactly what that project is for"
+        );
+    }
+
+    #[test]
+    fn stage6_admission_tier_f_ignores_an_unreachable_duplicate_and_emits_the_reachable_one() {
+        // Tier (f) emits on exactly ONE distinct declaring class, so a second
+        // same-named extension method in the same namespace silences it
+        // entirely and the ref falls through to the scored tier, which names
+        // both. The gate runs BEFORE that count, which is why an unreachable
+        // duplicate stops being an ambiguity at all rather than merely losing
+        // a race -- and the edge that comes back is the EXT one, not the pair
+        // of guesses the fallthrough produced.
+        let files = fragments_for(&[
+            (
+                "src/Ext.Adapters/ServiceCollectionExtensions.cs",
+                "namespace Fixture.Registration { public static class ServiceCollectionExtensions { public static void AddWidgets(this IServiceCollection s) { } } }",
+            ),
+            (
+                "src/Unreachable/UnreachableExtensions.cs",
+                "namespace Fixture.Registration { public static class UnreachableExtensions { public static void AddWidgets(this IServiceCollection s) { } } }",
+            ),
+            (
+                "src/App/Startup.cs",
+                "\nusing Fixture.Registration;\n\nnamespace Fixture.App;\n\npublic class Startup\n{\n  public void Run(IServiceCollection s) => s.AddWidgets();\n}\n",
+            ),
+        ]);
+        let root = no_git_root();
+
+        let bare = resolve_graph(&root, &files);
+        assert_eq!(
+            heuristic_member_edges_from(&bare, "src/App/Startup.cs"),
+            vec![
+                ("Fixture.Registration.ServiceCollectionExtensions", 8),
+                ("Fixture.Registration.UnreachableExtensions", 8)
+            ],
+            "without a model both static classes clear every tier-(f) filter, two distinct classes is an ambiguity, and the tier stays silent"
+        );
+        assert_eq!(
+            heuristic_member_tiers_from(&bare, "src/App/Startup.cs"),
+            vec![Some(HeuristicTier::Guess), Some(HeuristicTier::Guess)],
+            "the two edges are the scored tier's, re-admitted by the receiver rule because each `this` parameter names the receiver type exactly"
+        );
+
+        let model = model_of(vec![
+            unit(
+                "src/App/App.csproj",
+                &["src/Ext.Adapters/Ext.Adapters.csproj"],
+                false,
+            ),
+            unit("src/Ext.Adapters/Ext.Adapters.csproj", &[], false),
+            unit("src/Unreachable/Unreachable.csproj", &[], false),
+        ]);
+        let g = resolve_graph_with_model(&root, &files, &[], Some(&model));
+        assert_eq!(
+            heuristic_member_edges_from(&g, "src/App/Startup.cs"),
+            vec![("Fixture.Registration.ServiceCollectionExtensions", 8)],
+            "one admitted candidate is one distinct class, and tier (f) emits"
+        );
+        assert_eq!(
+            heuristic_member_tiers_from(&g, "src/App/Startup.cs"),
+            vec![Some(HeuristicTier::Ext)],
+            "the edge is tier (f)'s, not the scored tier's second-guess"
+        );
+    }
+
+    #[test]
+    fn stage6_admission_a_file_outside_every_project_fails_open() {
+        // Both directions of "unknown": a candidate whose file no project
+        // owns, and a SITE whose file no project owns. Neither may lose an
+        // edge -- the gate refuses only on a positive answer.
+        let files = fragments_for(&[
+            (
+                "src/App/Widget.cs",
+                "namespace Fixture.App { public class Widget { public void Ping() { } } }",
+            ),
+            (
+                "tools/Helper.cs",
+                "namespace Fixture.Tools { public class Helper { public void Pong() { } } }",
+            ),
+            (
+                "src/App/Runner.cs",
+                "\nnamespace Fixture.App;\n\npublic class Runner\n{\n  public void Run()\n  {\n    var h = Build();\n    h.Pong();\n  }\n}\n",
+            ),
+            (
+                "tools/Script.cs",
+                "\nnamespace Fixture.Tools;\n\npublic class Script\n{\n  public void Run()\n  {\n    var w = Build();\n    w.Ping();\n  }\n}\n",
+            ),
+        ]);
+        let model = model_of(vec![unit("src/App/App.csproj", &[], false)]);
+        let g = resolve_graph_with_model(&no_git_root(), &files, &[], Some(&model));
+
+        assert_eq!(
+            heuristic_member_edges_from(&g, "src/App/Runner.cs"),
+            vec![("Fixture.Tools.Helper", 9)],
+            "the candidate sits outside every project, so nothing can be proven about reaching it"
+        );
+        assert_eq!(
+            heuristic_member_edges_from(&g, "tools/Script.cs"),
+            vec![("Fixture.App.Widget", 9)],
+            "the SITE sits outside every project -- same fail-open answer from the other side"
+        );
+    }
+
+    // --- stage 6: `global using` is a per-PROJECT fact ---------------------
+    //
+    // A `global using` is scoped to the compilation that declares it and does
+    // NOT flow across a ProjectReference. Without a model the resolver cannot
+    // see project boundaries and pools every global using repo-wide (the
+    // documented over-approximation); with one, each file is seeded from its
+    // OWN project's globals only.
+
+    // Two same-named `Config` classes, so the ladder's global-uniqueness step
+    // cannot answer `Config` on its own and the `global using` is the ONLY
+    // thing that can pick one -- which is what makes "who can see that global
+    // using" observable at all.
+    const SCOPED_GLOBAL_USING_FIXTURE: &[(&str, &str)] = &[
+        (
+            "src/Alpha/Config.cs",
+            "namespace Fixture.Alpha { public class Config { public void Load() { } } }",
+        ),
+        (
+            "src/Beta/Config.cs",
+            "namespace Fixture.Beta { public class Config { public void Load() { } } }",
+        ),
+        ("src/App/GlobalUsings.cs", "global using Fixture.Alpha;\n"),
+        (
+            "src/App/AppConsumer.cs",
+            "\nnamespace Fixture.App;\n\npublic class AppConsumer\n{\n  public void Run() => Config.Load();\n}\n",
+        ),
+        (
+            "src/Other/OtherConsumer.cs",
+            "\nnamespace Fixture.Other;\n\npublic class OtherConsumer\n{\n  public void Run() => Config.Load();\n}\n",
+        ),
+    ];
+
+    #[test]
+    fn stage6_global_usings_are_scoped_to_the_declaring_unit_when_a_model_exists() {
+        let files = fragments_for(SCOPED_GLOBAL_USING_FIXTURE);
+        // Both consumers reference both Alpha and Beta, so admission has
+        // nothing to say here: the only difference between the two files is
+        // which project declared the `global using`.
+        let model = model_of(vec![
+            unit("src/Alpha/Alpha.csproj", &[], false),
+            unit("src/Beta/Beta.csproj", &[], false),
+            unit(
+                "src/App/App.csproj",
+                &["src/Alpha/Alpha.csproj", "src/Beta/Beta.csproj"],
+                false,
+            ),
+            unit(
+                "src/Other/Other.csproj",
+                &["src/Alpha/Alpha.csproj", "src/Beta/Beta.csproj"],
+                false,
+            ),
+        ]);
+        let g = resolve_graph_with_model(&no_git_root(), &files, &[], Some(&model));
+
+        assert_eq!(
+            member_edges_from(&g, "src/App/AppConsumer.cs"),
+            vec![("Fixture.Alpha.Config", 6)],
+            "the declaring project's own files still see its global using"
+        );
+        assert!(
+            member_edges_from(&g, "src/Other/OtherConsumer.cs").is_empty(),
+            "the other project never wrote that global using, so `Config` names nothing there"
+        );
+        assert_eq!(
+            heuristic_member_edges_from(&g, "src/Other/OtherConsumer.cs"),
+            vec![("Fixture.Alpha.Config", 6), ("Fixture.Beta.Config", 6)],
+            "it degrades to the ordinary two-way ambiguity an unimported `Config` always is -- not to a precise edge borrowed from another project"
+        );
+    }
+
+    #[test]
+    fn stage6_global_usings_are_repo_wide_without_one() {
+        let files = fragments_for(SCOPED_GLOBAL_USING_FIXTURE);
+        let g = resolve_graph(&no_git_root(), &files);
+
+        assert_eq!(
+            member_edges_from(&g, "src/App/AppConsumer.cs"),
+            vec![("Fixture.Alpha.Config", 6)]
+        );
+        assert_eq!(
+            member_edges_from(&g, "src/Other/OtherConsumer.cs"),
+            vec![("Fixture.Alpha.Config", 6)],
+            "with no project boundaries to read, every global using is in scope everywhere -- the pre-stage-6 behaviour, unchanged"
+        );
+        assert_eq!(
+            g.stats.heuristic_edge_count, 0,
+            "both qualifiers resolved precisely, so no ref ever reached a heuristic tier"
         );
     }
 
