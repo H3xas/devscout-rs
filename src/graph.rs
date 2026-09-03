@@ -965,6 +965,24 @@ pub struct FragDef {
         skip_serializing_if = "OrderedMap::is_empty"
     )]
     pub property_types: OrderedMap<FragFact>,
+    /// Per method name `methodReturns` also carries an entry for,
+    /// that return type's top-level generic-arg descriptors -- the same
+    /// capture `baseGenericArgs` keeps beside `bases` (see extract.rs's
+    /// `DefRecord`). `methodReturns` itself is left exactly as it always
+    /// was (the bare return-type identifier, "Task" for
+    /// `Task<Order> GetAsync()`) so an UNAWAITED use of the same callee
+    /// keeps reading "Task" unchanged; this is a purely additive sibling
+    /// field, not a reshaping of `methodReturns`, which is what lets it
+    /// join the schema with no cache-version bump -- an absent key reads
+    /// back as "no generic args", the safe default for every fragment
+    /// cached before this field existed. Appended LAST of all, after
+    /// `propertyTypes`, omitted when empty.
+    #[serde(
+        default,
+        rename = "methodReturnArgs",
+        skip_serializing_if = "OrderedMap::is_empty"
+    )]
+    pub method_return_args: OrderedMap<Vec<String>>,
     #[serde(default, rename = "endLine", skip_serializing_if = "is_zero")]
     /// The end line value.
     pub end_line: usize,
@@ -1136,6 +1154,16 @@ pub struct FragRef {
     /// sets it, and also what makes a v15 cached fragment parse safely.
     #[serde(default, rename = "receiverBase", skip_serializing_if = "is_false")]
     pub receiver_base: bool,
+    /// `true` when `receiverCallOwner`/`receiverCallMember` came from an
+    /// AWAITED call (see `extract.rs`'s `RefRecord`). Appended LAST of all,
+    /// after `receiverBase`, and omitted when `false` -- an absent key reads
+    /// back as `false`, the same as an unawaited call fact and as every ref
+    /// kind that never sets it, which is also what lets a cached fragment
+    /// from before this field existed parse safely with no cache-version
+    /// bump: it simply reads back as "not awaited", the same answer the
+    /// resolver gave before this field existed.
+    #[serde(default, rename = "receiverAwaited", skip_serializing_if = "is_false")]
+    pub receiver_awaited: bool,
 }
 
 fn is_false(b: &bool) -> bool {
@@ -1265,6 +1293,13 @@ pub fn fragment_from_extraction(e: &extract::Extraction) -> Fragment {
                     }
                     m
                 },
+                method_return_args: {
+                    let mut m = OrderedMap::new();
+                    for (name, args) in &d.method_return_args {
+                        m.insert(name.clone(), args.clone());
+                    }
+                    m
+                },
                 end_line: d.end_line,
             })
             .collect(),
@@ -1308,6 +1343,7 @@ pub fn fragment_from_extraction(e: &extract::Extraction) -> Fragment {
                 receiver_call_owner: r.receiver_call_owner.clone(),
                 receiver_call_member: r.receiver_call_member.clone(),
                 receiver_base: r.receiver_base,
+                receiver_awaited: r.receiver_awaited,
             })
             .collect(),
         names: e
@@ -1355,6 +1391,7 @@ pub fn markup_fragment(root: &Path, rel: &str) -> Option<Fragment> {
                 base_generic_args: OrderedMap::new(),
                 test_methods: Vec::new(),
                 property_types: OrderedMap::new(),
+                method_return_args: OrderedMap::new(),
                 end_line: d.line,
             })
             .collect(),
@@ -1383,6 +1420,7 @@ pub fn markup_fragment(root: &Path, rel: &str) -> Option<Fragment> {
                 receiver_call_owner: None,
                 receiver_call_member: None,
                 receiver_base: false,
+                receiver_awaited: false,
             })
             .collect(),
         names: facts
@@ -1687,6 +1725,7 @@ mod tests {
             type_params: Vec::new(),
             base_generic_args: OrderedMap::new(),
             property_types: OrderedMap::new(),
+            method_return_args: OrderedMap::new(),
             test_methods: Vec::new(),
             end_line: 0,
         }
@@ -1931,6 +1970,7 @@ mod tests {
             receiver_call_owner: None,
             receiver_call_member: None,
             receiver_base: false,
+            receiver_awaited: false,
         }
     }
 
@@ -2652,6 +2692,7 @@ mod tests {
                 base_generic_args: OrderedMap::new(),
                 test_methods: vec![],
                 property_types: OrderedMap::new(),
+                method_return_args: OrderedMap::new(),
                 end_line: 1,
             }],
             usings: vec![],
@@ -2726,6 +2767,7 @@ mod tests {
                 base_generic_args: OrderedMap::new(),
                 test_methods: vec![],
                 property_types: OrderedMap::new(),
+                method_return_args: OrderedMap::new(),
                 end_line: 1,
             }],
             usings: vec![],

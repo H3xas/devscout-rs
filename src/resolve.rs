@@ -155,6 +155,13 @@ pub struct MemberLists {
     /// Property name -> declared type fact, the second half of a property hop.
     /// Merged across a partial class exactly like `method_returns`.
     pub property_types: OrderedMap<FragFact>,
+    /// Method name -> the generic-arg descriptors `method_returns` itself
+    /// strips off (see `FragDef.method_return_args`), read ONLY by the
+    /// awaited-call unwrap: an entry here exists exactly when the same name
+    /// has a `method_returns` entry AND that return type carried a
+    /// top-level type-argument list. Merged across a partial class exactly
+    /// like `method_returns`.
+    pub method_return_args: OrderedMap<Vec<String>>,
 }
 
 fn build_def_index(fragments_by_file: &[(String, Fragment)]) -> DefIndex {
@@ -231,6 +238,7 @@ fn build_def_index(fragments_by_file: &[(String, Fragment)]) -> DefIndex {
                             .collect(),
                         method_returns: d.method_returns.clone(),
                         property_types: d.property_types.clone(),
+                        method_return_args: d.method_return_args.clone(),
                     });
                     for e in &d.extension_methods {
                         add_extension_method(&mut member_lists, &mut extension_index, idx, e);
@@ -303,6 +311,13 @@ fn build_def_index(fragments_by_file: &[(String, Fragment)]) -> DefIndex {
                             member_lists[idx]
                                 .property_types
                                 .insert(name.clone(), fact.clone());
+                        }
+                    }
+                    for (name, args) in d.method_return_args.iter() {
+                        if member_lists[idx].method_return_args.get(name).is_none() {
+                            member_lists[idx]
+                                .method_return_args
+                                .insert(name.clone(), args.clone());
                         }
                     }
                 }
@@ -380,6 +395,7 @@ fn name_probe(name: String, namespace: &str, outer_types: Vec<String>) -> FragRe
         receiver_call_owner: None,
         receiver_call_member: None,
         receiver_base: false,
+        receiver_awaited: false,
     }
 }
 
@@ -561,17 +577,22 @@ fn build_file_contexts(
 // walked: an external base -- a BCL type, a NuGet type -- cannot be inspected,
 // so a member it declares cannot veto. That is the documented bound, and it is
 // the same one tier (e) already lives with.
-fn inheritance_walk_matches(
+// The same walk as `inheritance_walk_matches`, returning the matched def's
+// OWN index instead of a bare bool -- the primitive both that function and
+// the `receiver_base` bases-only lookup below are built on, so the walk
+// algorithm (cycle guard, lazy per-def base resolution) lives in exactly one
+// place.
+fn inheritance_walk_find(
     index: &DefIndex,
     file_contexts: &HashMap<String, FileContext>,
     start: usize,
     mut matches: impl FnMut(usize) -> bool,
-) -> bool {
+) -> Option<usize> {
     let mut seen: HashSet<usize> = HashSet::from([start]);
     let mut stack: Vec<usize> = vec![start];
     while let Some(cur) = stack.pop() {
         if matches(cur) {
-            return true;
+            return Some(cur);
         }
         let Some(ctx) = file_contexts.get(&index.defs[cur].file) else {
             continue;
@@ -590,7 +611,16 @@ fn inheritance_walk_matches(
             }
         }
     }
-    false
+    None
+}
+
+fn inheritance_walk_matches(
+    index: &DefIndex,
+    file_contexts: &HashMap<String, FileContext>,
+    start: usize,
+    matches: impl FnMut(usize) -> bool,
+) -> bool {
+    inheritance_walk_find(index, file_contexts, start, matches).is_some()
 }
 
 fn inherited_member_declared(
@@ -602,6 +632,39 @@ fn inherited_member_declared(
     inheritance_walk_matches(index, file_contexts, start, |idx| {
         declares_member(index, idx, member)
     })
+}
+
+// The `receiver_base == true` lookup (`base.M`): never `start` itself (the
+// enclosing type `base.` never considers), only its OWN direct bases -- read
+// off `start`'s `MemberLists.bases`, in DECLARATION order -- each followed
+// by its own in-graph inheritance walk (so a member declared on the base of
+// the base still resolves, exactly like the instance-member veto's closure
+// does). Returns the first in-graph def, across that ordered search, whose
+// own closure declares the member; `None` when `start` resolves to nothing
+// in-graph, when it declares no in-graph base, or when no in-graph base's
+// closure declares the member at all -- every one of those is an ordinary
+// external receiver to the caller, never a candidate for a scored guess.
+fn base_member_declared(
+    index: &DefIndex,
+    file_contexts: &HashMap<String, FileContext>,
+    start: usize,
+    member: Option<&str>,
+) -> Option<usize> {
+    let ctx = file_contexts.get(&index.defs[start].file)?;
+    let ns = index.defs[start].namespace.clone();
+    for base in &index.member_lists[start].bases {
+        let probe = name_probe(base.clone(), &ns, Vec::new());
+        if let Resolution::Resolved(bidx, _) =
+            resolve_ref(&probe, &ctx.usings, &ns, index, &ctx.aliases, file_contexts)
+        {
+            if let Some(found) = inheritance_walk_find(index, file_contexts, bidx, |idx| {
+                declares_member(index, idx, member)
+            }) {
+                return Some(found);
+            }
+        }
+    }
+    None
 }
 
 // The scored tier's own receiver test, and the mirror image of the veto above:
@@ -1593,7 +1656,41 @@ pub fn resolve_graph_with_model(
                     &admission,
                 );
                 let mut emitted = false;
-                if let Resolution::Resolved(idx, via) = &result {
+                // `base.M`: a receiver_base ref's `result` names the
+                // ENCLOSING type (the same resolution a plain `this.M` ref
+                // gets, from the same `receiver_type`/`name`), and this rule
+                // exists precisely so that type is never consulted for the
+                // member -- only its OWN bases, in declaration order, each
+                // with its own in-graph inheritance walk (see
+                // `base_member_declared`). `emitted` is forced `true`
+                // regardless of whether a base declared the member, which is
+                // what keeps every tier below (e, e2, f, scored) from ever
+                // treating a `base.` ref as an ordinary receiver fact: falling
+                // through to them would let the enclosing type's OWN
+                // `receiver_type` reintroduce the exact self-edge this rule
+                // forbids, or let the scored tier guess where the design
+                // requires silent external.
+                if r.receiver_base {
+                    if let Resolution::Resolved(start, _) = &result {
+                        if let Some(target) = base_member_declared(
+                            &index,
+                            &file_contexts,
+                            *start,
+                            r.member.as_deref(),
+                        ) {
+                            edges.push(Edge::uses_member(
+                                file.clone(),
+                                r.line,
+                                index.defs[target].id.clone(),
+                                index.defs[target].file.clone(),
+                                r.member.clone(),
+                                None,
+                            ));
+                            edges_by_kind.uses_member += 1;
+                        }
+                    }
+                    emitted = true;
+                } else if let Resolution::Resolved(idx, via) = &result {
                     let (idx, via) = (*idx, *via);
                     if index.defs[idx].kind == "enum" {
                         let member_key = format!(
@@ -1685,8 +1782,40 @@ pub fn resolve_graph_with_model(
                         if let Resolution::Resolved(oidx, _) =
                             resolve_ref(&probe, usings, ns, &index, aliases, &file_contexts)
                         {
-                            receiver_type_name =
+                            let returns =
                                 index.member_lists[oidx].method_returns.get(member).cloned();
+                            // An AWAITED callee returning `Task<T>`/
+                            // `ValueTask<T>` unwraps to `T` -- exactly ONE
+                            // layer, read off the same one-level generic-arg
+                            // capture every other base-identifier fact keeps
+                            // beside its own bare name
+                            // (`method_return_args`, never re-derived from
+                            // source). An UNAWAITED call keeps the bare
+                            // wrapper name unchanged (`var t = x.FetchAsync();
+                            // t.Wait();` must stay typed `Task`, never
+                            // `Order`), and a doubly-wrapped
+                            // `Task<Task<Order>>` return unwraps to the INNER
+                            // `Task`'s own bare name -- never twice -- because
+                            // `method_return_args` itself only ever records
+                            // one level of argument base identifiers. A
+                            // type-parameter pass-through ("*") is refused,
+                            // the same as every other wildcard generic-arg
+                            // fact in this file: nothing at THIS call site
+                            // knows what it is bound to.
+                            receiver_type_name = match &returns {
+                                Some(name)
+                                    if r.receiver_awaited
+                                        && (name == "Task" || name == "ValueTask") =>
+                                {
+                                    match index.member_lists[oidx].method_return_args.get(member) {
+                                        Some(args) if args.len() == 1 && args[0] != "*" => {
+                                            Some(args[0].clone())
+                                        }
+                                        _ => returns,
+                                    }
+                                }
+                                _ => returns,
+                            };
                         }
                     }
                 }
@@ -2356,6 +2485,7 @@ mod tests {
             base_generic_args: crate::graph::OrderedMap::new(),
             test_methods: vec![],
             property_types: crate::graph::OrderedMap::new(),
+            method_return_args: crate::graph::OrderedMap::new(),
             end_line: 0,
         }
     }
@@ -2418,6 +2548,7 @@ mod tests {
             receiver_call_owner: None,
             receiver_call_member: None,
             receiver_base: false,
+            receiver_awaited: false,
         }
     }
 
@@ -2440,6 +2571,7 @@ mod tests {
             receiver_call_owner: None,
             receiver_call_member: None,
             receiver_base: false,
+            receiver_awaited: false,
         }
     }
 
@@ -7101,6 +7233,7 @@ mod tests {
                     receiver_call_owner: None,
                     receiver_call_member: None,
                     receiver_base: false,
+                    receiver_awaited: false,
                 }],
             ),
         )];
@@ -7150,6 +7283,7 @@ mod tests {
                             receiver_call_owner: None,
                             receiver_call_member: None,
                             receiver_base: false,
+                            receiver_awaited: false,
                         },
                     ],
                 ),
@@ -8207,5 +8341,170 @@ mod tests {
         // owner whose `Make` records no return type all leave the local exactly
         // as unknown as the extractor left it.
         assert!(member_edge_targets(&g).is_empty());
+    }
+
+    // --- Stage 7: this/base receiver typing, awaited Task unwrap ------------
+    //
+    // All four run real C# through the extractor (`fragments_for`), the same
+    // choice the tier-(e) end-to-end block above makes: a `this.`/`base.`
+    // qualifier's `receiverBase`/`receiverAwaited` bits and a method's
+    // `methodReturnArgs` are extractor facts, so a test that hand-built the
+    // fragments would take the extractor's word for them rather than proving
+    // them.
+
+    #[test]
+    fn stage7_this_member_resolves_to_the_declaring_def_across_partial_files() {
+        let files = fragments_for(&[
+            (
+                "Domain/Order.cs",
+                "\nnamespace App.Domain;\n\npublic partial class Order\n{\n    public string Name;\n}\n",
+            ),
+            (
+                "Domain/Order.Validation.cs",
+                "\nnamespace App.Domain;\n\npublic partial class Order\n{\n    public int Describe() => this.Name.Length;\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        let name_edges: Vec<(&str, &str, bool)> = g
+            .edges
+            .iter()
+            .filter_map(|e| match e {
+                Edge::UsesMember {
+                    from_file,
+                    to,
+                    member,
+                    heuristic,
+                    ..
+                } if from_file == "Domain/Order.Validation.cs"
+                    && member.as_deref() == Some("Name") =>
+                {
+                    Some((to.as_str(), member.as_deref().unwrap(), *heuristic))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            name_edges,
+            vec![("App.Domain.Order", "Name", false)],
+            "this.Name resolves through the ordinary typed-receiver path -- Name is declared in the \
+             OTHER partial-class file, which the merged member lists already cover; no self-edge \
+             rule was needed"
+        );
+    }
+
+    #[test]
+    fn stage7_base_member_resolves_to_the_first_base_that_declares_it() {
+        let files = fragments_for(&[
+            (
+                "Domain/GrandBase.cs",
+                "\nnamespace App.Domain;\n\npublic class GrandBase\n{\n    public void Touch() { }\n}\n",
+            ),
+            (
+                "Domain/Base.cs",
+                "\nnamespace App.Domain;\n\npublic class Base : GrandBase\n{\n}\n",
+            ),
+            (
+                "Domain/Order.cs",
+                "\nnamespace App.Domain;\n\npublic class Order : Base\n{\n    public void Touch() { }\n\n    public void Poke()\n    {\n        base.Touch();\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        let touch_edges: Vec<(&str, bool)> = g
+            .edges
+            .iter()
+            .filter_map(|e| match e {
+                Edge::UsesMember {
+                    from_file,
+                    to,
+                    member,
+                    heuristic,
+                    ..
+                } if from_file == "Domain/Order.cs" && member.as_deref() == Some("Touch") => {
+                    Some((to.as_str(), *heuristic))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            touch_edges,
+            vec![("App.Domain.GrandBase", false)],
+            "base.Touch() starts at Order's OWN bases -- Base does not declare Touch, so the walk \
+             continues to Base's own base GrandBase, which does; Order's OWN override (also named \
+             Touch) is never even considered"
+        );
+    }
+
+    #[test]
+    fn stage7_base_member_declared_nowhere_in_graph_resolves_external() {
+        let files = fragments_for(&[
+            (
+                "Domain/Base.cs",
+                "\nnamespace App.Domain;\n\npublic class Base\n{\n    public void Other() { }\n}\n",
+            ),
+            (
+                "Domain/Order.cs",
+                "\nnamespace App.Domain;\n\npublic class Order : Base\n{\n    public void Touch() { }\n\n    public void Poke()\n    {\n        base.Touch();\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        let touch_edges: Vec<&Edge> = g
+            .edges
+            .iter()
+            .filter(|e| {
+                matches!(e, Edge::UsesMember { from_file, member, .. }
+                    if from_file == "Domain/Order.cs" && member.as_deref() == Some("Touch"))
+            })
+            .collect();
+        assert!(
+            touch_edges.is_empty(),
+            "no in-graph base declares Touch -- base.Touch() is external like any other unresolved \
+             receiver, never a scored guess, even though Order itself declares Touch: {touch_edges:?}"
+        );
+        assert_eq!(g.stats.heuristic_edge_count, 0);
+    }
+
+    #[test]
+    fn stage7_awaited_static_call_local_unwraps_task_once() {
+        let files = fragments_for(&[
+            (
+                "Domain/Order.cs",
+                "\nnamespace App.Domain;\n\npublic class Order\n{\n    public void Validate() { }\n}\n",
+            ),
+            (
+                "Infra/Repo.cs",
+                "\nnamespace App.Infra;\n\npublic static class Repo\n{\n    public static Task<Order> LoadAsync() => null;\n    public static Task<Task<Order>> LoadNestedAsync() => null;\n}\n",
+            ),
+            (
+                "App/Worker.cs",
+                "\nnamespace App.Workers;\n\npublic class Worker\n{\n    public async Task Run()\n    {\n        var order = await Repo.LoadAsync();\n        order.Validate();\n\n        var nested = await Repo.LoadNestedAsync();\n        nested.Validate();\n\n        var plain = Repo.LoadAsync();\n        plain.Validate();\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        let validate_edges: Vec<(&str, usize, bool)> = g
+            .edges
+            .iter()
+            .filter_map(|e| match e {
+                Edge::UsesMember {
+                    from_file,
+                    from_line,
+                    to,
+                    member,
+                    heuristic,
+                    ..
+                } if from_file == "App/Worker.cs" && member.as_deref() == Some("Validate") => {
+                    Some((to.as_str(), *from_line, *heuristic))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            validate_edges,
+            vec![("App.Domain.Order", 9, false)],
+            "the SINGLY-wrapped AWAITED call (`order`) unwraps Task<Order> to Order precisely; the \
+             DOUBLY-wrapped awaited call (`nested`) unwraps only once, landing on the bare name \
+             \"Task\" (never Order), and the UNAWAITED call (`plain`) is never unwrapped at all -- \
+             both of the latter two stay typed \"Task\", resolve to nothing in-graph, and earn no \
+             edge at all, guessed or otherwise"
+        );
     }
 }

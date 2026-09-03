@@ -322,6 +322,19 @@ pub struct DefRecord {
     /// `method_returns` is one: the serialized key order is significant.
     /// Appended LAST, after `test_methods`.
     pub property_types: Vec<(String, Fact)>,
+    /// Per method name that `method_returns` also records an
+    /// entry for, that return type's top-level generic-arg descriptors --
+    /// the same capture `base_generic_args` keeps beside `bases`, for the
+    /// same reason: `method_returns` records only the return type's bare
+    /// identifier ("Task" for `Task<Order> GetAsync()`), and this is what
+    /// lets the resolver unwrap ONE `Task<...>`/`ValueTask<...>` layer off
+    /// an AWAITED call's callee without ever touching `method_returns`
+    /// itself, which an unawaited use of the very same callee reads
+    /// unchanged. A `Vec` of pairs, not a map, for the same reason
+    /// `method_returns` is one: the serialized key order is significant.
+    /// Appended LAST of all, after `property_types`; a method whose return
+    /// type carries no type-argument list at all contributes no entry.
+    pub method_return_args: Vec<(String, Vec<String>)>,
     /// 1-based last line of the complete declaration node.
     pub end_line: usize,
 }
@@ -431,6 +444,16 @@ pub struct RefRecord {
     /// qualifier (which resolves through the ordinary typed-receiver path
     /// against the enclosing type itself). Appended LAST of all.
     pub receiver_base: bool,
+    /// `true` when this ref's `receiver_call_owner`/`receiver_call_member`
+    /// pair came from an AWAITED call (`var x = await Q.M()`, `_client` a
+    /// field: `var order = await _client.FetchAsync()`) -- the resolver reads
+    /// it to decide whether to unwrap exactly one `Task<...>`/`ValueTask<...>`
+    /// layer off `M`'s recorded return type before typing the local. `false`
+    /// for an unawaited call fact and for every ref carrying no call fact at
+    /// all, which is what keeps `var t = x.FetchAsync(); t.Wait();` typed as
+    /// `Task` rather than unwrapped. Appended LAST of all, after
+    /// `receiver_base`.
+    pub receiver_awaited: bool,
 }
 
 /// Represents `UsingRecord`.
@@ -808,6 +831,7 @@ fn push_ref(
         receiver_call_owner: None,
         receiver_call_member: None,
         receiver_base: false,
+        receiver_awaited: false,
     });
 }
 
@@ -841,6 +865,7 @@ fn push_ctor_param_ref(
         receiver_call_owner: None,
         receiver_call_member: None,
         receiver_base: false,
+        receiver_awaited: false,
     });
 }
 
@@ -869,6 +894,13 @@ fn push_ctor_param_ref(
 // `receiver_base` is appended LAST of all, after `outer_types` -- `true`
 // only for a `base.M` qualifier, `false` for everything else including a
 // plain `this.M` qualifier.
+//
+// `receiver_awaited` travels with the call fact, not with the function's own
+// parameters -- it comes out of the SAME `Fact` `receiver_type`/
+// `receiver_call_owner` do, read from the fact's own `awaited` bit rather
+// than threaded in separately, which is what keeps a call fact and its
+// awaited-ness from ever landing on two different refs. Appended LAST of
+// all, after `receiver_base`.
 fn push_member_ref(
     refs: &mut Vec<RefRecord>,
     qualifier_text: &str,
@@ -885,19 +917,22 @@ fn push_member_ref(
     // A call fact records the CALLEE it depends on and never a receiver type:
     // the two are mutually exclusive on one ref, which is what lets every
     // reader tell a recorded type from a lookup the resolver still owes.
-    let (receiver_type, receiver_args, receiver_call_owner, receiver_call_member) = match receiver {
-        Some(Fact {
-            type_name,
-            call: Some(member),
-            ..
-        }) => (None, None, Some(type_name), Some(member)),
-        Some(Fact {
-            type_name,
-            args,
-            call: None,
-        }) => (Some(type_name), args, None, None),
-        None => (None, None, None, None),
-    };
+    let (receiver_type, receiver_args, receiver_call_owner, receiver_call_member, receiver_awaited) =
+        match receiver {
+            Some(Fact {
+                type_name,
+                call: Some(member),
+                awaited,
+                ..
+            }) => (None, None, Some(type_name), Some(member), awaited),
+            Some(Fact {
+                type_name,
+                args,
+                call: None,
+                ..
+            }) => (Some(type_name), args, None, None, false),
+            None => (None, None, None, None, false),
+        };
     match qualifier_text.rfind('.') {
         Some(dot) => refs.push(RefRecord {
             kind: "uses-member".to_string(),
@@ -917,6 +952,7 @@ fn push_member_ref(
             receiver_call_owner: receiver_call_owner.clone(),
             receiver_call_member: receiver_call_member.clone(),
             receiver_base,
+            receiver_awaited,
         }),
         None => refs.push(RefRecord {
             kind: "uses-member".to_string(),
@@ -936,6 +972,7 @@ fn push_member_ref(
             receiver_call_owner,
             receiver_call_member,
             receiver_base,
+            receiver_awaited,
         }),
     }
 }
@@ -1168,6 +1205,45 @@ fn raw_method_returns(node: Node, src: &[u8], kind: &str) -> Vec<(String, String
         }
         if let Some(returns) = base_type_identifier(c.child_by_field_name("returns"), src, false) {
             pairs.push((name, returns));
+        }
+    }
+    pairs
+}
+
+// The generic-argument descriptors `raw_method_returns` throws away, keyed
+// by the same method name, under the exact same first-declaration-wins gate
+// (a name's `seen` slot is claimed by its FIRST declaration whether or not
+// that declaration turns out to carry a type-argument list, so a later
+// overload can never contribute an entry `raw_method_returns` itself would
+// have ignored). Every name recorded here is one `raw_method_returns` also
+// recorded a plain return-type name for; a return type with no top-level
+// type-argument list at all contributes no entry, exactly like
+// `raw_base_generic_args` does for a non-generic base.
+fn raw_method_return_args(
+    node: Node,
+    src: &[u8],
+    kind: &str,
+    type_params: &HashSet<String>,
+) -> Vec<(String, Vec<String>)> {
+    let Some(body) = node.child_by_field_name("body") else {
+        return Vec::new();
+    };
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut pairs = Vec::new();
+    for c in named_children(body) {
+        if !is_recorded_method(c, src, kind) {
+            continue;
+        }
+        let name = declared_name(c, src);
+        if name.is_empty() || !seen.insert(name.clone()) {
+            continue;
+        }
+        let returns_node = c.child_by_field_name("returns");
+        if base_type_identifier(returns_node, src, false).is_none() {
+            continue;
+        }
+        if let Some(args) = generic_arg_descriptors(returns_node, src, type_params) {
+            pairs.push((name, args));
         }
     }
     pairs
@@ -1639,6 +1715,7 @@ fn record_type_def(
         base_generic_args: raw_base_generic_args(node, src, type_params),
         test_methods: raw_test_methods(node, src, kind),
         property_types: raw_property_types(node, src, type_params),
+        method_return_args: raw_method_return_args(node, src, kind, type_params),
         end_line: node.end_position().row + 1,
     });
 }
@@ -1686,6 +1763,7 @@ fn record_enum_members(
             base_generic_args: Vec::new(),
             test_methods: Vec::new(),
             property_types: Vec::new(),
+            method_return_args: Vec::new(),
             end_line: member.end_position().row + 1,
         });
     }
@@ -1770,6 +1848,13 @@ pub struct Fact {
     /// `var x = A.Build()` in sibling blocks conflict exactly like two
     /// different type names would.
     pub call: Option<String>,
+    /// `true` when this is a call fact (`call.is_some()`) built from an
+    /// AWAITED invocation (`var x = await Q.M()`); meaningless -- and always
+    /// `false` -- when `call` is `None`. Part of the equality the table
+    /// compares, so `var x = Q.M()` and `var x = await Q.M()` in sibling
+    /// blocks conflict exactly like two different callees would, rather than
+    /// silently picking one awaited-ness for a name the source gives two.
+    pub awaited: bool,
 }
 
 // name -> `Some(fact)` when exactly one fact vouches for it, `None` when the
@@ -1802,6 +1887,7 @@ fn type_fact(type_node: Option<Node>, src: &[u8], type_params: &HashSet<String>)
         type_name,
         args,
         call: None,
+        awaited: false,
     })
 }
 
@@ -1811,15 +1897,20 @@ fn type_fact(type_node: Option<Node>, src: &[u8], type_params: &HashSet<String>)
 // child, with `invocation_expression`/`object_creation_expression` one
 // level further in (confirmed against the shipped grammar's own
 // `await_expression` -- a single unnamed `expression` child). Exactly one
-// level: an `await` wrapping another `await` does not unwrap twice.
-fn find_child_through_await<'a>(node: Node<'a>, target: &str) -> Option<Node<'a>> {
+// level: an `await` wrapping another `await` does not unwrap twice. The
+// returned `bool` is `true` only when the match came from inside the
+// `await_expression` layer -- `invocation_call` reads it to record whether
+// the callee it found was awaited; `new_expression_fact` discards it, since
+// an object-creation fact never carries a call and awaited-ness has nothing
+// to unwrap there.
+fn find_child_through_await<'a>(node: Node<'a>, target: &str) -> Option<(Node<'a>, bool)> {
     for c in named_children(node) {
         if c.kind() == target {
-            return Some(c);
+            return Some((c, false));
         }
         if c.kind() == "await_expression" {
             if let Some(inner) = named_children(c).into_iter().find(|g| g.kind() == target) {
-                return Some(inner);
+                return Some((inner, true));
             }
         }
     }
@@ -1837,7 +1928,7 @@ fn new_expression_fact(
     src: &[u8],
     type_params: &HashSet<String>,
 ) -> Option<Fact> {
-    let init = find_child_through_await(declarator, "object_creation_expression")?;
+    let (init, _awaited) = find_child_through_await(declarator, "object_creation_expression")?;
     type_fact(init.child_by_field_name("type"), src, type_params)
 }
 
@@ -1986,6 +2077,7 @@ fn collect_member_facts(
                 type_name,
                 args: None,
                 call: Some(d.member.clone()),
+                awaited: d.awaited,
             });
             add_fact(&mut table, Some(d.name.clone()), fact);
         }
@@ -2005,12 +2097,15 @@ fn collect_member_facts(
     table
 }
 
-// One `var x = Q.M(...)` local awaiting the second pass: the local's name, and
-// the two halves of the callee its type depends on.
+// One `var x = Q.M(...)` local awaiting the second pass: the local's name,
+// the two halves of the callee its type depends on, and whether the call was
+// awaited (`var x = await Q.M()`) -- carried straight through to the settled
+// fact's own `awaited` bit.
 struct DeferredCall {
     name: String,
     qualifier: String,
     member: String,
+    awaited: bool,
 }
 
 // One `foreach (var item in collection)` local awaiting the
@@ -2059,10 +2154,11 @@ fn visit_member_facts(
                 _ => None,
             };
             match call {
-                Some((qualifier, member)) => deferred.push(DeferredCall {
+                Some((qualifier, member, awaited)) => deferred.push(DeferredCall {
                     name: name.unwrap_or_default(),
                     qualifier,
                     member,
+                    awaited,
                 }),
                 None => add_fact(table, name, fact),
             }
@@ -2122,13 +2218,16 @@ fn visit_member_facts(
     }
 }
 
-// The (qualifier, member) halves of a `var x = Q.M(...)`
+// The (qualifier, member, awaited) triple of a `var x = Q.M(...)`
 // initializer, or `None` for every other shape. The qualifier must be BARE and
 // non-generic for the same reason a receiver fact's is: a dotted or computed
 // qualifier is not a name the ladder can put a type behind. A bare call
 // (`var x = M()`) has no qualifier at all and is deliberately not covered.
-fn invocation_call(declarator: Node, src: &[u8]) -> Option<(String, String)> {
-    let init = find_child_through_await(declarator, "invocation_expression")?;
+// `awaited` is `true` only when the invocation sat one level inside an
+// `await_expression` (`var x = await Q.M()`) -- straight from
+// `find_child_through_await`'s own signal, never re-derived.
+fn invocation_call(declarator: Node, src: &[u8]) -> Option<(String, String, bool)> {
+    let (init, awaited) = find_child_through_await(declarator, "invocation_expression")?;
     let function = init.child_by_field_name("function")?;
     if function.kind() != "member_access_expression" {
         return None;
@@ -2157,7 +2256,7 @@ fn invocation_call(declarator: Node, src: &[u8]) -> Option<(String, String)> {
     if member.is_empty() {
         return None;
     }
-    Some((qualifier, member))
+    Some((qualifier, member, awaited))
 }
 
 // The type NAME a bare qualifier stands for, as far as the file can vouch: the
@@ -2188,6 +2287,7 @@ fn collection_element_fact(locals: &FactTable, type_facts: &FactTable, name: &st
                 type_name: arg.clone(),
                 args: None,
                 call: None,
+                awaited: false,
             }),
             _ => None,
         },
@@ -2330,6 +2430,7 @@ fn resolve_member_qualifier(
                 type_name: qt.clone(),
                 args: receiver_args,
                 call: None,
+                awaited: false,
             }),
             text: qt,
             generic,
@@ -3111,7 +3212,7 @@ fn def_to_json(d: &DefRecord) -> Json {
             ),
         ));
     }
-    // Appended LAST, after testMethods, entry keys in source order.
+    // Appended after testMethods, entry keys in source order.
     if !d.property_types.is_empty() {
         fields.push((
             "propertyTypes",
@@ -3119,6 +3220,23 @@ fn def_to_json(d: &DefRecord) -> Json {
                 d.property_types
                     .iter()
                     .map(|(name, fact)| (name.clone(), fact_to_json(fact)))
+                    .collect(),
+            ),
+        ));
+    }
+    // Appended LAST of all, after propertyTypes, entry keys in source order.
+    if !d.method_return_args.is_empty() {
+        fields.push((
+            "methodReturnArgs",
+            Json::Map(
+                d.method_return_args
+                    .iter()
+                    .map(|(k, v)| {
+                        (
+                            k.clone(),
+                            Json::Arr(v.iter().map(|a| Json::Str(a.clone())).collect()),
+                        )
+                    })
                     .collect(),
             ),
         ));
@@ -7401,6 +7519,13 @@ public class Host
                 ("chained", None, None, None),
             ]
         );
+        assert!(
+            e.refs
+                .iter()
+                .filter(|r| r.kind == "uses-member" && r.member.as_deref() == Some("Render"))
+                .all(|r| !r.receiver_awaited),
+            "none of these calls are awaited, so none of their facts unwrap a Task later"
+        );
     }
 
     #[test]
@@ -7771,6 +7896,7 @@ public class Client
         assert_eq!(c.receiver_call_owner, p.receiver_call_owner);
         assert_eq!(c.receiver_call_member, p.receiver_call_member);
         assert_eq!(c.receiver_base, p.receiver_base);
+        assert_eq!(c.receiver_awaited, p.receiver_awaited);
         // line deliberately not compared -- the two sources place the
         // access on the same source line here, but the fields above are
         // the actual guarantee.
@@ -7803,6 +7929,10 @@ public class Worker
         );
         assert_eq!(validate.receiver_call_member.as_deref(), Some("LoadAsync"));
         assert_eq!(validate.receiver_type, None);
+        assert!(
+            validate.receiver_awaited,
+            "the call fact came from an AWAITED invocation"
+        );
 
         let creation = extract_src(
             r#"
@@ -7823,6 +7953,57 @@ public class Worker
             .find(|r| r.kind == "uses-member" && r.member.as_deref() == Some("Render"))
             .expect("widget.Render() ref present");
         assert_eq!(render.receiver_type.as_deref(), Some("Widget"));
+        assert!(
+            !render.receiver_awaited,
+            "a constructed-type receiver fact never carries a call, so it never carries awaited \
+             either"
+        );
+    }
+
+    #[test]
+    fn stage4_method_return_args_records_one_level_of_generic_args_for_task_wrapped_returns() {
+        let e = extract_src(
+            r#"
+namespace Fixtures.Recall;
+public class Repo
+{
+    public Task<Order> LoadAsync() => null;
+    public ValueTask<Order> LoadFastAsync() => null;
+    public Task<Task<Order>> LoadNestedAsync() => null;
+    public Order LoadSync() => null;
+    public void Nothing() { }
+}
+"#,
+        );
+        let d = find_def(&e, "Fixtures.Recall.Repo").expect("Repo def present");
+        assert_eq!(
+            d.method_returns,
+            vec![
+                ("LoadAsync".to_string(), "Task".to_string()),
+                ("LoadFastAsync".to_string(), "ValueTask".to_string()),
+                ("LoadNestedAsync".to_string(), "Task".to_string()),
+                ("LoadSync".to_string(), "Order".to_string()),
+            ],
+            "unchanged: the bare return-type identifier, generic args stripped, exactly as \
+             raw_method_returns has always recorded it"
+        );
+        let args: Vec<_> = d
+            .method_return_args
+            .iter()
+            .map(|(n, a)| (n.as_str(), a.as_slice()))
+            .collect();
+        assert_eq!(
+            args,
+            vec![
+                ("LoadAsync", &["Order".to_string()][..]),
+                ("LoadFastAsync", &["Order".to_string()][..]),
+                ("LoadNestedAsync", &["Task".to_string()][..]),
+            ],
+            "one level of generic-arg descriptors, present only for a name method_returns ALSO \
+             recorded an entry for -- LoadSync (non-generic) and Nothing (no method_returns entry \
+             at all) contribute nothing, and LoadNestedAsync's own descriptor is the INNER Task's \
+             bare name, never its own further-nested Order"
+        );
     }
 
     #[test]
