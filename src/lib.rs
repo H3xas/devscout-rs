@@ -26,6 +26,9 @@ pub mod mapcmd;
 pub mod markup;
 /// Tree-sitter parsing and source-span collection.
 pub mod parse;
+/// Hand-scanned csproj/Directory.Build.props project model: discovery,
+/// project units, and reference closure.
+pub mod project;
 /// Graph queries and their result models.
 pub mod query;
 /// Text rendering for query results.
