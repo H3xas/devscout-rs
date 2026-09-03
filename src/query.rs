@@ -516,6 +516,12 @@ pub struct GraphIndex<'g> {
     /// whatever its resolution: how widely a contract is injected is a fact
     /// about the contract, not about whether an implementor was confirmed.
     pub ctor_di_fanin: HashMap<String, usize>,
+    /// The repo's `.csproj` project model, rebuilt from `graph.units` --
+    /// `None` when the graph carries none, which is every repo that declares
+    /// no project and every graph written before `units` existed. Owned
+    /// rather than borrowed: `ProjectModel` holds the derived directory map
+    /// and reference closure, neither of which is persisted.
+    pub project: Option<crate::project::ProjectModel>,
     /// File -> the number of DISTINCT OTHER FILES that reference it through a
     /// `direct` (inherits/uses-type/uses-member) or heuristic edge. The
     /// file-level mirror of `ctor_di_fanin`, over the two edge kinds
@@ -862,6 +868,13 @@ pub fn load_graph_index_with<'g>(
         flagged_files,
         manifest_present,
         ctor_di_by_to,
+        project: if graph.units.is_empty() {
+            None
+        } else {
+            Some(crate::project::ProjectModel::from_units(
+                crate::project::units_from_graph(&graph.units),
+            ))
+        },
         ctor_di_fanin: ctor_di_sites_by_iface
             .into_iter()
             .map(|(name, sites)| (name, sites.len()))
@@ -3331,6 +3344,7 @@ mod tests {
             edges,
             stats: dummy_stats(),
             names: Vec::new(),
+            units: Vec::new(),
         }
     }
 

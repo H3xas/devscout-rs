@@ -42,6 +42,15 @@
 //     the first bytes of an existing graph.json and refuses to reuse one
 //     written at an older version, so a stale artifact is rebuilt on the next
 //     `map` even when not one fragment moved.
+//   - `units` is the LAST key of the whole object, appended after `names`
+//     and omitted entirely (not `[]`) when the repo declares no `.csproj` --
+//     so a tree without one serializes byte-for-byte as it did before the
+//     project model existed. Each row's own key order is fixed too: `id`,
+//     `name`, then `refs` (omitted when the project references nothing) and
+//     `test` (omitted when false). A unit's DIRECTORY is not persisted: it
+//     is `id`'s parent, recomputed on read (`project::units_from_graph`),
+//     and neither is per-file/per-def membership -- that is derived from the
+//     unit list by `ProjectModel` rather than stored.
 //   - `stats.edges_by_kind` has a FIXED key order (inherits, uses-type,
 //     imports, uses-member, ctor-di) -- not
 //     alphabetical, not insertion order of first edge seen. A plain struct
@@ -99,6 +108,20 @@ fn graph_dir(root: &Path) -> PathBuf {
 /// Path to the graph artifact (`graph.json`) for `root`.
 pub fn graph_json_path(root: &Path) -> PathBuf {
     graph_dir(root).join("graph.json")
+}
+
+/// Path to the project-model staleness sidecar for `root`.
+///
+/// Holds exactly the bytes `graph.json`'s `units` array would carry -- the
+/// serialized `Vec<GraphUnit>` and nothing else. `map` compares this file
+/// against a freshly discovered model to notice a `.csproj` edit, which no
+/// mtime in the fragments index can see: `.csproj` is not a `SOURCE_EXT`, so
+/// editing one moves no graph file and `index_is_stale` stays false. Written
+/// by `rebuild_graph` only when a model exists and DELETED when one does not,
+/// so a repo that never had a `.csproj` never grows the file and one whose
+/// last `.csproj` was removed still sees a difference on the next run.
+pub fn project_units_path(root: &Path) -> PathBuf {
+    graph_dir(root).join("project-units.json")
 }
 
 // The version in both cache filenames is the fragment SCHEMA version, bumped
@@ -766,6 +789,36 @@ pub struct GraphName {
     pub owner: String,
 }
 
+/// One `.csproj` project as graph.json persists it. Field order (`id`,
+/// `name`, `refs`, `test`) is significant, and the last two are
+/// omit-when-empty/omit-when-false: a leaf project that references nothing
+/// and is not a test project serializes as just its `id` and `name`.
+///
+/// Deliberately NOT `project::Unit`: that type also carries `dir`, which is
+/// always `id`'s parent directory and so is recomputed on read rather than
+/// stored (`project::units_from_graph`). Nothing about which FILE belongs to
+/// which unit is persisted either -- `ProjectModel` derives that from the
+/// unit list.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GraphUnit {
+    /// Repo-relative path to the `.csproj` file, which is also this unit's
+    /// identity -- what `refs` entries name.
+    pub id: String,
+    /// The project name (the csproj file name without its extension).
+    pub name: String,
+    /// The `id`s of this project's DIRECT `ProjectReference` targets, not
+    /// transitively closed. Omitted when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub refs: Vec<String>,
+    /// Whether this is a test project. Omitted when false.
+    #[serde(default, skip_serializing_if = "is_not_test")]
+    pub test: bool,
+}
+
+fn is_not_test(b: &bool) -> bool {
+    !*b
+}
+
 /// The version stamped into every graph.json this build writes, and the one
 /// `rebuild_graph` demands before it reuses an artifact it did not just
 /// produce. Bumped to 2 when `uses-member` edges gained `tier` and `member`:
@@ -791,6 +844,12 @@ pub struct Graph {
     /// set that declares no name byte-identical to what it was.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub names: Vec<GraphName>,
+    /// The repo's `.csproj` projects, sorted by `id` -- appended LAST, after
+    /// `names`, and omitted entirely when the repo declares none. A tree with
+    /// no `.csproj` therefore serializes exactly as it did before the project
+    /// model existed.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub units: Vec<GraphUnit>,
 }
 
 /// Reads and deserializes the repository graph, returning `None` on failure.
@@ -1412,16 +1471,43 @@ fn graph_schema_is_current(root: &Path) -> bool {
     head[..filled].starts_with(format!("{{\"schema_version\":{GRAPH_SCHEMA_VERSION},").as_bytes())
 }
 
+// Mirrors the model's units into the staleness sidecar. No model means the
+// repo declares no `.csproj`, and then the file must NOT exist: an empty
+// `[]` left behind would be indistinguishable from "no model" on the read
+// side, and the sidecar's whole job is telling those two apart.
+fn write_project_units(
+    root: &Path,
+    model: Option<&crate::project::ProjectModel>,
+) -> io::Result<()> {
+    match model {
+        Some(m) => atomic_write_json(&project_units_path(root), &crate::project::graph_units(m)),
+        None => {
+            let path = project_units_path(root);
+            match fs::remove_file(&path) {
+                Ok(()) => Ok(()),
+                Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+                Err(e) => Err(e),
+            }
+        }
+    }
+}
+
 /// `fresh_fragments`: fragments this run's extractor produced for files that
 /// needed reparsing (the same set that got a fresh purpose signature in the
 /// real `devscout map` flow -- `mapcmd::map_repo` assembles it). `changed`: from the
 /// caller's own `indexIsStale`-equivalent check against `csFiles`, passed in
 /// rather than recomputed so the unchanged path never opens any graph file.
+/// `model`: the repo's discovered `.csproj` projects, or `None` when it
+/// declares none -- serialized into `graph.units` and mirrored into the
+/// `project_units_path` staleness sidecar. The caller is expected to have
+/// already folded `project::sidecar_differs` into `changed`; this function
+/// only writes the sidecar, it never decides on it.
 pub fn rebuild_graph(
     root: &Path,
     graph_files: &[GraphFile],
     fresh_fragments: &HashMap<String, AnyFragment>,
     changed: bool,
+    model: Option<&crate::project::ProjectModel>,
 ) -> io::Result<RebuildOutcome> {
     if !changed && graph_json_path(root).exists() && graph_schema_is_current(root) {
         return Ok(RebuildOutcome::NotRebuilt);
@@ -1455,8 +1541,9 @@ pub fn rebuild_graph(
         );
     }
 
-    let graph = crate::resolve::resolve_graph_with_ts(root, &merged_cs, &merged_ts);
+    let graph = crate::resolve::resolve_graph_with_model(root, &merged_cs, &merged_ts, model);
     write_graph(root, &graph)?;
+    write_project_units(root, model)?;
     write_fragments_cache(root, &new_cache)?;
     write_fragments_index(root, &new_cache)?;
     remove_superseded_caches(root);
@@ -2203,6 +2290,111 @@ mod tests {
         );
     }
 
+    // --- graph.json: `units` is appended after `names` --------------------
+
+    fn empty_stats() -> Stats {
+        Stats {
+            def_count: 0,
+            file_count: 0,
+            edges_by_kind: EdgesByKind::default(),
+            ambiguous_count: 0,
+            ambiguous_pct: Percent1::zero(),
+            unresolved_external_count: 0,
+            heuristic_edge_count: 0,
+            test_def_count: 0,
+            heuristic_by_tier: HeuristicByTier::default(),
+            ts: None,
+        }
+    }
+
+    // The two halves of the `units` contract in one place: a graph whose
+    // repo declares no project must serialize with NO `units` key at all
+    // (that is what keeps every csproj-less tree byte-identical to what it
+    // was), and one that does must carry `units` LAST -- after `names` --
+    // with each row keyed `id`, `name`, `refs`, `test` in that order and the
+    // last two omitted at their empty/false value. Byte literals on purpose:
+    // a golden recomputed by the code under test proves nothing.
+    #[test]
+    fn graph_omits_units_when_empty_and_appends_them_after_names_otherwise() {
+        let mut g = Graph {
+            schema_version: GRAPH_SCHEMA_VERSION,
+            built_at_head: None,
+            defs: Vec::new(),
+            edges: Vec::new(),
+            stats: empty_stats(),
+            names: vec![GraphName {
+                name: "A".to_string(),
+                kind: "class".to_string(),
+                file: "A/A.cs".to_string(),
+                line: 1,
+                owner: String::new(),
+            }],
+            units: Vec::new(),
+        };
+
+        const WITHOUT_UNITS: &str = concat!(
+            r#"{"schema_version":2,"built_at_head":null,"defs":[],"edges":[],"stats":{"def_count":0,"#,
+            r#""file_count":0,"edges_by_kind":{"inherits":0,"uses-type":0,"imports":0,"uses-member":0,"#,
+            r#""ctor-di":0},"ambiguous_count":0,"ambiguous_pct":0,"unresolved_external_count":0,"#,
+            r#""heuristic_edge_count":0,"test_def_count":0,"heuristic_by_tier":{"ext":0,"guess":0}},"#,
+            r#""names":[{"name":"A","kind":"class","file":"A/A.cs","line":1}]}"#,
+        );
+        assert_eq!(
+            serde_json::to_string(&g).unwrap(),
+            WITHOUT_UNITS,
+            "an empty unit list must not emit a `units` key at all"
+        );
+
+        g.units = vec![
+            GraphUnit {
+                id: "A/A.csproj".to_string(),
+                name: "A".to_string(),
+                refs: vec!["B/B.csproj".to_string()],
+                test: false,
+            },
+            GraphUnit {
+                id: "B/B.csproj".to_string(),
+                name: "B".to_string(),
+                refs: Vec::new(),
+                test: false,
+            },
+            GraphUnit {
+                id: "T/T.Tests.csproj".to_string(),
+                name: "T.Tests".to_string(),
+                refs: vec!["A/A.csproj".to_string()],
+                test: true,
+            },
+        ];
+
+        const WITH_UNITS: &str = concat!(
+            r#""names":[{"name":"A","kind":"class","file":"A/A.cs","line":1}],"#,
+            r#""units":[{"id":"A/A.csproj","name":"A","refs":["B/B.csproj"]},"#,
+            r#"{"id":"B/B.csproj","name":"B"},"#,
+            r#"{"id":"T/T.Tests.csproj","name":"T.Tests","refs":["A/A.csproj"],"test":true}]}"#,
+        );
+        let json = serde_json::to_string(&g).unwrap();
+        assert_eq!(
+            json,
+            format!(
+                "{}{}",
+                WITHOUT_UNITS
+                    .strip_suffix(
+                        r#""names":[{"name":"A","kind":"class","file":"A/A.cs","line":1}]}"#
+                    )
+                    .unwrap(),
+                WITH_UNITS
+            ),
+            "`units` is appended after `names` and changes nothing before it"
+        );
+
+        // And a graph.json written before `units` existed still reads back --
+        // the field defaults rather than failing the parse.
+        let reparsed: Graph = serde_json::from_str(WITHOUT_UNITS).unwrap();
+        assert!(reparsed.units.is_empty());
+        let round_tripped: Graph = serde_json::from_str(&json).unwrap();
+        assert_eq!(round_tripped.units, g.units);
+    }
+
     // --- Stats: fixed edges_by_kind order ---------------------------------
 
     #[test]
@@ -2342,7 +2534,7 @@ mod tests {
         let dir = temp_dir("rebuild-unchanged");
         fs::create_dir_all(graph_dir(&dir)).unwrap();
         fs::write(graph_json_path(&dir), b"{\"schema_version\":2,\"built_at_head\":null,\"defs\":[],\"edges\":[],\"stats\":{\"def_count\":0,\"file_count\":0,\"edges_by_kind\":{\"inherits\":0,\"uses-type\":0,\"imports\":0,\"uses-member\":0},\"ambiguous_count\":0,\"ambiguous_pct\":0,\"unresolved_external_count\":0}}").unwrap();
-        let outcome = rebuild_graph(&dir, &[], &HashMap::new(), false).unwrap();
+        let outcome = rebuild_graph(&dir, &[], &HashMap::new(), false, None).unwrap();
         assert!(matches!(outcome, RebuildOutcome::NotRebuilt));
     }
 
@@ -2356,7 +2548,7 @@ mod tests {
         let dir = temp_dir("rebuild-old-schema");
         fs::create_dir_all(graph_dir(&dir)).unwrap();
         fs::write(graph_json_path(&dir), b"{\"schema_version\":1,\"built_at_head\":null,\"defs\":[],\"edges\":[],\"stats\":{\"def_count\":0,\"file_count\":0,\"edges_by_kind\":{\"inherits\":0,\"uses-type\":0,\"imports\":0,\"uses-member\":0},\"ambiguous_count\":0,\"ambiguous_pct\":0,\"unresolved_external_count\":0}}").unwrap();
-        let outcome = rebuild_graph(&dir, &[], &HashMap::new(), false).unwrap();
+        let outcome = rebuild_graph(&dir, &[], &HashMap::new(), false, None).unwrap();
         let RebuildOutcome::Rebuilt(graph) = outcome else {
             panic!("an older-schema graph must be rebuilt on the unchanged path");
         };
@@ -2378,7 +2570,7 @@ mod tests {
         fs::write(graph_json_path(&dir), b"{").unwrap();
         assert!(!graph_schema_is_current(&dir));
         assert!(matches!(
-            rebuild_graph(&dir, &[], &HashMap::new(), false).unwrap(),
+            rebuild_graph(&dir, &[], &HashMap::new(), false, None).unwrap(),
             RebuildOutcome::Rebuilt(_)
         ));
     }
@@ -2416,13 +2608,13 @@ mod tests {
             rel: "A.cs".to_string(),
             mtime: 111,
         }];
-        let first = rebuild_graph(&dir, &graph_files, &fresh, true).unwrap();
+        let first = rebuild_graph(&dir, &graph_files, &fresh, true, None).unwrap();
         assert!(matches!(first, RebuildOutcome::Rebuilt(_)));
 
         // Second build: same mtime, EMPTY fresh_fragments -- must reuse the
         // cache, not silently drop the file from the graph.
         let empty: HashMap<String, AnyFragment> = HashMap::new();
-        let second = rebuild_graph(&dir, &graph_files, &empty, true).unwrap();
+        let second = rebuild_graph(&dir, &graph_files, &empty, true, None).unwrap();
         match second {
             RebuildOutcome::Rebuilt(g) => {
                 assert_eq!(g.defs.len(), 1, "cached fragment must still be used")
@@ -2489,7 +2681,7 @@ mod tests {
             rel: "src/A.cs".to_string(),
             mtime: 222,
         }];
-        rebuild_graph(&dir, &graph_files, &fresh, true).unwrap();
+        rebuild_graph(&dir, &graph_files, &fresh, true, None).unwrap();
 
         assert!(
             graph_dir(&dir).join("fragments-v15.json").exists(),

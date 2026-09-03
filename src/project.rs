@@ -58,6 +58,7 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
+use crate::graph;
 use crate::repo;
 use crate::walk;
 
@@ -360,6 +361,79 @@ impl ProjectModel {
     /// transitive `ProjectReference` closure.
     pub fn reachable(&self, from: usize, to: usize) -> bool {
         from == to || self.closure.get(from).is_some_and(|c| c.contains(&to))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Persistence bridge -- `graph.json`'s `units` array and the staleness
+// sidecar beside it. The on-disk row type (`graph::GraphUnit`) lives in
+// graph.rs with every other serde struct; the two conversions and the
+// comparison live here, next to the model they describe.
+// ---------------------------------------------------------------------------
+
+/// The model's units as graph.json persists them, in `ProjectModel` order
+/// (sorted by `id`). `dir` is dropped: it is always `id`'s parent directory
+/// and `units_from_graph` recomputes it.
+pub fn graph_units(model: &ProjectModel) -> Vec<graph::GraphUnit> {
+    model
+        .units
+        .iter()
+        .map(|u| graph::GraphUnit {
+            id: u.id.clone(),
+            name: u.name.clone(),
+            refs: u.refs.clone(),
+            test: u.test,
+        })
+        .collect()
+}
+
+/// The inverse of `graph_units`: persisted rows back into `Unit`s, ready for
+/// `ProjectModel::from_units`. `dir` is recomputed as `id`'s parent (`""` for
+/// a `.csproj` sitting directly at the repo root), which is exactly what
+/// `discover` derived it from in the first place.
+pub fn units_from_graph(rows: &[graph::GraphUnit]) -> Vec<Unit> {
+    rows.iter()
+        .map(|r| Unit {
+            id: r.id.clone(),
+            name: r.name.clone(),
+            dir: match r.id.rfind('/') {
+                Some(i) => r.id[..i].to_string(),
+                None => String::new(),
+            },
+            refs: r.refs.clone(),
+            test: r.test,
+        })
+        .collect()
+}
+
+/// Whether `model` disagrees with the project-units sidecar last written for
+/// `root` -- `map`'s "did a `.csproj` change?" signal.
+///
+/// It has to exist because a `.csproj` is not a `SOURCE_EXT`: editing one
+/// moves no indexed file, so `graph::index_is_stale` stays false and the
+/// graph would keep a stale reference closure forever. The comparison is a
+/// raw BYTE compare against the sidecar rather than a parse-and-diff -- the
+/// sidecar holds exactly what `graph_units` serializes, so any difference at
+/// all (a new project, a dropped `ProjectReference`, a flipped `test`) shows
+/// up as different bytes, and an unreadable or truncated sidecar reads as
+/// differing, which costs one rebuild and is the safe direction.
+///
+/// A missing sidecar with a model is a difference (nothing was ever written,
+/// or the last run had no projects); a missing sidecar with NO model is not
+/// -- that is the steady state of every repo that has no `.csproj`, and it
+/// must never force a rebuild.
+pub fn sidecar_differs(root: &Path, model: Option<&ProjectModel>) -> bool {
+    let existing = fs::read(graph::project_units_path(root)).ok();
+    match (existing, model) {
+        (None, None) => false,
+        (None, Some(_)) => true,
+        // A sidecar left over from when the repo still had projects: the
+        // model went away, so the graph's `units` must go away with it.
+        (Some(_), None) => true,
+        (Some(bytes), Some(m)) => match serde_json::to_vec(&graph_units(m)) {
+            Ok(fresh) => bytes != fresh,
+            Err(_) => true,
+        },
     }
 }
 

@@ -1231,7 +1231,7 @@ fn heuristic_edge_key(e: &Edge) -> Option<String> {
 /// set changed, and unit-testable without a parser (see this module's tests,
 /// which build `Fragment` values by hand).
 pub fn resolve_graph(root: &Path, fragments_by_file: &[(String, Fragment)]) -> Graph {
-    resolve_graph_with_ts(root, fragments_by_file, &[])
+    resolve_graph_with_model(root, fragments_by_file, &[], None)
 }
 
 /// The same resolve, with the TS/TSX half alongside. The caller passes the two
@@ -1247,6 +1247,22 @@ pub fn resolve_graph_with_ts(
     root: &Path,
     fragments_by_file: &[(String, Fragment)],
     ts_fragments_by_file: &[(String, crate::extract::TsFragment)],
+) -> Graph {
+    resolve_graph_with_model(root, fragments_by_file, ts_fragments_by_file, None)
+}
+
+/// The same resolve again, now with the repo's `.csproj` project model
+/// alongside -- `devscout map`'s entry point, and the only one that can
+/// produce a graph carrying `units`. The other two wrap this one with `None`.
+///
+/// `model` is `None` for a repo that declares no `.csproj`, and a `None`
+/// model must leave the resolve BYTE-IDENTICAL to what it was: `units` is
+/// omitted when empty, so the whole artifact is unchanged for such a tree.
+pub fn resolve_graph_with_model(
+    root: &Path,
+    fragments_by_file: &[(String, Fragment)],
+    ts_fragments_by_file: &[(String, crate::extract::TsFragment)],
+    model: Option<&crate::project::ProjectModel>,
 ) -> Graph {
     let index = build_def_index(fragments_by_file);
     let (global_usings, global_aliases) = collect_global_usings(fragments_by_file);
@@ -1975,6 +1991,9 @@ pub fn resolve_graph_with_ts(
         defs: index.defs,
         edges,
         names,
+        // Appended LAST and empty without a model, which is what keeps a
+        // csproj-less repo's graph.json byte-identical to what it was.
+        units: model.map(crate::project::graph_units).unwrap_or_default(),
     };
     if !ts_fragments_by_file.is_empty() {
         let alias = crate::tsgraph::read_ts_path_aliases(root);
@@ -5383,6 +5402,32 @@ mod tests {
                 ("App.Beta.Config", 16),
                 ("App.Solo.Counter", 18)
             ]
+        );
+    }
+
+    // Stage 6 adds a project model the resolver may consult; a repo that
+    // declares no `.csproj` has none, and for such a repo the WHOLE artifact
+    // -- not just the edge array -- must serialize exactly as it did before
+    // stage 6 existed. Whole-graph bytes rather than a spot check on `units`:
+    // an omitted key is only half the guarantee, the other half is that
+    // threading the model through moved nothing else.
+    #[test]
+    fn stage6_without_a_project_model_the_byte_identity_fixture_serializes_exactly_as_before() {
+        let files = fragments_for(BYTE_IDENTITY_FIXTURE);
+        let root = no_git_root();
+
+        let legacy = serde_json::to_string(&resolve_graph(&root, &files)).unwrap();
+        let modelled =
+            serde_json::to_string(&resolve_graph_with_model(&root, &files, &[], None)).unwrap();
+        assert_eq!(
+            legacy, modelled,
+            "a None model must leave the artifact byte-identical, key for key"
+        );
+
+        assert!(
+            !legacy.contains(r#""units""#),
+            "no `.csproj`, no `units` key -- it is omit-when-empty precisely so a \
+             csproj-less repo's graph.json is unchanged: {legacy}"
         );
     }
 
