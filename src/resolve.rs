@@ -553,6 +553,154 @@ fn inherited_member_declared(
     })
 }
 
+// The scored tier's own receiver test, and the mirror image of the veto above:
+// that one asks whether an in-graph receiver ALREADY declares the member (so a
+// guess would be wrong); this one asks whether a candidate is a type the
+// receiver could even be, which is the question an EXTERNAL receiver leaves
+// open. C# binds `x.M(...)` only to a member of a type `x` is assignable to, so
+// a candidate the receiver type cannot reach is a disproved guess rather than a
+// weak one.
+//
+// True when `start` IS `type_name`, when any def in its in-graph base closure
+// is, or when any def in that closure lists `type_name` as a RAW base string.
+// The last case carries the weight: a receiver typed by an external interface
+// has no def to walk to, so the only evidence available is the base name the
+// candidate wrote down. `bases` holds bare identifiers (a base written
+// `System.IDisposable` is recorded as `IDisposable`) and a receiver fact's type
+// name is bare the same way, so the two strings meet without either side being
+// resolved.
+//
+// `args_known` says whether the receiver's type ARGUMENTS are known at all. A
+// receiver read off a declaration carries both halves of the fact, so
+// `ILogger<Worker>` must not accept a candidate whose base is the non-generic
+// `ILogger`. A receiver inferred from a method's recorded RETURN type carries a
+// name and nothing else, and refusing every generic implementation on the
+// strength of an absence would be reading a fact the extractor never recorded --
+// so that case compares names only.
+fn nominally_assignable(
+    index: &DefIndex,
+    file_contexts: &HashMap<String, FileContext>,
+    start: usize,
+    type_name: &str,
+    receiver_args: Option<&Vec<String>>,
+    args_known: bool,
+) -> bool {
+    inheritance_walk_matches(index, file_contexts, start, |idx| {
+        (index.defs[idx].name == type_name
+            && (!args_known
+                || index.member_lists[idx].type_params.len() == receiver_args.map_or(0, Vec::len)))
+            || index.member_lists[idx].bases.iter().any(|b| {
+                b == type_name
+                    && (!args_known
+                        || generic_args_unify(
+                            index.member_lists[idx]
+                                .base_generic_args
+                                .iter()
+                                .find(|(k, _)| k == b)
+                                .map(|(_, v)| v),
+                            receiver_args,
+                        ))
+            })
+    })
+}
+
+/// Memo for `nominally_assignable`, one per resolve run. The walk is a
+/// transitive base closure with a ladder resolution at every hop, and a corpus
+/// asks the same `(candidate, receiver type)` question once per call site, so
+/// the answer is cached rather than recomputed. `args_known` is part of the key
+/// because it changes the answer for the same receiver name: an absent
+/// type-argument list means "no arguments" when the fact is a declaration and
+/// "unknown" when it is a return type.
+type AssignabilityCache = HashMap<(usize, String, Option<Vec<String>>, bool), bool>;
+
+fn nominally_assignable_cached(
+    cache: &mut AssignabilityCache,
+    index: &DefIndex,
+    file_contexts: &HashMap<String, FileContext>,
+    start: usize,
+    type_name: &str,
+    receiver_args: Option<&Vec<String>>,
+    args_known: bool,
+) -> bool {
+    let key = (
+        start,
+        type_name.to_string(),
+        receiver_args.cloned(),
+        args_known,
+    );
+    if let Some(&answer) = cache.get(&key) {
+        return answer;
+    }
+    let answer = nominally_assignable(
+        index,
+        file_contexts,
+        start,
+        type_name,
+        receiver_args,
+        args_known,
+    );
+    cache.insert(key, answer);
+    answer
+}
+
+// The whole receiver rule for ONE scored candidate, applied only when the ref
+// carries a receiver type that resolved to nothing in-graph. Two ways in, and a
+// candidate needs just one of them:
+//
+//   - as an INSTANCE member: the candidate declares the member (per the ref's
+//     shape) AND is nominally assignable to the receiver type.
+//   - as an EXTENSION method: the candidate declares an extension of that
+//     member name whose `this` parameter is the receiver type EXACTLY, type
+//     arguments unified -- the same (member, thisType) key and the same
+//     unification tier (f) uses. Tier (f) declined this ref for one of its own
+//     reasons (most often the namespace test, which is narrower than the
+//     language), and re-admitting the candidate HERE, as a guess, is the
+//     honest answer: the this-parameter is direct evidence about this exact
+//     receiver type, which is more than the uniqueness pool alone ever had.
+//
+// The two are OR-ed rather than tried in order because an extension method is
+// also an ordinary public static method, so the static class holding it
+// vouches through `methods` too -- requiring assignability of a candidate that
+// merely LOOKS instance-vouched would refuse every extension there is.
+fn receiver_admits_candidate(
+    index: &DefIndex,
+    file_contexts: &HashMap<String, FileContext>,
+    cache: &mut AssignabilityCache,
+    candidate: usize,
+    member: &str,
+    shape: MemberShape,
+    receiver_type: &str,
+    receiver_args: Option<&Vec<String>>,
+    args_known: bool,
+) -> bool {
+    let instance_vouches = match shape {
+        MemberShape::Call => index.defs[candidate].methods.iter().any(|m| m == member),
+        MemberShape::Read => declares_member(index, candidate, Some(member)),
+    };
+    if instance_vouches
+        && nominally_assignable_cached(
+            cache,
+            index,
+            file_contexts,
+            candidate,
+            receiver_type,
+            receiver_args,
+            args_known,
+        )
+    {
+        return true;
+    }
+    index
+        .extension_index
+        .get(&format!("{member} {receiver_type}"))
+        .map(Vec::as_slice)
+        .unwrap_or(&[])
+        .iter()
+        .any(|c| {
+            c.def_idx == candidate && generic_args_unify(c.entry.this_args.as_ref(), receiver_args)
+        })
+}
+
 fn nested_candidate_visible_from_site(
     ref_: &FragRef,
     ns: &str,
@@ -1094,6 +1242,10 @@ pub fn resolve_graph_with_ts(
     // `edges_by_kind['uses-member']` never has a guess folded into a fact. The
     // heuristic total is reported separately in the stats object.
     let mut heuristic_edge_count: usize = 0;
+    // One memo for the whole run: the receiver rule below asks the same
+    // "is this candidate assignable to this receiver type" question once per
+    // call site, and the answer is a base-closure walk.
+    let mut assignable_cache: AssignabilityCache = HashMap::new();
 
     for (file, frag) in fragments_by_file {
         // Local alias shadows a same-named global one -- see
@@ -1557,6 +1709,39 @@ pub fn resolve_graph_with_ts(
                             }
                         }
                         Resolution::Resolved(..) => None,
+                    };
+                    // The RECEIVER rule, the pool's last filter and, like
+                    // every W1 rule, purely subtractive. It applies only where
+                    // the ref carries a receiver type that resolved to nothing
+                    // in-graph -- the shape that made the uniqueness pool a
+                    // pool of same-named strangers. An AMBIGUOUS receiver
+                    // (several in-graph candidates, none picked) is untouched:
+                    // there the pool already IS the receiver's own candidate
+                    // set, so assignability is not in question. A ref with no
+                    // receiver fact at all is untouched too -- there is nothing
+                    // to be assignable TO.
+                    let pool = match (&receiver_type_name, source, r.member.as_deref()) {
+                        (Some(receiver_type), Resolution::External, Some(member)) => {
+                            pool.map(|candidates| {
+                                candidates
+                                    .into_iter()
+                                    .filter(|&d| {
+                                        receiver_admits_candidate(
+                                            &index,
+                                            &file_contexts,
+                                            &mut assignable_cache,
+                                            d,
+                                            member,
+                                            shape,
+                                            receiver_type,
+                                            r.receiver_args.as_ref(),
+                                            r.receiver_type.is_some(),
+                                        )
+                                    })
+                                    .collect()
+                            })
+                        }
+                        _ => pool,
                     };
                     if let Some(pool) = pool {
                         let mut scored: Vec<(usize, u8)> = pool
@@ -4875,6 +5060,195 @@ mod tests {
             heuristic_member_edge_targets(&g),
             vec!["App.A.Counter", "App.Ext.FooExtensions"],
             "a method name and an extension-method name both still vouch for a call -- the shape rule only ever removes candidates, never adds one"
+        );
+    }
+
+    // --- stage 5: the receiver-assignability rule --------------------------
+    //
+    // The scored tier's uniqueness pool is drawn by member NAME alone, so a
+    // ref whose receiver is typed but EXTERNAL (`private ILogger _logger;`
+    // where ILogger is a NuGet interface) used to name any in-graph class
+    // carrying a method of that name -- a log adapter implementing an
+    // unrelated interface, say. The receiver's type is a fact the extractor
+    // already recorded, and C# will only bind that call to a member of a type
+    // the receiver is assignable to, so a candidate the in-graph inheritance
+    // closure cannot connect to the receiver type is not a weak guess, it is a
+    // disproved one. The rule below refuses it.
+    //
+    // The connection is NOMINAL and deliberately shallow: a candidate answers
+    // when it IS the receiver type, when a def in its in-graph base closure
+    // is, or when any def in that closure merely NAMES the receiver type in
+    // its raw base list -- the last case being the one that matters, since the
+    // receiver type is usually external and so has no def to walk to.
+
+    #[test]
+    fn stage5_receiver_rule_an_external_receiver_refuses_a_candidate_not_assignable_to_it() {
+        let files = fragments_for(&[
+            (
+                "Logging/DbUpLogAdapter.cs",
+                "namespace App.Logging { public class DbUpLogAdapter : IUpgradeLog { public void LogInformation(string m) { } } }",
+            ),
+            (
+                "Consumers/Runner.cs",
+                "\nnamespace App.Consumers;\n\npublic class Runner\n{\n  private ILogger _logger;\n  public void Run() => _logger.LogInformation(\"x\");\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert!(
+            heuristic_member_edges_from(&g, "Consumers/Runner.cs").is_empty(),
+            "DbUpLogAdapter implements IUpgradeLog and nothing in its closure names ILogger -- the receiver's own type disproves the guess"
+        );
+        assert_eq!(g.stats.heuristic_edge_count, 0);
+    }
+
+    #[test]
+    fn stage5_receiver_rule_a_candidate_whose_base_closure_names_the_receiver_type_still_emits() {
+        let files = fragments_for(&[
+            (
+                "Logging/FileLogger.cs",
+                "namespace App.Logging { public class FileLogger : ILogger { public void LogInformation(string m) { } } }",
+            ),
+            (
+                "Logging/Base.cs",
+                "namespace App.Logging { public class Base : ILogger { } }",
+            ),
+            (
+                "Logging/Derived.cs",
+                "namespace App.Logging { public class Derived : Base { public void LogInformation(string m) { } } }",
+            ),
+            (
+                "Consumers/Runner.cs",
+                "\nnamespace App.Consumers;\n\npublic class Runner\n{\n  private ILogger _logger;\n  public void Run() => _logger.LogInformation(\"x\");\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            heuristic_member_edges_from(&g, "Consumers/Runner.cs"),
+            vec![("App.Logging.Derived", 7), ("App.Logging.FileLogger", 7)],
+            "FileLogger names ILogger directly; Derived reaches it one in-graph hop up, through Base"
+        );
+    }
+
+    #[test]
+    fn stage5_receiver_rule_generic_arguments_must_unify_on_the_matched_base() {
+        let files = fragments_for(&[
+            (
+                "Logging/Adapter.cs",
+                "namespace App.Logging { public class Adapter : ILogger { public void LogInformation(string m) { } } }",
+            ),
+            (
+                "Logging/Typed.cs",
+                "namespace App.Logging { public class Typed : ILogger<Worker> { public void LogInformation(string m) { } } }",
+            ),
+            (
+                "Logging/Open.cs",
+                "namespace App.Logging { public class Open<T> : ILogger<T> { public void LogInformation(string m) { } } }",
+            ),
+            (
+                "Consumers/Runner.cs",
+                "\nnamespace App.Consumers;\n\npublic class Runner\n{\n  private ILogger<Worker> _logger;\n  public void Run() => _logger.LogInformation(\"x\");\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            heuristic_member_edges_from(&g, "Consumers/Runner.cs"),
+            vec![("App.Logging.Open", 7), ("App.Logging.Typed", 7)],
+            "the base NAME matching is not enough: the non-generic `: ILogger` never binds an ILogger<Worker> receiver, while a closed and an open implementation both do"
+        );
+    }
+
+    #[test]
+    fn stage5_receiver_rule_a_call_hop_receiver_with_unknown_args_compares_by_name_only() {
+        let files = fragments_for(&[
+            (
+                "Logging/LoggerFactory.cs",
+                "namespace App.Logging { public class LoggerFactory { public static ILogger Make() { return null; } } }",
+            ),
+            (
+                "Logging/Typed.cs",
+                "namespace App.Logging { public class Typed : ILogger<Worker> { public void LogInformation(string m) { } } }",
+            ),
+            (
+                "Consumers/Runner.cs",
+                "\nusing App.Logging;\n\nnamespace App.Consumers;\n\npublic class Runner\n{\n  public void Run()\n  {\n    var l = LoggerFactory.Make();\n    l.LogInformation(\"x\");\n  }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            heuristic_member_edges_from(&g, "Consumers/Runner.cs"),
+            vec![("App.Logging.Typed", 11)],
+            "a method's recorded RETURN type carries a name and no type arguments, so the rule compares names only rather than refusing every generic implementation"
+        );
+    }
+
+    #[test]
+    fn stage5_receiver_rule_an_extension_only_candidate_is_refused_after_tier_f_declined() {
+        let files = fragments_for(&[
+            (
+                "Ext/LogExt.cs",
+                "namespace App.Ext { public static class LogExt { public static void LogInformation(this IOtherLogger l, string m) { } } }",
+            ),
+            (
+                "Registration/WidgetServiceExtensions.cs",
+                "namespace App.Registration { public static class WidgetServiceExtensions { public static void AddWidgets(this IServiceCollection s) { } } }",
+            ),
+            (
+                "Consumers/Startup.cs",
+                "\nnamespace App.Consumers;\n\npublic class Startup\n{\n  public void Run(ILogger logger, IServiceCollection services)\n  {\n    logger.LogInformation(\"x\");\n    services.AddWidgets();\n  }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            heuristic_member_edges_from(&g, "Consumers/Startup.cs"),
+            vec![("App.Registration.WidgetServiceExtensions", 9)],
+            "LogExt extends IOtherLogger, not ILogger, so no this-type of its own answers the receiver and nothing else connects it -- while AddWidgets extends the receiver type exactly and only tier (f)'s namespace test (App.Registration is not imported here) kept it out"
+        );
+    }
+
+    #[test]
+    fn stage5_receiver_rule_an_in_graph_receiver_still_resolves_precisely() {
+        let files = fragments_for(&[
+            (
+                "Widgets/Widget.cs",
+                "namespace App.Widgets { public class Widget { public void Render() { } } }",
+            ),
+            (
+                "Consumers/UsesWidget.cs",
+                "\nusing App.Widgets;\n\nnamespace App.Consumers;\n\npublic class UsesWidget\n{\n  private Widget _widget;\n  public void Run() => _widget.Render();\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_from(&g, "Consumers/UsesWidget.cs"),
+            vec![("App.Widgets.Widget", 9)],
+            "an in-graph receiver never reaches the scored tier at all -- tier (e) answers it precisely"
+        );
+        assert_eq!(g.stats.heuristic_edge_count, 0);
+    }
+
+    // The probe the design asked for: a base written with its namespace
+    // (`class Handle : System.IDisposable`) is recorded as the bare identifier
+    // `IDisposable`, and a receiver declared the same dotted way is recorded
+    // bare too, so the two raw strings meet and the rule admits the candidate.
+    // Both halves of that are extractor behaviour, which is why this runs real
+    // sources rather than hand-built facts.
+    #[test]
+    fn stage5_receiver_rule_a_dotted_base_name_meets_a_dotted_receiver_type_by_bare_identifier() {
+        let files = fragments_for(&[
+            (
+                "Io/Handle.cs",
+                "namespace App.Io { public class Handle : System.IDisposable { public void Dispose() { } } }",
+            ),
+            (
+                "Consumers/Closer.cs",
+                "\nnamespace App.Consumers;\n\npublic class Closer\n{\n  public void Run(System.IDisposable d) => d.Dispose();\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            heuristic_member_edges_from(&g, "Consumers/Closer.cs"),
+            vec![("App.Io.Handle", 6)],
+            "both sides reduce to the bare identifier IDisposable, so the raw base string answers the receiver type"
         );
     }
 
