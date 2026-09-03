@@ -393,19 +393,49 @@ fn declares_member(index: &DefIndex, idx: usize, member: Option<&str>) -> bool {
         || index.member_lists[idx].fields.iter().any(|f| f == member)
 }
 
+// The two shapes a member reference can take, read straight off the ref's own
+// recorded fact: a CALL carries an `argCount` (the extractor only ever sets
+// one on the function half of an `invocation_expression`, see
+// `invocation_arg_count`), a READ carries none. C# will only ever bind a call
+// to something invocable, so the shape is what tells `member_vouched` whether
+// a property or field is even eligible to answer.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum MemberShape {
+    Call,
+    Read,
+}
+
+fn member_shape(r: &FragRef) -> MemberShape {
+    if r.arg_count.is_some() {
+        MemberShape::Call
+    } else {
+        MemberShape::Read
+    }
+}
+
 // The membership test the SCORED tier uses: `declares_member` widened by the
-// extension-method names the def declares. A static class holding
+// extension-method names the def declares, and -- for a CALL -- narrowed
+// first to the names that are actually invocable. A static class holding
 // `Render(this Widget w)` never "declares Render" in the instance sense
 // `declares_member` means, but it is exactly the def a `something.Render()`
-// guess should be allowed to name, so the scored tier counts it. Deliberately
-// NOT used by any precise tier: widening `declares_member` itself would let
-// tiers (a)/(e) emit a PRECISE edge on an extension name with none of tier
-// (f)'s arity, generic-unification or admission filters applied.
-fn member_vouched(index: &DefIndex, idx: usize, member: Option<&str>) -> bool {
-    if declares_member(index, idx, member) {
+// guess should be allowed to name, so the scored tier counts it for a call.
+// A property or a field is never callable: `entity.Property(x => x.Id)`
+// cannot bind to a property or field under any C# overload resolution, so a
+// property/field-only def must not vouch for a ref shaped like a call, even
+// though the very same def is fair game for a READ of that same member name
+// (`entity.Property`). Deliberately NOT used by any precise tier: widening
+// `declares_member` itself would let tiers (a)/(e) emit a PRECISE edge on an
+// extension name with none of tier (f)'s arity, generic-unification or
+// admission filters applied.
+fn member_vouched(index: &DefIndex, idx: usize, member: Option<&str>, shape: MemberShape) -> bool {
+    let Some(member) = member else { return false };
+    let instance_vouches = match shape {
+        MemberShape::Call => index.defs[idx].methods.iter().any(|m| m == member),
+        MemberShape::Read => declares_member(index, idx, Some(member)),
+    };
+    if instance_vouches {
         return true;
     }
-    let Some(member) = member else { return false };
     index.member_lists[idx]
         .extension_methods
         .iter()
@@ -1484,12 +1514,17 @@ pub fn resolve_graph_with_ts(
                     } else {
                         &result
                     };
+                    // The ref's own call shape, read once and reused by both
+                    // pools below: a property or field never vouches for a
+                    // ref shaped like a call, no matter which pool it came
+                    // from.
+                    let shape = member_shape(r);
                     let pool: Option<Vec<usize>> = match source {
                         Resolution::Ambiguous(candidates) => Some(
                             candidates
                                 .iter()
                                 .copied()
-                                .filter(|&d| member_vouched(&index, d, r.member.as_deref()))
+                                .filter(|&d| member_vouched(&index, d, r.member.as_deref(), shape))
                                 .collect(),
                         ),
                         Resolution::External => {
@@ -1501,8 +1536,22 @@ pub fn resolve_graph_with_ts(
                                 Some(list) => list.clone(),
                                 None => Vec::new(),
                             };
+                            // The uniqueness CAP is measured on the raw,
+                            // shape-blind bucket -- a member name common
+                            // enough to refuse a guess stays refused
+                            // regardless of how many of its declarers survive
+                            // the shape filter below. Only once the ref is
+                            // admitted at all does the shape rule get to
+                            // narrow which of those declarers actually vouch.
                             if named.len() <= SCORED_UNIQUENESS_CAP {
-                                Some(named)
+                                Some(
+                                    named
+                                        .into_iter()
+                                        .filter(|&d| {
+                                            member_vouched(&index, d, r.member.as_deref(), shape)
+                                        })
+                                        .collect(),
+                                )
                             } else {
                                 None
                             }
@@ -4741,6 +4790,92 @@ mod tests {
         let g = resolve_graph(&no_git_root(), &files);
         assert!(member_edges_from(&g, "Consumers/ResolvedMiss.cs").is_empty());
         assert!(heuristic_member_edges_from(&g, "Consumers/ResolvedMiss.cs").is_empty());
+    }
+
+    // --- stage 5: the call-shape rule -------------------------------------
+    //
+    // A property or field is undeniable evidence for a READ of its own name,
+    // but no evidence at all for a CALL of that name -- C# simply has no
+    // overload-resolution path from `entity.Property(x => x.Id)` to a
+    // property or a field. Letting one vouch for a call anyway is exactly the
+    // false-positive shape a corpus audit surfaced: 41% of all heuristic
+    // edges were a call landing on a property/field-only def.
+
+    #[test]
+    fn stage5_shape_rule_a_call_never_vouches_through_a_property_or_field_in_the_uniqueness_pool() {
+        let files = fragments_for(&[
+            (
+                "Model/Customer.cs",
+                "namespace App.Model { public class Customer { public string Property { get; set; } } }",
+            ),
+            (
+                "Model/Order.cs",
+                "namespace App.Model { public class Order { public int Property; } }",
+            ),
+            (
+                "Consumers/CallShape.cs",
+                "\nnamespace App.Consumers;\n\npublic class CallShape\n{\n  public void Run()\n  {\n    var e = Entity();\n    e.Property(x => x.Id);\n    var p = e.Property;\n  }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            heuristic_member_edges_from(&g, "Consumers/CallShape.cs"),
+            vec![("App.Model.Customer", 10), ("App.Model.Order", 10)],
+            "the call at line 9 names neither a property nor a field -- only the read at line 10, which both a property and a field vouch for, survives"
+        );
+    }
+
+    #[test]
+    fn stage5_shape_rule_filters_the_ambiguous_pool_the_same_way() {
+        let files = fragments_for(&[
+            (
+                "One/Config.cs",
+                "namespace App.One { public class Config { public void Load() { } } }",
+            ),
+            (
+                "Two/Config.cs",
+                "namespace App.Two { public class Config { public string Load { get; } } }",
+            ),
+            (
+                "Consumers/AmbiguousCall.cs",
+                "\nnamespace App.Consumers;\n\npublic class AmbiguousCall\n{\n  public void Run() => Config.Load();\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert!(
+            member_edges_from(&g, "Consumers/AmbiguousCall.cs").is_empty(),
+            "the precise tiers still refuse to pick"
+        );
+        assert_eq!(
+            heuristic_member_edges_from(&g, "Consumers/AmbiguousCall.cs"),
+            vec![("App.One.Config", 6)],
+            "Config.Load() is a call -- App.Two.Config only ever declared Load as a property, so the shape rule drops it out of the ambiguous pool before scoring"
+        );
+    }
+
+    #[test]
+    fn stage5_shape_rule_a_method_or_extension_name_still_vouches_for_a_call() {
+        let files = fragments_for(&[
+            (
+                "A/Counter.cs",
+                "namespace App.A { public class Counter { public void Tally() { } } }",
+            ),
+            ("Other/Foo.cs", "namespace App.Other { public class Foo { } }"),
+            (
+                "Ext/FooExtensions.cs",
+                "namespace App.Ext { public static class FooExtensions { public static void Tally(this Foo f) { } } }",
+            ),
+            (
+                "Consumers/CallShapeOk.cs",
+                "\nnamespace App.Consumers;\n\npublic class CallShapeOk\n{\n  public void Run()\n  {\n    var x = Build();\n    x.Tally();\n  }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            heuristic_member_edge_targets(&g),
+            vec!["App.A.Counter", "App.Ext.FooExtensions"],
+            "a method name and an extension-method name both still vouch for a call -- the shape rule only ever removes candidates, never adds one"
+        );
     }
 
     // The byte-identity fixture: a fixed set of sources whose resolved edge and
