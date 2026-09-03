@@ -838,3 +838,241 @@ below 0.20 means one method-return hop is not where the chain misses are. The en
 rule registered before Run 2 stands unchanged: precise+ext at or above 0.70 closes the question;
 below it, the remaining misses are bucketed and the enrichment layer is designed against the
 oracle's record contract.
+
+## Run 3 — after the arity and walk-order fixes
+
+Same corpus pin and oracle output as Runs 1, 2 and 2b (denominators identical). The indexer state
+was wiped before mapping this round — full reparse, graph rebuilt in 2.13s, 9956 defs, 130649
+edges. Devscout is at the branch head adding declaration-order, class-first binding walks,
+per-overload method arities gating call vouching, one-hop chain tails, and lambda-parameter
+element typing.
+
+### Audit text output (verbatim; `root` rewritten bench-relative, nothing else changed)
+
+```
+devscout audit --semantic  root bench/corpora/csharp  oracle 112190 records / 66924 sites  units ok 56 failed 0  method units
+tier        edges     tp     fp   precision   fp:no-site  fp:external  fp:wrong  structural
+precise     25713  24983    730       0.972           64           55       611          12
+ext          2194   1980    214       0.902            5           17       192           0
+guess        9652   4792   4860       0.496           50         2514      2296           0
+recall (56713 in-graph member sites)  precise 0.431  precise+ext 0.466  all 0.550
+  by receiver  ident 0.631  qualified 0.216  this 0.535  base 0.978  call 0.128
+external sites 19153  silent-correct 18042  leaked 1111
+fan-out  1: 23693  2: 3902  3: 1492  4+: 368
+top fp targets   InMemoryDelayProvider 295  CodePrinter 218  Retry 214  RoutingSlipExtensions 161  BusRegistrationContext 158  IBusRegistrationContext 157  IPerformanceCounter 148  NullPerformanceCounter 148  StatsDPerformanceCounter 148  InMemoryContainerTestFixture 107  ClosureInfo 103  Instance 102  ContainerTestHarness 78  Message 78  ConcurrencyLimiter 77  IConcurrencyLimiter 77  TelemetryMonitorExtensions 75  ToCSharpPrinter 73  IIndexedSagaProperty 65  IndexedSagaDictionary 65
+top missed       MassTransit.ConsumeContext 1734  MassTransit.SendContext 932  MassTransit.MessageContext 823  MassTransit.BehaviorContext 684  MassTransit.Testing.IBaseTestHarness 634  MassTransit.Testing.ITestHarness 600  MassTransit.PipeContext 538  MassTransit.IPublishEndpoint 491  MassTransit.SagaConsumeContext 482  MassTransit.IRegistrationConfigurator 423  MassTransit.TransitionExtensions 418  MassTransit.IStateMachineModifier 339  MassTransit.ThenExtensions 313  MassTransit.DependencyInjectionTestingExtensions 279  MassTransit.Testing.IReceivedMessageList 278  MassTransit.IReceiveConfigurator 275  MassTransit.Testing.IPublishedMessageList 272  MassTransit.TestStateMachineExtensions 269  MassTransit.ISendEndpoint 222  MassTransit.IProbeSite 179
+unknown targets  enum-member 30  class 16  struct 5  delegate 1  interface 1
+partial file mismatch 155
+ambiguous 137
+edges outside universe (not judged) 685
+```
+
+### `--json` tier objects (verbatim)
+
+```json
+{
+  "precise": {
+    "edges": 25713,
+    "tp": 24983,
+    "fp": 730,
+    "precision": 0.972,
+    "fp_no_site": 64,
+    "fp_external_site": 55,
+    "fp_wrong_target": 611,
+    "structural": 12
+  },
+  "ext": {
+    "edges": 2194,
+    "tp": 1980,
+    "fp": 214,
+    "precision": 0.902,
+    "fp_no_site": 5,
+    "fp_external_site": 17,
+    "fp_wrong_target": 192,
+    "structural": 0
+  },
+  "guess": {
+    "edges": 9652,
+    "tp": 4792,
+    "fp": 4860,
+    "precision": 0.496,
+    "fp_no_site": 50,
+    "fp_external_site": 2514,
+    "fp_wrong_target": 2296,
+    "structural": 0
+  }
+}
+```
+
+### Recall by receiver kind
+
+Denominator 56713 in-graph member sites (same as Run 1, Run 2 and Run 2b — oracle unchanged).
+
+| Receiver kind | Run 2b | Run 3 |
+| --- | --- | --- |
+| `ident` | 0.624 | 0.631 |
+| `qualified` | 0.216 | 0.216 |
+| `this` | 0.526 | 0.535 |
+| `base` | 0.248 | 0.978 |
+| `call` | 0.004 | 0.128 |
+| **all** | **0.534** (precise 0.419, precise+ext 0.452) | **0.550** (precise 0.431, precise+ext 0.466) |
+
+`conditional` (`?.`): 709 records. `bare` (unqualified invocation): 7512 records. Both still
+excluded from the headline recall figure.
+
+### Predictions vs. actual
+
+| Prediction | Actual | Verdict |
+| --- | --- | --- |
+| recall `this` ≥ 0.80 | 0.535 | **FAIL** |
+| recall `base` ≥ 0.95 | 0.978 | **HOLD** |
+| recall `call` ≥ 0.20 | 0.128 | **FAIL** |
+| recall `ident` ≥ 0.63 | 0.631 | **HOLD** |
+| recall all ≥ 0.55 | 0.550 | **HOLD** |
+| recall precise+ext ≥ 0.47 | 0.466 | **FAIL** |
+| precise precision ≥ 0.968 | 0.972 | **HOLD** |
+| ext precision ≥ 0.85 | 0.902 | **HOLD** |
+| guess precision ≥ 0.48 | 0.496 | **HOLD** |
+| leaked external sites ≤ 1098 | 1111 | **FAIL** |
+
+Every guess-tier edge that appeared between Run 2b and Run 3 was traced: all 640 are chain-tail
+references whose method-return hop found no receiver type and which then fell into the scored
+tier's name-uniqueness pool, 374 of them at sites whose receiver the compiler binds to an external
+type. That is a precision regression the chain-tail rule introduced, fixed in Run 4 by finishing
+such a reference as external. The remaining `this` misses are 93 of 99 on a generic enclosing
+type, where the extension tier compared the receiver's own type-parameter wildcards against a
+non-generic `this` parameter reached through the base closure; also fixed in Run 4. Of the missed
+`call` sites, 47% are bare unqualified calls (a stated non-goal) and a further third are chains
+deeper than one hop. The top missed target overall, a generic context interface, splits into
+accesses on untyped lambda parameters (57%) and a generic-arity collision where two declarations
+share one arity-stripped id (35%).
+
+## Run 4 — after the chain-tail and unification fixes
+
+Same corpus pin, oracle output, and wiped-state procedure as Run 3 (graph rebuilt in 2.13s, 9956
+defs, 129813 edges). Devscout is at the branch head that finishes a chain tail as external when
+its hop yields no receiver type, and unifies extension type arguments against the matched base.
+
+### Audit text output (verbatim; `root` rewritten bench-relative, nothing else changed)
+
+```
+devscout audit --semantic  root bench/corpora/csharp  oracle 112190 records / 66924 sites  units ok 56 failed 0  method units
+tier        edges     tp     fp   precision   fp:no-site  fp:external  fp:wrong  structural
+precise     25713  24983    730       0.972           64           55       611          12
+ext          2272   2058    214       0.906            5           17       192           0
+guess        8746   4479   4267       0.512           46         2078      2143           0
+recall (56713 in-graph member sites)  precise 0.431  precise+ext 0.467  all 0.546
+  by receiver  ident 0.628  qualified 0.216  this 0.944  base 0.978  call 0.060
+external sites 19153  silent-correct 18142  leaked 1011
+fan-out  1: 23685  2: 3737  3: 1383  4+: 328
+top fp targets   InMemoryDelayProvider 295  Retry 211  CodePrinter 179  RoutingSlipExtensions 161  BusRegistrationContext 158  IBusRegistrationContext 157  IPerformanceCounter 148  NullPerformanceCounter 148  StatsDPerformanceCounter 148  ClosureInfo 103  Instance 102  InMemoryContainerTestFixture 83  ContainerTestHarness 78  Message 78  ToCSharpPrinter 70  TextTableOptions 65  ISendEndpoint 55  ConsumerPipeConfiguratorExtensions 53  SagaPipeConfiguratorExtensions 53  Tools 53
+top missed       MassTransit.ConsumeContext 1734  MassTransit.SendContext 932  MassTransit.MessageContext 823  MassTransit.BehaviorContext 684  MassTransit.Testing.IBaseTestHarness 634  MassTransit.Testing.ITestHarness 600  MassTransit.PipeContext 538  MassTransit.IPublishEndpoint 491  MassTransit.SagaConsumeContext 482  MassTransit.TransitionExtensions 449  MassTransit.IRegistrationConfigurator 423  MassTransit.IStateMachineModifier 340  MassTransit.ThenExtensions 315  MassTransit.DependencyInjectionTestingExtensions 294  MassTransit.Testing.IReceivedMessageList 278  MassTransit.IReceiveConfigurator 275  MassTransit.Testing.IPublishedMessageList 272  MassTransit.TestStateMachineExtensions 268  MassTransit.ISendEndpoint 222  MassTransit.IProbeSite 179
+unknown targets  enum-member 30  class 16  struct 5  delegate 1  interface 1
+partial file mismatch 155
+ambiguous 137
+edges outside universe (not judged) 677
+```
+
+### `--json` tier objects (verbatim)
+
+```json
+{
+  "precise": {
+    "edges": 25713,
+    "tp": 24983,
+    "fp": 730,
+    "precision": 0.972,
+    "fp_no_site": 64,
+    "fp_external_site": 55,
+    "fp_wrong_target": 611,
+    "structural": 12
+  },
+  "ext": {
+    "edges": 2272,
+    "tp": 2058,
+    "fp": 214,
+    "precision": 0.906,
+    "fp_no_site": 5,
+    "fp_external_site": 17,
+    "fp_wrong_target": 192,
+    "structural": 0
+  },
+  "guess": {
+    "edges": 8746,
+    "tp": 4479,
+    "fp": 4267,
+    "precision": 0.512,
+    "fp_no_site": 46,
+    "fp_external_site": 2078,
+    "fp_wrong_target": 2143,
+    "structural": 0
+  }
+}
+```
+
+### Recall by receiver kind
+
+Denominator 56713 in-graph member sites (same as Run 1 through Run 3 — oracle unchanged).
+
+| Receiver kind | Run 3 | Run 4 |
+| --- | --- | --- |
+| `ident` | 0.631 | 0.628 |
+| `qualified` | 0.216 | 0.216 |
+| `this` | 0.535 | 0.944 |
+| `base` | 0.978 | 0.978 |
+| `call` | 0.128 | 0.060 |
+| **all** | **0.550** (precise 0.431, precise+ext 0.466) | **0.546** (precise 0.431, precise+ext 0.467) |
+
+`conditional` (`?.`): 709 records. `bare` (unqualified invocation): 7512 records. Both still
+excluded from the headline recall figure.
+
+### Predictions vs. actual
+
+Same Run 3 prediction rows, re-judged against Run 4 numbers:
+
+| Prediction | Actual | Verdict |
+| --- | --- | --- |
+| recall `this` ≥ 0.80 | 0.944 | **HOLD** |
+| recall `base` ≥ 0.95 | 0.978 | **HOLD** |
+| recall `call` ≥ 0.20 | 0.060 | **FAIL** |
+| recall `ident` ≥ 0.63 | 0.628 | **FAIL** |
+| recall all ≥ 0.55 | 0.546 | **FAIL** |
+| recall precise+ext ≥ 0.47 | 0.467 | **FAIL** |
+| precise precision ≥ 0.968 | 0.972 | **HOLD** |
+| ext precision ≥ 0.85 | 0.906 | **HOLD** |
+| guess precision ≥ 0.48 | 0.512 | **HOLD** |
+| leaked external sites ≤ 1098 | 1011 | **HOLD** |
+
+Run 4 trades guess-tier volume for precision: 906 fewer guess edges (593 wrong, 313 right), leaked
+external sites down from 1111 to 1011, which is below the 1098 the branch started from, and guess
+precision up to 0.512. The `call` bucket falls from 0.128 to 0.060 because its earlier hits were
+guesses at the right target, now silent; the all-tier figure moves by the same mechanism. The
+`this` bucket reaches 0.944. Three recall predictions miss by three thousandths or less and are
+recorded as misses.
+
+## Decision on the enrichment layer (2026-09-03)
+
+The rule registered before Run 2 stands: recall precise+ext at or above 0.70 would have closed the
+question; Run 4 measures 0.467. The question therefore stays open and moves to design, not to
+code. The remaining misses have been bucketed by receiver kind and target kind above; the largest
+single class, accesses on lambda parameters typed only by the callee's delegate parameter, is a
+syntactic rule for in-graph callees and is the next extractor step before a compiler-backed layer
+is weighed against it. Whatever that weighing decides, it will be measured here, on this corpus
+pin and this oracle output, with predictions registered first.
+
+### Summary across the branch
+
+| Metric | Run 1 | Run 4 |
+| --- | --- | --- |
+| precise precision | 0.969 | 0.972 |
+| ext precision | 0.809 | 0.906 |
+| guess precision | 0.502 | 0.512 |
+| leaked external sites | 1098 | 1011 |
+| recall precise | 0.379 | 0.431 |
+| recall precise+ext | 0.394 | 0.467 |
+| recall all | 0.479 | 0.546 |
+| recall `this` | 0.000 | 0.944 |
+| recall `base` | 0.000 | 0.978 |
+| recall `ident` | 0.560 | 0.628 |
+| recall `qualified` | 0.217 | 0.216 |
+| recall `call` | 0.004 | 0.060 |
