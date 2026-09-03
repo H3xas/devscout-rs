@@ -362,6 +362,23 @@ pub struct DefRecord {
     /// vouching or veto, which keep reading `methods` alone. Appended
     /// LAST of all, after `method_return_args`.
     pub non_public_methods: Vec<String>,
+    /// Method name -> the (min, max) argument-count RANGE every overload
+    /// sharing that name accepts, one tuple per overload, in declaration
+    /// order -- covers EVERY `method_declaration`, public and non-public
+    /// alike (unlike `methods`/`non_public_methods`, which only say a name
+    /// exists, this says what a CALL of that name needs to look like).
+    /// `min` excludes a parameter carrying a default value or the `params`
+    /// modifier; `max` is the total parameter count, or -1 (unbounded) when
+    /// the trailing parameter is a `params` array -- the same sentinel
+    /// `ExtensionMethod::arity_max` already uses. A `Vec` of pairs, not a
+    /// map, for the same reason `method_returns` is one: the serialized key
+    /// order is significant. Consulted by the resolver's arity-aware call
+    /// vouching: a ref carrying an `argCount` binds to `methods`/
+    /// `non_public_methods` only when SOME overload's range admits it: a
+    /// same-named instance member at the wrong arity does not shadow the
+    /// extension tier. A read (no `argCount`) never consults this table.
+    /// Appended LAST of all, after `non_public_methods`.
+    pub method_arities: Vec<(String, Vec<(usize, i64)>)>,
     /// 1-based last line of the complete declaration node.
     pub end_line: usize,
 }
@@ -1166,6 +1183,50 @@ fn raw_non_public_method_names(node: Node, src: &[u8], kind: &str) -> Vec<String
         .collect()
 }
 
+// Every `method_declaration`'s own (name, arity RANGE) fact, regardless of
+// accessibility -- unlike `raw_method_returns`/`is_recorded_method`, this is
+// NOT filtered to public methods: the resolver's arity-aware call vouching
+// (Unit A4 item 2) needs an overload's range whether `methods` or
+// `non_public_methods` is the list answering "does this def declare the
+// name". One (name, ranges) pair per DISTINCT name, in first-occurrence
+// source order (a `Vec` of pairs, not a map: the serialized key order is
+// significant, same reason as `method_returns`); `ranges` collects EVERY
+// overload sharing that name, each its own (min, max) tuple, in declaration
+// order -- unlike `method_returns`'s first-wins gate, a later overload's
+// range is never discarded, since the resolver needs the OR of every
+// overload to answer "does some overload admit N arguments". `max` uses the
+// same -1-for-unbounded sentinel as `ExtensionMethod::arity_max`. A
+// `parameters` field that cannot be read (not expected for a valid
+// `method_declaration`, but the extractor never assumes a shape it has not
+// verified) contributes the unbounded range (0, -1) rather than no entry at
+// all -- precision-first: an arity fact the extractor could not read must
+// never silently NARROW a call the resolver would otherwise decline to
+// widen.
+fn raw_method_arities(node: Node, src: &[u8]) -> Vec<(String, Vec<(usize, i64)>)> {
+    let Some(body) = node.child_by_field_name("body") else {
+        return Vec::new();
+    };
+    let mut pairs: Vec<(String, Vec<(usize, i64)>)> = Vec::new();
+    for c in named_children(body) {
+        if c.kind() != "method_declaration" {
+            continue;
+        }
+        let name = declared_name(c, src);
+        if name.is_empty() {
+            continue;
+        }
+        let range = match c.child_by_field_name("parameters") {
+            Some(parameters) => method_arity_range(parameters, src),
+            None => (0, -1),
+        };
+        match pairs.iter_mut().find(|(n, _)| *n == name) {
+            Some((_, ranges)) => ranges.push(range),
+            None => pairs.push((name, vec![range])),
+        }
+    }
+    pairs
+}
+
 // Declared property names, source order, deduped. Indexers are
 // a different grammar node (indexer_declaration) so they are excluded by
 // construction; expression-bodied properties are property_declaration like
@@ -1367,17 +1428,22 @@ fn raw_method_return_args(
     pairs
 }
 
-// The two halves of an extension method's acceptable argument COUNT, read off
-// the parameter list as
-// written:
-//   arity_min -- non-this parameters a caller cannot leave out: no default
-//     value AND no `params` modifier.
-//   arity_max -- the total non-this parameter count, or -1 (unbounded) when the
-//     trailing parameter is a `params` array.
+// The two halves of a parameter list's acceptable argument COUNT, read off
+// the list as written:
+//   min -- parameters a caller cannot leave out: no default value AND no
+//     `params` modifier.
+//   max -- the total parameter count, or -1 (unbounded) when the trailing
+//     parameter is a `params` array.
 // A single exact arity would under-match every optional-parameter and
-// `params` call site and -- worse -- make two classes look like ONE candidate
-// when only one of them could actually bind the call: the false-uniqueness
-// shape.
+// `params` call site and -- worse -- make two classes (or two overloads)
+// look like ONE candidate when only one of them could actually bind the
+// call: the false-uniqueness shape.
+//
+// `skip_first` is `extension_arity_range`'s own need: an extension method's
+// FIRST `parameter` node is its this-parameter (the caller has already
+// verified its `this` modifier), never counted toward either half.
+// `method_arity_range` (an ordinary, non-extension overload) passes `false`
+// -- every parameter counts, there is no this-parameter to skip.
 //
 // The loop reads ALL children, not named_children, because tree-sitter-c-sharp
 // does NOT wrap a `params` parameter in a `parameter` node: it emits a bare
@@ -1386,11 +1452,11 @@ fn raw_method_return_args(
 // `(this T t, params X[] xs)` as THREE parameters and a `parameter`-node count
 // reads it as one; the token itself is the only reliable signal, and since C#
 // requires `params` to be last, seeing it at all means unbounded.
-fn extension_arity_range(parameters: Node, src: &[u8]) -> (usize, i64) {
+fn parameter_arity_range(parameters: Node, src: &[u8], skip_first: bool) -> (usize, i64) {
     let mut total: i64 = 0;
     let mut min: usize = 0;
     let mut unbounded = false;
-    let mut seen_this = false;
+    let mut skip_next = skip_first;
     let mut cursor = parameters.walk();
     for c in parameters.children(&mut cursor) {
         if c.kind() == "params" {
@@ -1400,11 +1466,8 @@ fn extension_arity_range(parameters: Node, src: &[u8]) -> (usize, i64) {
         if c.kind() != "parameter" {
             continue;
         }
-        // The first `parameter` node IS the this-parameter (the caller has
-        // already verified its `this` modifier), and a flattened `params` group
-        // can never occupy that slot.
-        if !seen_this {
-            seen_this = true;
+        if skip_next {
+            skip_next = false;
             continue;
         }
         total += 1;
@@ -1418,6 +1481,18 @@ fn extension_arity_range(parameters: Node, src: &[u8]) -> (usize, i64) {
         }
     }
     (min, if unbounded { -1 } else { total })
+}
+
+fn extension_arity_range(parameters: Node, src: &[u8]) -> (usize, i64) {
+    parameter_arity_range(parameters, src, true)
+}
+
+// The same range, for an ORDINARY (non-extension) method overload: every
+// parameter counts, there is no this-parameter to skip. Unit A4 item 2's own
+// input -- `raw_method_arities` calls this once per `method_declaration`,
+// public and non-public alike.
+fn method_arity_range(parameters: Node, src: &[u8]) -> (usize, i64) {
+    parameter_arity_range(parameters, src, false)
 }
 
 // A default value is an `=` token among the parameter's own children.
@@ -1815,9 +1890,9 @@ fn record_type_def(
     // appended LAST in declaration order -- properties, fields, methodReturns
     // -- then extensionMethods and (for the inheritance veto) bases, then
     // type_params and base_generic_args, then testMethods, then propertyTypes,
-    // fieldTypes and methodReturnArgs, then nonPublicMethods. Each is omitted
-    // when empty, so a type with none of them serializes exactly as it did
-    // before those additions.
+    // fieldTypes and methodReturnArgs, then nonPublicMethods, then
+    // methodArities. Each is omitted when empty, so a type with none of them
+    // serializes exactly as it did before those additions.
     defs.push(DefRecord {
         id,
         name,
@@ -1837,6 +1912,7 @@ fn record_type_def(
         field_types: raw_field_types(node, src, type_params),
         method_return_args: raw_method_return_args(node, src, kind, type_params),
         non_public_methods: raw_non_public_method_names(node, src, kind),
+        method_arities: raw_method_arities(node, src),
         end_line: node.end_position().row + 1,
     });
 }
@@ -1887,6 +1963,7 @@ fn record_enum_members(
             field_types: Vec::new(),
             method_return_args: Vec::new(),
             non_public_methods: Vec::new(),
+            method_arities: Vec::new(),
             end_line: member.end_position().row + 1,
         });
     }
@@ -8651,6 +8728,60 @@ public class Widget : IWidget
             "every interface method already counts as public -- is_recorded_method's own \
              kind == \"interface\" short-circuit -- so this list is always empty for an interface, \
              by construction rather than by a second check"
+        );
+    }
+
+    #[test]
+    fn stage4_method_arities_are_recorded_per_overload_with_params_unbounded() {
+        let e = extract_src(
+            r#"
+namespace App.Arity;
+
+public class Mailer
+{
+    public void Touch() { }
+    public void Send(string to) { }
+    public void Send(string to, string cc = null) { }
+    public void Spray(params string[] recipients) { }
+    private void Log(string message) { }
+}
+"#,
+        );
+        let d = find_def(&e, "App.Arity.Mailer").expect("Mailer def present");
+        let arities: Vec<(&str, &[(usize, i64)])> = d
+            .method_arities
+            .iter()
+            .map(|(n, r)| (n.as_str(), r.as_slice()))
+            .collect();
+        assert_eq!(
+            arities,
+            vec![
+                ("Touch", &[(0, 0)][..]),
+                (
+                    "Send",
+                    // Two overloads sharing the name -- BOTH ranges recorded,
+                    // in declaration order: the required-only shape first,
+                    // the optional-parameter shape second. Neither discards
+                    // the other -- the resolver needs the OR of every
+                    // overload.
+                    &[(1, 1), (1, 2)][..]
+                ),
+                (
+                    "Spray",
+                    // A trailing `params` array is optional AND unbounded:
+                    // nothing forces it, nothing caps it -- the same -1
+                    // sentinel `ExtensionMethod::arity_max` already uses.
+                    &[(0, -1)][..]
+                ),
+                (
+                    "Log",
+                    // Non-public methods get an entry too: unlike `methods`,
+                    // `method_arities` is not filtered by accessibility --
+                    // the resolver's arity gate applies equally to a
+                    // `base.`/`this.` lookup against `non_public_methods`.
+                    &[(1, 1)][..]
+                ),
+            ]
         );
     }
 

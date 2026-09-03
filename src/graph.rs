@@ -1015,6 +1015,23 @@ pub struct FragDef {
         skip_serializing_if = "Vec::is_empty"
     )]
     pub non_public_methods: Vec<String>,
+    /// Method name -> the (min, max) argument-count range every overload
+    /// sharing that name accepts, one tuple per overload, in declaration
+    /// order -- covers every method, public and non-public alike (see
+    /// `extract::DefRecord::method_arities`). `max` is -1 for an unbounded
+    /// `params` overload, the same sentinel `FragExtensionMethod::arity_max`
+    /// already uses. An `OrderedMap` for the same reason `methodReturns` is
+    /// one: the serialized key order is significant. Appended LAST of all,
+    /// after `nonPublicMethods`, omitted when empty -- purely additive, so
+    /// an absent key reads back as "no arity facts", the safe default for
+    /// every fragment cached before this field existed, which is what lets
+    /// it join the schema with no cache-version bump.
+    #[serde(
+        default,
+        rename = "methodArities",
+        skip_serializing_if = "OrderedMap::is_empty"
+    )]
+    pub method_arities: OrderedMap<Vec<(usize, i64)>>,
     #[serde(default, rename = "endLine", skip_serializing_if = "is_zero")]
     /// The end line value.
     pub end_line: usize,
@@ -1363,6 +1380,13 @@ pub fn fragment_from_extraction(e: &extract::Extraction) -> Fragment {
                     m
                 },
                 non_public_methods: d.non_public_methods.clone(),
+                method_arities: {
+                    let mut m = OrderedMap::new();
+                    for (name, ranges) in &d.method_arities {
+                        m.insert(name.clone(), ranges.clone());
+                    }
+                    m
+                },
                 end_line: d.end_line,
             })
             .collect(),
@@ -1458,6 +1482,7 @@ pub fn markup_fragment(root: &Path, rel: &str) -> Option<Fragment> {
                 field_types: OrderedMap::new(),
                 method_return_args: OrderedMap::new(),
                 non_public_methods: Vec::new(),
+                method_arities: OrderedMap::new(),
                 end_line: d.line,
             })
             .collect(),
@@ -1795,6 +1820,7 @@ mod tests {
             field_types: OrderedMap::new(),
             method_return_args: OrderedMap::new(),
             non_public_methods: Vec::new(),
+            method_arities: OrderedMap::new(),
             test_methods: Vec::new(),
             end_line: 0,
         }
@@ -2765,6 +2791,7 @@ mod tests {
                 field_types: OrderedMap::new(),
                 method_return_args: OrderedMap::new(),
                 non_public_methods: vec![],
+                method_arities: OrderedMap::new(),
                 end_line: 1,
             }],
             usings: vec![],
@@ -2842,6 +2869,7 @@ mod tests {
                 field_types: OrderedMap::new(),
                 method_return_args: OrderedMap::new(),
                 non_public_methods: vec![],
+                method_arities: OrderedMap::new(),
                 end_line: 1,
             }],
             usings: vec![],

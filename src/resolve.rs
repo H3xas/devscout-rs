@@ -176,6 +176,15 @@ pub struct MemberLists {
     /// base walk); every other caller of a "does this def declare the
     /// member" question keeps reading `Def.methods` alone.
     pub non_public_methods: Vec<String>,
+    /// Method name -> the (min, max) argument-count range every overload
+    /// sharing that name accepts -- see `FragDef.method_arities`. Merged
+    /// across a partial class exactly like `method_returns`/`property_types`:
+    /// first-declaration-wins per NAME (a later part's own overload set for
+    /// a name the first part already answered is never consulted), not a
+    /// union of ranges the way `non_public_methods` unions NAMES. Read by
+    /// `declares_member`/`declares_member_any_visibility` for a ref that
+    /// carries an `argCount`.
+    pub method_arities: OrderedMap<Vec<(usize, i64)>>,
 }
 
 fn build_def_index(fragments_by_file: &[(String, Fragment)]) -> DefIndex {
@@ -255,6 +264,7 @@ fn build_def_index(fragments_by_file: &[(String, Fragment)]) -> DefIndex {
                         field_types: d.field_types.clone(),
                         method_return_args: d.method_return_args.clone(),
                         non_public_methods: d.non_public_methods.clone(),
+                        method_arities: d.method_arities.clone(),
                     });
                     for e in &d.extension_methods {
                         add_extension_method(&mut member_lists, &mut extension_index, idx, e);
@@ -348,6 +358,16 @@ fn build_def_index(fragments_by_file: &[(String, Fragment)]) -> DefIndex {
                                 .insert(name.clone(), args.clone());
                         }
                     }
+                    // First-declaration-wins per NAME, same rule as
+                    // `method_returns` immediately above -- not a union of
+                    // ranges the way `non_public_methods` unions NAMES.
+                    for (name, ranges) in d.method_arities.iter() {
+                        if member_lists[idx].method_arities.get(name).is_none() {
+                            member_lists[idx]
+                                .method_arities
+                                .insert(name.clone(), ranges.clone());
+                        }
+                    }
                 }
             }
         }
@@ -428,40 +448,100 @@ fn name_probe(name: String, namespace: &str, outer_types: Vec<String>) -> FragRe
     }
 }
 
-// The def's member lists, unioned: methods ∪ properties ∪ fields, which is what
-// lets a static PROPERTY access (MessageUrn.Prefix) and a const/static FIELD
-// access earn an edge on the same evidence a static method call already did.
-fn declares_member(index: &DefIndex, idx: usize, member: Option<&str>) -> bool {
-    let Some(member) = member else { return false };
-    index.defs[idx].methods.iter().any(|m| m == member)
-        || index.member_lists[idx]
-            .properties
+// Whether SOME overload's own (min, max) range admits exactly `arg_count`
+// arguments -- the OR every overload sharing a name contributes, since C#
+// overload resolution picks whichever member of the set actually accepts the
+// call. `max == -1` is the same unbounded-`params` sentinel
+// `arity_accepts` (the extension-method counterpart) already reads. No entry
+// for the name at all -- an arity fact `raw_method_arities` did not attach,
+// or a fragment cached before this table existed (`serde(default)` reads it
+// back empty) -- admits ANY count: an arity gate this resolver cannot answer
+// must never silently NARROW what `declares_member` would otherwise have
+// said, and must never turn a stale, un-remapped cache into a false miss.
+fn method_arity_admits(index: &DefIndex, idx: usize, member: &str, arg_count: usize) -> bool {
+    match index.member_lists[idx].method_arities.get(member) {
+        Some(ranges) => ranges
             .iter()
-            .any(|p| p == member)
-        || index.member_lists[idx].fields.iter().any(|f| f == member)
+            .any(|&(min, max)| min <= arg_count && (max == -1 || (arg_count as i64) <= max)),
+        None => true,
+    }
+}
+
+// The def's member lists, unioned: methods ∪ properties ∪ fields for a READ
+// (`arg_count == None`), which is what lets a static PROPERTY access
+// (MessageUrn.Prefix) and a const/static FIELD access earn an edge on the
+// same evidence a static method call already did.
+//
+// A CALL (`arg_count == Some(n)`) is narrower on both axes (Unit A4 item 2):
+// properties and fields never satisfy a call (the rule `member_vouched`'s own
+// Call/Read split already enforces for the scored tier; this is where the
+// PRECISE tier gains it too), and `methods` alone is not enough either -- the
+// name must ALSO have an overload whose own arity range admits `n`
+// (`method_arity_admits`), or this answers `false` exactly as it would for a
+// name this def never declares at all. That is what lets tier (f)/the scored
+// tier run when a same-named instance member exists but at the WRONG
+// signature: the precise tier's own callers read `false` here as "nothing
+// declared", never mark the ref `emitted`, and every later tier proceeds
+// undisturbed.
+fn declares_member(
+    index: &DefIndex,
+    idx: usize,
+    member: Option<&str>,
+    arg_count: Option<usize>,
+) -> bool {
+    let Some(member) = member else { return false };
+    match arg_count {
+        Some(n) => {
+            index.defs[idx].methods.iter().any(|m| m == member)
+                && method_arity_admits(index, idx, member, n)
+        }
+        None => {
+            index.defs[idx].methods.iter().any(|m| m == member)
+                || index.member_lists[idx]
+                    .properties
+                    .iter()
+                    .any(|p| p == member)
+                || index.member_lists[idx].fields.iter().any(|f| f == member)
+        }
+    }
 }
 
 // `declares_member` widened by `non_public_methods` -- `properties`/`fields`
 // already carry every accessibility with no filter of their own (see
-// `DefRecord::properties`), so `methods` is the only list this widens.
-// Read ONLY where the SITE is inside the hierarchy the member lookup is
-// walking: `base_member_declared` (a `base.` qualifier never considers
-// anything but the enclosing type's own bases) and the typed-receiver
-// precise tier's own base walk, and even there ONLY when the receiver is
-// the enclosing type itself (the `this.` shape). Every other caller --
-// the scored tier's veto and its `member_vouched` pool filter, tier (f)'s
-// instance-member veto, and an ordinary typed receiver's own base walk --
-// keeps asking `declares_member` unchanged, so a guess can never start
-// vouching through a member C# would refuse it visibility to.
-fn declares_member_any_visibility(index: &DefIndex, idx: usize, member: Option<&str>) -> bool {
-    if declares_member(index, idx, member) {
+// `DefRecord::properties`), so `methods` is the only list this widens, and
+// (Unit A4 item 2) the SAME arity gate applies to a non-public method: a
+// call whose `arg_count` no non-public overload admits is exactly as
+// undeclared as one whose PUBLIC overloads all decline. Read ONLY where the
+// SITE is inside the hierarchy the member lookup is walking:
+// `base_member_declared` (a `base.` qualifier never considers anything but
+// the enclosing type's own bases) and the typed-receiver precise tier's own
+// base walk, and even there ONLY when the receiver is the enclosing type
+// itself (the `this.` shape). Every other caller -- the scored tier's veto
+// and its `member_vouched` pool filter, tier (f)'s instance-member veto, and
+// an ordinary typed receiver's own base walk -- keeps asking `declares_member`
+// unchanged, so a guess can never start vouching through a member C# would
+// refuse it visibility to.
+fn declares_member_any_visibility(
+    index: &DefIndex,
+    idx: usize,
+    member: Option<&str>,
+    arg_count: Option<usize>,
+) -> bool {
+    if declares_member(index, idx, member, arg_count) {
         return true;
     }
     let Some(member) = member else { return false };
-    index.member_lists[idx]
+    if !index.member_lists[idx]
         .non_public_methods
         .iter()
         .any(|m| m == member)
+    {
+        return false;
+    }
+    match arg_count {
+        Some(n) => method_arity_admits(index, idx, member, n),
+        None => true,
+    }
 }
 
 // The two shapes a member reference can take, read straight off the ref's own
@@ -502,7 +582,7 @@ fn member_vouched(index: &DefIndex, idx: usize, member: Option<&str>, shape: Mem
     let Some(member) = member else { return false };
     let instance_vouches = match shape {
         MemberShape::Call => index.defs[idx].methods.iter().any(|m| m == member),
-        MemberShape::Read => declares_member(index, idx, Some(member)),
+        MemberShape::Read => declares_member(index, idx, Some(member), None),
     };
     if instance_vouches {
         return true;
@@ -680,32 +760,100 @@ fn inherited_member_declared(
     file_contexts: &HashMap<String, FileContext>,
     start: usize,
     member: Option<&str>,
+    arg_count: Option<usize>,
 ) -> bool {
     inheritance_walk_matches(index, file_contexts, start, |idx| {
-        declares_member(index, idx, member)
+        declares_member(index, idx, member, arg_count)
     })
+}
+
+// The recursive worker `first_base_declaring` drives (Unit A4 item 1): `cur`
+// is a def already known to be in-graph and, when `skip_interfaces`, already
+// known not to be an interface. Checked by `declares` FIRST -- so a base
+// that itself declares the member wins before its own bases are even looked
+// at -- then, only if that misses, each of `cur`'s OWN in-graph bases in
+// turn, EACH FULLY EXPLORED (this function calls itself) before the next
+// sibling base is even resolved: true depth-first, declaration order, the
+// first base string's entire subtree ahead of the second. Class bases are
+// tried before any interface AT EVERY LEVEL (not just `cur`'s own direct
+// bases -- every recursive call repeats the same split), and when
+// `skip_interfaces` an interface base is dropped ENTIRELY, its own closure
+// never walked either, so a class-typed receiver can never bind to an
+// interface's member declaration at any depth -- not only among `start`'s
+// direct bases, which is as far as the walk this replaces reached.
+//
+// `seen` is per BRANCH (see `first_base_declaring`'s own call site, which
+// seeds a fresh set for each of `start`'s direct bases): a cycle within one
+// direct base's own closure cannot re-enter that closure, but two SIBLING
+// direct bases sharing a common ancestor each see it once, from their own
+// branch -- exactly the guard the walk this replaces already gave.
+fn declares_in_base_closure(
+    index: &DefIndex,
+    file_contexts: &HashMap<String, FileContext>,
+    cur: usize,
+    skip_interfaces: bool,
+    seen: &mut HashSet<usize>,
+    declares: &mut impl FnMut(&DefIndex, usize) -> bool,
+) -> Option<usize> {
+    if declares(index, cur) {
+        return Some(cur);
+    }
+    let Some(ctx) = file_contexts.get(&index.defs[cur].file) else {
+        return None;
+    };
+    let ns = index.defs[cur].namespace.clone();
+    let mut classes: Vec<usize> = Vec::new();
+    let mut interfaces: Vec<usize> = Vec::new();
+    for base in &index.member_lists[cur].bases {
+        let probe = name_probe(base.clone(), &ns, Vec::new());
+        let Resolution::Resolved(bidx, _) =
+            resolve_ref(&probe, &ctx.usings, &ns, index, &ctx.aliases, file_contexts)
+        else {
+            continue;
+        };
+        if !seen.insert(bidx) {
+            continue;
+        }
+        if index.defs[bidx].kind == "interface" {
+            if skip_interfaces {
+                continue;
+            }
+            interfaces.push(bidx);
+        } else {
+            classes.push(bidx);
+        }
+    }
+    for bidx in classes.into_iter().chain(interfaces) {
+        if let Some(found) =
+            declares_in_base_closure(index, file_contexts, bidx, skip_interfaces, seen, declares)
+        {
+            return Some(found);
+        }
+    }
+    None
 }
 
 // The shared shape both `base_member_declared` and the typed-receiver
 // precise tier's own base walk need: never `start` itself, only its OWN
 // direct bases -- read off `start`'s `MemberLists.bases`, in DECLARATION
-// order -- each followed by its own in-graph inheritance walk (so a member
-// declared on the base of the base still resolves, exactly like the
-// instance-member veto's closure does). Returns the first in-graph def,
+// order -- each fully explored (`declares_in_base_closure`) before the next
+// sibling base is even resolved, so a member declared on the base of the
+// base still resolves, and the FIRST base string in the source always wins
+// over a later one when both would otherwise answer (Unit A4 item 1 --
+// `inheritance_walk_find`'s LIFO stack, which this no longer uses, visited
+// bases in REVERSE declaration order). Returns the first in-graph def,
 // across that ordered search, for which `declares` answers true; `None`
 // when `start` resolves to nothing in-graph, when it declares no in-graph
 // base, or when no in-graph base's closure satisfies `declares` at all.
 //
-// `skip_interfaces` drops a direct base whose resolved def is itself an
-// `interface` -- and never walks into its closure either -- which is
+// `skip_interfaces` drops a base whose resolved def is itself an `interface`
+// -- and never walks into its closure either -- at EVERY depth the walk
+// reaches, not only among `start`'s own direct bases: `declares_in_base_closure`
+// re-applies the same rule at every recursive level. This is
 // `base_member_declared`'s own rule (a `base.` qualifier never names an
 // interface member; an interface can only ever extend other interfaces, so
-// skipping the whole base is equivalent to skipping its closure). The
-// typed-receiver base walk passes `false`: a member declared only on an
-// implemented interface (a C# 8+ default interface implementation) is a
-// legitimate target for an ordinary typed access, and tier (f)'s own
-// closure fallback (a different lookup entirely) already treats interface
-// bases as first-class evidence.
+// skipping the whole base is equivalent to skipping its closure), and both
+// of this function's current callers pass `true`.
 fn first_base_declaring(
     index: &DefIndex,
     file_contexts: &HashMap<String, FileContext>,
@@ -715,39 +863,57 @@ fn first_base_declaring(
 ) -> Option<usize> {
     let ctx = file_contexts.get(&index.defs[start].file)?;
     let ns = index.defs[start].namespace.clone();
+    let mut classes: Vec<usize> = Vec::new();
+    let mut interfaces: Vec<usize> = Vec::new();
     for base in &index.member_lists[start].bases {
         let probe = name_probe(base.clone(), &ns, Vec::new());
-        if let Resolution::Resolved(bidx, _) =
+        let Resolution::Resolved(bidx, _) =
             resolve_ref(&probe, &ctx.usings, &ns, index, &ctx.aliases, file_contexts)
-        {
-            if skip_interfaces && index.defs[bidx].kind == "interface" {
+        else {
+            continue;
+        };
+        if index.defs[bidx].kind == "interface" {
+            if skip_interfaces {
                 continue;
             }
-            if let Some(found) =
-                inheritance_walk_find(index, file_contexts, bidx, |idx| declares(index, idx))
-            {
-                return Some(found);
-            }
+            interfaces.push(bidx);
+        } else {
+            classes.push(bidx);
+        }
+    }
+    for bidx in classes.into_iter().chain(interfaces) {
+        let mut seen: HashSet<usize> = HashSet::from([bidx]);
+        if let Some(found) = declares_in_base_closure(
+            index,
+            file_contexts,
+            bidx,
+            skip_interfaces,
+            &mut seen,
+            &mut declares,
+        ) {
+            return Some(found);
         }
     }
     None
 }
 
 // The `receiver_base == true` lookup (`base.M`): `first_base_declaring` with
-// `skip_interfaces = true` (`base.` never names an interface member) and
-// `declares_member_any_visibility` (a `base.` site is, by construction,
-// lexically inside the hierarchy it is walking, so a protected or
-// internal member is exactly as reachable as a public one). `None` is
-// the ordinary external-receiver answer to the caller, never a candidate
-// for a scored guess.
+// `skip_interfaces = true` (`base.` never names an interface member, at any
+// depth) and `declares_member_any_visibility` (a `base.` site is, by
+// construction, lexically inside the hierarchy it is walking, so a protected
+// or internal member is exactly as reachable as a public one), arity-gated
+// by the ref's own `arg_count` (Unit A4 item 2) exactly like the
+// typed-receiver walk below. `None` is the ordinary external-receiver
+// answer to the caller, never a candidate for a scored guess.
 fn base_member_declared(
     index: &DefIndex,
     file_contexts: &HashMap<String, FileContext>,
     start: usize,
     member: Option<&str>,
+    arg_count: Option<usize>,
 ) -> Option<usize> {
     first_base_declaring(index, file_contexts, start, true, |index, idx| {
-        declares_member_any_visibility(index, idx, member)
+        declares_member_any_visibility(index, idx, member, arg_count)
     })
 }
 
@@ -756,11 +922,12 @@ fn base_member_declared(
 // in its in-graph base closure that does is the precise target -- exactly
 // the widening `base_member_declared` already does for `base.`, applied to
 // an ORDINARY typed receiver, `skip_interfaces = true` for the same reason
-// `base_member_declared` skips them: an interface's own method declaration
-// has no body of its own to be the target of an ordinary call (a C# 8+
-// default interface implementation is indistinguishable from an abstract
-// one at this def's own record, so neither is treated as a precise bind
-// target here) -- see `stage3_veto_a_member_declared_by_the_receivers_interface_beats_a_matching_visible_extension`,
+// `base_member_declared` skips them, at every depth (Unit A4 item 1): an
+// interface's own method declaration has no body of its own to be the
+// target of an ordinary call (a C# 8+ default interface implementation is
+// indistinguishable from an abstract one at this def's own record, so
+// neither is treated as a precise bind target here) -- see
+// `stage3_veto_a_member_declared_by_the_receivers_interface_beats_a_matching_visible_extension`,
 // which pins exactly this: an interface-only ancestor must NOT earn a
 // precise edge, only veto the extension tier (which reads the closure
 // itself, not this function). `any_visibility` is the caller's own answer
@@ -769,19 +936,22 @@ fn base_member_declared(
 // `declares_member_any_visibility`, `false` keeps the public-only
 // `declares_member`, so a receiver typed by anything OTHER than the
 // enclosing type can only ever bind to a member C# would let it see from
-// outside.
+// outside. `arg_count` is the ref's own call-shape fact (Unit A4 item 2): a
+// base that declares the name at the WRONG arity is skipped exactly like
+// one that does not declare it at all.
 fn typed_receiver_base_member(
     index: &DefIndex,
     file_contexts: &HashMap<String, FileContext>,
     start: usize,
     member: Option<&str>,
+    arg_count: Option<usize>,
     any_visibility: bool,
 ) -> Option<usize> {
     first_base_declaring(index, file_contexts, start, true, |index, idx| {
         if any_visibility {
-            declares_member_any_visibility(index, idx, member)
+            declares_member_any_visibility(index, idx, member, arg_count)
         } else {
-            declares_member(index, idx, member)
+            declares_member(index, idx, member, arg_count)
         }
     })
 }
@@ -1040,7 +1210,7 @@ fn receiver_admits_candidate(
 ) -> bool {
     let instance_vouches = match shape {
         MemberShape::Call => index.defs[candidate].methods.iter().any(|m| m == member),
-        MemberShape::Read => declares_member(index, candidate, Some(member)),
+        MemberShape::Read => declares_member(index, candidate, Some(member), None),
     };
     if instance_vouches
         && nominally_assignable_cached(
@@ -1922,6 +2092,7 @@ pub fn resolve_graph_with_model(
                             &file_contexts,
                             *start,
                             r.member.as_deref(),
+                            r.arg_count,
                         ) {
                             edges.push(Edge::uses_member(
                                 file.clone(),
@@ -1979,9 +2150,14 @@ pub fn resolve_graph_with_model(
                         // public-only walk.
                         let this_shaped = is_this_shaped_receiver(r);
                         let declares_here = if this_shaped {
-                            declares_member_any_visibility(&index, idx, r.member.as_deref())
+                            declares_member_any_visibility(
+                                &index,
+                                idx,
+                                r.member.as_deref(),
+                                r.arg_count,
+                            )
                         } else {
-                            declares_member(&index, idx, r.member.as_deref())
+                            declares_member(&index, idx, r.member.as_deref(), r.arg_count)
                         };
                         if declares_here
                             || (r.generic && r.qualified.is_none())
@@ -2002,6 +2178,7 @@ pub fn resolve_graph_with_model(
                             &file_contexts,
                             idx,
                             r.member.as_deref(),
+                            r.arg_count,
                             this_shaped,
                         ) {
                             // Unit A3 item 4: `idx` itself does not declare
@@ -2170,9 +2347,14 @@ pub fn resolve_graph_with_model(
                             // only.
                             let this_shaped = is_this_shaped_receiver(r);
                             let declares_here = if this_shaped {
-                                declares_member_any_visibility(&index, ridx, r.member.as_deref())
+                                declares_member_any_visibility(
+                                    &index,
+                                    ridx,
+                                    r.member.as_deref(),
+                                    r.arg_count,
+                                )
                             } else {
-                                declares_member(&index, ridx, r.member.as_deref())
+                                declares_member(&index, ridx, r.member.as_deref(), r.arg_count)
                             };
                             let target = if declares_here {
                                 Some(ridx)
@@ -2182,6 +2364,7 @@ pub fn resolve_graph_with_model(
                                     &file_contexts,
                                     ridx,
                                     r.member.as_deref(),
+                                    r.arg_count,
                                     this_shaped,
                                 )
                             };
@@ -2241,7 +2424,12 @@ pub fn resolve_graph_with_model(
                                 if let Resolution::Resolved(hidx, _) =
                                     resolve_ref(&hop, usings, ns, &index, aliases, &file_contexts)
                                 {
-                                    if declares_member(&index, hidx, r.member.as_deref()) {
+                                    if declares_member(
+                                        &index,
+                                        hidx,
+                                        r.member.as_deref(),
+                                        r.arg_count,
+                                    ) {
                                         edges.push(Edge::uses_member(
                                             file.clone(),
                                             r.line,
@@ -2418,12 +2606,19 @@ pub fn resolve_graph_with_model(
                                 distinct.push(c.def_idx);
                             }
                         }
+                        // Unit A4 item 2: arity-gated exactly like the
+                        // precise tier's own `declares_here` check -- a
+                        // same-named instance member at an arity `arg_count`
+                        // does not fall inside is not a veto, so this tier
+                        // runs "exactly as for an undeclared member" for
+                        // that name.
                         let vetoed = match receiver_def {
                             Some(ridx) => inherited_member_declared(
                                 &index,
                                 &file_contexts,
                                 ridx,
                                 r.member.as_deref(),
+                                r.arg_count,
                             ),
                             None => false,
                         };
@@ -2858,6 +3053,7 @@ mod tests {
             field_types: crate::graph::OrderedMap::new(),
             method_return_args: crate::graph::OrderedMap::new(),
             non_public_methods: vec![],
+            method_arities: crate::graph::OrderedMap::new(),
             end_line: 0,
         }
     }
@@ -9336,5 +9532,180 @@ mod tests {
              Ping publicly, vouches"
         );
         assert_eq!(g.stats.heuristic_by_tier.guess, 1);
+    }
+
+    // --- Unit A4: base-walk declaration order (+ interface skip at any
+    // depth) and arity-aware call vouching -----------------------------
+
+    #[test]
+    fn stage7_base_walk_visits_class_bases_in_declaration_order_before_any_interface() {
+        // Endpoint : BaseEndpoint (a single class base). BaseEndpoint's OWN
+        // base list names its class base FIRST, an interface SECOND --
+        // BasePipe declares Go directly; IEndpoint reaches Go only through
+        // ITS OWN base, IPipe, two levels down. A walk that visits siblings
+        // in REVERSE declaration order (a LIFO stack popping the
+        // last-pushed base first) would explore IEndpoint's entire closure
+        // -- and find IPipe's Go -- before ever touching BasePipe, which is
+        // the correct C# answer.
+        let files = fragments_for(&[
+            (
+                "Domain/IPipe.cs",
+                "namespace App.Domain { public interface IPipe { void Go(); } }",
+            ),
+            (
+                "Domain/IEndpoint.cs",
+                "namespace App.Domain { public interface IEndpoint : IPipe { } }",
+            ),
+            (
+                "Domain/BasePipe.cs",
+                "namespace App.Domain { public class BasePipe { public void Go() { } } }",
+            ),
+            (
+                "Domain/BaseEndpoint.cs",
+                "namespace App.Domain { public class BaseEndpoint : BasePipe, IEndpoint { } }",
+            ),
+            (
+                "Domain/Endpoint.cs",
+                "namespace App.Domain { public class Endpoint : BaseEndpoint { } }",
+            ),
+            (
+                "Consumers/Runner.cs",
+                "\nusing App.Domain;\n\nnamespace App.Consumers;\n\npublic class Runner\n{\n    public void Run(Endpoint ep) => ep.Go();\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_from(&g, "Consumers/Runner.cs"),
+            vec![("App.Domain.BasePipe", 8)],
+            "BasePipe, BaseEndpoint's FIRST base, wins over IEndpoint's (SECOND base) own \
+             interface closure -- declaration order, not stack order"
+        );
+        assert_eq!(
+            g.stats.heuristic_edge_count, 0,
+            "a precise hit, not a guess"
+        );
+    }
+
+    #[test]
+    fn stage7_class_typed_receiver_never_binds_to_an_interface_declaration_at_any_depth() {
+        // Touch is declared ONLY on IHasTouch, an interface reached
+        // TRANSITIVELY through Base's own base list -- not a direct base of
+        // the class-typed receiver Derived at all (Derived -> Base ->
+        // IHasTouch, two levels down). Base implements IHasTouch but
+        // declares no override of its own, and Derived adds nothing either.
+        let files = fragments_for(&[
+            (
+                "Domain/IHasTouch.cs",
+                "namespace App.Domain { public interface IHasTouch { void Touch(); } }",
+            ),
+            (
+                "Domain/Base.cs",
+                "namespace App.Domain { public class Base : IHasTouch { } }",
+            ),
+            (
+                "Domain/Derived.cs",
+                "namespace App.Domain { public class Derived : Base { } }",
+            ),
+            (
+                "Consumers/Runner.cs",
+                "\nusing App.Domain;\n\nnamespace App.Consumers;\n\npublic class Runner\n{\n    public void Run(Derived d) => d.Touch();\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert!(
+            member_edges_from(&g, "Consumers/Runner.cs").is_empty(),
+            "the base walk must skip IHasTouch at EVERY depth it is reached, not only when it is \
+             Derived's own direct base -- an interface's member declaration is a contract, never a \
+             precise bind target, for a class-typed receiver"
+        );
+        assert!(
+            heuristic_member_edges_from(&g, "Consumers/Runner.cs").is_empty(),
+            "no extension method named Touch exists anywhere in this fixture either, so this is a \
+             silent miss, not a guess"
+        );
+    }
+
+    #[test]
+    fn stage7_a_call_whose_arity_matches_no_instance_overload_falls_through_to_the_extension_tier()
+    {
+        // Widget.Stop takes exactly one argument; the call passes two. No
+        // overload admits it, so the precise tier must decline -- and tier
+        // (f)'s own veto, reading the SAME arity-aware `declares_member`,
+        // must decline too, letting the two-argument extension bind.
+        let files = fragments_for(&[
+            (
+                "Domain/Widget.cs",
+                "namespace App.Domain { public class Widget { public void Stop(int a) { } } }",
+            ),
+            (
+                "Ext/WidgetExt.cs",
+                "using App.Domain;\n\nnamespace App.Ext { public static class WidgetExt { public static void Stop(this Widget w, int a, int b) { } } }",
+            ),
+            (
+                "Consumers/Runner.cs",
+                "\nusing App.Domain;\nusing App.Ext;\n\nnamespace App.Consumers;\n\npublic class Runner\n{\n    public void Run(Widget w) => w.Stop(1, 2);\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert!(
+            member_edges_from(&g, "Consumers/Runner.cs").is_empty(),
+            "Widget declares Stop, but only a ONE-argument overload -- the call passes two \
+             arguments, which no overload admits, so the precise tier must not claim the ref"
+        );
+        assert_eq!(
+            heuristic_member_edges_from(&g, "Consumers/Runner.cs"),
+            vec![("App.Ext.WidgetExt", 9)],
+            "the arity mismatch on the instance side also un-vetoes tier (f): Stop(this Widget w, \
+             int a, int b) admits two arguments and is the only candidate"
+        );
+    }
+
+    #[test]
+    fn stage7_a_call_admitted_by_a_params_or_optional_overload_binds_to_the_instance_member() {
+        let files = fragments_for(&[
+            (
+                "Domain/Widget.cs",
+                "namespace App.Domain { public class Widget { public void Send(int a, int b = 0) { } public void Spray(params int[] xs) { } } }",
+            ),
+            (
+                "Consumers/Runner.cs",
+                "\nusing App.Domain;\n\nnamespace App.Consumers;\n\npublic class Runner\n{\n    public void RunOptional(Widget w) => w.Send(1);\n    public void RunParams(Widget w) => w.Spray(1, 2, 3, 4, 5);\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_from(&g, "Consumers/Runner.cs"),
+            vec![("App.Domain.Widget", 8), ("App.Domain.Widget", 9)],
+            "Send(1) falls inside the OPTIONAL-parameter overload's (1, 2) range, and Spray(1, 2, \
+             3, 4, 5) falls inside the `params` overload's unbounded (0, -1) range -- both admit \
+             the call, so both bind precisely to the instance member"
+        );
+        assert_eq!(
+            g.stats.heuristic_edge_count, 0,
+            "two precise hits, no guess"
+        );
+    }
+
+    #[test]
+    fn stage7_a_read_of_a_property_is_still_name_only() {
+        let files = fragments_for(&[
+            (
+                "Domain/Sensor.cs",
+                "namespace App.Domain { public class Sensor { public string Label { get; } } }",
+            ),
+            (
+                "Consumers/Runner.cs",
+                "\nusing App.Domain;\n\nnamespace App.Consumers;\n\npublic class Runner\n{\n    public string Run(Sensor s) => s.Label;\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_from(&g, "Consumers/Runner.cs"),
+            vec![("App.Domain.Sensor", 8)],
+            "s.Label is a READ (no argCount at all) -- declares_member's arg_count == None branch \
+             is untouched by Unit A4 item 2's arity gate, so a property still resolves precisely on \
+             name alone, exactly as before"
+        );
+        assert_eq!(g.stats.heuristic_edge_count, 0);
     }
 }
