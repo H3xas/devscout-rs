@@ -543,10 +543,51 @@ fn note_file(flagged: &mut HashSet<String>, manifest_paths: Option<&HashSet<Stri
     }
 }
 
+/// What the caller wants left OUT of the index it is asking for.
+///
+/// The one knob is `include_guesses`, and it is spent HERE rather than at each
+/// render site on purpose: a filter applied while the adjacency is built cannot
+/// be forgotten by the next consumer of that adjacency, which is the same
+/// reasoning that keeps heuristic edges in their own buckets in the first place
+/// (see [`GraphIndex::heuristic_inbound`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IndexOptions {
+    /// Whether a scored-tier guess joins the heuristic adjacency at all.
+    /// `false` (`--no-guess`) admits ONLY [`graph::HeuristicTier::Ext`] edges
+    /// there: extension-method lookup is one of C#'s own rules, run over a
+    /// recorded bucket and unverifiable only against an out-of-graph receiver,
+    /// whereas the scored tier picked by name. An edge carrying no tier at all
+    /// -- a graph written before schema 2 -- is treated as the weaker of the
+    /// two and drops with the guesses.
+    pub include_guesses: bool,
+}
+
+impl Default for IndexOptions {
+    /// Guesses are IN by default: every caller that does not ask asked for the
+    /// whole index, and a default that quietly narrowed the answer would change
+    /// what `refs` means without anyone typing a flag.
+    fn default() -> Self {
+        IndexOptions {
+            include_guesses: true,
+        }
+    }
+}
+
 /// Build the query index, phase two of the two-phase build (see module
 /// header). `graph` is what the caller got back from `graph::read_graph(root)`;
 /// `root` is used here only for the manifest join.
 pub fn load_graph_index<'g>(graph: &'g graph::Graph, root: &Path) -> GraphIndex<'g> {
+    load_graph_index_with(graph, root, IndexOptions::default())
+}
+
+/// [`load_graph_index`] with the caller's own [`IndexOptions`]. Everything is
+/// built the same way either way; `opts` only decides which heuristic edges earn
+/// a place in the heuristic adjacency.
+pub fn load_graph_index_with<'g>(
+    graph: &'g graph::Graph,
+    root: &Path,
+    opts: IndexOptions,
+) -> GraphIndex<'g> {
     let manifest_value = match manifest::read_manifest(root) {
         Ok(v) => v,
         Err(_) => None, // corrupt manifest.json: fail open, see module header
@@ -606,6 +647,14 @@ pub fn load_graph_index<'g>(graph: &'g graph::Graph, root: &Path) -> GraphIndex<
     // File -> the distinct other files that reference it (see `hub_indegree`).
     let mut hub_referrers_by_file: HashMap<String, HashSet<String>> = HashMap::new();
 
+    // Whether a heuristic edge earns a place in the heuristic adjacency at all.
+    // Under `--no-guess` only the extension tier does; every other guess is
+    // dropped from the index, so no consumer downstream has to remember to ask.
+    // It is asked ONLY of an edge already known to be heuristic -- a precise
+    // edge carries no tier and this would wrongly refuse it.
+    let admits =
+        |e: &graph::Edge| opts.include_guesses || e.tier() == Some(graph::HeuristicTier::Ext);
+
     for (i, e) in graph.edges.iter().enumerate() {
         match e {
             graph::Edge::Imports { from_file, .. } => {
@@ -652,16 +701,22 @@ pub fn load_graph_index<'g>(graph: &'g graph::Graph, root: &Path) -> GraphIndex<
                         .insert(from_file.clone());
                 }
                 if *heuristic {
-                    heuristic_outbound_by_file
-                        .entry(from_file.clone())
-                        .or_default()
-                        .inherits
-                        .push(i);
-                    heuristic_inbound
-                        .entry(to.clone())
-                        .or_default()
-                        .inherits
-                        .push(i);
+                    // A guess `--no-guess` refuses leaves the index with no
+                    // bucket at all: it was already counted for the hub brake
+                    // above, and it is not a precise edge, so there is nowhere
+                    // else for it to go.
+                    if admits(e) {
+                        heuristic_outbound_by_file
+                            .entry(from_file.clone())
+                            .or_default()
+                            .inherits
+                            .push(i);
+                        heuristic_inbound
+                            .entry(to.clone())
+                            .or_default()
+                            .inherits
+                            .push(i);
+                    }
                 } else {
                     outbound_by_file
                         .entry(from_file.clone())
@@ -690,16 +745,19 @@ pub fn load_graph_index<'g>(graph: &'g graph::Graph, root: &Path) -> GraphIndex<
                         .insert(from_file.clone());
                 }
                 if *heuristic {
-                    heuristic_outbound_by_file
-                        .entry(from_file.clone())
-                        .or_default()
-                        .uses_type
-                        .push(i);
-                    heuristic_inbound
-                        .entry(to.clone())
-                        .or_default()
-                        .uses_type
-                        .push(i);
+                    // Same rule as the `inherits` arm above.
+                    if admits(e) {
+                        heuristic_outbound_by_file
+                            .entry(from_file.clone())
+                            .or_default()
+                            .uses_type
+                            .push(i);
+                        heuristic_inbound
+                            .entry(to.clone())
+                            .or_default()
+                            .uses_type
+                            .push(i);
+                    }
                 } else {
                     outbound_by_file
                         .entry(from_file.clone())
@@ -728,16 +786,21 @@ pub fn load_graph_index<'g>(graph: &'g graph::Graph, root: &Path) -> GraphIndex<
                         .insert(from_file.clone());
                 }
                 if *heuristic {
-                    heuristic_outbound_by_file
-                        .entry(from_file.clone())
-                        .or_default()
-                        .uses_member
-                        .push(i);
-                    heuristic_inbound
-                        .entry(to.clone())
-                        .or_default()
-                        .uses_member
-                        .push(i);
+                    // The one kind that actually carries a tier, and so the one
+                    // kind `--no-guess` can keep anything of: an extension-tier
+                    // edge survives here, a scored one does not.
+                    if admits(e) {
+                        heuristic_outbound_by_file
+                            .entry(from_file.clone())
+                            .or_default()
+                            .uses_member
+                            .push(i);
+                        heuristic_inbound
+                            .entry(to.clone())
+                            .or_default()
+                            .uses_member
+                            .push(i);
+                    }
                 } else {
                     outbound_by_file
                         .entry(from_file.clone())
@@ -1153,9 +1216,30 @@ fn loc_cmp(a: &graph::Edge, b: &graph::Edge) -> std::cmp::Ordering {
     }
 }
 
+/// Which tier a ROW reports, folded from the tiers of the edges behind it.
+///
+/// One extension edge is enough to call the whole row an extension: that tier
+/// ran C#'s own lookup rule and only failed to check the receiver, so it is the
+/// stronger of the two and a name guess sitting beside it does not weaken it.
+/// Everything else heuristic is a guess, an edge carrying NO tier included -- a
+/// graph written before schema 2 cannot prove it was anything better, and
+/// reporting an unproven edge as the stronger tier is the one direction this
+/// surface must never round.
+fn row_tier(heuristic: bool, ext_seen: bool) -> Option<graph::HeuristicTier> {
+    if !heuristic {
+        return None;
+    }
+    Some(if ext_seen {
+        graph::HeuristicTier::Ext
+    } else {
+        graph::HeuristicTier::Guess
+    })
+}
+
 /// One inbound-table row: `file` and `line` of the referencing site, then
-/// `heuristic` (whether the edge was guessed) and `source` (the trimmed
-/// referencing line). An empty `source` is omitted from `--json`.
+/// `heuristic` (whether the edge was guessed), `tier` (which guess tier said
+/// so) and `source` (the trimmed referencing line). An empty `source` is
+/// omitted from `--json`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct InboundRow {
     /// The file value.
@@ -1164,6 +1248,9 @@ pub struct InboundRow {
     pub line: usize,
     /// The heuristic value.
     pub heuristic: bool,
+    /// Which heuristic tier stands behind this row; `None` exactly when
+    /// `heuristic` is false (see [`row_tier`]).
+    pub tier: Option<graph::HeuristicTier>,
     /// The source value.
     pub source: String,
 }
@@ -1185,6 +1272,9 @@ pub struct OutboundRow {
     pub to: String,
     /// The heuristic value.
     pub heuristic: bool,
+    /// Which heuristic tier stands behind this row, same rule as
+    /// [`InboundRow::tier`].
+    pub tier: Option<graph::HeuristicTier>,
     /// The source value.
     pub source: String,
 }
@@ -1639,6 +1729,10 @@ fn build_member_refs_models(
                 file: file.to_string(),
                 line,
                 heuristic,
+                tier: row_tier(
+                    heuristic,
+                    edges[e].tier() == Some(graph::HeuristicTier::Ext),
+                ),
                 source,
             });
         }
@@ -1822,6 +1916,10 @@ fn build_outbound_tables(
             to_file,
             to,
             heuristic: r.heuristic,
+            tier: row_tier(
+                r.heuristic,
+                edges[r.edge].tier() == Some(graph::HeuristicTier::Ext),
+            ),
             source,
         };
         match r.kind {
@@ -1986,6 +2084,10 @@ fn build_refs_model_inner(
             file: file.to_string(),
             line,
             heuristic: r.heuristic,
+            tier: row_tier(
+                r.heuristic,
+                edges[r.edge].tier() == Some(graph::HeuristicTier::Ext),
+            ),
             source,
         });
     }
@@ -2167,6 +2269,10 @@ pub struct TestRow {
     pub ref_count: usize,
     /// The heuristic value.
     pub heuristic: bool,
+    /// Which heuristic tier stands behind this FILE's references. A row folds
+    /// every reference the file makes, so one extension edge among them names
+    /// the whole row -- same rule as [`InboundRow::tier`], applied to a set.
+    pub tier: Option<graph::HeuristicTier>,
 }
 
 /// The resolved `tests` result for one symbol.
@@ -2225,11 +2331,19 @@ fn collect_test_rows(index: &GraphIndex, kinds: [&[usize]; 3], heuristic: bool) 
                         lines: Vec::new(),
                         ref_count: 0,
                         heuristic,
+                        tier: row_tier(heuristic, false),
                     });
                     by_file.insert(from_file.to_string(), slot);
                     slot
                 }
             };
+            // A row folds every reference ONE file makes, so its tier can only
+            // ever be raised as the rest of that file's edges arrive: the first
+            // extension edge names the row, and no later name guess takes that
+            // back (see `row_tier`).
+            if index.graph.edges[i].tier() == Some(graph::HeuristicTier::Ext) {
+                rows[slot].tier = row_tier(heuristic, true);
+            }
             rows[slot].lines.push(from_line);
             rows[slot].ref_count += 1;
         }
@@ -2334,6 +2448,10 @@ struct Hit {
     via_count: u32,
     ambiguous_count: u32,
     heuristic_count: u32,
+    // How many of `heuristic_count` came from the EXTENSION tier. Counted
+    // rather than flagged so the walk keeps one shape for both tiers, and one
+    // is all the row needs to call itself an extension (see `row_tier`).
+    ext_count: u32,
     symbols: SeqSet<String>,
     // The `via` labels an interface-hop hit at this file carries
     // (`"IFoo (ctor-di)"` or bare `"IFoo"`), first-seen order.
@@ -2353,6 +2471,8 @@ pub struct VisitedEntry {
     pub ambiguous_count: u32,
     /// The heuristic count value.
     pub heuristic_count: u32,
+    /// How many of `heuristic_count` came from the extension tier.
+    pub ext_count: u32,
     /// The symbols value.
     pub symbols: Vec<String>,
     /// The interface `via` labels for this file's hits.
@@ -2591,6 +2711,9 @@ pub fn impact_walk(
                         let from_file = loc_file.to_string();
                         let h = hits.get_or_insert_default(&from_file);
                         h.heuristic_count += 1;
+                        if index.graph.edges[ei].tier() == Some(graph::HeuristicTier::Ext) {
+                            h.ext_count += 1;
+                        }
                         h.symbols.insert(def_id.clone());
                         note_line(&mut h.lines.heuristic, loc_line);
                     }
@@ -2617,6 +2740,7 @@ pub fn impact_walk(
                         via_count: h.via_count,
                         ambiguous_count: h.ambiguous_count,
                         heuristic_count: h.heuristic_count,
+                        ext_count: h.ext_count,
                         symbols: h.symbols.clone().into_vec(),
                         iface_via: h.iface_via.clone().into_vec(),
                         lines: h.lines.clone(),
@@ -2913,6 +3037,11 @@ pub struct ImpactRow {
     pub heuristic_count: u32,
     /// The heuristic value.
     pub heuristic: bool,
+    /// Which heuristic tier REACHED this file. Folded the same way `heuristic`
+    /// itself is -- over every guess that landed here -- so a file one
+    /// extension edge and ten name guesses all point at is an extension row.
+    /// Absent from `--json` on a precise row, like `heuristic`.
+    pub tier: Option<graph::HeuristicTier>,
     /// Present only on a row the interface hop actually reached, empty (and
     /// omitted from `--json`) on every other row.
     pub iface_via: Vec<String>,
@@ -3080,6 +3209,7 @@ pub fn build_impact_model(
                 score: *rank.get(file).unwrap_or(&0.0),
                 heuristic_count: if heuristic { h.heuristic_count } else { 0 },
                 heuristic,
+                tier: row_tier(heuristic, h.ext_count > 0),
                 iface_via: h.iface_via.clone(),
                 from_lines: from_lines_of(&h.lines),
                 infra: h.infra,
@@ -3304,7 +3434,6 @@ mod tests {
     }
     // And the same edge tagged as the OTHER heuristic tier: extension-method
     // lookup, which the query surface reports apart from a name guess.
-    #[allow(dead_code)]
     fn ext_uses_member(from_file: &str, from_line: usize, to: &str, to_file: &str) -> graph::Edge {
         graph::Edge::UsesMember {
             from_file: from_file.into(),
@@ -6717,7 +6846,7 @@ mod tests {
             &lines[start + 1..start + 3],
             [
                 "    Consumers/Precise.cs:10  uses-member",
-                "    Consumers/Guess.cs:7  uses-member (heuristic)"
+                "    Consumers/Guess.cs:7  uses-member (guess)"
             ]
         );
 
@@ -6728,6 +6857,90 @@ mod tests {
                 "in:uses-member (2):\n  Consumers/Precise.cs:10\n  Consumers/Guess.cs:7h"
             ),
             "{compact}"
+        );
+    }
+
+    #[test]
+    fn no_guess_keeps_the_extension_tier_drops_the_scored_one_and_leaves_the_hub_indegree_alone() {
+        let defs = vec![widget_def()];
+        let edges = vec![
+            uses_member(
+                "Consumers/Precise.cs",
+                10,
+                "App.Core.Widget",
+                "Core/Widget.cs",
+            ),
+            ext_uses_member("Consumers/Ext.cs", 4, "App.Core.Widget", "Core/Widget.cs"),
+            heuristic_uses_member("Consumers/Guess.cs", 7, "App.Core.Widget", "Core/Widget.cs"),
+        ];
+        let root = stage4_root(&defs, &edges, "no-guess-index");
+        let g = make_graph(defs, edges);
+
+        let full = load_graph_index(&g, &root);
+        let narrowed = load_graph_index_with(
+            &g,
+            &root,
+            IndexOptions {
+                include_guesses: false,
+            },
+        );
+        assert_eq!(
+            full.heuristic_inbound["App.Core.Widget"].uses_member.len(),
+            2,
+            "the default index carries both tiers"
+        );
+        let kept = &narrowed.heuristic_inbound["App.Core.Widget"].uses_member;
+        assert_eq!(kept.len(), 1, "only the extension tier survives --no-guess");
+        assert_eq!(
+            edge_loc(&g.edges[kept[0]]).0,
+            "Consumers/Ext.cs",
+            "and it is the extension edge that survived, not whichever came first"
+        );
+
+        // The hub brake counts a referring FILE, not a believed edge: a guess
+        // still proves the two files touch, so narrowing the ANSWER must not
+        // quietly widen the WALK by making a hub look less connected.
+        assert_eq!(full.hub_indegree.get("Core/Widget.cs").copied(), Some(3));
+        assert_eq!(
+            narrowed.hub_indegree.get("Core/Widget.cs").copied(),
+            Some(3),
+            "--no-guess drops rows, never the in-degree the hub brake reads"
+        );
+
+        let text = |index: &GraphIndex| {
+            let model = match build_refs_model(
+                index,
+                "Widget",
+                false,
+                DEFAULT_CAP,
+                INBOUND_CAP,
+                OUTBOUND_CAP,
+                false,
+            ) {
+                RefsResult::Resolved(m) => m,
+                other => panic!("expected a resolved model, got {other:?}"),
+            };
+            crate::render::render_refs_text(&model)
+        };
+        let out = text(&full);
+        assert!(
+            out.contains("    Consumers/Ext.cs:4  uses-member (extension)"),
+            "{out}"
+        );
+        assert!(
+            out.contains("    Consumers/Guess.cs:7  uses-member (guess)"),
+            "{out}"
+        );
+
+        let out = text(&narrowed);
+        assert!(out.contains("  uses-member (2):"), "{out}");
+        assert!(
+            out.contains("    Consumers/Ext.cs:4  uses-member (extension)"),
+            "the surviving tier still says which tier it is\n{out}"
+        );
+        assert!(
+            !out.contains("Consumers/Guess.cs"),
+            "a refused guess leaves no row behind\n{out}"
         );
     }
 
@@ -6776,7 +6989,7 @@ mod tests {
             "one trailer carries the exact count the call did not return\n{out}"
         );
         assert!(
-            !out.contains("(heuristic)"),
+            !out.contains("(guess)"),
             "precise rows have priority -- a full cap shows zero guesses"
         );
         assert_eq!(
@@ -6858,7 +7071,7 @@ mod tests {
             &lines[header + 1..header + 3],
             [
                 "Consumers/Direct.cs  1  1  Widget",
-                "Consumers/Guessed.cs  1  1  Widget (heuristic)"
+                "Consumers/Guessed.cs  1  1  Widget (guess)"
             ],
             "heuristic-reached files are listed after every precise one, never ranked among them"
         );
@@ -6954,7 +7167,7 @@ mod tests {
 
         let guessed = impact_out(true, "stage4-walk-guess");
         assert!(
-            guessed.contains("Mid/Middle.cs  1  1  Widget (heuristic)"),
+            guessed.contains("Mid/Middle.cs  1  1  Widget (guess)"),
             "the guessed file itself is still reported\n{guessed}"
         );
         assert!(
@@ -7454,6 +7667,7 @@ mod tests {
                 file: "Books/Consumer.cs".into(),
                 line: 2,
                 heuristic: false,
+                tier: None,
                 source: "Ledger.PostEx(2);".into()
             }]
         );

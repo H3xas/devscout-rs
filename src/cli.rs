@@ -143,10 +143,10 @@ index
 
 query
   find <query> [--resources] search the manifest by name or purpose
-  refs <symbol>              references to a symbol   [--out --all --json|--compact]
-  read <symbol>              decl span + inbound refs [--json|--compact]
-  impact <file|symbol>       blast radius             [--hops N --json|--compact]
-  tests <symbol>             tests reaching a symbol  [--json|--compact]
+  refs <symbol>              references to a symbol   [--out --all --no-guess --json|--compact]
+  read <symbol>              decl span + inbound refs [--no-guess --json|--compact]
+  impact <file|symbol>       blast radius             [--hops N --no-guess --json|--compact]
+  tests <symbol>             tests reaching a symbol  [--no-guess --json|--compact]
   stats                      index + cache summary for this repo
 
 plumbing
@@ -453,6 +453,21 @@ fn parse_int_js(s: &str) -> Option<i64> {
     s[..idx].parse::<i64>().ok()
 }
 
+// `--no-guess`, shared by the four verbs that read the graph index. Spelled
+// once and read at INDEX BUILD rather than at each render site: a guess that
+// never entered the adjacency cannot leak back out through a consumer that
+// forgot to filter, which is the same reasoning that gives heuristic edges
+// their own buckets in the first place.
+//
+// The flag is a plain presence test like `--json`/`--out`, so it takes no
+// value and can never be mistaken for the query -- no usage-error branch of
+// its own, which is why the four call sites below just call this.
+fn index_options(args: &[String]) -> query::IndexOptions {
+    query::IndexOptions {
+        include_guesses: !args.iter().any(|a| a == "--no-guess"),
+    }
+}
+
 // `refs`. Check order: `--compact`+`--json` conflict, then missing query, THEN
 // `require_repo`, THEN the graph-present check -- a query run with no repo
 // present reports the missing-repo error even if the query itself is also
@@ -469,7 +484,8 @@ fn cmd_refs(cwd: &Path, args: &[String]) -> (i32, String) {
     let Some(q) = first_positional(args) else {
         return (
             2,
-            "usage: devscout refs <symbol> [--out] [--all] [--json|--compact]".to_string(),
+            "usage: devscout refs <symbol> [--out] [--all] [--no-guess] [--json|--compact]"
+                .to_string(),
         );
     };
     let out = args.iter().any(|a| a == "--out");
@@ -486,7 +502,7 @@ fn cmd_refs(cwd: &Path, args: &[String]) -> (i32, String) {
             "no graph.json for this repo — run `devscout map` on a C# scope first".to_string(),
         );
     };
-    let index = query::load_graph_index(&g, &root);
+    let index = query::load_graph_index_with(&g, &root, index_options(args));
 
     match query::build_refs_model(
         &index,
@@ -556,7 +572,7 @@ fn cmd_read(cwd: &Path, args: &[String]) -> (i32, String) {
     let Some(q) = first_positional(args) else {
         return (
             2,
-            "usage: devscout read <symbol> [--json|--compact]".to_string(),
+            "usage: devscout read <symbol> [--no-guess] [--json|--compact]".to_string(),
         );
     };
     let root = match require_repo(cwd) {
@@ -569,7 +585,7 @@ fn cmd_read(cwd: &Path, args: &[String]) -> (i32, String) {
             "no graph.json for this repo — run `devscout map` on a C# scope first".to_string(),
         );
     };
-    let index = query::load_graph_index(&g, &root);
+    let index = query::load_graph_index_with(&g, &root, index_options(args));
 
     match query::build_read_model(&index, q) {
         query::ReadResult::NotFound => (EXIT_NO_RESULT, format!("no symbol matches \"{q}\"")),
@@ -631,7 +647,7 @@ fn cmd_impact(cwd: &Path, args: &[String]) -> (i32, String) {
         let raw = args.get(idx + 1).map(String::as_str).unwrap_or("");
         match parse_int_js(raw) {
             Some(h) if h >= 1 => hops = h as u32,
-            _ => return (2, "usage: devscout impact <file|symbol> [--hops N] [--no-iface] [--iface-max-fanin N] [--hub-max-indegree N] [--json|--compact]".to_string()),
+            _ => return (2, "usage: devscout impact <file|symbol> [--hops N] [--no-iface] [--no-guess] [--iface-max-fanin N] [--hub-max-indegree N] [--json|--compact]".to_string()),
         }
     }
 
@@ -643,7 +659,7 @@ fn cmd_impact(cwd: &Path, args: &[String]) -> (i32, String) {
         let raw = args.get(idx + 1).map(String::as_str).unwrap_or("");
         match parse_int_js(raw) {
             Some(n) if n >= 0 => iface_max_fanin = n as usize,
-            _ => return (2, "usage: devscout impact <file|symbol> [--hops N] [--no-iface] [--iface-max-fanin N] [--hub-max-indegree N] [--json|--compact]".to_string()),
+            _ => return (2, "usage: devscout impact <file|symbol> [--hops N] [--no-iface] [--no-guess] [--iface-max-fanin N] [--hub-max-indegree N] [--json|--compact]".to_string()),
         }
     }
 
@@ -654,7 +670,7 @@ fn cmd_impact(cwd: &Path, args: &[String]) -> (i32, String) {
         let raw = args.get(idx + 1).map(String::as_str).unwrap_or("");
         match parse_int_js(raw) {
             Some(n) if n >= 0 => hub_max_indegree = n as usize,
-            _ => return (2, "usage: devscout impact <file|symbol> [--hops N] [--no-iface] [--iface-max-fanin N] [--hub-max-indegree N] [--json|--compact]".to_string()),
+            _ => return (2, "usage: devscout impact <file|symbol> [--hops N] [--no-iface] [--no-guess] [--iface-max-fanin N] [--hub-max-indegree N] [--json|--compact]".to_string()),
         }
     }
 
@@ -676,7 +692,7 @@ fn cmd_impact(cwd: &Path, args: &[String]) -> (i32, String) {
         break;
     }
     let Some(q) = q else {
-        return (2, "usage: devscout impact <file|symbol> [--hops N] [--no-iface] [--iface-max-fanin N] [--hub-max-indegree N] [--json|--compact]".to_string());
+        return (2, "usage: devscout impact <file|symbol> [--hops N] [--no-iface] [--no-guess] [--iface-max-fanin N] [--hub-max-indegree N] [--json|--compact]".to_string());
     };
 
     let root = match require_repo_for_path(cwd, Some(q)) {
@@ -691,7 +707,7 @@ fn cmd_impact(cwd: &Path, args: &[String]) -> (i32, String) {
             "no graph.json for this repo — run `devscout map` on a C# scope first".to_string(),
         );
     };
-    let index = query::load_graph_index(&g, &root);
+    let index = query::load_graph_index_with(&g, &root, index_options(args));
 
     match query::build_impact_model(
         &index,
@@ -741,7 +757,7 @@ fn cmd_tests(cwd: &Path, args: &[String]) -> (i32, String) {
     let Some(q) = args.iter().find(|a| !a.starts_with("--")) else {
         return (
             2,
-            "usage: devscout tests <symbol> [--json|--compact]".to_string(),
+            "usage: devscout tests <symbol> [--no-guess] [--json|--compact]".to_string(),
         );
     };
     let root = match require_repo(cwd) {
@@ -754,7 +770,7 @@ fn cmd_tests(cwd: &Path, args: &[String]) -> (i32, String) {
             "no graph.json for this repo — run `devscout map` on a C# scope first".to_string(),
         );
     };
-    let index = query::load_graph_index(&g, &root);
+    let index = query::load_graph_index_with(&g, &root, index_options(args));
 
     match query::build_tests_model(&index, q) {
         query::TestsResult::NotFound => (EXIT_NO_RESULT, format!("no symbol matches \"{q}\"")),
@@ -1215,12 +1231,31 @@ fn j_table<R>(t: &query::Table<R>, row: impl Fn(&R) -> J) -> J {
     ])
 }
 
-// `heuristic: true` is appended LAST on a guessed row and the key is ABSENT on a
-// precise one -- the flag is added only in the heuristic branch, so a precise
-// row's JSON carries no trace of it at all.
-fn push_heuristic(fields: &mut Vec<(&'static str, J)>, heuristic: bool) {
-    if heuristic {
-        fields.push(("heuristic", J::Bool(true)));
+// `heuristic: true` then `tier` are appended LAST on a guessed row and BOTH
+// keys are ABSENT on a precise one -- they are added only in the heuristic
+// branch, so a precise row's JSON carries no trace of either. `tier` sits
+// immediately after `heuristic` because it refines it: a consumer reading only
+// `heuristic` sees the object it saw before, and one that wants the tier finds
+// it in the next slot rather than hunting the tail.
+//
+// A row that declares itself a guess but names no tier writes no `tier` key at
+// all -- the same omit-when-empty rule every optional field here follows, and
+// the same fallback the text renderer's umbrella `(heuristic)` word takes.
+fn push_heuristic(
+    fields: &mut Vec<(&'static str, J)>,
+    heuristic: bool,
+    tier: Option<graph::HeuristicTier>,
+) {
+    if !heuristic {
+        return;
+    }
+    fields.push(("heuristic", J::Bool(true)));
+    if let Some(tier) = tier {
+        let word = match tier {
+            graph::HeuristicTier::Ext => "ext",
+            graph::HeuristicTier::Guess => "guess",
+        };
+        fields.push(("tier", J::Str(word.to_string())));
     }
 }
 
@@ -1229,7 +1264,7 @@ fn j_inbound_row(r: &query::InboundRow) -> J {
         ("file", J::Str(r.file.clone())),
         ("line", J::UInt(r.line as u64)),
     ];
-    push_heuristic(&mut fields, r.heuristic);
+    push_heuristic(&mut fields, r.heuristic, r.tier);
     // `source` is appended after `heuristic` and omitted when the line could not
     // be read -- an absent key, never an empty string.
     if !r.source.is_empty() {
@@ -1244,7 +1279,7 @@ fn j_outbound_row(r: &query::OutboundRow) -> J {
         ("toFile", J::Str(r.to_file.clone())),
         ("to", J::Str(r.to.clone())),
     ];
-    push_heuristic(&mut fields, r.heuristic);
+    push_heuristic(&mut fields, r.heuristic, r.tier);
     // `source` is appended after `heuristic`, the same append-last/omit-when-empty
     // rule `j_inbound_row` follows.
     if !r.source.is_empty() {
@@ -1428,13 +1463,16 @@ fn j_impact_row(r: &query::ImpactRow) -> J {
         ("topSymbolsMore", J::UInt(r.top_symbols_more as u64)),
         ("score", J::RawNum(js_float_string(r.score))),
     ];
-    // `heuristicCount` then `heuristic`, both appended after `score` and both
-    // present only on a heuristic-only row (JS assigns them inside the same
-    // `if`).
+    // `heuristicCount` then `heuristic` then `tier`, all appended after `score`
+    // and all present only on a heuristic-only row (JS assigns them inside the
+    // same `if`). The last two go through the shared `push_heuristic`, so their
+    // order relative to each other is stated once for all four row shapes --
+    // which lands `tier` BEFORE `ifaceVia` here, in the slot right after the
+    // flag it refines.
     if r.heuristic {
         fields.push(("heuristicCount", J::UInt(r.heuristic_count as u64)));
-        fields.push(("heuristic", J::Bool(true)));
     }
+    push_heuristic(&mut fields, r.heuristic, r.tier);
     // Appended LAST, present only on a row the interface hop actually reached.
     if !r.iface_via.is_empty() {
         fields.push((
@@ -1568,7 +1606,7 @@ fn tests_model_to_json(model: &query::TestsModel) -> String {
                             ),
                             ("refCount", J::UInt(r.ref_count as u64)),
                         ];
-                        push_heuristic(&mut fields, r.heuristic);
+                        push_heuristic(&mut fields, r.heuristic, r.tier);
                         J::Obj(fields)
                     })
                     .collect(),
@@ -1717,12 +1755,14 @@ mod tests {
                     file: "src/Fact.cs".into(),
                     line: 4,
                     heuristic: false,
+                    tier: None,
                     source: String::new(),
                 },
                 query::InboundRow {
                     file: "src/Guess.cs".into(),
                     line: 9,
                     heuristic: true,
+                    tier: None,
                     source: "var w = new Widget();".into(),
                 },
             ],
@@ -1738,12 +1778,47 @@ mod tests {
     }
 
     #[test]
+    fn refs_json_appends_tier_after_heuristic_and_omits_it_on_a_precise_row() {
+        let row = |file: &str, line: usize, tier: Option<graph::HeuristicTier>| query::InboundRow {
+            file: file.into(),
+            line,
+            heuristic: tier.is_some(),
+            tier,
+            source: String::new(),
+        };
+        let model = json_refs_model(
+            vec![
+                row("src/Fact.cs", 4, None),
+                row("src/Ext.cs", 7, Some(graph::HeuristicTier::Ext)),
+                row("src/Guess.cs", 9, Some(graph::HeuristicTier::Guess)),
+            ],
+            true,
+        );
+        let json = refs_model_to_json(&model);
+        // A precise row is byte-identical to what it was before the tier
+        // existed; a guessed one gains exactly one key, in the slot right after
+        // the flag it refines and still before `source`.
+        assert!(
+            json.contains(
+                r#""rows":[{"file":"src/Fact.cs","line":4},{"file":"src/Ext.cs","line":7,"heuristic":true,"tier":"ext"},{"file":"src/Guess.cs","line":9,"heuristic":true,"tier":"guess"}]"#
+            ),
+            "{json}"
+        );
+        assert_eq!(
+            json.matches(r#""tier""#).count(),
+            2,
+            "a precise row carries no trace of the key: {json}"
+        );
+    }
+
+    #[test]
     fn refs_json_omits_the_outbound_key_entirely_without_out_and_keeps_its_slot_with_it() {
         let row = || {
             vec![query::InboundRow {
                 file: "src/Fact.cs".into(),
                 line: 4,
                 heuristic: false,
+                tier: None,
                 source: String::new(),
             }]
         };
@@ -1777,6 +1852,7 @@ mod tests {
                 file: "src/Fact.cs".into(),
                 line: 4,
                 heuristic: false,
+                tier: None,
                 source: String::new(),
             }]
         };
@@ -1808,6 +1884,7 @@ mod tests {
             score: 0.5,
             heuristic_count: if heuristic { 2 } else { 0 },
             heuristic,
+            tier: None,
             iface_via: vec![],
             from_lines: vec![],
             infra: false,
@@ -1841,6 +1918,57 @@ mod tests {
         assert!(
             json.ends_with(
                 r#","dropped":0,"manifestGap":0,"heuristicAffected":1,"testsAffected":0}"#
+            ),
+            "{json}"
+        );
+    }
+
+    #[test]
+    fn impact_json_tier_sits_between_heuristic_and_iface_via() {
+        let row = |file: &str, tier: graph::HeuristicTier| query::ImpactRow {
+            file: file.to_string(),
+            hop: 1,
+            via_count: 0,
+            ambiguous_count: 0,
+            top_symbols: vec!["Widget".to_string()],
+            top_symbols_more: 0,
+            score: 0.5,
+            heuristic_count: 2,
+            heuristic: true,
+            tier: Some(tier),
+            iface_via: vec!["IWidget".to_string()],
+            from_lines: vec![],
+            infra: false,
+        };
+        let model = query::ImpactModel {
+            kind: query::SeedKind::Symbol,
+            seed_files: vec!["src/Widget.cs".to_string()],
+            hops: 2,
+            total_affected: 0,
+            rows: vec![
+                row("src/Extended.cs", graph::HeuristicTier::Ext),
+                row("src/Guessed.cs", graph::HeuristicTier::Guess),
+            ],
+            dropped: 0,
+            manifest_gap: 0,
+            heuristic_affected: 2,
+            tests_affected: 0,
+            braked: vec![],
+            braked_files: vec![],
+        };
+        let json = impact_model_to_json("Widget", &model);
+        // `tier` takes the slot right after the flag it refines, which on this
+        // row shape means BEFORE `ifaceVia` -- every key that was already
+        // appended last stays appended last.
+        assert!(
+            json.contains(
+                r#""score":0.5,"heuristicCount":2,"heuristic":true,"tier":"ext","ifaceVia":["IWidget"]}"#
+            ),
+            "{json}"
+        );
+        assert!(
+            json.contains(
+                r#""score":0.5,"heuristicCount":2,"heuristic":true,"tier":"guess","ifaceVia":["IWidget"]}"#
             ),
             "{json}"
         );
