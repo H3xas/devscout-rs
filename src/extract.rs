@@ -1978,6 +1978,18 @@ pub struct Fact {
     /// blocks conflict exactly like two different callees would, rather than
     /// silently picking one awaited-ness for a name the source gives two.
     pub awaited: bool,
+    /// `true` when the declaration's own type node was, at its TOP level, an
+    /// `array_type` (`Widget[]`) -- set ONLY by `type_fact`, `false`
+    /// everywhere else (a call fact, a receiver-args unwrap, `this`/`base`'s
+    /// own fact: none of those can be an array). `base_type_identifier`
+    /// already collapses `Widget[]` to the same `type_name`/`args` shape a
+    /// plain `Widget` field would carry (the element type's own base
+    /// identifier, no type-argument list), so this bit is the ONLY signal
+    /// left that distinguishes "one Widget" from "an array of Widget" --
+    /// needed by the lambda-parameter element-typing rule, which must tell
+    /// `Widget[]` apart from `Widget` even though both facts otherwise read
+    /// identically. Part of the equality the table compares.
+    pub is_array: bool,
 }
 
 // name -> `Some(fact)` when exactly one fact vouches for it, `None` when the
@@ -2006,11 +2018,17 @@ fn add_fact(table: &mut FactTable, name: Option<String>, fact: Option<Fact>) {
 fn type_fact(type_node: Option<Node>, src: &[u8], type_params: &HashSet<String>) -> Option<Fact> {
     let type_name = base_type_identifier(type_node, src, false)?;
     let args = generic_arg_descriptors(type_node, src, type_params);
+    // The array bit is read off the type node's OWN top-level kind, before
+    // any unwrapping -- `base_type_identifier`/`generic_arg_descriptors`
+    // both already look THROUGH an `array_type` to its element, so this is
+    // the only place left that still knows the wrapper was there at all.
+    let is_array = type_node.is_some_and(|n| n.kind() == "array_type");
     Some(Fact {
         type_name,
         args,
         call: None,
         awaited: false,
+        is_array,
     })
 }
 
@@ -2176,6 +2194,12 @@ fn collect_member_facts(
     // the collection may be a local declared anywhere in this same flat
     // table, including one declared AFTER this foreach in source order.
     let mut deferred_foreach: Vec<DeferredForeach> = Vec::new();
+    // A single-parameter lambda's element-type fact (Unit C) needs the same
+    // second pass, for the same reason: its collection receiver may itself
+    // be a local settled only below (a `Q.M()` callee owner, a foreach
+    // variable), or a field this function's OWN first-pass walk never sees
+    // at all until `type_facts` is consulted here.
+    let mut deferred_lambda: Vec<DeferredLambdaParam> = Vec::new();
     visit_member_facts(
         node,
         src,
@@ -2183,6 +2207,7 @@ fn collect_member_facts(
         &mut table,
         &mut deferred,
         &mut deferred_foreach,
+        &mut deferred_lambda,
     );
     if !deferred.is_empty() {
         let pending: HashSet<&str> = deferred.iter().map(|d| d.name.as_str()).collect();
@@ -2201,6 +2226,7 @@ fn collect_member_facts(
                 args: None,
                 call: Some(d.member.clone()),
                 awaited: d.awaited,
+                is_array: false,
             });
             add_fact(&mut table, Some(d.name.clone()), fact);
         }
@@ -2215,6 +2241,17 @@ fn collect_member_facts(
         // ordinary unresolvable collection gets. Order among these entries
         // therefore cannot change the answer.
         let fact = collection_element_fact(&table, type_facts, &d.collection);
+        add_fact(&mut table, Some(d.name.clone()), fact);
+    }
+    for d in &deferred_lambda {
+        // Same reasoning as the foreach loop above -- and the SAME
+        // no-explicit-refusal shortcut applies for the same reason:
+        // `lambda_receiver_element_fact` only ever unwraps an array or a
+        // single-argument generic, never a call fact, so a sibling
+        // lambda parameter sharing this one's collection name (however
+        // it settles) can only ever read as "no such shape" here, same as
+        // an ordinary unresolvable receiver.
+        let fact = lambda_receiver_element_fact(&table, type_facts, &d.collection);
         add_fact(&mut table, Some(d.name.clone()), fact);
     }
     table
@@ -2239,6 +2276,71 @@ struct DeferredForeach {
     collection: String,
 }
 
+// One single-parameter lambda (`x => ...` or `(x) => ...`) sitting as the
+// FIRST argument of an invocation on a bare-identifier receiver, awaiting the
+// second pass: the parameter's own name, and the receiver's bare identifier
+// -- resolved into an element-type fact by `lambda_receiver_element_fact`
+// once every declaration in the member has settled.
+struct DeferredLambdaParam {
+    name: String,
+    collection: String,
+}
+
+// `n` (a `parameter` or `implicit_parameter` node) is the SOLE, UNTYPED
+// parameter of a `lambda_expression` sitting as the FIRST argument of an
+// `invocation_expression` whose function is a `member_access_expression` --
+// the shape `xs.Where(x => ...)` / `xs.Select((x) => ...)` asks for -- and
+// its receiver is a bare identifier: returns that receiver node. Purely
+// structural, never consulting a fact table (the receiver's OWN type is
+// looked up separately, in the second pass, once it has settled). `None`
+// for every other shape: an explicitly typed parameter (already handled by
+// the ordinary `type_fact` path below), a multi-parameter list, a lambda
+// that is not an invocation argument at all, a lambda argument that is not
+// the FIRST one, or a receiver that is not a bare identifier.
+fn lambda_first_arg_receiver(n: Node) -> Option<Node> {
+    let lambda = match n.kind() {
+        "implicit_parameter" => n.parent()?,
+        "parameter" => {
+            if n.child_by_field_name("type").is_some() {
+                return None;
+            }
+            let list = n.parent()?;
+            if list.kind() != "parameter_list" || named_children(list).len() != 1 {
+                return None;
+            }
+            list.parent()?
+        }
+        _ => return None,
+    };
+    if lambda.kind() != "lambda_expression" {
+        return None;
+    }
+    let argument = lambda.parent()?;
+    if argument.kind() != "argument" {
+        return None;
+    }
+    let argument_list = argument.parent()?;
+    if argument_list.kind() != "argument_list" {
+        return None;
+    }
+    if named_children(argument_list).first()?.id() != argument.id() {
+        return None;
+    }
+    let invocation = argument_list.parent()?;
+    if invocation.kind() != "invocation_expression" {
+        return None;
+    }
+    let function = invocation.child_by_field_name("function")?;
+    if function.kind() != "member_access_expression" {
+        return None;
+    }
+    let receiver = function.child_by_field_name("expression")?;
+    if receiver.kind() != "identifier" {
+        return None;
+    }
+    Some(receiver)
+}
+
 fn visit_member_facts(
     n: Node,
     src: &[u8],
@@ -2246,13 +2348,44 @@ fn visit_member_facts(
     table: &mut FactTable,
     deferred: &mut Vec<DeferredCall>,
     deferred_foreach: &mut Vec<DeferredForeach>,
+    deferred_lambda: &mut Vec<DeferredLambdaParam>,
 ) {
     if n.kind() == "parameter" {
-        add_fact(
-            table,
-            n.child_by_field_name("name").map(|x| text(x, src)),
-            type_fact(n.child_by_field_name("type"), src, type_params),
-        );
+        let name = n.child_by_field_name("name").map(|x| text(x, src));
+        match lambda_first_arg_receiver(n) {
+            // Deferred to the second pass instead of recorded as
+            // taken-but-unknown here: recording it now (even as `None`)
+            // would permanently conflict with the settled element fact
+            // `add_fact` writes later for the SAME name.
+            Some(receiver) => {
+                if let Some(name) = name.filter(|nm| !nm.is_empty()) {
+                    deferred_lambda.push(DeferredLambdaParam {
+                        name,
+                        collection: text(receiver, src),
+                    });
+                }
+            }
+            None => add_fact(
+                table,
+                name,
+                type_fact(n.child_by_field_name("type"), src, type_params),
+            ),
+        }
+    } else if n.kind() == "implicit_parameter" {
+        // An implicit lambda parameter (`x => ...`) has no `parameter` node
+        // at all, so it never reaches the branch above -- and outside a
+        // qualifying invocation it earns no fact either way, same as
+        // before this rule existed (see the doc comment on
+        // `lambda_first_arg_receiver`).
+        if let Some(receiver) = lambda_first_arg_receiver(n) {
+            let name = text(n, src);
+            if !name.is_empty() {
+                deferred_lambda.push(DeferredLambdaParam {
+                    name,
+                    collection: text(receiver, src),
+                });
+            }
+        }
     } else if n.kind() == "variable_declaration" {
         let type_node = n.child_by_field_name("type");
         let is_var = type_node.map(|t| t.kind()) == Some("implicit_type");
@@ -2337,7 +2470,15 @@ fn visit_member_facts(
         );
     }
     for c in named_children(n) {
-        visit_member_facts(c, src, type_params, table, deferred, deferred_foreach);
+        visit_member_facts(
+            c,
+            src,
+            type_params,
+            table,
+            deferred,
+            deferred_foreach,
+            deferred_lambda,
+        );
     }
 }
 
@@ -2411,9 +2552,70 @@ fn collection_element_fact(locals: &FactTable, type_facts: &FactTable, name: &st
                 args: None,
                 call: None,
                 awaited: false,
+                is_array: false,
             }),
             _ => None,
         },
+        _ => None,
+    }
+}
+
+// The element fact of a `xs.Where(x => ...)`-shaped lambda parameter's
+// COLLECTION receiver -- read the same two tables `collection_element_fact`
+// reads, over the SAME two shapes Unit C asks for, kept as its own function
+// rather than folded into `collection_element_fact` because the two rules
+// disagree on array handling (`foreach` never unwraps one, this rule
+// always does) and must never be conflated:
+//   - `T[]` (an array): `base_type_identifier`/`generic_arg_descriptors`
+//     already collapse the wrapper away at fact-recording time, so the
+//     ONLY signal left that a `Widget` fact denotes `Widget[]` rather than
+//     one `Widget` is `Fact::is_array` (see its own doc comment) --
+//     `args` is empty either way, since an array's OWN top-level generic
+//     name (if its element is itself generic, `List<Order>[]`) is a
+//     different, THIRD shape this rule declines rather than guesses at.
+//   - a generic type with EXACTLY one top-level type argument (`List<T>`,
+//     `IEnumerable<T>`, ...): the non-array branch below, identical to
+//     `collection_element_fact`'s own single-argument case. A two-argument
+//     generic (`Dictionary<K,V>`) and a wildcard argument (the enclosing
+//     declaration's own type parameter, nothing at this call site knows
+//     what it is bound to) both decline, same as `collection_element_fact`.
+// A call-shaped fact (`var xs = Q.GetItems();`, still unresolved at
+// extraction time -- the callee's return type lives in another file) is
+// never read as either shape: `fact.args` is always `None` for a call fact
+// by construction (`invocation_call`'s own Fact literal never sets it), so
+// it already falls through the generic-argument arm to `None`, and
+// `is_array` is always `false` for one too (never set by anything but
+// `type_fact`) -- both refusals happen for free, no explicit check needed.
+fn lambda_receiver_element_fact(
+    locals: &FactTable,
+    type_facts: &FactTable,
+    name: &str,
+) -> Option<Fact> {
+    let fact = match locals.get(name).or_else(|| type_facts.get(name)) {
+        Some(Some(fact)) => fact,
+        _ => return None,
+    };
+    if fact.is_array {
+        return if fact.args.is_none() {
+            Some(Fact {
+                type_name: fact.type_name.clone(),
+                args: None,
+                call: None,
+                awaited: false,
+                is_array: false,
+            })
+        } else {
+            None
+        };
+    }
+    match fact.args.as_deref() {
+        Some([arg]) if arg != "*" => Some(Fact {
+            type_name: arg.clone(),
+            args: None,
+            call: None,
+            awaited: false,
+            is_array: false,
+        }),
         _ => None,
     }
 }
@@ -2514,6 +2716,20 @@ impl<'a> Scope<'a> {
             .as_ref()
             .is_some_and(|table| table.contains_key(name))
     }
+
+    // `true` when SOME declaration in scope claims `name` at all -- a local
+    // or parameter (`has_local_fact`) OR a field/primary-ctor parameter of
+    // the enclosing TYPE -- typed or not. Mirrors `qualifier_type_name`'s own
+    // "claimed at all" test (used for `var x = Q.M()`'s call-owner fallback)
+    // over `Scope`'s two tables instead of a `collect_member_facts` pass's
+    // raw pair: the chain-tail rule (Unit C) needs exactly this to tell "no
+    // declaration anywhere claims this bare name, so treat it as a static
+    // type reference" apart from "something claims it but vouches for
+    // nothing", which `receiver_fact_for` alone collapses into the same
+    // `None`.
+    fn name_is_claimed(&self, name: &str, src: &[u8]) -> bool {
+        self.has_local_fact(name, src) || self.type_facts.contains_key(name)
+    }
 }
 
 // The member name half of a member-access-shaped ref, normalizing a
@@ -2574,6 +2790,7 @@ fn resolve_member_qualifier(
                 args: receiver_args,
                 call: None,
                 awaited: false,
+                is_array: false,
             }),
             text: qt,
             generic,
@@ -2618,6 +2835,77 @@ fn resolve_member_qualifier(
         receiver_base: false,
         receiver_local,
     })
+}
+
+// The type NAME a chain-tail's HEAD (`a` in `a.B().C()`, for the `.C`
+// window) stands for, as far as the file can vouch -- the exact three-way
+// answer `qualifier_type_name` gives `Q` in `var x = Q.M()`, reused here
+// over `Scope`'s own tables since this runs from `walk()`, not from a
+// `collect_member_facts` pass: an in-file fact when one vouches for the
+// name (a call-shaped fact refused -- one hop, never a chain); the bare
+// name itself when nothing in scope claims it at all (the static-qualifier
+// shape, `Repo.Load().Validate()`); `None` when something claims the name
+// but vouches for no type.
+fn chain_tail_receiver_type(a_text: &str, scope: &Scope, src: &[u8]) -> Option<String> {
+    match scope.receiver_fact_for(a_text, src) {
+        Some(Fact {
+            type_name,
+            call: None,
+            ..
+        }) => Some(type_name),
+        Some(_) => None,
+        None if scope.name_is_claimed(a_text, src) => None,
+        None => Some(a_text.to_string()),
+    }
+}
+
+// The chain-tail shape (Unit C): `.C` in `a.B().C()`, whose OWN qualifier is
+// the invocation `a.B()`. Returns `(owner, member)` -- the SAME two fields
+// `var x = Q.M()` produces for its local, feeding the identical one-hop
+// `method_returns` resolver path -- for
+//   - a qualifier that is an `invocation_expression`,
+//   - whose OWN `function` is a `member_access_expression` (`a.B`) --
+//     anything else (a bare call `B()`, a delegate-shaped `Get()()`) is not
+//     this shape, and
+//   - whose `a` resolves through `member_qualifier_info` to a BARE,
+//     non-generic, non-dotted name with a typed receiver (see
+//     `chain_tail_receiver_type`).
+// A chain of chains (`a.B().C().D()`'s `.D`, whose own `a` is `a.B().C()`,
+// an `invocation_expression` `member_qualifier_info` has no arm for) never
+// reaches the receiver-typing step at all: `member_qualifier_info` returns
+// `None` for it, same as every other shape this function declines.
+fn resolve_call_chain_tail(
+    qualifier: Node,
+    src: &[u8],
+    type_stack: &[String],
+    scope: &Scope,
+) -> Option<(String, String)> {
+    if qualifier.kind() != "invocation_expression" {
+        return None;
+    }
+    let function = qualifier.child_by_field_name("function")?;
+    if function.kind() != "member_access_expression" {
+        return None;
+    }
+    let (a_text, a_generic) =
+        member_qualifier_info(function.child_by_field_name("expression"), src, type_stack)?;
+    if a_generic || a_text.contains('.') {
+        return None;
+    }
+    let name_node = function.child_by_field_name("name")?;
+    let inner_member = if name_node.kind() == "generic_name" {
+        named_children(name_node)
+            .into_iter()
+            .find(|c| c.kind() == "identifier")
+            .map(|id| text(id, src))?
+    } else {
+        text(name_node, src)
+    };
+    if inner_member.is_empty() {
+        return None;
+    }
+    let owner = chain_tail_receiver_type(&a_text, scope, src)?;
+    Some((owner, inner_member))
 }
 
 // walk_list mutates its local `ns` mid-iteration for a FILE-SCOPED
@@ -2977,6 +3265,50 @@ fn walk<'a>(
                         q.receiver_base,
                         q.receiver_local,
                     );
+                }
+            } else if let (Some(qn), Some(m)) = (expr_field, &member) {
+                // Unit C, chain tail: `resolve_member_qualifier` structurally
+                // NEVER succeeds here (`member_qualifier_info` has no arm
+                // for `invocation_expression`), so this is a true fallback,
+                // never a double emission for the same window.
+                if !m.is_empty() {
+                    if let Some((owner, inner_member)) =
+                        resolve_call_chain_tail(qn, src, type_stack, scope)
+                    {
+                        push_member_ref(
+                            &mut out.refs,
+                            // The qualifier's OWN source text ("a.B()",
+                            // "Repo.Load()", ...) rather than a name that
+                            // could coincidentally collide with a real
+                            // type: an invocation_expression's span always
+                            // ends at its own closing ')', a character no
+                            // C# identifier or dotted type name can ever
+                            // contain, so `push_member_ref`'s `name`/
+                            // `qualified` split can never accidentally
+                            // resolve as a real def. `receiver_type` stays
+                            // `None` (a call-shaped Fact, not a resolved
+                            // type) -- resolution goes through the same
+                            // one-hop `method_returns` path a `var x =
+                            // Q.M()` local already uses.
+                            &text(qn, src),
+                            m.clone(),
+                            node.start_position().row + 1,
+                            ns.to_string(),
+                            false,
+                            Some(Fact {
+                                type_name: owner,
+                                args: None,
+                                call: Some(inner_member),
+                                awaited: false,
+                                is_array: false,
+                            }),
+                            invocation_arg_count(node),
+                            type_stack,
+                            None,
+                            false,
+                            false,
+                        );
+                    }
                 }
             }
             walk_list(
@@ -6233,7 +6565,7 @@ namespace App.NoFacts;
 
 public class Host
 {
-  public void Run(string text, System.Collections.Generic.List<Widget> items)
+  public void Run(string text, System.Collections.Generic.Dictionary<string, Widget> items)
   {
     var computed = Compute();
     int count = 0;
@@ -6265,9 +6597,14 @@ public class Host
                 ("text.Trim".to_string(), None),
                 ("count.ToString".to_string(), None),
                 // an explicitly typed parameter DOES earn a fact even when its
-                // declared type is qualified AND generic -- reduced to "List"
-                ("items.ForEach".to_string(), Some("List")),
-                // implicit lambda parameter: no type node, no fact
+                // declared type is qualified AND generic -- reduced to
+                // "Dictionary" (a TWO-argument generic, deliberately, so this
+                // window does NOT also qualify for the lambda-parameter
+                // element-typing rule below -- that positive case has its own
+                // dedicated stage4_first_single_parameter_lambda_... test)
+                ("items.ForEach".to_string(), Some("Dictionary")),
+                // implicit lambda parameter, first argument of a call whose
+                // receiver is a TWO-argument generic: still no fact
                 ("x.Do".to_string(), None),
             ]
         );
@@ -8401,5 +8738,157 @@ public class Probe
             .find(|r| r.kind == "uses-member" && r.member.as_deref() == Some("Render"))
             .expect("x.Render() ref present");
         assert_eq!(render.receiver_type, None, "out var x earns no fact");
+    }
+
+    // --- Unit C: chain-tail receivers and lambda-parameter element typing --
+
+    #[test]
+    fn stage4_call_chain_tail_carries_the_inner_call_as_its_receiver() {
+        let e = extract_src(
+            r#"
+namespace App.ChainTail;
+
+public class Host
+{
+  private Widget a;
+
+  public void Run()
+  {
+    var y = a.B().C();
+    var z = Repo.Load().Validate();
+  }
+}
+"#,
+        );
+        // `a`: an IN-FILE fact (the field `a: Widget`). `Repo`: nothing in
+        // scope claims the name, so its own bare text is the static-type
+        // candidate -- the "Static type qualifier ... counts as typed" case.
+        let c = e
+            .refs
+            .iter()
+            .find(|r| r.kind == "uses-member" && r.member.as_deref() == Some("C"))
+            .expect("a.B().C() earns a ref for its own window");
+        assert_eq!(
+            c.receiver_type, None,
+            "a call-shaped receiver, never a resolved type"
+        );
+        assert_eq!(c.receiver_call_owner.as_deref(), Some("Widget"));
+        assert_eq!(c.receiver_call_member.as_deref(), Some("B"));
+        assert!(!c.generic);
+        assert!(!c.receiver_base);
+        assert_eq!(c.arg_count, Some(0), "C() itself takes zero arguments");
+
+        let validate = e
+            .refs
+            .iter()
+            .find(|r| r.kind == "uses-member" && r.member.as_deref() == Some("Validate"))
+            .expect("Repo.Load().Validate() earns a ref for its own window");
+        assert_eq!(validate.receiver_type, None);
+        assert_eq!(validate.receiver_call_owner.as_deref(), Some("Repo"));
+        assert_eq!(validate.receiver_call_member.as_deref(), Some("Load"));
+    }
+
+    #[test]
+    fn stage4_second_hop_of_a_chain_emits_no_ref() {
+        let e = extract_src(
+            r#"
+namespace App.ChainOfChains;
+
+public class Host
+{
+  private Widget a;
+
+  public void Run()
+  {
+    var y = a.B().C().D();
+  }
+}
+"#,
+        );
+        // `.D`'s OWN qualifier is `a.B().C()`, itself a chain (its `function`
+        // is a member_access_expression whose own `expression` is the
+        // invocation `a.B()`, not a plain name) -- `member_qualifier_info`
+        // has no arm for an `invocation_expression` qualifier, so `.D` never
+        // reaches the chain-tail rule at all and earns no ref, precise or
+        // otherwise.
+        let d = e
+            .refs
+            .iter()
+            .find(|r| r.kind == "uses-member" && r.member.as_deref() == Some("D"));
+        assert!(
+            d.is_none(),
+            "a chain-of-chains qualifier earns no ref for its own tail"
+        );
+
+        // The NESTED `.C` window, walked independently, is an ordinary
+        // chain tail in its own right and still earns its own ref.
+        let c = e
+            .refs
+            .iter()
+            .find(|r| r.kind == "uses-member" && r.member.as_deref() == Some("C"))
+            .expect("the nested a.B().C() window still earns its own ref");
+        assert_eq!(c.receiver_call_owner.as_deref(), Some("Widget"));
+        assert_eq!(c.receiver_call_member.as_deref(), Some("B"));
+    }
+
+    #[test]
+    fn stage4_first_single_parameter_lambda_on_a_collection_receiver_gets_the_element_type() {
+        let e = extract_src(
+            r#"
+namespace App.LambdaElement;
+
+public class Host
+{
+  private Widget[] arr;
+  private List<Widget> list;
+
+  public void Run()
+  {
+    arr.Where(x => x.Go());
+    list.Where((y) => y.Go());
+  }
+}
+"#,
+        );
+        let go_types: Vec<_> = e
+            .refs
+            .iter()
+            .filter(|r| r.kind == "uses-member" && r.member.as_deref() == Some("Go"))
+            .map(|r| r.receiver_type.as_deref())
+            .collect();
+        assert_eq!(
+            go_types,
+            vec![Some("Widget"), Some("Widget")],
+            "an array's implicit lambda parameter (`x`) and a single-argument generic's \
+             parenthesized untyped parameter (`(y)`) both earn the element type"
+        );
+    }
+
+    #[test]
+    fn stage4_lambda_on_a_two_argument_generic_receiver_gets_no_fact() {
+        let e = extract_src(
+            r#"
+namespace App.LambdaNoFact;
+
+public class Host
+{
+  private Dictionary<string, Widget> dict;
+
+  public void Run()
+  {
+    dict.Where(kv => kv.Deconstruct());
+  }
+}
+"#,
+        );
+        let call = e
+            .refs
+            .iter()
+            .find(|r| r.kind == "uses-member" && r.member.as_deref() == Some("Deconstruct"))
+            .expect("kv.Deconstruct() still earns an ordinary ref");
+        assert_eq!(
+            call.receiver_type, None,
+            "a two-argument generic receiver (Dictionary<K,V>) never types the lambda parameter"
+        );
     }
 }

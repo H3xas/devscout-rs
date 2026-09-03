@@ -8894,6 +8894,50 @@ mod tests {
         );
     }
 
+    // --- Unit C: chain-tail receivers -----------------------------------
+
+    #[test]
+    fn stage7_chain_tail_resolves_through_one_method_return_hop() {
+        let files = fragments_for(&[
+            (
+                "Domain/Order.cs",
+                "\nnamespace App.Domain;\n\npublic class Order\n{\n    public void Validate() { }\n}\n",
+            ),
+            (
+                "Infra/Repo.cs",
+                "\nnamespace App.Infra;\n\npublic static class Repo\n{\n    public static Order Load() => null;\n}\n",
+            ),
+            (
+                "App/Worker.cs",
+                "\nnamespace App.Workers;\n\npublic class Worker\n{\n    public void Run()\n    {\n        Repo.Load().Validate();\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        let validate_edges: Vec<(&str, bool)> = g
+            .edges
+            .iter()
+            .filter_map(|e| match e {
+                Edge::UsesMember {
+                    from_file,
+                    to,
+                    member,
+                    heuristic,
+                    ..
+                } if from_file == "App/Worker.cs" && member.as_deref() == Some("Validate") => {
+                    Some((to.as_str(), *heuristic))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            validate_edges,
+            vec![("App.Domain.Order", false)],
+            "the chain tail `.Validate()` resolves through the ONE method_returns hop off \
+             `Repo.Load()`, precisely and non-heuristically -- exactly like a `var x = \
+             Repo.Load(); x.Validate();` local already would"
+        );
+    }
+
     // --- Unit B: cross-file field facts, the bare-identifier fallback -------
     //
     // All three run real C# through the extractor (`fragments_for`), the same
