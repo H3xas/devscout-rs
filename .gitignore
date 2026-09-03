@@ -30,3 +30,5 @@ bench/state/
 
 # Local release tooling, not published.
 scripts/preflight.sh
+bin/
+obj/
