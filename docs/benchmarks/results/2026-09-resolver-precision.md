@@ -535,3 +535,37 @@ New this run:
     without this exclusion and a clear pass with it — the file's `#if`/`#else`-selected namespace is
     a known extractor blind spot (a preprocessor-conditional symbol the tree-sitter-based extractor
     cannot evaluate), not a representative sample of `ext`-tier behavior elsewhere in the corpus.
+
+## Runs 2 and 3 — registered predictions (2026-09-03)
+
+Two further runs on the same corpus pin and the same oracle output follow the extractor recall
+work, so every denominator is identical to Run 1. Run 2 comes after the receiver-shape changes
+(`this.`, `base.`, `?.` bindings, `await` look-through for local facts, cast, declaration-pattern
+and typed `out` designations). Run 3 comes after cross-file field facts (a field declared in a
+sibling partial-class file or on a base type types the receiver), one-hop call-chain tails and
+element typing of a single-parameter lambda on a collection-typed receiver. Predictions, registered
+before Run 2 numbers are seen:
+
+| metric | Run 1 | Run 2 predicted | Run 3 predicted |
+| --- | --- | --- | --- |
+| recall `this` | 0.000 | ≥ 0.60 | ≥ 0.60 |
+| recall `base` | 0.000 | ≥ 0.50 | ≥ 0.50 |
+| recall `call` | 0.004 | unchanged | ≥ 0.30 |
+| recall `ident` | 0.560 | unchanged | ≥ 0.60 |
+| recall all | 0.479 | ≥ 0.52 | ≥ 0.55 |
+| recall precise+ext | 0.394 | ≥ 0.42 | ≥ 0.47 |
+| precise precision | 0.969 | ≥ 0.964 | ≥ 0.964 |
+| guess precision | 0.502 | ≥ 0.48 | ≥ 0.48 |
+| leaked external sites | 1098 | ≤ 1098 | ≤ 1098 |
+
+Falsification. Precise precision below 0.964 on either run means the new receiver typing binds
+wrong types, and that wave is reverted before the next one is measured. A `this` bucket still below
+0.60 after Run 2 means the misses are not receiver-shape misses; they are bucketed by target kind
+before the field-fact wave lands. A `call` bucket still below 0.30 after Run 3 means one
+method-return hop is not where the chain misses are.
+
+Decision rule, fixed now. If recall precise+ext is at or above 0.70 after Run 3, the question of a
+compiler-backed enrichment layer is closed as not worth its dependency. Below that, the remaining
+misses are bucketed by receiver kind and target kind, and an enrichment layer is designed against
+the record contract the oracle already emits (`receiverText`, `receiver`, `target`), cached and
+never on the hook path.
