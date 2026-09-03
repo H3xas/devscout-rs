@@ -8,7 +8,7 @@ description = "Fast code index for C# and TypeScript codebases -- map, find, ref
 readme = "README.md"
 keywords = ["code-index", "csharp", "typescript", "code-navigation", "cli"]
 categories = ["command-line-utilities", "development-tools"]
-exclude = [".github/", "target/"]
+exclude = [".github/", "target/", "tools/", "bench/"]
 
 [[bin]]
 name = "devscout"
