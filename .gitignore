@@ -26,6 +26,7 @@ WORKTREE.md
 # Benchmark corpora and isolated bench state; cloned by bench/clone-corpus.sh, never committed.
 # (bench/out/ is already covered by the out/ rule above.)
 bench/corpora/
+bench/clones/
 bench/state/
 
 # Local release tooling, not published.

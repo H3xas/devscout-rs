@@ -3,7 +3,7 @@
 # for one corpus solution.
 #
 # Usage: bench/semantic.sh <corpus-dir> <solution.sln> [msbuild -p:... args]
-#   e.g. bench/semantic.sh bench/corpora/csharp MassTransit.sln -p:TargetFrameworks=net9.0
+#   e.g. bench/semantic.sh bench/clones/csharp MassTransit.sln -p:TargetFrameworks=net9.0
 #
 # Restores <corpus-dir>/<solution.sln>, runs tools/scout-semantic over it for the oracle's
 # refs.jsonl/units.jsonl, indexes the corpus with devscout, then runs `audit --semantic`
