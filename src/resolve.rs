@@ -379,6 +379,7 @@ fn name_probe(name: String, namespace: &str, outer_types: Vec<String>) -> FragRe
         receiver_property_owner: None,
         receiver_call_owner: None,
         receiver_call_member: None,
+        receiver_base: false,
     }
 }
 
@@ -2416,6 +2417,7 @@ mod tests {
             receiver_property_owner: None,
             receiver_call_owner: None,
             receiver_call_member: None,
+            receiver_base: false,
         }
     }
 
@@ -2437,6 +2439,7 @@ mod tests {
             receiver_property_owner: None,
             receiver_call_owner: None,
             receiver_call_member: None,
+            receiver_base: false,
         }
     }
 
@@ -7097,6 +7100,7 @@ mod tests {
                     receiver_property_owner: None,
                     receiver_call_owner: None,
                     receiver_call_member: None,
+                    receiver_base: false,
                 }],
             ),
         )];
@@ -7145,6 +7149,7 @@ mod tests {
                             receiver_property_owner: None,
                             receiver_call_owner: None,
                             receiver_call_member: None,
+                            receiver_base: false,
                         },
                     ],
                 ),

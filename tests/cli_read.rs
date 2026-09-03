@@ -321,23 +321,23 @@ fn map_rerun_reuses_fragments_and_a_missing_cache_re_extracts_with_spans() {
     );
 
     let graph_dir = fx.graph_dir();
-    let v15 = graph_dir.join("fragments-v15.json");
-    assert!(v15.exists(), "the current cache generation is on disk");
+    let v16 = graph_dir.join("fragments-v16.json");
+    assert!(v16.exists(), "the current cache generation is on disk");
 
-    // Simulate the pre-bump world: only a v13 pair present. BOTH v14 files
+    // Simulate the pre-bump world: only a v13 pair present. BOTH v15 files
     // must go -- reuse is decided against the mtime-only index, so leaving it
     // behind would let every file look reusable off an empty payload cache.
     // The next map then finds nothing reusable, re-extracts every file,
-    // writes the v14 pair again, and deletes the superseded generation.
-    fs::write(graph_dir.join("fragments-v14.json"), b"{}").unwrap();
-    fs::remove_file(&v15).unwrap();
-    fs::remove_file(graph_dir.join("fragments-index-v15.json")).unwrap();
+    // writes the v15 pair again, and deletes the superseded generation.
+    fs::write(graph_dir.join("fragments-v15.json"), b"{}").unwrap();
+    fs::remove_file(&v16).unwrap();
+    fs::remove_file(graph_dir.join("fragments-index-v16.json")).unwrap();
 
     let rebuild = fx.run(&["map", "."]);
     assert!(rebuild.status.success(), "{rebuild:?}");
-    assert!(v15.exists(), "re-extraction rewrote the current generation");
+    assert!(v16.exists(), "re-extraction rewrote the current generation");
     assert!(
-        !graph_dir.join("fragments-v14.json").exists(),
+        !graph_dir.join("fragments-v15.json").exists(),
         "rename IS the invalidation: superseded generations are deleted"
     );
 

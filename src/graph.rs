@@ -3,7 +3,7 @@
 // a mismatch makes reuse break silently.
 //
 // This module owns every serde struct for graph.json + the fragments-cache
-// pair (fragments-v15.json, fragments-index-v15.json), plus their path resolution,
+// pair (fragments-v16.json, fragments-index-v16.json), plus their path resolution,
 // atomic I/O, and the cache-then-resolve-then-write orchestration
 // (`rebuild_graph`). The pure resolution ladder that
 // turns fragments into `defs`/`edges` lives in `resolve.rs` and returns the
@@ -136,16 +136,19 @@ pub fn project_units_path(root: &Path) -> PathBuf {
 // element-type fact -- no new field (it settles into the existing
 // `receiver_type`), but a cached fragment from before it can still disagree
 // with a fresh one for the same unchanged file, so it rides the same bump
-// rather than skipping it. The rename IS the invalidation mechanism:
+// rather than skipping it. v16 added the ref `receiverBase` flag, set only
+// for a `base.` qualifier -- a cached v15 fragment carries none, so every
+// `base.` receiver would silently resolve (or fail to resolve) as if it
+// were a plain `this.` receiver. The rename IS the invalidation mechanism:
 // pre-bump caches stop being found, every file reparses
 // once, no reader carries version-compat logic. Writers delete every
 // superseded generation (see `remove_superseded_caches`).
 fn fragments_cache_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-v15.json")
+    graph_dir(root).join("fragments-v16.json")
 }
 
 fn fragments_index_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-index-v15.json")
+    graph_dir(root).join("fragments-index-v16.json")
 }
 
 // Every generation below the current one, not just the immediately previous:
@@ -180,6 +183,8 @@ const SUPERSEDED_CACHE_FILES: &[&str] = &[
     "fragments-index-v13.json",
     "fragments-v14.json",
     "fragments-index-v14.json",
+    "fragments-v15.json",
+    "fragments-index-v15.json",
 ];
 
 fn remove_superseded_caches(root: &Path) {
@@ -1123,6 +1128,14 @@ pub struct FragRef {
     )]
     /// The receiver call member value.
     pub receiver_call_member: Option<String>,
+    /// `true` for a `base.` qualifier -- the member lookup starts at the
+    /// enclosing type's bases and never considers the enclosing type
+    /// itself (see `extract.rs`'s `RefRecord`). Appended LAST of all, and
+    /// omitted when `false` -- an absent key reads back as `false`, the
+    /// same as a plain `this.` receiver and as every ref kind that never
+    /// sets it, and also what makes a v15 cached fragment parse safely.
+    #[serde(default, rename = "receiverBase", skip_serializing_if = "is_false")]
+    pub receiver_base: bool,
 }
 
 fn is_false(b: &bool) -> bool {
@@ -1294,6 +1307,7 @@ pub fn fragment_from_extraction(e: &extract::Extraction) -> Fragment {
                 receiver_property_owner: r.receiver_property_owner.clone(),
                 receiver_call_owner: r.receiver_call_owner.clone(),
                 receiver_call_member: r.receiver_call_member.clone(),
+                receiver_base: r.receiver_base,
             })
             .collect(),
         names: e
@@ -1368,6 +1382,7 @@ pub fn markup_fragment(root: &Path, rel: &str) -> Option<Fragment> {
                 receiver_property_owner: None,
                 receiver_call_owner: None,
                 receiver_call_member: None,
+                receiver_base: false,
             })
             .collect(),
         names: facts
@@ -1915,6 +1930,7 @@ mod tests {
             receiver_property_owner: None,
             receiver_call_owner: None,
             receiver_call_member: None,
+            receiver_base: false,
         }
     }
 
@@ -2688,7 +2704,7 @@ mod tests {
         // receiverCallMember pair, so a v12 fragment read back carries none and
         // every property hop and every var-from-invocation receiver would
         // silently stay unresolved.
-        assert_eq!(SUPERSEDED_CACHE_FILES.len(), 28, "v1..v14 pairs");
+        assert_eq!(SUPERSEDED_CACHE_FILES.len(), 30, "v1..v15 pairs");
         for stale in SUPERSEDED_CACHE_FILES {
             fs::write(graph_dir(&dir).join(stale), b"{}").unwrap();
         }
@@ -2725,11 +2741,11 @@ mod tests {
         rebuild_graph(&dir, &graph_files, &fresh, true, None).unwrap();
 
         assert!(
-            graph_dir(&dir).join("fragments-v15.json").exists(),
-            "the v15 payload cache is what gets written"
+            graph_dir(&dir).join("fragments-v16.json").exists(),
+            "the v16 payload cache is what gets written"
         );
         assert!(
-            graph_dir(&dir).join("fragments-index-v15.json").exists(),
+            graph_dir(&dir).join("fragments-index-v16.json").exists(),
             "and its mtime-only index alongside it"
         );
         for stale in SUPERSEDED_CACHE_FILES {
@@ -2738,6 +2754,56 @@ mod tests {
                 "{stale} must be deleted -- rename IS the invalidation"
             );
         }
+    }
+
+    // --- The v16 cache generation --------------------------
+
+    #[test]
+    fn fragments_cache_v16_supersedes_v15() {
+        let dir = temp_dir("fragments-cache-v16-paths");
+        assert_eq!(
+            fragments_cache_path(&dir),
+            graph_dir(&dir).join("fragments-v16.json")
+        );
+        assert_eq!(
+            fragments_index_path(&dir),
+            graph_dir(&dir).join("fragments-index-v16.json")
+        );
+        assert!(
+            SUPERSEDED_CACHE_FILES.contains(&"fragments-v15.json"),
+            "v15 joined the superseded list when the v16 bump landed"
+        );
+        assert!(
+            SUPERSEDED_CACHE_FILES.contains(&"fragments-index-v15.json"),
+            "its index pairs with it, same as every other generation"
+        );
+
+        let dir = temp_dir("rebuild-v16");
+        fs::create_dir_all(graph_dir(&dir)).unwrap();
+        fs::write(graph_dir(&dir).join("fragments-v15.json"), b"{}").unwrap();
+        fs::write(graph_dir(&dir).join("fragments-index-v15.json"), b"{}").unwrap();
+
+        let fragment = Fragment {
+            defs: vec![],
+            usings: vec![],
+            refs: vec![],
+            names: vec![],
+        };
+        let mut fresh = HashMap::new();
+        fresh.insert("src/A.cs".to_string(), AnyFragment::Cs(fragment));
+        let graph_files = vec![GraphFile {
+            rel: "src/A.cs".to_string(),
+            mtime: 1,
+        }];
+        rebuild_graph(&dir, &graph_files, &fresh, true, None).unwrap();
+
+        assert!(graph_dir(&dir).join("fragments-v16.json").exists());
+        assert!(graph_dir(&dir).join("fragments-index-v16.json").exists());
+        assert!(
+            !graph_dir(&dir).join("fragments-v15.json").exists(),
+            "the v15 pair is deleted -- rename IS the invalidation"
+        );
+        assert!(!graph_dir(&dir).join("fragments-index-v15.json").exists());
     }
 
     // --- v8: FragRef's outerTypes, appended last -----------------------------
