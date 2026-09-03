@@ -124,8 +124,9 @@ untracked files and are shared correctly by worktrees:
 ```
 <git-common-dir>/scout/manifest.json              file -> purpose + symbol index
 <git-common-dir>/scout/index-state.json           HEAD + timestamp the index was built at
-<git-common-dir>/scout/graph/graph.json           definitions and edges
+<git-common-dir>/scout/graph/graph.json           definitions, edges, and project units
 <git-common-dir>/scout/graph/fragments-v15.json   per-file extraction cache (incremental map)
+<git-common-dir>/scout/graph/project-units.json   csproj staleness sidecar (present only with a project model)
 ```
 
 Outside a git repository the same tree is written to `<root>/.scout/` instead. `devscout init`
@@ -189,6 +190,28 @@ Known, rather than hidden:
   filesystem for you.
 - **Ordering is load-bearing but not a stability promise.** Artifact ordering is fixed and
   deterministic by design; do not rely on it staying byte-identical across minor versions.
+- **Heuristic `uses-member` edges carry a `tier`: `ext` or `guess`.** `ext` is C#'s own
+  extension-method lookup — an exact `(member, this-type)` bucket, matched arity, generic
+  unification, and namespace visibility including enclosing namespaces, vetoed the moment an
+  in-graph receiver already declares the member — whose one unverifiable case is a receiver
+  outside the graph that itself declares the member. `guess` is a name match among the defs
+  that declare the member, bounded by a uniqueness cap, the call-shape rule (a call is never
+  vouched by a property or field), and the receiver-assignability rule (an external receiver's
+  guess must be nominally assignable to it). Neither tier's edges become the premise of a
+  further `impact` hop; `--no-guess` drops the `guess` tier from `refs`/`read`/`impact`/`tests`
+  while keeping `ext`; compact output marks the two `x`/`h`. Precise edges carry neither
+  `heuristic` nor `tier`.
+- **The project model reads only `.csproj` and `Directory.Build.props`.** It hand-scans
+  `ProjectReference`, `Microsoft.NET.Test.Sdk`, and `IsTestProject` — no MSBuild evaluation, no
+  conditions, no NuGet resolution, and no `.sln`. A file belongs to the nearest ancestor
+  directory holding exactly one `.csproj`; a directory holding two or more is left unmapped.
+  When a model exists, a guess never names a def in a project the reference site's project
+  cannot reach, nor a def in a test project from a non-test site, and a `global using` scopes
+  to the project that declared it. Without any `.csproj` files, nothing changes.
+- **Graph schema 2 adds `member`, `tier`, `units`, and `stats.heuristic_by_tier`.** `member`
+  is written on every `uses-member` edge, `tier` on the heuristic ones; `units` (the discovered
+  `.csproj` projects) is appended last. A reserved `source` slot is set aside for a future
+  semantic-provenance tag. A v1 graph.json is rebuilt automatically on the next `map`.
 
 `devscout` began as the Rust half of a two-implementation tool, and a number of source comments
 still describe behaviour by reference to that original implementation. Those notes are history:

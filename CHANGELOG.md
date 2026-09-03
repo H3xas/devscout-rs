@@ -7,6 +7,46 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`uses-member` edges carry `tier` and `member`.** `tier` names which heuristic tier
+  emitted the edge (`ext` for extension-method lookup, `guess` for the scored name match);
+  `member` names the member the reference reads or calls, on precise and heuristic edges
+  alike. Only `tier` (and `heuristic`) are omitted on a precise edge; `member` is written
+  there too, which is why a precise edge's bytes change under this schema bump as well.
+- **`--no-guess` on `refs`, `read`, `impact`, and `tests`.** Admits only the `ext` tier's
+  edges into the query surface, dropping every scored-tier guess; compact output marks the
+  two tiers `x` and `h`.
+- **`stats.heuristic_by_tier` splits `heuristic_edge_count` by tier.** Always written, with
+  `ext` and `guess` counts that sum to `heuristic_edge_count`.
+- **A lightweight `.csproj` project model.** Hand-scans `ProjectReference`,
+  `Microsoft.NET.Test.Sdk`, and `IsTestProject` out of `.csproj` and `Directory.Build.props`
+  files, with no MSBuild evaluation. Discovered projects are persisted as `units` in
+  `graph.json` and mirrored in a `project-units.json` sidecar; editing a `.csproj` is now
+  itself a rebuild trigger.
+
+### Changed
+
+- **Graph schema bumped to 2.** `tier`, `member`, and `units` are the new keys; a v1
+  graph.json is rebuilt automatically on the next `map` rather than read as-is.
+- **`global using` scopes to the project that declared it when a project model exists.**
+  Without a model every `global using` is still repo-wide, unchanged.
+- **Tier (f) admits an extension class from an enclosing namespace, not just an imported
+  one.** `App.Ext` is now visible from `App.Ext.Deep` with no `using` at all, matching C#'s
+  own namespace-visibility rule.
+
+### Fixed
+
+- **A call no longer vouches through a property or field.** `entity.Property(x => x.Id)` has
+  no overload-resolution path to a property or field of that name, so the scored tier no
+  longer lets one stand in as evidence for a call shape it cannot answer.
+- **A scored guess under an external receiver must be nominally assignable to it.** A
+  candidate the receiver's type could never actually be is now a disproved guess rather than
+  a weak one.
+- **A scored guess never crosses into a project the reference site cannot reach, or into a
+  test project from non-test code.** When a project model exists, both are now structural
+  refusals rather than name-only guesses.
+
 ### Benchmarks
 
 - **Resolver-precision benchmark against a compiler oracle.** `tools/scout-semantic` (a C# console
