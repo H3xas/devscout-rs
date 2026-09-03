@@ -82,3 +82,66 @@ jobs:
       # publishing anything. Runs on every push/PR to main.
       - name: cargo publish --dry-run
         run: cargo publish --dry-run
+
+  semantic-audit:
+    name: Semantic oracle audit (fixture)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install stable Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('tools/scout-semantic/packages.lock.json', 'fixtures/csharp-semantic/Directory.Packages.props') }}
+
+      - name: Restore (oracle locked, fixture CPM-pinned)
+        run: |
+          dotnet restore tools/scout-semantic --locked-mode
+          dotnet restore fixtures/csharp-semantic/Fixture.sln
+
+      - name: Build oracle
+        run: dotnet build tools/scout-semantic --no-restore -c Release
+
+      - name: Run oracle on the fixture solution
+        run: |
+          dotnet run --project tools/scout-semantic --no-build -c Release -- \
+            fixtures/csharp-semantic/Fixture.sln --root fixtures/csharp-semantic \
+            --out out/semantic/refs.jsonl --units out/semantic/units.jsonl --strict
+
+      - name: Oracle output matches the committed snapshot
+        run: |
+          diff -u fixtures/csharp-semantic/oracle/refs.jsonl  out/semantic/refs.jsonl
+          diff -u fixtures/csharp-semantic/oracle/units.jsonl out/semantic/units.jsonl
+
+      - name: Build devscout
+        run: cargo build --locked --release
+
+      - name: Index an isolated copy of the fixture and audit it
+        env:
+          HOME: ${{ runner.temp }}/home
+          SCOUT_REGISTRY: ${{ runner.temp }}/home/repos.json
+          SCOUT_CONTENT_DB: ${{ runner.temp }}/home/content.db
+        run: |
+          mkdir -p "$HOME" "$RUNNER_TEMP/semantic-repo"
+          rsync -a --exclude bin --exclude obj fixtures/csharp-semantic/src fixtures/csharp-semantic/tests "$RUNNER_TEMP/semantic-repo/"
+          ./target/release/devscout -C "$RUNNER_TEMP/semantic-repo" init --no-hooks --no-map
+          ./target/release/devscout -C "$RUNNER_TEMP/semantic-repo" map src tests
+          ./target/release/devscout -C "$RUNNER_TEMP/semantic-repo" audit --semantic "$PWD/out/semantic/refs.jsonl" --units "$PWD/out/semantic/units.jsonl"
+          ./target/release/devscout -C "$RUNNER_TEMP/semantic-repo" audit --semantic "$PWD/out/semantic/refs.jsonl" --units "$PWD/out/semantic/units.jsonl" --assert "$PWD/fixtures/csharp-semantic/expected.json"

@@ -8,7 +8,10 @@ the linked issues; anything not listed here is fair game for a proposal.
 - **Reproducible agent-lane benchmark harness, then a 0.3.0 benchmark round.** The
   tool-call proxy table in the benchmark docs currently lacks an in-repository
   reproduction path, and the published scorecard was measured on 0.2.0; the corpus pin,
-  lane harness, commands, and fresh numbers land together.
+  lane harness, commands, and fresh numbers land together. (A different benchmark family
+  already has this: [`bench/semantic.sh`](bench/semantic.sh) is a one-command, in-repo
+  reproduction path for the resolver-precision numbers — pinned fixture, one script, one
+  command. The agent-lane harness this item is about is still open.)
 
 ## TypeScript / JavaScript semantic coverage
 

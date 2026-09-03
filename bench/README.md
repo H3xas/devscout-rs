@@ -62,6 +62,41 @@ Cost without a model in the loop is payload bytes, reported as the proxy it is:
 `tokens = ceil(bytes / 4)`. Never place a byte-derived token figure in the same table as a
 harness per-agent counter figure from an agentic lane.
 
+## Resolver precision (semantic oracle)
+
+A second harness, independent of the cost/wall-time one above: it scores devscout's
+`uses-member` edges against a **compiler** ground truth instead of measuring retrieval cost.
+The oracle is [`tools/scout-semantic`](../tools/scout-semantic/README.md), a Roslyn console
+tool (not part of the crate build) that walks a compiled C# solution and emits one record per
+member-access, conditional-access, or bare-invocation site. `devscout audit --semantic`
+scores devscout's own edges against those records.
+
+**Prerequisites**: .NET SDK 9.0.3xx (`dotnet --version`) in addition to the Rust toolchain,
+and the target solution's own restore inputs (NuGet feeds reachable at restore time).
+
+```sh
+cargo build --release
+bench/semantic.sh bench/corpora/csharp MassTransit.sln -p:TargetFrameworks=net9.0
+```
+
+This restores `MassTransit.sln` inside the corpus, runs the oracle to produce
+`refs.jsonl`/`units.jsonl`, indexes the corpus with `devscout map`, and runs
+`devscout audit --semantic` twice — text to `bench/out/semantic/MassTransit/audit.txt`,
+`--json` to `audit.json`, alongside the oracle's own JSONL in the same directory.
+
+[`fixtures/csharp-semantic/`](../fixtures/csharp-semantic) is the pinned, hand-built solution
+this metric family is validated against: each source file's header comment names its case
+letter (`a`–`g`, plus the partial-class, enum-member, and receiver-shape sub-cases) and the
+defect it probes — external-receiver leaks, enclosing-namespace extension methods, chained and
+`this`-qualified receivers, cross-project structural impossibility. Its `oracle/refs.jsonl` and
+`oracle/units.jsonl` are a committed snapshot that CI diffs against a fresh oracle run on every
+build, so a Roslyn or extractor regression there fails the build before it reaches a corpus.
+See [`docs/benchmarks/methodology.md`](../docs/benchmarks/methodology.md#resolver-precision)
+for the metric definitions, the join rule, and the two-run protocol.
+
+**`refs.jsonl` for a private or unpublishable corpus is never committed** — the same rule as
+every other corpus artifact in this directory.
+
 ## Rules the harness holds to
 
 - One clone per arm. This tool writes artifacts into the git common directory, so worktrees of

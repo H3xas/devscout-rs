@@ -11,6 +11,7 @@ in exchange for that room.
 | [peers.md](peers.md) | The other tools an agent could install instead, and where each one leads |
 | [agentic.md](agentic.md) | The model-in-the-loop protocol: lanes, effort, arms, disclosure |
 | [results/](results/) | Dated result documents. One file per run. Never edited in place. |
+| [methodology.md § Resolver precision](methodology.md#resolver-precision) | Per-edge precision/recall for `uses-member` edges against a compiler oracle ([`tools/scout-semantic`](../../tools/scout-semantic/README.md)), scored by `devscout audit --semantic` and run via [`bench/semantic.sh`](../../bench/semantic.sh) |
 
 The harness itself is in [`bench/`](../../bench/README.md).
 

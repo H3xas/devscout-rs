@@ -5,6 +5,17 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Benchmarks
+
+- **Resolver-precision benchmark against a compiler oracle.** `tools/scout-semantic` (a C# console
+  project, not part of the crate build) emits one record per member reference from a compiled
+  solution; the plumbing verb `devscout audit --semantic <refs.jsonl>` scores `uses-member`
+  edges per tier for precision, recall, external-receiver leaks and cross-project impossibility,
+  with `--assert` thresholds for CI. `fixtures/csharp-semantic` pins the defect shapes; baseline
+  figures on the pinned MassTransit corpus are in `docs/benchmarks/results/2026-09-resolver-precision.md`.
+
 ## [0.3.0] - 2026-08-27
 
 ### Added
