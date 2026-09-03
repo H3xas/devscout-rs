@@ -5,6 +5,9 @@
 //! rendering modules produce command results. The remaining modules locate
 //! repositories, persist artifacts, and implement CLI commands and hooks.
 
+/// `devscout audit --semantic`: scores `uses-member` graph edges against a
+/// Roslyn-derived oracle.
+pub mod audit;
 /// Command-line argument parsing and dispatch.
 pub mod cli;
 /// C# and TypeScript declaration and reference extraction.

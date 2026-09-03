@@ -13,6 +13,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process;
 
+use crate::audit;
 use crate::extract;
 use crate::graph;
 use crate::hookio;
@@ -152,6 +153,7 @@ plumbing
   parse <file.cs>            dump the parse tree
   spans <file.cs>            dump declaration spans
   extract-dump <file.cs>     dump extraction records
+  audit --semantic <refs.jsonl>  score uses-member edges against a semantic oracle [--units F] [--defs F] [--json] [--assert F]
   hook <read|bash>           agent hook filters, stdin -> stdout
   noop                       exit 0 (harness probe)
 
@@ -199,6 +201,11 @@ pub fn dispatch(args: Vec<String>) {
                 process::exit(1);
             };
             extract::run_extract_dump(path);
+        }
+        Some("audit") => {
+            let (code, out) = audit::cmd_audit(&cwd, &args[2..]);
+            print_out(&out);
+            process::exit(code);
         }
         Some("hook") => match args.get(2).map(String::as_str) {
             Some("read") => run_hook(hookio::run_read),
@@ -310,7 +317,10 @@ fn current_dir() -> PathBuf {
 // The repo root for `cwd`: an initialized `.scout` ancestor wins; otherwise fall
 // back to the nearest `.git` ancestor. `Err` carries the message callers wrap as
 // `"error: {message}"`.
-fn require_repo(cwd: &Path) -> Result<PathBuf, String> {
+//
+// `pub(crate)`: `audit.rs`'s `cmd_audit` resolves its repo root the same way
+// every other command here does.
+pub(crate) fn require_repo(cwd: &Path) -> Result<PathBuf, String> {
     require_repo_for_path(cwd, None)
 }
 
@@ -1116,7 +1126,9 @@ fn js_math_round(x: f64) -> i64 {
 // `serde_json::to_string` for escaping (control chars, `"`, `\`).
 // ---------------------------------------------------------------------------
 
-enum J {
+// `pub(crate)`: `audit.rs`'s `--json` rendering builds its own `J` tree with
+// this same encoder rather than hand-rolling a second one.
+pub(crate) enum J {
     Str(String),
     UInt(u64),
     RawNum(String),
@@ -1161,7 +1173,7 @@ impl J {
         }
     }
 
-    fn to_json_string(&self) -> String {
+    pub(crate) fn to_json_string(&self) -> String {
         let mut s = String::new();
         self.write(&mut s);
         s
