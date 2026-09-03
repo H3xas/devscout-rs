@@ -280,6 +280,258 @@ The top-20 FP list above is published regardless, per the clause's instruction.
 
 ## Run 1 — after resolver changes
 
-Not yet run. Append here only if `bench/corpus.lock`'s `csharp` pin and the oracle commit
-(`564739a`) are both unchanged from this document's Environment block — otherwise Run 0 must be
-re-baselined first, since a predicted figure is a claim about Run 0's bucket sizes specifically.
+`bench/corpus.lock`'s `csharp` pin (`855cf1752c94ca9498e0c45ce8d09fdc9e957dd6`) and the oracle
+commit (`564739a`) are unchanged from Run 0's Environment block — verified: `refs.jsonl` still
+112190 records / 66924 sites, `units.jsonl` still 56 units, both byte-identical in record count to
+Run 0's numbers above. No re-baseline needed; this run's predicted-figure claims are still claims
+about Run 0's own bucket sizes.
+
+This round lands the `tier` key (W2) plus a csproj project model (W3: unit discovery, admission on
+the heuristic tiers, per-unit global usings, ambiguous-narrowing by project reachability) and a set
+of scored-tier resolver fixes (a call-shaped ref no longer vouched by a property/field; a guess
+under an external receiver must be nominally assignable). It also refines `audit --semantic` itself
+(member-aware join on `(file, startLine, member)`, an oracle-covered-universe filter applied to
+graph edges as well as oracle records, `structural` narrowed to false positives only). **That last
+part matters for reading the deltas below**: some movement between Run 0 and Run 1 is the
+measurement rule changing under the resolver, not only the resolver itself — see Defect 8.
+
+### Environment delta
+
+```
+Date            2026-09-03
+Devscout        commit f2ac770 (crate version unchanged, 0.3.0) — d833ef3..f2ac770 on top of Run
+                0's ba39a96 baseline: schema 2 (tier/member on uses-member edges), csproj project
+                model + admission + per-unit global usings, ambiguous narrowing by project
+                reachability, call-shape/external-receiver resolver fixes, and the audit refinement
+                above
+Build           cargo build --release, rustc 1.97.1 (8bab26f4f 2026-07-14), aarch64-apple-darwin
+Corpus/Oracle   unchanged — see verification note above
+devscout map .  5634 files, cold rebuild in 1.91s (was 1.67s): 9956 defs (unchanged), 126216 edges
+                (was 130366 — the project model's admission rules drop some heuristic edges rather
+                than emit them), 59 project units discovered, stats.heuristic_by_tier ext 1057 /
+                guess 9758 (raw, pre-audit-universe-filter; audit's own tiers below apply the
+                oracle-covered-universe cut on top, see the `edges outside universe` line)
+devscout audit  text + --json, <5s combined
+Host            macOS (Darwin 25.2.0), Apple M2 Max, arm64, 12 cores, 64 GiB RAM, otherwise idle —
+                same workstation as Run 0
+```
+
+### Audit text output (verbatim; `root` rewritten bench-relative, nothing else changed)
+
+```
+devscout audit --semantic  root bench/corpora/csharp  oracle 112190 records / 66924 sites  units ok 56 failed 0  method units
+tier        edges     tp     fp   precision   fp:no-site  fp:external  fp:wrong  structural
+precise     22510  21804    706       0.969           55           52       599          12
+ext          1047    850    197       0.812            0           15       182           0
+guess        9579   4808   4771       0.502           48         2294      2429           0
+recall (56713 in-graph member sites)  precise 0.379  precise+ext 0.394  all 0.479
+  by receiver  ident 0.560  qualified 0.217  this 0.000  base 0.000  call 0.004
+external sites 19153  silent-correct 18055  leaked 1098
+fan-out  1: 20816  2: 3573  3: 1233  4+: 343
+top fp targets   InMemoryDelayProvider 295  Retry 211  CodePrinter 180  RoutingSlipExtensions 161  BusRegistrationContext 158  IBusRegistrationContext 157  IPerformanceCounter 148  NullPerformanceCounter 148  StatsDPerformanceCounter 148  InMemoryContainerTestFixture 135  ClosureInfo 103  Instance 102  ContainerTestHarness 78  Message 78  ToCSharpPrinter 73  TextTableOptions 65  ConsumerPipeConfiguratorExtensions 55  SagaPipeConfiguratorExtensions 55  Tools 52  IIndexedSagaProperty 50
+top missed       MassTransit.ConsumeContext 1705  MassTransit.SendContext 932  MassTransit.MessageContext 823  MassTransit.ISendEndpoint 734  MassTransit.BehaviorContext 684  MassTransit.Testing.IBaseTestHarness 634  MassTransit.Testing.ITestHarness 600  MassTransit.PipeContext 538  MassTransit.IPublishEndpoint 495  MassTransit.SagaConsumeContext 482  MassTransit.TransitionExtensions 449  MassTransit.IRegistrationConfigurator 423  MassTransit.IStateMachineModifier 340  MassTransit.ThenExtensions 315  MassTransit.DependencyInjectionTestingExtensions 297  MassTransit.Testing.BusTestHarness 284  MassTransit.Testing.IReceivedMessageList 278  MassTransit.IReceiveConfigurator 277  MassTransit.Testing.IPublishedMessageList 272  MassTransit.TestStateMachineExtensions 269
+unknown targets  enum-member 30  class 16  struct 5  delegate 1  interface 1
+partial file mismatch 65
+ambiguous 137
+edges outside universe (not judged) 675
+```
+
+### `--json` tier objects (verbatim)
+
+```json
+{
+  "precise": {
+    "edges": 22510,
+    "tp": 21804,
+    "fp": 706,
+    "precision": 0.969,
+    "fp_no_site": 55,
+    "fp_external_site": 52,
+    "fp_wrong_target": 599,
+    "structural": 12
+  },
+  "ext": {
+    "edges": 1047,
+    "tp": 850,
+    "fp": 197,
+    "precision": 0.812,
+    "fp_no_site": 0,
+    "fp_external_site": 15,
+    "fp_wrong_target": 182,
+    "structural": 0
+  },
+  "guess": {
+    "edges": 9579,
+    "tp": 4808,
+    "fp": 4771,
+    "precision": 0.502,
+    "fp_no_site": 48,
+    "fp_external_site": 2294,
+    "fp_wrong_target": 2429,
+    "structural": 0
+  }
+}
+```
+
+### Recall by receiver kind
+
+Denominator 56713 in-graph member sites (same as Run 0 — oracle unchanged).
+
+| Receiver kind | Run 0 | Run 1 |
+| --- | --- | --- |
+| `ident` | 0.561 | 0.560 |
+| `qualified` | 0.218 | 0.217 |
+| `this` | 0.000 | 0.000 |
+| `base` | 0.000 | 0.000 |
+| `call` | 0.033 | 0.004 |
+| **all** | **0.481** (precise-only 0.381) | **0.479** (precise 0.379, precise+ext 0.394) |
+
+`conditional` (`?.`): 709 records. `bare` (unqualified invocation): 7512 records. Both still
+excluded from the headline recall figure. `call` recall fell from 0.033 to 0.004 — worth watching,
+though the absolute record count behind it is small; see Defect 9.
+
+### External-receiver leak
+
+19153 external sites (unchanged — oracle-derived, not resolver-derived): 18055 silent-correct (was
+16556), 1098 leaked (was 2597) — **5.7% of external sites now leak, down from 13.6%**. As a share of
+the tier that can leak, 1098 / 9579 guess-tier edges = **11.5%** (Run 0's merged proxy, leaked /
+`heuristic`-edges, was 17.3% — see "Predictions vs. actual" for why the two are not the same
+denominator).
+
+### Fan-out (candidate count per site)
+
+| 1 | 2 | 3 | 4+ |
+| --- | --- | --- | --- |
+| 20816 | 3573 | 1233 | 343 |
+
+Run 0: 21590 / 4045 / 2097 / 448. Every bucket shrank — fewer sites now carry an unresolved
+multi-candidate guess, consistent with the project model narrowing ambiguity by reachability.
+
+### Top-20 FP targets, by short name
+
+| Target | FP count |
+| --- | --- |
+| InMemoryDelayProvider | 295 |
+| Retry | 211 |
+| CodePrinter | 180 |
+| RoutingSlipExtensions | 161 |
+| BusRegistrationContext | 158 |
+| IBusRegistrationContext | 157 |
+| IPerformanceCounter | 148 |
+| NullPerformanceCounter | 148 |
+| StatsDPerformanceCounter | 148 |
+| InMemoryContainerTestFixture | 135 |
+| ClosureInfo | 103 |
+| Instance | 102 |
+| ContainerTestHarness | 78 |
+| Message | 78 |
+| ToCSharpPrinter | 73 |
+| TextTableOptions | 65 |
+| ConsumerPipeConfiguratorExtensions | 55 |
+| SagaPipeConfiguratorExtensions | 55 |
+| Tools | 52 |
+| IIndexedSagaProperty | 50 |
+
+Run 0's top two FP targets (`ResponseHandlerConnectHandle` 443, `HandlerConnectHandle` 441) are gone
+from this list entirely — resolved correctly now, not just demoted in rank.
+
+### Top-20 missed targets, by id
+
+| Target id | Missed count |
+| --- | --- |
+| MassTransit.ConsumeContext | 1705 |
+| MassTransit.SendContext | 932 |
+| MassTransit.MessageContext | 823 |
+| MassTransit.ISendEndpoint | 734 |
+| MassTransit.BehaviorContext | 684 |
+| MassTransit.Testing.IBaseTestHarness | 634 |
+| MassTransit.Testing.ITestHarness | 600 |
+| MassTransit.PipeContext | 538 |
+| MassTransit.IPublishEndpoint | 495 |
+| MassTransit.SagaConsumeContext | 482 |
+| MassTransit.TransitionExtensions | 449 |
+| MassTransit.IRegistrationConfigurator | 423 |
+| MassTransit.IStateMachineModifier | 340 |
+| MassTransit.ThenExtensions | 315 |
+| MassTransit.DependencyInjectionTestingExtensions | 297 |
+| MassTransit.Testing.BusTestHarness | 284 |
+| MassTransit.Testing.IReceivedMessageList | 278 |
+| MassTransit.IReceiveConfigurator | 277 |
+| MassTransit.Testing.IPublishedMessageList | 272 |
+| MassTransit.TestStateMachineExtensions | 269 |
+
+Nearly the same list and nearly the same counts as Run 0 (same interface-heavy, `this`/`base`/`call`
+receiver-kind miss the extractor still does not accept as a qualifier — Defect 3 below, unchanged).
+
+### Predictions vs. actual
+
+The `tier` key has landed, so all five of the design doc's registered predictions are directly
+checkable for the first time (Run 0 could only evaluate `precise` and `recall(precise)`).
+
+| Prediction | Actual | Verdict |
+| --- | --- | --- |
+| precise precision ≥ 0.95 | 0.969 (22510 edges, 706 fp) | **met** — wider margin than Run 0's 0.952, though see Defect 8: part of the FP mix shifted (`fp_no_site` 530→55, `fp_wrong_target` 556→599) because the audit's own join rule changed alongside the resolver, not from the resolver alone |
+| ext precision ≥ 0.95 | 0.812 as measured (1047 edges, 197 fp) | **not met** as measured, but the shortfall is concentrated in one vendored file — excluding it, 0.978 (869 edges, 19 fp), which **would meet** the line; see Defect 10 |
+| guess precision < 0.30 | 0.502 (9579 edges, 4771 fp) | **not met** — `guess` is far more precise than the ceiling the prediction feared, the inverse direction of a miss |
+| recall(precise) 0.45–0.65 | 0.379 | **miss**, same band-miss as Run 0's 0.381 — essentially unmoved, 0.071 below the low end |
+| leaked external sites > 50% of guess edges | 1098 / 9579 = 11.5% | **not met**, far short of 50% (Run 0's merged proxy was 17.3%, also short) |
+
+Falsification clause: precise precision (0.969) does not cross below 0.95, so it is not falsified on
+its own terms this round either — the FP-subclass caveat from Run 0's Defect 2 still argues against
+reading it as an unqualified clean pass (see Defect 8's updated numbers).
+
+## Defects this run found in its own method
+
+Carried forward from Run 0, still applicable:
+
+1. ~~Three of five predictions not evaluable pre-tier-split~~ — **resolved this run**: the `tier`
+   key landed (W2), so all five predictions are directly checkable above.
+2. **The `precise` tier's own FP subclasses still cut against an unqualified clean pass.** Of 706
+   FPs, 599 are `fp_wrong_target` and 12 are `structural` (was 556 / 14 of 1108 in Run 0) — the
+   `structural` count is now FP-only by construction (Defect 8), so 12 is not directly comparable to
+   Run 0's 14, but `fp_wrong_target`'s share of `precise` FPs actually grew (85% vs 50% in Run 0).
+3. **`this`/`base` receiver kinds still recall 0.000; `call` fell further, to 0.004** (was 0.033).
+   Expected from the extractor's still-unchanged qualifier list (`this`, `base`, invocation-result
+   qualifiers not accepted as `uses-member` qualifiers) — recall(all) 0.479 is still propped up
+   almost entirely by `ident` (0.560) and `qualified` (0.217). See Defect 9 for the `call` drop.
+4. **Two units still carry heavy compiler diagnostics while scoring `status: "ok"`** — oracle-side,
+   unchanged this run (same oracle commit and units.jsonl as Run 0): `MassTransit.MartenIntegration.Tests`
+   (TFM-mismatch class, 871 diagnostics) and `MassTransit.Analyzers` (2649 diagnostics). Neither
+   trips `status != "ok"`.
+5. **NuGetAudit restore warnings and real project-reference errors still share one text channel** in
+   the oracle's `WorkspaceFailed` collection — oracle-side, unchanged.
+6. **137 ambiguous sites, 65 partial file mismatches — identical to Run 0**, digit for digit. Either
+   genuinely stable or a sign the resolver changes this round don't touch the code paths that
+   produce these two counts; worth a closer look if Run 2 reproduces the exact same numbers again.
+7. **Zero failed units, unchanged.** `--strict` would still exit 0 on this corpus.
+
+New this run:
+
+8. **The audit tool changed alongside the resolver, confounding a clean before/after.** Commit
+   `640807a` (`fix(audit): member-aware join, oracle-covered universe, structural on FPs only`) is
+   part of this round's integrated branch but landed on the resolver side of the tree, not on Run
+   0's baseline (`3de5657`, off `ba39a96`, predates it). Three of its effects are visible in the
+   deltas above and are measurement-rule artifacts, not resolver improvements on their own: the
+   `edges outside universe` line (675 edges this run, absent from Run 0's output entirely — Run 0's
+   audit did not filter graph edges to the oracle-compiled universe, only oracle records); the
+   `fp_no_site` collapse in `precise` (530 → 55), largely member-aware join reclassifying same-line,
+   different-member matches that used to read as "no site" into `fp_wrong_target` or `tp` correctly;
+   and `structural` now counting false positives only (`TierStats.structural`'s own doc comment),
+   where Run 0's figure may have included TPs at structurally-unusual sites. None of this invalidates
+   the Run 0 → Run 1 comparison — the corpus, oracle, and registered predictions are all unchanged —
+   but a reader should not attribute 100% of the `precise`-tier FP-mix shift to the resolver fixes
+   alone.
+9. **`call`-receiver recall fell from 0.033 to 0.004.** Both figures sit on a small denominator (the
+   extractor's qualifier list still excludes invocation-result receivers by design, per Defect 3), so
+   this may be noise from the project model narrowing a handful of previously-lucky guesses rather
+   than a regression — flagged for Run 2 to confirm the direction before treating it as a trend.
+10. **`ext`-tier precision is dominated by one vendored file whose namespace is chosen by
+    `#if`/`#else`.** `src/MassTransit/Internals/Reflection/ExpressionCompiler.cs` accounts for 178 of
+    the tier's 1047 edges (17%) and **all 178 are false positives** — every one of the tier's other
+    869 edges is a true positive except 19. Recomputed directly from graph.json + the oracle
+    (excluding edges whose `from_file` ends with that path, same join/match rules as `audit.rs`):
+    **1047 edges / 850 tp / 197 fp / precision 0.812 including the file; 869 edges / 850 tp / 19 fp /
+    precision 0.978 excluding it.** The registered `ext ≥ 0.95` prediction reads as a clear miss
+    without this exclusion and a clear pass with it — the file's `#if`/`#else`-selected namespace is
+    a known extractor blind spot (a preprocessor-conditional symbol the tree-sitter-based extractor
+    cannot evaluate), not a representative sample of `ext`-tier behavior elsewhere in the corpus.
