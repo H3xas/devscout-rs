@@ -37,7 +37,8 @@ use std::path::Path;
 
 use crate::graph::{
     AlsoIn, Candidate, Def, Edge, EdgesByKind, FragExtensionMethod, FragFact, FragRef, FragUsing,
-    Fragment, Graph, GraphName, OrderedMap, Percent1, Stats,
+    Fragment, Graph, GraphName, HeuristicByTier, HeuristicTier, OrderedMap, Percent1, Stats,
+    GRAPH_SCHEMA_VERSION,
 };
 use crate::manifest;
 
@@ -1173,33 +1174,54 @@ fn type_edge(kind: &str, file: &str, line: usize, target: &Def) -> Edge {
 // The identity a heuristic edge is deduped on: everything its serialized form
 // carries. `None` for a precise edge, which is never a dedup subject. Field
 // order matches the edge's own, so two edges share a key exactly when they
-// serialize to the same bytes.
+// serialize to the same bytes -- which is why `tier` and `member` join the
+// key the moment they join the edge: two guesses that name DIFFERENT members
+// of the same target on one line are two distinct facts now, and collapsing
+// them would drop one.
 fn heuristic_edge_key(e: &Edge) -> Option<String> {
-    let (kind, from_file, from_line, to, to_file) = match e {
+    let (kind, from_file, from_line, to, to_file, tier, member) = match e {
         Edge::Inherits {
             from_file,
             from_line,
             to,
             to_file,
             heuristic: true,
-        } => ("inherits", from_file, from_line, to, to_file),
+        } => ("inherits", from_file, from_line, to, to_file, None, None),
         Edge::UsesType {
             from_file,
             from_line,
             to,
             to_file,
             heuristic: true,
-        } => ("uses-type", from_file, from_line, to, to_file),
+        } => ("uses-type", from_file, from_line, to, to_file, None, None),
         Edge::UsesMember {
             from_file,
             from_line,
             to,
             to_file,
             heuristic: true,
-        } => ("uses-member", from_file, from_line, to, to_file),
+            tier,
+            member,
+        } => (
+            "uses-member",
+            from_file,
+            from_line,
+            to,
+            to_file,
+            *tier,
+            member.as_deref(),
+        ),
         _ => return None,
     };
-    Some(format!("{kind} {from_file} {from_line} {to} {to_file}"))
+    let tier = match tier {
+        Some(HeuristicTier::Ext) => "ext",
+        Some(HeuristicTier::Guess) => "guess",
+        None => "-",
+    };
+    let member = member.unwrap_or("-");
+    Some(format!(
+        "{kind} {from_file} {from_line} {to} {to_file} {tier} {member}"
+    ))
 }
 
 /// Resolve C# fragments into a graph. Pure: `fragments_by_file` is
@@ -1242,6 +1264,10 @@ pub fn resolve_graph_with_ts(
     // `edges_by_kind['uses-member']` never has a guess folded into a fact. The
     // heuristic total is reported separately in the stats object.
     let mut heuristic_edge_count: usize = 0;
+    // The same total, split by emitting tier. Kept beside the total rather
+    // than derived from the edge array afterwards so the dedup below can
+    // decrement both in one place and neither can drift.
+    let mut heuristic_by_tier = HeuristicByTier::default();
     // One memo for the whole run: the receiver rule below asks the same
     // "is this candidate assignable to this receiver type" question once per
     // call site, and the answer is a base-closure walk.
@@ -1310,13 +1336,14 @@ pub fn resolve_graph_with_ts(
                             Some(&mi) => (index.defs[mi].id.clone(), index.defs[mi].file.clone()),
                             None => (index.defs[idx].id.clone(), index.defs[idx].file.clone()),
                         };
-                        edges.push(Edge::UsesMember {
-                            from_file: file.clone(),
-                            from_line: r.line,
+                        edges.push(Edge::uses_member(
+                            file.clone(),
+                            r.line,
                             to,
                             to_file,
-                            heuristic: false,
-                        });
+                            r.member.clone(),
+                            None,
+                        ));
                         edges_by_kind.uses_member += 1;
                         emitted = true;
                     } else {
@@ -1331,13 +1358,14 @@ pub fn resolve_graph_with_ts(
                             || (r.generic && r.qualified.is_none())
                             || (r.qualified.is_some() && via == Via::Qualified)
                         {
-                            edges.push(Edge::UsesMember {
-                                from_file: file.clone(),
-                                from_line: r.line,
-                                to: index.defs[idx].id.clone(),
-                                to_file: index.defs[idx].file.clone(),
-                                heuristic: false,
-                            });
+                            edges.push(Edge::uses_member(
+                                file.clone(),
+                                r.line,
+                                index.defs[idx].id.clone(),
+                                index.defs[idx].file.clone(),
+                                r.member.clone(),
+                                None,
+                            ));
                             edges_by_kind.uses_member += 1;
                             emitted = true;
                         }
@@ -1400,13 +1428,14 @@ pub fn resolve_graph_with_ts(
                             let ridx = *ridx;
                             receiver_def = Some(ridx);
                             if declares_member(&index, ridx, r.member.as_deref()) {
-                                edges.push(Edge::UsesMember {
-                                    from_file: file.clone(),
-                                    from_line: r.line,
-                                    to: index.defs[ridx].id.clone(),
-                                    to_file: index.defs[ridx].file.clone(),
-                                    heuristic: false,
-                                });
+                                edges.push(Edge::uses_member(
+                                    file.clone(),
+                                    r.line,
+                                    index.defs[ridx].id.clone(),
+                                    index.defs[ridx].file.clone(),
+                                    r.member.clone(),
+                                    None,
+                                ));
                                 edges_by_kind.uses_member += 1;
                                 // Tier (e) RECORDS its claim: the extension
                                 // tier below reads `emitted`, and that is
@@ -1455,13 +1484,14 @@ pub fn resolve_graph_with_ts(
                                     resolve_ref(&hop, usings, ns, &index, aliases, &file_contexts)
                                 {
                                     if declares_member(&index, hidx, r.member.as_deref()) {
-                                        edges.push(Edge::UsesMember {
-                                            from_file: file.clone(),
-                                            from_line: r.line,
-                                            to: index.defs[hidx].id.clone(),
-                                            to_file: index.defs[hidx].file.clone(),
-                                            heuristic: false,
-                                        });
+                                        edges.push(Edge::uses_member(
+                                            file.clone(),
+                                            r.line,
+                                            index.defs[hidx].id.clone(),
+                                            index.defs[hidx].file.clone(),
+                                            r.member.clone(),
+                                            None,
+                                        ));
                                         edges_by_kind.uses_member += 1;
                                         emitted = true;
                                     }
@@ -1602,14 +1632,16 @@ pub fn resolve_graph_with_ts(
                         };
                         if distinct.len() == 1 && !vetoed {
                             let didx = distinct[0];
-                            edges.push(Edge::UsesMember {
-                                from_file: file.clone(),
-                                from_line: r.line,
-                                to: index.defs[didx].id.clone(),
-                                to_file: index.defs[didx].file.clone(),
-                                heuristic: true,
-                            });
+                            edges.push(Edge::uses_member(
+                                file.clone(),
+                                r.line,
+                                index.defs[didx].id.clone(),
+                                index.defs[didx].file.clone(),
+                                r.member.clone(),
+                                Some(HeuristicTier::Ext),
+                            ));
                             heuristic_edge_count += 1;
+                            heuristic_by_tier.ext += 1;
                             emitted = true;
                         }
                     }
@@ -1755,14 +1787,16 @@ pub fn resolve_graph_with_ts(
                         for (d, _) in scored.into_iter().take(SCORED_EMIT_CAP).filter(|&(d, _)| {
                             !index.defs[d].id.contains('+') || index.defs[d].file == *file
                         }) {
-                            edges.push(Edge::UsesMember {
-                                from_file: file.clone(),
-                                from_line: r.line,
-                                to: index.defs[d].id.clone(),
-                                to_file: index.defs[d].file.clone(),
-                                heuristic: true,
-                            });
+                            edges.push(Edge::uses_member(
+                                file.clone(),
+                                r.line,
+                                index.defs[d].id.clone(),
+                                index.defs[d].file.clone(),
+                                r.member.clone(),
+                                Some(HeuristicTier::Guess),
+                            ));
                             heuristic_edge_count += 1;
+                            heuristic_by_tier.guess += 1;
                         }
                     }
                 }
@@ -1900,6 +1934,11 @@ pub fn resolve_graph_with_ts(
                 true
             } else {
                 heuristic_edge_count -= 1;
+                match e.tier() {
+                    Some(HeuristicTier::Ext) => heuristic_by_tier.ext -= 1,
+                    Some(HeuristicTier::Guess) => heuristic_by_tier.guess -= 1,
+                    None => {}
+                }
                 false
             }
         }
@@ -1908,7 +1947,7 @@ pub fn resolve_graph_with_ts(
     let type_ref_attempts = edges_by_kind.inherits + edges_by_kind.uses_type + ambiguous_count;
 
     let mut graph = Graph {
-        schema_version: 1,
+        schema_version: GRAPH_SCHEMA_VERSION,
         built_at_head: manifest::git_head(root),
         stats: Stats {
             def_count: index.defs.len(),
@@ -1927,6 +1966,10 @@ pub fn resolve_graph_with_ts(
                 .iter()
                 .filter(|d| !d.test_methods.is_empty())
                 .count(),
+            // Appended after the test counter, always written, and summing to
+            // `heuristic_edge_count` above: the two tiers are the whole
+            // population of guesses.
+            heuristic_by_tier,
             ts: None,
         },
         defs: index.defs,
@@ -3939,6 +3982,23 @@ mod tests {
             .collect()
     }
 
+    /// The members named by one file's heuristic uses-member edges, in edge
+    /// order -- the fact `heuristic_member_edges_from` above cannot show.
+    fn heuristic_member_names_from<'a>(g: &'a Graph, from: &str) -> Vec<Option<&'a str>> {
+        g.edges
+            .iter()
+            .filter_map(|e| match e {
+                Edge::UsesMember {
+                    from_file,
+                    heuristic: true,
+                    member,
+                    ..
+                } if from_file == from => Some(member.as_deref()),
+                _ => None,
+            })
+            .collect()
+    }
+
     #[test]
     fn stage2_end_to_end_static_property_access_emits_and_an_undeclared_member_does_not() {
         let files = fragments_for(&[
@@ -4070,8 +4130,8 @@ mod tests {
         }
         assert_eq!(
             serde_json::to_string(edge).unwrap(),
-            r#"{"kind":"uses-member","from_file":"Consumers/UsesExtension.cs","from_line":9,"to":"App.Ext.WidgetExtensions","to_file":"Ext/WidgetExtensions.cs","heuristic":true}"#,
-            "heuristic is appended LAST -- the exact field order Node's own byte assertion pins"
+            r#"{"kind":"uses-member","from_file":"Consumers/UsesExtension.cs","from_line":9,"to":"App.Ext.WidgetExtensions","to_file":"Ext/WidgetExtensions.cs","heuristic":true,"tier":"ext","member":"Render"}"#,
+            "heuristic, then tier, then member -- appended in that order after the shared prefix"
         );
         assert_eq!(
             g.stats.edges_by_kind.uses_member, 0,
@@ -5280,8 +5340,8 @@ mod tests {
         r#"{"kind":"imports","from_file":"Consumers/Consumer.cs","from_line":3,"target":"App.Alpha"}"#,
         r#"{"kind":"imports","from_file":"Consumers/Consumer.cs","from_line":4,"target":"App.Beta"}"#,
         r#"{"kind":"uses-type","from_file":"Consumers/Consumer.cs","from_line":10,"to":"App.Core.Widget","to_file":"Core/Widget.cs"}"#,
-        r#"{"kind":"uses-member","from_file":"Consumers/Consumer.cs","from_line":14,"to":"App.Core.Widget","to_file":"Core/Widget.cs"}"#,
-        r#"{"kind":"uses-member","from_file":"Consumers/Consumer.cs","from_line":15,"to":"App.Core.Status.Active","to_file":"Core/Status.cs"}"#,
+        r#"{"kind":"uses-member","from_file":"Consumers/Consumer.cs","from_line":14,"to":"App.Core.Widget","to_file":"Core/Widget.cs","member":"Render"}"#,
+        r#"{"kind":"uses-member","from_file":"Consumers/Consumer.cs","from_line":15,"to":"App.Core.Status.Active","to_file":"Core/Status.cs","member":"Active"}"#,
     ];
 
     #[test]
@@ -5326,6 +5386,116 @@ mod tests {
         );
     }
 
+    // The three-tier fixture: one file whose three member references are
+    // claimed by three different tiers, so a single resolve exercises the whole
+    // schema. `_widget.Render()` is a precise field hop, `_widget.Tally()` is
+    // an extension call only tier (f) can claim, and `Config.Load()` is
+    // ambiguous between two imported namespaces and reaches the scored tier.
+    const THREE_TIER_FIXTURE: &[(&str, &str)] = &[
+        ("Core/Widget.cs", "namespace App.Core { public class Widget { public void Render() { } } }"),
+        (
+            "Ext/WidgetExtensions.cs",
+            "namespace App.Ext { public static class WidgetExtensions { public static void Tally(this Widget w) { } } }",
+        ),
+        ("Alpha/Config.cs", "namespace App.Alpha { public class Config { public void Load() { } } }"),
+        ("Beta/Config.cs", "namespace App.Beta { public class Config { public void Load() { } } }"),
+        (
+            "Consumers/Consumer.cs",
+            "\nusing App.Core;\nusing App.Ext;\nusing App.Alpha;\nusing App.Beta;\n\nnamespace App.Consumers;\n\npublic class Consumer\n{\n  private Widget _widget;\n\n  public void Run()\n  {\n    _widget.Render();\n    _widget.Tally();\n    Config.Load();\n  }\n}\n",
+        ),
+    ];
+
+    #[test]
+    fn stage5_schema_every_uses_member_edge_carries_its_member_and_only_heuristic_edges_carry_a_tier(
+    ) {
+        let files = fragments_for(THREE_TIER_FIXTURE);
+        let g = resolve_graph(&no_git_root(), &files);
+
+        let member_edges: Vec<&Edge> = g
+            .edges
+            .iter()
+            .filter(|e| matches!(e, Edge::UsesMember { .. }))
+            .collect();
+        for e in &member_edges {
+            let Edge::UsesMember {
+                heuristic,
+                tier,
+                member,
+                ..
+            } = e
+            else {
+                unreachable!()
+            };
+            assert!(
+                member.is_some(),
+                "every uses-member edge names its member, precise ones included: {e:?}"
+            );
+            assert_eq!(
+                *heuristic,
+                tier.is_some(),
+                "the flag and the tier are one fact -- `Edge::uses_member` derives one from the other: {e:?}"
+            );
+        }
+
+        let rows: Vec<(&str, Option<HeuristicTier>, Option<&str>)> = member_edges
+            .iter()
+            .map(|e| match e {
+                Edge::UsesMember {
+                    to, tier, member, ..
+                } => (to.as_str(), *tier, member.as_deref()),
+                _ => unreachable!(),
+            })
+            .collect();
+        assert_eq!(
+            rows,
+            vec![
+                ("App.Core.Widget", None, Some("Render")),
+                (
+                    "App.Ext.WidgetExtensions",
+                    Some(HeuristicTier::Ext),
+                    Some("Tally")
+                ),
+                ("App.Alpha.Config", Some(HeuristicTier::Guess), Some("Load")),
+                ("App.Beta.Config", Some(HeuristicTier::Guess), Some("Load")),
+            ]
+        );
+
+        // One serialized sample per tier, pinned: the precise row gains
+        // `member` and nothing else, and the two guess rows spell their tier
+        // between the flag and the member.
+        let bytes: Vec<String> = member_edges
+            .iter()
+            .map(|e| serde_json::to_string(e).unwrap())
+            .collect();
+        assert_eq!(
+            bytes[0],
+            r#"{"kind":"uses-member","from_file":"Consumers/Consumer.cs","from_line":15,"to":"App.Core.Widget","to_file":"Core/Widget.cs","member":"Render"}"#
+        );
+        assert_eq!(
+            bytes[1],
+            r#"{"kind":"uses-member","from_file":"Consumers/Consumer.cs","from_line":16,"to":"App.Ext.WidgetExtensions","to_file":"Ext/WidgetExtensions.cs","heuristic":true,"tier":"ext","member":"Tally"}"#
+        );
+        assert_eq!(
+            bytes[2],
+            r#"{"kind":"uses-member","from_file":"Consumers/Consumer.cs","from_line":17,"to":"App.Alpha.Config","to_file":"Alpha/Config.cs","heuristic":true,"tier":"guess","member":"Load"}"#
+        );
+
+        // And the counters partition the guesses: every heuristic edge is in
+        // exactly one tier, so the two add up to the total.
+        assert_eq!(
+            g.stats.heuristic_by_tier,
+            HeuristicByTier { ext: 1, guess: 2 }
+        );
+        assert_eq!(
+            g.stats.heuristic_by_tier.ext + g.stats.heuristic_by_tier.guess,
+            g.stats.heuristic_edge_count
+        );
+        assert_eq!(
+            g.schema_version, GRAPH_SCHEMA_VERSION,
+            "a graph carrying tier and member is a schema-2 graph"
+        );
+    }
+
     #[test]
     fn stage4_stats_heuristic_edge_count_is_appended_last_and_edges_by_kind_never_counts_a_guess() {
         let files = fragments_for(BYTE_IDENTITY_FIXTURE);
@@ -5335,8 +5505,8 @@ mod tests {
         // serialized `stats` keys appear in, and the values with them.
         assert_eq!(
             serde_json::to_string(&g.stats).unwrap(),
-            r#"{"def_count":9,"file_count":7,"edges_by_kind":{"inherits":1,"uses-type":1,"imports":4,"uses-member":2,"ctor-di":0},"ambiguous_count":0,"ambiguous_pct":0,"unresolved_external_count":0,"heuristic_edge_count":3,"test_def_count":0}"#,
-            "test_def_count is appended LAST -- the stats key order the Node reference pins"
+            r#"{"def_count":9,"file_count":7,"edges_by_kind":{"inherits":1,"uses-type":1,"imports":4,"uses-member":2,"ctor-di":0},"ambiguous_count":0,"ambiguous_pct":0,"unresolved_external_count":0,"heuristic_edge_count":3,"test_def_count":0,"heuristic_by_tier":{"ext":0,"guess":3}}"#,
+            "heuristic_by_tier is appended LAST, after test_def_count -- the stats key order graph.json pins"
         );
         assert_eq!(g.stats.heuristic_edge_count, 3);
         assert_eq!(
@@ -5509,12 +5679,12 @@ mod tests {
                 "Ext/Helpers.cs",
                 "\nnamespace App.Ext;\n\npublic static class Helpers\n{\n  public static string Slug(this Widget widget)\n  {\n    return \"s\";\n  }\n\n  public static string Tag(this Widget widget)\n  {\n    return \"t\";\n  }\n}\n",
             ),
-            // Two DIFFERENT extension calls on ONE line, both naming the same
-            // declaring static class: two guesses that serialize to the same
-            // bytes.
+            // The SAME extension call twice on ONE line: same declaring static
+            // class, same member, same line -- two guesses that serialize to
+            // the same bytes.
             (
                 "Ops/Caller.cs",
-                "\nusing App.Ext;\nusing App.Widgets;\n\nnamespace App.Ops;\n\npublic class Caller\n{\n  public string Run()\n  {\n    Widget widget = new Widget();\n    return widget.Tag() + widget.Slug();\n  }\n}\n",
+                "\nusing App.Ext;\nusing App.Widgets;\n\nnamespace App.Ops;\n\npublic class Caller\n{\n  public string Run()\n  {\n    Widget widget = new Widget();\n    return widget.Tag() + widget.Tag();\n  }\n}\n",
             ),
             ("Enums/Mode.cs", "namespace App.Enums { public enum Mode { On, Off } }"),
             // The precise counterpart: the same enum member read twice on one
@@ -5539,6 +5709,47 @@ mod tests {
         assert_eq!(
             g.stats.heuristic_edge_count, 1,
             "the dropped guess leaves the counter too"
+        );
+        assert_eq!(
+            g.stats.heuristic_by_tier,
+            HeuristicByTier { ext: 1, guess: 0 },
+            "and it leaves ITS tier's counter, not the other one"
+        );
+    }
+
+    // The other side of the same rule, and the reason `member` had to join the
+    // dedup key: two guesses that agree on every key the edge used to carry
+    // and differ ONLY in the member they name are two facts, not a duplicate.
+    // Before `member` existed these collapsed into one, and a reader lost a
+    // call.
+    #[test]
+    fn heuristic_side_dedup_keeps_two_guesses_that_name_different_members_of_one_target() {
+        let files = fragments_for(&[
+            ("Widgets/Widget.cs", "namespace App.Widgets { public class Widget { } }"),
+            (
+                "Ext/Helpers.cs",
+                "\nnamespace App.Ext;\n\npublic static class Helpers\n{\n  public static string Slug(this Widget widget)\n  {\n    return \"s\";\n  }\n\n  public static string Tag(this Widget widget)\n  {\n    return \"t\";\n  }\n}\n",
+            ),
+            (
+                "Ops/Caller.cs",
+                "\nusing App.Ext;\nusing App.Widgets;\n\nnamespace App.Ops;\n\npublic class Caller\n{\n  public string Run()\n  {\n    Widget widget = new Widget();\n    return widget.Tag() + widget.Slug();\n  }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            heuristic_member_edges_from(&g, "Ops/Caller.cs"),
+            vec![("App.Ext.Helpers", 12), ("App.Ext.Helpers", 12)],
+            "two calls, two edges -- identical but for the member each names"
+        );
+        assert_eq!(
+            heuristic_member_names_from(&g, "Ops/Caller.cs"),
+            vec![Some("Tag"), Some("Slug")],
+            "and the member is what tells them apart, in source order"
+        );
+        assert_eq!(g.stats.heuristic_edge_count, 2);
+        assert_eq!(
+            g.stats.heuristic_by_tier,
+            HeuristicByTier { ext: 2, guess: 0 }
         );
     }
 

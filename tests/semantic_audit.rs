@@ -133,8 +133,16 @@ fn audit_scores_the_fixture_against_the_committed_oracle_snapshot() {
     assert_eq!(v["tiers"]["precise"]["tp"], 7, "{stdout}");
     assert_eq!(v["tiers"]["precise"]["fp"], 0, "{stdout}");
     assert!(
-        v["tiers"]["heuristic"].is_object(),
-        "the heuristic tier (no `tier` key on the resolver's guess edges yet) must be present: {stdout}"
+        v["tiers"]["ext"].is_object(),
+        "the extension tier is reported on its own now that every guess edge names its tier: {stdout}"
+    );
+    assert!(
+        v["tiers"]["guess"].is_object(),
+        "and so is the scored tier: {stdout}"
+    );
+    assert!(
+        v["tiers"]["heuristic"].is_null(),
+        "the legacy umbrella tier is gone -- nothing untagged is left to fall into it: {stdout}"
     );
     let recall_all = v["recall"]["all"].as_f64().expect("recall.all is a number");
     assert!(recall_all >= 0.9, "recall.all = {recall_all}: {stdout}");

@@ -28,6 +28,20 @@
 //     candidate_count}`. Modeled as an internally-tagged enum
 //     (`#[serde(tag = "kind")]`) -- serde always emits the tag field first,
 //     matching every one of these shapes' field order.
+//   - a `uses-member` edge appends three more keys AFTER that shared prefix,
+//     in this exact order: `heuristic` (omitted when precise), `tier`, then
+//     `member`. `tier` names WHICH guess tier emitted the row and is present
+//     exactly when `heuristic` is; `member` names the member the reference
+//     reads or calls and is written on EVERY uses-member edge, the precise
+//     ones included -- it is the one fact the row never carried. Both are
+//     omit-when-`None`, so the append-last rule every other added key follows
+//     holds here too; the other two flagged kinds (inherits, uses-type) stay
+//     exactly as they were.
+//   - `schema_version` is `GRAPH_SCHEMA_VERSION`, which the `tier`/`member`
+//     append above moved to 2. `rebuild_graph`'s unchanged fast path reads
+//     the first bytes of an existing graph.json and refuses to reuse one
+//     written at an older version, so a stale artifact is rebuilt on the next
+//     `map` even when not one fragment moved.
 //   - `stats.edges_by_kind` has a FIXED key order (inherits, uses-type,
 //     imports, uses-member, ctor-di) -- not
 //     alphabetical, not insertion order of first edge seen. A plain struct
@@ -56,6 +70,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::fs;
 use std::io;
+use std::io::Read;
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -386,6 +401,21 @@ pub struct Candidate {
     pub file: String,
 }
 
+/// Which heuristic tier emitted a guess. The two differ by an order of
+/// magnitude in precision and `heuristic: true` alone cannot tell them
+/// apart: `Ext` is C#'s own extension-method lookup run over a recorded
+/// `(member, this-type)` bucket -- a real rule, only unverifiable against an
+/// out-of-graph receiver -- while `Guess` is the scored tier picking by NAME
+/// among the defs that happen to declare a member so called.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum HeuristicTier {
+    /// Tier (f): extension-method lookup.
+    Ext,
+    /// The scored tier: a name guess.
+    Guess,
+}
+
 /// The guess tag, appended LAST on every edge kind that can
 /// carry it. `heuristic: true` is set only on an edge a heuristic tier
 /// emitted and never writes `heuristic: false`, so this side pairs
@@ -395,6 +425,19 @@ pub struct Candidate {
 /// `uses-member`), but the flag lives on all three targeted kinds because
 /// the query layer's heuristic adjacency is kind-keyed, so a future tier
 /// tagging a `uses-type` edge needs no schema change.
+///
+/// `uses-member` carries two more appended keys, `tier` then `member`, in
+/// that order and NOT mirrored onto the other two kinds: neither has a
+/// member to name, and no tier tags one today. `tier` splits the umbrella
+/// flag into the two tiers a reader can act on differently; `member` names
+/// the member the reference reads or calls and is written on every
+/// uses-member edge, precise ones included, because "which member" is a fact
+/// about the reference rather than about the guess. Both are
+/// omit-when-`None`, so a reader of the old shape sees only added keys.
+///
+/// The next slot on this variant is reserved for `source: Option<Provenance>`
+/// (`"semantic"` for an edge a real compiler vouched for), appended after
+/// `member` and omitted when empty, on the same rule.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind")]
 pub enum Edge {
@@ -442,6 +485,16 @@ pub enum Edge {
         #[serde(default, skip_serializing_if = "is_false")]
         /// The value value.
         heuristic: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        /// Which guess tier emitted this edge -- `Some` exactly when
+        /// `heuristic` is true. Build the variant through
+        /// `Edge::uses_member`, which derives one from the other.
+        tier: Option<HeuristicTier>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        /// The member this reference reads or calls, on precise and
+        /// heuristic edges alike. `None` only for a reference the extractor
+        /// recorded no member name for.
+        member: Option<String>,
     },
     #[serde(rename = "imports")]
     /// The value value.
@@ -561,6 +614,52 @@ pub enum Edge {
     },
 }
 
+impl Edge {
+    /// The guess tier that emitted this edge, or `None` on a precise one --
+    /// and on every kind that carries no tier at all, which is every kind but
+    /// `uses-member`.
+    pub fn tier(&self) -> Option<HeuristicTier> {
+        match self {
+            Edge::UsesMember { tier, .. } => *tier,
+            _ => None,
+        }
+    }
+
+    /// Whether the edge declares itself a guess, across the three kinds that
+    /// can carry the flag.
+    pub fn is_heuristic(&self) -> bool {
+        match self {
+            Edge::Inherits { heuristic, .. }
+            | Edge::UsesType { heuristic, .. }
+            | Edge::UsesMember { heuristic, .. } => *heuristic,
+            _ => false,
+        }
+    }
+
+    /// The one way to build a `uses-member` edge. `heuristic` is DERIVED from
+    /// `tier` rather than passed alongside it, so the two cannot disagree: a
+    /// tagged edge is always flagged, a flagged edge always names its tier,
+    /// and no emit site can grow a third state by forgetting a field.
+    pub fn uses_member(
+        from_file: String,
+        from_line: usize,
+        to: String,
+        to_file: String,
+        member: Option<String>,
+        tier: Option<HeuristicTier>,
+    ) -> Edge {
+        Edge::UsesMember {
+            from_file,
+            from_line,
+            to,
+            to_file,
+            heuristic: tier.is_some(),
+            tier,
+            member,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 /// Represents `EdgesByKind`.
 pub struct EdgesByKind {
@@ -594,6 +693,19 @@ pub struct EdgesByKind {
     pub dispatch: Option<usize>,
 }
 
+/// `heuristic_edge_count` split by the tier that emitted each edge, in the
+/// fixed key order every tier-keyed output uses (ext, then guess). Both keys
+/// are always written, and `ext + guess` equals `heuristic_edge_count` --
+/// including after the heuristic-side dedup, which decrements the dropped
+/// edge's own tier.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+pub struct HeuristicByTier {
+    /// Edges tier (f) emitted.
+    pub ext: usize,
+    /// Edges the scored tier emitted.
+    pub guess: usize,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 /// Represents `Stats`.
 pub struct Stats {
@@ -621,6 +733,13 @@ pub struct Stats {
     /// so a partial test class split across two files is one test def.
     #[serde(default)]
     pub test_def_count: usize,
+    /// The tier split of `heuristic_edge_count`, appended after
+    /// `test_def_count` and always serialized, like the two counters above
+    /// it. `default` is for the READ side only: a graph.json written before
+    /// the tiers existed has no such key and must read back as two zeros
+    /// rather than fail to parse.
+    #[serde(default)]
+    pub heuristic_by_tier: HeuristicByTier,
     /// The TS resolver's own four counters, appended LAST inside
     /// `stats` and omitted entirely when the repo carries no TS fragment (the
     /// same omit-when-empty rule every other appended fact follows).
@@ -646,6 +765,13 @@ pub struct GraphName {
     /// The owner value.
     pub owner: String,
 }
+
+/// The version stamped into every graph.json this build writes, and the one
+/// `rebuild_graph` demands before it reuses an artifact it did not just
+/// produce. Bumped to 2 when `uses-member` edges gained `tier` and `member`:
+/// a schema-1 graph is READABLE (both keys default) but it is missing facts
+/// the query layer now reports, so it gets rebuilt rather than trusted.
+pub const GRAPH_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 /// Represents `Graph`.
@@ -1263,6 +1389,29 @@ pub enum RebuildOutcome {
     Rebuilt(Graph),
 }
 
+/// Whether the graph.json already on disk was written at the CURRENT schema
+/// version. Reads the first 64 bytes and compares the literal
+/// `{"schema_version":N,` prefix rather than deserializing: `schema_version`
+/// is the first key `Graph` serializes, the artifact can be tens of
+/// megabytes, and this runs on the fast path whose whole point is not opening
+/// it. Anything else -- an older version, an unreadable or truncated file --
+/// answers false and costs a rebuild, which is the safe direction.
+fn graph_schema_is_current(root: &Path) -> bool {
+    let Ok(mut file) = fs::File::open(graph_json_path(root)) else {
+        return false;
+    };
+    let mut head = [0u8; 64];
+    let mut filled = 0;
+    while filled < head.len() {
+        match file.read(&mut head[filled..]) {
+            Ok(0) => break,
+            Ok(n) => filled += n,
+            Err(_) => return false,
+        }
+    }
+    head[..filled].starts_with(format!("{{\"schema_version\":{GRAPH_SCHEMA_VERSION},").as_bytes())
+}
+
 /// `fresh_fragments`: fragments this run's extractor produced for files that
 /// needed reparsing (the same set that got a fresh purpose signature in the
 /// real `devscout map` flow -- `mapcmd::map_repo` assembles it). `changed`: from the
@@ -1274,7 +1423,7 @@ pub fn rebuild_graph(
     fresh_fragments: &HashMap<String, AnyFragment>,
     changed: bool,
 ) -> io::Result<RebuildOutcome> {
-    if !changed && graph_json_path(root).exists() {
+    if !changed && graph_json_path(root).exists() && graph_schema_is_current(root) {
         return Ok(RebuildOutcome::NotRebuilt);
     }
 
@@ -1869,12 +2018,15 @@ mod tests {
             unresolved_external_count: 0,
             heuristic_edge_count: 0,
             test_def_count: 0,
+            heuristic_by_tier: HeuristicByTier::default(),
             ts: None,
         };
         let json = serde_json::to_string(&stats).unwrap();
         assert!(
-            json.ends_with(r#""heuristic_edge_count":0,"test_def_count":0}"#),
-            "test_def_count is LAST: {json}"
+            json.ends_with(
+                r#""heuristic_edge_count":0,"test_def_count":0,"heuristic_by_tier":{"ext":0,"guess":0}}"#
+            ),
+            "heuristic_by_tier is LAST, after test_def_count, and both its keys are always written: {json}"
         );
     }
 
@@ -1921,6 +2073,8 @@ mod tests {
             to: "Ns.T".into(),
             to_file: "Ns/T.cs".into(),
             heuristic: false,
+            tier: None,
+            member: None,
         };
         assert_eq!(
             serde_json::to_string(&precise).unwrap(),
@@ -1932,20 +2086,100 @@ mod tests {
             to: "Ns.T".into(),
             to_file: "Ns/T.cs".into(),
             heuristic: true,
+            tier: Some(HeuristicTier::Guess),
+            member: Some("M".into()),
         };
         assert_eq!(
             serde_json::to_string(&guess).unwrap(),
-            r#"{"kind":"uses-member","from_file":"F.cs","from_line":1,"to":"Ns.T","to_file":"Ns/T.cs","heuristic":true}"#
+            r#"{"kind":"uses-member","from_file":"F.cs","from_line":1,"to":"Ns.T","to_file":"Ns/T.cs","heuristic":true,"tier":"guess","member":"M"}"#
+        );
+        let ext = Edge::UsesMember {
+            from_file: "F.cs".into(),
+            from_line: 1,
+            to: "Ns.T".into(),
+            to_file: "Ns/T.cs".into(),
+            heuristic: true,
+            tier: Some(HeuristicTier::Ext),
+            member: Some("M".into()),
+        };
+        assert_eq!(
+            serde_json::to_string(&ext).unwrap(),
+            r#"{"kind":"uses-member","from_file":"F.cs","from_line":1,"to":"Ns.T","to_file":"Ns/T.cs","heuristic":true,"tier":"ext","member":"M"}"#
         );
         // And it reads back: an edge written by either runtime round-trips
-        // with the flag intact, absent meaning precise.
+        // with the flag intact, absent meaning precise -- and now with its
+        // tier and member intact too, which is what makes an older graph.json
+        // (neither key written) still parse, as two `None`s.
         assert_eq!(
             serde_json::from_str::<Edge>(&serde_json::to_string(&guess).unwrap()).unwrap(),
             guess
         );
         assert_eq!(
+            serde_json::from_str::<Edge>(&serde_json::to_string(&ext).unwrap()).unwrap(),
+            ext
+        );
+        assert_eq!(
             serde_json::from_str::<Edge>(&serde_json::to_string(&precise).unwrap()).unwrap(),
             precise
+        );
+    }
+
+    // The append ORDER, pinned on its own: `heuristic`, then `tier`, then
+    // `member`, each omitted when it has nothing to say. A precise edge that
+    // does name its member -- which is every precise uses-member edge the
+    // resolver emits -- carries `member` and nothing else, so its bytes gain
+    // exactly one key over the pre-tier shape.
+    #[test]
+    fn uses_member_edge_appends_tier_then_member_after_heuristic_and_omits_both_when_precise() {
+        let precise = Edge::uses_member(
+            "F.cs".into(),
+            1,
+            "Ns.T".into(),
+            "Ns/T.cs".into(),
+            Some("M".into()),
+            None,
+        );
+        assert_eq!(
+            serde_json::to_string(&precise).unwrap(),
+            r#"{"kind":"uses-member","from_file":"F.cs","from_line":1,"to":"Ns.T","to_file":"Ns/T.cs","member":"M"}"#
+        );
+        assert!(!precise.is_heuristic(), "no tier means no guess");
+        assert_eq!(precise.tier(), None);
+
+        for (tier, word) in [(HeuristicTier::Ext, "ext"), (HeuristicTier::Guess, "guess")] {
+            let e = Edge::uses_member(
+                "F.cs".into(),
+                1,
+                "Ns.T".into(),
+                "Ns/T.cs".into(),
+                Some("M".into()),
+                Some(tier),
+            );
+            assert_eq!(
+                serde_json::to_string(&e).unwrap(),
+                format!(
+                    r#"{{"kind":"uses-member","from_file":"F.cs","from_line":1,"to":"Ns.T","to_file":"Ns/T.cs","heuristic":true,"tier":"{word}","member":"M"}}"#
+                ),
+                "heuristic, then tier, then member"
+            );
+            // The constructor is what makes the flag and the tier one fact:
+            // pass a tier and the edge is a guess, pass none and it is not.
+            assert!(e.is_heuristic());
+            assert_eq!(e.tier(), Some(tier));
+        }
+
+        // The two kinds that carry the flag but no tier answer `None` rather
+        // than guessing on the reader's behalf.
+        assert_eq!(
+            Edge::UsesType {
+                from_file: "F.cs".into(),
+                from_line: 1,
+                to: "Ns.T".into(),
+                to_file: "Ns/T.cs".into(),
+                heuristic: true,
+            }
+            .tier(),
+            None
         );
     }
 
@@ -2107,9 +2341,46 @@ mod tests {
     fn rebuild_graph_skips_when_unchanged_and_graph_already_exists() {
         let dir = temp_dir("rebuild-unchanged");
         fs::create_dir_all(graph_dir(&dir)).unwrap();
-        fs::write(graph_json_path(&dir), b"{\"schema_version\":1,\"built_at_head\":null,\"defs\":[],\"edges\":[],\"stats\":{\"def_count\":0,\"file_count\":0,\"edges_by_kind\":{\"inherits\":0,\"uses-type\":0,\"imports\":0,\"uses-member\":0},\"ambiguous_count\":0,\"ambiguous_pct\":0,\"unresolved_external_count\":0}}").unwrap();
+        fs::write(graph_json_path(&dir), b"{\"schema_version\":2,\"built_at_head\":null,\"defs\":[],\"edges\":[],\"stats\":{\"def_count\":0,\"file_count\":0,\"edges_by_kind\":{\"inherits\":0,\"uses-type\":0,\"imports\":0,\"uses-member\":0},\"ambiguous_count\":0,\"ambiguous_pct\":0,\"unresolved_external_count\":0}}").unwrap();
         let outcome = rebuild_graph(&dir, &[], &HashMap::new(), false).unwrap();
         assert!(matches!(outcome, RebuildOutcome::NotRebuilt));
+    }
+
+    // The other half of that fast path: "nothing changed" is not enough on
+    // its own. A graph.json written by a build that predates the current
+    // schema is missing facts every reader now expects, so it is rebuilt
+    // even though not one fragment moved -- the ONLY thing separating this
+    // case from the one above is the version in its first bytes.
+    #[test]
+    fn rebuild_graph_rebuilds_when_the_existing_graph_carries_an_older_schema_version() {
+        let dir = temp_dir("rebuild-old-schema");
+        fs::create_dir_all(graph_dir(&dir)).unwrap();
+        fs::write(graph_json_path(&dir), b"{\"schema_version\":1,\"built_at_head\":null,\"defs\":[],\"edges\":[],\"stats\":{\"def_count\":0,\"file_count\":0,\"edges_by_kind\":{\"inherits\":0,\"uses-type\":0,\"imports\":0,\"uses-member\":0},\"ambiguous_count\":0,\"ambiguous_pct\":0,\"unresolved_external_count\":0}}").unwrap();
+        let outcome = rebuild_graph(&dir, &[], &HashMap::new(), false).unwrap();
+        let RebuildOutcome::Rebuilt(graph) = outcome else {
+            panic!("an older-schema graph must be rebuilt on the unchanged path");
+        };
+        assert_eq!(graph.schema_version, GRAPH_SCHEMA_VERSION);
+        assert!(
+            fs::read_to_string(graph_json_path(&dir))
+                .unwrap()
+                .starts_with(r#"{"schema_version":2,"#),
+            "and the rebuilt artifact carries the current version on disk"
+        );
+    }
+
+    // A truncated or unreadable artifact answers the same way an older one
+    // does -- rebuild -- rather than being trusted or panicking.
+    #[test]
+    fn rebuild_graph_rebuilds_when_the_existing_graph_is_too_short_to_carry_a_version() {
+        let dir = temp_dir("rebuild-truncated");
+        fs::create_dir_all(graph_dir(&dir)).unwrap();
+        fs::write(graph_json_path(&dir), b"{").unwrap();
+        assert!(!graph_schema_is_current(&dir));
+        assert!(matches!(
+            rebuild_graph(&dir, &[], &HashMap::new(), false).unwrap(),
+            RebuildOutcome::Rebuilt(_)
+        ));
     }
 
     #[test]

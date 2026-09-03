@@ -3186,6 +3186,7 @@ mod tests {
             unresolved_external_count: 0,
             heuristic_edge_count: 0,
             test_def_count: 0,
+            heuristic_by_tier: graph::HeuristicByTier::default(),
             // Incidental: `ts` has no bearing on this C#-only query-layer
             // fixture.
             ts: None,
@@ -3194,7 +3195,7 @@ mod tests {
 
     fn make_graph(defs: Vec<graph::Def>, edges: Vec<graph::Edge>) -> graph::Graph {
         graph::Graph {
-            schema_version: 1,
+            schema_version: graph::GRAPH_SCHEMA_VERSION,
             built_at_head: Some("deadbeef".to_string()),
             defs,
             edges,
@@ -3279,10 +3280,12 @@ mod tests {
             to: to.into(),
             to_file: to_file.into(),
             heuristic: false,
+            tier: None,
+            member: None,
         }
     }
-    // The same edge, tagged as a guess -- the only difference the query layer
-    // is allowed to see.
+    // The same edge, tagged as a scored guess -- the only difference the query
+    // layer is allowed to see.
     fn heuristic_uses_member(
         from_file: &str,
         from_line: usize,
@@ -3295,6 +3298,22 @@ mod tests {
             to: to.into(),
             to_file: to_file.into(),
             heuristic: true,
+            tier: Some(graph::HeuristicTier::Guess),
+            member: None,
+        }
+    }
+    // And the same edge tagged as the OTHER heuristic tier: extension-method
+    // lookup, which the query surface reports apart from a name guess.
+    #[allow(dead_code)]
+    fn ext_uses_member(from_file: &str, from_line: usize, to: &str, to_file: &str) -> graph::Edge {
+        graph::Edge::UsesMember {
+            from_file: from_file.into(),
+            from_line,
+            to: to.into(),
+            to_file: to_file.into(),
+            heuristic: true,
+            tier: Some(graph::HeuristicTier::Ext),
+            member: None,
         }
     }
     fn heuristic_uses_type(

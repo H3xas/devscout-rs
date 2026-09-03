@@ -1419,9 +1419,9 @@ mod tests {
         ];
         let value = graph_value_for(&files);
         let (graph_defs, edges) = parse_graph(&value).expect("graph.json parses");
-        let heuristic_count = edges.iter().filter(|e| e.tier == Tier::Heuristic).count();
+        let heuristic_count = edges.iter().filter(|e| e.tier == Tier::Guess).count();
         assert_eq!(heuristic_count, 1, "expected exactly one guessed edge");
-        let g_edge = edges.iter().find(|e| e.tier == Tier::Heuristic).unwrap();
+        let g_edge = edges.iter().find(|e| e.tier == Tier::Guess).unwrap();
 
         // The oracle saw a genuinely external member at this same site (e.g.
         // an extension method from a package devscout never indexed) --
@@ -1448,7 +1448,7 @@ mod tests {
 
         assert_eq!(report.tiers.len(), 1);
         let (tier, ts) = &report.tiers[0];
-        assert_eq!(*tier, Tier::Heuristic);
+        assert_eq!(*tier, Tier::Guess);
         assert_eq!(ts.tp, 0);
         assert_eq!(ts.fp, 1);
         assert_eq!(ts.fp_external_site, 1);
