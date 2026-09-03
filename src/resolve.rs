@@ -168,6 +168,14 @@ pub struct MemberLists {
     /// top-level type-argument list. Merged across a partial class exactly
     /// like `method_returns`.
     pub method_return_args: OrderedMap<Vec<String>>,
+    /// Declared method names `methods` (on `Def`) does not carry -- see
+    /// `FragDef.non_public_methods`. Merged across a partial class exactly
+    /// like `properties`/`fields` (union, first-insertion order). Read ONLY
+    /// by `declares_member_any_visibility`, itself read ONLY for
+    /// hierarchy-internal receivers (`base.` and the `this.` shape's own
+    /// base walk); every other caller of a "does this def declare the
+    /// member" question keeps reading `Def.methods` alone.
+    pub non_public_methods: Vec<String>,
 }
 
 fn build_def_index(fragments_by_file: &[(String, Fragment)]) -> DefIndex {
@@ -246,6 +254,7 @@ fn build_def_index(fragments_by_file: &[(String, Fragment)]) -> DefIndex {
                         property_types: d.property_types.clone(),
                         field_types: d.field_types.clone(),
                         method_return_args: d.method_return_args.clone(),
+                        non_public_methods: d.non_public_methods.clone(),
                     });
                     for e in &d.extension_methods {
                         add_extension_method(&mut member_lists, &mut extension_index, idx, e);
@@ -291,6 +300,11 @@ fn build_def_index(fragments_by_file: &[(String, Fragment)]) -> DefIndex {
                     for f in &d.fields {
                         if !member_lists[idx].fields.contains(f) {
                             member_lists[idx].fields.push(f.clone());
+                        }
+                    }
+                    for m in &d.non_public_methods {
+                        if !member_lists[idx].non_public_methods.contains(m) {
+                            member_lists[idx].non_public_methods.push(m.clone());
                         }
                     }
                     for e in &d.extension_methods {
@@ -425,6 +439,29 @@ fn declares_member(index: &DefIndex, idx: usize, member: Option<&str>) -> bool {
             .iter()
             .any(|p| p == member)
         || index.member_lists[idx].fields.iter().any(|f| f == member)
+}
+
+// `declares_member` widened by `non_public_methods` -- `properties`/`fields`
+// already carry every accessibility with no filter of their own (see
+// `DefRecord::properties`), so `methods` is the only list this widens.
+// Read ONLY where the SITE is inside the hierarchy the member lookup is
+// walking: `base_member_declared` (a `base.` qualifier never considers
+// anything but the enclosing type's own bases) and the typed-receiver
+// precise tier's own base walk, and even there ONLY when the receiver is
+// the enclosing type itself (the `this.` shape). Every other caller --
+// the scored tier's veto and its `member_vouched` pool filter, tier (f)'s
+// instance-member veto, and an ordinary typed receiver's own base walk --
+// keeps asking `declares_member` unchanged, so a guess can never start
+// vouching through a member C# would refuse it visibility to.
+fn declares_member_any_visibility(index: &DefIndex, idx: usize, member: Option<&str>) -> bool {
+    if declares_member(index, idx, member) {
+        return true;
+    }
+    let Some(member) = member else { return false };
+    index.member_lists[idx]
+        .non_public_methods
+        .iter()
+        .any(|m| m == member)
 }
 
 // The two shapes a member reference can take, read straight off the ref's own
@@ -649,21 +686,32 @@ fn inherited_member_declared(
     })
 }
 
-// The `receiver_base == true` lookup (`base.M`): never `start` itself (the
-// enclosing type `base.` never considers), only its OWN direct bases -- read
-// off `start`'s `MemberLists.bases`, in DECLARATION order -- each followed
-// by its own in-graph inheritance walk (so a member declared on the base of
-// the base still resolves, exactly like the instance-member veto's closure
-// does). Returns the first in-graph def, across that ordered search, whose
-// own closure declares the member; `None` when `start` resolves to nothing
-// in-graph, when it declares no in-graph base, or when no in-graph base's
-// closure declares the member at all -- every one of those is an ordinary
-// external receiver to the caller, never a candidate for a scored guess.
-fn base_member_declared(
+// The shared shape both `base_member_declared` and the typed-receiver
+// precise tier's own base walk need: never `start` itself, only its OWN
+// direct bases -- read off `start`'s `MemberLists.bases`, in DECLARATION
+// order -- each followed by its own in-graph inheritance walk (so a member
+// declared on the base of the base still resolves, exactly like the
+// instance-member veto's closure does). Returns the first in-graph def,
+// across that ordered search, for which `declares` answers true; `None`
+// when `start` resolves to nothing in-graph, when it declares no in-graph
+// base, or when no in-graph base's closure satisfies `declares` at all.
+//
+// `skip_interfaces` drops a direct base whose resolved def is itself an
+// `interface` -- and never walks into its closure either -- which is
+// `base_member_declared`'s own rule (a `base.` qualifier never names an
+// interface member; an interface can only ever extend other interfaces, so
+// skipping the whole base is equivalent to skipping its closure). The
+// typed-receiver base walk passes `false`: a member declared only on an
+// implemented interface (a C# 8+ default interface implementation) is a
+// legitimate target for an ordinary typed access, and tier (f)'s own
+// closure fallback (a different lookup entirely) already treats interface
+// bases as first-class evidence.
+fn first_base_declaring(
     index: &DefIndex,
     file_contexts: &HashMap<String, FileContext>,
     start: usize,
-    member: Option<&str>,
+    skip_interfaces: bool,
+    mut declares: impl FnMut(&DefIndex, usize) -> bool,
 ) -> Option<usize> {
     let ctx = file_contexts.get(&index.defs[start].file)?;
     let ns = index.defs[start].namespace.clone();
@@ -672,14 +720,122 @@ fn base_member_declared(
         if let Resolution::Resolved(bidx, _) =
             resolve_ref(&probe, &ctx.usings, &ns, index, &ctx.aliases, file_contexts)
         {
-            if let Some(found) = inheritance_walk_find(index, file_contexts, bidx, |idx| {
-                declares_member(index, idx, member)
-            }) {
+            if skip_interfaces && index.defs[bidx].kind == "interface" {
+                continue;
+            }
+            if let Some(found) =
+                inheritance_walk_find(index, file_contexts, bidx, |idx| declares(index, idx))
+            {
                 return Some(found);
             }
         }
     }
     None
+}
+
+// The `receiver_base == true` lookup (`base.M`): `first_base_declaring` with
+// `skip_interfaces = true` (`base.` never names an interface member) and
+// `declares_member_any_visibility` (a `base.` site is, by construction,
+// lexically inside the hierarchy it is walking, so a protected or
+// internal member is exactly as reachable as a public one). `None` is
+// the ordinary external-receiver answer to the caller, never a candidate
+// for a scored guess.
+fn base_member_declared(
+    index: &DefIndex,
+    file_contexts: &HashMap<String, FileContext>,
+    start: usize,
+    member: Option<&str>,
+) -> Option<usize> {
+    first_base_declaring(index, file_contexts, start, true, |index, idx| {
+        declares_member_any_visibility(index, idx, member)
+    })
+}
+
+// The typed-receiver precise tier's own base walk (Unit A3 item 4): when a
+// resolved receiver def does not itself declare the member, the first def
+// in its in-graph base closure that does is the precise target -- exactly
+// the widening `base_member_declared` already does for `base.`, applied to
+// an ORDINARY typed receiver, `skip_interfaces = true` for the same reason
+// `base_member_declared` skips them: an interface's own method declaration
+// has no body of its own to be the target of an ordinary call (a C# 8+
+// default interface implementation is indistinguishable from an abstract
+// one at this def's own record, so neither is treated as a precise bind
+// target here) -- see `stage3_veto_a_member_declared_by_the_receivers_interface_beats_a_matching_visible_extension`,
+// which pins exactly this: an interface-only ancestor must NOT earn a
+// precise edge, only veto the extension tier (which reads the closure
+// itself, not this function). `any_visibility` is the caller's own answer
+// to "is this receiver the enclosing type itself" (the `this.` shape,
+// `receiver_type == outer_types.last()`): `true` walks
+// `declares_member_any_visibility`, `false` keeps the public-only
+// `declares_member`, so a receiver typed by anything OTHER than the
+// enclosing type can only ever bind to a member C# would let it see from
+// outside.
+fn typed_receiver_base_member(
+    index: &DefIndex,
+    file_contexts: &HashMap<String, FileContext>,
+    start: usize,
+    member: Option<&str>,
+    any_visibility: bool,
+) -> Option<usize> {
+    first_base_declaring(index, file_contexts, start, true, |index, idx| {
+        if any_visibility {
+            declares_member_any_visibility(index, idx, member)
+        } else {
+            declares_member(index, idx, member)
+        }
+    })
+}
+
+// Unit A3 item 3: the extension bucket key tier (f) tries when the exact
+// `"{member} {receiverType}"` key names no bucket at all. Walks the
+// receiver's own nominal closure -- itself first, then its in-graph bases
+// transitively, the same DFS `inheritance_walk_find` uses everywhere else --
+// and at each visited def tries that def's own NAME as a key, then every RAW
+// base string it declares (an external interface included, whether or not
+// that name resolves in-graph: an extension's `thisType` is written against
+// the interface's bare name, and a raw base string is exactly that name,
+// unresolved or not). First key with an existing bucket wins and the walk
+// stops; which CANDIDATE within that bucket is right is still decided by
+// the caller's own unchanged arity/generic-unification/namespace/admission
+// filters and veto -- this function only ever widens which key is looked
+// up, never which candidates a matched key returns.
+fn extension_closure_key(
+    index: &DefIndex,
+    file_contexts: &HashMap<String, FileContext>,
+    start: usize,
+    member: &str,
+) -> Option<String> {
+    let mut found: Option<String> = None;
+    inheritance_walk_find(index, file_contexts, start, |idx| {
+        let own_key = format!("{member} {}", index.defs[idx].name);
+        if index.extension_index.contains_key(&own_key) {
+            found = Some(own_key);
+            return true;
+        }
+        for base in &index.member_lists[idx].bases {
+            let base_key = format!("{member} {base}");
+            if index.extension_index.contains_key(&base_key) {
+                found = Some(base_key);
+                return true;
+            }
+        }
+        false
+    });
+    found
+}
+
+// `true` exactly for the `this.` shape (precision rule (a)): a `uses-member`
+// ref whose recorded receiver type IS the innermost `outer_types` entry --
+// the enclosing type itself, whether the qualifier was literally `this.` or
+// an ordinary same-typed local/parameter/field (C#'s own private/protected
+// access rule reaches every expression of the declaring type from within
+// its own members, not only `this`). `false` whenever `receiver_type` is
+// unset (nothing to compare) or names a different type.
+fn is_this_shaped_receiver(r: &FragRef) -> bool {
+    match (&r.receiver_type, r.outer_types.last()) {
+        (Some(rt), Some(outer)) => rt == outer,
+        _ => false,
+    }
 }
 
 // One def's own field or property fact for `name`, field_types tried first
@@ -1809,7 +1965,25 @@ pub fn resolve_graph_with_model(
                         // unrelated type. Dotted
                         // chains earn their edge via the member lists or the
                         // exact-qualified step instead.
-                        if declares_member(&index, idx, r.member.as_deref())
+                        //
+                        // `this_shaped` is precision rule (a)'s guard: this
+                        // resolution arm is where a `this.M` ref lands (its
+                        // `name` IS the enclosing type, resolved through the
+                        // ordinary type ladder like any other bare type
+                        // name), so a member declared non-publicly on the
+                        // enclosing type itself, or on one of its bases,
+                        // must still bind precisely -- Unit A3 items 1 and
+                        // 4. Every other typed-qualified access reaching
+                        // this arm (`SomeType.Member`, an inherited STATIC
+                        // member named through a derived type) keeps the
+                        // public-only walk.
+                        let this_shaped = is_this_shaped_receiver(r);
+                        let declares_here = if this_shaped {
+                            declares_member_any_visibility(&index, idx, r.member.as_deref())
+                        } else {
+                            declares_member(&index, idx, r.member.as_deref())
+                        };
+                        if declares_here
                             || (r.generic && r.qualified.is_none())
                             || (r.qualified.is_some() && via == Via::Qualified)
                         {
@@ -1818,6 +1992,31 @@ pub fn resolve_graph_with_model(
                                 r.line,
                                 index.defs[idx].id.clone(),
                                 index.defs[idx].file.clone(),
+                                r.member.clone(),
+                                None,
+                            ));
+                            edges_by_kind.uses_member += 1;
+                            emitted = true;
+                        } else if let Some(target) = typed_receiver_base_member(
+                            &index,
+                            &file_contexts,
+                            idx,
+                            r.member.as_deref(),
+                            this_shaped,
+                        ) {
+                            // Unit A3 item 4: `idx` itself does not declare
+                            // the member (at the visibility this receiver
+                            // may see) -- the first in-graph base that does
+                            // is the precise target, exactly the widening
+                            // `base_member_declared` already does for
+                            // `base.`, applied here to a receiver whose OWN
+                            // type resolved directly rather than through a
+                            // `base.` qualifier.
+                            edges.push(Edge::uses_member(
+                                file.clone(),
+                                r.line,
+                                index.defs[target].id.clone(),
+                                index.defs[target].file.clone(),
                                 r.member.clone(),
                                 None,
                             ));
@@ -1840,9 +2039,13 @@ pub fn resolve_graph_with_model(
                 // The resolution itself is hoisted into `receiver_def` so tier
                 // (f)'s instance-member veto can reuse it instead of walking the
                 // ladder a second time for the same name in the same file
-                // context. Tier (e) still requires the member on the EXACT
-                // receiver def, with no inheritance widening. The closure is a
-                // negative signal only.
+                // context. Tier (e) tries the EXACT receiver def first and,
+                // only when that def itself does not declare the member, its
+                // in-graph base closure (Unit A3 item 4, mirroring the
+                // widening `base_member_declared` already does for `base.`)
+                // -- public visibility, unless the receiver IS the enclosing
+                // type itself (`is_this_shaped_receiver`), which may also see
+                // a non-public member per precision rule (a).
                 //
                 // The FULL outcome is kept too, not just the def: the scored
                 // tier reads its status (ambiguous vs. nothing-at-all) for any
@@ -1956,12 +2159,38 @@ pub fn resolve_graph_with_model(
                         if let Resolution::Resolved(ridx, _) = &rr {
                             let ridx = *ridx;
                             receiver_def = Some(ridx);
-                            if declares_member(&index, ridx, r.member.as_deref()) {
+                            // Unit A3 item 4: the receiver's OWN def may not
+                            // declare the member while an in-graph base of
+                            // it does -- `IS_THIS_SHAPED` decides only
+                            // whether that base walk may see a non-public
+                            // member (precision rule (a)), never whether it
+                            // runs at all, so an ordinary field/local/
+                            // parameter receiver widens to its bases exactly
+                            // like the `this.` shape does, public visibility
+                            // only.
+                            let this_shaped = is_this_shaped_receiver(r);
+                            let declares_here = if this_shaped {
+                                declares_member_any_visibility(&index, ridx, r.member.as_deref())
+                            } else {
+                                declares_member(&index, ridx, r.member.as_deref())
+                            };
+                            let target = if declares_here {
+                                Some(ridx)
+                            } else {
+                                typed_receiver_base_member(
+                                    &index,
+                                    &file_contexts,
+                                    ridx,
+                                    r.member.as_deref(),
+                                    this_shaped,
+                                )
+                            };
+                            if let Some(target) = target {
                                 edges.push(Edge::uses_member(
                                     file.clone(),
                                     r.line,
-                                    index.defs[ridx].id.clone(),
-                                    index.defs[ridx].file.clone(),
+                                    index.defs[target].id.clone(),
+                                    index.defs[target].file.clone(),
                                     r.member.clone(),
                                     None,
                                 ));
@@ -2132,7 +2361,26 @@ pub fn resolve_graph_with_model(
                     if let (Some(receiver_type), Some(member), Some(arg_count)) =
                         (&receiver_type_name, r.member.as_deref(), r.arg_count)
                     {
-                        let key = format!("{member} {receiver_type}");
+                        let exact_key = format!("{member} {receiver_type}");
+                        // Unit A3 item 3: the exact key misses for an
+                        // extension whose `this` parameter is a BASE of the
+                        // receiver rather than the receiver's own exact
+                        // type -- widen to the receiver's nominal closure
+                        // only once the exact key itself names no bucket,
+                        // and only when the receiver resolved in-graph
+                        // (`receiver_def`, the same resolution tier (e)
+                        // already computed). Applies to every typed
+                        // receiver, `this.` included -- `receiver_def` is
+                        // set identically for both.
+                        let key = if index.extension_index.contains_key(&exact_key) {
+                            exact_key
+                        } else {
+                            receiver_def
+                                .and_then(|ridx| {
+                                    extension_closure_key(&index, &file_contexts, ridx, member)
+                                })
+                                .unwrap_or(exact_key)
+                        };
                         let candidates: &[ExtCandidate] = index
                             .extension_index
                             .get(&key)
@@ -2609,6 +2857,7 @@ mod tests {
             property_types: crate::graph::OrderedMap::new(),
             field_types: crate::graph::OrderedMap::new(),
             method_return_args: crate::graph::OrderedMap::new(),
+            non_public_methods: vec![],
             end_line: 0,
         }
     }
@@ -5332,9 +5581,19 @@ mod tests {
             ),
         ]);
         let g = resolve_graph(&no_git_root(), &files);
-        assert!(
-            member_edges_from(&g, "Consumers/DeepVeto.cs").is_empty(),
-            "two hops up the chain is still an instance member"
+        // Two hops up the chain is still an instance member -- Unit A3 item 4
+        // is exactly this widening: Leaf itself declares nothing, but Root,
+        // reached through Leaf's transitive in-graph base closure, does, so
+        // the typed-receiver precise tier binds there instead of leaving the
+        // extension tier's veto as the only visible effect.
+        assert_eq!(
+            member_edges_from(&g, "Consumers/DeepVeto.cs"),
+            vec![("App.Other.Root", 9)],
+            "the precise tier now walks the closure the veto always could see"
+        );
+        assert_eq!(
+            g.stats.heuristic_edge_count, 0,
+            "the extension is still unreachable -- precise supersedes it, not joins it"
         );
     }
 
@@ -8865,5 +9124,173 @@ mod tests {
              from the field/property fallback (which the shadowing rule keeps from ever running \
              here): {edges:?}"
         );
+    }
+
+    // --- Unit A3: non-public hierarchy-internal members, interface-skipped
+    // base lookup, tier (f)'s closure fallback, and the typed-receiver
+    // precise tier's own base walk -----------------------------------------
+
+    #[test]
+    fn stage7_base_member_that_is_protected_resolves_to_the_base_that_declares_it() {
+        let files = fragments_for(&[
+            (
+                "Domain/Base.cs",
+                "\nnamespace App.Domain;\n\npublic class Base\n{\n    protected void Touch() { }\n}\n",
+            ),
+            (
+                "Domain/Order.cs",
+                "\nnamespace App.Domain;\n\npublic class Order : Base\n{\n    public void Poke() => base.Touch();\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_from(&g, "Domain/Order.cs"),
+            vec![("App.Domain.Base", 6)],
+            "Touch is protected -- absent from Base's public `methods` list, present only in \
+             `nonPublicMethods` -- but a `base.` site is by construction inside the hierarchy it \
+             is walking, so base_member_declared reads any-visibility and resolves precisely \
+             anyway"
+        );
+        assert_eq!(g.stats.heuristic_edge_count, 0);
+    }
+
+    #[test]
+    fn stage7_base_lookup_skips_interface_bases() {
+        let files = fragments_for(&[
+            (
+                "Domain/IGreeter.cs",
+                "namespace App.Domain { public interface IGreeter { void Greet(); } }",
+            ),
+            (
+                "Domain/Base.cs",
+                "namespace App.Domain { public class Base { public void Greet() { } } }",
+            ),
+            (
+                "Domain/Order.cs",
+                "\nnamespace App.Domain;\n\npublic class Order : IGreeter, Base\n{\n    public void Greet() { }\n\n    public void Poke() => base.Greet();\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_from(&g, "Domain/Order.cs"),
+            vec![("App.Domain.Base", 8)],
+            "IGreeter is listed FIRST in Order's base list and also declares Greet, but base. \
+             never names an interface member -- base_member_declared skips it (and never walks \
+             its own closure) and continues to Base, the class, which is the right target. \
+             Order's own override (also named Greet) is never even considered, matching the \
+             existing non-interface base test."
+        );
+    }
+
+    #[test]
+    fn stage7_extension_declared_on_an_interface_binds_through_the_receivers_base_closure() {
+        let files = fragments_for(&[
+            (
+                "Domain/ISpecification.cs",
+                "namespace App.Domain { public interface ISpecification { } }",
+            ),
+            (
+                "Domain/BatchOptions.cs",
+                "\nusing App.Ext;\n\nnamespace App.Domain;\n\npublic class BatchOptions : ISpecification\n{\n    public void Validate() => this.Fail();\n}\n",
+            ),
+            (
+                "Ext/SpecExtensions.cs",
+                "namespace App.Ext { public static class SpecExtensions { public static void Fail(this ISpecification spec) { } } }",
+            ),
+            (
+                "Consumers/Runner.cs",
+                "\nusing App.Domain;\nusing App.Ext;\n\nnamespace App.Consumers;\n\npublic class Runner\n{\n    public void Run(BatchOptions opts) => opts.Fail();\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        // The `this` receiver: BatchOptions itself declares nothing named
+        // Fail, and typed_receiver_base_member's own base walk skips
+        // ISpecification (an interface, per its own rule) and finds nothing
+        // either -- so the exact-key lookup at tier (f) misses ("Fail
+        // BatchOptions" names no bucket) and the closure fallback (Unit A3
+        // item 3) tries BatchOptions's raw base string "ISpecification" next,
+        // which the extension actually keys on.
+        assert_eq!(
+            heuristic_member_edges_from(&g, "Domain/BatchOptions.cs"),
+            vec![("App.Ext.SpecExtensions", 8)],
+            "this.Fail() binds through BatchOptions's OWN raw base string, tried as a fallback key \
+             once the exact receiver-type key misses"
+        );
+        // The ordinary LOCAL receiver: `opts` is a ref with no this. shape at
+        // all (its enclosing type is Runner, not BatchOptions), proving the
+        // fallback is not `this.`-specific.
+        assert_eq!(
+            heuristic_member_edges_from(&g, "Consumers/Runner.cs"),
+            vec![("App.Ext.SpecExtensions", 9)],
+            "opts.Fail() -- an ordinary typed local, not this. -- binds through the exact same \
+             closure fallback: item 3 applies to every typed receiver"
+        );
+        assert_eq!(g.stats.heuristic_by_tier.ext, 2);
+    }
+
+    #[test]
+    fn stage7_typed_receiver_member_declared_on_an_in_graph_base_resolves_to_the_base() {
+        let files = fragments_for(&[
+            (
+                "Domain/Base.cs",
+                "namespace App.Domain { public class Base { public void Touch() { } } }",
+            ),
+            (
+                "Domain/Order.cs",
+                "namespace App.Domain { public class Order : Base { } }",
+            ),
+            (
+                "Consumers/Runner.cs",
+                "\nusing App.Domain;\n\nnamespace App.Consumers;\n\npublic class Runner\n{\n    public void Run(Order o) => o.Touch();\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_from(&g, "Consumers/Runner.cs"),
+            vec![("App.Domain.Base", 8)],
+            "Order itself declares nothing named Touch -- the typed-receiver precise tier \
+             (previously exact-def-only) now walks Order's in-graph base closure (Unit A3 item 4) \
+             and binds to Base, the first def that declares it. `o` is an ordinary parameter, not \
+             `this.`, so only the public list is consulted -- proven sufficient here since Touch \
+             is public."
+        );
+        assert_eq!(
+            g.stats.heuristic_edge_count, 0,
+            "a precise hit, not a guess"
+        );
+    }
+
+    #[test]
+    fn stage7_a_scored_guess_never_vouches_through_a_non_public_member() {
+        // Two same-named, same-shaped classes in different namespaces (no
+        // using imports either), so `_widget`'s declared type "Widget"
+        // resolves AMBIGUOUS -- the scored tier's ambiguous pool, filtered by
+        // `member_vouched`. Alpha.Widget declares Ping publicly; Beta.Widget
+        // declares the SAME name but only privately.
+        let files = fragments_for(&[
+            (
+                "Alpha/Widget.cs",
+                "namespace Fixture.Alpha { public class Widget { public void Ping() { } } }",
+            ),
+            (
+                "Beta/Widget.cs",
+                "namespace Fixture.Beta { public class Widget { private void Ping() { } } }",
+            ),
+            (
+                "App/Runner.cs",
+                "\nnamespace Fixture.App;\n\npublic class Runner\n{\n  private Widget _widget;\n\n  public void Run() => _widget.Ping();\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            heuristic_member_edges_from(&g, "App/Runner.cs"),
+            vec![("Fixture.Alpha.Widget", 8)],
+            "Beta.Widget also declares Ping, but only NON-publicly -- member_vouched (and the \
+             Call-shape `declares_member` it reads) is untouched by Unit A3's non-public tables, \
+             so Beta.Widget never enters the scored guess at all, even though it sits right in the \
+             ambiguous pool this ref's receiver resolved to; only Alpha.Widget, which declares \
+             Ping publicly, vouches"
+        );
+        assert_eq!(g.stats.heuristic_by_tier.guess, 1);
     }
 }

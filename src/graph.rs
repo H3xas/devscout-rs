@@ -997,6 +997,24 @@ pub struct FragDef {
         skip_serializing_if = "OrderedMap::is_empty"
     )]
     pub method_return_args: OrderedMap<Vec<String>>,
+    /// Declared method names `methods` does not carry because
+    /// `is_recorded_method` gates that list on a literal `public` modifier
+    /// (or `kind == "interface"`, where this list is always empty). Source
+    /// order, no dedup, same as `methods`. A resolution input only, like
+    /// `properties`/`fields`/`bases`: `resolve_graph` strips it before
+    /// graph.json's def rows. Consulted only for hierarchy-internal
+    /// receivers (`base.` and the `this.` shape's own base walk); the
+    /// scored tier keeps reading `methods` alone. Appended LAST of all,
+    /// after `methodReturnArgs`, omitted when empty -- purely additive, so
+    /// an absent key reads back as "no non-public methods", the safe
+    /// default for every fragment cached before this field existed, which
+    /// is what lets it join the schema with no cache-version bump.
+    #[serde(
+        default,
+        rename = "nonPublicMethods",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub non_public_methods: Vec<String>,
     #[serde(default, rename = "endLine", skip_serializing_if = "is_zero")]
     /// The end line value.
     pub end_line: usize,
@@ -1344,6 +1362,7 @@ pub fn fragment_from_extraction(e: &extract::Extraction) -> Fragment {
                     }
                     m
                 },
+                non_public_methods: d.non_public_methods.clone(),
                 end_line: d.end_line,
             })
             .collect(),
@@ -1438,6 +1457,7 @@ pub fn markup_fragment(root: &Path, rel: &str) -> Option<Fragment> {
                 property_types: OrderedMap::new(),
                 field_types: OrderedMap::new(),
                 method_return_args: OrderedMap::new(),
+                non_public_methods: Vec::new(),
                 end_line: d.line,
             })
             .collect(),
@@ -1774,6 +1794,7 @@ mod tests {
             property_types: OrderedMap::new(),
             field_types: OrderedMap::new(),
             method_return_args: OrderedMap::new(),
+            non_public_methods: Vec::new(),
             test_methods: Vec::new(),
             end_line: 0,
         }
@@ -2743,6 +2764,7 @@ mod tests {
                 property_types: OrderedMap::new(),
                 field_types: OrderedMap::new(),
                 method_return_args: OrderedMap::new(),
+                non_public_methods: vec![],
                 end_line: 1,
             }],
             usings: vec![],
@@ -2819,6 +2841,7 @@ mod tests {
                 property_types: OrderedMap::new(),
                 field_types: OrderedMap::new(),
                 method_return_args: OrderedMap::new(),
+                non_public_methods: vec![],
                 end_line: 1,
             }],
             usings: vec![],

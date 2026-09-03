@@ -346,6 +346,22 @@ pub struct DefRecord {
     /// Appended LAST of all, after `field_types`; a method whose return
     /// type carries no type-argument list at all contributes no entry.
     pub method_return_args: Vec<(String, Vec<String>)>,
+    /// Declared METHOD names this type does NOT record in `methods`,
+    /// because `is_recorded_method` gates that list on a literal `public`
+    /// modifier (or `kind == "interface"`, where every method already
+    /// counts as public and this list is always empty). Same predicate,
+    /// same `method_declaration` node kind, same source order and dedup as
+    /// `methods` -- the two lists partition a type's method declarations
+    /// with no overlap and no gap. Unlike `properties`/`fields`, which
+    /// already carry every accessibility with no filter at all, `methods`
+    /// needed a counterpart list for a non-public method (protected,
+    /// internal, private or no-modifier/private-by-default) to be
+    /// recorded anywhere. Consulted by the resolver ONLY for
+    /// hierarchy-internal receivers -- a `base.` lookup and the `this.`
+    /// shape's own typed-receiver walk -- never by the scored tier's
+    /// vouching or veto, which keep reading `methods` alone. Appended
+    /// LAST of all, after `method_return_args`.
+    pub non_public_methods: Vec<String>,
     /// 1-based last line of the complete declaration node.
     pub end_line: usize,
 }
@@ -1133,6 +1149,23 @@ fn is_recorded_method(node: Node, src: &[u8], kind: &str) -> bool {
     node.kind() == "method_declaration" && (kind == "interface" || is_public(node, src))
 }
 
+// `non_public_methods`: the exact complement of `is_recorded_method` among
+// method_declaration nodes -- every method NOT recorded in `methods`. An
+// interface's methods are ALL recorded as public by `is_recorded_method`
+// (the `kind == "interface"` short-circuit), so this list is always empty
+// for an interface, by construction rather than by a second check here.
+fn raw_non_public_method_names(node: Node, src: &[u8], kind: &str) -> Vec<String> {
+    let Some(body) = node.child_by_field_name("body") else {
+        return Vec::new();
+    };
+    named_children(body)
+        .into_iter()
+        .filter(|c| c.kind() == "method_declaration" && !is_recorded_method(*c, src, kind))
+        .map(|c| declared_name(c, src))
+        .filter(|n| !n.is_empty())
+        .collect()
+}
+
 // Declared property names, source order, deduped. Indexers are
 // a different grammar node (indexer_declaration) so they are excluded by
 // construction; expression-bodied properties are property_declaration like
@@ -1782,8 +1815,9 @@ fn record_type_def(
     // appended LAST in declaration order -- properties, fields, methodReturns
     // -- then extensionMethods and (for the inheritance veto) bases, then
     // type_params and base_generic_args, then testMethods, then propertyTypes,
-    // fieldTypes and methodReturnArgs. Each is omitted when empty, so a type
-    // with none of them serializes exactly as it did before those additions.
+    // fieldTypes and methodReturnArgs, then nonPublicMethods. Each is omitted
+    // when empty, so a type with none of them serializes exactly as it did
+    // before those additions.
     defs.push(DefRecord {
         id,
         name,
@@ -1802,6 +1836,7 @@ fn record_type_def(
         property_types: raw_property_types(node, src, type_params),
         field_types: raw_field_types(node, src, type_params),
         method_return_args: raw_method_return_args(node, src, kind, type_params),
+        non_public_methods: raw_non_public_method_names(node, src, kind),
         end_line: node.end_position().row + 1,
     });
 }
@@ -1851,6 +1886,7 @@ fn record_enum_members(
             property_types: Vec::new(),
             field_types: Vec::new(),
             method_return_args: Vec::new(),
+            non_public_methods: Vec::new(),
             end_line: member.end_position().row + 1,
         });
     }
@@ -8228,6 +8264,56 @@ public class Widget
                 ("_fallback", "Settings", None),
                 ("_slots", "Box", Some(&vec!["Gadget".to_string()])),
             ]
+        );
+    }
+
+    #[test]
+    fn stage4_non_public_members_are_recorded_in_their_own_lists() {
+        let e = extract_src(
+            r#"
+namespace App.Visibility;
+
+public interface IWidget
+{
+    void Contract();
+}
+
+public class Widget : IWidget
+{
+    public void PublicMethod() { }
+    protected void ProtectedMethod() { }
+    internal void InternalMethod() { }
+    private void PrivateMethod() { }
+    void DefaultMethod() { }
+    public void Contract() { }
+}
+"#,
+        );
+        let d = find_def(&e, "App.Visibility.Widget").expect("Widget def present");
+        assert_eq!(
+            d.methods,
+            vec!["PublicMethod", "Contract"],
+            "the public list is unchanged by this unit"
+        );
+        assert_eq!(
+            d.non_public_methods,
+            vec![
+                "ProtectedMethod",
+                "InternalMethod",
+                "PrivateMethod",
+                "DefaultMethod",
+            ],
+            "the exact complement, same source order, same method_declaration nodes -- every \
+             method declaration lands in exactly one of the two lists"
+        );
+
+        let iface = find_def(&e, "App.Visibility.IWidget").expect("IWidget def present");
+        assert_eq!(iface.methods, vec!["Contract"]);
+        assert!(
+            iface.non_public_methods.is_empty(),
+            "every interface method already counts as public -- is_recorded_method's own \
+             kind == \"interface\" short-circuit -- so this list is always empty for an interface, \
+             by construction rather than by a second check"
         );
     }
 
