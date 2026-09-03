@@ -29,6 +29,34 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   methods, suffixed `(test project)` in text and carrying `"via":"project"` (appended last) in
   JSON, so a harness reference stays distinguishable from a discovered test; `impact`'s
   `testsAffected` counts both.
+- **`this.` and `base.` member accesses resolve to the enclosing type and its bases.**
+  `this.Name` types the reference as the enclosing type, including its own type arguments
+  when the type is generic, and emits no reference outside any type; `base.Name` starts the
+  member lookup at the enclosing type's in-graph bases, in declaration order, walking each
+  base's own inheritance chain, and never considers the enclosing type itself — no in-graph
+  base declaring the member resolves as an ordinary external receiver, not a guess.
+- **`?.` bindings emit the same reference a plain member access would.** `a?.B` resolves
+  exactly as `a.B` does, at the conditional-access expression's own line.
+- **Local type facts see through `await`, casts, patterns, and typed `out` parameters.**
+  `var x = await Repo.LoadAsync();`, `var x = (T)e;`, an `is`/switch pattern designation, and
+  `out T x` all record a type fact for the introduced name; `out var x` still records none.
+- **A local assigned from an awaited call resolves through one `Task<T>`/`ValueTask<T>`
+  unwrap.** `var o = await Repo.LoadAsync();` types `o` from the unwrapped return type
+  rather than the raw `Task<...>`, and a `Task<Task<T>>` return is unwrapped only once.
+- **One-hop call-chain tails are typed.** A member access on the result of `a.B()` carries
+  the inner call as its receiver and resolves through one method-return hop; a qualifier
+  that is itself a chain (`.D` on `a.B().C()`) emits no reference.
+- **A collection receiver types its first lambda argument's sole parameter.** A
+  single-parameter lambda passed as the first argument to a call on an array- or
+  single-type-argument-generic-typed identifier gets that parameter typed as the element
+  type; two-argument generics, multi-parameter lambdas, and later arguments get none.
+- **Field types cross files.** A bare-identifier receiver with no in-file type fact is typed
+  from the enclosing type's own field and property declarations, merged across every file a
+  partial type spans, then from the same tables on each in-graph base in declaration order;
+  an in-file local or parameter of the same name always wins over this fallback.
+- **Method arities are recorded per overload.** Each declared method records the
+  parameter-count range every overload accepts, an unbounded `params` overload left
+  open-ended and optional parameters lowering the minimum.
 
 ### Changed
 
@@ -44,6 +72,15 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   cannot reach are removed before the precise tiers judge the result: one survivor resolves
   precisely, none behaves like an external name, two or more stay ambiguous with the shorter
   list. Without a model nothing changes.
+- **Fragment cache moves to v16.** The next `map` after upgrading reparses every file once;
+  the superseded v15 cache files are removed.
+- **Typed-receiver and extension lookups walk the receiver's base closure, class bases
+  before any interface, in declaration order.** A class-typed receiver never binds to an
+  interface declaration at any depth; the extension tier tries every in-graph base, and its
+  raw base names, as a lookup key when the receiver's own type misses.
+- **Non-public base members are visible to `this.` and `base.` lookups only.** The scored
+  tier keeps vouching only through publicly declared members, so a guess never resolves
+  through a private one.
 
 ### Fixed
 
@@ -56,6 +93,20 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **A scored guess never crosses into a project the reference site cannot reach, or into a
   test project from non-test code.** When a project model exists, both are now structural
   refusals rather than name-only guesses.
+- **A `base.` call no longer binds to an interface base.** The base walk skips interface
+  bases entirely — an interface declares a contract, not a target.
+- **A call whose argument count no overload admits no longer binds to the same-named
+  instance member.** It falls through to the extension tier instead, exactly as it would
+  for a member the receiver does not declare at all.
+- **A call-chain tail whose method-return hop fails no longer enters the guess pool.** When
+  the hop yields no in-graph receiver type, the reference is finished as external instead
+  of falling into the extension tier with an unknown receiver or the scored tier's
+  name-uniqueness pool.
+- **Extension-method generic unification checks the matched base's own type arguments.**
+  When the extension tier reaches its lookup key through the receiver's base closure,
+  unification runs against that base's declared type arguments rather than the receiver's
+  own, so an extension declared on an implemented interface binds for a generic enclosing
+  type.
 
 ### Benchmarks
 
@@ -65,6 +116,18 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   edges per tier for precision, recall, external-receiver leaks and cross-project impossibility,
   with `--assert` thresholds for CI. `fixtures/csharp-semantic` pins the defect shapes; baseline
   figures on the pinned MassTransit corpus are in `docs/benchmarks/results/2026-09-resolver-precision.md`.
+- **Recall and precision on the pinned MassTransit corpus, Run 1 through Run 4.** `this.`
+  receivers climb from 0.000 to 0.944 recall and `base.` receivers from 0.000 to 0.978;
+  overall recall rises 0.479 → 0.546 (precise-only 0.379 → 0.431, precise+ext
+  0.394 → 0.467). Extension-tier precision rises 0.809 → 0.906 on more than double the
+  edges (1083 → 2272); precise precision holds near-flat at 0.969 → 0.972 and guess
+  precision at 0.502 → 0.512; leaked external sites fall 1098 → 1011. Full per-tier
+  figures are in `docs/benchmarks/results/2026-09-resolver-precision.md`.
+- **A stale fragment cache silently read this branch's additive tables as empty.** A corpus
+  run measured against a fragment cache built by an earlier commit on this branch dropped
+  every table it had not yet cached — base closures, arities, field types, and the rest —
+  understating both recall and precision; every corpus run now wipes the indexer state
+  before mapping.
 
 ## [0.3.0] - 2026-08-27
 

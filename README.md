@@ -125,7 +125,7 @@ untracked files and are shared correctly by worktrees:
 <git-common-dir>/scout/manifest.json              file -> purpose + symbol index
 <git-common-dir>/scout/index-state.json           HEAD + timestamp the index was built at
 <git-common-dir>/scout/graph/graph.json           definitions, edges, and project units
-<git-common-dir>/scout/graph/fragments-v15.json   per-file extraction cache (incremental map)
+<git-common-dir>/scout/graph/fragments-v16.json   per-file extraction cache (incremental map)
 <git-common-dir>/scout/graph/project-units.json   csproj staleness sidecar (present only with a project model)
 ```
 
@@ -200,7 +200,13 @@ Known, rather than hidden:
   guess must be nominally assignable to it). Neither tier's edges become the premise of a
   further `impact` hop; `--no-guess` drops the `guess` tier from `refs`/`read`/`impact`/`tests`
   while keeping `ext`; compact output marks the two `x`/`h`. Precise edges carry neither
-  `heuristic` nor `tier`.
+  `heuristic` nor `tier`. Receiver typing covers `this.` and `base.` qualifiers, `?.`
+  bindings, a local's `await`ed initializer, cast- and pattern-designated locals, typed
+  `out` parameters, and a one-hop call-chain tail. A bare unqualified call, a chain more
+  than one hop deep, a lambda parameter other than a call's first single-parameter one, a
+  receiver typed only by inference the syntax itself does not show, and a `using static`
+  import stay unrecorded, so those shapes resolve through the untyped name-only tiers or
+  not at all.
 - **The project model reads only `.csproj` and `Directory.Build.props`.** It hand-scans
   `ProjectReference`, `Microsoft.NET.Test.Sdk`, and `IsTestProject` — no MSBuild evaluation, no
   conditions, no NuGet resolution, and no `.sln`. A file belongs to the nearest ancestor
