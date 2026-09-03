@@ -569,3 +569,126 @@ compiler-backed enrichment layer is closed as not worth its dependency. Below th
 misses are bucketed by receiver kind and target kind, and an enrichment layer is designed against
 the record contract the oracle already emits (`receiverText`, `receiver`, `target`), cached and
 never on the hook path.
+
+## Run 2 — after the receiver-shape wave
+
+Same corpus pin and oracle output as Run 1 (denominators identical). Devscout is at the branch
+head that adds `this`/`base`/`?.` receivers, `await` look-through, cast, pattern and typed `out`
+facts, base-qualified member binding and awaited task unwrapping. Fragment cache v16 (full
+reparse); graph rebuilt in 1.51s, 9956 defs, 126663 edges; `devscout map` wall time 3.6s.
+
+### Audit text output (verbatim; `root` rewritten bench-relative, nothing else changed)
+
+```
+devscout audit --semantic  root bench/corpora/csharp  oracle 112190 records / 66924 sites  units ok 56 failed 0  method units
+tier        edges     tp     fp   precision   fp:no-site  fp:external  fp:wrong  structural
+precise     23117  22394    723       0.969           55           55       613          12
+ext          1083    876    207       0.809            0           15       192           0
+guess        9375   4771   4604       0.509           48         2183      2373           0
+recall (56713 in-graph member sites)  precise 0.386  precise+ext 0.401  all 0.485
+  by receiver  ident 0.565  qualified 0.216  this 0.066  base 0.248  call 0.004
+external sites 19153  silent-correct 18060  leaked 1093
+fan-out  1: 21260  2: 3611  3: 1210  4+: 340
+top fp targets   InMemoryDelayProvider 295  Retry 211  CodePrinter 179  RoutingSlipExtensions 161  BusRegistrationContext 158  IBusRegistrationContext 157  IPerformanceCounter 148  NullPerformanceCounter 148  StatsDPerformanceCounter 148  InMemoryContainerTestFixture 135  ClosureInfo 103  Instance 102  ContainerTestHarness 78  Message 78  ToCSharpPrinter 71  TextTableOptions 65  ConsumerPipeConfiguratorExtensions 55  SagaPipeConfiguratorExtensions 55  Tools 54  IIndexedSagaProperty 50
+top missed       MassTransit.ConsumeContext 1702  MassTransit.SendContext 932  MassTransit.MessageContext 823  MassTransit.ISendEndpoint 731  MassTransit.BehaviorContext 684  MassTransit.Testing.IBaseTestHarness 634  MassTransit.Testing.ITestHarness 600  MassTransit.PipeContext 538  MassTransit.IPublishEndpoint 495  MassTransit.SagaConsumeContext 482  MassTransit.TransitionExtensions 449  MassTransit.IRegistrationConfigurator 423  MassTransit.IStateMachineModifier 340  MassTransit.ThenExtensions 315  MassTransit.DependencyInjectionTestingExtensions 297  MassTransit.Testing.BusTestHarness 284  MassTransit.Testing.IReceivedMessageList 278  MassTransit.IReceiveConfigurator 277  MassTransit.Testing.IPublishedMessageList 272  MassTransit.TestStateMachineExtensions 269
+unknown targets  enum-member 30  class 16  struct 5  delegate 1  interface 1
+partial file mismatch 65
+ambiguous 137
+edges outside universe (not judged) 683
+```
+
+### `--json` tier objects (verbatim)
+
+```json
+{
+  "precise": {
+    "edges": 23117,
+    "tp": 22394,
+    "fp": 723,
+    "precision": 0.969,
+    "fp_no_site": 55,
+    "fp_external_site": 55,
+    "fp_wrong_target": 613,
+    "structural": 12
+  },
+  "ext": {
+    "edges": 1083,
+    "tp": 876,
+    "fp": 207,
+    "precision": 0.809,
+    "fp_no_site": 0,
+    "fp_external_site": 15,
+    "fp_wrong_target": 192,
+    "structural": 0
+  },
+  "guess": {
+    "edges": 9375,
+    "tp": 4771,
+    "fp": 4604,
+    "precision": 0.509,
+    "fp_no_site": 48,
+    "fp_external_site": 2183,
+    "fp_wrong_target": 2373,
+    "structural": 0
+  }
+}
+```
+
+### Recall by receiver kind
+
+Denominator 56713 in-graph member sites (same as Run 1 — oracle unchanged).
+
+| Receiver kind | Run 1 | Run 2 |
+| --- | --- | --- |
+| `ident` | 0.560 | 0.565 |
+| `qualified` | 0.217 | 0.216 |
+| `this` | 0.000 | 0.066 |
+| `base` | 0.000 | 0.248 |
+| `call` | 0.004 | 0.004 |
+| **all** | **0.479** (precise 0.379, precise+ext 0.394) | **0.485** (precise 0.386, precise+ext 0.401) |
+
+`conditional` (`?.`): 709 records. `bare` (unqualified invocation): 7512 records. Both still
+excluded from the headline recall figure.
+
+### Predictions vs. actual
+
+| Prediction | Actual | Verdict |
+| --- | --- | --- |
+| recall `this` ≥ 0.60 | 0.066 | **FAIL** |
+| recall `base` ≥ 0.50 | 0.248 | **FAIL** |
+| recall `call` unchanged | 0.004 | **HOLD** |
+| recall `ident` unchanged | 0.565 | **HOLD** |
+| recall all ≥ 0.52 | 0.485 | **FAIL** |
+| recall precise+ext ≥ 0.42 | 0.401 | **FAIL** |
+| precise precision ≥ 0.964 | 0.969 | **HOLD** |
+| guess precision ≥ 0.48 | 0.509 | **HOLD** |
+| leaked external sites ≤ 1098 | 1093 | **HOLD** |
+
+The falsification clause fired, so every missed `this` and `base` site was bucketed before the next
+wave. Two facts came out. First, the two buckets together are 528 sites, 0.93% of the 56713-site
+denominator, so the registered thresholds could never have moved the aggregate by more than 0.008;
+they were a poor proxy for the wave, which is recorded here as a methodology defect rather than
+explained away. Second, the misses are not receiver-shape misses. All 199 missed `this` sites call
+an extension method whose `this` parameter is an interface or base type the enclosing type
+implements; the extension tier keys its index on the exact receiver name and never walks the
+receiver's base closure. 230 of the 237 missed `base` sites name a non-public member of the base,
+which the fragment's member lists do not record because they hold public members only; the eight
+`base.` edges that bind to the wrong target bind to an interface base. Both classes are language
+rules, not heuristics, and are fixed in the next wave under the predictions below.
+
+## Run 2b — registered predictions (2026-09-03)
+
+| metric | Run 2 | Run 2b predicted |
+| --- | --- | --- |
+| recall `this` | 0.066 | ≥ 0.80 |
+| recall `base` | 0.248 | ≥ 0.85 |
+| recall precise+ext | 0.401 | ≥ 0.41 |
+| recall all | 0.485 | ≥ 0.49 |
+| precise precision | 0.969 | ≥ 0.964 |
+| ext precision | 0.809 | ≥ 0.80 |
+| guess precision | 0.509 | ≥ 0.48 |
+| leaked external sites | 1093 | ≤ 1098 |
+
+Falsification. Ext-tier precision below 0.80 means walking the receiver's base closure binds
+extension methods the language would not; the walk is reverted. Any guess-tier edge vouched by a
+non-public member is a defect in the visibility split and reverts the split.
