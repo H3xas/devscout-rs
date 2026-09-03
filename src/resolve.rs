@@ -950,8 +950,53 @@ enum Via {
 
 enum Resolution {
     Resolved(usize, Via),
-    Ambiguous(Vec<usize>),
+    /// Several same-named defs the ladder refused to choose between, plus the
+    /// step that pooled them -- only steps 2 and 4 can produce this, so the
+    /// `Via` is always `Usings` or `Global`. It rides along so
+    /// `narrow_by_reachability` can hand back a `Resolved` carrying the step
+    /// that actually answered instead of inventing one: the uses-member
+    /// emission tier reads that step (`via == Via::Qualified`) as one of its
+    /// type-certainty signals, and a narrowed resolution must be judged by the
+    /// same rule as any other.
+    Ambiguous(Vec<usize>, Via),
     External,
+}
+
+/// The project model's answer to an ambiguity the ladder could not settle:
+/// C# cannot name a type in an assembly this one does not reference, so such
+/// a candidate was never really a candidate. Applied at the ladder's THREE
+/// `Ambiguous` consumers rather than inside `resolve_ref`, because the ladder
+/// is a pure name-resolution function that knows nothing about projects and
+/// because two of its callers -- the base-closure probes and the ctor-DI
+/// resolver -- must keep seeing the unnarrowed answer.
+///
+/// Every other resolution passes through untouched, and so does every
+/// candidate when there is no model (`Admission::admits` then says yes to
+/// everything), which is what keeps a csproj-less repo's graph byte-identical.
+///
+/// One survivor is a FACT, not a guess: the ambiguity was only ever the
+/// ladder's refusal to choose, and the reference rule chose for it. Zero
+/// survivors is an ordinary `External` -- the same answer the ladder gives for
+/// a name it never found, which is exactly what a name whose every candidate
+/// is out of reach IS. Two or more stay ambiguous on the FILTERED list, so the
+/// reported candidates and `candidate_count` shrink together.
+fn narrow_by_reachability(
+    res: Resolution,
+    site_unit: Option<usize>,
+    admission: &Admission,
+) -> Resolution {
+    let Resolution::Ambiguous(candidates, via) = res else {
+        return res;
+    };
+    let reachable: Vec<usize> = candidates
+        .into_iter()
+        .filter(|&c| admission.admits(site_unit, c))
+        .collect();
+    match reachable.as_slice() {
+        [] => Resolution::External,
+        [idx] => Resolution::Resolved(*idx, via),
+        _ => Resolution::Ambiguous(reachable, via),
+    }
 }
 
 fn type_candidate(index: &DefIndex, name: &str, arity: Option<usize>) -> Option<usize> {
@@ -1062,7 +1107,7 @@ fn resolve_ref(
         return Resolution::Resolved(using_matches[0], Via::Usings);
     }
     if using_matches.len() >= 2 {
-        return Resolution::Ambiguous(using_matches);
+        return Resolution::Ambiguous(using_matches, Via::Usings);
     }
 
     // Step 3: the reference site's namespace AND every ancestor of it,
@@ -1103,7 +1148,7 @@ fn resolve_ref(
         .collect();
     match matches.as_slice() {
         [idx] => Resolution::Resolved(*idx, Via::Global),
-        [_, _, ..] => Resolution::Ambiguous(matches),
+        [_, _, ..] => Resolution::Ambiguous(matches, Via::Global),
         _ => Resolution::External,
     }
 }
@@ -1202,7 +1247,9 @@ fn resolve_ctor_param(
     implementors_by_base_name: &HashMap<String, Vec<usize>>,
 ) -> CtorDiResolution {
     match resolve_ref(ref_, usings, ns, index, aliases, file_contexts) {
-        Resolution::Ambiguous(candidate_indices) => CtorDiResolution::Ambiguous(candidate_indices),
+        Resolution::Ambiguous(candidate_indices, _) => {
+            CtorDiResolution::Ambiguous(candidate_indices)
+        }
         Resolution::External => {
             if usings.iter().any(|u| is_infra_namespace(u)) {
                 CtorDiResolution::Infra
@@ -1497,7 +1544,11 @@ pub fn resolve_graph_with_model(
                 // nothing-at-all) to decide which candidate pool it may draw
                 // from, and re-walking the ladder there would be a second
                 // resolution of the same name in the same file context.
-                let result = resolve_ref(r, usings, ns, &index, aliases, &file_contexts);
+                let result = narrow_by_reachability(
+                    resolve_ref(r, usings, ns, &index, aliases, &file_contexts),
+                    site_unit,
+                    &admission,
+                );
                 let mut emitted = false;
                 if let Resolution::Resolved(idx, via) = &result {
                     let (idx, via) = (*idx, *via);
@@ -1598,7 +1649,11 @@ pub fn resolve_graph_with_model(
                 if !emitted {
                     if let Some(receiver_type) = &receiver_type_name {
                         let probe = name_probe(receiver_type.clone(), ns, r.outer_types.clone());
-                        let rr = resolve_ref(&probe, usings, ns, &index, aliases, &file_contexts);
+                        let rr = narrow_by_reachability(
+                            resolve_ref(&probe, usings, ns, &index, aliases, &file_contexts),
+                            site_unit,
+                            &admission,
+                        );
                         if let Resolution::Resolved(ridx, _) = &rr {
                             let ridx = *ridx;
                             receiver_def = Some(ridx);
@@ -1899,7 +1954,7 @@ pub fn resolve_graph_with_model(
                     // from.
                     let shape = member_shape(r);
                     let pool: Option<Vec<usize>> = match source {
-                        Resolution::Ambiguous(candidates) => Some(
+                        Resolution::Ambiguous(candidates, _) => Some(
                             candidates
                                 .iter()
                                 .copied()
@@ -2058,7 +2113,11 @@ pub fn resolve_graph_with_model(
                 continue;
             }
 
-            match resolve_ref(r, usings, ns, &index, aliases, &file_contexts) {
+            match narrow_by_reachability(
+                resolve_ref(r, usings, ns, &index, aliases, &file_contexts),
+                site_unit,
+                &admission,
+            ) {
                 Resolution::Resolved(idx, _) => {
                     edges.push(type_edge(&r.kind, file, r.line, &index.defs[idx]));
                     match r.kind.as_str() {
@@ -2067,7 +2126,7 @@ pub fn resolve_graph_with_model(
                         _ => {}
                     }
                 }
-                Resolution::Ambiguous(candidate_indices) => {
+                Resolution::Ambiguous(candidate_indices, _) => {
                     let candidate_count = candidate_indices.len();
                     edges.push(Edge::Ambiguous {
                         origin: r.kind.clone(),
@@ -6024,6 +6083,333 @@ mod tests {
         assert_eq!(
             g.stats.heuristic_edge_count, 0,
             "both qualifiers resolved precisely, so no ref ever reached a heuristic tier"
+        );
+    }
+
+    // --- stage 6: narrowing an AMBIGUOUS resolution by reachability -------
+    //
+    // The ladder pools same-named defs and refuses to pick; the project model
+    // can settle some of those refusals with the language's own rule rather
+    // than a guess -- a type in a project this one does not reference cannot
+    // be named here at all, so it was never a candidate. The narrowing runs
+    // OUTSIDE the ladder, at the three places that consume an `Ambiguous`,
+    // which is why it can turn one into a PRECISE edge without any tier
+    // learning about projects.
+
+    // Two same-named `Config` classes in two different projects and one
+    // consumer that names `Config` twice: once as a plain type reference (the
+    // field declaration on line 6) and once as a uses-member qualifier
+    // (`Config.Load()` on line 8). No using is in scope, so both refs are
+    // answered at the ladder's global-simple-name step, where two candidates
+    // is exactly an ambiguity -- so one resolve shows what the model does to
+    // both consumers at once.
+    const CROSS_PROJECT_AMBIGUITY_FIXTURE: &[(&str, &str)] = &[
+        (
+            "src/Alpha/Config.cs",
+            "namespace Fixture.Alpha { public class Config { public void Load() { } } }",
+        ),
+        (
+            "src/Beta/Config.cs",
+            "namespace Fixture.Beta { public class Config { public void Load() { } } }",
+        ),
+        (
+            "src/App/Runner.cs",
+            "\nnamespace Fixture.App;\n\npublic class Runner\n{\n  private Config _config;\n\n  public void Run() => Config.Load();\n}\n",
+        ),
+    ];
+
+    /// Every `ambiguous` edge out of one file as (origin, raw, candidate ids,
+    /// `candidate_count`) -- the capped list AND the uncapped total, since
+    /// narrowing has to shrink both or neither.
+    fn ambiguous_edges_from<'a>(
+        g: &'a Graph,
+        from: &str,
+    ) -> Vec<(&'a str, &'a str, Vec<&'a str>, usize)> {
+        g.edges
+            .iter()
+            .filter_map(|e| match e {
+                Edge::Ambiguous {
+                    origin,
+                    from_file,
+                    raw,
+                    candidates,
+                    candidate_count,
+                    ..
+                } if from_file == from => Some((
+                    origin.as_str(),
+                    raw.as_str(),
+                    candidates.iter().map(|c| c.id.as_str()).collect(),
+                    *candidate_count,
+                )),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn stage6_narrowing_turns_a_two_project_ambiguity_into_a_precise_edge_when_only_one_is_reachable(
+    ) {
+        let files = fragments_for(CROSS_PROJECT_AMBIGUITY_FIXTURE);
+        let root = no_git_root();
+
+        let bare = resolve_graph(&root, &files);
+        assert_eq!(
+            ambiguous_edges_from(&bare, "src/App/Runner.cs"),
+            vec![(
+                "uses-type",
+                "Config",
+                vec!["Fixture.Alpha.Config", "Fixture.Beta.Config"],
+                2
+            )],
+            "without a model the two Configs are indistinguishable and the type ref stays an ambiguity"
+        );
+        assert_eq!(
+            heuristic_member_edges_from(&bare, "src/App/Runner.cs"),
+            vec![("Fixture.Alpha.Config", 8), ("Fixture.Beta.Config", 8)],
+            "and the qualifier's ambiguity is what feeds the scored tier's strong pool"
+        );
+
+        let model = model_of(vec![
+            unit("src/Alpha/Alpha.csproj", &[], false),
+            unit("src/App/App.csproj", &["src/Alpha/Alpha.csproj"], false),
+            unit("src/Beta/Beta.csproj", &[], false),
+        ]);
+        let g = resolve_graph_with_model(&root, &files, &[], Some(&model));
+
+        assert_eq!(
+            type_edge_targets_from(&g, "src/App/Runner.cs"),
+            vec!["Fixture.Alpha.Config"],
+            "App cannot reference Beta, so `Config` in this file has exactly one meaning and the type ref is a FACT"
+        );
+        assert_eq!(
+            member_edges_from(&g, "src/App/Runner.cs"),
+            vec![("Fixture.Alpha.Config", 8)],
+            "the same narrowing at the uses-member qualifier promotes the call out of the scored tier entirely"
+        );
+        assert!(
+            ambiguous_edges_from(&g, "src/App/Runner.cs").is_empty()
+                && g.stats.ambiguous_count == 0,
+            "a settled ambiguity is not an ambiguity: the edge and the count both go"
+        );
+        assert_eq!(
+            g.stats.heuristic_edge_count, 0,
+            "nothing is guessed when the language's own reference rule already answers"
+        );
+        assert_eq!(
+            g.stats.unresolved_external_count, 0,
+            "narrowed to ONE, not to zero -- the external counter must not move"
+        );
+    }
+
+    #[test]
+    fn stage6_narrowing_settles_the_receiver_probe_so_a_field_hop_lands_on_a_precise_edge() {
+        // The third consumer: tier (e) resolves the RECEIVER's recorded type
+        // through the same ladder, and an ambiguous answer there stops the hop
+        // dead -- the tier emits only on exactly one def. Narrowing the probe
+        // is what turns `_config.Load()` from two scored guesses into the one
+        // edge the compiler would bind.
+        let files = fragments_for(&[
+            (
+                "src/Alpha/Config.cs",
+                "namespace Fixture.Alpha { public class Config { public void Load() { } } }",
+            ),
+            (
+                "src/Beta/Config.cs",
+                "namespace Fixture.Beta { public class Config { public void Load() { } } }",
+            ),
+            (
+                "src/App/Runner.cs",
+                "\nnamespace Fixture.App;\n\npublic class Runner\n{\n  private Config _config;\n\n  public void Run() => _config.Load();\n}\n",
+            ),
+        ]);
+        let root = no_git_root();
+
+        assert_eq!(
+            heuristic_member_edges_from(&resolve_graph(&root, &files), "src/App/Runner.cs"),
+            vec![("Fixture.Alpha.Config", 8), ("Fixture.Beta.Config", 8)],
+            "without a model the receiver type is ambiguous, tier (e) declines and the scored tier names both"
+        );
+
+        let model = model_of(vec![
+            unit("src/Alpha/Alpha.csproj", &[], false),
+            unit("src/App/App.csproj", &["src/Alpha/Alpha.csproj"], false),
+            unit("src/Beta/Beta.csproj", &[], false),
+        ]);
+        let g = resolve_graph_with_model(&root, &files, &[], Some(&model));
+        assert_eq!(
+            member_edges_from(&g, "src/App/Runner.cs"),
+            vec![("Fixture.Alpha.Config", 8)],
+            "one reachable receiver type is one receiver type, and the field hop is precise again"
+        );
+        assert_eq!(
+            g.stats.heuristic_edge_count, 0,
+            "the guesses are replaced, not joined"
+        );
+    }
+
+    #[test]
+    fn stage6_narrowing_keeps_an_ambiguity_between_two_reachable_projects() {
+        // The gate is subtractive and nothing more: when the site can
+        // reference both projects the model has nothing to say, and the
+        // resolver must go on refusing to pick rather than inventing a
+        // tie-break.
+        let files = fragments_for(CROSS_PROJECT_AMBIGUITY_FIXTURE);
+        let root = no_git_root();
+        let model = model_of(vec![
+            unit("src/Alpha/Alpha.csproj", &[], false),
+            unit(
+                "src/App/App.csproj",
+                &["src/Alpha/Alpha.csproj", "src/Beta/Beta.csproj"],
+                false,
+            ),
+            unit("src/Beta/Beta.csproj", &[], false),
+        ]);
+        let g = resolve_graph_with_model(&root, &files, &[], Some(&model));
+
+        assert_eq!(
+            ambiguous_edges_from(&g, "src/App/Runner.cs"),
+            ambiguous_edges_from(&resolve_graph(&root, &files), "src/App/Runner.cs"),
+            "both candidates survive the filter, so the edge is the one the model-less resolve emits"
+        );
+        assert_eq!(g.stats.ambiguous_count, 1);
+        assert_eq!(
+            heuristic_member_edges_from(&g, "src/App/Runner.cs"),
+            vec![("Fixture.Alpha.Config", 8), ("Fixture.Beta.Config", 8)],
+            "and the qualifier still reaches the scored tier with both candidates in its pool"
+        );
+    }
+
+    #[test]
+    fn stage6_narrowing_never_touches_ctor_di_implementor_choice() {
+        // The ctor-DI resolver picks an IMPLEMENTATION of an interface the
+        // site names -- a different question from "which same-named type did
+        // this reference mean", and one the model is not entitled to answer:
+        // an unreachable implementor is still evidence that the interface has
+        // more than one, and silently promoting the reachable one would turn a
+        // reported ambiguity into a confident wrong answer whenever the
+        // path-based ownership guess is off.
+        let files = fragments_for(&[
+            (
+                "src/Contracts/IRepo.cs",
+                "namespace Fixture.Contracts { public interface IRepo { void Save(); } }",
+            ),
+            (
+                "src/Files/FileRepo.cs",
+                "using Fixture.Contracts;\n\nnamespace Fixture.Files { public class FileRepo : IRepo { public void Save() { } } }",
+            ),
+            (
+                "src/Sql/SqlRepo.cs",
+                "using Fixture.Contracts;\n\nnamespace Fixture.Sql { public class SqlRepo : IRepo { public void Save() { } } }",
+            ),
+            (
+                "src/App/Service.cs",
+                "using Fixture.Contracts;\n\nnamespace Fixture.App;\n\npublic class Service\n{\n  public Service(IRepo repo) { }\n}\n",
+            ),
+        ]);
+        let root = no_git_root();
+        // App can reach Sql and not Files -- exactly the shape that settles a
+        // ladder ambiguity, applied to a question the ladder never asked.
+        let model = model_of(vec![
+            unit(
+                "src/App/App.csproj",
+                &["src/Contracts/Contracts.csproj", "src/Sql/Sql.csproj"],
+                false,
+            ),
+            unit("src/Contracts/Contracts.csproj", &[], false),
+            unit(
+                "src/Files/Files.csproj",
+                &["src/Contracts/Contracts.csproj"],
+                false,
+            ),
+            unit(
+                "src/Sql/Sql.csproj",
+                &["src/Contracts/Contracts.csproj"],
+                false,
+            ),
+        ]);
+
+        let ctor_di = |g: &Graph| -> (String, Vec<String>) {
+            match find_edge(g, |e| matches!(e, Edge::CtorDi { .. })).expect("ctor-di edge present")
+            {
+                Edge::CtorDi {
+                    resolution,
+                    candidates,
+                    ..
+                } => (
+                    resolution.clone(),
+                    candidates.iter().map(|c| c.id.clone()).collect(),
+                ),
+                _ => unreachable!(),
+            }
+        };
+        assert_eq!(
+            ctor_di(&resolve_graph_with_model(&root, &files, &[], Some(&model))),
+            ctor_di(&resolve_graph(&root, &files)),
+            "two implementors is two implementors, model or no model"
+        );
+        assert_eq!(
+            ctor_di(&resolve_graph(&root, &files)),
+            (
+                "ambiguous".to_string(),
+                vec![
+                    "Fixture.Files.FileRepo".to_string(),
+                    "Fixture.Sql.SqlRepo".to_string()
+                ]
+            ),
+            "pinned so the assertion above cannot pass on two identically-broken answers"
+        );
+    }
+
+    #[test]
+    fn stage6_narrowing_to_zero_leaves_the_scored_tier_the_answer_an_external_would_have_got() {
+        // Narrowing can also empty the candidate list, and the result is an
+        // ordinary External -- not a silently-kept ambiguity and not an
+        // invented pick. For the type ref that means the unresolved counter
+        // rather than the ambiguous one; for the qualifier it means the scored
+        // tier switches pools, from "the ladder's own candidates" to
+        // member-name uniqueness, and then admission takes the unreachable
+        // ones back out. `Ledger` is the proof the switch really happened: it
+        // is not a `Config` at all, so it can only ever be reached through the
+        // uniqueness pool.
+        let mut files: Vec<(&str, &str)> = CROSS_PROJECT_AMBIGUITY_FIXTURE.to_vec();
+        files.push((
+            "src/Shared/Ledger.cs",
+            "namespace Fixture.Shared { public class Ledger { public void Load() { } } }",
+        ));
+        let files = fragments_for(&files);
+        let root = no_git_root();
+
+        assert_eq!(
+            heuristic_member_edges_from(&resolve_graph(&root, &files), "src/App/Runner.cs"),
+            vec![("Fixture.Alpha.Config", 8), ("Fixture.Beta.Config", 8)],
+            "without a model the ladder's ambiguous pool wins and Ledger is never in the running"
+        );
+
+        let model = model_of(vec![
+            unit("src/Alpha/Alpha.csproj", &[], false),
+            unit("src/App/App.csproj", &["src/Shared/Shared.csproj"], false),
+            unit("src/Beta/Beta.csproj", &[], false),
+            unit("src/Shared/Shared.csproj", &[], false),
+        ]);
+        let g = resolve_graph_with_model(&root, &files, &[], Some(&model));
+
+        assert!(
+            ambiguous_edges_from(&g, "src/App/Runner.cs").is_empty(),
+            "neither Config is nameable here, so there is nothing left to be ambiguous between"
+        );
+        assert_eq!(
+            (g.stats.ambiguous_count, g.stats.unresolved_external_count),
+            (0, 1),
+            "the type ref moves from the ambiguous count to the external one, which is what an emptied pool MEANS"
+        );
+        assert!(
+            member_edges_from(&g, "src/App/Runner.cs").is_empty(),
+            "no precise edge is invented out of an empty candidate list"
+        );
+        assert_eq!(
+            heuristic_member_edges_from(&g, "src/App/Runner.cs"),
+            vec![("Fixture.Shared.Ledger", 8)],
+            "the scored tier took the External path -- same pool, same filters, same answer it would give if the two Configs had never existed"
         );
     }
 
