@@ -966,26 +966,54 @@ fn typed_receiver_base_member(
 // the interface's bare name, and a raw base string is exactly that name,
 // unresolved or not). First key with an existing bucket wins and the walk
 // stops; which CANDIDATE within that bucket is right is still decided by
-// the caller's own unchanged arity/generic-unification/namespace/admission
-// filters and veto -- this function only ever widens which key is looked
-// up, never which candidates a matched key returns.
+// the caller's own unchanged arity/namespace/admission filters and veto --
+// this function only ever widens which key is looked up, never which
+// candidates a matched key returns.
+//
+// Unit A5 item 2: also returns the MATCHED node's own generic-argument
+// picture, since a key widened onto a base or ancestor names a DIFFERENT
+// type than the receiver -- the receiver's own type arguments (`r.receiver_
+// args`) describe the receiver, not the matched node, and comparing the
+// extension's `this`-parameter arguments against them is only correct on
+// the exact-key path, never here:
+//   - matched via one of `idx`'s own RAW base strings: `idx`'s own
+//     `base_generic_args` entry for that exact base -- the arguments `idx`
+//     declared THAT base with (`*` for a pass-through of `idx`'s own type
+//     parameters), absent entirely when the base carries no type-argument
+//     list at all (`raw_base_generic_args`'s own rule).
+//   - matched via `idx`'s own bare NAME (no base list is involved -- `idx`
+//     IS the matched node): a wildcard per `idx`'s own type parameter,
+//     `None` when `idx` is not generic at all -- so a non-generic matched
+//     node unifies with a non-generic `this` parameter regardless of what
+//     the receiver's own arguments were.
 fn extension_closure_key(
     index: &DefIndex,
     file_contexts: &HashMap<String, FileContext>,
     start: usize,
     member: &str,
-) -> Option<String> {
-    let mut found: Option<String> = None;
+) -> Option<(String, Option<Vec<String>>)> {
+    let mut found: Option<(String, Option<Vec<String>>)> = None;
     inheritance_walk_find(index, file_contexts, start, |idx| {
         let own_key = format!("{member} {}", index.defs[idx].name);
         if index.extension_index.contains_key(&own_key) {
-            found = Some(own_key);
+            let type_params = index.member_lists[idx].type_params.len();
+            let args = if type_params == 0 {
+                None
+            } else {
+                Some(vec!["*".to_string(); type_params])
+            };
+            found = Some((own_key, args));
             return true;
         }
         for base in &index.member_lists[idx].bases {
             let base_key = format!("{member} {base}");
             if index.extension_index.contains_key(&base_key) {
-                found = Some(base_key);
+                let args = index.member_lists[idx]
+                    .base_generic_args
+                    .iter()
+                    .find(|(k, _)| k == base)
+                    .map(|(_, v)| v.clone());
+                found = Some((base_key, args));
                 return true;
             }
         }
@@ -2388,6 +2416,46 @@ pub fn resolve_graph_with_model(
                         receiver_result = Some(rr);
                     }
                 }
+                // Unit A5 item 1: a chain-tail ref (one carrying
+                // `receiver_call_owner`/`receiver_call_member`, `a.B().C`'s
+                // `.C`) resolves ONLY through the method-return hop above.
+                // `receiver_type_name` is `None` here in every way that hop
+                // can come up EMPTY -- the owner did not resolve, the owner
+                // resolved ambiguously, or the callee has no recorded return
+                // at all -- and for a chain-tail ref there is no OTHER fact
+                // to fall back on: `r.name` is the invocation's own source
+                // text (`"a.B()"`), which by construction never resolves as
+                // a real def (`push_member_ref`'s doc comment), so `result`
+                // is unconditionally `External` and unnarrowed. Left alone,
+                // that is exactly the shape the scored tier's UNFILTERED
+                // name-uniqueness fallback exists for -- every def
+                // graph-wide vouching for the OUTER member name, with no
+                // receiver to filter by, since the receiver-narrowing rule
+                // below only ever runs when `receiver_type_name` is `Some`.
+                // Forcing `emitted` the same way `receiver_base` does above
+                // finishes the ref as external right here instead: silent,
+                // never entering tier (f) (already gated on `Some`) and
+                // never falling into that unfiltered pool.
+                //
+                // A hop that DID produce a name -- in-graph OR a name this
+                // extractor cannot look inside (an external return type,
+                // e.g. `ILogger`) -- leaves `receiver_type_name` `Some` and
+                // this guard alone: tier (e) above may already have claimed
+                // it (in-graph case), and otherwise the ref keeps walking
+                // the ordinary typed-receiver path below (tier (f), and the
+                // scored tier's own RECEIVER rule, `receiver_admits_
+                // candidate`, which -- unlike this guard -- filters rather
+                // than silences, and is what an external-but-named receiver
+                // is supposed to get: `stage5_receiver_rule_a_call_hop_
+                // receiver_with_unknown_args_compares_by_name_only` pins
+                // exactly this case green).
+                if !emitted
+                    && r.receiver_call_owner.is_some()
+                    && r.receiver_call_member.is_some()
+                    && receiver_type_name.is_none()
+                {
+                    emitted = true;
+                }
                 // Tier (e2): the qualifier is a two-segment chain
                 // whose head the extractor could type (`_widget.Config.Reload()`
                 // where the file declares `private Widget _widget;`). The head
@@ -2560,15 +2628,27 @@ pub fn resolve_graph_with_model(
                         // already computed). Applies to every typed
                         // receiver, `this.` included -- `receiver_def` is
                         // set identically for both.
-                        let key = if index.extension_index.contains_key(&exact_key) {
-                            exact_key
-                        } else {
-                            receiver_def
-                                .and_then(|ridx| {
+                        //
+                        // Unit A5 item 2: the widened key names a DIFFERENT
+                        // type than the receiver (a base or an ancestor), so
+                        // filter 3 below must not unify against the
+                        // receiver's OWN type arguments once the key was
+                        // widened -- `unify_args` is whichever picture is
+                        // right for the key actually chosen: the receiver's
+                        // own arguments, unchanged, on the exact-key path;
+                        // the matched node's own arguments, from
+                        // `extension_closure_key`, on the widened path.
+                        let (key, unify_args): (String, Option<Vec<String>>) =
+                            if index.extension_index.contains_key(&exact_key) {
+                                (exact_key, r.receiver_args.clone())
+                            } else {
+                                match receiver_def.and_then(|ridx| {
                                     extension_closure_key(&index, &file_contexts, ridx, member)
-                                })
-                                .unwrap_or(exact_key)
-                        };
+                                }) {
+                                    Some((widened_key, args)) => (widened_key, args),
+                                    None => (exact_key, r.receiver_args.clone()),
+                                }
+                            };
                         let candidates: &[ExtCandidate] = index
                             .extension_index
                             .get(&key)
@@ -2579,10 +2659,8 @@ pub fn resolve_graph_with_model(
                             if !arity_accepts(&c.entry, arg_count) {
                                 continue;
                             }
-                            if !generic_args_unify(
-                                c.entry.this_args.as_ref(),
-                                r.receiver_args.as_ref(),
-                            ) {
+                            if !generic_args_unify(c.entry.this_args.as_ref(), unify_args.as_ref())
+                            {
                                 continue;
                             }
                             let def_ns = &index.defs[c.def_idx].namespace;
@@ -9707,5 +9785,195 @@ mod tests {
              name alone, exactly as before"
         );
         assert_eq!(g.stats.heuristic_edge_count, 0);
+    }
+
+    // --- Unit A5: chain-tail hop failures, and closure-key generic
+    // unification against the MATCHED base's own arguments ------------------
+
+    #[test]
+    fn stage7_a_chain_tail_whose_hop_fails_emits_no_guess() {
+        // `Unknown` names no in-graph def at all, so the chain tail's own
+        // method-return hop cannot even resolve an OWNER, let alone a
+        // return type: `receiver_type_name` stays `None`. `Order.Validate`
+        // is the only in-graph def vouching for the member name "Validate"
+        // -- exactly the sole candidate a scored guess drawn from the raw,
+        // receiver-blind name-uniqueness pool would land on, since nothing
+        // can filter that pool by receiver when there IS no receiver type
+        // at all.
+        let files = fragments_for(&[
+            (
+                "Domain/Order.cs",
+                "\nnamespace App.Domain;\n\npublic class Order\n{\n    public void Validate() { }\n}\n",
+            ),
+            (
+                "App/Worker.cs",
+                "\nnamespace App.Workers;\n\npublic class Worker\n{\n    public void Run()\n    {\n        Unknown.Load().Validate();\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        let validate_edges: Vec<(&str, bool)> = g
+            .edges
+            .iter()
+            .filter_map(|e| match e {
+                Edge::UsesMember {
+                    from_file,
+                    to,
+                    member,
+                    heuristic,
+                    ..
+                } if from_file == "App/Worker.cs" && member.as_deref() == Some("Validate") => {
+                    Some((to.as_str(), *heuristic))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            validate_edges,
+            Vec::<(&str, bool)>::new(),
+            "Unknown.Load() never resolves an owner in-graph at all -- the hop yields NO receiver \
+             type, in-graph or otherwise -- so the chain tail `.Validate()` is finished as external \
+             right there: without this guard it would fall into the scored tier's unfiltered \
+             name-uniqueness pool and guess App.Domain.Order, the sole in-graph Validate"
+        );
+        assert_eq!(g.stats.heuristic_edge_count, 0);
+    }
+
+    #[test]
+    fn stage7_a_chain_tail_whose_hop_lands_on_an_external_type_is_silent() {
+        // `Repo.Load()` DOES resolve an in-graph owner and DOES have a
+        // recorded return type -- "ExternalWidget" -- so the hop is not the
+        // empty case the guard above catches: `receiver_type_name` is
+        // `Some("ExternalWidget")`, exactly like a `Q.M()` local's own call
+        // hop, and this ref keeps walking the ordinary typed-receiver path
+        // rather than being force-silenced. "ExternalWidget" is declared
+        // NOWHERE in this fixture, so that path itself comes up empty on
+        // its own: tier (f) finds no "Validate ExternalWidget" extension
+        // bucket, and the scored tier's own receiver rule
+        // (`receiver_admits_candidate`) correctly refuses the one same-named
+        // candidate (App.Domain.Order, which declares Validate) because
+        // Order is nominally assignable to nothing named "ExternalWidget" --
+        // no base, no name match. The observable result is the same silence
+        // Unit A5 item 1 requires, produced by the EXISTING filters rather
+        // than a new one: a chain tail with a real but external target type
+        // is still an answerable receiver, just one this corpus proves
+        // nothing about here.
+        let files = fragments_for(&[
+            (
+                "Domain/Order.cs",
+                "\nnamespace App.Domain;\n\npublic class Order\n{\n    public void Validate() { }\n}\n",
+            ),
+            (
+                "Infra/Repo.cs",
+                "\nnamespace App.Infra;\n\npublic static class Repo\n{\n    public static ExternalWidget Load() => null;\n}\n",
+            ),
+            (
+                "App/Worker.cs",
+                "\nnamespace App.Workers;\n\npublic class Worker\n{\n    public void Run()\n    {\n        Repo.Load().Validate();\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        let validate_edges: Vec<(&str, bool)> = g
+            .edges
+            .iter()
+            .filter_map(|e| match e {
+                Edge::UsesMember {
+                    from_file,
+                    to,
+                    member,
+                    heuristic,
+                    ..
+                } if from_file == "App/Worker.cs" && member.as_deref() == Some("Validate") => {
+                    Some((to.as_str(), *heuristic))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            validate_edges,
+            Vec::<(&str, bool)>::new(),
+            "the hop lands the receiver on \"ExternalWidget\", a real but external type name -- no \
+             extension binds it and App.Domain.Order (the only in-graph Validate) is not \
+             assignable to it, so the ref is silent"
+        );
+        assert_eq!(g.stats.heuristic_edge_count, 0);
+    }
+
+    #[test]
+    fn stage7_extension_on_an_implemented_interface_binds_for_a_generic_enclosing_type() {
+        // BatchOptions<T> is GENERIC (unlike Unit A3's own non-generic
+        // BatchOptions fixture), so `this.Fail()`'s receiver_args is
+        // `Some(["*"])` -- BatchOptions's own type parameter, wildcarded.
+        // ISpecification is written into BatchOptions's base list with NO
+        // type-argument list at all (it is not generic), so
+        // `base_generic_args` records no entry for it at all. Before Unit
+        // A5 item 2, filter 3 compared SpecExtensions's `this_args` (`None`
+        // -- Fail's `this ISpecification` is non-generic) against the
+        // RECEIVER's own `Some(["*"])`, a hard (None, Some) mismatch that
+        // dropped the edge; the fix compares against the matched base's own
+        // arguments (`None`, since ISpecification carries none), which
+        // unify with a non-generic `this` regardless of BatchOptions's own
+        // arity.
+        let files = fragments_for(&[
+            (
+                "Domain/ISpecification.cs",
+                "namespace App.Domain { public interface ISpecification { } }",
+            ),
+            (
+                "Domain/BatchOptions.cs",
+                "\nusing App.Ext;\n\nnamespace App.Domain;\n\npublic class BatchOptions<T> : ISpecification\n{\n    public void Validate() => this.Fail();\n}\n",
+            ),
+            (
+                "Ext/SpecExtensions.cs",
+                "namespace App.Ext { public static class SpecExtensions { public static void Fail(this ISpecification spec) { } } }",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            heuristic_member_edges_from(&g, "Domain/BatchOptions.cs"),
+            vec![("App.Ext.SpecExtensions", 8)],
+            "this.Fail() binds through BatchOptions's OWN raw base string \"ISpecification\", with \
+             the non-generic base's OWN (absent) arguments unifying against Fail's non-generic \
+             this-parameter -- BatchOptions's own generic arity never enters the comparison"
+        );
+        assert_eq!(g.stats.heuristic_by_tier.ext, 1);
+    }
+
+    #[test]
+    fn stage7_extension_unification_uses_the_matched_base_arguments() {
+        // Repository<TKey, TValue> implements IRepository<TValue> -- ONE of
+        // its own two type parameters, not both -- so `base_generic_args`
+        // records IRepository's own arity as a SINGLE wildcard
+        // (`Some(["*"])`), one element shorter than the receiver's own
+        // `receiver_args` (`Some(["*", "*"])`, both of Repository's own type
+        // parameters). RepoExtensions.Validate<T>(this IRepository<T> repo)
+        // is generic too, so `this_args` is also a single wildcard
+        // (`Some(["*"])`). Unifying against the RECEIVER's own two-element
+        // arguments (the pre-Unit-A5 behaviour) is a length mismatch that
+        // drops the edge; unifying against the matched base's own
+        // one-element arguments -- what Unit A5 item 2 wires -- matches.
+        let files = fragments_for(&[
+            (
+                "Domain/IRepository.cs",
+                "namespace App.Domain { public interface IRepository<T> { } }",
+            ),
+            (
+                "Domain/Repository.cs",
+                "\nusing App.Ext;\n\nnamespace App.Domain;\n\npublic class Repository<TKey, TValue> : IRepository<TValue>\n{\n    public void Poke() => this.Validate();\n}\n",
+            ),
+            (
+                "Ext/RepoExtensions.cs",
+                "namespace App.Ext { public static class RepoExtensions { public static void Validate<T>(this IRepository<T> repo) { } } }",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            heuristic_member_edges_from(&g, "Domain/Repository.cs"),
+            vec![("App.Ext.RepoExtensions", 8)],
+            "this.Validate() binds through IRepository, unifying Validate's own single wildcard \
+             this-argument against IRepository's own single wildcard argument AS Repository \
+             DECLARED IT (\"IRepository<TValue>\") -- not against Repository's own two-argument \
+             receiver_args, which would fail the length check"
+        );
+        assert_eq!(g.stats.heuristic_by_tier.ext, 1);
     }
 }
