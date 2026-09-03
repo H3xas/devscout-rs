@@ -965,6 +965,20 @@ pub struct FragDef {
         skip_serializing_if = "OrderedMap::is_empty"
     )]
     pub property_types: OrderedMap<FragFact>,
+    /// Field name -> declared type fact, in source order and
+    /// under the same dedup as `fields`. Mirrors `propertyTypes` field for
+    /// field: an `OrderedMap` for the same reason (the serialized key order
+    /// is significant), a resolution input only, like `properties`/`fields`,
+    /// and this is a purely additive field -- an absent key reads back as
+    /// "no fields typed", the safe default for every fragment cached before
+    /// this field existed, so it joins the schema with no cache-version
+    /// bump. Appended right after `propertyTypes`, omitted when empty.
+    #[serde(
+        default,
+        rename = "fieldTypes",
+        skip_serializing_if = "OrderedMap::is_empty"
+    )]
+    pub field_types: OrderedMap<FragFact>,
     /// Per method name `methodReturns` also carries an entry for,
     /// that return type's top-level generic-arg descriptors -- the same
     /// capture `baseGenericArgs` keeps beside `bases` (see extract.rs's
@@ -976,7 +990,7 @@ pub struct FragDef {
     /// join the schema with no cache-version bump -- an absent key reads
     /// back as "no generic args", the safe default for every fragment
     /// cached before this field existed. Appended LAST of all, after
-    /// `propertyTypes`, omitted when empty.
+    /// `fieldTypes`, omitted when empty.
     #[serde(
         default,
         rename = "methodReturnArgs",
@@ -1164,6 +1178,23 @@ pub struct FragRef {
     /// resolver gave before this field existed.
     #[serde(default, rename = "receiverAwaited", skip_serializing_if = "is_false")]
     pub receiver_awaited: bool,
+    /// `true` when this ref's qualifier is a bare identifier for which the
+    /// enclosing MEMBER's own fact table (locals, parameters, lambda
+    /// parameters, patterns, `out` designations) holds ANY entry for the
+    /// name, typed or taken-but-unknown (see `extract.rs`'s `RefRecord` and
+    /// `Scope::has_local_fact`). Read ONLY by the bare-identifier
+    /// field/property fallback: a member-scoped name always shadows a
+    /// same-named field, whether or not anything vouches for its type, so
+    /// that fallback never runs when this is `true`. `false` for every
+    /// dotted or generic qualifier, for `this.`/`base.` (never asked of the
+    /// enclosing scope's local table at all), and for every ref kind but
+    /// `uses-member`. Appended LAST of all, after `receiverAwaited`, and
+    /// omitted when `false` -- an absent key reads back as `false`, the
+    /// same as every ref kind that never sets it, which is also what lets a
+    /// cached fragment from before this field existed parse safely with no
+    /// cache-version bump.
+    #[serde(default, rename = "receiverLocal", skip_serializing_if = "is_false")]
+    pub receiver_local: bool,
 }
 
 fn is_false(b: &bool) -> bool {
@@ -1293,6 +1324,19 @@ pub fn fragment_from_extraction(e: &extract::Extraction) -> Fragment {
                     }
                     m
                 },
+                field_types: {
+                    let mut m = OrderedMap::new();
+                    for (name, fact) in &d.field_types {
+                        m.insert(
+                            name.clone(),
+                            FragFact {
+                                type_name: fact.type_name.clone(),
+                                args: fact.args.clone(),
+                            },
+                        );
+                    }
+                    m
+                },
                 method_return_args: {
                     let mut m = OrderedMap::new();
                     for (name, args) in &d.method_return_args {
@@ -1344,6 +1388,7 @@ pub fn fragment_from_extraction(e: &extract::Extraction) -> Fragment {
                 receiver_call_member: r.receiver_call_member.clone(),
                 receiver_base: r.receiver_base,
                 receiver_awaited: r.receiver_awaited,
+                receiver_local: r.receiver_local,
             })
             .collect(),
         names: e
@@ -1391,6 +1436,7 @@ pub fn markup_fragment(root: &Path, rel: &str) -> Option<Fragment> {
                 base_generic_args: OrderedMap::new(),
                 test_methods: Vec::new(),
                 property_types: OrderedMap::new(),
+                field_types: OrderedMap::new(),
                 method_return_args: OrderedMap::new(),
                 end_line: d.line,
             })
@@ -1421,6 +1467,7 @@ pub fn markup_fragment(root: &Path, rel: &str) -> Option<Fragment> {
                 receiver_call_member: None,
                 receiver_base: false,
                 receiver_awaited: false,
+                receiver_local: false,
             })
             .collect(),
         names: facts
@@ -1725,6 +1772,7 @@ mod tests {
             type_params: Vec::new(),
             base_generic_args: OrderedMap::new(),
             property_types: OrderedMap::new(),
+            field_types: OrderedMap::new(),
             method_return_args: OrderedMap::new(),
             test_methods: Vec::new(),
             end_line: 0,
@@ -1971,6 +2019,7 @@ mod tests {
             receiver_call_member: None,
             receiver_base: false,
             receiver_awaited: false,
+            receiver_local: false,
         }
     }
 
@@ -2692,6 +2741,7 @@ mod tests {
                 base_generic_args: OrderedMap::new(),
                 test_methods: vec![],
                 property_types: OrderedMap::new(),
+                field_types: OrderedMap::new(),
                 method_return_args: OrderedMap::new(),
                 end_line: 1,
             }],
@@ -2767,6 +2817,7 @@ mod tests {
                 base_generic_args: OrderedMap::new(),
                 test_methods: vec![],
                 property_types: OrderedMap::new(),
+                field_types: OrderedMap::new(),
                 method_return_args: OrderedMap::new(),
                 end_line: 1,
             }],

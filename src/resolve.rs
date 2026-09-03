@@ -155,6 +155,12 @@ pub struct MemberLists {
     /// Property name -> declared type fact, the second half of a property hop.
     /// Merged across a partial class exactly like `method_returns`.
     pub property_types: OrderedMap<FragFact>,
+    /// Field name -> declared type fact, the field half of a bare-identifier
+    /// receiver's type when the file that reads it carries no local/
+    /// parameter/field fact of its own for the name (a sibling partial-class
+    /// file's field, reached only through this merged table). Merged across
+    /// a partial class exactly like `property_types`.
+    pub field_types: OrderedMap<FragFact>,
     /// Method name -> the generic-arg descriptors `method_returns` itself
     /// strips off (see `FragDef.method_return_args`), read ONLY by the
     /// awaited-call unwrap: an entry here exists exactly when the same name
@@ -238,6 +244,7 @@ fn build_def_index(fragments_by_file: &[(String, Fragment)]) -> DefIndex {
                             .collect(),
                         method_returns: d.method_returns.clone(),
                         property_types: d.property_types.clone(),
+                        field_types: d.field_types.clone(),
                         method_return_args: d.method_return_args.clone(),
                     });
                     for e in &d.extension_methods {
@@ -310,6 +317,13 @@ fn build_def_index(fragments_by_file: &[(String, Fragment)]) -> DefIndex {
                         if member_lists[idx].property_types.get(name).is_none() {
                             member_lists[idx]
                                 .property_types
+                                .insert(name.clone(), fact.clone());
+                        }
+                    }
+                    for (name, fact) in d.field_types.iter() {
+                        if member_lists[idx].field_types.get(name).is_none() {
+                            member_lists[idx]
+                                .field_types
                                 .insert(name.clone(), fact.clone());
                         }
                     }
@@ -396,6 +410,7 @@ fn name_probe(name: String, namespace: &str, outer_types: Vec<String>) -> FragRe
         receiver_call_member: None,
         receiver_base: false,
         receiver_awaited: false,
+        receiver_local: false,
     }
 }
 
@@ -661,6 +676,80 @@ fn base_member_declared(
                 declares_member(index, idx, member)
             }) {
                 return Some(found);
+            }
+        }
+    }
+    None
+}
+
+// One def's own field or property fact for `name`, field_types tried first
+// -- the order the caller's doc comment names. Never widens to the def's
+// bases; the walk that does is the caller's job.
+fn declared_field_or_property_type<'a>(
+    index: &'a DefIndex,
+    idx: usize,
+    name: &str,
+) -> Option<&'a FragFact> {
+    index.member_lists[idx]
+        .field_types
+        .get(name)
+        .or_else(|| index.member_lists[idx].property_types.get(name))
+}
+
+// The bare-identifier receiver lookup a ref with NO in-file fact at all
+// falls back to: the innermost `outer_types` def's OWN merged field_types,
+// then property_types (a partial class's sibling-file field/property, the
+// current file cannot see for itself), then the same two tables on each
+// in-graph base of that def, in DECLARATION order, each followed by its own
+// inheritance walk -- exactly `base_member_declared`'s structure, except
+// this lookup checks `start` itself FIRST (unlike `base.`, an ordinary bare
+// identifier's own enclosing type is exactly where its fields live).
+// `None` when `outer_types` is empty (no enclosing type, so no field/
+// property table to consult), when the innermost entry does not resolve
+// in-graph, or when neither table on `start` nor on any in-graph base
+// answers for the name.
+fn bare_receiver_field_or_property_type(
+    index: &DefIndex,
+    ns: &str,
+    r: &FragRef,
+    usings: &HashSet<String>,
+    aliases: &HashMap<String, String>,
+    file_contexts: &HashMap<String, FileContext>,
+) -> Option<String> {
+    let innermost = r.outer_types.last()?;
+    let probe = name_probe(innermost.clone(), ns, r.outer_types.clone());
+    let Resolution::Resolved(start, _) =
+        resolve_ref(&probe, usings, ns, index, aliases, file_contexts)
+    else {
+        return None;
+    };
+    if let Some(fact) = declared_field_or_property_type(index, start, &r.name) {
+        return Some(fact.type_name.clone());
+    }
+    let ctx = file_contexts.get(&index.defs[start].file)?;
+    let base_ns = index.defs[start].namespace.clone();
+    for base in &index.member_lists[start].bases {
+        let probe = name_probe(base.clone(), &base_ns, Vec::new());
+        if let Resolution::Resolved(bidx, _) = resolve_ref(
+            &probe,
+            &ctx.usings,
+            &base_ns,
+            index,
+            &ctx.aliases,
+            file_contexts,
+        ) {
+            let mut found: Option<String> = None;
+            inheritance_walk_find(index, file_contexts, bidx, |idx| {
+                match declared_field_or_property_type(index, idx, &r.name) {
+                    Some(fact) => {
+                        found = Some(fact.type_name.clone());
+                        true
+                    }
+                    None => false,
+                }
+            });
+            if found.is_some() {
+                return found;
             }
         }
     }
@@ -1817,6 +1906,39 @@ pub fn resolve_graph_with_model(
                                 _ => returns,
                             };
                         }
+                    } else if r.qualified.is_none() && !r.generic && !r.receiver_local {
+                        // `receiver_type` AND `receiver_call_owner` are both
+                        // `None` here, which `push_member_ref` produces in
+                        // two cases it cannot tell apart from ITS OWN two
+                        // fields alone: no local/parameter/field fact for the
+                        // name exists in this file at all, OR one exists but
+                        // is a TAKEN-BUT-UNTYPED entry (an unresolved call, a
+                        // predefined type, a conflicting re-declaration --
+                        // see `receiver_fact_for`'s own doc comment).
+                        // `r.receiver_local` is the signal that DOES tell
+                        // the two apart: `true` whenever the enclosing
+                        // MEMBER's own fact table holds ANY entry for the
+                        // name (typed or not -- `Scope::has_local_fact`), so
+                        // a same-named local or parameter ALWAYS shadows a
+                        // field here, exactly like a TYPED one already does
+                        // by leaving `receiver_type` set. Bare identifier
+                        // only (`r.qualified.is_none() && !r.generic`): a
+                        // dotted or generic qualifier is never a field or
+                        // property name. Typed from the enclosing def's OWN
+                        // field and property declarations, merged across
+                        // every file that declares it (a sibling
+                        // partial-class file), then the same two tables
+                        // walked across each in-graph base of that def, in
+                        // declaration order -- the field the CURRENT file
+                        // cannot see for itself.
+                        receiver_type_name = bare_receiver_field_or_property_type(
+                            &index,
+                            ns,
+                            r,
+                            usings,
+                            aliases,
+                            &file_contexts,
+                        );
                     }
                 }
                 if !emitted {
@@ -2485,6 +2607,7 @@ mod tests {
             base_generic_args: crate::graph::OrderedMap::new(),
             test_methods: vec![],
             property_types: crate::graph::OrderedMap::new(),
+            field_types: crate::graph::OrderedMap::new(),
             method_return_args: crate::graph::OrderedMap::new(),
             end_line: 0,
         }
@@ -2549,6 +2672,7 @@ mod tests {
             receiver_call_member: None,
             receiver_base: false,
             receiver_awaited: false,
+            receiver_local: false,
         }
     }
 
@@ -2572,6 +2696,7 @@ mod tests {
             receiver_call_member: None,
             receiver_base: false,
             receiver_awaited: false,
+            receiver_local: false,
         }
     }
 
@@ -7234,6 +7359,7 @@ mod tests {
                     receiver_call_member: None,
                     receiver_base: false,
                     receiver_awaited: false,
+                    receiver_local: false,
                 }],
             ),
         )];
@@ -7284,6 +7410,7 @@ mod tests {
                             receiver_call_member: None,
                             receiver_base: false,
                             receiver_awaited: false,
+                            receiver_local: false,
                         },
                     ],
                 ),
@@ -8505,6 +8632,238 @@ mod tests {
              \"Task\" (never Order), and the UNAWAITED call (`plain`) is never unwrapped at all -- \
              both of the latter two stay typed \"Task\", resolve to nothing in-graph, and earn no \
              edge at all, guessed or otherwise"
+        );
+    }
+
+    // --- Unit B: cross-file field facts, the bare-identifier fallback -------
+    //
+    // All three run real C# through the extractor (`fragments_for`), the same
+    // choice the four stage-7 tests above make: a field's declared type is an
+    // extractor fact (`FragDef.fieldTypes`), so a test that hand-built the
+    // fragments would take the extractor's word for it rather than proving
+    // it end to end.
+
+    #[test]
+    fn stage7_partial_class_field_declared_in_a_sibling_file_types_the_receiver() {
+        let files = fragments_for(&[
+            (
+                "Infra/Widget.cs",
+                "\nnamespace App.Infra;\n\npublic class Widget\n{\n    public void Spin() { }\n}\n",
+            ),
+            (
+                "Domain/Order.cs",
+                "\nnamespace App.Domain;\n\npublic partial class Order\n{\n    private Widget _widget;\n}\n",
+            ),
+            (
+                "Domain/Order.Extra.cs",
+                "\nnamespace App.Domain;\n\npublic partial class Order\n{\n    public void Poke()\n    {\n        _widget.Spin();\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        let spin_edges: Vec<(&str, bool)> = g
+            .edges
+            .iter()
+            .filter_map(|e| match e {
+                Edge::UsesMember {
+                    from_file,
+                    to,
+                    member,
+                    heuristic,
+                    ..
+                } if from_file == "Domain/Order.Extra.cs" && member.as_deref() == Some("Spin") => {
+                    Some((to.as_str(), *heuristic))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            spin_edges,
+            vec![("App.Infra.Widget", false)],
+            "_widget.Spin() carries no in-file fact at all in Order.Extra.cs -- _widget is declared \
+             as a field only in the OTHER partial-class file -- so it is typed from the merged \
+             field_types table the resolver builds across both files instead"
+        );
+    }
+
+    #[test]
+    fn stage7_protected_field_declared_on_a_base_types_the_receiver() {
+        let files = fragments_for(&[
+            (
+                "Infra/Logger.cs",
+                "\nnamespace App.Infra;\n\npublic class Logger\n{\n    public void Log() { }\n}\n",
+            ),
+            (
+                "Domain/Base.cs",
+                "\nnamespace App.Domain;\n\npublic class Base\n{\n    protected Logger _logger;\n}\n",
+            ),
+            (
+                "Domain/Order.cs",
+                "\nnamespace App.Domain;\n\npublic class Order : Base\n{\n    public void Poke()\n    {\n        _logger.Log();\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        let log_edges: Vec<(&str, bool)> = g
+            .edges
+            .iter()
+            .filter_map(|e| match e {
+                Edge::UsesMember {
+                    from_file,
+                    to,
+                    member,
+                    heuristic,
+                    ..
+                } if from_file == "Domain/Order.cs" && member.as_deref() == Some("Log") => {
+                    Some((to.as_str(), *heuristic))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            log_edges,
+            vec![("App.Infra.Logger", false)],
+            "_logger.Log() has no in-file fact anywhere in Order.cs -- Order itself declares no \
+             _logger field at all -- so the fallback walks Order's OWN bases: Base declares it, \
+             typed Logger, which declares Log"
+        );
+    }
+
+    #[test]
+    fn stage7_an_in_file_local_shadows_a_same_named_field_fact() {
+        let files = fragments_for(&[
+            (
+                "Infra/Widget.cs",
+                "\nnamespace App.Infra;\n\npublic class Widget\n{\n    public void Spin() { }\n}\n",
+            ),
+            (
+                "Infra/Gadget.cs",
+                "\nnamespace App.Infra;\n\npublic class Gadget\n{\n    public void Zap() { }\n}\n",
+            ),
+            (
+                "Domain/Base.cs",
+                "\nnamespace App.Domain;\n\npublic class Base\n{\n    protected Widget _item;\n}\n",
+            ),
+            (
+                "Domain/Order.cs",
+                "\nnamespace App.Domain;\n\npublic class Order : Base\n{\n    public void Poke()\n    {\n        var _item = new Gadget();\n        _item.Zap();\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        let zap_edges: Vec<(&str, bool)> = g
+            .edges
+            .iter()
+            .filter_map(|e| match e {
+                Edge::UsesMember {
+                    from_file,
+                    to,
+                    member,
+                    heuristic,
+                    ..
+                } if from_file == "Domain/Order.cs" && member.as_deref() == Some("Zap") => {
+                    Some((to.as_str(), *heuristic))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            zap_edges,
+            vec![("App.Infra.Gadget", false)],
+            "Poke's own local `_item` (typed Gadget, which declares Zap) is an in-file fact for the \
+             name, so the base's same-named field (typed Widget, which does NOT declare Zap) is \
+             never even consulted -- a local always shadows a same-named field fact, precisely \
+             because the fallback only ever runs when receiver_type is still unset"
+        );
+    }
+
+    #[test]
+    fn stage7_an_untyped_in_file_local_still_shadows_a_same_named_field_fact() {
+        // `var order = Unknown();` is a BARE (undotted) call -- a shape
+        // `invocation_call` never matches (it requires a dotted qualifier,
+        // "Q.M()") -- so `order` settles as an ordinary taken-but-unknown
+        // member-table entry: no `Fact` vouches for its type, but the name
+        // IS in scope, exactly like a real (typed) local. `Order.Fields.cs`
+        // declares a field of the SAME name in a SIBLING partial-class
+        // file, which is precisely the shape the field/property fallback
+        // exists to answer for a name with no in-file fact -- this proves
+        // it does NOT answer here, because `order` is one.
+        let with_field = fragments_for(&[
+            (
+                "Infra/Widget.cs",
+                "\nnamespace App.Infra;\n\npublic class Widget\n{\n    public void Spin() { }\n}\n",
+            ),
+            (
+                "Domain/Order.Fields.cs",
+                "\nnamespace App.Domain;\n\npublic partial class Order\n{\n    private Widget order;\n}\n",
+            ),
+            (
+                "Domain/Order.cs",
+                "\nnamespace App.Domain;\n\npublic partial class Order\n{\n    public void Poke()\n    {\n        var order = Unknown();\n        order.Spin();\n    }\n}\n",
+            ),
+        ]);
+        let without_field = fragments_for(&[
+            (
+                "Infra/Widget.cs",
+                "\nnamespace App.Infra;\n\npublic class Widget\n{\n    public void Spin() { }\n}\n",
+            ),
+            (
+                "Domain/Order.Fields.cs",
+                "\nnamespace App.Domain;\n\npublic partial class Order\n{\n}\n",
+            ),
+            (
+                "Domain/Order.cs",
+                "\nnamespace App.Domain;\n\npublic partial class Order\n{\n    public void Poke()\n    {\n        var order = Unknown();\n        order.Spin();\n    }\n}\n",
+            ),
+        ]);
+        let g_with = resolve_graph(&no_git_root(), &with_field);
+        let g_without = resolve_graph(&no_git_root(), &without_field);
+        // Scoped to `uses-member` edges: the field's OWN declared type earns
+        // an ordinary `uses-type` ref (see the walk's `field_declaration`
+        // arm) whether or not this test's concern holds, so comparing the
+        // WHOLE graph would differ by that one incidental edge every time --
+        // it is not what this test is about. What this test is about is
+        // whether the field ever gets to answer a `uses-member` ref it has
+        // no business answering.
+        fn uses_member_edges(g: &Graph) -> Vec<Edge> {
+            g.edges
+                .iter()
+                .filter(|e| matches!(e, Edge::UsesMember { .. }))
+                .cloned()
+                .collect()
+        }
+        assert_eq!(
+            uses_member_edges(&g_with),
+            uses_member_edges(&g_without),
+            "the untyped local `order` is a member-table entry for the name (taken, unknown) -- \
+             `receiver_local` -- so it shadows the sibling file's same-named field exactly like a \
+             typed local already does; the uses-member edge set must be identical whether or not \
+             that field exists at all"
+        );
+        // Both variants DO carry one `uses-member` edge for `order.Spin()` --
+        // `Spin` is declared by exactly one def anywhere in this fixture
+        // (Widget), so the SCORED tier's own uniqueness fallback (a
+        // wholly separate mechanism from the field/property fallback this
+        // test guards, reached only when a ref carries NO receiver fact at
+        // all) claims it as a heuristic guess in BOTH variants alike --
+        // proof by itself that the field played no part, since it fires
+        // identically whether or not the field exists. What distinguishes
+        // "the field answered" from "an unrelated tier guessed" is
+        // `heuristic`: the field/property fallback feeds the ordinary
+        // typed-receiver path, which only ever emits a PRECISE
+        // (non-heuristic) edge.
+        let edges = uses_member_edges(&g_with);
+        assert_eq!(
+            edges,
+            vec![Edge::UsesMember {
+                from_file: "Domain/Order.cs".to_string(),
+                from_line: 9,
+                to: "App.Infra.Widget".to_string(),
+                to_file: "Infra/Widget.cs".to_string(),
+                member: Some("Spin".to_string()),
+                heuristic: true,
+                tier: Some(HeuristicTier::Guess),
+            }],
+            "the one edge present is the SCORED tier's own heuristic guess, never a precise edge \
+             from the field/property fallback (which the shadowing rule keeps from ever running \
+             here): {edges:?}"
         );
     }
 }

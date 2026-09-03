@@ -322,6 +322,17 @@ pub struct DefRecord {
     /// `method_returns` is one: the serialized key order is significant.
     /// Appended LAST, after `test_methods`.
     pub property_types: Vec<(String, Fact)>,
+    /// (field name, declared type fact) pairs for exactly the
+    /// fields `fields` records, in the same source order and under the same
+    /// dedup. A field whose declared type yields no fact (a predefined type)
+    /// has no entry, so the two lists are parallel but not equal in length.
+    /// Every declarator of one `field_declaration` shares that declaration's
+    /// own type node, so `private int a, b;` gives `a` and `b` the SAME
+    /// fact -- the same declarator sharing `fields`'s own collection loop
+    /// already relies on. A `Vec` of pairs, not a map, for the same reason
+    /// `property_types` is one: the serialized key order is significant.
+    /// Appended LAST, after `property_types`.
+    pub field_types: Vec<(String, Fact)>,
     /// Per method name that `method_returns` also records an
     /// entry for, that return type's top-level generic-arg descriptors --
     /// the same capture `base_generic_args` keeps beside `bases`, for the
@@ -332,7 +343,7 @@ pub struct DefRecord {
     /// itself, which an unawaited use of the very same callee reads
     /// unchanged. A `Vec` of pairs, not a map, for the same reason
     /// `method_returns` is one: the serialized key order is significant.
-    /// Appended LAST of all, after `property_types`; a method whose return
+    /// Appended LAST of all, after `field_types`; a method whose return
     /// type carries no type-argument list at all contributes no entry.
     pub method_return_args: Vec<(String, Vec<String>)>,
     /// 1-based last line of the complete declaration node.
@@ -454,6 +465,22 @@ pub struct RefRecord {
     /// `Task` rather than unwrapped. Appended LAST of all, after
     /// `receiver_base`.
     pub receiver_awaited: bool,
+    /// `true` when this ref's qualifier is a bare identifier for which the
+    /// enclosing MEMBER's own fact table -- `Scope::has_local_fact`, the
+    /// SAME `member_facts` table `receiver_fact_for` reads first -- holds
+    /// ANY entry for the name: a local, a parameter, an explicitly-typed
+    /// lambda parameter, a pattern designation, or an `out` designation,
+    /// typed or taken-but-unknown. A member-scoped name always shadows a
+    /// same-named field regardless of whether anything vouches for its
+    /// type, so the resolver's bare-identifier field/property fallback
+    /// (Unit B) reads this to refuse running at all when it is `true` --
+    /// the one shape a resolved `receiver_type`/`receiver_call_owner` of
+    /// `None` cannot itself distinguish from "no fact anywhere for this
+    /// name". `false` for a dotted or generic qualifier, for `this.`/
+    /// `base.` (never asked of the enclosing scope's local table), and for
+    /// every ref kind but `uses-member`. Appended LAST of all, after
+    /// `receiver_awaited`.
+    pub receiver_local: bool,
 }
 
 /// Represents `UsingRecord`.
@@ -832,6 +859,7 @@ fn push_ref(
         receiver_call_member: None,
         receiver_base: false,
         receiver_awaited: false,
+        receiver_local: false,
     });
 }
 
@@ -866,6 +894,7 @@ fn push_ctor_param_ref(
         receiver_call_member: None,
         receiver_base: false,
         receiver_awaited: false,
+        receiver_local: false,
     });
 }
 
@@ -901,6 +930,15 @@ fn push_ctor_param_ref(
 // than threaded in separately, which is what keeps a call fact and its
 // awaited-ness from ever landing on two different refs. Appended LAST of
 // all, after `receiver_base`.
+//
+// `receiver_local`, unlike every field above it, is NOT derivable from
+// `receiver: Option<Fact>` -- a `None` receiver means either "no fact
+// anywhere for this name" or "a same-named local/parameter is taken but
+// nothing vouches for its type", and those two cases must answer this
+// field differently. It is threaded in as its own explicit parameter,
+// computed by the caller (`resolve_member_qualifier`, which has the
+// `Scope` this function does not). Appended LAST of all, after
+// `receiver_awaited`.
 fn push_member_ref(
     refs: &mut Vec<RefRecord>,
     qualifier_text: &str,
@@ -913,6 +951,7 @@ fn push_member_ref(
     type_stack: &[String],
     property_owner: Option<String>,
     receiver_base: bool,
+    receiver_local: bool,
 ) {
     // A call fact records the CALLEE it depends on and never a receiver type:
     // the two are mutually exclusive on one ref, which is what lets every
@@ -953,6 +992,7 @@ fn push_member_ref(
             receiver_call_member: receiver_call_member.clone(),
             receiver_base,
             receiver_awaited,
+            receiver_local,
         }),
         None => refs.push(RefRecord {
             kind: "uses-member".to_string(),
@@ -973,6 +1013,7 @@ fn push_member_ref(
             receiver_call_member,
             receiver_base,
             receiver_awaited,
+            receiver_local,
         }),
     }
 }
@@ -1180,6 +1221,50 @@ fn raw_field_names(node: Node, src: &[u8]) -> Vec<String> {
         }
     }
     names
+}
+
+// (field name, fact) pairs for exactly the fields `raw_field_names`
+// records, in the same source order and under the same dedup -- a field
+// whose declared type yields no fact (a predefined type) simply has no
+// entry. Every declarator of one `field_declaration` shares that
+// declaration's own type node ("private int a, b;" gives `a` and `b` the
+// SAME fact), the same sharing `raw_field_names`'s own declarator loop
+// already relies on. Mirrors `raw_property_types` field for field, so a
+// field-typed receiver goes through the exact same resolution shape a
+// property-typed one already does.
+fn raw_field_types(node: Node, src: &[u8], type_params: &HashSet<String>) -> Vec<(String, Fact)> {
+    let Some(body) = node.child_by_field_name("body") else {
+        return Vec::new();
+    };
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut pairs = Vec::new();
+    for c in named_children(body) {
+        if c.kind() != "field_declaration" {
+            continue;
+        }
+        let Some(vd) = named_children(c)
+            .into_iter()
+            .find(|k| k.kind() == "variable_declaration")
+        else {
+            continue;
+        };
+        let Some(fact) = type_fact(vd.child_by_field_name("type"), src, type_params) else {
+            continue;
+        };
+        for decl in named_children(vd) {
+            if decl.kind() != "variable_declarator" {
+                continue;
+            }
+            let Some(name) = decl.child_by_field_name("name").map(|n| text(n, src)) else {
+                continue;
+            };
+            if name.is_empty() || !seen.insert(name.clone()) {
+                continue;
+            }
+            pairs.push((name, fact.clone()));
+        }
+    }
+    pairs
 }
 
 // (name, returnTypeName) pairs in first-declaration order, for
@@ -1696,9 +1781,9 @@ fn record_type_def(
     // id, name, namespace, kind, line, methods, then the member-fact additions
     // appended LAST in declaration order -- properties, fields, methodReturns
     // -- then extensionMethods and (for the inheritance veto) bases, then
-    // type_params and base_generic_args, then testMethods, then propertyTypes.
-    // Each is omitted when empty, so a type with none of them serializes
-    // exactly as it did before those additions.
+    // type_params and base_generic_args, then testMethods, then propertyTypes,
+    // fieldTypes and methodReturnArgs. Each is omitted when empty, so a type
+    // with none of them serializes exactly as it did before those additions.
     defs.push(DefRecord {
         id,
         name,
@@ -1715,6 +1800,7 @@ fn record_type_def(
         base_generic_args: raw_base_generic_args(node, src, type_params),
         test_methods: raw_test_methods(node, src, kind),
         property_types: raw_property_types(node, src, type_params),
+        field_types: raw_field_types(node, src, type_params),
         method_return_args: raw_method_return_args(node, src, kind, type_params),
         end_line: node.end_position().row + 1,
     });
@@ -1763,6 +1849,7 @@ fn record_enum_members(
             base_generic_args: Vec::new(),
             test_methods: Vec::new(),
             property_types: Vec::new(),
+            field_types: Vec::new(),
             method_return_args: Vec::new(),
             end_line: member.end_position().row + 1,
         });
@@ -2372,6 +2459,25 @@ impl<'a> Scope<'a> {
         }
         self.type_facts.get(name).cloned().flatten()
     }
+
+    // `true` when the enclosing MEMBER's own fact table -- locals,
+    // parameters, explicitly-typed lambda parameters, patterns and `out`
+    // designations, every shape `collect_member_facts` records -- holds ANY
+    // entry for `name`, typed or taken-but-unknown. Deliberately never
+    // consults `type_facts` (the enclosing TYPE's own fields/properties/
+    // primary-ctor params): this answers "is `name` a local in scope", not
+    // "does the enclosing scope have a type fact for `name`" --
+    // `receiver_fact_for` already answers the latter. This is `receiver_local`'s
+    // one source of truth.
+    fn has_local_fact(&self, name: &str, src: &[u8]) -> bool {
+        let locals = self.member_facts.get_or_init(|| {
+            self.node
+                .map(|n| collect_member_facts(n, src, &self.type_params, &self.type_facts))
+        });
+        locals
+            .as_ref()
+            .is_some_and(|table| table.contains_key(name))
+    }
 }
 
 // The member name half of a member-access-shaped ref, normalizing a
@@ -2402,6 +2508,7 @@ struct QualifierResolution {
     receiver: Option<Fact>,
     property_owner: Option<String>,
     receiver_base: bool,
+    receiver_local: bool,
 }
 
 fn resolve_member_qualifier(
@@ -2436,6 +2543,7 @@ fn resolve_member_qualifier(
             generic,
             property_owner: None,
             receiver_base: kind == "base",
+            receiver_local: false,
         });
     }
     // A receiver fact is asked for ONLY for a bare, non-generic qualifier:
@@ -2449,6 +2557,14 @@ fn resolve_member_qualifier(
     } else {
         None
     };
+    // `receiver_local`: does the enclosing MEMBER's own fact table hold ANY
+    // entry for this bare name at all, typed or taken-but-unknown? Answered
+    // independently of `receiver` above -- a `None` receiver alone cannot
+    // tell "no fact anywhere for this name" apart from "a same-named local
+    // is taken but nothing vouches for its type", and the resolver's
+    // bare-identifier field/property fallback (Unit B) needs exactly that
+    // distinction to let a local always shadow a same-named field.
+    let receiver_local = bare && scope.has_local_fact(&qt, src);
     // The head of a TWO-segment chain, and only when the scope vouches for
     // its type: "a.Settings" asks what `a` is, while "x.y.Settings" and a
     // namespace path ask nothing, because a head this file cannot type is a
@@ -2464,6 +2580,7 @@ fn resolve_member_qualifier(
         receiver,
         property_owner,
         receiver_base: false,
+        receiver_local,
     })
 }
 
@@ -2822,6 +2939,7 @@ fn walk<'a>(
                         type_stack,
                         q.property_owner.clone(),
                         q.receiver_base,
+                        q.receiver_local,
                     );
                 }
             }
@@ -2871,6 +2989,7 @@ fn walk<'a>(
                             type_stack,
                             q.property_owner.clone(),
                             q.receiver_base,
+                            q.receiver_local,
                         );
                     }
                 }
@@ -7842,6 +7961,76 @@ public class Order : Entity
     }
 
     #[test]
+    fn stage4_receiver_local_is_recorded_for_a_shadowing_name_and_omitted_otherwise() {
+        let e = extract_src(
+            r#"
+namespace Fixtures.Recall;
+public class Widget
+{
+    public void Poke()
+    {
+        var order = Unknown();
+        order.Spin();
+        other.Spin();
+    }
+}
+"#,
+        );
+        // `Unknown()` is a BARE (undotted) call -- a shape `invocation_call`
+        // never matches -- so `order` settles as an ordinary
+        // taken-but-unknown member-table entry: no `Fact` vouches for its
+        // type, but the name IS in scope.
+        let order_ref = e
+            .refs
+            .iter()
+            .find(|r| {
+                r.kind == "uses-member" && r.name == "order" && r.member.as_deref() == Some("Spin")
+            })
+            .expect("order.Spin() ref present");
+        assert!(
+            order_ref.receiver_local,
+            "order is taken by an in-file member-table entry (untyped), so receiver_local is true"
+        );
+        assert!(order_ref.receiver_type.is_none());
+
+        let other_ref = e
+            .refs
+            .iter()
+            .find(|r| {
+                r.kind == "uses-member" && r.name == "other" && r.member.as_deref() == Some("Spin")
+            })
+            .expect("other.Spin() ref present");
+        assert!(
+            !other_ref.receiver_local,
+            "other has no in-file fact of any kind -- not even a taken-but-unknown entry -- so \
+             receiver_local is false"
+        );
+
+        // `receiverLocal` is OMITTED from the serialized fragment JSON when
+        // false (the file's `is_false` idiom, see graph.rs), never written
+        // as `"receiverLocal":false`.
+        let fragment = crate::graph::fragment_from_extraction(&e);
+        let spin_refs: Vec<&crate::graph::FragRef> = fragment
+            .refs
+            .iter()
+            .filter(|r| r.member.as_deref() == Some("Spin"))
+            .collect();
+        assert_eq!(spin_refs.len(), 2);
+        let jsons: Vec<String> = spin_refs
+            .iter()
+            .map(|r| serde_json::to_string(r).unwrap())
+            .collect();
+        assert!(
+            jsons.iter().any(|j| j.contains("\"receiverLocal\":true")),
+            "order.Spin() carries receiverLocal: {jsons:?}"
+        );
+        assert!(
+            jsons.iter().any(|j| !j.contains("receiverLocal")),
+            "other.Spin() omits receiverLocal entirely: {jsons:?}"
+        );
+    }
+
+    #[test]
     fn stage4_conditional_access_yields_the_same_ref_as_plain_access() {
         let plain = extract_src(
             r#"
@@ -8003,6 +8192,42 @@ public class Repo
              recorded an entry for -- LoadSync (non-generic) and Nothing (no method_returns entry \
              at all) contribute nothing, and LoadNestedAsync's own descriptor is the INNER Task's \
              bare name, never its own further-nested Order"
+        );
+    }
+
+    #[test]
+    fn stage4_field_declarations_record_field_types() {
+        let e = extract_src(
+            r#"
+namespace App.FieldTypes;
+
+public class Widget
+{
+  private Settings _config, _fallback;
+  private string _label;
+  private Box<Gadget> _slots;
+}
+"#,
+        );
+        let d = find_def(&e, "App.FieldTypes.Widget").expect("Widget def present");
+        assert_eq!(d.fields, vec!["_config", "_fallback", "_label", "_slots"]);
+        let recorded: Vec<_> = d
+            .field_types
+            .iter()
+            .map(|(n, f)| (n.as_str(), f.type_name.as_str(), f.args.as_ref()))
+            .collect();
+        // A predefined type vouches for nothing, exactly as it does for a
+        // property, local or method return, so `_label` has no entry -- the
+        // map is parallel to `fields` but not equal in length. `_config` and
+        // `_fallback` share ONE field_declaration's type node ("private
+        // Settings _config, _fallback;"), so they share the SAME fact.
+        assert_eq!(
+            recorded,
+            vec![
+                ("_config", "Settings", None),
+                ("_fallback", "Settings", None),
+                ("_slots", "Box", Some(&vec!["Gadget".to_string()])),
+            ]
         );
     }
 
