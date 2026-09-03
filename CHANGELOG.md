@@ -24,6 +24,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   files, with no MSBuild evaluation. Discovered projects are persisted as `units` in
   `graph.json` and mirrored in a `project-units.json` sidecar; editing a `.csproj` is now
   itself a rebuild trigger.
+- **`tests` lists harness files that live in test projects.** When a project model exists, a
+  file in a test project that reaches the symbol is listed even without attribute-marked test
+  methods, suffixed `(test project)` in text and carrying `"via":"project"` (appended last) in
+  JSON, so a harness reference stays distinguishable from a discovered test; `impact`'s
+  `testsAffected` counts both.
 
 ### Changed
 
@@ -34,6 +39,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Tier (f) admits an extension class from an enclosing namespace, not just an imported
   one.** `App.Ext` is now visible from `App.Ext.Deep` with no `using` at all, matching C#'s
   own namespace-visibility rule.
+- **A same-named ambiguity is narrowed by project reachability.** When a project model
+  exists and the ladder finds two same-named defs, candidates the reference site's project
+  cannot reach are removed before the precise tiers judge the result: one survivor resolves
+  precisely, none behaves like an external name, two or more stay ambiguous with the shorter
+  list. Without a model nothing changes.
 
 ### Fixed
 
