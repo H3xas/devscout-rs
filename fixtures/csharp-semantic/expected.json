@@ -1,8 +1,8 @@
 {
   "tiers.precise.precision": { "min": 1.0 },
   "tiers.precise.edges": { "min": 7 },
-  "recall.precise": { "min": 0.5 },
-  "recall.all": { "min": 0.9 },
+  "recall.precise": { "min": 0.428 },
+  "recall.all": { "min": 0.865 },
   "silent.leak": { "max": 4 },
   "structural.impossible": { "max": 2 },
   "units.failed": { "max": 0 }

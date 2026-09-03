@@ -2,31 +2,34 @@
 // graph edges against a Roslyn-derived oracle (`tools/scout-semantic`,
 // documented in the W0 design note). The oracle emits one ground-truth record
 // per member reference in a compiled solution; this command joins those
-// records to the graph's own `uses-member` edges on `(file, startLine)` and
-// reports precision/recall per resolver tier, plus a handful of leak/
-// structural-impossibility signals that catch a specific class of resolver
-// bug (a guessed edge landing on a member the caller's project can never
-// actually see).
+// records to the graph's own `uses-member` edges on `(file, startLine)`, AND
+// on `member` when the edge names one (schema 2's `member` key, joined
+// against the oracle's own `member` field -- two references sharing a line,
+// e.g. a fluent chain's qualifier call and its own member access, are not
+// interchangeable evidence for one another), and reports precision/recall
+// per resolver tier, plus a handful of leak/structural-impossibility signals
+// that catch a specific class of resolver bug (a guessed edge landing on a
+// member the caller's project can never actually see).
 //
 // Split in two, deliberately: `load` touches the filesystem (graph.json, the
 // oracle JSONL files, the manifest) and returns `Inputs`; `score` is a pure
 // function from `Inputs` to `AuditReport` with no I/O at all, so every
 // scoring rule below is unit-testable without a repo on disk. `graph.json` is
 // read as a bare `serde_json::Value`, not through `graph::read_graph` --
-// `Edge::UsesMember` does not carry a `tier` field yet (only legacy
-// `heuristic: bool`), and reading through the typed struct would silently
-// drop a `tier` key the day the resolver starts emitting one. Parsing the
-// loose `Value` here means that day requires no change to this file's load
-// path, only to `tier_of` below.
+// parsing the loose `Value` here means a future schema addition (the
+// `source: Option<Provenance>` slot `graph.rs` reserves after `member`)
+// requires no change to this file's load path, only to `tier_of`/`parse_graph`
+// below.
 //
 // `OracleRef` is trimmed to the fields the scoring rules in the design note
-// actually consult (file/startLine/shape/receiverKind/target/targetKind/
-// targetFile/external/ambiguous) -- `member`, `line`, `ext`, `receiver`,
-// `receiverText`, `memberKind`, `targetUnit` and `unit` are part of the
-// oracle's on-disk schema but never referenced by any rule here, so declaring
-// them would only be dead weight (unknown JSON keys are ignored by serde
-// without `deny_unknown_fields`, so dropping them from the struct changes
-// nothing about what a real refs.jsonl file parses to).
+// (plus this file's member-join refinement) actually consult
+// (file/startLine/shape/receiverKind/member/target/targetKind/targetFile/
+// external/ambiguous) -- `line`, `ext`, `receiver`, `receiverText`,
+// `memberKind`, `targetUnit` and `unit` are part of the oracle's on-disk
+// schema but never referenced by any rule here, so declaring them would only
+// be dead weight (unknown JSON keys are ignored by serde without
+// `deny_unknown_fields`, so dropping them from the struct changes nothing
+// about what a real refs.jsonl file parses to).
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -72,13 +75,19 @@ impl Tier {
 /// `graph.rs`'s `Def.file` is the def's first-insertion file for a partial
 /// class, so a member declared in a second `also_in` file is joined on that
 /// first file here too (the design note's fact table: "audit joins on def id
-/// only").
+/// only"). `member` is schema 2's own member-name key (`graph.rs`'s
+/// `Edge::UsesMember.member`) -- `None` for a schema-1 edge (no `member` key
+/// on disk at all) or the rare reference the extractor recorded no member
+/// name for; either way `None` makes this edge's second half of the match
+/// rule (`member_matches`, below) unconstrained, which is what keeps a
+/// schema-1 graph's scoring byte-identical to before this field existed.
 struct EdgeRow {
     from_file: String,
     from_line: usize,
     to: String,
     to_file: String,
     tier: Tier,
+    member: Option<String>,
 }
 
 /// A graph.json def, reduced to what scoring needs -- and, doubling as the
@@ -104,8 +113,11 @@ struct DefRow {
 /// One line of `refs.jsonl`, the oracle's ground-truth member-reference
 /// records -- reduced (see the module header) to what scoring reads.
 /// `target`/`targetKind`/`targetFile` are `Option` because the oracle writes
-/// `null` for an unknown value (its own §3.6 rule); every other field here is
-/// always present on a real oracle record.
+/// `null` for an unknown value (its own §3.6 rule); `member` is not --
+/// `tools/scout-semantic`'s `Records.cs` declares it a non-nullable `string`,
+/// and every syntax shape the oracle walks (`a.M`, `?.M`, a bare `M(...)`)
+/// names a member by construction -- and every other field here is always
+/// present on a real oracle record too.
 #[derive(Debug, Clone, serde::Deserialize)]
 struct OracleRef {
     file: String,
@@ -114,6 +126,7 @@ struct OracleRef {
     shape: String,
     #[serde(rename = "receiverKind")]
     receiver_kind: String,
+    member: String,
     target: Option<String>,
     #[serde(rename = "targetKind")]
     target_kind: Option<String>,
@@ -279,6 +292,10 @@ fn parse_graph(v: &serde_json::Value) -> Result<(Vec<DefRow>, Vec<EdgeRow>), Str
             to: str_field(e, "to"),
             to_file: str_field(e, "to_file"),
             tier: tier_of(e),
+            member: e
+                .get("member")
+                .and_then(|x| x.as_str())
+                .map(|s| s.to_string()),
         });
     }
     Ok((defs, edges))
@@ -313,12 +330,23 @@ fn tier_of(e: &serde_json::Value) -> Tier {
 
 /// The audit's file universe: the manifest's mapped-file set (`entries`
 /// object keys) if a manifest is present and non-empty; otherwise every file
-/// named by a graph.json def or edge. Either way, the files of any unit whose
-/// `status` is not `"ok"` are then removed -- a failed unit's own files carry
-/// no reliable oracle ground truth (the compilation that would have produced
-/// it never succeeded). A corrupt manifest fails open (falls back to the
-/// graph-files set) rather than aborting the whole audit over an unrelated
-/// artifact.
+/// named by a graph.json def or edge. A corrupt manifest fails open (falls
+/// back to the graph-files set) rather than aborting the whole audit over an
+/// unrelated artifact.
+///
+/// With no `--units`, that set IS the universe, unchanged (there is no
+/// per-file compile status to narrow it by). With `--units`, the universe
+/// instead becomes that set intersected with the UNION of `files` across
+/// every unit whose `status` is `"ok"` -- not the older subtractive rule
+/// (start from every mapped file, remove a failed unit's own files), because
+/// subtracting only reaches a unit `units.jsonl` actually lists. A project
+/// absent from the compiled `.sln` altogether -- never a `units` entry at
+/// all, ok or failed -- has no ground truth either, and the old rule left
+/// its files in the universe by omission; the new one excludes them by
+/// construction, since they can never appear in the ok-unit union. Either
+/// way, a file the oracle never compiled carries no reliable ground truth
+/// (`score` below drops both the oracle records AND the graph edges this
+/// filters out).
 fn build_universe(root: &Path, graph_value: &serde_json::Value, units: &[Unit]) -> HashSet<String> {
     let mut universe: HashSet<String> = HashSet::new();
     if let Ok(Some(m)) = crate::manifest::read_manifest(root) {
@@ -339,13 +367,15 @@ fn build_universe(root: &Path, graph_value: &serde_json::Value, units: &[Unit]) 
             }
         }
     }
-    for u in units {
-        if u.status != "ok" {
-            for f in &u.files {
-                universe.remove(f);
-            }
-        }
+    if units.is_empty() {
+        return universe;
     }
+    let ok_unit_files: HashSet<&str> = units
+        .iter()
+        .filter(|u| u.status == "ok")
+        .flat_map(|u| u.files.iter().map(String::as_str))
+        .collect();
+    universe.retain(|f| ok_unit_files.contains(f.as_str()));
     universe
 }
 
@@ -374,6 +404,25 @@ fn target_matches(r: &OracleRef, edge_to: &str) -> bool {
         }
     }
     false
+}
+
+/// The match rule's second clause (member-join refinement): whether an
+/// oracle record's own `member` agrees with an edge's. An edge with no
+/// `member` at all -- a schema-1 graph, or the rare reference the extractor
+/// recorded no member name for (`EdgeRow`'s doc comment) -- is unconstrained
+/// here, so a caller combining this with `target_matches` for a no-member
+/// edge gets EXACTLY `target_matches`'s own verdict: the legacy path stays
+/// byte-identical. When the edge does name a member, a record sharing its
+/// `(file, startLine)` but naming a DIFFERENT member is not evidence for it
+/// -- the fixture's `tests/App.Tests/WorkerTests.cs:18` is the motivating
+/// case, `Order.Load("x").Validate()`: one line, two member references
+/// (`Load` on the `Order` qualifier, `Validate` on the chain's tail), and
+/// only the `member`-matching record may vouch for either edge.
+fn member_matches(edge_member: &Option<String>, record_member: &str) -> bool {
+    match edge_member {
+        Some(m) => m == record_member,
+        None => true,
+    }
 }
 
 /// Whether an oracle record's target is a def devscout's own graph knows
@@ -497,6 +546,13 @@ struct TierStats {
     fp_no_site: usize,
     fp_external_site: usize,
     fp_wrong_target: usize,
+    /// Structurally-impossible FALSE POSITIVES only -- a structurally
+    /// impossible edge that also happens to be the right answer to its site
+    /// (the oracle sees the caller's project as unable to reach the
+    /// target's, but a `uses-member` edge to that exact member still landed
+    /// there and is a TP) is real signal about a project-boundary edge case,
+    /// not resolver noise, and counting it here would silently make `guess`
+    /// tier's own name-collision false positives look worse than they are.
     structural: usize,
 }
 
@@ -547,12 +603,29 @@ struct AuditReport {
     /// `(target id, count)`, sorted by count desc then id asc, top 20.
     top_missed: Vec<(String, usize)>,
     partial_file_mismatch: usize,
+    /// `--units` edges only (always 0 with no `--units`): a `uses-member`
+    /// edge whose `from_file` fell outside `universe` -- a project the
+    /// oracle's `.sln` never compiled at all, ok or failed, so there is no
+    /// ground truth for this edge one way or the other. Dropped before
+    /// every other signal below (tiers, recall, structural, fan-out), the
+    /// same as an out-of-universe oracle record, and counted on its own:
+    /// unlike `fp_no_site` (a site the oracle DID walk and simply saw no
+    /// reference on this exact line), this edge was never in the oracle's
+    /// judged universe to begin with, so it is neither a true nor a false
+    /// positive.
+    edges_outside_universe: usize,
 }
 
 /// Scores `inputs` into a full `AuditReport`. Pure: every branch below reads
 /// only `inputs` and locally built indexes over it.
 fn score(inputs: Inputs) -> AuditReport {
     let root = inputs.root.display().to_string();
+
+    // "units" method (below) applies exactly when `--units` produced at
+    // least one unit -- computed once, up front, since both the edge-universe
+    // filter just below and the structural-check setup further down switch
+    // on it.
+    let units_method = !inputs.units.is_empty();
 
     // Universe filter: an oracle record whose file is outside `universe` is
     // dropped and counted, never scored.
@@ -569,14 +642,35 @@ fn score(inputs: Inputs) -> AuditReport {
         })
         .collect();
 
+    // Universe filter, edge side: with `--units`, a `uses-member` edge whose
+    // `from_file` is outside `universe` (a project the oracle's `.sln` never
+    // compiled, ok or failed) is dropped before every signal below -- it is
+    // neither a true nor a false positive, just unjudgeable, the same
+    // reasoning as the record-side filter just above. With no `--units`
+    // (`units_method` false), `universe` carries no per-file compile status
+    // to filter by (see `build_universe`), so nothing is dropped here --
+    // this stays a no-op, matching every edge's pre-refinement fate.
+    let mut edges_outside_universe = 0usize;
+    let edges: Vec<&EdgeRow> = inputs
+        .edges
+        .iter()
+        .filter(|e| {
+            let keep = !units_method || inputs.universe.contains(&e.from_file);
+            if !keep {
+                edges_outside_universe += 1;
+            }
+            keep
+        })
+        .collect();
+
     let graph_defs_by_id: HashMap<&str, &DefRow> = inputs
         .graph_defs
         .iter()
         .map(|d| (d.id.as_str(), d))
         .collect();
 
-    // Site indexes: every kept record, and every uses-member edge, grouped
-    // by `(file, startLine)`/`(from_file, from_line)`.
+    // Site indexes: every kept record, and every kept uses-member edge,
+    // grouped by `(file, startLine)`/`(from_file, from_line)`.
     let mut by_site: HashMap<(String, usize), Vec<&OracleRef>> = HashMap::new();
     for r in &records {
         by_site
@@ -585,7 +679,7 @@ fn score(inputs: Inputs) -> AuditReport {
             .push(r);
     }
     let mut edges_by_site: HashMap<(String, usize), Vec<&EdgeRow>> = HashMap::new();
-    for e in &inputs.edges {
+    for e in edges.iter().copied() {
         edges_by_site
             .entry((e.from_file.clone(), e.from_line))
             .or_default()
@@ -619,7 +713,6 @@ fn score(inputs: Inputs) -> AuditReport {
 
     // Structural check setup: "units" method when `--units` produced at
     // least one unit, else the "test-defs" fallback.
-    let units_method = !inputs.units.is_empty();
     let structural_method: &'static str = if units_method { "units" } else { "test-defs" };
     let file_unit = file_to_unit(&inputs.units);
     let reach_map = reach(&inputs.units);
@@ -637,9 +730,9 @@ fn score(inputs: Inputs) -> AuditReport {
     }
     let mut structural_impossible = 0usize;
     let mut structural_checked = 0usize;
-    let edge_structural: Vec<bool> = inputs
-        .edges
+    let edge_structural: Vec<bool> = edges
         .iter()
+        .copied()
         .map(|e| {
             match is_structural(
                 e,
@@ -665,27 +758,32 @@ fn score(inputs: Inputs) -> AuditReport {
     let mut tiers: HashMap<Tier, TierStats> = HashMap::new();
     let mut fp_targets: HashMap<String, usize> = HashMap::new();
     let mut fanout_sites: HashMap<(String, usize), usize> = HashMap::new();
-    for e in &inputs.edges {
+    for e in edges.iter().copied() {
         *fanout_sites
             .entry((e.from_file.clone(), e.from_line))
             .or_insert(0) += 1;
     }
     let mut partial_file_mismatch = 0usize;
 
-    for (i, e) in inputs.edges.iter().enumerate() {
+    for (i, e) in edges.iter().copied().enumerate() {
         let stats = tiers.entry(e.tier).or_default();
         stats.edges += 1;
         let site_key = (e.from_file.clone(), e.from_line);
-        match by_site.get(&site_key) {
+        // Whether this edge landed a true positive -- tracked separately
+        // from the FP/TP branch below so the structural tally after it can
+        // count a structurally-impossible edge only when it is ALSO a false
+        // positive (`TierStats.structural`'s doc comment).
+        let is_tp = match by_site.get(&site_key) {
             None => {
                 stats.fp += 1;
                 stats.fp_no_site += 1;
                 *fp_targets.entry(short_name(&e.to).to_string()).or_insert(0) += 1;
+                false
             }
             Some(recs) => {
-                let tp_record = recs
-                    .iter()
-                    .find(|r| !r.external && target_matches(r, &e.to));
+                let tp_record = recs.iter().find(|r| {
+                    !r.external && target_matches(r, &e.to) && member_matches(&e.member, &r.member)
+                });
                 if let Some(r) = tp_record {
                     stats.tp += 1;
                     if let Some(tf) = &r.target_file {
@@ -693,18 +791,37 @@ fn score(inputs: Inputs) -> AuditReport {
                             partial_file_mismatch += 1;
                         }
                     }
-                } else if recs.iter().all(|r| r.external) {
-                    stats.fp += 1;
-                    stats.fp_external_site += 1;
-                    *fp_targets.entry(short_name(&e.to).to_string()).or_insert(0) += 1;
+                    true
                 } else {
+                    // The external-site/wrong-target split is scoped to the
+                    // SAME member as the edge, when it names one: a
+                    // different-member record sharing this source line (a
+                    // fluent chain's outer call, a lambda parameter access)
+                    // is not evidence of an in-tree answer for the exact
+                    // reference this edge represents -- the fixture's
+                    // `entity.Property(e => e.Name)` case
+                    // (`AppDbContext.cs`), where an unrelated `e.Name`
+                    // record on the same line used to make a guessed
+                    // `Property(...)` edge look like a "wrong target" miss
+                    // instead of the external-API leak it is. A no-member
+                    // edge (legacy path) is unconstrained here, exactly as
+                    // before.
+                    let scoped: Vec<&&OracleRef> = recs
+                        .iter()
+                        .filter(|r| member_matches(&e.member, &r.member))
+                        .collect();
                     stats.fp += 1;
-                    stats.fp_wrong_target += 1;
+                    if scoped.iter().all(|r| r.external) {
+                        stats.fp_external_site += 1;
+                    } else {
+                        stats.fp_wrong_target += 1;
+                    }
                     *fp_targets.entry(short_name(&e.to).to_string()).or_insert(0) += 1;
+                    false
                 }
             }
-        }
-        if edge_structural[i] {
+        };
+        if !is_tp && edge_structural[i] {
             stats.structural += 1;
         }
     }
@@ -718,8 +835,11 @@ fn score(inputs: Inputs) -> AuditReport {
         edges_by_site
             .get(&(r.file.clone(), r.start_line))
             .is_some_and(|es| {
-                es.iter()
-                    .any(|e| tier_ok(e.tier) && target_matches(r, &e.to))
+                es.iter().any(|e| {
+                    tier_ok(e.tier)
+                        && target_matches(r, &e.to)
+                        && member_matches(&e.member, &r.member)
+                })
             })
     };
     let d_records: Vec<&&OracleRef> = records
@@ -838,6 +958,7 @@ fn score(inputs: Inputs) -> AuditReport {
         top_fp,
         top_missed,
         partial_file_mismatch,
+        edges_outside_universe,
     }
 }
 
@@ -957,9 +1078,9 @@ fn render_text(r: &AuditReport) -> String {
             .join("  ");
         lines.push(format!("unknown targets  {s}"));
     }
-    // These three are printed only when non-zero: the common case (a clean
-    // run against a well-formed oracle) has all three at zero, and a text
-    // report that always carried three "0" lines would bury the signal a
+    // These four are printed only when non-zero: the common case (a clean
+    // run against a well-formed oracle) has all four at zero, and a text
+    // report that always carried four "0" lines would bury the signal a
     // real run needs to see.
     if r.partial_file_mismatch > 0 {
         lines.push(format!("partial file mismatch {}", r.partial_file_mismatch));
@@ -969,6 +1090,12 @@ fn render_text(r: &AuditReport) -> String {
     }
     if r.oracle_dropped > 0 {
         lines.push(format!("dropped (outside universe) {}", r.oracle_dropped));
+    }
+    if r.edges_outside_universe > 0 {
+        lines.push(format!(
+            "edges outside universe (not judged) {}",
+            r.edges_outside_universe
+        ));
     }
 
     lines.join("\n")
@@ -1114,6 +1241,10 @@ fn render_json(r: &AuditReport) -> String {
         (
             "partial_file_mismatch",
             J::UInt(r.partial_file_mismatch as u64),
+        ),
+        (
+            "edges_outside_universe",
+            J::UInt(r.edges_outside_universe as u64),
         ),
     ])
     .to_json_string()
@@ -1334,11 +1465,13 @@ mod tests {
         serde_json::from_str(&text).expect("graph.json round-trips through Value")
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn oracle_ref(
         file: &str,
         start_line: usize,
         shape: &str,
         receiver_kind: &str,
+        member: &str,
         target: Option<&str>,
         target_kind: Option<&str>,
         external: bool,
@@ -1348,6 +1481,7 @@ mod tests {
             start_line,
             shape: shape.to_string(),
             receiver_kind: receiver_kind.to_string(),
+            member: member.to_string(),
             target: target.map(str::to_string),
             target_kind: target_kind.map(str::to_string),
             target_file: None,
@@ -1380,6 +1514,7 @@ mod tests {
             edges[0].from_line,
             "access",
             "ident",
+            edges[0].member.as_deref().unwrap_or(""),
             Some(&edges[0].to),
             Some("class"),
             false,
@@ -1431,6 +1566,7 @@ mod tests {
             g_edge.from_line,
             "access",
             "ident",
+            g_edge.member.as_deref().unwrap_or("Frob"),
             Some("Some.External.Type"),
             Some("class"),
             true,
@@ -1461,18 +1597,24 @@ mod tests {
 
     #[test]
     fn a_matching_record_among_several_at_one_site_still_earns_a_true_positive() {
+        // No `member` on the edge (the legacy, schema-1 shape) -- unconstrained
+        // by the member-join refinement, so this test still exercises pure
+        // target-matching across several records at one site, byte-identical
+        // to before that refinement existed.
         let edge = EdgeRow {
             from_file: "F.cs".into(),
             from_line: 5,
             to: "Ns.Right".into(),
             to_file: "F.cs".into(),
             tier: Tier::Precise,
+            member: None,
         };
         let wrong = oracle_ref(
             "F.cs",
             5,
             "access",
             "ident",
+            "M",
             Some("Ns.Wrong"),
             Some("class"),
             false,
@@ -1482,6 +1624,7 @@ mod tests {
             5,
             "access",
             "ident",
+            "M",
             Some("Ns.Right"),
             Some("class"),
             false,
@@ -1505,6 +1648,163 @@ mod tests {
         assert_eq!(ts.fp, 0);
     }
 
+    // --- member equality picks the right record at a shared site -----------
+
+    /// The motivating case for the member-join refinement: a chain-tail call
+    /// (`Order.Load("x").Validate()`, `tests/App.Tests/WorkerTests.cs:18` in
+    /// the fixture) puts TWO oracle records on one `(file, startLine)` --
+    /// `Load` on the `Order` qualifier, `Validate` on the chain's tail -- but
+    /// devscout's own extractor only ever emits an edge for the qualifier
+    /// call. Before the member-join refinement, `Validate`'s record still
+    /// counted as a recall HIT, because `target_matches` alone can't tell
+    /// the two references on that line apart: both target `Ns.Order`. With
+    /// member equality required, only the `Load` edge's own record vouches
+    /// for it, and `Validate` -- which no edge actually names -- is
+    /// correctly a miss.
+    #[test]
+    fn member_equality_picks_the_right_record_at_a_shared_site_chain_tail_vs_qualifier() {
+        let edge = EdgeRow {
+            from_file: "F.cs".into(),
+            from_line: 5,
+            to: "Ns.Order".into(),
+            to_file: "F.cs".into(),
+            tier: Tier::Precise,
+            member: Some("Load".to_string()),
+        };
+        let load_record = oracle_ref(
+            "F.cs",
+            5,
+            "access",
+            "ident",
+            "Load",
+            Some("Ns.Order"),
+            Some("class"),
+            false,
+        );
+        let validate_record = oracle_ref(
+            "F.cs",
+            5,
+            "access",
+            "call",
+            "Validate",
+            Some("Ns.Order"),
+            Some("class"),
+            false,
+        );
+        let report = score(Inputs {
+            root: PathBuf::from("/repo"),
+            graph_defs: vec![DefRow {
+                id: "Ns.Order".into(),
+                file: "F.cs".into(),
+                kind: "class".into(),
+                test: false,
+            }],
+            oracle_defs: Vec::new(),
+            edges: vec![edge],
+            records: vec![load_record, validate_record],
+            units: Vec::new(),
+            universe: ["F.cs".to_string()].into_iter().collect(),
+        });
+
+        // The edge itself: a TP against `load_record` only.
+        let (_, ts) = &report.tiers[0];
+        assert_eq!(ts.tp, 1);
+        assert_eq!(ts.fp, 0);
+
+        // Recall: both records are D-eligible, but only `load_record` is a
+        // hit -- `validate_record` is a genuine miss, not a false hit
+        // borrowed from the `Load` edge sharing its site.
+        assert_eq!(report.recall_denominator, 2);
+        assert_eq!(report.recall_all, 1);
+        assert_eq!(report.top_missed, vec![("Ns.Order".to_string(), 1)]);
+    }
+
+    // --- member-scoped external-site vs wrong-target classification --------
+
+    /// The fixture's `entity.Property(e => e.Name)` case
+    /// (`src/App/AppDbContext.cs`): a guessed `Property(...)` edge landing
+    /// on the wrong in-tree class shares its source line with an UNRELATED
+    /// non-external record for a different member (`e.Name`'s lambda
+    /// parameter access) -- before the member-join refinement, that
+    /// unrelated record's mere presence at the site was enough to call the
+    /// guess `fp_wrong_target` instead of the external-API leak it actually
+    /// is (EF's real `Property(...)` fluent method, external). Scoping the
+    /// external-vs-wrong split to records sharing the edge's own member
+    /// fixes this: `e.Name` (member `Name`) no longer speaks for a `Property`
+    /// edge.
+    #[test]
+    fn a_different_member_non_external_record_does_not_block_an_external_leak_classification() {
+        let edge = EdgeRow {
+            from_file: "F.cs".into(),
+            from_line: 24,
+            to: "Ns.FilterConfig".into(),
+            to_file: "F.cs".into(),
+            tier: Tier::Guess,
+            member: Some("Property".to_string()),
+        };
+        // The chain's outer call -- external, same member as the edge.
+        let has_max_length = oracle_ref(
+            "F.cs",
+            24,
+            "access",
+            "call",
+            "HasMaxLength",
+            Some("Ext.PropertyBuilder"),
+            Some("class"),
+            true,
+        );
+        // The lambda parameter access `e.Name` -- non-external, but a
+        // DIFFERENT member than the edge's own `Property`.
+        let e_name = oracle_ref(
+            "F.cs",
+            24,
+            "access",
+            "ident",
+            "Name",
+            Some("Ns.Order"),
+            Some("class"),
+            false,
+        );
+        // The actual `entity.Property(...)` call the edge is a wrong guess
+        // for -- external, same member (`Property`) as the edge.
+        let entity_property = oracle_ref(
+            "F.cs",
+            24,
+            "access",
+            "ident",
+            "Property",
+            Some("Ext.EntityTypeBuilder"),
+            Some("class"),
+            true,
+        );
+        let report = score(Inputs {
+            root: PathBuf::from("/repo"),
+            graph_defs: vec![DefRow {
+                id: "Ns.Order".into(),
+                file: "F.cs".into(),
+                kind: "class".into(),
+                test: false,
+            }],
+            oracle_defs: Vec::new(),
+            edges: vec![edge],
+            records: vec![has_max_length, e_name, entity_property],
+            units: Vec::new(),
+            universe: ["F.cs".to_string()].into_iter().collect(),
+        });
+
+        let (_, ts) = &report.tiers[0];
+        assert_eq!(ts.fp, 1);
+        assert_eq!(
+            ts.fp_external_site, 1,
+            "the member-scoped view sees only `entity_property`, which is external"
+        );
+        assert_eq!(
+            ts.fp_wrong_target, 0,
+            "`e_name` is non-external but names a different member, so it must not \
+             count as an in-tree answer this edge got wrong"
+        );
+    }
+
     // --- enum member, both spellings ----------------------------------------
 
     #[test]
@@ -1515,6 +1815,7 @@ mod tests {
             to: "Ns.OrderStatus.Open".into(),
             to_file: "Ns/OrderStatus.cs".into(),
             tier: Tier::Precise,
+            member: Some("Open".to_string()),
         };
         let edge_bare = EdgeRow {
             from_file: "F.cs".into(),
@@ -1522,12 +1823,14 @@ mod tests {
             to: "Ns.OrderStatus".into(),
             to_file: "Ns/OrderStatus.cs".into(),
             tier: Tier::Precise,
+            member: Some("Open".to_string()),
         };
         let rec_at_full = oracle_ref(
             "F.cs",
             10,
             "access",
             "ident",
+            "Open",
             Some("Ns.OrderStatus.Open"),
             Some("enum-member"),
             false,
@@ -1537,6 +1840,7 @@ mod tests {
             20,
             "access",
             "ident",
+            "Open",
             Some("Ns.OrderStatus.Open"),
             Some("enum-member"),
             false,
@@ -1585,6 +1889,60 @@ mod tests {
         );
     }
 
+    // --- universe: an edge from a file outside units[].files is dropped ----
+
+    /// The MassTransit-run bug this refinement fixes (480 of 530 FPs, per
+    /// the design note): with `--units`, a `uses-member` edge whose
+    /// `from_file` belongs to a project the compiled `.sln` never listed at
+    /// all -- not `"ok"`, not `"failed"`, simply absent from `units.jsonl`
+    /// -- carries no oracle ground truth either way. Before this
+    /// refinement, only oracle RECORDS were dropped for falling outside
+    /// `universe`; nothing stopped such an edge from being scored, and
+    /// since no record ever shares its site, it landed as an `fp_no_site`
+    /// false positive on every run. `universe` = union of `files` across
+    /// every `"ok"` unit means "App/A.cs" is in it and "Other/B.cs" -- from
+    /// a project `units` never mentions -- is not, so the edge from
+    /// "Other/B.cs" is dropped before scoring, not counted as a false
+    /// positive.
+    #[test]
+    fn an_edge_from_a_file_outside_units_files_is_dropped_not_a_false_positive() {
+        let edge = EdgeRow {
+            from_file: "Other/B.cs".into(),
+            from_line: 1,
+            to: "Ns.Something".into(),
+            to_file: "Other/B.cs".into(),
+            tier: Tier::Heuristic,
+            member: None,
+        };
+        let units = vec![Unit {
+            name: "App".into(),
+            status: "ok".into(),
+            refs: vec![],
+            files: vec!["App/A.cs".into()],
+        }];
+        let report = score(Inputs {
+            root: PathBuf::from("/repo"),
+            graph_defs: Vec::new(),
+            oracle_defs: Vec::new(),
+            edges: vec![edge],
+            records: Vec::new(),
+            units,
+            // What `build_universe` would produce: the manifest's mapped
+            // files ("App/A.cs" AND "Other/B.cs" -- devscout mapped both)
+            // intersected with the union of ok units' files ("App/A.cs"
+            // only), since "Other/B.cs" belongs to no unit at all.
+            universe: ["App/A.cs".to_string()].into_iter().collect(),
+        });
+
+        assert_eq!(report.edges_outside_universe, 1);
+        assert!(
+            report.tiers.is_empty(),
+            "the dropped edge must not appear in any tier's stats, fp_no_site included: {:?}",
+            report.tiers
+        );
+        assert_eq!(report.structural_checked, 0);
+    }
+
     // --- structural: units method, and test-defs fallback -------------------
 
     #[test]
@@ -1595,6 +1953,7 @@ mod tests {
             to: "Tests.Foo".into(),
             to_file: "Tests/Foo.cs".into(),
             tier: Tier::Heuristic,
+            member: None,
         };
         let units = vec![
             Unit {
@@ -1616,15 +1975,20 @@ mod tests {
                 files: vec!["Tests/Foo.cs".into()],
             },
         ];
-        // Also a genuine (non-external) match at the site, to show the
-        // structural flag is orthogonal to TP/FP: App can never reach
-        // Tests, so this edge is structurally impossible EVEN THOUGH it is
-        // also the right answer to the oracle record at its site.
+        // Also a genuine (non-external) match at the site: App can never
+        // reach Tests, so this edge is structurally impossible EVEN THOUGH
+        // it is also the right answer to the oracle record at its site --
+        // exactly the case `TierStats.structural`'s doc comment calls out.
+        // The GLOBAL counts (`structural_checked`/`structural_impossible`)
+        // still see it: they come from `is_structural` alone, independent
+        // of TP/FP. Only the per-tier `structural` column, which feeds a
+        // "these are resolver false positives" reading, excludes it.
         let record = oracle_ref(
             "App/A.cs",
             9,
             "access",
             "ident",
+            "Foo",
             Some("Tests.Foo"),
             Some("class"),
             false,
@@ -1647,8 +2011,12 @@ mod tests {
         assert_eq!(report.structural_checked, 1);
         assert_eq!(report.structural_impossible, 1);
         let (_, ts) = &report.tiers[0];
-        assert_eq!(ts.tp, 1, "structural is orthogonal to TP/FP");
-        assert_eq!(ts.structural, 1);
+        assert_eq!(ts.tp, 1, "the structurally-impossible edge is still a TP");
+        assert_eq!(
+            ts.structural, 0,
+            "a TP is never counted structural, however structurally impossible its edge -- \
+             the tier column reports resolver false positives, not every structural oddity"
+        );
     }
 
     #[test]
@@ -1659,6 +2027,7 @@ mod tests {
             to: "Tests.Helper".into(),
             to_file: "Tests/Helper.cs".into(),
             tier: Tier::Heuristic,
+            member: None,
         };
         // A second edge from a file that DOES declare a test-attributed def
         // of its own -- the fallback's second clause ("from_file has no
@@ -1669,6 +2038,7 @@ mod tests {
             to: "Tests.Helper".into(),
             to_file: "Tests/Helper.cs".into(),
             tier: Tier::Heuristic,
+            member: None,
         };
         let report = score(Inputs {
             root: PathBuf::from("/repo"),
@@ -1776,6 +2146,7 @@ mod tests {
             top_fp: vec![("FilterConfig".to_string(), 2), ("Mailer".to_string(), 1)],
             top_missed: vec![("Fixture.Domain.Order".to_string(), 2)],
             partial_file_mismatch: 0,
+            edges_outside_universe: 5,
         };
         let json = render_json(&report);
         assert_eq!(
@@ -1797,7 +2168,8 @@ mod tests {
                 "\"unknown_targets\":[{\"kind\":\"class\",\"count\":2}],",
                 "\"top_fp\":[{\"name\":\"FilterConfig\",\"count\":2},{\"name\":\"Mailer\",\"count\":1}],",
                 "\"top_missed\":[{\"id\":\"Fixture.Domain.Order\",\"count\":2}],",
-                "\"partial_file_mismatch\":0}",
+                "\"partial_file_mismatch\":0,",
+                "\"edges_outside_universe\":5}",
             )
         );
     }
