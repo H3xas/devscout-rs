@@ -107,6 +107,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   unification runs against that base's declared type arguments rather than the receiver's
   own, so an extension declared on an implemented interface binds for a generic enclosing
   type.
+- **The scored tier no longer re-admits an extension the extension tier declined on arity.**
+  An extension of the receiver's exact type is still a valid guess when only its namespace
+  was not imported at the site, but a call whose argument count the extension cannot take
+  has no binding under any import and is refused there too.
 
 ### Benchmarks
 
