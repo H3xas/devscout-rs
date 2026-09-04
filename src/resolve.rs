@@ -176,13 +176,14 @@ pub struct MemberLists {
     /// base walk); every other caller of a "does this def declare the
     /// member" question keeps reading `Def.methods` alone.
     pub non_public_methods: Vec<String>,
-    /// Method name -> the (min, max) argument-count range every overload
-    /// sharing that name accepts -- see `FragDef.method_arities`. Merged
-    /// across a partial class exactly like `method_returns`/`property_types`:
-    /// first-declaration-wins per NAME (a later part's own overload set for
-    /// a name the first part already answered is never consulted), not a
-    /// union of ranges the way `non_public_methods` unions NAMES. Read by
-    /// `declares_member`/`declares_member_any_visibility` for a ref that
+    /// Method name -> the (min, max) argument-count ranges the overloads
+    /// sharing that name accept -- see `FragDef.method_arities`. Merged
+    /// across a partial class as a UNION of ranges per NAME, the way
+    /// `Def.methods` unions the names themselves: every declaring part
+    /// contributes the overloads it declares, duplicates dropped, because
+    /// the parts of one partial class share a single overload set and a
+    /// call some part's overload accepts is a call the type accepts. Read
+    /// by `declares_member`/`declares_member_any_visibility` for a ref that
     /// carries an `argCount`.
     pub method_arities: OrderedMap<Vec<(usize, i64)>>,
 }
@@ -358,15 +359,30 @@ fn build_def_index(fragments_by_file: &[(String, Fragment)]) -> DefIndex {
                                 .insert(name.clone(), args.clone());
                         }
                     }
-                    // First-declaration-wins per NAME, same rule as
-                    // `method_returns` immediately above -- not a union of
-                    // ranges the way `non_public_methods` unions NAMES.
+                    // A UNION per NAME, unlike `method_returns` above: a
+                    // partial class's parts declare OVERLOADS of one name,
+                    // not competing answers for it, so `void Run()` in one
+                    // file and `void Run(int)` in another must both be
+                    // admitted -- first-declaration-wins here would have
+                    // hidden the sibling file's overload and made
+                    // `method_arity_admits` refuse a call the type really
+                    // accepts. Ranges already recorded are not repeated, so
+                    // a part re-declaring an overload the merged set holds
+                    // leaves the set unchanged.
                     for (name, ranges) in d.method_arities.iter() {
-                        if member_lists[idx].method_arities.get(name).is_none() {
-                            member_lists[idx]
-                                .method_arities
-                                .insert(name.clone(), ranges.clone());
+                        let mut merged = member_lists[idx]
+                            .method_arities
+                            .get(name)
+                            .cloned()
+                            .unwrap_or_default();
+                        for range in ranges {
+                            if !merged.contains(range) {
+                                merged.push(*range);
+                            }
                         }
+                        member_lists[idx]
+                            .method_arities
+                            .insert(name.clone(), merged);
                     }
                 }
             }
@@ -9755,6 +9771,39 @@ mod tests {
             "Send(1) falls inside the OPTIONAL-parameter overload's (1, 2) range, and Spray(1, 2, \
              3, 4, 5) falls inside the `params` overload's unbounded (0, -1) range -- both admit \
              the call, so both bind precisely to the instance member"
+        );
+        assert_eq!(
+            g.stats.heuristic_edge_count, 0,
+            "two precise hits, no guess"
+        );
+    }
+
+    #[test]
+    fn stage7_partial_class_overloads_declared_in_sibling_files_both_admit_their_calls() {
+        // One partial class, one overload set, split across two files. The
+        // merged arity table has to hold BOTH overloads: either call is a
+        // call the type accepts, and the file that cannot see the other
+        // part's declaration is exactly the file that needs the merge.
+        let files = fragments_for(&[
+            (
+                "Domain/Svc.cs",
+                "\nnamespace App.Domain;\n\npublic partial class Svc\n{\n    public void Run() { }\n\n    public void First() { this.Run(1); }\n}\n",
+            ),
+            (
+                "Domain/Svc.More.cs",
+                "\nnamespace App.Domain;\n\npublic partial class Svc\n{\n    public void Run(int n) { }\n\n    public void Second() { this.Run(); }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_from(&g, "Domain/Svc.cs"),
+            vec![("App.Domain.Svc", 8)],
+            "this.Run(1) is admitted by the ONE-argument overload the SIBLING file declares --              merging the arity ranges per name is what lets the first-declaring part's              zero-argument range stop hiding it"
+        );
+        assert_eq!(
+            member_edges_from(&g, "Domain/Svc.More.cs"),
+            vec![("App.Domain.Svc", 8)],
+            "and the zero-argument call keeps binding from the other direction -- the merge is a              union, so neither part's overload set is lost"
         );
         assert_eq!(
             g.stats.heuristic_edge_count, 0,
