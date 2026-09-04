@@ -57,6 +57,18 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Method arities are recorded per overload.** Each declared method records the
   parameter-count range every overload accepts, an unbounded `params` overload left
   open-ended and optional parameters lowering the minimum.
+- **TypeScript aliases follow the nearest `tsconfig.json`.** A bare specifier resolves through
+  the `paths`/`baseUrl` chain of the closest ancestor `tsconfig.json` of the importing file,
+  so an app-level `@/*` inside a workspace resolves instead of falling out external; the
+  repo-root `tsconfig.json`/`tsconfig.base.json` chain stays the fallback for files under no
+  nested config or under one that declares neither option. A nested `paths` is a
+  whole-property override, TypeScript's own rule.
+- **Chained TypeScript barrels are followed.** A name pulled through up to eight nested
+  `index.ts` re-exports (`export * from`, `export { X } from`) resolves to its declaring
+  file; a visited set makes a re-export cycle terminate. The barrel-followed `import` edge
+  still carries `via`, and a `jsx-use` or `call` edge bound through a two-hop barrel now
+  lands on the declaring file instead of resolving to nothing. `refs`/`impact` still fold
+  none of the TS edge kinds (README, Limitations). Pinned by `fixtures/ts-resolution/`.
 
 ### Changed
 
