@@ -45,11 +45,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   rather than the raw `Task<...>`, and a `Task<Task<T>>` return is unwrapped only once.
 - **One-hop call-chain tails are typed.** A member access on the result of `a.B()` carries
   the inner call as its receiver and resolves through one method-return hop; a qualifier
-  that is itself a chain (`.D` on `a.B().C()`) emits no reference.
+  that is itself a chain (`.D` on `a.B().C()`) or a null-conditional chain (`a?.B()?.C`)
+  emits no typed reference.
 - **A collection receiver types its first lambda argument's sole parameter.** A
   single-parameter lambda passed as the first argument to a call on an array- or
   single-type-argument-generic-typed identifier gets that parameter typed as the element
-  type; two-argument generics, multi-parameter lambdas, and later arguments get none.
+  type; two-argument generics, multi-parameter lambdas, and later arguments get none. The
+  rule reads the receiver's shape only, so a single-type-argument wrapper such as `Task<T>`
+  or `Lazy<T>` types the parameter as its type argument too.
 - **Field types cross files.** A bare-identifier receiver with no in-file type fact is typed
   from the enclosing type's own field and property declarations, merged across every file a
   partial type spans, then from the same tables on each in-graph base in declaration order;
@@ -74,10 +77,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   list. Without a model nothing changes.
 - **Fragment cache moves to v16.** The next `map` after upgrading reparses every file once;
   the superseded v15 cache files are removed.
-- **Typed-receiver and extension lookups walk the receiver's base closure, class bases
-  before any interface, in declaration order.** A class-typed receiver never binds to an
-  interface declaration at any depth; the extension tier tries every in-graph base, and its
-  raw base names, as a lookup key when the receiver's own type misses.
+- **Typed-receiver lookups walk the receiver's base closure, class bases before any
+  interface, in declaration order.** A class-typed receiver never binds to an interface
+  declaration at any depth; the extension tier tries every in-graph base, and its raw base
+  names, as a lookup key when the receiver's own type misses, in no promised order.
 - **Non-public base members are visible to `this.` and `base.` lookups only.** The scored
   tier keeps vouching only through publicly declared members, so a guess never resolves
   through a private one.
@@ -98,15 +101,32 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **A call whose argument count no overload admits no longer binds to the same-named
   instance member.** It falls through to the extension tier instead, exactly as it would
   for a member the receiver does not declare at all.
-- **A call-chain tail whose method-return hop fails no longer enters the guess pool.** When
-  the hop yields no in-graph receiver type, the reference is finished as external instead
-  of falling into the extension tier with an unknown receiver or the scored tier's
+- **A receiver typed by a call whose method-return hop fails no longer enters the guess
+  pool.** When the hop yields no in-graph receiver type — for a chain tail, or for a local
+  assigned from a call or an awaited call — the reference is finished as external instead of
+  falling into the extension tier with an unknown receiver or the scored tier's
   name-uniqueness pool.
 - **Extension-method generic unification checks the matched base's own type arguments.**
   When the extension tier reaches its lookup key through the receiver's base closure,
   unification runs against that base's declared type arguments rather than the receiver's
   own, so an extension declared on an implemented interface binds for a generic enclosing
   type.
+- **Overloads a partial type declares across files all admit their calls.** Method arities
+  merge as a union per name across every file the type spans, so `this.Run(1)` with `Run()`
+  in one file and `Run(int)` in another binds instead of falling through.
+- **A `base.` lookup on a cyclic hierarchy never binds the enclosing type.** The
+  base-closure walk starts with its own type already marked as seen.
+- **A field or property type declared in another file resolves in that file's context.**
+  A base or sibling-partial field typed `Alpha` resolves `Alpha` with the declaring file's
+  `using`s and namespace, not the reading file's, so a same-named type visible only from
+  the reading file no longer takes the edge.
+- **Every catch, query-range and lambda binding shadows the cross-file field fallback.** A
+  `catch (T e)` designation records a type fact; a query range variable and a lambda
+  parameter the element rule does not type take the name untyped, so a same-named field on
+  the enclosing type or a base can no longer type them.
+- **A `base.`-qualified chain head hops through the base's method return.**
+  `base.Make().Validate()` types the tail from the first in-graph base declaring `Make`,
+  never from the enclosing type's own same-named member.
 
 ### Benchmarks
 
@@ -121,8 +141,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   overall recall rises 0.479 → 0.546 (precise-only 0.379 → 0.431, precise+ext
   0.394 → 0.467). Extension-tier precision rises 0.809 → 0.906 on more than double the
   edges (1083 → 2272); precise precision holds near-flat at 0.969 → 0.972 and guess
-  precision at 0.502 → 0.512; leaked external sites fall 1098 → 1011. Full per-tier
-  figures are in `docs/benchmarks/results/2026-09-resolver-precision.md`.
+  precision at 0.502 → 0.512; leaked external sites fall 1098 → 1011. Run 4 misses four of
+  its registered recall predictions (`call` 0.060 against ≥ 0.20, `ident` 0.628 against
+  ≥ 0.63, all 0.546 against ≥ 0.55, precise+ext 0.467 against ≥ 0.47). Full per-tier
+  figures, every prediction with its verdict, and the open enrichment decision are in
+  `docs/benchmarks/results/2026-09-resolver-precision.md`.
 - **A stale fragment cache silently read this branch's additive tables as empty.** A corpus
   run measured against a fragment cache built by an earlier commit on this branch dropped
   every table it had not yet cached — base closures, arities, field types, and the rest —

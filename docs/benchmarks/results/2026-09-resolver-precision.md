@@ -1060,6 +1060,32 @@ syntactic rule for in-graph callees and is the next extractor step before a comp
 is weighed against it. Whatever that weighing decides, it will be measured here, on this corpus
 pin and this oracle output, with predictions registered first.
 
+The buckets this decision rests on are the Run 4 recall-by-receiver-kind table and the Run 3
+attribution of the missed `call` sites (47% bare unqualified calls, a further third chains deeper
+than one hop) and of the top missed target (57% accesses on untyped lambda parameters, 35% a
+generic-arity collision); this document holds no separate per-target-kind table. Applying the
+registered rule's second branch: the enrichment layer is a design item of its own, tracked outside
+this repository, and its input contract is the per-site record `tools/scout-semantic` already
+emits — `receiverText`, `receiver`, `target` (`tools/scout-semantic/Records.cs`) — consumed from a
+cache and never on the hook path. The lambda-parameter syntactic rule named above is measured
+first; the compiler-backed layer is weighed against whatever that run leaves.
+
+### Changes after Run 4, not yet measured (2026-09-05)
+
+A whole-branch review after Run 4 found and fixed five resolver and extractor defects: partial-type
+overload arities merged as a union per name; a `base.` walk on a cyclic hierarchy no longer
+binding the enclosing type; a cross-file field or property type resolved in its declaring file's
+`using` context; catch, query-range and untyped lambda bindings shadowing the cross-file field
+fallback; and a `base.`-qualified chain head hopping through the base's method return. Each is
+subtractive on wrong edges or additive on a call that previously fell through, and each carries
+a unit test; none is reflected in the Run 4 figures above. The next corpus run (wiped state, as
+Run 3 and Run 4 were) measures them; its predictions are registered here before it runs.
+
+The 5%-false-positive stop condition registered for the lambda-parameter rule was not checked as
+its own `ident`-bucket attribution on Runs 3 or 4; the evidence on record is indirect — precise
+precision 0.972 on both runs against the 0.964 floor, and the guess-tier delta between Runs 2b and
+3 attributed entirely to chain tails — so the next run carries that attribution explicitly.
+
 ### Summary across the branch
 
 | Metric | Run 1 | Run 4 |
