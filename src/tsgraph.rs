@@ -7,8 +7,14 @@
 // resolution, no `.d.ts` / type-level analysis, and no resolution through a
 // chained method call, which is the same open gap the C# side still carries.
 //
-// Everything here is pure over the fragment map except one read: the repo's own
-// tsconfig chain, which is where a bare specifier's meaning is written down.
+// Everything here is pure over the fragment map except one read: a tsconfig
+// chain, which is where a bare specifier's meaning is written down. A
+// monorepo writes that meaning down more than once -- an app folder owns its
+// own aliases below the root's -- so the read is scoped PER DIRECTORY: a file
+// resolves through the nearest ancestor `tsconfig.json` above it, falling
+// back to the repo root's own chain when no ancestor owns one, or when the
+// one that does declares neither `paths` nor `baseUrl` of its own (see
+// `read_ts_alias_scopes`).
 
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -41,6 +47,12 @@ const TSCONFIG_CHAIN_LIMIT: usize = 4;
 // the default name at all -- so both are tried, and the one that actually
 // declares `paths` wins rather than whichever happens to exist.
 const TSCONFIG_ROOTS: &[&str] = &["tsconfig.json", "tsconfig.base.json"];
+// A directory below the root can own its OWN `tsconfig.json`, scoping the
+// files beneath it to that config's chain instead of the root's -- the shape
+// a monorepo's per-app aliases actually take. Only the default name is
+// recognised as a nested owner (never `tsconfig.base.json`): a nested config
+// is written by the app itself and names itself the ordinary way, unlike the
+// root, which sometimes has nothing at the default name at all.
 // One level of barrel following, and one only: a name a file re-exports is
 // looked up in the module it re-exports FROM, and that module answers from its
 // own declarations alone. Two chained barrels resolve to nothing rather than to
@@ -347,6 +359,17 @@ pub struct TsPathAliases {
     base_url_dir: Option<String>,
 }
 
+/// A repo's tsconfig alias reading, scoped per directory: `root` is the
+/// repo-root chain (see `read_ts_path_aliases`), and `nested` is every
+/// directory below it that owns a `tsconfig.json` declaring `paths` or
+/// `baseUrl` of its own, longest directory first so the nearest ancestor is
+/// always checked before a shallower one. Built by `read_ts_alias_scopes`.
+#[derive(Debug, Clone, Default)]
+pub struct TsAliasScopes {
+    root: TsPathAliases,
+    nested: Vec<(String, TsPathAliases)>,
+}
+
 /// `paths` and `baseUrl` are whole-property overrides in TypeScript's own
 /// inheritance rule, not merged key by key -- the nearest config that declares
 /// one wins it outright. `paths` entries resolve against that config's own
@@ -360,15 +383,21 @@ pub fn read_ts_path_aliases(root: &Path) -> TsPathAliases {
             continue;
         }
         let declares_paths = candidate.iter().any(|c| c.cfg.declares_paths());
-        if chain.is_empty() {
-            chain = candidate;
-        } else if declares_paths {
+        if chain.is_empty() || declares_paths {
             chain = candidate;
         }
         if declares_paths {
             break;
         }
     }
+    aliases_from_chain(&chain)
+}
+
+// The part of alias reading shared by the root chain and every nested one:
+// once a chain is picked, decide which link in it owns `paths` and which owns
+// `baseUrl` (independently -- each is its own whole-property override) and
+// resolve every pattern's targets against that.
+fn aliases_from_chain(chain: &[ChainLink]) -> TsPathAliases {
     let paths_from = chain.iter().find(|c| c.cfg.paths().is_some());
     let base_url_from = chain.iter().find(|c| c.cfg.base_url().is_some());
     let base_url_dir = base_url_from.and_then(|c| join_rel(&c.dir, c.cfg.base_url().unwrap_or("")));
@@ -431,6 +460,85 @@ pub fn read_ts_path_aliases(root: &Path) -> TsPathAliases {
     }
 }
 
+// Walks a directory's own ancestors toward the repo root -- itself first, then
+// its parent, and so on, stopping before the empty root directory -- for the
+// nearest one that owns a `tsconfig.json`. Memoized per directory so two
+// files under the same app cost one filesystem check between them rather than
+// one each.
+fn owning_tsconfig_dir(
+    root: &Path,
+    dir: &str,
+    cache: &mut HashMap<String, Option<String>>,
+) -> Option<String> {
+    if dir.is_empty() {
+        return None;
+    }
+    if let Some(hit) = cache.get(dir) {
+        return hit.clone();
+    }
+    let answer = if root.join(dir).join("tsconfig.json").is_file() {
+        Some(dir.to_string())
+    } else {
+        owning_tsconfig_dir(root, dir_of(dir), cache)
+    };
+    cache.insert(dir.to_string(), answer.clone());
+    answer
+}
+
+/// Reads the root chain once, then finds each distinct directory `files`
+/// names an owner for: the nearest ancestor `tsconfig.json` above it. An
+/// owner that declares neither `paths` nor `baseUrl` of its own is dropped --
+/// a silent nested config must not switch the workspace's own aliases off for
+/// the files beneath it -- which is what leaves those files resolving through
+/// `root` exactly as if no nested config existed at all.
+pub fn read_ts_alias_scopes<'a>(
+    root: &Path,
+    files: impl IntoIterator<Item = &'a str>,
+) -> TsAliasScopes {
+    let root_aliases = read_ts_path_aliases(root);
+    let mut owner_cache: HashMap<String, Option<String>> = HashMap::new();
+    let mut owners: HashSet<String> = HashSet::new();
+    for file in files {
+        if let Some(owner) = owning_tsconfig_dir(root, dir_of(file), &mut owner_cache) {
+            owners.insert(owner);
+        }
+    }
+    let mut nested: Vec<(String, TsPathAliases)> = owners
+        .into_iter()
+        .filter_map(|dir| {
+            let chain = read_tsconfig_chain(root, &format!("{dir}/tsconfig.json"));
+            let aliases = aliases_from_chain(&chain);
+            let owns_something = !aliases.aliases.is_empty() || aliases.base_url_dir.is_some();
+            owns_something.then_some((dir, aliases))
+        })
+        .collect();
+    // Longest directory first, ties broken by name for a total, deterministic
+    // order: `scope_for` below returns the first match, so the nearest
+    // ancestor must be checked before a shallower one that also prefixes the
+    // file.
+    nested.sort_by(|a, b| b.0.len().cmp(&a.0.len()).then_with(|| a.0.cmp(&b.0)));
+    TsAliasScopes {
+        root: root_aliases,
+        nested,
+    }
+}
+
+// The scope a specifier in `from_file` resolves against: its nearest owning
+// nested config, or `root` when none owns it. `dir` prefixes `from_file` only
+// when the next character is a path separator, so `apps/web2` never matches
+// an owner directory `apps/web`.
+fn scope_for<'a>(from_file: &str, scopes: &'a TsAliasScopes) -> &'a TsPathAliases {
+    for (dir, aliases) in &scopes.nested {
+        if from_file.len() > dir.len()
+            && from_file.starts_with(dir.as_str())
+            && from_file.as_bytes()[dir.len()] == b'/'
+        {
+            return aliases;
+        }
+    }
+    &scopes.root
+}
+
 fn alias_targets(spec: &str, aliases: &[Alias]) -> Vec<Option<String>> {
     for a in aliases {
         if !a.wildcard {
@@ -466,25 +574,27 @@ fn alias_targets(spec: &str, aliases: &[Alias]) -> Vec<Option<String>> {
     Vec::new()
 }
 
-/// Relative specifiers resolve directly; a bare one resolves only as far as the
-/// repo's OWN tsconfig paths/baseUrl already take it. Anything else is
+/// Relative specifiers resolve directly; a bare one resolves only as far as
+/// the repo's own tsconfig paths/baseUrl already take it -- the NEAREST
+/// owning scope to `from_file`, root when none owns it. Anything else is
 /// `external` -- the TS-side counterpart of the C# graph's cross-project
 /// handling, and never a guess at a package's internals.
 pub fn resolve_specifier(
     from_file: &str,
     spec: &str,
     file_set: &HashSet<&str>,
-    alias: &TsPathAliases,
+    alias: &TsAliasScopes,
 ) -> Option<String> {
     if spec.starts_with('.') {
         return probe_file(join_rel(dir_of(from_file), spec).as_deref(), file_set);
     }
-    for candidate in alias_targets(spec, &alias.aliases) {
+    let scope = scope_for(from_file, alias);
+    for candidate in alias_targets(spec, &scope.aliases) {
         if let Some(hit) = probe_file(candidate.as_deref(), file_set) {
             return Some(hit);
         }
     }
-    if let Some(base) = &alias.base_url_dir {
+    if let Some(base) = &scope.base_url_dir {
         if let Some(hit) = probe_file(join_rel(base, spec).as_deref(), file_set) {
             return Some(hit);
         }
@@ -542,7 +652,7 @@ struct ResolvedReexport {
 }
 
 /// Resolves the TS/TSX graph: every file's reference fragments into edges.
-pub fn resolve_ts_graph(fragments: &[(String, TsFragment)], alias: &TsPathAliases) -> TsGraph {
+pub fn resolve_ts_graph(fragments: &[(String, TsFragment)], alias: &TsAliasScopes) -> TsGraph {
     let file_set: HashSet<&str> = fragments.iter().map(|(f, _)| f.as_str()).collect();
 
     let mut defs: Vec<Def> = Vec::new();
@@ -801,6 +911,7 @@ pub fn resolve_ts_graph(fragments: &[(String, TsFragment)], alias: &TsPathAliase
 mod tests {
     use super::*;
     use crate::extract::{TsBinding, TsFragmentDef, TsImport, TsReexport, TsReexportName, TsRef};
+    use std::sync::atomic::{AtomicU64, Ordering};
 
     fn frag(
         defs: Vec<(&str, &str, usize)>,
@@ -849,8 +960,268 @@ mod tests {
         }
     }
 
-    fn no_alias() -> TsPathAliases {
-        TsPathAliases::default()
+    fn no_alias() -> TsAliasScopes {
+        TsAliasScopes::default()
+    }
+
+    // A throwaway directory tree for the alias-scope tests below: nothing
+    // else in this module touches disk. Named and counted the same way every
+    // other `src/*.rs` test's temp-dir helper is (see e.g. `mapcmd.rs`'s),
+    // and removed on drop so a panicking assertion still cleans up.
+    struct TmpDir(std::path::PathBuf);
+
+    static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    impl TmpDir {
+        fn new(label: &str) -> Self {
+            let n = TMP_COUNTER.fetch_add(1, Ordering::SeqCst);
+            let dir = std::env::temp_dir().join(format!(
+                "scout-tsgraph-test-{label}-{}-{n}",
+                std::process::id()
+            ));
+            fs::create_dir_all(&dir).expect("create temp dir");
+            TmpDir(dir)
+        }
+
+        fn write(&self, rel: &str, contents: &str) {
+            let path = self.0.join(rel);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).expect("create parent dirs");
+            }
+            fs::write(&path, contents).expect("write fixture file");
+        }
+    }
+
+    impl Drop for TmpDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn a_root_tsconfig_alias_resolves_a_bare_specifier() {
+        let tmp = TmpDir::new("root-alias");
+        tmp.write(
+            "tsconfig.base.json",
+            r#"{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": { "@core/*": ["packages/core/src/*"] }
+  }
+}"#,
+        );
+        let files = ["apps/api/src/handler.ts"];
+        let scopes = read_ts_alias_scopes(&tmp.0, files.iter().copied());
+        let file_set: HashSet<&str> = [
+            "apps/api/src/handler.ts",
+            "packages/core/src/formatLabel.ts",
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(
+            resolve_specifier(
+                "apps/api/src/handler.ts",
+                "@core/formatLabel",
+                &file_set,
+                &scopes
+            ),
+            Some("packages/core/src/formatLabel.ts".to_string())
+        );
+    }
+
+    #[test]
+    fn a_nested_tsconfig_owns_the_files_beneath_it() {
+        let tmp = TmpDir::new("nested-owns");
+        tmp.write(
+            "tsconfig.base.json",
+            r#"{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": { "@core/*": ["packages/core/src/*"] }
+  }
+}"#,
+        );
+        tmp.write(
+            "apps/web/tsconfig.json",
+            r#"{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": { "@/*": ["./src/*"] }
+  }
+}"#,
+        );
+        let files = ["apps/web/src/pages/Home.tsx", "apps/api/src/handler.ts"];
+        let scopes = read_ts_alias_scopes(&tmp.0, files.iter().copied());
+        let file_set: HashSet<&str> = [
+            "apps/web/src/pages/Home.tsx",
+            "apps/api/src/handler.ts",
+            "packages/core/src/formatLabel.ts",
+            "apps/web/src/components/Button.tsx",
+        ]
+        .into_iter()
+        .collect();
+
+        assert_eq!(
+            resolve_specifier(
+                "apps/web/src/pages/Home.tsx",
+                "@/components/Button",
+                &file_set,
+                &scopes
+            ),
+            Some("apps/web/src/components/Button.tsx".to_string()),
+            "the nested config's own @/ alias resolves"
+        );
+        assert_eq!(
+            resolve_specifier(
+                "apps/web/src/pages/Home.tsx",
+                "@core/formatLabel",
+                &file_set,
+                &scopes
+            ),
+            None,
+            "the nested paths override is whole-property: it turns off the root's @core alias too"
+        );
+        assert_eq!(
+            resolve_specifier(
+                "apps/api/src/handler.ts",
+                "@core/formatLabel",
+                &file_set,
+                &scopes
+            ),
+            Some("packages/core/src/formatLabel.ts".to_string()),
+            "a file with no nested owner still resolves through the root chain"
+        );
+    }
+
+    #[test]
+    fn a_nested_paths_entry_shadows_the_root_entry_with_the_same_pattern() {
+        let tmp = TmpDir::new("shadow");
+        tmp.write(
+            "tsconfig.base.json",
+            r#"{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": { "@shared/*": ["packages/shared/src/*"] }
+  }
+}"#,
+        );
+        tmp.write(
+            "apps/web/tsconfig.json",
+            r#"{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": { "@shared/*": ["./vendor/shared/*"] }
+  }
+}"#,
+        );
+        let files = ["apps/web/src/index.ts", "apps/other/src/index.ts"];
+        let scopes = read_ts_alias_scopes(&tmp.0, files.iter().copied());
+        let file_set: HashSet<&str> = [
+            "apps/web/src/index.ts",
+            "apps/other/src/index.ts",
+            "packages/shared/src/thing.ts",
+            "apps/web/vendor/shared/thing.ts",
+        ]
+        .into_iter()
+        .collect();
+
+        assert_eq!(
+            resolve_specifier("apps/web/src/index.ts", "@shared/thing", &file_set, &scopes),
+            Some("apps/web/vendor/shared/thing.ts".to_string()),
+            "the file under the nested config resolves to the nested target"
+        );
+        assert_eq!(
+            resolve_specifier(
+                "apps/other/src/index.ts",
+                "@shared/thing",
+                &file_set,
+                &scopes
+            ),
+            Some("packages/shared/src/thing.ts".to_string()),
+            "a file outside the nested config still resolves to the root target"
+        );
+    }
+
+    #[test]
+    fn a_nested_tsconfig_without_paths_or_base_url_falls_back_to_the_root_scope() {
+        let tmp = TmpDir::new("silent-nested");
+        tmp.write(
+            "tsconfig.base.json",
+            r#"{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": { "@core/*": ["packages/core/src/*"] }
+  }
+}"#,
+        );
+        tmp.write(
+            "apps/web/tsconfig.json",
+            r#"{
+  "compilerOptions": { "strict": true }
+}"#,
+        );
+        let files = ["apps/web/src/index.ts"];
+        let scopes = read_ts_alias_scopes(&tmp.0, files.iter().copied());
+        let file_set: HashSet<&str> = ["apps/web/src/index.ts", "packages/core/src/formatLabel.ts"]
+            .into_iter()
+            .collect();
+
+        assert_eq!(
+            resolve_specifier(
+                "apps/web/src/index.ts",
+                "@core/formatLabel",
+                &file_set,
+                &scopes
+            ),
+            Some("packages/core/src/formatLabel.ts".to_string()),
+            "a nested config declaring neither paths nor baseUrl does not switch the root alias off"
+        );
+    }
+
+    #[test]
+    fn nested_scopes_are_ordered_longest_directory_first() {
+        let tmp = TmpDir::new("nested-order");
+        tmp.write(
+            "apps/web/tsconfig.json",
+            r#"{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": { "@/*": ["./from-web/*"] }
+  }
+}"#,
+        );
+        tmp.write(
+            "apps/web/admin/tsconfig.json",
+            r#"{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": { "@/*": ["./from-admin/*"] }
+  }
+}"#,
+        );
+        let files = ["apps/web/other/file.ts", "apps/web/admin/src/page.ts"];
+        let scopes = read_ts_alias_scopes(&tmp.0, files.iter().copied());
+        let file_set: HashSet<&str> = [
+            "apps/web/other/file.ts",
+            "apps/web/admin/src/page.ts",
+            "apps/web/from-web/thing.ts",
+            "apps/web/admin/from-admin/thing.ts",
+        ]
+        .into_iter()
+        .collect();
+
+        assert_eq!(
+            resolve_specifier("apps/web/admin/src/page.ts", "@/thing", &file_set, &scopes),
+            Some("apps/web/admin/from-admin/thing.ts".to_string()),
+            "the deeper nested config owns files beneath it, not the shallower one"
+        );
+        assert_eq!(
+            resolve_specifier("apps/web/other/file.ts", "@/thing", &file_set, &scopes),
+            Some("apps/web/from-web/thing.ts".to_string()),
+            "a file outside the deeper config still resolves through the shallower one"
+        );
     }
 
     #[test]
