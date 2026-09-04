@@ -161,6 +161,19 @@ pub struct MemberLists {
     /// file's field, reached only through this merged table). Merged across
     /// a partial class exactly like `property_types`.
     pub field_types: OrderedMap<FragFact>,
+    /// The file whose declaration supplied each `property_types` /
+    /// `field_types` entry -- one key per key of the table beside it, filled
+    /// in at merge time. Purely an in-memory bookkeeping table (nothing here
+    /// is serialized), and the only record of WHERE a merged fact came from:
+    /// a partial class's def carries the FIRST declaring file, which is not
+    /// necessarily the file that declared any given member. The type name a
+    /// fact holds is a bare identifier that only means anything under the
+    /// `using` directives, aliases and namespace of the file that WROTE it,
+    /// so `bare_receiver_field_or_property_type`'s caller resolves it in
+    /// that file's context rather than the reading file's.
+    pub property_type_files: OrderedMap<String>,
+    /// The `field_types` half of `property_type_files`.
+    pub field_type_files: OrderedMap<String>,
     /// Method name -> the generic-arg descriptors `method_returns` itself
     /// strips off (see `FragDef.method_return_args`), read ONLY by the
     /// awaited-call unwrap: an entry here exists exactly when the same name
@@ -195,6 +208,18 @@ fn build_def_index(fragments_by_file: &[(String, Fragment)]) -> DefIndex {
     let mut qualified_name_and_arity_to_def: HashMap<(String, usize), usize> = HashMap::new();
     let mut simple_name_to_defs: HashMap<String, Vec<usize>> = HashMap::new();
     let mut extension_index: HashMap<String, Vec<ExtCandidate>> = HashMap::new();
+
+    // One entry per key of `map`, all naming `file` -- the shape
+    // `MemberLists::property_type_files`/`field_type_files` hold for a def's
+    // FIRST declaration, where every fact came from the same file by
+    // construction.
+    fn keys_mapped_to_file<V>(map: &OrderedMap<V>, file: &str) -> OrderedMap<String> {
+        let mut out = OrderedMap::new();
+        for (name, _) in map.iter() {
+            out.insert(name.clone(), file.to_string());
+        }
+        out
+    }
 
     // Dedupe on the def's OWN quadruple list FIRST, then push into the bucket --
     // the guard is what keeps one def out of the same bucket twice.
@@ -263,6 +288,8 @@ fn build_def_index(fragments_by_file: &[(String, Fragment)]) -> DefIndex {
                         method_returns: d.method_returns.clone(),
                         property_types: d.property_types.clone(),
                         field_types: d.field_types.clone(),
+                        property_type_files: keys_mapped_to_file(&d.property_types, file),
+                        field_type_files: keys_mapped_to_file(&d.field_types, file),
                         method_return_args: d.method_return_args.clone(),
                         non_public_methods: d.non_public_methods.clone(),
                         method_arities: d.method_arities.clone(),
@@ -338,11 +365,19 @@ fn build_def_index(fragments_by_file: &[(String, Fragment)]) -> DefIndex {
                                 .insert(name.clone(), returns.clone());
                         }
                     }
+                    // The declaring FILE is recorded alongside each fact
+                    // it accepts -- see `MemberLists::property_type_files`:
+                    // a type name is only meaningful under the usings of
+                    // the file that wrote it, and for a partial class that
+                    // is not always the def's own first-declaring file.
                     for (name, fact) in d.property_types.iter() {
                         if member_lists[idx].property_types.get(name).is_none() {
                             member_lists[idx]
                                 .property_types
                                 .insert(name.clone(), fact.clone());
+                            member_lists[idx]
+                                .property_type_files
+                                .insert(name.clone(), file.clone());
                         }
                     }
                     for (name, fact) in d.field_types.iter() {
@@ -350,6 +385,9 @@ fn build_def_index(fragments_by_file: &[(String, Fragment)]) -> DefIndex {
                             member_lists[idx]
                                 .field_types
                                 .insert(name.clone(), fact.clone());
+                            member_lists[idx]
+                                .field_type_files
+                                .insert(name.clone(), file.clone());
                         }
                     }
                     for (name, args) in d.method_return_args.iter() {
@@ -1060,15 +1098,55 @@ fn is_this_shaped_receiver(r: &FragRef) -> bool {
 // One def's own field or property fact for `name`, field_types tried first
 // -- the order the caller's doc comment names. Never widens to the def's
 // bases; the walk that does is the caller's job.
+//
+// The declaring FILE rides along with the fact (see
+// `MemberLists::property_type_files`), because a type NAME is only
+// meaningful under that file's usings and aliases. A table built without
+// the companion map -- every `MemberLists` a test assembles by hand -- falls
+// back to the def's own first-declaring file, which is what a single-file
+// def has anyway.
 fn declared_field_or_property_type<'a>(
     index: &'a DefIndex,
     idx: usize,
     name: &str,
-) -> Option<&'a FragFact> {
-    index.member_lists[idx]
-        .field_types
+) -> Option<(&'a FragFact, &'a str)> {
+    let lists = &index.member_lists[idx];
+    let (fact, files) = match lists.field_types.get(name) {
+        Some(fact) => (fact, &lists.field_type_files),
+        None => (lists.property_types.get(name)?, &lists.property_type_files),
+    };
+    let file = files
         .get(name)
-        .or_else(|| index.member_lists[idx].property_types.get(name))
+        .map_or(index.defs[idx].file.as_str(), String::as_str);
+    Some((fact, file))
+}
+
+// A bare-identifier receiver's type as some def's field or property table
+// answered it, with everything the answer needs to be read correctly: the
+// def that declares the member (its namespace and nesting chain) and the
+// FILE whose declaration wrote the type name down (its usings and aliases).
+struct ReceiverFieldType {
+    type_name: String,
+    declaring_def: usize,
+    declaring_file: String,
+}
+
+// The enclosing-type chain a ref written INSIDE `def`'s own body carries
+// (`FragRef::outer_types`): every nesting level from the outermost in,
+// ending with the def itself. A def id spells nesting exactly that way --
+// the namespace, a dot, then the chain joined with "+", which is how
+// `resolve_ref`'s step 0b rebuilds an id from a ref's chain -- so the chain
+// is the id with its namespace prefix taken off. A namespace-level def
+// yields a one-entry chain holding its own name.
+fn def_outer_types(def: &Def) -> Vec<String> {
+    let chain = if def.namespace.is_empty() {
+        def.id.as_str()
+    } else {
+        def.id
+            .strip_prefix(&format!("{}.", def.namespace))
+            .unwrap_or(def.name.as_str())
+    };
+    chain.split('+').map(str::to_string).collect()
 }
 
 // The bare-identifier receiver lookup a ref with NO in-file fact at all
@@ -1083,6 +1161,11 @@ fn declared_field_or_property_type<'a>(
 // property table to consult), when the innermost entry does not resolve
 // in-graph, or when neither table on `start` nor on any in-graph base
 // answers for the name.
+//
+// The answer names the def and the file the fact came FROM, not the site
+// that read it: the type name is a bare identifier, and the caller has to
+// resolve it under the usings, aliases, namespace and nesting of the
+// declaration that wrote it down.
 fn bare_receiver_field_or_property_type(
     index: &DefIndex,
     ns: &str,
@@ -1090,7 +1173,7 @@ fn bare_receiver_field_or_property_type(
     usings: &HashSet<String>,
     aliases: &HashMap<String, String>,
     file_contexts: &HashMap<String, FileContext>,
-) -> Option<String> {
+) -> Option<ReceiverFieldType> {
     let innermost = r.outer_types.last()?;
     let probe = name_probe(innermost.clone(), ns, r.outer_types.clone());
     let Resolution::Resolved(start, _) =
@@ -1098,8 +1181,12 @@ fn bare_receiver_field_or_property_type(
     else {
         return None;
     };
-    if let Some(fact) = declared_field_or_property_type(index, start, &r.name) {
-        return Some(fact.type_name.clone());
+    if let Some((fact, declaring_file)) = declared_field_or_property_type(index, start, &r.name) {
+        return Some(ReceiverFieldType {
+            type_name: fact.type_name.clone(),
+            declaring_def: start,
+            declaring_file: declaring_file.to_string(),
+        });
     }
     let ctx = file_contexts.get(&index.defs[start].file)?;
     let base_ns = index.defs[start].namespace.clone();
@@ -1113,11 +1200,15 @@ fn bare_receiver_field_or_property_type(
             &ctx.aliases,
             file_contexts,
         ) {
-            let mut found: Option<String> = None;
+            let mut found: Option<ReceiverFieldType> = None;
             inheritance_walk_find(index, file_contexts, bidx, |idx| {
                 match declared_field_or_property_type(index, idx, &r.name) {
-                    Some(fact) => {
-                        found = Some(fact.type_name.clone());
+                    Some((fact, declaring_file)) => {
+                        found = Some(ReceiverFieldType {
+                            type_name: fact.type_name.clone(),
+                            declaring_def: idx,
+                            declaring_file: declaring_file.to_string(),
+                        });
                         true
                     }
                     None => false,
@@ -2292,6 +2383,13 @@ pub fn resolve_graph_with_model(
                 // taken-but-unknown, which is the answer the extractor already
                 // gave.
                 let mut receiver_type_name = r.receiver_type.clone();
+                // Set only by the bare-identifier field/property fallback
+                // below, and only so the resolution of the name it produced
+                // can happen in the DECLARING file's context rather than
+                // this one's. Every other way `receiver_type_name` is
+                // filled reads a name off this file's own ref, so it stays
+                // `None` and the site's own context is used.
+                let mut receiver_field: Option<ReceiverFieldType> = None;
                 if receiver_type_name.is_none() {
                     if let (Some(owner), Some(member)) =
                         (&r.receiver_call_owner, &r.receiver_call_member)
@@ -2360,7 +2458,7 @@ pub fn resolve_graph_with_model(
                         // walked across each in-graph base of that def, in
                         // declaration order -- the field the CURRENT file
                         // cannot see for itself.
-                        receiver_type_name = bare_receiver_field_or_property_type(
+                        receiver_field = bare_receiver_field_or_property_type(
                             &index,
                             ns,
                             r,
@@ -2368,16 +2466,50 @@ pub fn resolve_graph_with_model(
                             aliases,
                             &file_contexts,
                         );
+                        receiver_type_name = receiver_field.as_ref().map(|f| f.type_name.clone());
                     }
                 }
                 if !emitted {
                     if let Some(receiver_type) = &receiver_type_name {
-                        let probe = name_probe(receiver_type.clone(), ns, r.outer_types.clone());
+                        // A field's declared type is a bare identifier that
+                        // only means what the file that WROTE it meant: its
+                        // usings, its aliases, its namespace, its nesting.
+                        // A fact merged in from a sibling partial-class file
+                        // or read off a base in another file therefore
+                        // resolves in THAT file's context -- resolving it
+                        // here would let a same-named type visible only from
+                        // the reading file answer for a declaration that
+                        // never saw it. The site's own admission filter
+                        // still applies: the edge is emitted from here, so
+                        // what this project may reference is still this
+                        // project's question.
+                        let declaring = receiver_field.as_ref().and_then(|f| {
+                            file_contexts
+                                .get(&f.declaring_file)
+                                .map(|ctx| (f.declaring_def, ctx))
+                        });
+                        let (probe_usings, probe_ns, probe_aliases, probe_outer) = match declaring {
+                            Some((didx, dctx)) => (
+                                &dctx.usings,
+                                index.defs[didx].namespace.as_str(),
+                                &dctx.aliases,
+                                def_outer_types(&index.defs[didx]),
+                            ),
+                            None => (usings, ns, aliases, r.outer_types.clone()),
+                        };
+                        let probe = name_probe(receiver_type.clone(), probe_ns, probe_outer);
                         let Narrowed {
                             res: rr,
                             narrowed_away,
                         } = narrow_tracked(
-                            resolve_ref(&probe, usings, ns, &index, aliases, &file_contexts),
+                            resolve_ref(
+                                &probe,
+                                probe_usings,
+                                probe_ns,
+                                &index,
+                                probe_aliases,
+                                &file_contexts,
+                            ),
                             site_unit,
                             &admission,
                         );
@@ -9353,6 +9485,41 @@ mod tests {
             "_logger.Log() has no in-file fact anywhere in Order.cs -- Order itself declares no \
              _logger field at all -- so the fallback walks Order's OWN bases: Base declares it, \
              typed Logger, which declares Log"
+        );
+    }
+
+    #[test]
+    fn stage7_a_cross_file_field_type_resolves_in_its_declaring_files_context() {
+        // Two types named Alpha, in two namespaces. The base declares the
+        // field under `using N1`; the derived file that reads it imports N2
+        // instead and has never heard of N1.Alpha. The field's declared type
+        // is a bare name that only means N1.Alpha, so the reading file's own
+        // imports must not be what decides which Alpha it names.
+        let files = fragments_for(&[
+            (
+                "N1/Alpha.cs",
+                "\nnamespace N1;\n\npublic class Alpha\n{\n    public void Ship() { }\n}\n",
+            ),
+            (
+                "N2/Alpha.cs",
+                "\nnamespace N2;\n\npublic class Alpha\n{\n    public void Ship() { }\n}\n",
+            ),
+            (
+                "App/BaseT.cs",
+                "\nusing N1;\n\nnamespace App;\n\npublic class BaseT\n{\n    protected Alpha _thing;\n}\n",
+            ),
+            (
+                "App/Derived.cs",
+                "\nusing N2;\n\nnamespace App;\n\npublic class Derived : BaseT\n{\n    public void Go() { _thing.Ship(); }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_from(&g, "App/Derived.cs"),
+            vec![("N1.Alpha", 8)],
+            "the field fact came from BaseT.cs, so its type name is resolved under BaseT.cs's own \
+             usings, namespace and nesting -- Derived.cs's `using N2` is not evidence about a \
+             declaration written in another file"
         );
     }
 
