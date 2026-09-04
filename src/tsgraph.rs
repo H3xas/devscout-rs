@@ -53,11 +53,14 @@ const TSCONFIG_ROOTS: &[&str] = &["tsconfig.json", "tsconfig.base.json"];
 // recognised as a nested owner (never `tsconfig.base.json`): a nested config
 // is written by the app itself and names itself the ordinary way, unlike the
 // root, which sometimes has nothing at the default name at all.
-// One level of barrel following, and one only: a name a file re-exports is
-// looked up in the module it re-exports FROM, and that module answers from its
-// own declarations alone. Two chained barrels resolve to nothing rather than to
-// a walk with no bound.
-const BARREL_HOPS: usize = 1;
+// Feature folders nest their index files two to four barrels deep, so one hop
+// of following was not enough: a name a file re-exports is looked up in the
+// module it re-exports FROM, which may itself re-export it again, up to this
+// many times before the walk gives up. The bound is what keeps a cyclic
+// `export *` pair (`a` re-exporting `b`, `b` re-exporting `a`) from recursing
+// forever even before the visited-pair guard in `lookup_export` catches the
+// cycle outright.
+const BARREL_HOPS: usize = 8;
 
 /// Builds a TypeScript definition identifier from a file and symbol name.
 pub fn ts_def_id(file: &str, name: &str) -> String {
@@ -359,12 +362,13 @@ pub struct TsPathAliases {
     base_url_dir: Option<String>,
 }
 
-/// A repo's tsconfig alias reading, scoped per directory: `root` is the
-/// repo-root chain (see `read_ts_path_aliases`), and `nested` is every
-/// directory below it that owns a `tsconfig.json` declaring `paths` or
-/// `baseUrl` of its own, longest directory first so the nearest ancestor is
-/// always checked before a shallower one. Built by `read_ts_alias_scopes`.
 #[derive(Debug, Clone, Default)]
+/// A repo's tsconfig alias reading, scoped per directory.
+///
+/// `root` is the repo-root chain (see `read_ts_path_aliases`), and `nested`
+/// is every directory below it that owns a `tsconfig.json` declaring `paths`
+/// or `baseUrl` of its own, longest directory first so the nearest ancestor
+/// is always checked before a shallower one. Built by `read_ts_alias_scopes`.
 pub struct TsAliasScopes {
     root: TsPathAliases,
     nested: Vec<(String, TsPathAliases)>,
@@ -486,11 +490,12 @@ fn owning_tsconfig_dir(
 }
 
 /// Reads the root chain once, then finds each distinct directory `files`
-/// names an owner for: the nearest ancestor `tsconfig.json` above it. An
-/// owner that declares neither `paths` nor `baseUrl` of its own is dropped --
-/// a silent nested config must not switch the workspace's own aliases off for
-/// the files beneath it -- which is what leaves those files resolving through
-/// `root` exactly as if no nested config existed at all.
+/// names an owner for: the nearest ancestor `tsconfig.json` above it.
+///
+/// An owner that declares neither `paths` nor `baseUrl` of its own is
+/// dropped -- a silent nested config must not switch the workspace's own
+/// aliases off for the files beneath it -- which is what leaves those files
+/// resolving through `root` exactly as if no nested config existed at all.
 pub fn read_ts_alias_scopes<'a>(
     root: &Path,
     files: impl IntoIterator<Item = &'a str>,
@@ -575,10 +580,11 @@ fn alias_targets(spec: &str, aliases: &[Alias]) -> Vec<Option<String>> {
 }
 
 /// Relative specifiers resolve directly; a bare one resolves only as far as
-/// the repo's own tsconfig paths/baseUrl already take it -- the NEAREST
-/// owning scope to `from_file`, root when none owns it. Anything else is
-/// `external` -- the TS-side counterpart of the C# graph's cross-project
-/// handling, and never a guess at a package's internals.
+/// the repo's own tsconfig paths/baseUrl already take it -- the nearest
+/// owning scope to `from_file`, root when none owns it.
+///
+/// Anything else is `external` -- the TS-side counterpart of the C# graph's
+/// cross-project handling, and never a guess at a package's internals.
 pub fn resolve_specifier(
     from_file: &str,
     spec: &str,
@@ -708,13 +714,28 @@ pub fn resolve_ts_graph(fragments: &[(String, TsFragment)], alias: &TsAliasScope
         reexports_by_file.insert(file.as_str(), rows);
     }
 
+    // `visited` is one top-level lookup's own set, fresh at every call site
+    // below (never shared across bindings or refs): a `(file, name)` pair
+    // revisited mid-walk means a cyclic `export *` pair sent the walk back to
+    // a state it is already computing, so it fails closed to `None` right
+    // there rather than recursing again. That guard also keeps a single
+    // `export *` fan-out linear in files times names -- every `(file, name)`
+    // is entered at most once regardless of how many stars point at it.
     fn lookup_export(
         file: &str,
         name: &str,
         hops: usize,
         exports_by_file: &HashMap<&str, HashMap<String, usize>>,
         reexports_by_file: &HashMap<&str, Vec<ResolvedReexport>>,
+        visited: &mut HashSet<(String, String)>,
     ) -> Option<usize> {
+        if !visited.insert((file.to_string(), name.to_string())) {
+            return None;
+        }
+        // Own declarations are checked before the hop cap is enforced, so a
+        // chain of exactly `BARREL_HOPS` barrels followed by a declaring file
+        // still resolves -- the cap bounds how many re-export hops are
+        // FOLLOWED, not how many files may be visited in total.
         if let Some(own) = exports_by_file.get(file).and_then(|m| m.get(name)) {
             return Some(*own);
         }
@@ -728,20 +749,33 @@ pub fn resolve_ts_graph(fragments: &[(String, TsFragment)], alias: &TsAliasScope
         {
             let Some(to) = &rx.to else { continue };
             if rx.star {
-                if let Some(hit) =
-                    lookup_export(to, name, hops + 1, exports_by_file, reexports_by_file)
-                {
+                if let Some(hit) = lookup_export(
+                    to,
+                    name,
+                    hops + 1,
+                    exports_by_file,
+                    reexports_by_file,
+                    visited,
+                ) {
                     return Some(hit);
                 }
                 continue;
             }
+            // Declaration order is the tie-break: the first re-export naming
+            // this export wins, matching the first-occurrence rule the def
+            // map itself uses.
             for (exported, imported) in &rx.names {
                 if exported != name {
                     continue;
                 }
-                if let Some(hit) =
-                    lookup_export(to, imported, hops + 1, exports_by_file, reexports_by_file)
-                {
+                if let Some(hit) = lookup_export(
+                    to,
+                    imported,
+                    hops + 1,
+                    exports_by_file,
+                    reexports_by_file,
+                    visited,
+                ) {
                     return Some(hit);
                 }
             }
@@ -792,9 +826,15 @@ pub fn resolve_ts_graph(fragments: &[(String, TsFragment)], alias: &TsAliasScope
                 if b.imported == "*" {
                     continue;
                 }
-                let Some(target) =
-                    lookup_export(&to, &b.imported, 0, &exports_by_file, &reexports_by_file)
-                else {
+                let mut visited: HashSet<(String, String)> = HashSet::new();
+                let Some(target) = lookup_export(
+                    &to,
+                    &b.imported,
+                    0,
+                    &exports_by_file,
+                    &reexports_by_file,
+                    &mut visited,
+                ) else {
                     continue;
                 };
                 let target_file = defs[target].file.clone();
@@ -838,11 +878,22 @@ pub fn resolve_ts_graph(fragments: &[(String, TsFragment)], alias: &TsAliasScope
                 // carries no name of its own -- only `ns.member` says which
                 // export is meant.
                 Some((to, imported)) if imported == "*" => match &r.member {
-                    Some(m) => lookup_export(to, m, 0, &exports_by_file, &reexports_by_file),
+                    Some(m) => {
+                        let mut visited: HashSet<(String, String)> = HashSet::new();
+                        lookup_export(to, m, 0, &exports_by_file, &reexports_by_file, &mut visited)
+                    }
                     None => None,
                 },
                 Some((to, imported)) => {
-                    lookup_export(to, imported, 0, &exports_by_file, &reexports_by_file)
+                    let mut visited: HashSet<(String, String)> = HashSet::new();
+                    lookup_export(
+                        to,
+                        imported,
+                        0,
+                        &exports_by_file,
+                        &reexports_by_file,
+                        &mut visited,
+                    )
                 }
                 None if r.member.is_none() => exports_by_file
                     .get(file.as_str())
@@ -957,6 +1008,27 @@ mod tests {
             name: name.into(),
             member: None,
             line,
+        }
+    }
+
+    fn named_barrel(spec: &str, exported: &str) -> TsReexport {
+        TsReexport {
+            spec: spec.into(),
+            line: 1,
+            star: false,
+            names: vec![TsReexportName {
+                exported: exported.into(),
+                imported: exported.into(),
+            }],
+        }
+    }
+
+    fn star_barrel(spec: &str) -> TsReexport {
+        TsReexport {
+            spec: spec.into(),
+            line: 1,
+            star: true,
+            names: vec![],
         }
     }
 
@@ -1317,71 +1389,160 @@ mod tests {
     }
 
     #[test]
-    fn one_barrel_hop_is_followed_and_two_are_not() {
-        let barrel = |spec: &str, exported: &str| TsReexport {
-            spec: spec.into(),
-            line: 1,
-            star: false,
-            names: vec![TsReexportName {
-                exported: exported.into(),
-                imported: exported.into(),
-            }],
-        };
-        let one = vec![
+    fn chained_barrels_resolve_to_the_declaring_file_within_the_hop_cap() {
+        let fragments = vec![
             (
                 "src/a.ts".to_string(),
                 frag(
                     vec![],
                     vec![import("./b", 1, &[("go", "go")])],
                     vec![],
-                    vec![],
+                    vec![call_ref("go", 3)],
                 ),
             ),
             (
                 "src/b.ts".to_string(),
-                frag(vec![], vec![], vec![barrel("./c", "go")], vec![]),
+                frag(vec![], vec![], vec![named_barrel("./c", "go")], vec![]),
             ),
             (
                 "src/c.ts".to_string(),
-                frag(vec![("go", "function", 1)], vec![], vec![], vec![]),
-            ),
-        ];
-        let g1 = resolve_ts_graph(&one, &no_alias());
-        assert!(matches!(
-            g1.edges.iter().find(|e| matches!(e, Edge::Import { via: Some(_), .. })),
-            Some(Edge::Import { to_file, .. }) if to_file == "src/c.ts"
-        ));
-
-        let two = vec![
-            (
-                "src/a.ts".to_string(),
-                frag(
-                    vec![],
-                    vec![import("./b", 1, &[("go", "go")])],
-                    vec![],
-                    vec![],
-                ),
-            ),
-            (
-                "src/b.ts".to_string(),
-                frag(vec![], vec![], vec![barrel("./c", "go")], vec![]),
-            ),
-            (
-                "src/c.ts".to_string(),
-                frag(vec![], vec![], vec![barrel("./d", "go")], vec![]),
+                frag(vec![], vec![], vec![star_barrel("./d")], vec![]),
             ),
             (
                 "src/d.ts".to_string(),
+                frag(vec![], vec![], vec![named_barrel("./e", "go")], vec![]),
+            ),
+            (
+                "src/e.ts".to_string(),
                 frag(vec![("go", "function", 1)], vec![], vec![], vec![]),
             ),
         ];
-        let g2 = resolve_ts_graph(&two, &no_alias());
+        let g = resolve_ts_graph(&fragments, &no_alias());
+        assert!(matches!(
+            g.edges.iter().find(|e| matches!(
+                e,
+                Edge::Import { via: Some(v), .. } if v == "src/b.ts"
+            )),
+            Some(Edge::Import { to_file, .. }) if to_file == "src/e.ts"
+        ));
+        assert!(matches!(
+            g.edges.iter().find(|e| matches!(e, Edge::Call { .. })),
+            Some(Edge::Call { to_file, .. }) if to_file == "src/e.ts"
+        ));
+
+        // One barrel more than the cap allows: the walk gives up one hop
+        // short of the file that finally declares the name, so it resolves
+        // to nothing.
+        let mut deep = vec![(
+            "src/deep_a.ts".to_string(),
+            frag(
+                vec![],
+                vec![import("./deep0", 1, &[("go", "go")])],
+                vec![],
+                vec![],
+            ),
+        )];
+        for i in 0..=BARREL_HOPS {
+            let next = if i == BARREL_HOPS {
+                "deep_decl".to_string()
+            } else {
+                format!("deep{}", i + 1)
+            };
+            deep.push((
+                format!("src/deep{i}.ts"),
+                frag(
+                    vec![],
+                    vec![],
+                    vec![named_barrel(&format!("./{next}"), "go")],
+                    vec![],
+                ),
+            ));
+        }
+        deep.push((
+            "src/deep_decl.ts".to_string(),
+            frag(vec![("go", "function", 1)], vec![], vec![], vec![]),
+        ));
+        let g2 = resolve_ts_graph(&deep, &no_alias());
         assert!(
             !g2.edges
                 .iter()
                 .any(|e| matches!(e, Edge::Import { via: Some(_), .. })),
-            "two chained barrels resolve to nothing"
+            "a chain one barrel past the hop cap resolves to nothing"
         );
+    }
+
+    #[test]
+    fn a_cyclic_star_reexport_pair_terminates_and_resolves_nothing_for_an_absent_name() {
+        let fragments = vec![
+            (
+                "src/a.ts".to_string(),
+                frag(
+                    vec![],
+                    vec![import("./b", 1, &[("missing", "missing")])],
+                    vec![],
+                    vec![call_ref("missing", 3)],
+                ),
+            ),
+            (
+                "src/b.ts".to_string(),
+                frag(vec![], vec![], vec![star_barrel("./c")], vec![]),
+            ),
+            (
+                "src/c.ts".to_string(),
+                frag(vec![], vec![], vec![star_barrel("./b")], vec![]),
+            ),
+        ];
+        // The assertion below is the point of the test, but so is simply
+        // reaching it: a cyclic `export *` pair with no bound would recurse
+        // forever over a name neither file ever declares.
+        let g = resolve_ts_graph(&fragments, &no_alias());
+        assert!(
+            !g.edges
+                .iter()
+                .any(|e| matches!(e, Edge::Import { via: Some(_), .. })),
+            "a name absent from a cyclic star-reexport pair carries no via edge"
+        );
+        assert!(
+            !g.edges.iter().any(|e| matches!(e, Edge::Call { .. })),
+            "a name absent from a cyclic star-reexport pair resolves no call"
+        );
+    }
+
+    #[test]
+    fn a_cycle_still_resolves_a_name_one_of_its_members_declares() {
+        let fragments = vec![
+            (
+                "src/a.ts".to_string(),
+                frag(
+                    vec![],
+                    vec![import("./b", 1, &[("go", "go")])],
+                    vec![],
+                    vec![call_ref("go", 3)],
+                ),
+            ),
+            (
+                "src/b.ts".to_string(),
+                frag(vec![], vec![], vec![star_barrel("./c")], vec![]),
+            ),
+            (
+                "src/c.ts".to_string(),
+                frag(
+                    vec![("go", "function", 1)],
+                    vec![],
+                    vec![star_barrel("./b")],
+                    vec![],
+                ),
+            ),
+        ];
+        let g = resolve_ts_graph(&fragments, &no_alias());
+        assert!(matches!(
+            g.edges.iter().find(|e| matches!(e, Edge::Import { via: Some(_), .. })),
+            Some(Edge::Import { to_file, .. }) if to_file == "src/c.ts"
+        ));
+        assert!(matches!(
+            g.edges.iter().find(|e| matches!(e, Edge::Call { .. })),
+            Some(Edge::Call { to_file, .. }) if to_file == "src/c.ts"
+        ));
     }
 
     #[test]
