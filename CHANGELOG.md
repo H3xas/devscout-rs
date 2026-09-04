@@ -111,6 +111,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   An extension of the receiver's exact type is still a valid guess when only its namespace
   was not imported at the site, but a call whose argument count the extension cannot take
   has no binding under any import and is refused there too.
+- **A receiver written `Foo<X>` binds the generic `Foo<T>`, not whichever of `Foo` and `Foo<T>`
+  was indexed first.** The two share one id, so a declared receiver type now resolves with the
+  argument count it was written with and each base-list entry with the count its generic-argument
+  record carries; the precise tier, the base walks it shares with the extension veto, and the
+  veto itself read the sibling the language names. A name with no def at that count keeps the
+  arity-blind answer, so no site that resolves today turns external.
 
 ### Benchmarks
 
