@@ -2418,6 +2418,51 @@ fn lambda_first_arg_receiver(n: Node) -> Option<Node> {
     Some(receiver)
 }
 
+// The names one LINQ query clause BINDS -- `from d in xs`, `join o in ys`,
+// `join ... into g`, `let n = ...`, and the query continuation `... into g`.
+// Every one is a range variable: a name the rest of the query reads and the
+// enclosing type never declared. Nothing here vouches for its TYPE (the
+// element type of the source sequence is exactly what this extractor cannot
+// compute), so the caller records each as taken-but-unknown -- which is the
+// whole point: without an entry, the resolver's bare-identifier fallback
+// would type `d` from a same-named field of the enclosing type or one of its
+// bases and emit a precise edge the language never binds.
+fn query_binding_names(n: Node, src: &[u8]) -> Vec<String> {
+    match n.kind() {
+        // `from [T] d in xs` -- the only clause that names its range
+        // variable with a field.
+        "from_clause" => n
+            .child_by_field_name("name")
+            .map(|x| text(x, src))
+            .into_iter()
+            .collect(),
+        // `join [T] o in ys on a equals b`, `let n = ...`, `into g`: the
+        // bound name is the FIRST bare identifier child that is not the
+        // optional type node (a type can itself be an `identifier`).
+        // Everything after it -- a `let`'s value, a join's source and its
+        // two key expressions -- is an expression this must not claim.
+        "join_clause" | "let_clause" | "join_into_clause" => {
+            let type_id = n.child_by_field_name("type").map(|t| t.id());
+            named_children(n)
+                .into_iter()
+                .find(|c| c.kind() == "identifier" && Some(c.id()) != type_id)
+                .map(|c| text(c, src))
+                .into_iter()
+                .collect()
+        }
+        // The query continuation `... into g` has no node of its own -- the
+        // grammar's query-body rule is hidden -- so its identifier sits as a
+        // direct child of the `query_expression`, the one place a bare
+        // identifier can appear there at all.
+        "query_expression" => named_children(n)
+            .into_iter()
+            .filter(|c| c.kind() == "identifier")
+            .map(|c| text(c, src))
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
 fn visit_member_facts(
     n: Node,
     src: &[u8],
@@ -2450,18 +2495,29 @@ fn visit_member_facts(
         }
     } else if n.kind() == "implicit_parameter" {
         // An implicit lambda parameter (`x => ...`) has no `parameter` node
-        // at all, so it never reaches the branch above -- and outside a
-        // qualifying invocation it earns no fact either way, same as
-        // before this rule existed (see the doc comment on
-        // `lambda_first_arg_receiver`).
-        if let Some(receiver) = lambda_first_arg_receiver(n) {
-            let name = text(n, src);
-            if !name.is_empty() {
-                deferred_lambda.push(DeferredLambdaParam {
-                    name,
-                    collection: text(receiver, src),
-                });
+        // at all, so it never reaches the branch above.
+        let name = text(n, src);
+        match lambda_first_arg_receiver(n) {
+            // Deferred for the reason the `parameter` branch defers: an
+            // entry written now would conflict with the element fact the
+            // second pass settles for this very name.
+            Some(receiver) => {
+                if !name.is_empty() {
+                    deferred_lambda.push(DeferredLambdaParam {
+                        name,
+                        collection: text(receiver, src),
+                    });
+                }
             }
+            // Outside a qualifying invocation the element rule types
+            // nothing -- but the name is still DECLARED here, so it is
+            // taken-but-unknown rather than unentered. A lambda parameter
+            // that shares its name with a field of the enclosing type
+            // shadows that field in C#, and without the entry the
+            // resolver's bare-identifier fallback would type it from the
+            // field and emit a precise edge to a member the call can
+            // never reach.
+            None => add_fact(table, Some(name), None),
         }
     } else if n.kind() == "variable_declaration" {
         let type_node = n.child_by_field_name("type");
@@ -2528,13 +2584,20 @@ fn visit_member_facts(
                 }
             }
         }
-    } else if matches!(n.kind(), "declaration_pattern" | "declaration_expression") {
+    } else if matches!(
+        n.kind(),
+        "declaration_pattern" | "declaration_expression" | "catch_declaration"
+    ) {
         // `if (e is T t)` (also switch statement case patterns and switch
-        // expression arms, same `declaration_pattern` node), and `out T x`
-        // (`declaration_expression`): both a {type, name} pair, same shape
-        // as `parameter`, just in pattern/argument position. A
-        // `declaration_pattern`'s designation is OPTIONAL -- a discard `_`
-        // or a parenthesized deconstruction carries no `name` field, and
+        // expression arms, same `declaration_pattern` node), `out T x`
+        // (`declaration_expression`) and `catch (T e)`
+        // (`catch_declaration`): each a {type, name} pair, the same shape
+        // as `parameter`, just in pattern/argument/handler position. A
+        // caught exception is as real a declaration as a local, and it
+        // shadows a same-named field of the enclosing type, so it gets the
+        // TYPE its handler names rather than merely taking the name. The
+        // designation is OPTIONAL for all three -- a discard `_`, a
+        // parenthesized deconstruction, a bare `catch (T)` -- and
         // `add_fact` with `None` is already a no-op. `out var x`'s `type`
         // field is `implicit_type`, which `type_fact` already answers with
         // `None` for -- recorded as taken-but-unknown rather than left
@@ -2545,6 +2608,17 @@ fn visit_member_facts(
             n.child_by_field_name("name").map(|x| text(x, src)),
             type_fact(n.child_by_field_name("type"), src, type_params),
         );
+    } else if matches!(
+        n.kind(),
+        "from_clause" | "join_clause" | "join_into_clause" | "let_clause" | "query_expression"
+    ) {
+        // Every name a LINQ query binds is taken-but-unknown: in scope for
+        // the rest of the query, never a field of the enclosing type, and
+        // with no type this extractor can read off the syntax. See
+        // `query_binding_names`.
+        for name in query_binding_names(n, src) {
+            add_fact(table, Some(name), None);
+        }
     }
     for c in named_children(n) {
         visit_member_facts(
@@ -8869,6 +8943,124 @@ public class Probe
             .find(|r| r.kind == "uses-member" && r.member.as_deref() == Some("Render"))
             .expect("x.Render() ref present");
         assert_eq!(render.receiver_type, None, "out var x earns no fact");
+    }
+
+    #[test]
+    fn stage4_catch_declaration_designation_yields_a_type_fact() {
+        let e = extract_src(
+            r#"
+namespace Fixtures.Recall;
+public class Probe
+{
+    public void F()
+    {
+        try { Work(); }
+        catch (WidgetException e) { e.Ship(); }
+    }
+}
+"#,
+        );
+        let ship = e
+            .refs
+            .iter()
+            .find(|r| r.kind == "uses-member" && r.member.as_deref() == Some("Ship"))
+            .expect("e.Ship() ref present");
+        assert_eq!(
+            ship.receiver_type.as_deref(),
+            Some("WidgetException"),
+            "a caught exception is a declaration like any other -- the handler names its type"
+        );
+        assert!(
+            ship.receiver_local,
+            "and the member's own fact table claims the name, so it shadows a same-named field"
+        );
+    }
+
+    #[test]
+    fn stage4_range_variables_and_untyped_lambda_parameters_take_the_name_without_a_type() {
+        // Every name below is DECLARED by the syntax that introduces it, so
+        // each has to claim a slot in the member's own fact table even
+        // though nothing here says what its type is. `receiver_local` is
+        // what the resolver reads to keep its field fallback off them.
+        let queried = extract_src(
+            r#"
+namespace Fixtures.Recall;
+public class Probe
+{
+    public void F()
+    {
+        var picked = from d in Items
+                     join o in Others on d equals o into g
+                     let n = Items
+                     select d.Ship();
+        var more = from x in Items select x into k select k.Ship();
+        g.Ship();
+        n.Ship();
+        o.Ship();
+    }
+}
+"#,
+        );
+        for name in ["d", "o", "g", "n", "k"] {
+            let r = queried
+                .refs
+                .iter()
+                .find(|r| {
+                    r.kind == "uses-member" && r.name == name && r.member.as_deref() == Some("Ship")
+                })
+                .unwrap_or_else(|| panic!("{name}.Ship() ref present"));
+            assert!(
+                r.receiver_local,
+                "{name} is a query range variable, so the member's fact table claims it"
+            );
+            assert_eq!(
+                r.receiver_type, None,
+                "{name} is claimed without a type -- the element type of the source sequence is \
+                 not something this extractor can compute"
+            );
+        }
+
+        let lambdas = extract_src(
+            r#"
+namespace Fixtures.Recall;
+public class Probe
+{
+    public void F()
+    {
+        Wrap(1, q => q.Ship());
+        var f = w => w.Ship();
+        Items.Select((a, b) => a.Ship());
+        Items.Select((Order z) => z.Ship());
+    }
+}
+"#,
+        );
+        for name in ["q", "w", "a"] {
+            let r = lambdas
+                .refs
+                .iter()
+                .find(|r| {
+                    r.kind == "uses-member" && r.name == name && r.member.as_deref() == Some("Ship")
+                })
+                .unwrap_or_else(|| panic!("{name}.Ship() ref present"));
+            assert!(
+                r.receiver_local,
+                "{name} is a lambda parameter the element rule declines -- a non-first argument, a \
+                 lambda that is no argument at all, a multi-parameter list -- and it is still a \
+                 declaration"
+            );
+            assert_eq!(r.receiver_type, None, "with no type the rule could give it");
+        }
+        let typed = lambdas
+            .refs
+            .iter()
+            .find(|r| r.kind == "uses-member" && r.name == "z")
+            .expect("z.Ship() ref present");
+        assert_eq!(
+            typed.receiver_type.as_deref(),
+            Some("Order"),
+            "an explicitly typed lambda parameter keeps the fact its own declaration gives"
+        );
     }
 
     // --- Unit C: chain-tail receivers and lambda-parameter element typing --

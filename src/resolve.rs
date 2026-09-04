@@ -9524,6 +9524,36 @@ mod tests {
     }
 
     #[test]
+    fn stage7_a_catch_variable_shadows_a_same_named_base_field_fact() {
+        // The handler declares `e` as a WidgetException, a type this graph
+        // does not hold. A protected field on the base happens to share the
+        // name and IS in-graph -- and before the catch designation earned a
+        // fact of its own, the bare-identifier fallback typed the caught
+        // exception from that field and bound the call to it.
+        let files = fragments_for(&[
+            (
+                "Domain/Order.cs",
+                "\nnamespace App.Domain;\n\npublic class Order\n{\n    public void Ship() { }\n}\n",
+            ),
+            (
+                "Domain/BaseT.cs",
+                "\nnamespace App.Domain;\n\npublic class BaseT\n{\n    protected Order e;\n}\n",
+            ),
+            (
+                "Domain/Derived.cs",
+                "\nnamespace App.Domain;\n\npublic class Derived : BaseT\n{\n    public void Go()\n    {\n        try { Work(); }\n        catch (WidgetException e) { e.Ship(); }\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert!(
+            member_edges_from(&g, "Domain/Derived.cs").is_empty(),
+            "the caught exception shadows the base field, and its own type is out of graph -- so \
+             the site is an ordinary external miss, never a precise edge to Order.Ship: {:?}",
+            member_edges_from(&g, "Domain/Derived.cs")
+        );
+    }
+
+    #[test]
     fn stage7_an_in_file_local_shadows_a_same_named_field_fact() {
         let files = fragments_for(&[
             (
