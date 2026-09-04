@@ -802,7 +802,11 @@ fn inherited_member_declared(
 // seeds a fresh set for each of `start`'s direct bases): a cycle within one
 // direct base's own closure cannot re-enter that closure, but two SIBLING
 // direct bases sharing a common ancestor each see it once, from their own
-// branch -- exactly the guard the walk this replaces already gave.
+// branch -- exactly the guard the walk this replaces already gave. Each
+// branch's set also holds `start` itself from the outset, so a hierarchy
+// that names its own descendant (`class A : B`, `class B : A` -- invalid
+// C#, but a shape this parser reads happily) can never walk back INTO the
+// type the lookup started from and answer with it.
 fn declares_in_base_closure(
     index: &DefIndex,
     file_contexts: &HashMap<String, FileContext>,
@@ -896,7 +900,10 @@ fn first_base_declaring(
         }
     }
     for bidx in classes.into_iter().chain(interfaces) {
-        let mut seen: HashSet<usize> = HashSet::from([bidx]);
+        // Seeded with `start` as well as the branch's own root: this walk
+        // answers "which BASE declares it", so the starting type is out of
+        // bounds however a cyclic hierarchy leads back to it.
+        let mut seen: HashSet<usize> = HashSet::from([start, bidx]);
         if let Some(found) = declares_in_base_closure(
             index,
             file_contexts,
@@ -9135,6 +9142,37 @@ mod tests {
              receiver, never a scored guess, even though Order itself declares Touch: {touch_edges:?}"
         );
         assert_eq!(g.stats.heuristic_edge_count, 0);
+    }
+
+    #[test]
+    fn stage7_base_member_lookup_on_a_cyclic_hierarchy_never_binds_the_enclosing_type() {
+        // `class A : B` / `class B : A` is not valid C#, but it parses, and a
+        // graph built from half-written source can hold it. Walking B's own
+        // bases leads straight back to A, and A declares Only -- so without a
+        // guard the `base.` lookup answers with the very type the call was
+        // written in, the self-edge a `base.` qualifier can never mean.
+        let files = fragments_for(&[
+            (
+                "Domain/A.cs",
+                "\nnamespace App.Domain;\n\npublic class A : B\n{\n    public void Only() { }\n\n    public void Go() { base.Only(); }\n}\n",
+            ),
+            (
+                "Domain/B.cs",
+                "\nnamespace App.Domain;\n\npublic class B : A\n{\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert!(
+            member_edges_from(&g, "Domain/A.cs").is_empty(),
+            "no in-graph BASE of A declares Only -- reaching A again through the cycle is not an \
+             answer, so base.Only() is external exactly like a member no base declares at all: \
+             {:?}",
+            member_edges_from(&g, "Domain/A.cs")
+        );
+        assert_eq!(
+            g.stats.heuristic_edge_count, 0,
+            "and a `base.` ref never falls through to a guess either"
+        );
     }
 
     #[test]
