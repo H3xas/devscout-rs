@@ -429,9 +429,10 @@ pub struct Candidate {
     pub file: String,
 }
 
-/// Which heuristic tier emitted a guess. The two differ by an order of
-/// magnitude in precision and `heuristic: true` alone cannot tell them
-/// apart: `Ext` is C#'s own extension-method lookup run over a recorded
+/// Which heuristic tier emitted a guess.
+///
+/// The two differ by an order of magnitude in precision and `heuristic: true`
+/// alone cannot tell them apart: `Ext` is C#'s own extension-method lookup run over a recorded
 /// `(member, this-type)` bucket -- a real rule, only unverifiable against an
 /// out-of-graph receiver -- while `Guess` is the scored tier picking by NAME
 /// among the defs that happen to declare a member so called.
@@ -722,8 +723,9 @@ pub struct EdgesByKind {
 }
 
 /// `heuristic_edge_count` split by the tier that emitted each edge, in the
-/// fixed key order every tier-keyed output uses (ext, then guess). Both keys
-/// are always written, and `ext + guess` equals `heuristic_edge_count` --
+/// fixed key order every tier-keyed output uses (ext, then guess).
+///
+/// Both keys are always written, and `ext + guess` equals `heuristic_edge_count` --
 /// including after the heuristic-side dedup, which decrements the dropped
 /// edge's own tier.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
@@ -799,8 +801,9 @@ pub struct GraphName {
     pub owner: String,
 }
 
-/// One `.csproj` project as graph.json persists it. Field order (`id`,
-/// `name`, `refs`, `test`) is significant, and the last two are
+/// One `.csproj` project as graph.json persists it.
+///
+/// Field order (`id`, `name`, `refs`, `test`) is significant, and the last two are
 /// omit-when-empty/omit-when-false: a leaf project that references nothing
 /// and is not a test project serializes as just its `id` and `name`.
 ///
@@ -831,7 +834,9 @@ fn is_not_test(b: &bool) -> bool {
 
 /// The version stamped into every graph.json this build writes, and the one
 /// `rebuild_graph` demands before it reuses an artifact it did not just
-/// produce. Bumped to 2 when `uses-member` edges gained `tier` and `member`:
+/// produce.
+///
+/// Bumped to 2 when `uses-member` edges gained `tier` and `member`:
 /// a schema-1 graph is READABLE (both keys default) but it is missing facts
 /// the query layer now reports, so it gets rebuilt rather than trusted.
 pub const GRAPH_SCHEMA_VERSION: u32 = 2;

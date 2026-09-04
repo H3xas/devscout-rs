@@ -2289,8 +2289,9 @@ pub fn build_read_model(index: &GraphIndex, query: &str) -> ReadResult {
 
 /// Which vouch earned a row in a tests model: an attribute-carrying def
 /// declared in the file (`Attribute`), or, absent that, the project model
-/// placing the file's unit inside a project marked `test` (`Project`). The
-/// two are checked in that order -- a file's own attributed def is always
+/// placing the file's unit inside a project marked `test` (`Project`).
+///
+/// The two are checked in that order -- a file's own attributed def is always
 /// the more specific vouch, so `Attribute` wins whenever both would apply.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TestVia {

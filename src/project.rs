@@ -388,7 +388,9 @@ pub fn graph_units(model: &ProjectModel) -> Vec<graph::GraphUnit> {
 }
 
 /// The inverse of `graph_units`: persisted rows back into `Unit`s, ready for
-/// `ProjectModel::from_units`. `dir` is recomputed as `id`'s parent (`""` for
+/// `ProjectModel::from_units`.
+///
+/// `dir` is recomputed as `id`'s parent (`""` for
 /// a `.csproj` sitting directly at the repo root), which is exactly what
 /// `discover` derived it from in the first place.
 pub fn units_from_graph(rows: &[graph::GraphUnit]) -> Vec<Unit> {
