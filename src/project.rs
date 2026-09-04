@@ -901,6 +901,28 @@ mod tests {
     }
 
     #[test]
+    fn from_units_closes_a_reference_cycle_without_revisiting_a_unit() {
+        // A -> B -> C -> A: the walk must terminate, every unit must reach the
+        // other two, and a unit's own index is never listed in its closure.
+        let model = ProjectModel::from_units(vec![
+            unit("src/A/A.csproj", "src/A", &["src/B/B.csproj"], false),
+            unit("src/B/B.csproj", "src/B", &["src/C/C.csproj"], false),
+            unit("src/C/C.csproj", "src/C", &["src/A/A.csproj"], false),
+        ]);
+        for from in 0..3 {
+            assert_eq!(
+                model.closure[from].len(),
+                2,
+                "unit {from} reaches the other two"
+            );
+            assert!(!model.closure[from].contains(&from));
+            for to in 0..3 {
+                assert!(model.reachable(from, to), "{from} -> {to} inside the cycle");
+            }
+        }
+    }
+
+    #[test]
     fn unit_of_file_climbs_to_a_root_level_unit_from_any_nested_file() {
         let model = ProjectModel::from_units(vec![unit("A.csproj", "", &[], false)]);
         assert_eq!(model.unit_of_file("Elsewhere/Deep/x.cs"), Some(0));
