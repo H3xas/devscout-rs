@@ -448,6 +448,47 @@ fn name_probe(name: String, namespace: &str, outer_types: Vec<String>) -> FragRe
     }
 }
 
+// Resolve a probe built from a type NAME the resolver derived itself (a
+// receiver's declared type, a base-list entry) when the number of type
+// ARGUMENTS that name was written with is known. `Foo` and `Foo<T>` share one
+// id and one `qualified_name_to_def` slot (first-indexed wins), so the
+// arity-blind ladder answers for whichever sibling the index met first; the
+// arity-keyed ladder answers for the sibling the language names. `Resolved`
+// and `Ambiguous` from the exact-arity pass stand; `External` re-runs the
+// blind ladder, so an arity of 0 inferred from an ABSENT argument list (the
+// extractor records no descriptors for an argument shape it cannot read)
+// never turns a site external that resolves today.
+fn resolve_ref_by_arity(
+    mut probe: FragRef,
+    arity: Option<usize>,
+    usings: &HashSet<String>,
+    ns: &str,
+    index: &DefIndex,
+    aliases: &HashMap<String, String>,
+    file_contexts: &HashMap<String, FileContext>,
+) -> Resolution {
+    if let Some(n) = arity {
+        probe.type_arg_count = Some(n);
+        let exact = resolve_ref(&probe, usings, ns, index, aliases, file_contexts);
+        if !matches!(exact, Resolution::External) {
+            return exact;
+        }
+        probe.type_arg_count = None;
+    }
+    resolve_ref(&probe, usings, ns, index, aliases, file_contexts)
+}
+
+// The type-argument count a `bases` entry of def `idx` was written with:
+// `base_generic_args` keeps the descriptors of a generic base and no entry
+// for a base written bare.
+fn base_arity(index: &DefIndex, idx: usize, base: &str) -> usize {
+    index.member_lists[idx]
+        .base_generic_args
+        .iter()
+        .find(|(k, _)| k == base)
+        .map_or(0, |(_, v)| v.len())
+}
+
 // Whether SOME overload's own (min, max) range admits exactly `arg_count`
 // arguments -- the OR every overload sharing a name contributes, since C#
 // overload resolution picks whichever member of the set actually accepts the
@@ -734,9 +775,15 @@ fn inheritance_walk_find(
             // The base-closure probe carries no stack: it walks BASE types,
             // not the lexical chain.
             let probe = name_probe(base.clone(), &ns, Vec::new());
-            if let Resolution::Resolved(bidx, _) =
-                resolve_ref(&probe, &ctx.usings, &ns, index, &ctx.aliases, file_contexts)
-            {
+            if let Resolution::Resolved(bidx, _) = resolve_ref_by_arity(
+                probe,
+                Some(base_arity(index, cur, base)),
+                &ctx.usings,
+                &ns,
+                index,
+                &ctx.aliases,
+                file_contexts,
+            ) {
                 if seen.insert(bidx) {
                     stack.push(bidx);
                 }
@@ -804,9 +851,15 @@ fn declares_in_base_closure(
     let mut interfaces: Vec<usize> = Vec::new();
     for base in &index.member_lists[cur].bases {
         let probe = name_probe(base.clone(), &ns, Vec::new());
-        let Resolution::Resolved(bidx, _) =
-            resolve_ref(&probe, &ctx.usings, &ns, index, &ctx.aliases, file_contexts)
-        else {
+        let Resolution::Resolved(bidx, _) = resolve_ref_by_arity(
+            probe,
+            Some(base_arity(index, cur, base)),
+            &ctx.usings,
+            &ns,
+            index,
+            &ctx.aliases,
+            file_contexts,
+        ) else {
             continue;
         };
         if !seen.insert(bidx) {
@@ -865,9 +918,15 @@ fn first_base_declaring(
     let mut interfaces: Vec<usize> = Vec::new();
     for base in &index.member_lists[start].bases {
         let probe = name_probe(base.clone(), &ns, Vec::new());
-        let Resolution::Resolved(bidx, _) =
-            resolve_ref(&probe, &ctx.usings, &ns, index, &ctx.aliases, file_contexts)
-        else {
+        let Resolution::Resolved(bidx, _) = resolve_ref_by_arity(
+            probe,
+            Some(base_arity(index, start, base)),
+            &ctx.usings,
+            &ns,
+            index,
+            &ctx.aliases,
+            file_contexts,
+        ) else {
             continue;
         };
         if index.defs[bidx].kind == "interface" {
@@ -1082,8 +1141,9 @@ fn bare_receiver_field_or_property_type(
     let base_ns = index.defs[start].namespace.clone();
     for base in &index.member_lists[start].bases {
         let probe = name_probe(base.clone(), &base_ns, Vec::new());
-        if let Resolution::Resolved(bidx, _) = resolve_ref(
-            &probe,
+        if let Resolution::Resolved(bidx, _) = resolve_ref_by_arity(
+            probe,
+            Some(base_arity(index, start, base)),
             &ctx.usings,
             &base_ns,
             index,
@@ -2358,11 +2418,28 @@ pub fn resolve_graph_with_model(
                 if !emitted {
                     if let Some(receiver_type) = &receiver_type_name {
                         let probe = name_probe(receiver_type.clone(), ns, r.outer_types.clone());
+                        // A type the extractor read off a declaration carries
+                        // its argument list (`receiver_args`, absent for a
+                        // non-generic type); one the resolver derived (a call
+                        // hop's return type, a field typed on a base) carries
+                        // a bare name and stays arity-blind.
+                        let receiver_arity = r
+                            .receiver_type
+                            .as_ref()
+                            .map(|_| r.receiver_args.as_ref().map_or(0, Vec::len));
                         let Narrowed {
                             res: rr,
                             narrowed_away,
                         } = narrow_tracked(
-                            resolve_ref(&probe, usings, ns, &index, aliases, &file_contexts),
+                            resolve_ref_by_arity(
+                                probe,
+                                receiver_arity,
+                                usings,
+                                ns,
+                                &index,
+                                aliases,
+                                &file_contexts,
+                            ),
                             site_unit,
                             &admission,
                         );
@@ -6477,6 +6554,199 @@ mod tests {
             edges,
             vec![("App.Ext.LogExt", 10, Some(HeuristicTier::Ext))],
             "line 9 has no binding and no edge; line 10 binds through tier (f) as before"
+        );
+    }
+
+    /// Every `UsesMember` edge from one file, as (target id, from_line,
+    /// target file, tier) -- `to_file` is what lets the arity-aware receiver
+    /// tests below tell the generic sibling of a type apart from the
+    /// non-generic one sharing its id.
+    fn member_edges_with_file<'a>(
+        g: &'a Graph,
+        from: &str,
+    ) -> Vec<(&'a str, usize, &'a str, Option<HeuristicTier>)> {
+        g.edges
+            .iter()
+            .filter_map(|e| match e {
+                Edge::UsesMember {
+                    from_file,
+                    from_line,
+                    to,
+                    to_file,
+                    tier,
+                    ..
+                } if from_file == from => Some((to.as_str(), *from_line, to_file.as_str(), *tier)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn stage5_receiver_rule_a_generic_receiver_binds_the_generic_sibling_not_the_first_indexed() {
+        // `Context` (non-generic) is indexed FIRST; `Context<T>` (its own
+        // generic sibling) SECOND. Both share the id `App.Contexts.Context`,
+        // so the arity-blind map alone would answer every bare `Context`
+        // lookup with the FIRST-indexed, non-generic def -- wrong for a
+        // receiver written `Context<Order>`, whose type-argument count names
+        // the generic sibling instead.
+        //
+        // Classes rather than interfaces here: the base walk that reaches
+        // Publish from the generic sibling (`typed_receiver_base_member`)
+        // deliberately never crosses an INTERFACE base (Unit A4's
+        // `skip_interfaces` rule, unrelated to this defect), so an
+        // interface-extends-interface pair would mask the very base-walk
+        // path this test means to exercise.
+        let files = fragments_for(&[
+            (
+                "Contexts/Context.cs",
+                "namespace App.Contexts { public class Context { public void Publish() { } } }",
+            ),
+            (
+                "Contexts/ContextOfT.cs",
+                "namespace App.Contexts { public class Context<T> : Context { public T Message { get; } } }",
+            ),
+            (
+                "Consumers/Handler.cs",
+                "\nusing App.Contexts;\n\nnamespace App.Consumers;\n\npublic class Handler\n{\n  public void Handle(Context<Order> ctx)\n  {\n    var m = ctx.Message;\n    ctx.Publish();\n  }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        let edges = member_edges_with_file(&g, "Consumers/Handler.cs");
+        assert_eq!(
+            edges,
+            vec![
+                ("App.Contexts.Context", 10, "Contexts/ContextOfT.cs", None),
+                ("App.Contexts.Context", 11, "Contexts/Context.cs", None),
+            ],
+            "ctx.Message binds to the generic sibling (the only one declaring Message); \
+             ctx.Publish binds through the generic sibling's own base to the non-generic \
+             sibling -- neither answer is the first-indexed def by accident"
+        );
+    }
+
+    #[test]
+    fn stage5_receiver_rule_a_non_generic_receiver_binds_the_non_generic_sibling_when_the_generic_was_indexed_first(
+    ) {
+        // Same pair of siblings, but `Context<T>` is indexed FIRST this time:
+        // a bare `Context ctx` receiver must still bind Publish to the
+        // NON-generic sibling and must never answer Message precisely --
+        // Message is declared only on the generic sibling, which a bare,
+        // arity-0 receiver is not assignable to.
+        let files = fragments_for(&[
+            (
+                "Contexts/ContextOfT.cs",
+                "namespace App.Contexts { public interface Context<T> : Context { T Message { get; } } }",
+            ),
+            (
+                "Contexts/Context.cs",
+                "namespace App.Contexts { public interface Context { void Publish(); } }",
+            ),
+            (
+                "Consumers/Handler.cs",
+                "\nusing App.Contexts;\n\nnamespace App.Consumers;\n\npublic class Handler\n{\n  public void Handle(Context ctx)\n  {\n    ctx.Publish();\n    var m = ctx.Message;\n  }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        let edges = member_edges_with_file(&g, "Consumers/Handler.cs");
+        assert_eq!(
+            edges
+                .iter()
+                .filter(|(_, line, ..)| *line == 10)
+                .cloned()
+                .collect::<Vec<_>>(),
+            vec![("App.Contexts.Context", 10, "Contexts/Context.cs", None)],
+            "a bare Context receiver binds Publish to the non-generic sibling"
+        );
+        assert!(
+            !edges
+                .iter()
+                .any(|(_, line, _, tier)| *line == 11 && tier.is_none()),
+            "line 11 (ctx.Message) must not resolve precisely -- Message is declared only on \
+             the generic sibling, which a bare, arity-0 receiver is not assignable to; a \
+             guess-tier edge there, if the graph produces one, is not asserted against here"
+        );
+    }
+
+    #[test]
+    fn stage5_receiver_rule_a_base_written_without_arguments_walks_to_the_non_generic_sibling() {
+        // `Context<T>` indexed FIRST again. The receiver here is the GENERIC
+        // sibling (`Context<Order>`), and Publish is reached only by walking
+        // its base `Context` -- written bare, with no argument list -- which
+        // must resolve to the non-generic sibling (arity 0), not back to
+        // whichever sibling the blind map happened to index first.
+        //
+        // Classes rather than interfaces here for the same reason as the
+        // test above: the base walk must actually cross the `Context` base,
+        // which `skip_interfaces` would otherwise prune before it is ever
+        // tried.
+        let files = fragments_for(&[
+            (
+                "Contexts/ContextOfT.cs",
+                "namespace App.Contexts { public class Context<T> : Context { public T Message { get; } } }",
+            ),
+            (
+                "Contexts/Context.cs",
+                "namespace App.Contexts { public class Context { public void Publish() { } } }",
+            ),
+            (
+                "Consumers/Handler.cs",
+                "\nusing App.Contexts;\n\nnamespace App.Consumers;\n\npublic class Handler\n{\n  public void Handle(Context<Order> ctx)\n  {\n    ctx.Publish();\n  }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        let edges = member_edges_with_file(&g, "Consumers/Handler.cs");
+        assert_eq!(
+            edges,
+            vec![("App.Contexts.Context", 10, "Contexts/Context.cs", None)],
+            "the bare base name Context, carrying no argument list, walks to the \
+             non-generic sibling regardless of index order"
+        );
+    }
+
+    #[test]
+    fn stage5_receiver_rule_an_extension_stops_binding_when_the_generic_sibling_declares_the_member(
+    ) {
+        // `Context` (non-generic) indexed FIRST, `Context<T>` (declaring
+        // Respond) SECOND, plus an extension method of the same name and
+        // matching this-type. Before the fix, a `Context<Order>` receiver
+        // resolved arity-blind to the non-generic sibling, which does not
+        // declare Respond, so the call fell through to the extension tier.
+        // Arity-aware resolution must bind the receiver to the generic
+        // sibling directly, which declares Respond itself -- so the
+        // extension never gets a chance to answer.
+        let files = fragments_for(&[
+            (
+                "Contexts/Context.cs",
+                "namespace App.Contexts { public interface Context { void Publish(); } }",
+            ),
+            (
+                "Contexts/ContextOfT.cs",
+                "namespace App.Contexts { public interface Context<T> : Context { void Respond(string s); } }",
+            ),
+            (
+                "Ext/ContextExt.cs",
+                "namespace App.Ext { public static class ContextExt { public static void Respond<T>(this App.Contexts.Context<T> c, string s) { } } }",
+            ),
+            (
+                "Consumers/Handler.cs",
+                "\nusing App.Contexts;\nusing App.Ext;\n\nnamespace App.Consumers;\n\npublic class Handler\n{\n  public void Handle(Context<Order> ctx)\n  {\n    ctx.Respond(\"x\");\n  }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        let edges = member_edges_with_file(&g, "Consumers/Handler.cs");
+        assert_eq!(
+            edges,
+            vec![("App.Contexts.Context", 11, "Contexts/ContextOfT.cs", None)],
+            "the generic sibling declares Respond itself, so the receiver binds precisely \
+             to it rather than falling through to the extension"
+        );
+        assert!(
+            !g.edges.iter().any(|e| matches!(
+                e,
+                Edge::UsesMember { from_file, tier, .. }
+                    if from_file == "Consumers/Handler.cs" && *tier == Some(HeuristicTier::Ext)
+            )),
+            "no extension-tier edge from the consumer file -- tier (e) already claimed the call"
         );
     }
 
