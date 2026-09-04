@@ -12,6 +12,10 @@
 //      never ambiguous, never falls through.
 //   1. Exact qualified name, tried at every ENCLOSING namespace prefix,
 //      innermost first, only for dotted references.
+//   1.5 A dotted qualifier walked through NESTED types: the shortest head
+//      that names a type, then one exact `{id}+{segment}` lookup per
+//      remaining segment. Skipped when the extractor vouches that the
+//      qualifier is an instance.
 //   2. File's usings (local ∪ every `global using`) + simple name, each
 //      using name itself tried at every enclosing-namespace prefix.
 //   3. The reference site's namespace and every ancestor of it, innermost
@@ -1029,6 +1033,18 @@ fn extension_closure_key(
 // access rule reaches every expression of the declaring type from within
 // its own members, not only `this`). `false` whenever `receiver_type` is
 // unset (nothing to compare) or names a different type.
+// True when the extractor recorded any fact that types the qualifier as an
+// INSTANCE -- a scope-typed receiver, a member-scoped local (typed or not),
+// a property-owner hop, or a call receiver. Such a qualifier is never a type
+// path, so the nested-type walk and the nested-segment suppression both
+// stand aside and leave it to the receiver tiers.
+fn extractor_vouches_instance(r: &FragRef) -> bool {
+    r.receiver_type.is_some()
+        || r.receiver_local
+        || r.receiver_property_owner.is_some()
+        || r.receiver_call_owner.is_some()
+}
+
 fn is_this_shaped_receiver(r: &FragRef) -> bool {
     match (&r.receiver_type, r.outer_types.last()) {
         (Some(rt), Some(outer)) => rt == outer,
@@ -1623,6 +1639,83 @@ fn resolve_ref(
         }
     }
 
+    // Step 1.5: a dotted qualifier crossing a TYPE boundary -- a nested
+    // static class or enum reached through a namespace- or using-qualified
+    // head, e.g. `App.Other.Outer.Middle.Leaf.Value`. Nested ids join with
+    // '+', so step 1's plain '.' walk can never answer past the outermost
+    // type. Walks the qualifier's segments left to right, SHORTEST head
+    // first: a longer head is itself a name the later steps (or step 1's own
+    // k>1 walk here) could answer via a tail-name fallback before the true
+    // nested type is ever considered. Once a head resolves to a type, its
+    // tail is walked one exact `{id}+{segment}` lookup per level; a head
+    // whose tail walk does not consume every remaining segment is dropped in
+    // favour of the next, longer head. A walk that consumes the whole tail is
+    // as certain as an exact qualified match, hence `Via::Qualified`.
+    //
+    // Two gates keep the walk off qualifiers it cannot apply to. A ref the
+    // extractor already typed as an INSTANCE (a local, field, property or
+    // call receiver) is never a type path, however much its name looks like
+    // one -- `Settings.Retry.Max` through a `JobSettings Settings` field must
+    // keep its receiver-typed edge, not bind a same-named type's nested
+    // `Retry`. And a chain whose last qualifier segment names no def at all
+    // (every BCL chain) can never complete, so it skips the recursion.
+    if let Some(qualified) = ref_
+        .qualified
+        .as_ref()
+        .filter(|_| !extractor_vouches_instance(ref_))
+    {
+        let segs: Vec<&str> = qualified.split('.').collect();
+        let leaf_known = segs
+            .last()
+            .is_some_and(|leaf| index.simple_name_to_defs.contains_key(*leaf));
+        for k in 1..segs.len() {
+            if !leaf_known {
+                break;
+            }
+            let head_idx = if k == 1 {
+                let mut head = ref_.clone();
+                head.name = segs[0].to_string();
+                head.qualified = None;
+                head.type_arg_count = None;
+                match resolve_ref(&head, usings, ns, index, aliases, file_contexts) {
+                    Resolution::Resolved(idx, _) => Some(idx),
+                    _ => None,
+                }
+            } else {
+                let head = segs[..k].join(".");
+                prefixes.iter().find_map(|prefix| {
+                    let candidate = if prefix.is_empty() {
+                        head.clone()
+                    } else {
+                        format!("{prefix}.{head}")
+                    };
+                    type_candidate(index, &candidate, None)
+                })
+            };
+            let Some(start) = head_idx else {
+                continue;
+            };
+            let mut cur = start;
+            let mut complete = true;
+            let last = segs.len() - 1;
+            for (i, seg) in segs.iter().enumerate().skip(k) {
+                // Only the leaf carries the ref's own arity; intermediate
+                // segments are looked up arity-less like any qualifier text.
+                let arity = if i == last { ref_.type_arg_count } else { None };
+                match type_candidate(index, &format!("{}+{}", index.defs[cur].id, seg), arity) {
+                    Some(next) => cur = next,
+                    None => {
+                        complete = false;
+                        break;
+                    }
+                }
+            }
+            if complete {
+                return Resolution::Resolved(cur, Via::Qualified);
+            }
+        }
+    }
+
     // Step 2: file's usings (already the union of local + global by the time
     // this is called) + simple name, the using's OWN name walked over every
     // enclosing-namespace prefix -- `using Configuration;` inside
@@ -2076,7 +2169,8 @@ pub fn resolve_graph_with_model(
                 //   (b) the qualifier carried a type-argument list (syntax no
                 //       local/field/property can carry), or
                 //   (c) the qualifier was dotted AND answered at the
-                //       exact-qualified ladder step.
+                //       exact-qualified ladder step, or by step 1.5's
+                //       segment-by-segment walk through nested types.
                 // Everything else (ambiguous, external, or a non-enum
                 // resolution with no certainty signal) is dropped silently
                 // and deliberately NOT counted in ambiguous_count/
@@ -2156,14 +2250,32 @@ pub fn resolve_graph_with_model(
                         ));
                         edges_by_kind.uses_member += 1;
                         emitted = true;
+                    } else if !extractor_vouches_instance(r)
+                        && r.member.as_deref().is_some_and(|m| {
+                            type_candidate(&index, &format!("{}+{}", index.defs[idx].id, m), None)
+                                .is_some()
+                        })
+                    {
+                        // C# forbids a member and a nested type sharing one
+                        // name on the same type, so a member name that
+                        // matches a nested type id under `idx` names a chain
+                        // SEGMENT, not a member -- the deeper window of the
+                        // same chain (step 1.5 above) carries the real edge.
+                        // Marking this window emitted keeps tiers (e)/(f)/
+                        // scored from guessing at it as a member access. A
+                        // qualifier the extractor typed as an instance is
+                        // exempt: its name merely coincides with a type's,
+                        // and the receiver tiers below own it.
+                        emitted = true;
                     } else {
                         // generic counts only for BARE qualifiers: a
                         // flattened chain inherits the flag from its inner
                         // segment while ladder steps 2-4 resolve by the
                         // chain's TAIL name, which can name-match an
                         // unrelated type. Dotted
-                        // chains earn their edge via the member lists or the
-                        // exact-qualified step instead.
+                        // chains earn their edge via the member lists, the
+                        // exact-qualified step, or step 1.5's nested walk
+                        // instead.
                         //
                         // `this_shaped` is precision rule (a)'s guard: this
                         // resolution arm is where a `this.M` ref lands (its
@@ -5198,6 +5310,345 @@ mod tests {
             heuristic_member_edges_from(&g, "Consumers/Chain.cs"),
             vec![("App.Other.Widget", 10)],
             "exactly one guess -- the tail; the head already has its fact and is never second-guessed"
+        );
+    }
+
+    // --- nested-qualifier chain: the qualifier ladder walking through
+    // nested types ---
+    //
+    // A qualified expression that crosses one or more nesting boundaries
+    // (`Outer.Inner.Value`, `Outer.Middle.Leaf.Value`) must bind to the LEAF
+    // def the compiler actually binds -- using the "+"-joined id `type_id`
+    // (extract.rs) gives every nested type -- never to an outer container
+    // with the next dotted segment misread as one of ITS members. Real
+    // fixtures run through this crate's own extractor, matching the tier
+    // (e) end-to-end tests above.
+
+    #[test]
+    fn end_to_end_two_level_nested_qualifier_binds_the_inner_type_and_its_const() {
+        let files = fragments_for(&[
+            (
+                "Other/Outer.cs",
+                "namespace App.Other { public static class Outer { public static class Inner { public const string Value = \"v\"; } } }",
+            ),
+            (
+                "Consumers/UsesNested.cs",
+                "\nusing App.Other;\n\nnamespace App.Consumers;\n\npublic class UsesNested\n{\n  public string Get() => Outer.Inner.Value;\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_from(&g, "Consumers/UsesNested.cs"),
+            vec![("App.Other.Outer+Inner", 8)],
+            "exactly one precise edge, targeting the nested type -- not Outer"
+        );
+        let edge = find_edge(&g, |e| matches!(e, Edge::UsesMember { .. }))
+            .expect("uses-member edge present");
+        match edge {
+            Edge::UsesMember { member, .. } => {
+                assert_eq!(member.as_deref(), Some("Value"))
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn end_to_end_three_level_nested_qualifier_binds_the_leaf_type_and_its_const() {
+        let files = fragments_for(&[
+            (
+                "Other/Outer.cs",
+                "namespace App.Other { public struct Outer { public struct Middle { public struct Leaf { public const string Value = \"v\"; } } } }",
+            ),
+            (
+                "Consumers/UsesNested.cs",
+                "\nusing App.Other;\n\nnamespace App.Consumers;\n\npublic class UsesNested\n{\n  public string Get() => Outer.Middle.Leaf.Value;\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_from(&g, "Consumers/UsesNested.cs"),
+            vec![("App.Other.Outer+Middle+Leaf", 8)],
+            "the whole chain binds to the LEAF struct, not the outermost container"
+        );
+        let edge = find_edge(&g, |e| matches!(e, Edge::UsesMember { .. }))
+            .expect("uses-member edge present");
+        match edge {
+            Edge::UsesMember { member, .. } => {
+                assert_eq!(member.as_deref(), Some("Value"))
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn end_to_end_nested_enum_member_binds_the_enum_and_not_the_enclosing_type() {
+        let files = fragments_for(&[
+            (
+                "Other/Outer.cs",
+                "namespace App.Other { public class Outer { public enum Kind { First, Second } } }",
+            ),
+            (
+                "Consumers/UsesNested.cs",
+                "\nusing App.Other;\n\nnamespace App.Consumers;\n\npublic class UsesNested\n{\n  public object Get() => Outer.Kind.First;\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        let edge = find_edge(&g, |e| matches!(e, Edge::UsesMember { .. }))
+            .expect("uses-member edge present");
+        match edge {
+            Edge::UsesMember {
+                to,
+                to_file,
+                member,
+                heuristic,
+                ..
+            } => {
+                assert_eq!(to, "App.Other.Outer+Kind.First");
+                assert_eq!(to_file, "Other/Outer.cs");
+                assert_eq!(member.as_deref(), Some("First"));
+                assert!(!heuristic, "the enum member itself is the precise target");
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn end_to_end_collision_a_namespace_type_must_not_shadow_a_same_named_nested_type() {
+        // "Config" names two unrelated defs: a top-level class in namespace
+        // Shared.Config, and a class nested in Outer. `Outer.Config.Value`
+        // can only ever mean the NESTED one -- "Outer" already names a
+        // specific type, so C# never even considers the unrelated
+        // namespace's same-named class. The smallest fixture that puts both
+        // candidates in the same simple-name pool: this only breaks once
+        // the global-uniqueness fallback sees a same-named type ANYWHERE in
+        // the corpus and cannot tell the two apart.
+        let files = fragments_for(&[
+            (
+                "Shared/Config.cs",
+                "namespace Shared.Config { public class Config { public const string Value = \"ns\"; } }",
+            ),
+            (
+                "Other/Outer.cs",
+                "namespace App.Other { public class Outer { public class Config { public const string Value = \"nested\"; } } }",
+            ),
+            (
+                "Consumers/UsesNested.cs",
+                "\nusing App.Other;\n\nnamespace App.Consumers;\n\npublic class UsesNested\n{\n  public string Get() => Outer.Config.Value;\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_from(&g, "Consumers/UsesNested.cs"),
+            vec![("App.Other.Outer+Config", 8)],
+            "Outer.Config.Value must bind precisely to the NESTED Config -- never guess at the unrelated namespace-level Config"
+        );
+        assert!(
+            !any_member_edge_targets(&g, "Shared.Config.Config"),
+            "no edge of any tier may reach the namespace-level Config"
+        );
+    }
+
+    #[test]
+    fn end_to_end_plain_const_on_the_outer_type_still_resolves_precisely() {
+        // Control: no nesting at all. Guards the ladder change against
+        // regressing the ordinary case.
+        let files = fragments_for(&[
+            (
+                "Other/Outer.cs",
+                "namespace App.Other { public static class Outer { public const string Value = \"v\"; } }",
+            ),
+            (
+                "Consumers/UsesNested.cs",
+                "\nusing App.Other;\n\nnamespace App.Consumers;\n\npublic class UsesNested\n{\n  public string Get() => Outer.Value;\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_from(&g, "Consumers/UsesNested.cs"),
+            vec![("App.Other.Outer", 8)]
+        );
+        let edge = find_edge(&g, |e| matches!(e, Edge::UsesMember { .. }))
+            .expect("uses-member edge present");
+        match edge {
+            Edge::UsesMember { member, .. } => {
+                assert_eq!(member.as_deref(), Some("Value"))
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    /// `true` when some uses-member edge out of `g`, precise or heuristic,
+    /// names `target` as its `to`. Used by the nested-qualifier chain tests
+    /// below to prove the outer container of a walked chain earns no edge at
+    /// all, not merely no PRECISE one -- `member_edges_from` and
+    /// `heuristic_member_edges_from` only ever show what DID emit.
+    fn any_member_edge_targets(g: &Graph, target: &str) -> bool {
+        g.edges.iter().any(|e| match e {
+            Edge::UsesMember { to, .. } => to == target,
+            _ => false,
+        })
+    }
+
+    #[test]
+    fn end_to_end_namespace_qualified_head_walks_nested_types_to_the_leaf() {
+        let files = fragments_for(&[
+            (
+                "Other/Outer.cs",
+                "namespace App.Other { public static class Outer { public static class Middle { public static class Leaf { public const string Value = \"v\"; } } } }",
+            ),
+            (
+                "Consumers/UsesNested.cs",
+                "\nnamespace App.Consumers;\n\npublic class UsesNested\n{\n  public string Get() => App.Other.Outer.Middle.Leaf.Value;\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_from(&g, "Consumers/UsesNested.cs"),
+            vec![("App.Other.Outer+Middle+Leaf", 6)],
+            "a namespace-qualified head walks every nested level to the leaf, with no using at all"
+        );
+        let edge = find_edge(&g, |e| matches!(e, Edge::UsesMember { .. }))
+            .expect("uses-member edge present");
+        match edge {
+            Edge::UsesMember { member, .. } => {
+                assert_eq!(member.as_deref(), Some("Value"))
+            }
+            _ => unreachable!(),
+        }
+        assert!(
+            !any_member_edge_targets(&g, "App.Other.Outer"),
+            "no uses-member edge, precise or heuristic, may target the outer container"
+        );
+    }
+
+    #[test]
+    fn end_to_end_repeated_nested_leaf_name_binds_the_named_container() {
+        let files = fragments_for(&[
+            (
+                "Other/Constants.cs",
+                "namespace App.Other { public static class Constants { public static class SalesInvoice { public static class FormField { public const string RecId = \"a\"; } } public static class PurchaseOrder { public static class FormField { public const string RecId = \"b\"; } } } }",
+            ),
+            (
+                "Consumers/UsesNested.cs",
+                "\nnamespace App.Consumers;\n\npublic class UsesNested\n{\n  public string Get() => App.Other.Constants.SalesInvoice.FormField.RecId;\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_from(&g, "Consumers/UsesNested.cs"),
+            vec![("App.Other.Constants+SalesInvoice+FormField", 6)],
+            "two same-named FormField leaves under different containers -- the qualifier's own container segment picks the right one"
+        );
+        let edge = find_edge(&g, |e| matches!(e, Edge::UsesMember { .. }))
+            .expect("uses-member edge present");
+        match edge {
+            Edge::UsesMember { member, .. } => {
+                assert_eq!(member.as_deref(), Some("RecId"))
+            }
+            _ => unreachable!(),
+        }
+        assert!(
+            !any_member_edge_targets(&g, "App.Other.Constants"),
+            "no uses-member edge, precise or heuristic, may target the outer container"
+        );
+    }
+
+    #[test]
+    fn end_to_end_repeated_nested_leaf_name_binds_through_a_using_head() {
+        let files = fragments_for(&[
+            (
+                "Other/Constants.cs",
+                "namespace App.Other { public static class Constants { public static class SalesInvoice { public static class FormField { public const string RecId = \"a\"; } } public static class PurchaseOrder { public static class FormField { public const string RecId = \"b\"; } } } }",
+            ),
+            (
+                "Consumers/UsesNested.cs",
+                "\nusing App.Other;\n\nnamespace App.Consumers;\n\npublic class UsesNested\n{\n  public string Get() => Constants.SalesInvoice.FormField.RecId;\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_from(&g, "Consumers/UsesNested.cs"),
+            vec![("App.Other.Constants+SalesInvoice+FormField", 8)],
+            "the same walk through a using-resolved head instead of a namespace-qualified one"
+        );
+        let edge = find_edge(&g, |e| matches!(e, Edge::UsesMember { .. }))
+            .expect("uses-member edge present");
+        match edge {
+            Edge::UsesMember { member, .. } => {
+                assert_eq!(member.as_deref(), Some("RecId"))
+            }
+            _ => unreachable!(),
+        }
+        assert!(
+            !any_member_edge_targets(&g, "App.Other.Constants"),
+            "no uses-member edge, precise or heuristic, may target the outer container"
+        );
+    }
+
+    #[test]
+    fn end_to_end_nested_enum_two_levels_deep_behind_a_namespace_qualified_head() {
+        let files = fragments_for(&[
+            (
+                "Other/Box.cs",
+                "namespace App.Other { public static class Box { public static class Inner { public enum Kind { First, Second } } } }",
+            ),
+            (
+                "Consumers/UsesNested.cs",
+                "\nnamespace App.Consumers;\n\npublic class UsesNested\n{\n  public object Get() => App.Other.Box.Inner.Kind.First;\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_from(&g, "Consumers/UsesNested.cs"),
+            vec![("App.Other.Box+Inner+Kind.First", 6)],
+            "the enum sits two nesting levels deep behind a namespace-qualified head"
+        );
+        let edge = find_edge(&g, |e| matches!(e, Edge::UsesMember { .. }))
+            .expect("uses-member edge present");
+        match edge {
+            Edge::UsesMember { member, .. } => {
+                assert_eq!(member.as_deref(), Some("First"))
+            }
+            _ => unreachable!(),
+        }
+        assert!(
+            !any_member_edge_targets(&g, "App.Other.Box"),
+            "no uses-member edge, precise or heuristic, may target the outer container"
+        );
+    }
+
+    #[test]
+    fn end_to_end_instance_receiver_named_like_a_type_keeps_its_receiver_typed_edge() {
+        // `Settings` is BOTH a field of type JobSettings in the reference
+        // site's class and a globally unique type name with a nested `Retry`.
+        // The extractor types the field, so the chain is an instance access:
+        // the nested walk and the nested-segment suppression must both stand
+        // aside and leave the receiver tiers to bind JobSettings.Retry.
+        let files = fragments_for(&[
+            (
+                "Domain/Settings.cs",
+                "namespace App.Domain { public class Settings { public class Retry { public const int Max = 3; } } }",
+            ),
+            (
+                "Web/Job.cs",
+                "\nnamespace App.Web;\n\npublic class RetryPolicy { public int Max { get; set; } }\npublic class JobSettings { public RetryPolicy Retry { get; set; } }\npublic class Job\n{\n  private readonly JobSettings Settings;\n  public int M() => Settings.Retry.Max;\n}\n",
+            ),
+        ]);
+        // The second window (`Settings.Retry` with member `Max`) is a
+        // separate matter: the tail-name fallback in step 4 still answers it
+        // by the globally unique `Retry`, which is the qualified-name
+        // fallback's own problem and not the nested walk's -- this test pins
+        // only the first window and the walk's abstention.
+        let g = resolve_graph(&no_git_root(), &files);
+        assert!(
+            !any_member_edge_targets(&g, "App.Domain.Settings"),
+            "the field access `Settings.Retry` never binds the same-named type: {:?}",
+            member_edges_from(&g, "Web/Job.cs")
+        );
+        assert!(
+            member_edges_from(&g, "Web/Job.cs").contains(&("App.Web.JobSettings", 9)),
+            "the receiver-typed edge to JobSettings.Retry survives: {:?}",
+            member_edges_from(&g, "Web/Job.cs")
         );
     }
 
