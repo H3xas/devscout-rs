@@ -1308,9 +1308,8 @@ mod tests {
         ]
         .into_iter()
         .collect();
-        let alone = read_ts_alias_scopes(&tmp.0, ["apps/web/src/x.ts"].into_iter());
-        let with_sibling =
-            read_ts_alias_scopes(&tmp.0, ["apps/web/src/x.ts", "apps/tool/y.ts"].into_iter());
+        let alone = read_ts_alias_scopes(&tmp.0, ["apps/web/src/x.ts"]);
+        let with_sibling = read_ts_alias_scopes(&tmp.0, ["apps/web/src/x.ts", "apps/tool/y.ts"]);
         for scopes in [&alone, &with_sibling] {
             assert_eq!(
                 resolve_specifier("apps/web/src/x.ts", "@app/label", &file_set, scopes),
