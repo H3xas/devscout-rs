@@ -1080,6 +1080,13 @@ fn render_text(r: &AuditReport) -> String {
         "external sites {}  silent-correct {}  leaked {}",
         r.oracle_external_sites, r.silent_correct, r.silent_leak
     ));
+    // The per-tier `structural` column counts false positives only; this is
+    // the whole-graph figure `--assert structural.impossible` judges, so the
+    // text report carries it too.
+    lines.push(format!(
+        "structural  impossible {}  checked {}",
+        r.structural_impossible, r.structural_checked
+    ));
     lines.push(format!(
         "fan-out  1: {}  2: {}  3: {}  4+: {}",
         r.fanout[0], r.fanout[1], r.fanout[2], r.fanout[3]
@@ -2375,6 +2382,90 @@ mod tests {
                 "\"top_missed\":[{\"id\":\"Fixture.Domain.Order\",\"count\":2}],",
                 "\"partial_file_mismatch\":0,",
                 "\"edges_outside_universe\":5}",
+            )
+        );
+    }
+
+    // --- text layout snapshot ---------------------------------------------
+
+    #[test]
+    fn text_output_layout_is_pinned() {
+        let report = AuditReport {
+            root: "/repo".to_string(),
+            oracle_records: 34,
+            oracle_sites: 25,
+            oracle_external_sites: 8,
+            oracle_ambiguous: 1,
+            oracle_dropped: 0,
+            units_ok: 6,
+            units_failed: 0,
+            structural_method: "units",
+            tiers: vec![
+                (
+                    Tier::Precise,
+                    TierStats {
+                        edges: 6,
+                        tp: 6,
+                        fp: 0,
+                        fp_no_site: 0,
+                        fp_external_site: 0,
+                        fp_wrong_target: 0,
+                        structural: 0,
+                    },
+                ),
+                (
+                    Tier::Guess,
+                    TierStats {
+                        edges: 21,
+                        tp: 8,
+                        fp: 13,
+                        fp_no_site: 0,
+                        fp_external_site: 13,
+                        fp_wrong_target: 0,
+                        structural: 2,
+                    },
+                ),
+            ],
+            recall_denominator: 15,
+            recall_precise: 6,
+            recall_precise_ext: 7,
+            recall_all: 13,
+            by_receiver: vec![
+                ("ident", Some(0.917)),
+                ("qualified", None),
+                ("this", Some(0.0)),
+            ],
+            recall_conditional: 1,
+            recall_bare: 0,
+            silent_correct: 4,
+            silent_leak: 4,
+            structural_impossible: 3,
+            structural_checked: 21,
+            fanout: [20, 4, 0, 0],
+            unknown_targets: vec![("class".to_string(), 2)],
+            top_fp: vec![("FilterConfig".to_string(), 2), ("Mailer".to_string(), 1)],
+            top_missed: vec![("Fixture.Domain.Order".to_string(), 2)],
+            partial_file_mismatch: 0,
+            edges_outside_universe: 5,
+        };
+        let text = render_text(&report);
+        assert_eq!(
+            text,
+            concat!(
+                "devscout audit --semantic  root /repo  oracle 34 records / 25 sites  units ok 6 failed 0  method units\n",
+                "tier        edges     tp     fp   precision   fp:no-site  fp:external  fp:wrong  structural\n",
+                "precise         6      6      0       1.000            0            0         0           0\n",
+                "guess          21      8     13       0.381            0           13         0           2\n",
+                "recall (15 in-graph member sites)  precise 0.400  precise+ext 0.467  all 0.867\n",
+                "  by receiver  ident 0.917  qualified -  this 0.000\n",
+                "external sites 8  silent-correct 4  leaked 4\n",
+                "structural  impossible 3  checked 21\n",
+                "fan-out  1: 20  2: 4  3: 0  4+: 0\n",
+                "top fp targets   FilterConfig 2  Mailer 1\n",
+                "top missed       Fixture.Domain.Order 2\n",
+                "unknown targets  class 2\n",
+                "ambiguous 1\n",
+                "edges outside universe (not judged) 5",
             )
         );
     }
