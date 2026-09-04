@@ -798,9 +798,7 @@ fn declares_in_base_closure(
     if declares(index, cur) {
         return Some(cur);
     }
-    let Some(ctx) = file_contexts.get(&index.defs[cur].file) else {
-        return None;
-    };
+    let ctx = file_contexts.get(&index.defs[cur].file)?;
     let ns = index.defs[cur].namespace.clone();
     let mut classes: Vec<usize> = Vec::new();
     let mut interfaces: Vec<usize> = Vec::new();
