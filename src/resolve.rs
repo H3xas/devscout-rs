@@ -2225,7 +2225,16 @@ pub fn resolve_graph_with_model(
                 // `receiver_type` reintroduce the exact self-edge this rule
                 // forbids, or let the scored tier guess where the design
                 // requires silent external.
-                if r.receiver_base {
+                //
+                // A CHAIN TAIL carrying the bit (`base.Make().Validate()`,
+                // which sets both `receiverBase` and
+                // `receiverCallOwner`/`receiverCallMember`) is not this
+                // shape at all: its `name` is the inner invocation's own
+                // source text, which resolves to nothing, so this rule
+                // would only silence it. It belongs to the method-return
+                // hop below, which reads the same bit and starts the
+                // lookup at the bases for exactly the same reason.
+                if r.receiver_base && r.receiver_call_owner.is_none() {
                     if let Resolution::Resolved(start, _) = &result {
                         if let Some(target) = base_member_declared(
                             &index,
@@ -2398,8 +2407,38 @@ pub fn resolve_graph_with_model(
                         if let Resolution::Resolved(oidx, _) =
                             resolve_ref(&probe, usings, ns, &index, aliases, &file_contexts)
                         {
-                            let returns =
-                                index.member_lists[oidx].method_returns.get(member).cloned();
+                            // `base.Make().Validate()`: the owner the
+                            // extractor could name is the ENCLOSING type
+                            // (that is what a `base.` qualifier types as),
+                            // but the method being called is the first
+                            // in-graph base's, so its return type is the
+                            // one the hop must read. An enclosing type that
+                            // hides `Make` with an override or a `new`
+                            // declaration of its own returns something
+                            // else, and reading THAT would send the tail
+                            // to the wrong type. No in-graph base declares
+                            // the member -> no fact, exactly as an owner
+                            // with no recorded return already gives.
+                            // `this.` and every ordinary chain tail keep
+                            // hopping through the owner itself.
+                            //
+                            // Arity is deliberately not asked here: the
+                            // ref's own `arg_count` belongs to the OUTER
+                            // call (`Validate`), never to the inner one.
+                            let hop_owner = if r.receiver_base {
+                                base_member_declared(
+                                    &index,
+                                    &file_contexts,
+                                    oidx,
+                                    Some(member.as_str()),
+                                    None,
+                                )
+                            } else {
+                                Some(oidx)
+                            };
+                            let returns = hop_owner.and_then(|idx| {
+                                index.member_lists[idx].method_returns.get(member).cloned()
+                            });
                             // An AWAITED callee returning `Task<T>`/
                             // `ValueTask<T>` unwraps to `T` -- exactly ONE
                             // layer, read off the same one-level generic-arg
@@ -2423,7 +2462,9 @@ pub fn resolve_graph_with_model(
                                     if r.receiver_awaited
                                         && (name == "Task" || name == "ValueTask") =>
                                 {
-                                    match index.member_lists[oidx].method_return_args.get(member) {
+                                    match hop_owner.and_then(|idx| {
+                                        index.member_lists[idx].method_return_args.get(member)
+                                    }) {
                                         Some(args) if args.len() == 1 && args[0] != "*" => {
                                             Some(args[0].clone())
                                         }
@@ -10071,6 +10112,58 @@ mod tests {
 
     // --- Unit A5: chain-tail hop failures, and closure-key generic
     // unification against the MATCHED base's own arguments ------------------
+
+    #[test]
+    fn stage7_base_qualified_chain_tail_hops_through_the_base_method_return() {
+        // Use hides BaseC.Make with a `new` declaration returning a
+        // different type. `base.Make()` calls the BASE's Make, so the tail
+        // is an Order; `this.Make()` calls Use's own, so the tail is a
+        // Widget. Both heads type as the enclosing type -- only the ref's
+        // base marker separates them.
+        let files = fragments_for(&[
+            (
+                "Domain/Order.cs",
+                "\nnamespace App.Domain;\n\npublic class Order\n{\n    public void Validate() { }\n}\n",
+            ),
+            (
+                "Domain/Widget.cs",
+                "\nnamespace App.Domain;\n\npublic class Widget\n{\n    public void Validate() { }\n}\n",
+            ),
+            (
+                "Domain/BaseC.cs",
+                "\nnamespace App.Domain;\n\npublic class BaseC\n{\n    public virtual Order Make() { return null; }\n}\n",
+            ),
+            (
+                "Domain/Use.cs",
+                "\nnamespace App.Domain;\n\npublic class Use : BaseC\n{\n    public new Widget Make() { return null; }\n\n    public void Run()\n    {\n        base.Make().Validate();\n    }\n\n    public void RunThis()\n    {\n        this.Make().Validate();\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        let validate: Vec<(&str, usize)> = g
+            .edges
+            .iter()
+            .filter_map(|e| match e {
+                Edge::UsesMember {
+                    from_file,
+                    from_line,
+                    to,
+                    member,
+                    heuristic: false,
+                    ..
+                } if from_file == "Domain/Use.cs" && member.as_deref() == Some("Validate") => {
+                    Some((to.as_str(), *from_line))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            validate,
+            vec![("App.Domain.Order", 10), ("App.Domain.Widget", 15)],
+            "base.Make() reads its return type off the first in-graph base that declares Make, \
+             never off the enclosing type that hides it -- and this.Make() still reads the \
+             enclosing type's own"
+        );
+    }
 
     #[test]
     fn stage7_a_chain_tail_whose_hop_fails_emits_no_guess() {

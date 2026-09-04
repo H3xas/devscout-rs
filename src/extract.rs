@@ -3025,12 +3025,20 @@ fn chain_tail_receiver_type(a_text: &str, scope: &Scope, src: &[u8]) -> Option<S
 // an `invocation_expression` `member_qualifier_info` has no arm for) never
 // reaches the receiver-typing step at all: `member_qualifier_info` returns
 // `None` for it, same as every other shape this function declines.
+//
+// The third half of the answer is whether `a` was the `base` keyword. A
+// `base.` head types as the ENCLOSING type (that is what `type_stack` gives
+// it), but the method the hop has to read a return type from is the BASE's,
+// not the enclosing type's -- an enclosing type that hides the inherited
+// member with one of its own returns something else entirely. The resolver
+// reads the bit off the ref's `receiverBase` and starts the hop at the
+// bases; `this.` keeps `false` and keeps hopping through the enclosing type.
 fn resolve_call_chain_tail(
     qualifier: Node,
     src: &[u8],
     type_stack: &[String],
     scope: &Scope,
-) -> Option<(String, String)> {
+) -> Option<(String, String, bool)> {
     if qualifier.kind() != "invocation_expression" {
         return None;
     }
@@ -3038,8 +3046,9 @@ fn resolve_call_chain_tail(
     if function.kind() != "member_access_expression" {
         return None;
     }
-    let (a_text, a_generic) =
-        member_qualifier_info(function.child_by_field_name("expression"), src, type_stack)?;
+    let head = function.child_by_field_name("expression");
+    let head_is_base = head.is_some_and(|h| h.kind() == "base");
+    let (a_text, a_generic) = member_qualifier_info(head, src, type_stack)?;
     if a_generic || a_text.contains('.') {
         return None;
     }
@@ -3056,7 +3065,7 @@ fn resolve_call_chain_tail(
         return None;
     }
     let owner = chain_tail_receiver_type(&a_text, scope, src)?;
-    Some((owner, inner_member))
+    Some((owner, inner_member, head_is_base))
 }
 
 // walk_list mutates its local `ns` mid-iteration for a FILE-SCOPED
@@ -3423,7 +3432,7 @@ fn walk<'a>(
                 // for `invocation_expression`), so this is a true fallback,
                 // never a double emission for the same window.
                 if !m.is_empty() {
-                    if let Some((owner, inner_member)) =
+                    if let Some((owner, inner_member, head_is_base)) =
                         resolve_call_chain_tail(qn, src, type_stack, scope)
                     {
                         push_member_ref(
@@ -3456,7 +3465,11 @@ fn walk<'a>(
                             invocation_arg_count(node),
                             type_stack,
                             None,
-                            false,
+                            // `base.Make().Validate()`: the hop must read
+                            // Make's return type off the BASE that declares
+                            // it, never off an enclosing type that hides
+                            // Make with its own.
+                            head_is_base,
                             false,
                         );
                     }
@@ -9109,6 +9122,49 @@ public class Host
         assert_eq!(validate.receiver_type, None);
         assert_eq!(validate.receiver_call_owner.as_deref(), Some("Repo"));
         assert_eq!(validate.receiver_call_member.as_deref(), Some("Load"));
+    }
+
+    #[test]
+    fn stage4_base_qualified_chain_head_marks_the_tail_ref_as_base() {
+        let e = extract_src(
+            r#"
+namespace App.ChainTail;
+
+public class Use : BaseC
+{
+  public void Run()
+  {
+    base.Make().Validate();
+    this.Make().Validate();
+  }
+}
+"#,
+        );
+        let tails: Vec<(Option<&str>, bool)> = e
+            .refs
+            .iter()
+            .filter(|r| r.kind == "uses-member" && r.member.as_deref() == Some("Validate"))
+            .map(|r| (r.qualified.as_deref(), r.receiver_base))
+            .collect();
+        assert_eq!(
+            tails,
+            vec![(Some("base.Make()"), true), (Some("this.Make()"), false)],
+            "a base-qualified chain head marks its tail, so the resolver starts the \
+             method-return hop at the bases; a this-qualified one keeps hopping through the \
+             enclosing type"
+        );
+        for r in e
+            .refs
+            .iter()
+            .filter(|r| r.kind == "uses-member" && r.member.as_deref() == Some("Validate"))
+        {
+            assert_eq!(
+                r.receiver_call_owner.as_deref(),
+                Some("Use"),
+                "both heads type as the enclosing type -- the marker is what tells them apart"
+            );
+            assert_eq!(r.receiver_call_member.as_deref(), Some("Make"));
+        }
     }
 
     #[test]
