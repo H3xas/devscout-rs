@@ -468,55 +468,75 @@ fn aliases_from_chain(chain: &[ChainLink]) -> TsPathAliases {
 
 // Walks a directory's own ancestors toward the repo root -- itself first, then
 // its parent, and so on, stopping before the empty root directory -- for the
-// nearest one that owns a `tsconfig.json`. Memoized per directory so two
-// files under the same app cost one filesystem check between them rather than
-// one each.
+// nearest one that owns a `tsconfig.json` DECLARING `paths` or `baseUrl`. A
+// config that declares neither is stepped over, never stopped at: the walk
+// continues to the next owner above it, so the answer for a directory is a
+// function of its own ancestors alone, never of which other files the repo
+// happens to carry. Memoized per directory (the owner) and per config (its
+// aliases) so two files under the same app cost one filesystem check between
+// them rather than one each.
 fn owning_tsconfig_dir(
     root: &Path,
     dir: &str,
-    cache: &mut HashMap<String, Option<String>>,
+    owner_cache: &mut HashMap<String, Option<String>>,
+    alias_cache: &mut HashMap<String, Option<TsPathAliases>>,
 ) -> Option<String> {
     if dir.is_empty() {
         return None;
     }
-    if let Some(hit) = cache.get(dir) {
+    if let Some(hit) = owner_cache.get(dir) {
         return hit.clone();
     }
-    let answer = if root.join(dir).join("tsconfig.json").is_file() {
+    let own = alias_cache
+        .entry(dir.to_string())
+        .or_insert_with(|| {
+            let config = root.join(dir).join("tsconfig.json");
+            if !config.is_file() {
+                return None;
+            }
+            let chain = read_tsconfig_chain(root, &format!("{dir}/tsconfig.json"));
+            let aliases = aliases_from_chain(&chain);
+            let owns_something = !aliases.aliases.is_empty() || aliases.base_url_dir.is_some();
+            owns_something.then_some(aliases)
+        })
+        .is_some();
+    let answer = if own {
         Some(dir.to_string())
     } else {
-        owning_tsconfig_dir(root, dir_of(dir), cache)
+        owning_tsconfig_dir(root, dir_of(dir), owner_cache, alias_cache)
     };
-    cache.insert(dir.to_string(), answer.clone());
+    owner_cache.insert(dir.to_string(), answer.clone());
     answer
 }
 
 /// Reads the root chain once, then finds each distinct directory `files`
-/// names an owner for: the nearest ancestor `tsconfig.json` above it.
+/// names an owner for: the nearest ancestor `tsconfig.json` above it that
+/// declares `paths` or `baseUrl` of its own.
 ///
-/// An owner that declares neither `paths` nor `baseUrl` of its own is
-/// dropped -- a silent nested config must not switch the workspace's own
-/// aliases off for the files beneath it -- which is what leaves those files
-/// resolving through `root` exactly as if no nested config existed at all.
+/// A nested config that declares neither is stepped over -- a silent config
+/// must not switch the workspace's own aliases off for the files beneath it --
+/// so those files resolve through the next owner above it, and through `root`
+/// when there is none, exactly as if the silent config did not exist.
 pub fn read_ts_alias_scopes<'a>(
     root: &Path,
     files: impl IntoIterator<Item = &'a str>,
 ) -> TsAliasScopes {
     let root_aliases = read_ts_path_aliases(root);
     let mut owner_cache: HashMap<String, Option<String>> = HashMap::new();
+    let mut alias_cache: HashMap<String, Option<TsPathAliases>> = HashMap::new();
     let mut owners: HashSet<String> = HashSet::new();
     for file in files {
-        if let Some(owner) = owning_tsconfig_dir(root, dir_of(file), &mut owner_cache) {
+        if let Some(owner) =
+            owning_tsconfig_dir(root, dir_of(file), &mut owner_cache, &mut alias_cache)
+        {
             owners.insert(owner);
         }
     }
     let mut nested: Vec<(String, TsPathAliases)> = owners
         .into_iter()
         .filter_map(|dir| {
-            let chain = read_tsconfig_chain(root, &format!("{dir}/tsconfig.json"));
-            let aliases = aliases_from_chain(&chain);
-            let owns_something = !aliases.aliases.is_empty() || aliases.base_url_dir.is_some();
-            owns_something.then_some((dir, aliases))
+            let aliases = alias_cache.remove(&dir).flatten()?;
+            Some((dir, aliases))
         })
         .collect();
     // Longest directory first, ties broken by name for a total, deterministic
@@ -1257,6 +1277,47 @@ mod tests {
             Some("packages/core/src/formatLabel.ts".to_string()),
             "a nested config declaring neither paths nor baseUrl does not switch the root alias off"
         );
+    }
+
+    #[test]
+    fn a_silent_nested_tsconfig_is_stepped_over_to_the_next_owner_above_it() {
+        // `apps/` owns an alias; `apps/web/` carries a config that declares
+        // nothing. A file under `apps/web/` resolves through `apps/` -- and
+        // gets the same answer whether or not some sibling file elsewhere
+        // under `apps/` happens to exist to register that owner.
+        let tmp = TmpDir::new("stepped-over");
+        tmp.write(
+            "apps/tsconfig.json",
+            r#"{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": { "@app/*": ["shared/*"] }
+  }
+}"#,
+        );
+        tmp.write(
+            "apps/web/tsconfig.json",
+            r#"{
+  "compilerOptions": { "strict": true }
+}"#,
+        );
+        let file_set: HashSet<&str> = [
+            "apps/web/src/x.ts",
+            "apps/tool/y.ts",
+            "apps/shared/label.ts",
+        ]
+        .into_iter()
+        .collect();
+        let alone = read_ts_alias_scopes(&tmp.0, ["apps/web/src/x.ts"].into_iter());
+        let with_sibling =
+            read_ts_alias_scopes(&tmp.0, ["apps/web/src/x.ts", "apps/tool/y.ts"].into_iter());
+        for scopes in [&alone, &with_sibling] {
+            assert_eq!(
+                resolve_specifier("apps/web/src/x.ts", "@app/label", &file_set, scopes),
+                Some("apps/shared/label.ts".to_string()),
+                "the next owner above a silent config answers, sibling or no sibling"
+            );
+        }
     }
 
     #[test]
