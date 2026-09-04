@@ -374,6 +374,8 @@ pub struct TsAliasScopes {
     nested: Vec<(String, TsPathAliases)>,
 }
 
+/// Reads the repo-root tsconfig chain into its aliases.
+///
 /// `paths` and `baseUrl` are whole-property overrides in TypeScript's own
 /// inheritance rule, not merged key by key -- the nearest config that declares
 /// one wins it outright. `paths` entries resolve against that config's own
@@ -714,24 +716,29 @@ pub fn resolve_ts_graph(fragments: &[(String, TsFragment)], alias: &TsAliasScope
         reexports_by_file.insert(file.as_str(), rows);
     }
 
-    // `visited` is one top-level lookup's own set, fresh at every call site
+    // `visited` is one top-level lookup's own map, fresh at every call site
     // below (never shared across bindings or refs): a `(file, name)` pair
     // revisited mid-walk means a cyclic `export *` pair sent the walk back to
     // a state it is already computing, so it fails closed to `None` right
     // there rather than recursing again. That guard also keeps a single
-    // `export *` fan-out linear in files times names -- every `(file, name)`
-    // is entered at most once regardless of how many stars point at it.
+    // `export *` fan-out linear in files times names. What the map REMEMBERS
+    // is the shallowest hop count the pair was walked from: a pair first met
+    // deep in the walk, where the cap cut its own re-exports short, is walked
+    // again when a shorter path reaches it with more hops to spend -- and
+    // never again from the same depth or deeper.
     fn lookup_export(
         file: &str,
         name: &str,
         hops: usize,
         exports_by_file: &HashMap<&str, HashMap<String, usize>>,
         reexports_by_file: &HashMap<&str, Vec<ResolvedReexport>>,
-        visited: &mut HashSet<(String, String)>,
+        visited: &mut HashMap<(String, String), usize>,
     ) -> Option<usize> {
-        if !visited.insert((file.to_string(), name.to_string())) {
+        let key = (file.to_string(), name.to_string());
+        if visited.get(&key).is_some_and(|&seen| seen <= hops) {
             return None;
         }
+        visited.insert(key, hops);
         // Own declarations are checked before the hop cap is enforced, so a
         // chain of exactly `BARREL_HOPS` barrels followed by a declaring file
         // still resolves -- the cap bounds how many re-export hops are
@@ -826,7 +833,7 @@ pub fn resolve_ts_graph(fragments: &[(String, TsFragment)], alias: &TsAliasScope
                 if b.imported == "*" {
                     continue;
                 }
-                let mut visited: HashSet<(String, String)> = HashSet::new();
+                let mut visited: HashMap<(String, String), usize> = HashMap::new();
                 let Some(target) = lookup_export(
                     &to,
                     &b.imported,
@@ -879,13 +886,13 @@ pub fn resolve_ts_graph(fragments: &[(String, TsFragment)], alias: &TsAliasScope
                 // export is meant.
                 Some((to, imported)) if imported == "*" => match &r.member {
                     Some(m) => {
-                        let mut visited: HashSet<(String, String)> = HashSet::new();
+                        let mut visited: HashMap<(String, String), usize> = HashMap::new();
                         lookup_export(to, m, 0, &exports_by_file, &reexports_by_file, &mut visited)
                     }
                     None => None,
                 },
                 Some((to, imported)) => {
-                    let mut visited: HashSet<(String, String)> = HashSet::new();
+                    let mut visited: HashMap<(String, String), usize> = HashMap::new();
                     lookup_export(
                         to,
                         imported,
@@ -1543,6 +1550,68 @@ mod tests {
             g.edges.iter().find(|e| matches!(e, Edge::Call { .. })),
             Some(Edge::Call { to_file, .. }) if to_file == "src/c.ts"
         ));
+    }
+
+    #[test]
+    fn a_pair_first_cut_by_the_cap_is_walked_again_from_a_shorter_path() {
+        // `b` fans out to a long chain first and a short one second, both
+        // reaching `deep`, which alone re-exports the declaring file. Down
+        // the long chain `deep` is entered exactly at the cap, so its own
+        // re-export is never followed; the short chain then reaches it with
+        // hops to spare and must be allowed to walk it again.
+        let long_links = BARREL_HOPS - 1;
+        let mut fragments = vec![
+            (
+                "src/a.ts".to_string(),
+                frag(
+                    vec![],
+                    vec![import("./b", 1, &[("go", "go")])],
+                    vec![],
+                    vec![call_ref("go", 3)],
+                ),
+            ),
+            (
+                "src/b.ts".to_string(),
+                frag(
+                    vec![],
+                    vec![],
+                    vec![star_barrel("./long1"), star_barrel("./short")],
+                    vec![],
+                ),
+            ),
+            (
+                "src/short.ts".to_string(),
+                frag(vec![], vec![], vec![star_barrel("./deep")], vec![]),
+            ),
+            (
+                "src/deep.ts".to_string(),
+                frag(vec![], vec![], vec![star_barrel("./x")], vec![]),
+            ),
+            (
+                "src/x.ts".to_string(),
+                frag(vec![("go", "function", 1)], vec![], vec![], vec![]),
+            ),
+        ];
+        for i in 1..=long_links {
+            let next = if i == long_links {
+                "./deep".to_string()
+            } else {
+                format!("./long{}", i + 1)
+            };
+            fragments.push((
+                format!("src/long{i}.ts"),
+                frag(vec![], vec![], vec![star_barrel(&next)], vec![]),
+            ));
+        }
+        let g = resolve_ts_graph(&fragments, &no_alias());
+        assert!(
+            matches!(
+                g.edges.iter().find(|e| matches!(e, Edge::Call { .. })),
+                Some(Edge::Call { to_file, .. }) if to_file == "src/x.ts"
+            ),
+            "the short chain must still reach src/x.ts: {:?}",
+            g.edges
+        );
     }
 
     #[test]
