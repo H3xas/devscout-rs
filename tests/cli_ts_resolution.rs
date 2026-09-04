@@ -69,8 +69,15 @@ const API_HANDLER: &str = "apps/api/src/handler.ts";
 const FORMAT_LABEL: &str = "packages/core/src/formatLabel.ts";
 
 struct Fixture {
+    base: PathBuf,
     repo: PathBuf,
     home: PathBuf,
+}
+
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.base);
+    }
 }
 
 impl Fixture {
@@ -81,7 +88,7 @@ impl Fixture {
         fs::create_dir_all(&home).expect("create home dir");
         copy_tree(&fixture_root(), &repo);
 
-        let fx = Fixture { repo, home };
+        let fx = Fixture { base, repo, home };
         fx.expect_ok(&["init", "--no-hooks", "--no-map"]);
         fx.expect_ok(&["map", "."]);
         fx
