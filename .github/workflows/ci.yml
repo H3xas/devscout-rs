@@ -163,9 +163,9 @@ jobs:
 
       - name: Index an isolated copy of the direction fixture and audit it
         env:
-          HOME: ${{ runner.temp }}/home
-          SCOUT_REGISTRY: ${{ runner.temp }}/home/repos.json
-          SCOUT_CONTENT_DB: ${{ runner.temp }}/home/content.db
+          HOME: ${{ runner.temp }}/home-direction
+          SCOUT_REGISTRY: ${{ runner.temp }}/home-direction/repos.json
+          SCOUT_CONTENT_DB: ${{ runner.temp }}/home-direction/content.db
         run: |
           mkdir -p "$HOME" "$RUNNER_TEMP/direction-repo"
           rsync -a --exclude bin --exclude obj fixtures/csharp-direction/src "$RUNNER_TEMP/direction-repo/"

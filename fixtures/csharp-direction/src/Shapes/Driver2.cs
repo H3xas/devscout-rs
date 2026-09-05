@@ -1,6 +1,7 @@
 // Second probe driver: declared-type-versus-initializer locals, chain tails, qualified and
 // generic static qualifiers, accessibility and explicit-implementation shapes, and a same-arity
-// overload split. One probe per source line, `// case` comment on the line above.
+// overload split. One probe per source line, `// case` comment on the line above; the
+// chain-tail line (case H6) yields two oracle records, the inner call and the tail.
 namespace Fixture.Shapes;
 
 public class Driver2
@@ -15,6 +16,7 @@ public class Driver2
         var internalDerived = new InternalDerived();
         var shadow = new ShadowField();
         var overload = new OverloadDerived();
+        // case X17 (control: a member the receiver's own type declares)
         _ = shadow.Peek();
 
         // case H1

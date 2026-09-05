@@ -156,11 +156,13 @@ fn audit_scores_the_direction_fixture_against_the_committed_oracle_snapshot() {
         "the fixture has no extension methods and every receiver resolves in-graph, so no \
          heuristic tier emits: {stdout}"
     );
-    // Recall: the fixture's six misses are the shapes outside this
-    // fixture's question -- three bare unqualified calls and one bare call
-    // beside an explicit implementation (unrecorded), one cast receiver
-    // `((IContract)x).Fulfil()` (untyped), and one `internal override`
-    // (invisible to a non-`this` receiver).
+    // Six oracle records earn no edge at all, every one outside this
+    // fixture's question: four bare unqualified calls (unrecorded, and
+    // excluded from recall's denominator, which counts `access` records
+    // only), one cast receiver `((IContract)x).Fulfil()` (untyped), and one
+    // `internal override` (invisible to a non-`this` receiver). Recall's own
+    // six misses over its 62 sites are the two no-edge access records plus
+    // the four false-positive sites above, whose edge names the wrong type.
     let recall_all = v["recall"]["all"].as_f64().expect("recall.all is a number");
     assert!(recall_all >= 0.9, "recall.all = {recall_all}: {stdout}");
     assert_eq!(v["structural"]["impossible"], 0, "{stdout}");
