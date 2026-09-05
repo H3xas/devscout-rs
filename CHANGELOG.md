@@ -146,6 +146,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   precise edge to `Outer` with member `Inner`, and a nested type whose simple name repeats
   across containers now binds to the container the qualifier names instead of dropping out
   as ambiguous.
+- **A fully qualified name never falls back to its bare last segment.** A dotted reference
+  whose exact-qualified lookup fails matches only a def whose full path (a nested type's `+`
+  read as `.`) ends with the text as written, and is external otherwise:
+  `RabbitMQ.Client.ExchangeType.Fanout` no longer binds to an in-tree `ExchangeType`,
+  `System.Text.Json.JsonSerializer.Serialize(x)` no longer binds to an in-tree
+  `JsonSerializer`, and `expr.Member.Name` no longer binds to a nested type named `Member`.
+  `Outer.Inner` still reaches `Outer+Inner`, `Box<string>.Slot` and `global::App.Widget` are
+  read as the def paths they spell, `Derived.Item` reaches an `Item` declared inside a base of
+  `Derived`, and a `using` alias at the head of a dotted name is rewritten to its target and
+  looked up exactly.
 
 ### Benchmarks
 
