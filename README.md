@@ -261,6 +261,13 @@ plain `rg` baseline leads, the results say so. The dated results in
 [`docs/benchmarks/results/2026-08.md`](docs/benchmarks/results/2026-08.md) now include the first
 agentic (model-in-the-loop) round — preliminary, one run per cell, its integrity caveats leading.
 
+The resolver-precision numbers come from a Roslyn oracle, [`tools/scout-semantic`](tools/scout-semantic/README.md),
+that compiles a solution and records every member reference with its resolved target. The same
+oracle has a second output mode, `--emit flowtrace-facts`, that writes the flow tracer's
+per-repository fact set with compilation-resolved types where a text pass runs out (primary
+constructors, locals, minimal-API lambdas); the fixture under `fixtures/csharp-flowtrace/` pins
+that output byte-for-byte. Roslyn stays in the sidecar -- the `devscout` binary never links it.
+
 ## Versioning and releases
 
 Semantic versioning. Releases are cut by pushing a `v*` tag (`v0.1.0`, `v0.2.0`, …), which builds
