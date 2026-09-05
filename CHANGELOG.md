@@ -127,6 +127,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **A `base.`-qualified chain head hops through the base's method return.**
   `base.Make().Validate()` types the tail from the first in-graph base declaring `Make`,
   never from the enclosing type's own same-named member.
+- **A fully qualified name never falls back to its bare last segment.** A dotted reference
+  whose exact-qualified lookup fails matches only a def whose full path (a nested type's `+`
+  read as `.`) ends with the text as written, and is external otherwise:
+  `RabbitMQ.Client.ExchangeType.Fanout` no longer binds to an in-tree `ExchangeType`,
+  `System.Text.Json.JsonSerializer.Serialize(x)` no longer binds to an in-tree
+  `JsonSerializer`, and `expr.Member.Name` no longer binds to a nested type named `Member`.
+  `Outer.Inner` still reaches `Outer+Inner`, and a `using` alias at the head of a dotted name
+  is rewritten to its target and looked up exactly.
 
 ### Benchmarks
 
