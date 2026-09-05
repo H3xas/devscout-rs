@@ -60,6 +60,19 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Method arities are recorded per overload.** Each declared method records the
   parameter-count range every overload accepts, an unbounded `params` overload left
   open-ended and optional parameters lowering the minimum.
+- **An untyped lambda parameter is typed from the callee's delegate parameter.** Every
+  method records its parameter types per overload (`methodParams`, type parameters as `*`,
+  an extension method's receiver as `this <type>`; a `delegate` declaration records its own
+  parameters under `Invoke`). A lambda passed straight to `ident.M(...)`, `this.M(...)` or a
+  bare `M(...)` whose parameter carries no annotation and earns no collection element fact
+  records the call it sits in; when that callee is an in-graph method (or extension) whose
+  parameter at the lambda's position is `Action<..>`, `Func<..>`, `Predicate<T>`,
+  `Expression<>` of one of those, or an in-graph `delegate`, each lambda parameter is typed
+  positionally from that delegate and its member accesses resolve as typed-receiver edges.
+  Overloads that can take the lambda must agree on the type, a `*` yields nothing, and the
+  callee's receiver is read one hop deep only (an in-file fact, a static class name, or the
+  enclosing type), and a parameter name that two lambdas in one member bind to different
+  callees records no slot. The fragment cache moves to v17.
 
 ### Changed
 

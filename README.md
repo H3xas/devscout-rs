@@ -209,6 +209,12 @@ Known, rather than hidden:
   through the untyped name-only tiers or not at all. The lambda rule reads the receiver's
   shape, not its meaning: any single-type-argument generic (`Task<T>`, `Lazy<T>`) types the
   parameter as its type argument the way `List<T>` does.
+  A lambda handed straight to an in-graph method is typed from that method's delegate
+  parameter (`Action<T>`, `Func<T, ..>`, `Predicate<T>`, `Expression<>` of those, or a
+  declared `delegate`) when every overload that can take it agrees; a callee outside the
+  graph, a generic delegate parameter, a callee reached through a chain or through another
+  untyped lambda parameter, a named argument, and a parameter name that two lambdas in one
+  member bind to different callees leave the parameter untyped.
 - **The project model reads only `.csproj` and `Directory.Build.props`.** It hand-scans
   `ProjectReference`, `Microsoft.NET.Test.Sdk`, and `IsTestProject` — no MSBuild evaluation, no
   conditions, no NuGet resolution, and no `.sln`. A file belongs to the nearest ancestor
