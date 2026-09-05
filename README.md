@@ -125,7 +125,7 @@ untracked files and are shared correctly by worktrees:
 <git-common-dir>/scout/manifest.json              file -> purpose + symbol index
 <git-common-dir>/scout/index-state.json           HEAD + timestamp the index was built at
 <git-common-dir>/scout/graph/graph.json           definitions, edges, and project units
-<git-common-dir>/scout/graph/fragments-v16.json   per-file extraction cache (incremental map)
+<git-common-dir>/scout/graph/fragments-v17.json   per-file extraction cache (incremental map)
 <git-common-dir>/scout/graph/project-units.json   csproj staleness sidecar (present only with a project model)
 ```
 
@@ -218,6 +218,15 @@ Known, rather than hidden:
   is written on every `uses-member` edge, `tier` on the heuristic ones; `units` (the discovered
   `.csproj` projects) is appended last. A reserved `source` slot is set aside for a future
   semantic-provenance tag. A v1 graph.json is rebuilt automatically on the next `map`.
+- **Conditional compilation uses the no-build symbol model.** `#if`/`#elif`/`#else`/`#endif`
+  are evaluated before parsing with no symbol predefined — not `DEBUG`, not `TRACE`, not a
+  target-framework symbol — so `#if SYMBOL` is inactive, `#else` and `#if !SYMBOL` are active,
+  and exactly one arm of every group is indexed. `#define`/`#undef` inside the file are
+  honored; `DefineConstants` from a `.csproj` is not read. Inactive lines are blanked in place
+  (line numbers and offsets do not move), `#region`/`#pragma`/`#nullable`/`#line` are left to
+  the parser, and a directive-looking line inside a block comment, a verbatim string, or a raw
+  string literal is not treated as a directive. The `parse` and `spans` diagnostics show the
+  raw tree, both arms included.
 
 `devscout` began as the Rust half of a two-implementation tool, and a number of source comments
 still describe behaviour by reference to that original implementation. Those notes are history:

@@ -107,6 +107,18 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   unification runs against that base's declared type arguments rather than the receiver's
   own, so an extension declared on an implemented interface binds for a generic enclosing
   type.
+- **Declarations and references inside an inactive preprocessor arm are no longer indexed.**
+  The C# extractor now evaluates `#if`/`#elif`/`#else`/`#endif` before parsing, with the
+  no-build symbol model: no symbol is predefined (`DEBUG` and `TRACE` included), `#define`
+  and `#undef` inside the file are honored, and every other symbol is false, so exactly one
+  arm of every group reaches the parser. A file whose namespace or a member header is
+  chosen by a symbol previously yielded every type under a doubled namespace and every ref
+  from both arms; it now yields each once, under the arm the compiler keeps. Inactive lines
+  are blanked in place, so line numbers and byte offsets of the surviving text are
+  unchanged. `#region`, `#pragma`, `#nullable`, and `#line` are left alone, and a
+  directive-looking line inside a block comment, a verbatim string, or a raw string literal
+  is not a directive. The fragment cache generation moves to v17 so every file reparses
+  once on the next `map`.
 
 ### Benchmarks
 
