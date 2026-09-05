@@ -455,9 +455,20 @@ fn name_probe(name: String, namespace: &str, outer_types: Vec<String>) -> FragRe
 // arity-blind ladder answers for whichever sibling the index met first; the
 // arity-keyed ladder answers for the sibling the language names. `Resolved`
 // and `Ambiguous` from the exact-arity pass stand; `External` re-runs the
-// blind ladder, so an arity of 0 inferred from an ABSENT argument list (the
-// extractor records no descriptors for an argument shape it cannot read)
-// never turns a site external that resolves today.
+// blind ladder, so a name whose exact arity has no in-graph def anywhere
+// keeps the arity-blind answer (an arity of 0 is inferred from an ABSENT
+// argument list, and the extractor records no descriptors for an argument
+// shape it cannot read). When the exact arity exists only outside the site's
+// imports, the ladder's global-uniqueness step answers exactly as it does for
+// the declaration's own type reference.
+//
+// The exact pass runs only when at least two defs share the name's simple
+// form (the alias target's, for an aliased name): with one def or none, the
+// two ladders provably agree -- a lone def of the right arity is found at the
+// same step by both, and a lone def of another arity leaves the exact pass
+// external at every step, including the global pool it filters by arity --
+// so an external receiver or base, the common case, costs one ladder as
+// before.
 fn resolve_ref_by_arity(
     mut probe: FragRef,
     arity: Option<usize>,
@@ -468,12 +479,17 @@ fn resolve_ref_by_arity(
     file_contexts: &HashMap<String, FileContext>,
 ) -> Resolution {
     if let Some(n) = arity {
-        probe.type_arg_count = Some(n);
-        let exact = resolve_ref(&probe, usings, ns, index, aliases, file_contexts);
-        if !matches!(exact, Resolution::External) {
-            return exact;
+        let full = aliases.get(&probe.name).unwrap_or(&probe.name);
+        let simple = full.rsplit('.').next().unwrap_or(full);
+        let shared = index.simple_name_to_defs.get(simple).map_or(0, Vec::len) >= 2;
+        if shared {
+            probe.type_arg_count = Some(n);
+            let exact = resolve_ref(&probe, usings, ns, index, aliases, file_contexts);
+            if !matches!(exact, Resolution::External) {
+                return exact;
+            }
+            probe.type_arg_count = None;
         }
-        probe.type_arg_count = None;
     }
     resolve_ref(&probe, usings, ns, index, aliases, file_contexts)
 }
@@ -6557,8 +6573,8 @@ mod tests {
         );
     }
 
-    /// Every `UsesMember` edge from one file, as (target id, from_line,
-    /// target file, tier) -- `to_file` is what lets the arity-aware receiver
+    /// Every `UsesMember` edge from one file, as (target id, line, target
+    /// file, tier) -- the target file is what lets the arity-aware receiver
     /// tests below tell the generic sibling of a type apart from the
     /// non-generic one sharing its id.
     fn member_edges_with_file<'a>(
@@ -6651,19 +6667,14 @@ mod tests {
         assert_eq!(
             edges
                 .iter()
-                .filter(|(_, line, ..)| *line == 10)
+                .filter(|(_, _, _, tier)| tier.is_none())
                 .cloned()
                 .collect::<Vec<_>>(),
             vec![("App.Contexts.Context", 10, "Contexts/Context.cs", None)],
-            "a bare Context receiver binds Publish to the non-generic sibling"
-        );
-        assert!(
-            !edges
-                .iter()
-                .any(|(_, line, _, tier)| *line == 11 && tier.is_none()),
-            "line 11 (ctx.Message) must not resolve precisely -- Message is declared only on \
-             the generic sibling, which a bare, arity-0 receiver is not assignable to; a \
-             guess-tier edge there, if the graph produces one, is not asserted against here"
+            "a bare Context receiver binds Publish to the non-generic sibling, and line 11 \
+             (ctx.Message) has no precise edge -- Message is declared only on the generic \
+             sibling, which a bare, arity-0 receiver is not assignable to; a guess-tier edge \
+             there, if the graph produces one, is not asserted against here"
         );
     }
 
@@ -6700,6 +6711,31 @@ mod tests {
             vec![("App.Contexts.Context", 10, "Contexts/Context.cs", None)],
             "the bare base name Context, carrying no argument list, walks to the \
              non-generic sibling regardless of index order"
+        );
+    }
+
+    #[test]
+    fn stage5_receiver_rule_a_receiver_arity_with_no_in_graph_def_keeps_the_arity_blind_answer() {
+        // Only the non-generic `Repository` is in the graph; the receiver is
+        // written `Repository<Order>`. The exact-arity pass finds no def and
+        // the arity-blind ladder answers as it always has: the site keeps
+        // its precise edge rather than turning external on an arity the
+        // graph cannot confirm or refute.
+        let files = fragments_for(&[
+            (
+                "Data/Repository.cs",
+                "namespace App.Data { public class Repository { public void Save() { } } }",
+            ),
+            (
+                "Consumers/Handler.cs",
+                "\nusing App.Data;\n\nnamespace App.Consumers;\n\npublic class Handler\n{\n  public void Handle(Repository<Order> repo)\n  {\n    repo.Save();\n  }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_with_file(&g, "Consumers/Handler.cs"),
+            vec![("App.Data.Repository", 10, "Data/Repository.cs", None)],
+            "no def of arity 1 exists, so the arity-blind answer stands"
         );
     }
 

@@ -115,8 +115,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   was indexed first.** The two share one id, so a declared receiver type now resolves with the
   argument count it was written with and each base-list entry with the count its generic-argument
   record carries; the precise tier, the base walks it shares with the extension veto, and the
-  veto itself read the sibling the language names. A name with no def at that count keeps the
-  arity-blind answer, so no site that resolves today turns external.
+  veto itself read the sibling the language names. A name with no def at that count anywhere
+  keeps the arity-blind answer; a name shared by fewer than two defs costs one lookup as before.
 
 ### Benchmarks
 
