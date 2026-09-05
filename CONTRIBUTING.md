@@ -40,6 +40,15 @@ under `cargo clippy --all-targets -- -D warnings` on its own. When in doubt, run
 deny-warnings form locally and treat every new warning your diff introduces as a defect to
 fix before requesting review.
 
+If you add or change a dependency, also run the license/advisory check CI runs:
+
+```sh
+cargo install cargo-deny --locked
+cargo deny check
+```
+
+Its policy lives in `deny.toml` at the repo root.
+
 ## Developer Certificate of Origin
 
 Every commit must carry a sign-off certifying you wrote it or otherwise have the right to
