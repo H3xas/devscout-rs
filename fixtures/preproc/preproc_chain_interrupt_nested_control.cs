@@ -1,13 +1,13 @@
-// KG-1 control fixture -- a `#if` nested inside another `#if` interrupting
-// the same fluent chain. Unlike the single-level if/if-else cases in
-// preproc_chain_interrupt_if.cs and preproc_chain_interrupt_ifelse.cs, this
-// shape already parses identically on both engines WITHOUT the
-// preproc_promoted_qualifier compensation (native tree-sitter's error
-// recovery happens to build a proper `preproc_if` node here too, matching
-// web-tree-sitter). Kept as a fixture specifically to guard against the
-// compensation over-firing on this shape in the future -- it must stay a
-// no-op here.
+// A `#if` group nested inside another `#if` group interrupts a fluent
+// chain: `#if TRACE` sits inside `#if DEBUG`. Before parsing, the outer
+// group's own truth value decides whether any of it reaches the parser --
+// an inactive outer arm blanks everything inside it, inner directive
+// lines included, regardless of the inner symbol.
 //
+// With no build symbols defined, `DEBUG` is false, so the entire group --
+// both `.WriteTo.Trace()` (line 25) and `.WriteTo.Debug()` (line 27) --
+// is absent from the extracted refs. Only the trailing
+// `.MinimumLevel.Override(...)` (line 29) after the group survives.
 // Fully synthetic -- no identifiers below come from any real codebase.
 namespace Fixtures.Preproc
 {

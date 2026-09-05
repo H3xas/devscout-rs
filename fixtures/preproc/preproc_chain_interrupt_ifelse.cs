@@ -1,13 +1,13 @@
-// KG-1 regression fixture -- the `#if X #else #endif` variant of
-// preproc_chain_interrupt_if.cs: both the `#if` arm and the `#else` arm
-// interrupt the same fluent chain, and each opening token (`#if`, `#else`)
-// needs its own promoted-qualifier compensation. `#endif` never promotes --
-// Node's own preproc_if absorbs it as a trailing token rather than
-// splitting the statement there, confirmed by the trailing
-// `.MinimumLevel.Override(...)` continuation NOT producing a
-// "MinimumLevel"/"Override" candidate on either side.
+// An `#if TRACE #else #endif` group interrupts a fluent chain midway
+// through it, with a real call on either side of the whole group. The
+// pre-pass blanks whichever arm is inactive -- together with the
+// `#if`/`#else`/`#endif` directive lines -- so the chain reads as one
+// uninterrupted statement.
 //
-// Fully synthetic -- no identifiers below come from any real codebase.
+// With no build symbols defined, `TRACE` is false: the `#if` arm's
+// `.WriteTo.Trace()` (line 23) is absent from the refs; the `#else`
+// arm's `.WriteTo.Console()` (line 25) and the trailing
+// `.MinimumLevel.Override(...)` (line 27) survive untouched.
 namespace Fixtures.Preproc
 {
   public class ChainWithIfElseDirective

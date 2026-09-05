@@ -3480,8 +3480,14 @@ fn walk<'a>(
 
 /// Extract both outputs from one parse of C# `source`: the file's purpose
 /// signature and its graph fragment (defs, usings, refs, names).
+///
+/// The source is first stripped of inactive conditional-compilation arms,
+/// so only the arm that would actually compile is indexed.
 pub fn extract(source: &str) -> Extraction {
     let mut parser = new_parser();
+    // Exactly one arm of every `#if` group reaches the parser (see `preproc`).
+    let source = crate::preproc::strip_inactive(source);
+    let source = source.as_ref();
     let units = crate::parse::utf16_units(source);
     let utf16 = crate::parse::utf16_bytes(&units);
     let tree = parser
@@ -5887,27 +5893,19 @@ mod tests {
         assert!(uses_type_names.contains(&"GadgetBase"));
     }
 
-    // --- #if/#elif/#else interrupting a fluent chain -----------------
+    // --- `#if`/`#if-else` interrupting a fluent chain ------------------
     //
-    // Native tree-sitter's error recovery for these fixtures swallows the
-    // directive as a small ERROR-node extra child while continuing the
-    // interrupted chain as ONE uninterrupted subtree, rather than the clean
-    // statement split a non-recovering parse would produce (see
-    // `preproc_promoted_qualifier`'s doc comment for the full mechanism).
-    // The fixtures live in fixtures/preproc/ and are `include_str!`ed
-    // here, so this fast unit test and the differential check run on the
-    // identical bytes -- divergence between them would mean the fixture
-    // drifted from what this test asserts, not a real behavior change.
-    // They sit under fixtures/ rather than beside the harness because
-    // this test is part of the crate and has to compile wherever the crate
-    // does.
+    // Each fixture below has a conditional-compilation group sitting in the
+    // middle of a fluent member-access/invocation chain. Before parsing,
+    // `preproc::strip_inactive` blanks every inactive arm -- and the
+    // directive lines themselves -- with spaces, so by the time the parser
+    // sees the file the chain reads as one uninterrupted statement running
+    // straight from the call before the group into the call after it.
     //
-    // Both fixtures need this much surrounding chain complexity to actually
-    // reach the ERROR-node recovery path in native tree-sitter -- a much
-    // shorter chain (e.g. a bare two-call `.Step1() #if DEBUG .DebugStep()
-    // #endif .Step2()`) was verified to take a completely different, more
-    // broken error-recovery path instead, so trimming these fixtures down is
-    // NOT safe without re-verifying against the expected output.
+    // The fixtures live in fixtures/preproc/ and are `include_str!`ed here,
+    // so the assertions below are pinned to the exact same bytes a real
+    // extraction would see; a line number changing under them means the
+    // fixture drifted, not that the extractor's behavior changed.
 
     const IF_DIRECTIVE_CHAIN: &str =
         include_str!("../fixtures/preproc/preproc_chain_interrupt_if.cs");
@@ -5927,90 +5925,131 @@ mod tests {
     }
 
     #[test]
-    fn preproc_if_interrupting_chain_promotes_qualifier_at_the_resumed_identifiers_own_line() {
-        let e = extract_src(IF_DIRECTIVE_CHAIN);
-        // Line 31 is `.WriteTo.Debug()` itself -- NOT line 7 where the
-        // interrupted chain's own `new Pipeline()` starts. Native
-        // tree-sitter's enclosing (unsplit) node inherits that earlier
-        // start position, which is exactly the bug this line guards: using
-        // the wrong node's start position after promotion.
-        assert!(uses_member_refs(&e).contains(&("WriteTo", "Debug", 31)));
-    }
-
-    #[test]
-    fn preproc_if_interrupting_chain_places_promoted_ref_after_the_original_chains_own_arguments() {
+    fn preproc_if_arm_inside_a_chain_is_not_indexed_and_the_chain_continues() {
         let e = extract_src(IF_DIRECTIVE_CHAIN);
         let refs = uses_member_refs(&e);
-        let debug_pos = refs
-            .iter()
-            .position(|r| *r == ("WriteTo", "Debug", 31))
-            .expect("promoted ref present");
-        let interval_day_pos = refs
-            .iter()
-            .position(|r| *r == ("Interval", "Day", 26))
-            .expect("Interval/Day ref present");
-        let minimum_level_pos = refs
-            .iter()
-            .position(|r| *r == ("Level", "Information", 33))
-            .expect("first MinimumLevel.Override argument ref present");
-        // A cleanly-split tree walks the interrupted chain's OWN call
-        // arguments (Interval.Day, part of the pre-`#if` `.File(...)` call)
-        // before it ever reaches the promoted ref, because that ref lives in
-        // what a clean parse treats as a separate, later statement.
-        // Native tree-sitter has no such split -- without the deferred
-        // (post-recursion) push in the walk's member_access_expression arm,
-        // the promoted ref lands far too early in this array instead.
-        assert!(
-            interval_day_pos < debug_pos,
-            "Interval/Day ({interval_day_pos}) should precede WriteTo/Debug ({debug_pos})"
-        );
-        assert!(debug_pos < minimum_level_pos, "WriteTo/Debug ({debug_pos}) should precede the first MinimumLevel.Override argument ref ({minimum_level_pos})");
-    }
-
-    #[test]
-    fn preproc_ifelse_interrupting_chain_promotes_qualifier_in_both_arms_but_not_across_endif() {
-        let e = extract_src(IFELSE_DIRECTIVE_CHAIN);
-        let refs = uses_member_refs(&e);
-        // Both the `#if` arm (line 23) and the `#else` arm (line 25) are
-        // opening directives and each promotes its own qualifier.
-        assert!(refs.contains(&("WriteTo", "Trace", 23)));
-        assert!(refs.contains(&("WriteTo", "Console", 25)));
-        // `#endif` never promotes: a clean parse absorbs it as a
-        // trailing token rather than splitting the statement there, so
-        // there is no "MinimumLevel"/"Override" candidate on either side.
-        assert!(!refs.iter().any(|(_, member, _)| *member == "Override"));
-        assert!(!refs.iter().any(|(name, _, _)| *name == "MinimumLevel"));
-    }
-
-    #[test]
-    fn preproc_promotion_does_not_fire_on_nested_if_in_if_chain_interrupt() {
-        // A `#if` nested inside another `#if` interrupting the same kind of
-        // chain already parses cleanly WITHOUT the
-        // compensation (native tree-sitter happens to build a proper
-        // preproc_if node here too) -- this guards against the
-        // compensation over-firing on this shape and introducing a spurious
-        // ref.
-        let e = extract_src(NESTED_IF_DIRECTIVE_CHAIN_CONTROL);
-        let refs = uses_member_refs(&e);
-        assert!(refs.contains(&("WriteTo", "Trace", 25)));
-        assert!(!refs
-            .iter()
-            .any(|(name, member, _)| *name == "WriteTo" && *member == "Debug"));
-    }
-
-    #[test]
-    fn preproc_promotion_does_not_fire_on_whole_statement_if_guard() {
-        // An ordinary statement-level `#if DEBUG { ... }` (not interrupting
-        // an expression) already parses cleanly -- guards against the
-        // compensation over-firing there too. Both
-        // calls resolve as ordinary `registry.Attach(...)` member accesses,
-        // untouched by the directive between them.
-        let e = extract_src(WHOLESTMT_DIRECTIVE_CONTROL);
-        let refs = uses_member_refs(&e);
+        // `DEBUG` is undefined, so the `#if` arm -- `.WriteTo.Debug()` on
+        // line 31 -- is blanked before parsing and contributes no ref at
+        // all: neither "Debug" as a member name...
+        assert!(!refs.iter().any(|(_, member, _)| *member == "Debug"));
+        // ...nor "WriteTo" as a qualifier (the fluent chain itself is
+        // rooted in a `new Pipeline()`, so none of its own `.Enrich`,
+        // `.Filter`, `.WriteTo` or `.MinimumLevel` steps ever produce a
+        // ref -- only their call arguments do, which is exactly the shape
+        // asserted below).
+        assert!(!refs.iter().any(|(name, _, _)| *name == "WriteTo"));
+        // The chain parses as a single statement spanning the blanked
+        // lines, so every call argument keeps its real line number and the
+        // whole array stays in ascending line order.
         assert_eq!(
             refs,
-            vec![("registry", "Attach", 15), ("registry", "Attach", 17)]
+            vec![
+                ("e", "Level", 22),
+                ("Level", "Error", 22),
+                ("Interval", "Day", 26),
+                ("Level", "Information", 33),
+                ("Level", "Information", 34),
+            ]
         );
+    }
+
+    #[test]
+    fn preproc_ifelse_group_leaves_only_the_active_arms_own_refs() {
+        let e = extract_src(IFELSE_DIRECTIVE_CHAIN);
+        let refs = uses_member_refs(&e);
+        // `TRACE` is undefined, so the `#if` arm's `.WriteTo.Trace()` (line
+        // 23) is blanked before parsing. The `#else` arm's
+        // `.WriteTo.Console()` (line 25) survives the pre-pass and keeps
+        // the chain intact, but -- like every other fluent qualifier on
+        // this `new Pipeline()` chain -- neither call produces a ref of
+        // its own; only the trailing `.MinimumLevel.Override(...)`
+        // argument does.
+        assert!(!refs.iter().any(|(_, member, _)| *member == "Trace"));
+        assert!(!refs.iter().any(|(_, member, _)| *member == "Console"));
+        assert_eq!(refs, vec![("Level", "Information", 27)]);
+    }
+
+    #[test]
+    fn preproc_nested_if_in_if_leaves_the_whole_inner_group_absent() {
+        // The outer `#if DEBUG` is undefined, so the entire group -- the
+        // nested `#if TRACE`/`#endif` and both `.WriteTo.Trace()` (line 25)
+        // and `.WriteTo.Debug()` (line 27) -- is blanked before parsing,
+        // regardless of the inner symbol. Only the trailing
+        // `.MinimumLevel.Override(...)` argument after the group remains.
+        let e = extract_src(NESTED_IF_DIRECTIVE_CHAIN_CONTROL);
+        let refs = uses_member_refs(&e);
+        assert!(!refs.iter().any(|(_, member, _)| *member == "Trace"));
+        assert!(!refs.iter().any(|(_, member, _)| *member == "Debug"));
+        assert_eq!(refs, vec![("Level", "Information", 29)]);
+    }
+
+    #[test]
+    fn preproc_if_wrapping_a_whole_statement_removes_only_the_guarded_call() {
+        // An ordinary statement-level `#if DEBUG { ... }` guards a whole
+        // call rather than interrupting an expression. `DEBUG` is
+        // undefined, so the guarded call -- `registry.Attach(GetDebugSink())`
+        // on line 17 -- is blanked before parsing and produces no ref; the
+        // unguarded call on line 15 is untouched.
+        let e = extract_src(WHOLESTMT_DIRECTIVE_CONTROL);
+        let refs = uses_member_refs(&e);
+        assert_eq!(refs, vec![("registry", "Attach", 15)]);
+    }
+
+    const NAMESPACE_SELECTION_SRC: &str =
+        include_str!("../fixtures/preproc/preproc_namespace_selection.cs");
+
+    #[test]
+    fn preproc_namespace_selection_indexes_only_the_active_arm() {
+        let e = extract_src(NAMESPACE_SELECTION_SRC);
+
+        // The `#if` arm's namespace (`Fixtures.Preproc.LightLattice`) is
+        // undefined, so every type is indexed exactly once, under the
+        // `#else` arm's namespace only.
+        assert_eq!(e.defs.len(), 7);
+        let expected: Vec<(&str, &str, usize)> = vec![
+            ("Fixtures.Preproc.Lattice.LatticeCompiler", "class", 17),
+            (
+                "Fixtures.Preproc.Lattice.LatticeCompiler+EmitMode",
+                "enum",
+                26,
+            ),
+            (
+                "Fixtures.Preproc.Lattice.LatticeCompiler+EmitMode.Direct",
+                "enum-member",
+                28,
+            ),
+            (
+                "Fixtures.Preproc.Lattice.LatticeCompiler+EmitMode.Delegated",
+                "enum-member",
+                29,
+            ),
+            ("Fixtures.Preproc.Lattice.LatticeEmitter", "class", 33),
+            ("Fixtures.Preproc.Lattice.Closure", "class", 41),
+            ("Fixtures.Preproc.Lattice.Expression", "class", 46),
+        ];
+        for (id, kind, line) in &expected {
+            let d = find_def(&e, id).unwrap_or_else(|| panic!("def {id} present"));
+            assert_eq!(d.kind, *kind, "{id} kind");
+            assert_eq!(d.line, *line, "{id} line");
+            assert_eq!(d.namespace, "Fixtures.Preproc.Lattice", "{id} namespace");
+        }
+
+        assert!(e.defs.iter().all(|d| !d.id.contains("LightLattice")));
+
+        assert_eq!(e.usings.len(), 1);
+        match &e.usings[0] {
+            UsingRecord::Plain { text, global } => {
+                assert_eq!(text, "Fixtures.Preproc.Lattice.Expression");
+                assert!(!global);
+            }
+            UsingRecord::Alias { .. } => panic!("expected plain form"),
+        }
+
+        assert!(!e.refs.iter().any(|r| r.name.contains("LightLattice")
+            || r.qualified
+                .as_deref()
+                .unwrap_or("")
+                .contains("LightLattice")));
     }
 
     // --- TS/JS purposes (acceptance cases) -------
@@ -6247,29 +6286,22 @@ mod tests {
         assert!(ts_purpose("// just a comment, no code\n", TsGrammar::Typescript).is_none());
     }
 
-    // --- Duplicate-header preproc shape (the UTF-16 parse seam's motivating
-    // corpus case) ------------------------------------------------------
+    // --- Duplicate-header preproc shape ---------------------------------
     //
     // `#if X <header> { ... #else <header> { ... #endif <shared tail> }`
     // duplicates a member's header AND its opening brace across both arms
-    // while sharing one closing brace, so the text is unbalanced once the
-    // directives are treated as inert. Both engines' roots come back
-    // has_error() on it; what they must agree on is the repair, and they do
-    // only because both are handed the same UTF-16 view of the source (see
-    // parse::utf16_units). Parsing UTF-8 here instead made native recovery
-    // read the second arm's header as a local function nested inside the
-    // first arm's still-open block -- one member scope instead of two, so
-    // every receiver fact in them cancelled as a redeclaration conflict, and
-    // every type declared after the shape got swallowed as misread
-    // statements.
+    // while sharing one closing brace, so the raw text is unbalanced --
+    // reading both arms would leave two open braces and one close. The
+    // pre-pass blanks whichever arm is inactive, directive lines included,
+    // before the parser ever sees the file, so the parser is handed a
+    // single, well-formed header and body: no duplicated brace, no
+    // rebalancing to do.
     //
-    // These assertions are the expected output for these exact strings, not a
-    // description of any Rust-side compensation: there is none left to
-    // describe.
+    // These assertions are the expected output for these exact strings.
 
     // Two arms, one shared tail, one nested struct and one nested enum
-    // after it. At this scale the shared repair keeps the outer type and
-    // its "+"-nested members intact.
+    // after it. The nested struct and enum keep their real scope, under
+    // the outer type, regardless of which arm the pre-pass keeps.
     const DUPLICATE_HEADER_HOST_SRC: &str = "
 namespace Fixtures.Preproc
 {
@@ -6323,11 +6355,19 @@ namespace Fixtures.Preproc
         assert!(find_def(&e, "Fixtures.Preproc.WidgetCompiler+SlotStatus.Empty").is_some());
         assert!(find_def(&e, "Fixtures.Preproc.WidgetCompiler+SlotStatus.Filled").is_some());
 
-        // Both arms' parameter types are recorded; neither arm's refs are lost.
-        assert!(e
+        // `WIDGET_V2` is undefined, so the `#if` arm's parameter type and
+        // the field access inside it are blanked before parsing and never
+        // reach the refs...
+        assert!(!e
             .refs
             .iter()
             .any(|r| r.kind == "uses-type" && r.name == "IWidgetProvider"));
+        assert!(!e
+            .refs
+            .iter()
+            .any(|r| r.member.as_deref() == Some("WidgetCount")));
+        // ...while the `#else` arm's parameter type and field access are
+        // present, untouched.
         assert!(e
             .refs
             .iter()
@@ -6336,12 +6376,17 @@ namespace Fixtures.Preproc
             .refs
             .iter()
             .any(|r| r.kind == "uses-type" && r.name == "Widget"));
+        assert!(e
+            .refs
+            .iter()
+            .any(|r| r.kind == "uses-member" && r.member.as_deref() == Some("Count")));
     }
 
     #[test]
-    fn defs_and_refs_stay_in_ascending_line_order_on_a_pathological_file() {
-        // Document order is the artifact contract; a file whose root is
-        // has_error() is where it is easiest to lose, so it is pinned there.
+    fn defs_and_refs_stay_in_ascending_line_order_when_an_if_group_is_blanked() {
+        // Document order is the artifact contract; blanking an inactive arm
+        // in place (rather than removing it) is where a line could most
+        // easily drift out of order, so it is pinned here.
         let e = extract_src(DUPLICATE_HEADER_HOST_SRC);
         let def_lines: Vec<usize> = e.defs.iter().map(|d| d.line).collect();
         let mut sorted = def_lines.clone();
@@ -6370,12 +6415,9 @@ namespace Fixtures.Preproc
     }
 
     // Same shape, plus a SECOND nested type whose own body repeats the
-    // pattern. Two of them in one file is enough accumulated damage that the
-    // shared repair discards BOTH wrapping types: no WidgetCompiler def, no
-    // Emitter def, and everything that survives lands flat at namespace-less
-    // ambient scope. This drop is the correct output -- it is the shape the
-    // removed Rust-only recovery pass used to "rescue", inventing an `Emitter`
-    // def that must not appear.
+    // pattern one level deeper. Blanking each `#if` group independently
+    // keeps both wrapping types and both nested method bodies intact, no
+    // matter how many times the shape recurs in one file.
     const DUPLICATE_HEADER_HOST_WITH_NESTED_EMITTER_SRC: &str = "
 namespace Fixtures.Preproc
 {
@@ -6429,21 +6471,29 @@ namespace Fixtures.Preproc
 ";
 
     #[test]
-    fn stacked_duplicate_headers_drop_both_wrapping_types_like_the_reference() {
+    fn stacked_duplicate_headers_keep_both_wrapping_types_at_their_real_scope() {
         let e = extract_src(DUPLICATE_HEADER_HOST_WITH_NESTED_EMITTER_SRC);
 
-        assert!(e.defs.iter().all(|d| d.name != "WidgetCompiler"));
-        assert!(e.defs.iter().all(|d| d.name != "Emitter"));
+        assert!(find_def(&e, "Fixtures.Preproc.WidgetCompiler").is_some());
+        let emitter = find_def(&e, "Fixtures.Preproc.WidgetCompiler+Emitter")
+            .expect("Emitter kept, nested under WidgetCompiler");
+        assert_eq!(emitter.kind, "class");
+        assert_eq!(emitter.namespace, "Fixtures.Preproc");
 
-        let slot_info = find_def(&e, "SlotInfo").expect("SlotInfo survives, flat");
+        let slot_info = find_def(&e, "Fixtures.Preproc.WidgetCompiler+SlotInfo")
+            .expect("SlotInfo kept, nested under its type");
         assert_eq!(slot_info.kind, "struct");
-        assert_eq!(slot_info.namespace, "");
-        assert!(find_def(&e, "SlotStatus").is_some());
-        assert!(find_def(&e, "SlotStatus.Empty").is_some());
-        assert!(find_def(&e, "SlotStatus.Filled").is_some());
+        assert!(find_def(&e, "Fixtures.Preproc.WidgetCompiler+SlotStatus").is_some());
+        assert!(find_def(&e, "Fixtures.Preproc.WidgetCompiler+SlotStatus.Empty").is_some());
+        assert!(find_def(&e, "Fixtures.Preproc.WidgetCompiler+SlotStatus.Filled").is_some());
 
-        // The refs inside the innermost body still come through, at that
-        // same flat ambient scope.
+        // The inner method's `#if` group is blanked the same way as the
+        // outer one: no `IWidgetProvider` anywhere, and the refs inside the
+        // active arm's body come through at their real nested scope.
+        assert!(!e
+            .refs
+            .iter()
+            .any(|r| r.kind == "uses-type" && r.name == "IWidgetProvider"));
         assert!(e
             .refs
             .iter()
@@ -6966,12 +7016,12 @@ public class Host
     #[test]
     fn stage2b_each_duplicated_header_arm_keeps_its_own_receiver_facts() {
         // The duplicate-header preproc shape (see
-        // DUPLICATE_HEADER_HOST_WITH_NESTED_EMITTER_SRC). Each arm is its own
-        // method_declaration, so each arm's parameter list vouches for that
-        // arm's refs -- the two arms are NOT one flat scope in which `items`
-        // is a conflicting redeclaration. The inner type's two arms lose the
-        // parameter list along with their own header, so their
-        // `items` refs get no fact; `sink` does, from the surviving one.
+        // DUPLICATE_HEADER_HOST_WITH_NESTED_EMITTER_SRC), at both nesting
+        // levels. `WIDGET_V2` is undefined, so only the `#else` arm's
+        // `IReadOnlyList<Widget> items` parameter reaches the parser in
+        // either method -- both `items` refs vouch through that same
+        // parameter, and `sink` vouches through the inner method's own
+        // (unconditional) parameter.
         let e = extract_src(DUPLICATE_HEADER_HOST_WITH_NESTED_EMITTER_SRC);
         let facts: Vec<(&str, Option<&str>)> = e
             .refs
@@ -6982,10 +7032,8 @@ public class Host
         assert_eq!(
             facts,
             vec![
-                ("items", Some("IWidgetProvider")),
                 ("items", Some("IReadOnlyList")),
-                ("items", None),
-                ("items", None),
+                ("items", Some("IReadOnlyList")),
                 ("sink", Some("Sink")),
             ]
         );
@@ -7138,23 +7186,13 @@ public class Chain
     }
 
     #[test]
-    fn stage3_a_kg1_promoted_qualifier_computes_arg_count_from_its_own_invocation_parent() {
-        // The chain-promotion compensation supplies only the QUALIFIER text,
-        // from a DIFFERENT node than the one being walked. Its argCount must
-        // still come from the walked node's own invocation parent: the promoted
-        // `WriteTo.Debug()` call is a zero-argument call, and the surrounding
-        // `.File(...)` call's seven arguments, which this subtree still
-        // contains, must not leak into it.
+    fn stage3_a_ref_inside_a_blanked_if_arm_carries_no_arg_count_because_it_carries_no_ref_at_all()
+    {
+        // With the inactive `#if DEBUG` arm blanked before parsing (see the
+        // `#if`/`#if-else` fluent-chain tests above), every surviving
+        // `uses-member` ref in this chain is a plain value read, not an
+        // invocation, so none of them records an argCount.
         let e = extract_src(IF_DIRECTIVE_CHAIN);
-        let promoted = e
-            .refs
-            .iter()
-            .find(|r| r.name == "WriteTo" && r.member.as_deref() == Some("Debug"))
-            .expect("promoted ref present");
-        assert_eq!(promoted.arg_count, Some(0), "`.Debug()` takes no arguments; the wrapping `.File(...)` call's count must not leak in");
-        // And every ordinary ref in the same chain answers for itself. `Interval
-        // .Day` (line 26) sits INSIDE the seven-argument `.File(...)` list and
-        // is a plain value read, so it records no argCount at all.
         assert_eq!(
             e.refs
                 .iter()
@@ -7169,7 +7207,6 @@ public class Chain
                 ("e", "Level", None),
                 ("Level", "Error", None),
                 ("Interval", "Day", None),
-                ("WriteTo", "Debug", Some(0)),
                 ("Level", "Information", None),
                 ("Level", "Information", None),
             ]
