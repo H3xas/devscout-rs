@@ -1,0 +1,18 @@
+version: 2
+updates:
+  # Every dependency in Cargo.toml is exact-pinned; Dependabot's version PRs
+  # are the mechanism that moves those pins forward.
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "chore(deps)"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "chore(ci)"
