@@ -206,8 +206,8 @@ Header keys come first, in a fixed order, and `facts` is always last:
   "generatedFrom": "scout-semantic 0.1.0",
   "compilation": {
     "solution": "Fixture.sln",
-    "units": ["Api|net9.0"],
-    "digest": "7fec9e31f36cf61b15a259da7d81b96d157cdb06"
+    "units": ["Api|net9.0", "Shared|net9.0"],
+    "digest": "e18f1cdf4d76ce62e214c1050d8f2ad56bd8f3cd"
   },
   "headSha": "…", "dirty": false, "dirtyDigest": "…", "fileCount": 20,
   "facts": []
@@ -248,12 +248,27 @@ its own stand-in types is matched the same way a referenced package is.
 | `route` | Attribute routing: `[HttpGet]` … `[HttpDelete]` and `[Route]` on a method, combined with the first class-level `[Route]`, with `[controller]` and `[action]` expanded; a method-level `[Route]` with no verb attribute is `ANY`. Minimal API: `MapGet` … `MapDelete` and `MapMethods` with a constant pattern, prefixed by the `MapGroup` chain the receiver resolves through (depth-capped at 8). |
 | `method_span` | Every method and constructor with a body inside a named type, plus a minimal-API handler lambda with no enclosing method or constructor (once, whatever its verb count) — a lambda registered from inside a member is already covered by that member's span, so it gets none of its own. |
 
+A handler lambda with no enclosing member takes its `action` — and so its `method_span` method
+name — from the `Map*` call itself, following the regex pass's own convention, so several
+top-level lambdas registered with the same verb share the name `MapGet`, `MapPost` and so on;
+`line` is what tells them apart.
+
+`message_class`, `consume` and the handler-interface `di_binding` describe the **type**, so a
+partial type emits them once, at the first part that declares a base list (ties broken by file
+path then position). `iface_impl` and `ctor_field` describe the part they are written in and are
+emitted at every part.
+
 What is **approximated**: framework shapes are matched by name, so an unrelated type with a
 matching simple name is matched too, and a genuinely renamed one is not; `paramType` is the
 minimal display form a developer would write (`ILogger<OrderService>`, `IFoo?`) while
 `paramTypeFqn`, `fqn`, `ifaceFqn` and `implFqn` are fully qualified; a route template that is not
-a compile-time string constant is treated as empty; and a `MapGroup` prefix is only followed
-through a local, field or property whose declaration initialises it from an invocation.
+a compile-time string constant is treated as empty; a `MapGroup` prefix is only followed through
+a local, field or property whose declaration yields an invocation — an initialiser or, for a
+property, an expression-bodied getter; and a group declared in **another project** is read as
+syntax, since no model here can bind that tree, so its chain is followed through string literals
+only — a non-literal `MapGroup` argument counts as unresolved rather than yielding a guessed
+template, while a chain carrying no `MapGroup` at all has no prefix to lose and contributes one
+silently.
 
 What is **omitted**: the schema table is embedded whole, but this mode emits none of
 `branch_point`, `param_source`, `method_call`, `exception_map`, `http_out`, `worker_processor`,
@@ -271,6 +286,10 @@ A recognised site whose type cannot be resolved — an error type, an anonymous 
 `object` or `dynamic` message, a publish with neither an argument nor a type argument — yields no
 fact and is counted instead. The run reports `facts: N facts, M unresolved -> <path>` on stderr,
 and `--strict` turns a non-zero `M` into exit 2.
+
+A document whose fact walk throws does not end the run: the file and the exception are reported
+as `warning: facts: <file>: <type>: <message>` on stderr and the document counts as one
+unresolved site, so the rest of the solution is still emitted and `--strict` still fails.
 
 ### Fixture
 

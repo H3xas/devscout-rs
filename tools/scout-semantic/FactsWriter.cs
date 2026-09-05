@@ -294,8 +294,13 @@ internal static class FactsWriter
                 return null;
             }
 
+            // stderr is drained on its own thread: reading the two pipes one
+            // after the other deadlocks as soon as git writes more diagnostics
+            // than the stderr buffer holds while this thread still blocks on
+            // stdout.
+            process.ErrorDataReceived += static (_, _) => { };
+            process.BeginErrorReadLine();
             var output = process.StandardOutput.ReadToEnd();
-            process.StandardError.ReadToEnd();
             process.WaitForExit();
             return process.ExitCode == 0 ? output : null;
         }

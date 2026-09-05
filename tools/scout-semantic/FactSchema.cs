@@ -120,9 +120,6 @@ internal static class FactSchema
         ["exception_map"] = new[] { "scope", "class", "exception", "status" },
     };
 
-    /// <summary>Every fact type the schema knows, ordinal-sorted.</summary>
-    public static IEnumerable<string> KnownTypes => RequiredFields.Keys.OrderBy(k => k, StringComparer.Ordinal);
-
     /// <summary>
     /// Throws <see cref="FactSchemaException"/> when the fact is not serialisable
     /// as a valid fact: unknown type, empty or back-slashed file, a line before 1,

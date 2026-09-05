@@ -166,7 +166,7 @@ internal static class Program
                     options.Facts = Value(arg);
                     break;
                 case "--repo":
-                    options.Repo = Value(arg);
+                    options.Repo = RepoId(Value(arg));
                     break;
                 case "--no-git":
                     options.NoGit = true;
@@ -236,6 +236,26 @@ internal static class Program
         }
 
         return options;
+    }
+
+    /// <summary>
+    /// The repo id is one path segment: it names the default fact document
+    /// under <c>out/facts/</c>, so a separator or a <c>..</c> in it would let
+    /// the output escape that directory.
+    /// </summary>
+    private static string RepoId(string value)
+    {
+        if (value.Length == 0)
+        {
+            throw new ArgumentException("--repo needs a value");
+        }
+
+        if (value.Contains('/') || value.Contains('\\') || value == ".." || value == ".")
+        {
+            throw new ArgumentException($"--repo must be a single path segment, got: {value}");
+        }
+
+        return value;
     }
 
     private static void AddProperty(Options options, string pair)
@@ -341,7 +361,22 @@ internal static class Runner
                         walker.WalkDocument(model, tree, rel, loaded.Name, refs);
                     }
 
-                    factsWalker?.WalkDocument(model, tree, rel, facts);
+                    if (factsWalker is not null)
+                    {
+                        try
+                        {
+                            factsWalker.WalkDocument(model, tree, rel, facts);
+                        }
+                        catch (Exception e)
+                        {
+                            // One document's shape must not cost the rest of the
+                            // run, but it must not pass for a clean walk either:
+                            // it is reported and counted, so --strict still fails.
+                            Console.Error.WriteLine($"warning: facts: {rel}: {e.GetType().Name}: {e.Message}");
+                            factsWalker.CountUnresolved();
+                        }
+                    }
+
                     if (options.Defs is not null)
                     {
                         walker.CollectDefs(model, tree, rel, loaded.Name, defs);

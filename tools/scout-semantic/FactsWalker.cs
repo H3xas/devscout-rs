@@ -95,6 +95,13 @@ internal sealed class FactsWalker
     /// <summary>Recognised sites whose type could not be resolved into a fact.</summary>
     public int Unresolved { get; private set; }
 
+    /// <summary>
+    /// Counts one more unresolved site. The caller uses it for a document whose
+    /// walk threw, so a failed document is never silently dropped from the
+    /// strict check.
+    /// </summary>
+    public void CountUnresolved() => Unresolved++;
+
     /// <summary>Appends every fact found in one document to <paramref name="sink"/>.</summary>
     public void WalkDocument(SemanticModel model, SyntaxTree tree, string relFile, List<FactRecord> sink)
     {
@@ -132,9 +139,17 @@ internal sealed class FactsWalker
             ? LineOf(declaration.OpenBraceToken)
             : identifierLine;
 
-        if (MessagesDirectory.IsMatch(relFile)
-            || type.Name.EndsWith("Message", StringComparison.Ordinal)
-            || type.AllInterfaces.Any(i => MessageInterfaces.Contains(i.Name)))
+        // A partial type is one symbol spread over several declarations. The
+        // kinds below describe the symbol, not the part they are read from, so
+        // they are emitted once, at the canonical part. The syntactic kinds --
+        // iface_impl and ctor_field -- describe the part itself and stay where
+        // they are written.
+        var canonical = IsCanonicalPart(type, declaration);
+
+        if (canonical
+            && (MessagesDirectory.IsMatch(relFile)
+                || type.Name.EndsWith("Message", StringComparison.Ordinal)
+                || type.AllInterfaces.Any(i => MessageInterfaces.Contains(i.Name))))
         {
             sink.Add(new FactRecord("message_class", relFile, bodyLine)
                 .With("name", type.Name)
@@ -167,7 +182,7 @@ internal sealed class FactsWalker
             }
         }
 
-        if (!type.IsAbstract)
+        if (canonical && !type.IsAbstract)
         {
             EmitConsume(type, relFile, identifierLine, sink);
             EmitHandlerBindings(type, relFile, identifierLine, sink);
@@ -180,6 +195,51 @@ internal sealed class FactsWalker
                 EmitPrimaryCtorField(model, type.Name, parameter, relFile, bodyLine, sink);
             }
         }
+    }
+
+    /// <summary>
+    /// True when <paramref name="declaration"/> is the part of a partial type
+    /// that carries its symbol-derived facts: the first, ordered by file path
+    /// then position, among the parts that declare a base list -- and among all
+    /// parts when none does.
+    /// </summary>
+    private static bool IsCanonicalPart(INamedTypeSymbol type, TypeDeclarationSyntax declaration)
+    {
+        if (type.DeclaringSyntaxReferences.Length < 2)
+        {
+            return true;
+        }
+
+        TypeDeclarationSyntax? best = null;
+        var bestDeclaresBases = false;
+        foreach (var reference in type.DeclaringSyntaxReferences)
+        {
+            if (reference.GetSyntax() is not TypeDeclarationSyntax part)
+            {
+                continue;
+            }
+
+            var declaresBases = part.BaseList is not null;
+            if (best is null || (declaresBases && !bestDeclaresBases))
+            {
+                best = part;
+                bestDeclaresBases = declaresBases;
+                continue;
+            }
+
+            if (declaresBases != bestDeclaresBases)
+            {
+                continue;
+            }
+
+            var byPath = string.CompareOrdinal(part.SyntaxTree.FilePath, best.SyntaxTree.FilePath);
+            if (byPath < 0 || (byPath == 0 && part.SpanStart < best.SpanStart))
+            {
+                best = part;
+            }
+        }
+
+        return best is null || best == declaration;
     }
 
     private void EmitConsume(INamedTypeSymbol type, string relFile, int line, List<FactRecord> sink)
@@ -510,7 +570,8 @@ internal sealed class FactsWalker
             return;
         }
 
-        var template = Join(Prefix(model, ReceiverOf(invocation.Expression), 0), literal);
+        var visited = new HashSet<ISymbol>(SymbolEqualityComparer.Default);
+        var template = Join(Prefix(model, ReceiverOf(invocation.Expression), 0, visited), literal);
         var verbs = new List<string>();
         int handlerIndex;
 
@@ -700,8 +761,13 @@ internal sealed class FactsWalker
         return enclosing?.Identifier.ValueText ?? call;
     }
 
-    /// <summary>The route prefix a chain of <c>MapGroup</c> receivers contributes.</summary>
-    private static string Prefix(SemanticModel model, ExpressionSyntax? receiver, int depth)
+    /// <summary>
+    /// The route prefix a chain of <c>MapGroup</c> receivers contributes.
+    /// <paramref name="visited"/> holds the group symbols already followed, so
+    /// two initialisers that name each other yield "" instead of a fabricated
+    /// template.
+    /// </summary>
+    private string Prefix(SemanticModel model, ExpressionSyntax? receiver, int depth, HashSet<ISymbol> visited)
     {
         if (receiver is null || depth >= PrefixDepthCap)
         {
@@ -717,7 +783,7 @@ internal sealed class FactsWalker
                 return "";
             }
 
-            return Join(Prefix(model, ReceiverOf(group.Expression), depth + 1), literal);
+            return Join(Prefix(model, ReceiverOf(group.Expression), depth + 1, visited), literal);
         }
 
         if (receiver is not (IdentifierNameSyntax or MemberAccessExpressionSyntax))
@@ -726,25 +792,82 @@ internal sealed class FactsWalker
         }
 
         var symbol = model.GetSymbolInfo(receiver).Symbol;
-        if (symbol is not (ILocalSymbol or IFieldSymbol or IPropertySymbol))
+        if (symbol is not (ILocalSymbol or IFieldSymbol or IPropertySymbol) || !visited.Add(symbol))
         {
             return "";
         }
 
-        var (declaringModel, initializer) = InitializerOf(model, symbol);
+        var (declaringModel, initializer, foreign) = InitializerOf(model, symbol);
+        if (foreign)
+        {
+            return ForeignPrefix(initializer, depth + 1);
+        }
+
         return initializer is InvocationExpressionSyntax declared
-            ? Prefix(declaringModel, declared, depth + 1)
+            ? Prefix(declaringModel, declared, depth + 1, visited)
             : "";
     }
 
-    private static (SemanticModel Model, ExpressionSyntax? Initializer) InitializerOf(SemanticModel model, ISymbol symbol)
+    /// <summary>
+    /// The prefix of a group declared in a referenced project. That tree belongs
+    /// to another compilation, so nothing here may be bound and the receiver
+    /// chain is read as syntax: every <c>MapGroup</c> link carrying a single
+    /// string literal contributes it, and links of any other name -- whatever
+    /// built the root group -- contribute nothing. Only a <c>MapGroup</c> whose
+    /// argument is not such a literal is unresolved: an initialiser with no
+    /// <c>MapGroup</c> at all has no prefix to lose and is silent.
+    /// </summary>
+    private string ForeignPrefix(ExpressionSyntax? initializer, int depth)
+    {
+        // Outermost link first, so the collected literals are reversed below.
+        var groups = new List<string>();
+        var current = initializer;
+        for (var step = depth; step < PrefixDepthCap && current is InvocationExpressionSyntax call; step++)
+        {
+            if (SyntacticName(call) == "MapGroup")
+            {
+                if (call.ArgumentList.Arguments.Count != 1
+                    || call.ArgumentList.Arguments[0].Expression is not LiteralExpressionSyntax literal
+                    || !literal.IsKind(SyntaxKind.StringLiteralExpression))
+                {
+                    Unresolved++;
+                    return "";
+                }
+
+                groups.Add(literal.Token.ValueText);
+            }
+
+            current = ReceiverOf(call.Expression);
+        }
+
+        var prefix = "";
+        for (var i = groups.Count - 1; i >= 0; i--)
+        {
+            prefix = Join(prefix, groups[i]);
+        }
+
+        return prefix;
+    }
+
+    /// <summary>
+    /// The expression a group symbol is declared with, and the model that can
+    /// bind it. A property contributes either its initialiser or its
+    /// expression-bodied getter: both spell the group the same way, and the
+    /// getter form is what a chain of groups that name each other has to use.
+    /// <c>Foreign</c> marks an expression whose tree belongs to another
+    /// compilation -- a group declared in a referenced project -- which no model
+    /// here may bind and which <see cref="ForeignPrefix"/> reads as syntax.
+    /// </summary>
+    private static (SemanticModel Model, ExpressionSyntax? Initializer, bool Foreign) InitializerOf(
+        SemanticModel model, ISymbol symbol)
     {
         foreach (var reference in symbol.DeclaringSyntaxReferences)
         {
             var value = reference.GetSyntax() switch
             {
                 VariableDeclaratorSyntax variable => variable.Initializer?.Value,
-                PropertyDeclarationSyntax property => property.Initializer?.Value,
+                PropertyDeclarationSyntax property =>
+                    property.Initializer?.Value ?? property.ExpressionBody?.Expression,
                 _ => null,
             };
 
@@ -754,10 +877,20 @@ internal sealed class FactsWalker
             }
 
             var tree = reference.SyntaxTree;
-            return (tree == model.SyntaxTree ? model : model.Compilation.GetSemanticModel(tree), value);
+            if (tree == model.SyntaxTree)
+            {
+                return (model, value, false);
+            }
+
+            if (!model.Compilation.ContainsSyntaxTree(tree))
+            {
+                return (model, value, true);
+            }
+
+            return (model.Compilation.GetSemanticModel(tree), value, false);
         }
 
-        return (model, null);
+        return (model, null, false);
     }
 
     private static IEnumerable<ParameterSyntax> LambdaParameters(LambdaExpressionSyntax lambda) => lambda switch
@@ -797,9 +930,17 @@ internal sealed class FactsWalker
         }
 
         var qualified = ns.ToDisplayString();
-        return qualified.StartsWith("System", StringComparison.Ordinal)
-            || qualified.StartsWith("Microsoft", StringComparison.Ordinal);
+        return IsFrameworkNamespace(qualified, "System") || IsFrameworkNamespace(qualified, "Microsoft");
     }
+
+    /// <summary>
+    /// True when <paramref name="qualified"/> is <paramref name="root"/> or one
+    /// of its descendants. A bare prefix test would also swallow an unrelated
+    /// namespace that merely starts with those letters.
+    /// </summary>
+    private static bool IsFrameworkNamespace(string qualified, string root) =>
+        string.Equals(qualified, root, StringComparison.Ordinal)
+        || qualified.StartsWith(root + ".", StringComparison.Ordinal);
 
     // ----------------------------------------------------------- invocations
 
@@ -938,21 +1079,19 @@ internal sealed class FactsWalker
     private static IEnumerable<SyntaxNode> Inside(SyntaxNode body) =>
         body.DescendantNodes(n => n is not (AnonymousFunctionExpressionSyntax or LocalFunctionStatementSyntax));
 
-    private static string? InvokedName(SemanticModel model, InvocationExpressionSyntax invocation)
-    {
-        if (model.GetSymbolInfo(invocation).Symbol is IMethodSymbol method)
-        {
-            return method.Name;
-        }
+    private static string? InvokedName(SemanticModel model, InvocationExpressionSyntax invocation) =>
+        model.GetSymbolInfo(invocation).Symbol is IMethodSymbol method
+            ? method.Name
+            : SyntacticName(invocation);
 
-        return invocation.Expression switch
-        {
-            MemberAccessExpressionSyntax access => access.Name.Identifier.ValueText,
-            MemberBindingExpressionSyntax binding => binding.Name.Identifier.ValueText,
-            SimpleNameSyntax simple => simple.Identifier.ValueText,
-            _ => null,
-        };
-    }
+    /// <summary>The called member's name as written, with nothing bound.</summary>
+    private static string? SyntacticName(InvocationExpressionSyntax invocation) => invocation.Expression switch
+    {
+        MemberAccessExpressionSyntax access => access.Name.Identifier.ValueText,
+        MemberBindingExpressionSyntax binding => binding.Name.Identifier.ValueText,
+        SimpleNameSyntax simple => simple.Identifier.ValueText,
+        _ => null,
+    };
 
     private static ExpressionSyntax? ReceiverOf(ExpressionSyntax callee) =>
         callee is MemberAccessExpressionSyntax access ? access.Expression : null;
