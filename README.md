@@ -235,11 +235,18 @@ agentic (model-in-the-loop) round — preliminary, one run per cell, its integri
 Semantic versioning. Releases are cut by pushing a `v*` tag (`v0.1.0`, `v0.2.0`, …), which builds
 and attaches binaries for Linux, macOS, and Windows. While the version is `0.x`, minor bumps may
 change artifact layout — delete the artifact directory and re-run `devscout map` after upgrading.
+Each release binary is keylessly signed (Sigstore/cosign) and carries a GitHub build-provenance
+attestation, alongside its `.sha256` checksum; a CycloneDX SBOM covering the full dependency
+graph is attached to the release too. See [RELEASING.md](RELEASING.md) for the maintainer-side
+process and how to verify a downloaded binary's signature and provenance.
 
 **Provenance.** devscout is developed alongside a private reference implementation of the same
-graph contract; every release is gated on behavioral parity, and the committed test fixtures pin
-that contract byte-for-byte in this repository. You never need the reference implementation —
-everything required to build, test, and verify devscout is here.
+graph contract; every release is additionally gated on behavioral parity against it, and the
+committed test fixtures pin that contract byte-for-byte in this repository. You never need the
+reference implementation — everything required to build, test, and verify devscout is here,
+including a public conformance suite (`cargo test`, see
+[CONTRIBUTING.md](CONTRIBUTING.md#reaching-release-gate-confidence-locally)) that exercises the
+same command surface with fixtures that ship in this repository.
 
 ## Contributing
 
