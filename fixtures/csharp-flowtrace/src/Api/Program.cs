@@ -10,6 +10,7 @@ using Courier.Api.Messaging.Messages;
 using Courier.Api.Repositories;
 using Courier.Framework;
 using Microsoft.AspNetCore.Http;
+using Systematic.Billing;
 
 var app = WebApplication.Create();
 app.Services.AddScoped<IParcelRepository, ParcelRepository>();
@@ -26,5 +27,8 @@ parcels.MapPost("", async (CreateParcel request, IPublishEndpoint bus, HttpConte
 app.MapGroup("api").MapGroup("labels").MapDelete("{id}", ParcelEndpoints.Delete);
 app.MapMethods("health", new[] { "GET", "HEAD" }, () => "ok");
 parcels.MapPut("{id}", ParcelEndpoints.Update);
+parcels.MapPatch("{id}/invoice", (int id, Invoice invoice, IParcelRepository repository) => repository.Find(id));
+
+SharedGroups.Admin.MapGet("stats", () => "ok");
 
 app.Run();

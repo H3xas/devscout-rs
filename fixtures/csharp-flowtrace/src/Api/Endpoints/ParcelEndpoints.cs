@@ -16,5 +16,6 @@ public static class ParcelEndpoints
     public static void Register(WebApplication app)
     {
         app.MapGroup("api/v2").MapGet("parcels/{id}", (int id, IParcelRepository repository) => repository.Find(id));
+        LegacyGroups.Left.MapGet("cycle", () => "ok");
     }
 }

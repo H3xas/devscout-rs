@@ -8,11 +8,30 @@
   "compilation": {
     "solution": "Fixture.sln",
     "units": [
-      "Api|net9.0"
+      "Api|net9.0",
+      "Shared|net9.0"
     ],
-    "digest": "7fec9e31f36cf61b15a259da7d81b96d157cdb06"
+    "digest": "e18f1cdf4d76ce62e214c1050d8f2ad56bd8f3cd"
   },
   "facts": [
+    {
+      "type": "ctor_field",
+      "file": "src/Api/Billing/Invoice.cs",
+      "line": 7,
+      "class": "Invoice",
+      "field": "Amount",
+      "paramType": "decimal",
+      "paramTypeFqn": "System.Decimal"
+    },
+    {
+      "type": "ctor_field",
+      "file": "src/Api/Billing/Invoice.cs",
+      "line": 7,
+      "class": "Invoice",
+      "field": "Number",
+      "paramType": "string",
+      "paramTypeFqn": "System.String"
+    },
     {
       "type": "consume",
       "file": "src/Api/Consumers/BatchConsumer.cs",
@@ -157,6 +176,38 @@
       "line": 19,
       "message": "ParcelLostEvent",
       "fqn": "Courier.Api.Messaging.Events.ParcelLostEvent"
+    },
+    {
+      "type": "method_span",
+      "file": "src/Api/Consumers/ReturnRequestedConsumer.Audit.cs",
+      "line": 8,
+      "class": "ReturnRequestedConsumer",
+      "method": "Record",
+      "endLine": 11
+    },
+    {
+      "type": "consume",
+      "file": "src/Api/Consumers/ReturnRequestedConsumer.cs",
+      "line": 10,
+      "message": "ReturnRequested",
+      "consumer": "ReturnRequestedConsumer",
+      "fqn": "Courier.Api.Messaging.Events.ReturnRequested"
+    },
+    {
+      "type": "iface_impl",
+      "file": "src/Api/Consumers/ReturnRequestedConsumer.cs",
+      "line": 10,
+      "class": "ReturnRequestedConsumer",
+      "iface": "IConsumer",
+      "ifaceFqn": "Courier.Framework.IConsumer<Courier.Api.Messaging.Events.ReturnRequested>"
+    },
+    {
+      "type": "method_span",
+      "file": "src/Api/Consumers/ReturnRequestedConsumer.cs",
+      "line": 12,
+      "class": "ReturnRequestedConsumer",
+      "method": "Consume",
+      "endLine": 16
     },
     {
       "type": "ctor_field",
@@ -316,7 +367,7 @@
       "line": 16,
       "class": "ParcelEndpoints",
       "method": "Register",
-      "endLine": 19
+      "endLine": 20
     },
     {
       "type": "ctor_field",
@@ -337,323 +388,13 @@
       "template": "api/v2/parcels/{id}"
     },
     {
-      "type": "iface_impl",
-      "file": "src/Api/Framework/Bus.cs",
+      "type": "route",
+      "file": "src/Api/Endpoints/ParcelEndpoints.cs",
       "line": 19,
-      "class": "Batch",
-      "iface": "IEnumerable",
-      "ifaceFqn": "System.Collections.Generic.IEnumerable<T>"
-    },
-    {
-      "type": "method_span",
-      "file": "src/Api/Framework/Bus.cs",
-      "line": 23,
-      "class": "Batch",
-      "method": "Add",
-      "endLine": 23
-    },
-    {
-      "type": "method_span",
-      "file": "src/Api/Framework/Bus.cs",
-      "line": 25,
-      "class": "Batch",
-      "method": "GetEnumerator",
-      "endLine": 25
-    },
-    {
-      "type": "method_span",
-      "file": "src/Api/Framework/Bus.cs",
-      "line": 27,
-      "class": "Batch",
-      "method": "GetEnumerator",
-      "endLine": 27
-    },
-    {
-      "type": "iface_impl",
-      "file": "src/Api/Framework/Bus.cs",
-      "line": 30,
-      "class": "BaseConsumer",
-      "iface": "IConsumer",
-      "ifaceFqn": "Courier.Framework.IConsumer<T>"
-    },
-    {
-      "type": "iface_impl",
-      "file": "src/Api/Framework/Hosting.cs",
-      "line": 15,
-      "class": "RouteGroupBuilder",
-      "iface": "IEndpointRouteBuilder",
-      "ifaceFqn": "Courier.Framework.IEndpointRouteBuilder"
-    },
-    {
-      "type": "iface_impl",
-      "file": "src/Api/Framework/Hosting.cs",
-      "line": 19,
-      "class": "WebApplication",
-      "iface": "IEndpointRouteBuilder",
-      "ifaceFqn": "Courier.Framework.IEndpointRouteBuilder"
-    },
-    {
-      "type": "method_span",
-      "file": "src/Api/Framework/Hosting.cs",
-      "line": 21,
-      "class": "WebApplication",
-      "method": "Create",
-      "endLine": 21
-    },
-    {
-      "type": "method_span",
-      "file": "src/Api/Framework/Hosting.cs",
-      "line": 25,
-      "class": "WebApplication",
-      "method": "Run",
-      "endLine": 27
-    },
-    {
-      "type": "iface_impl",
-      "file": "src/Api/Framework/Hosting.cs",
-      "line": 29,
-      "class": "ServiceCollectionImpl",
-      "iface": "IServiceCollection",
-      "ifaceFqn": "Courier.Framework.IServiceCollection"
-    },
-    {
-      "type": "method_span",
-      "file": "src/Api/Framework/Hosting.cs",
-      "line": 36,
-      "class": "ServiceCollectionExtensions",
-      "method": "AddScoped",
-      "endLine": 38
-    },
-    {
-      "type": "method_span",
-      "file": "src/Api/Framework/Hosting.cs",
-      "line": 40,
-      "class": "ServiceCollectionExtensions",
-      "method": "AddSingleton",
-      "endLine": 41
-    },
-    {
-      "type": "method_span",
-      "file": "src/Api/Framework/Hosting.cs",
-      "line": 43,
-      "class": "ServiceCollectionExtensions",
-      "method": "AddTransient",
-      "endLine": 45
-    },
-    {
-      "type": "method_span",
-      "file": "src/Api/Framework/Hosting.cs",
-      "line": 47,
-      "class": "ServiceCollectionExtensions",
-      "method": "Register",
-      "endLine": 49
-    },
-    {
-      "type": "method_span",
-      "file": "src/Api/Framework/Hosting.cs",
-      "line": 54,
-      "class": "EndpointExtensions",
-      "method": "MapGroup",
-      "endLine": 54
-    },
-    {
-      "type": "method_span",
-      "file": "src/Api/Framework/Hosting.cs",
-      "line": 56,
-      "class": "EndpointExtensions",
-      "method": "MapGet",
-      "endLine": 56
-    },
-    {
-      "type": "method_span",
-      "file": "src/Api/Framework/Hosting.cs",
-      "line": 58,
-      "class": "EndpointExtensions",
-      "method": "MapPost",
-      "endLine": 58
-    },
-    {
-      "type": "method_span",
-      "file": "src/Api/Framework/Hosting.cs",
-      "line": 60,
-      "class": "EndpointExtensions",
-      "method": "MapPut",
-      "endLine": 60
-    },
-    {
-      "type": "method_span",
-      "file": "src/Api/Framework/Hosting.cs",
-      "line": 62,
-      "class": "EndpointExtensions",
-      "method": "MapDelete",
-      "endLine": 62
-    },
-    {
-      "type": "method_span",
-      "file": "src/Api/Framework/Hosting.cs",
-      "line": 64,
-      "class": "EndpointExtensions",
-      "method": "MapPatch",
-      "endLine": 64
-    },
-    {
-      "type": "method_span",
-      "file": "src/Api/Framework/Hosting.cs",
-      "line": 66,
-      "class": "EndpointExtensions",
-      "method": "MapMethods",
-      "endLine": 66
-    },
-    {
-      "type": "ctor_field",
-      "file": "src/Api/Framework/Mvc.cs",
-      "line": 8,
-      "class": "RouteAttribute",
-      "field": "Template",
-      "paramType": "string",
-      "paramTypeFqn": "System.String"
-    },
-    {
-      "type": "method_span",
-      "file": "src/Api/Framework/Mvc.cs",
-      "line": 8,
-      "class": "RouteAttribute",
-      "method": "RouteAttribute",
-      "endLine": 8
-    },
-    {
-      "type": "ctor_field",
-      "file": "src/Api/Framework/Mvc.cs",
-      "line": 16,
-      "class": "HttpGetAttribute",
-      "field": "Template",
-      "paramType": "string?",
-      "paramTypeFqn": "System.String"
-    },
-    {
-      "type": "method_span",
-      "file": "src/Api/Framework/Mvc.cs",
-      "line": 16,
-      "class": "HttpGetAttribute",
-      "method": "HttpGetAttribute",
-      "endLine": 16
-    },
-    {
-      "type": "ctor_field",
-      "file": "src/Api/Framework/Mvc.cs",
-      "line": 24,
-      "class": "HttpPostAttribute",
-      "field": "Template",
-      "paramType": "string?",
-      "paramTypeFqn": "System.String"
-    },
-    {
-      "type": "method_span",
-      "file": "src/Api/Framework/Mvc.cs",
-      "line": 24,
-      "class": "HttpPostAttribute",
-      "method": "HttpPostAttribute",
-      "endLine": 24
-    },
-    {
-      "type": "ctor_field",
-      "file": "src/Api/Framework/Mvc.cs",
-      "line": 32,
-      "class": "HttpPutAttribute",
-      "field": "Template",
-      "paramType": "string?",
-      "paramTypeFqn": "System.String"
-    },
-    {
-      "type": "method_span",
-      "file": "src/Api/Framework/Mvc.cs",
-      "line": 32,
-      "class": "HttpPutAttribute",
-      "method": "HttpPutAttribute",
-      "endLine": 32
-    },
-    {
-      "type": "ctor_field",
-      "file": "src/Api/Framework/Mvc.cs",
-      "line": 40,
-      "class": "HttpDeleteAttribute",
-      "field": "Template",
-      "paramType": "string?",
-      "paramTypeFqn": "System.String"
-    },
-    {
-      "type": "method_span",
-      "file": "src/Api/Framework/Mvc.cs",
-      "line": 40,
-      "class": "HttpDeleteAttribute",
-      "method": "HttpDeleteAttribute",
-      "endLine": 40
-    },
-    {
-      "type": "ctor_field",
-      "file": "src/Api/Framework/Mvc.cs",
-      "line": 48,
-      "class": "HttpPatchAttribute",
-      "field": "Template",
-      "paramType": "string?",
-      "paramTypeFqn": "System.String"
-    },
-    {
-      "type": "method_span",
-      "file": "src/Api/Framework/Mvc.cs",
-      "line": 48,
-      "class": "HttpPatchAttribute",
-      "method": "HttpPatchAttribute",
-      "endLine": 48
-    },
-    {
-      "type": "iface_impl",
-      "file": "src/Api/Framework/Mvc.cs",
-      "line": 72,
-      "class": "OkResult",
-      "iface": "IActionResult",
-      "ifaceFqn": "Courier.Framework.IActionResult"
-    },
-    {
-      "type": "ctor_field",
-      "file": "src/Api/Framework/Mvc.cs",
-      "line": 74,
-      "class": "OkResult",
-      "field": "Value",
-      "paramType": "object?",
-      "paramTypeFqn": "System.Object"
-    },
-    {
-      "type": "method_span",
-      "file": "src/Api/Framework/Mvc.cs",
-      "line": 74,
-      "class": "OkResult",
-      "method": "OkResult",
-      "endLine": 74
-    },
-    {
-      "type": "iface_impl",
-      "file": "src/Api/Framework/Mvc.cs",
-      "line": 79,
-      "class": "NotFoundResult",
-      "iface": "IActionResult",
-      "ifaceFqn": "Courier.Framework.IActionResult"
-    },
-    {
-      "type": "method_span",
-      "file": "src/Api/Framework/Mvc.cs",
-      "line": 85,
-      "class": "ControllerBase",
-      "method": "Ok",
-      "endLine": 85
-    },
-    {
-      "type": "method_span",
-      "file": "src/Api/Framework/Mvc.cs",
-      "line": 87,
-      "class": "ControllerBase",
-      "method": "NotFound",
-      "endLine": 87
+      "controller": "ParcelEndpoints",
+      "action": "Register",
+      "verb": "GET",
+      "template": "right/left/cycle"
     },
     {
       "type": "ctor_field",
@@ -791,6 +532,30 @@
       "paramTypeFqn": "System.DateTimeOffset"
     },
     {
+      "type": "ctor_field",
+      "file": "src/Api/Messaging/Events/ReturnRequested.cs",
+      "line": 7,
+      "class": "ReturnRequested",
+      "field": "ParcelId",
+      "paramType": "string",
+      "paramTypeFqn": "System.String"
+    },
+    {
+      "type": "iface_impl",
+      "file": "src/Api/Messaging/Events/ReturnRequested.cs",
+      "line": 7,
+      "class": "ReturnRequested",
+      "iface": "IMessage",
+      "ifaceFqn": "Courier.Framework.IMessage"
+    },
+    {
+      "type": "message_class",
+      "file": "src/Api/Messaging/Events/ReturnRequested.cs",
+      "line": 7,
+      "name": "ReturnRequested",
+      "fqn": "Courier.Api.Messaging.Events.ReturnRequested"
+    },
+    {
       "type": "iface_impl",
       "file": "src/Api/Messaging/InMemoryBus.cs",
       "line": 7,
@@ -916,7 +681,7 @@
     {
       "type": "di_binding",
       "file": "src/Api/Program.cs",
-      "line": 15,
+      "line": 16,
       "iface": "IParcelRepository",
       "impl": "ParcelRepository",
       "ifaceFqn": "Courier.Api.Repositories.IParcelRepository",
@@ -925,7 +690,7 @@
     {
       "type": "di_binding",
       "file": "src/Api/Program.cs",
-      "line": 16,
+      "line": 17,
       "iface": "ILabelPrinter",
       "impl": "ZplLabelPrinter",
       "ifaceFqn": "Courier.Api.Repositories.ILabelPrinter",
@@ -934,7 +699,7 @@
     {
       "type": "di_binding",
       "file": "src/Api/Program.cs",
-      "line": 17,
+      "line": 18,
       "iface": "IPublishEndpoint",
       "impl": "InMemoryBus",
       "ifaceFqn": "Courier.Framework.IPublishEndpoint",
@@ -943,7 +708,7 @@
     {
       "type": "ctor_field",
       "file": "src/Api/Program.cs",
-      "line": 20,
+      "line": 21,
       "class": "Program",
       "field": "repository",
       "paramType": "IParcelRepository",
@@ -952,15 +717,15 @@
     {
       "type": "method_span",
       "file": "src/Api/Program.cs",
-      "line": 20,
+      "line": 21,
       "class": "Program",
       "method": "MapGet",
-      "endLine": 20
+      "endLine": 21
     },
     {
       "type": "route",
       "file": "src/Api/Program.cs",
-      "line": 20,
+      "line": 21,
       "controller": "Program",
       "action": "MapGet",
       "verb": "GET",
@@ -969,7 +734,7 @@
     {
       "type": "ctor_field",
       "file": "src/Api/Program.cs",
-      "line": 21,
+      "line": 22,
       "class": "Program",
       "field": "bus",
       "paramType": "IPublishEndpoint",
@@ -978,7 +743,7 @@
     {
       "type": "ctor_field",
       "file": "src/Api/Program.cs",
-      "line": 21,
+      "line": 22,
       "class": "Program",
       "field": "request",
       "paramType": "CreateParcel",
@@ -987,15 +752,15 @@
     {
       "type": "method_span",
       "file": "src/Api/Program.cs",
-      "line": 21,
+      "line": 22,
       "class": "Program",
       "method": "MapPost",
-      "endLine": 25
+      "endLine": 26
     },
     {
       "type": "route",
       "file": "src/Api/Program.cs",
-      "line": 21,
+      "line": 22,
       "controller": "Program",
       "action": "MapPost",
       "verb": "POST",
@@ -1004,14 +769,14 @@
     {
       "type": "publish",
       "file": "src/Api/Program.cs",
-      "line": 24,
+      "line": 25,
       "message": "ParcelDispatchedMessage",
       "fqn": "Courier.Api.Messaging.Messages.ParcelDispatchedMessage"
     },
     {
       "type": "route",
       "file": "src/Api/Program.cs",
-      "line": 26,
+      "line": 27,
       "controller": "Program",
       "action": "Delete",
       "verb": "DELETE",
@@ -1020,15 +785,15 @@
     {
       "type": "method_span",
       "file": "src/Api/Program.cs",
-      "line": 27,
+      "line": 28,
       "class": "Program",
       "method": "MapMethods",
-      "endLine": 27
+      "endLine": 28
     },
     {
       "type": "route",
       "file": "src/Api/Program.cs",
-      "line": 27,
+      "line": 28,
       "controller": "Program",
       "action": "MapMethods",
       "verb": "GET",
@@ -1037,7 +802,7 @@
     {
       "type": "route",
       "file": "src/Api/Program.cs",
-      "line": 27,
+      "line": 28,
       "controller": "Program",
       "action": "MapMethods",
       "verb": "HEAD",
@@ -1046,11 +811,63 @@
     {
       "type": "route",
       "file": "src/Api/Program.cs",
-      "line": 28,
+      "line": 29,
       "controller": "Program",
       "action": "Update",
       "verb": "PUT",
       "template": "api/parcels/{id}"
+    },
+    {
+      "type": "ctor_field",
+      "file": "src/Api/Program.cs",
+      "line": 30,
+      "class": "Program",
+      "field": "invoice",
+      "paramType": "Invoice",
+      "paramTypeFqn": "Systematic.Billing.Invoice"
+    },
+    {
+      "type": "ctor_field",
+      "file": "src/Api/Program.cs",
+      "line": 30,
+      "class": "Program",
+      "field": "repository",
+      "paramType": "IParcelRepository",
+      "paramTypeFqn": "Courier.Api.Repositories.IParcelRepository"
+    },
+    {
+      "type": "method_span",
+      "file": "src/Api/Program.cs",
+      "line": 30,
+      "class": "Program",
+      "method": "MapPatch",
+      "endLine": 30
+    },
+    {
+      "type": "route",
+      "file": "src/Api/Program.cs",
+      "line": 30,
+      "controller": "Program",
+      "action": "MapPatch",
+      "verb": "PATCH",
+      "template": "api/parcels/{id}/invoice"
+    },
+    {
+      "type": "method_span",
+      "file": "src/Api/Program.cs",
+      "line": 32,
+      "class": "Program",
+      "method": "MapGet",
+      "endLine": 32
+    },
+    {
+      "type": "route",
+      "file": "src/Api/Program.cs",
+      "line": 32,
+      "controller": "Program",
+      "action": "MapGet",
+      "verb": "GET",
+      "template": "admin/stats"
     },
     {
       "type": "iface_impl",
@@ -1083,6 +900,325 @@
       "class": "ZplLabelPrinter",
       "method": "Print",
       "endLine": 11
+    },
+    {
+      "type": "iface_impl",
+      "file": "src/Shared/Bus.cs",
+      "line": 19,
+      "class": "Batch",
+      "iface": "IEnumerable",
+      "ifaceFqn": "System.Collections.Generic.IEnumerable<T>"
+    },
+    {
+      "type": "method_span",
+      "file": "src/Shared/Bus.cs",
+      "line": 23,
+      "class": "Batch",
+      "method": "Add",
+      "endLine": 23
+    },
+    {
+      "type": "method_span",
+      "file": "src/Shared/Bus.cs",
+      "line": 25,
+      "class": "Batch",
+      "method": "GetEnumerator",
+      "endLine": 25
+    },
+    {
+      "type": "method_span",
+      "file": "src/Shared/Bus.cs",
+      "line": 27,
+      "class": "Batch",
+      "method": "GetEnumerator",
+      "endLine": 27
+    },
+    {
+      "type": "iface_impl",
+      "file": "src/Shared/Bus.cs",
+      "line": 30,
+      "class": "BaseConsumer",
+      "iface": "IConsumer",
+      "ifaceFqn": "Courier.Framework.IConsumer<T>"
+    },
+    {
+      "type": "iface_impl",
+      "file": "src/Shared/Hosting.cs",
+      "line": 15,
+      "class": "RouteGroupBuilder",
+      "iface": "IEndpointRouteBuilder",
+      "ifaceFqn": "Courier.Framework.IEndpointRouteBuilder"
+    },
+    {
+      "type": "iface_impl",
+      "file": "src/Shared/Hosting.cs",
+      "line": 19,
+      "class": "WebApplication",
+      "iface": "IEndpointRouteBuilder",
+      "ifaceFqn": "Courier.Framework.IEndpointRouteBuilder"
+    },
+    {
+      "type": "method_span",
+      "file": "src/Shared/Hosting.cs",
+      "line": 21,
+      "class": "WebApplication",
+      "method": "Create",
+      "endLine": 21
+    },
+    {
+      "type": "method_span",
+      "file": "src/Shared/Hosting.cs",
+      "line": 25,
+      "class": "WebApplication",
+      "method": "Run",
+      "endLine": 27
+    },
+    {
+      "type": "iface_impl",
+      "file": "src/Shared/Hosting.cs",
+      "line": 29,
+      "class": "ServiceCollectionImpl",
+      "iface": "IServiceCollection",
+      "ifaceFqn": "Courier.Framework.IServiceCollection"
+    },
+    {
+      "type": "method_span",
+      "file": "src/Shared/Hosting.cs",
+      "line": 36,
+      "class": "ServiceCollectionExtensions",
+      "method": "AddScoped",
+      "endLine": 38
+    },
+    {
+      "type": "method_span",
+      "file": "src/Shared/Hosting.cs",
+      "line": 40,
+      "class": "ServiceCollectionExtensions",
+      "method": "AddSingleton",
+      "endLine": 41
+    },
+    {
+      "type": "method_span",
+      "file": "src/Shared/Hosting.cs",
+      "line": 43,
+      "class": "ServiceCollectionExtensions",
+      "method": "AddTransient",
+      "endLine": 45
+    },
+    {
+      "type": "method_span",
+      "file": "src/Shared/Hosting.cs",
+      "line": 47,
+      "class": "ServiceCollectionExtensions",
+      "method": "Register",
+      "endLine": 49
+    },
+    {
+      "type": "method_span",
+      "file": "src/Shared/Hosting.cs",
+      "line": 54,
+      "class": "EndpointExtensions",
+      "method": "MapGroup",
+      "endLine": 54
+    },
+    {
+      "type": "method_span",
+      "file": "src/Shared/Hosting.cs",
+      "line": 56,
+      "class": "EndpointExtensions",
+      "method": "MapGet",
+      "endLine": 56
+    },
+    {
+      "type": "method_span",
+      "file": "src/Shared/Hosting.cs",
+      "line": 58,
+      "class": "EndpointExtensions",
+      "method": "MapPost",
+      "endLine": 58
+    },
+    {
+      "type": "method_span",
+      "file": "src/Shared/Hosting.cs",
+      "line": 60,
+      "class": "EndpointExtensions",
+      "method": "MapPut",
+      "endLine": 60
+    },
+    {
+      "type": "method_span",
+      "file": "src/Shared/Hosting.cs",
+      "line": 62,
+      "class": "EndpointExtensions",
+      "method": "MapDelete",
+      "endLine": 62
+    },
+    {
+      "type": "method_span",
+      "file": "src/Shared/Hosting.cs",
+      "line": 64,
+      "class": "EndpointExtensions",
+      "method": "MapPatch",
+      "endLine": 64
+    },
+    {
+      "type": "method_span",
+      "file": "src/Shared/Hosting.cs",
+      "line": 66,
+      "class": "EndpointExtensions",
+      "method": "MapMethods",
+      "endLine": 66
+    },
+    {
+      "type": "ctor_field",
+      "file": "src/Shared/Mvc.cs",
+      "line": 8,
+      "class": "RouteAttribute",
+      "field": "Template",
+      "paramType": "string",
+      "paramTypeFqn": "System.String"
+    },
+    {
+      "type": "method_span",
+      "file": "src/Shared/Mvc.cs",
+      "line": 8,
+      "class": "RouteAttribute",
+      "method": "RouteAttribute",
+      "endLine": 8
+    },
+    {
+      "type": "ctor_field",
+      "file": "src/Shared/Mvc.cs",
+      "line": 16,
+      "class": "HttpGetAttribute",
+      "field": "Template",
+      "paramType": "string?",
+      "paramTypeFqn": "System.String"
+    },
+    {
+      "type": "method_span",
+      "file": "src/Shared/Mvc.cs",
+      "line": 16,
+      "class": "HttpGetAttribute",
+      "method": "HttpGetAttribute",
+      "endLine": 16
+    },
+    {
+      "type": "ctor_field",
+      "file": "src/Shared/Mvc.cs",
+      "line": 24,
+      "class": "HttpPostAttribute",
+      "field": "Template",
+      "paramType": "string?",
+      "paramTypeFqn": "System.String"
+    },
+    {
+      "type": "method_span",
+      "file": "src/Shared/Mvc.cs",
+      "line": 24,
+      "class": "HttpPostAttribute",
+      "method": "HttpPostAttribute",
+      "endLine": 24
+    },
+    {
+      "type": "ctor_field",
+      "file": "src/Shared/Mvc.cs",
+      "line": 32,
+      "class": "HttpPutAttribute",
+      "field": "Template",
+      "paramType": "string?",
+      "paramTypeFqn": "System.String"
+    },
+    {
+      "type": "method_span",
+      "file": "src/Shared/Mvc.cs",
+      "line": 32,
+      "class": "HttpPutAttribute",
+      "method": "HttpPutAttribute",
+      "endLine": 32
+    },
+    {
+      "type": "ctor_field",
+      "file": "src/Shared/Mvc.cs",
+      "line": 40,
+      "class": "HttpDeleteAttribute",
+      "field": "Template",
+      "paramType": "string?",
+      "paramTypeFqn": "System.String"
+    },
+    {
+      "type": "method_span",
+      "file": "src/Shared/Mvc.cs",
+      "line": 40,
+      "class": "HttpDeleteAttribute",
+      "method": "HttpDeleteAttribute",
+      "endLine": 40
+    },
+    {
+      "type": "ctor_field",
+      "file": "src/Shared/Mvc.cs",
+      "line": 48,
+      "class": "HttpPatchAttribute",
+      "field": "Template",
+      "paramType": "string?",
+      "paramTypeFqn": "System.String"
+    },
+    {
+      "type": "method_span",
+      "file": "src/Shared/Mvc.cs",
+      "line": 48,
+      "class": "HttpPatchAttribute",
+      "method": "HttpPatchAttribute",
+      "endLine": 48
+    },
+    {
+      "type": "iface_impl",
+      "file": "src/Shared/Mvc.cs",
+      "line": 72,
+      "class": "OkResult",
+      "iface": "IActionResult",
+      "ifaceFqn": "Courier.Framework.IActionResult"
+    },
+    {
+      "type": "ctor_field",
+      "file": "src/Shared/Mvc.cs",
+      "line": 74,
+      "class": "OkResult",
+      "field": "Value",
+      "paramType": "object?",
+      "paramTypeFqn": "System.Object"
+    },
+    {
+      "type": "method_span",
+      "file": "src/Shared/Mvc.cs",
+      "line": 74,
+      "class": "OkResult",
+      "method": "OkResult",
+      "endLine": 74
+    },
+    {
+      "type": "iface_impl",
+      "file": "src/Shared/Mvc.cs",
+      "line": 79,
+      "class": "NotFoundResult",
+      "iface": "IActionResult",
+      "ifaceFqn": "Courier.Framework.IActionResult"
+    },
+    {
+      "type": "method_span",
+      "file": "src/Shared/Mvc.cs",
+      "line": 85,
+      "class": "ControllerBase",
+      "method": "Ok",
+      "endLine": 85
+    },
+    {
+      "type": "method_span",
+      "file": "src/Shared/Mvc.cs",
+      "line": 87,
+      "class": "ControllerBase",
+      "method": "NotFound",
+      "endLine": 87
     }
   ]
 }

@@ -135,7 +135,7 @@ fn header_keys_come_first_and_name_the_producer() {
         .iter()
         .map(|unit| unit.as_str().expect("unit is a string"))
         .collect();
-    assert_eq!(units, ["Api|net9.0"]);
+    assert_eq!(units, ["Api|net9.0", "Shared|net9.0"]);
     let digest = compilation["digest"].as_str().expect("digest is a string");
     assert_eq!(digest.len(), 40, "digest is a hex sha1: {digest}");
     assert!(digest.chars().all(|c| c.is_ascii_hexdigit()));
@@ -306,5 +306,33 @@ fn semantic_resolution_shows_where_regexes_stop() {
             && f["verb"] == "ANY")
         .is_some(),
         "[action] expansion with no verb attribute"
+    );
+    // A group declared in a referenced project is read as syntax, so its
+    // literal prefix survives the compilation boundary.
+    assert!(
+        find("route", &|f| f["template"] == "admin/stats").is_some(),
+        "MapGroup prefix declared in another project"
+    );
+    // Two group properties that reference each other terminate at the first
+    // revisit instead of unrolling to the depth cap.
+    assert!(
+        find("route", &|f| f["template"] == "right/left/cycle").is_some(),
+        "cyclic MapGroup chain"
+    );
+    // A namespace that merely starts with the letters of a framework root is
+    // not a framework namespace.
+    let invoice = find("ctor_field", &|f| f["field"] == "invoice")
+        .expect("lambda parameter from a namespace starting with `System`");
+    assert_eq!(invoice["paramTypeFqn"], "Systematic.Billing.Invoice");
+    // A partial consumer yields one consume fact, on the part carrying the
+    // base list.
+    let partial: Vec<_> = all
+        .iter()
+        .filter(|f| f["type"] == "consume" && f["consumer"] == "ReturnRequestedConsumer")
+        .collect();
+    assert_eq!(partial.len(), 1, "one consume fact per partial consumer");
+    assert_eq!(
+        partial[0]["file"],
+        "src/Api/Consumers/ReturnRequestedConsumer.cs"
     );
 }
