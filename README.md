@@ -247,6 +247,11 @@ Known, rather than hidden:
   the parser, and a directive-looking line inside a block comment, a verbatim string, or a raw
   string literal is not treated as a directive. The `parse` and `spans` diagnostics show the
   raw tree, both arms included.
+- **Which C# constructs produce facts is catalogued, not implied.**
+  [`docs/csharp-coverage.md`](docs/csharp-coverage.md) lists every construct the extractor
+  meets with a verdict (`must`, `may`, `must-not` produce a fact) and the measured status,
+  pinned by `fixtures/csharp-syntax/` and `tests/csharp_syntax_matrix.rs`; the rows that are
+  silent today are listed there as follow-ups rather than discovered by the next corpus.
 
 `devscout` began as the Rust half of a two-implementation tool, and a number of source comments
 still describe behaviour by reference to that original implementation. Those notes are history:

@@ -99,6 +99,15 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   site the walk recognised but could not resolve. A package-free fixture solution under
   `fixtures/csharp-flowtrace/` pins the output as a committed snapshot that CI diffs, and
   `tests/flowtrace_facts.rs` pins its shape without a .NET toolchain.
+- **A C# construct catalogue with a pinned fixture.** `docs/csharp-coverage.md` enumerates
+  every C# construct the extractor meets, with its grammar node kinds, a syntactic verdict,
+  an obligation (`must` / `may` / `must-not` produce a fact), the status measured at this
+  release, and the fixture that shows it; `fixtures/csharp-syntax/` holds one compilable file
+  per construct group, and `tests/csharp_syntax_matrix.rs` fails when a fixture stops parsing
+  clean under the pinned grammar, when a producing `must` row stops producing, or when the
+  fixture set and the catalogue drift apart. The grammar's three known gaps (C# 14
+  `extension` blocks, `allows ref struct`, list-pattern slice designations) are recorded with
+  the crate version.
 
 ### Changed
 
