@@ -206,6 +206,53 @@ fn refs_json_carries_the_tier_next_to_the_flag_it_refines() {
 }
 
 #[test]
+fn read_and_tests_carry_the_tier_in_compact_and_json_like_refs() {
+    let fx = Fixture::build("read-tests-tier");
+
+    // `read` shares the refs table renderers, so every format marks the tier
+    // the same way refs does.
+    let ext_compact = stdout_of(&fx.run(&["read", "WidgetExtensions", "--compact"]));
+    assert!(
+        ext_compact.contains("Consumers/UsesExtension.cs:9x"),
+        "{ext_compact}"
+    );
+    let guess_compact = stdout_of(&fx.run(&["read", "Counter", "--compact"]));
+    assert!(
+        guess_compact.contains("Consumers/Guesser.cs:9h"),
+        "{guess_compact}"
+    );
+
+    let ext_json = stdout_of(&fx.run(&["read", "WidgetExtensions", "--json"]));
+    assert!(
+        ext_json.contains(
+            r#"{"file":"Consumers/UsesExtension.cs","line":9,"heuristic":true,"tier":"ext","source":"public void Run(Widget w) => w.Render();"}"#
+        ),
+        "{ext_json}"
+    );
+    let guess_json = stdout_of(&fx.run(&["read", "Counter", "--json"]));
+    assert!(
+        guess_json.contains(
+            r#"{"file":"Consumers/Guesser.cs","line":9,"heuristic":true,"tier":"guess","source":"x.Tally();"}"#
+        ),
+        "{guess_json}"
+    );
+
+    // `tests` rows carry the same pair in the same order.
+    let tests_ext = stdout_of(&fx.run(&["tests", "WidgetExtensions", "--json"]));
+    assert!(
+        tests_ext.contains(r#""heuristic":true,"tier":"ext""#),
+        "{tests_ext}"
+    );
+    assert!(!tests_ext.contains(r#""tier":"guess""#), "{tests_ext}");
+    let tests_guess = stdout_of(&fx.run(&["tests", "Counter", "--json"]));
+    assert!(
+        tests_guess.contains(r#""heuristic":true,"tier":"guess""#),
+        "{tests_guess}"
+    );
+    assert!(!tests_guess.contains(r#""tier":"ext""#), "{tests_guess}");
+}
+
+#[test]
 fn no_guess_keeps_the_extension_row_and_drops_the_scored_one_in_refs_and_read() {
     let fx = Fixture::build("refs-read");
 

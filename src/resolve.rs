@@ -1320,19 +1320,22 @@ fn nominally_assignable_cached(
 //     shape) AND is nominally assignable to the receiver type.
 //   - as an EXTENSION method: the candidate declares an extension of that
 //     member name whose `this` parameter is the receiver type EXACTLY, type
-//     arguments unified -- the same (member, thisType) key and the same
-//     unification tier (f) uses. Tier (f) declined this ref for one of its own
-//     reasons (most often the namespace test, which is narrower than the
+//     arguments unified and the call's argument count inside the declared
+//     arity -- the same (member, thisType) key and the same unification and
+//     arity filters tier (f) uses. Tier (f) declined this ref for one of its
+//     own reasons (most often the namespace test, which is narrower than the
 //     language), and re-admitting the candidate HERE, as a guess, is the
 //     honest answer: the this-parameter is direct evidence about this exact
 //     receiver type, which is more than the uniqueness pool alone ever had.
+//     Arity is NOT one of those reasons: a call the extension cannot accept
+//     has no binding under any import, so it stays refused.
 //
 // The two are OR-ed rather than tried in order because an extension method is
 // also an ordinary public static method, so the static class holding it
 // vouches through `methods` too -- requiring assignability of a candidate that
 // merely LOOKS instance-vouched would refuse every extension there is.
 //
-// Nine parameters, deliberately: every one is a distinct fact about the ONE
+// Ten parameters, deliberately: every one is a distinct fact about the ONE
 // question asked here, and bundling them into a struct built per candidate
 // would add an allocation and a second name for each field without making any
 // caller shorter -- there is exactly one caller.
@@ -1344,6 +1347,7 @@ fn receiver_admits_candidate(
     candidate: usize,
     member: &str,
     shape: MemberShape,
+    arg_count: Option<usize>,
     receiver_type: &str,
     receiver_args: Option<&Vec<String>>,
     args_known: bool,
@@ -1372,7 +1376,9 @@ fn receiver_admits_candidate(
         .unwrap_or(&[])
         .iter()
         .any(|c| {
-            c.def_idx == candidate && generic_args_unify(c.entry.this_args.as_ref(), receiver_args)
+            c.def_idx == candidate
+                && arg_count.is_none_or(|n| arity_accepts(&c.entry, n))
+                && generic_args_unify(c.entry.this_args.as_ref(), receiver_args)
         })
 }
 
@@ -2094,8 +2100,10 @@ pub fn resolve_graph_with_ts(
 }
 
 /// The same resolve again, now with the repo's `.csproj` project model
-/// alongside -- `devscout map`'s entry point, and the only one that can
-/// produce a graph carrying `units`. The other two wrap this one with `None`.
+/// alongside.
+///
+/// This is `devscout map`'s entry point, and the only one that can produce a
+/// graph carrying `units`. The other two wrap this one with `None`.
 ///
 /// `model` is `None` for a repo that declares no `.csproj`, and a `None`
 /// model must leave the resolve BYTE-IDENTICAL to what it was: `units` is
@@ -3047,6 +3055,7 @@ pub fn resolve_graph_with_model(
                                             d,
                                             member,
                                             shape,
+                                            r.arg_count,
                                             receiver_type,
                                             r.receiver_args.as_ref(),
                                             r.receiver_type.is_some(),
@@ -6606,7 +6615,7 @@ mod tests {
     }
 
     #[test]
-    fn stage5_receiver_rule_an_extension_only_candidate_is_refused_after_tier_f_declined() {
+    fn stage5_receiver_rule_readmits_an_extension_of_the_receiver_type_declined_on_namespace() {
         let files = fragments_for(&[
             (
                 "Ext/LogExt.cs",
@@ -6626,6 +6635,44 @@ mod tests {
             heuristic_member_edges_from(&g, "Consumers/Startup.cs"),
             vec![("App.Registration.WidgetServiceExtensions", 9)],
             "LogExt extends IOtherLogger, not ILogger, so no this-type of its own answers the receiver and nothing else connects it -- while AddWidgets extends the receiver type exactly and only tier (f)'s namespace test (App.Registration is not imported here) kept it out"
+        );
+    }
+
+    #[test]
+    fn stage5_receiver_rule_an_extension_tier_f_declined_on_arity_is_not_readmitted_as_a_guess() {
+        // `App.Ext` IS imported, so tier (f) reached its arity filter and
+        // declined there: `Trace(this IThing, string, string)` cannot take zero
+        // arguments under any import. The scored tier must not turn that into
+        // a guess -- the call has no binding at all.
+        let files = fragments_for(&[
+            (
+                "Ext/LogExt.cs",
+                "namespace App.Ext { public static class LogExt { public static void Trace(this IThing t, string a, string b) { } } }",
+            ),
+            (
+                "Consumers/Runner.cs",
+                "using App.Ext;\n\nnamespace App.Consumers;\n\npublic class Runner\n{\n  public void Run(IThing thing)\n  {\n    thing.Trace();\n    thing.Trace(\"a\", \"b\");\n  }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        let edges: Vec<(&str, usize, Option<HeuristicTier>)> = g
+            .edges
+            .iter()
+            .filter_map(|e| match e {
+                Edge::UsesMember {
+                    from_file,
+                    from_line,
+                    to,
+                    tier,
+                    ..
+                } if from_file == "Consumers/Runner.cs" => Some((to.as_str(), *from_line, *tier)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            edges,
+            vec![("App.Ext.LogExt", 10, Some(HeuristicTier::Ext))],
+            "line 9 has no binding and no edge; line 10 binds through tier (f) as before"
         );
     }
 

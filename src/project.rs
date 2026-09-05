@@ -388,7 +388,9 @@ pub fn graph_units(model: &ProjectModel) -> Vec<graph::GraphUnit> {
 }
 
 /// The inverse of `graph_units`: persisted rows back into `Unit`s, ready for
-/// `ProjectModel::from_units`. `dir` is recomputed as `id`'s parent (`""` for
+/// `ProjectModel::from_units`.
+///
+/// `dir` is recomputed as `id`'s parent (`""` for
 /// a `.csproj` sitting directly at the repo root), which is exactly what
 /// `discover` derived it from in the first place.
 pub fn units_from_graph(rows: &[graph::GraphUnit]) -> Vec<Unit> {
@@ -898,6 +900,28 @@ mod tests {
         let a = 0;
         assert!(model.closure[a].is_empty());
         assert!(!model.reachable(a, 99));
+    }
+
+    #[test]
+    fn from_units_closes_a_reference_cycle_without_revisiting_a_unit() {
+        // A -> B -> C -> A: the walk must terminate, every unit must reach the
+        // other two, and a unit's own index is never listed in its closure.
+        let model = ProjectModel::from_units(vec![
+            unit("src/A/A.csproj", "src/A", &["src/B/B.csproj"], false),
+            unit("src/B/B.csproj", "src/B", &["src/C/C.csproj"], false),
+            unit("src/C/C.csproj", "src/C", &["src/A/A.csproj"], false),
+        ]);
+        for from in 0..3 {
+            assert_eq!(
+                model.closure[from].len(),
+                2,
+                "unit {from} reaches the other two"
+            );
+            assert!(!model.closure[from].contains(&from));
+            for to in 0..3 {
+                assert!(model.reachable(from, to), "{from} -> {to} inside the cycle");
+            }
+        }
     }
 
     #[test]

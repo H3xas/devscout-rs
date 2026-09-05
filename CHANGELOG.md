@@ -127,6 +127,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **A `base.`-qualified chain head hops through the base's method return.**
   `base.Make().Validate()` types the tail from the first in-graph base declaring `Make`,
   never from the enclosing type's own same-named member.
+- **The scored tier no longer re-admits an extension the extension tier declined on arity.**
+  An extension of the receiver's exact type is still a valid guess when only its namespace
+  was not imported at the site, but a call whose argument count the extension cannot take
+  has no binding under any import and is refused there too.
 
 ### Benchmarks
 

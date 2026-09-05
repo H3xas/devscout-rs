@@ -12,9 +12,9 @@
 //! `expected.json` thresholds (and CI) expect.
 //!
 //! Every test here goes through the COMPILED BINARY as a subprocess, with
-//! HOME/SCOUT_REGISTRY/SCOUT_CONTENT_DB pointed at a fresh temp dir each --
+//! `HOME`/`SCOUT_REGISTRY`/`SCOUT_CONTENT_DB` pointed at a fresh temp dir each --
 //! same isolation rule and the same duplicated-per-file helpers as
-//! tests/cli_type_arity.rs and tests/cli_read.rs (each tests/*.rs file
+//! `tests/cli_type_arity.rs` and `tests/cli_read.rs` (each `tests/*.rs` file
 //! compiles as an independent binary, so sharing these small helpers via a
 //! common module would buy little).
 
