@@ -2242,11 +2242,12 @@ fn record_using(node: Node, src: &[u8], usings: &mut Vec<UsingRecord>, refs: &mu
 // through to a same-named field of a different type.
 // ---------------------------------------------------------------------------
 
-/// One untyped lambda parameter's callee slot: the delegate parameter this
-/// name's type comes from, on the invocation the lambda sits inside as an
-/// argument -- a lookup only the resolver can do (it has to look up the
-/// callee's own delegate-typed parameter at `arg_index` and read ITS
-/// `arity`-th parameter type). `owner`/`member` name the callee exactly like
+/// One untyped lambda parameter's callee slot.
+///
+/// The name's type is the delegate parameter of the invocation the lambda
+/// sits inside as an argument -- a lookup only the resolver can do (it has
+/// to look up the callee's own delegate-typed parameter at `arg_index` and
+/// read ITS `index`-th parameter type). `owner`/`member` name the callee like
 /// a call fact's `type_name`/`call` do; `arg_count`/`arg_index` locate the
 /// lambda among the callee's arguments; `arity`/`index` locate this
 /// parameter inside the lambda itself.

@@ -209,10 +209,10 @@ pub struct MemberLists {
     pub method_params: HashMap<String, Vec<MethodOverloadParams>>,
 }
 
-/// One method overload's parameter-descriptor list plus the file whose
-/// fragment declared it -- the (params, file) pair
-/// `MemberLists::method_params` keeps per method name. In-memory resolution
-/// input only; nothing here is serialized.
+/// One method overload's parameter-descriptor list plus its declaring file.
+///
+/// The (params, file) pair `MemberLists::method_params` keeps per method
+/// name. In-memory resolution input only; nothing here is serialized.
 pub struct MethodOverloadParams {
     /// The parameter type descriptors, in order (see extract.rs's
     /// `type_descriptor`/`DefRecord::method_params`).

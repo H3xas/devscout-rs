@@ -1100,8 +1100,9 @@ pub struct FragExtensionMethod {
     pub this_args: Option<Vec<String>>,
 }
 
-/// One untyped lambda parameter's callee slot (see extract.rs's
-/// `LambdaSlot`). Field order (`owner`, `member`, `argCount`, `argIndex`,
+/// One untyped lambda parameter's callee slot (see extract.rs's `LambdaSlot`).
+///
+/// Field order (`owner`, `member`, `argCount`, `argIndex`,
 /// `arity`, `index`) is significant: serde emits struct fields in
 /// declaration order under `#[serde(rename_all = "camelCase")]`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
