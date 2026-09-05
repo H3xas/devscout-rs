@@ -13,6 +13,11 @@
     <RootNamespace>ScoutSemantic</RootNamespace>
     <AssemblyName>scout-semantic</AssemblyName>
     <EnableDefaultItems>true</EnableDefaultItems>
+    <!-- The fact document reports this as its producer version, so the
+         informational version has to stay exactly the declared number: without
+         the second property the SDK appends "+<commit sha>" to it. -->
+    <Version>0.1.0</Version>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
 
   <ItemGroup>

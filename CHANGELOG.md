@@ -87,6 +87,18 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   still carries `via`, and a `jsx-use` or `call` edge bound through a two-hop barrel now
   lands on the declaring file instead of resolving to nothing. `refs`/`impact` still fold
   none of the TS edge kinds (README, Limitations). Pinned by `fixtures/ts-resolution/`.
+- **The Roslyn oracle emits the flow tracer's fact set.** `tools/scout-semantic --emit
+  flowtrace-facts` writes one provider document per solution (`schemaVersion`, `producer`,
+  `version`, `repo`, `kind: backend`, compilation identity, git identity, then `facts`) in the
+  flow tracer's published fact schema: `message_class`, `consume`, `publish`, `ctor_field`,
+  `di_binding`, `iface_impl`, `route` and `method_span`, with message, parameter and
+  handler-lambda types resolved by the compilation rather than read off the text -- a primary
+  constructor's consumer, a publish of a local variable, and a minimal-API lambda's parameters
+  all become facts. Output is sorted and byte-reproducible; every fact is checked against the
+  embedded required-field table before it is written, and `--strict` fails the run on any
+  site the walk recognised but could not resolve. A package-free fixture solution under
+  `fixtures/csharp-flowtrace/` pins the output as a committed snapshot that CI diffs, and
+  `tests/flowtrace_facts.rs` pins its shape without a .NET toolchain.
 
 ### Changed
 
