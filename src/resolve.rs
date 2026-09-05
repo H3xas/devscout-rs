@@ -11,7 +11,10 @@
 //      short-circuit before the ladder for bare (non-dotted) references --
 //      never ambiguous, never falls through.
 //   1. Exact qualified name, tried at every ENCLOSING namespace prefix,
-//      innermost first, only for dotted references.
+//      innermost first, only for dotted references. A dotted reference the
+//      exact step misses gets ONE fallback (steps 1a/1b: an alias at its
+//      head rewritten to the alias target, then only a def whose full path
+//      ends with the written text) and never reaches steps 2-4.
 //   2. File's usings (local ∪ every `global using`) + simple name, each
 //      using name itself tried at every enclosing-namespace prefix.
 //   3. The reference site's namespace and every ancestor of it, innermost
@@ -1578,8 +1581,8 @@ enum Via {
 enum Resolution {
     Resolved(usize, Via),
     /// Several same-named defs the ladder refused to choose between, plus the
-    /// step that pooled them -- only steps 2 and 4 can produce this, so the
-    /// `Via` is always `Usings` or `Global`. It rides along so
+    /// step that pooled them -- only steps 1b, 2 and 4 can produce this, so
+    /// the `Via` is always `Usings` or `Global`. It rides along so
     /// `narrow_by_reachability` can hand back a `Resolved` carrying the step
     /// that actually answered instead of inventing one: the uses-member
     /// emission tier reads that step (`via == Via::Qualified`) as one of its
@@ -1655,6 +1658,51 @@ fn narrow_tracked(res: Resolution, site_unit: Option<usize>, admission: &Admissi
         narrowed_away: was_ambiguous && matches!(res, Resolution::External),
         res,
     }
+}
+
+// The dotted text of a qualified reference as a def path would spell it: an
+// alias qualifier (`global::`, an extern alias) dropped, and every type
+// argument list removed from every segment -- the extractor strips them off
+// the tail only, so `Box<string>.Slot` arrives as written. Borrowed when
+// there is nothing to strip, which is the common case.
+fn written_type_path(qualified: &str) -> std::borrow::Cow<'_, str> {
+    let body = match qualified.find("::") {
+        Some(at) => &qualified[at + 2..],
+        None => qualified,
+    };
+    if !body.contains('<') {
+        return std::borrow::Cow::Borrowed(body);
+    }
+    let mut out = String::with_capacity(body.len());
+    let mut depth = 0usize;
+    for c in body.chars() {
+        match c {
+            '<' => depth += 1,
+            '>' => depth = depth.saturating_sub(1),
+            _ if depth == 0 => out.push(c),
+            _ => {}
+        }
+    }
+    std::borrow::Cow::Owned(out)
+}
+
+// Whether a def id, read with `+` as `.`, ends with `written` at a segment
+// boundary -- `App.Widgets.Outer+Inner` ends with `Outer.Inner` and with
+// `App.Widgets.Outer.Inner`, never with `Widgets.Outer` or `ter.Inner`.
+// Byte-wise so no candidate costs an allocation: a `+`/`.` separator is
+// ASCII, and no continuation byte of a multi-byte character can equal one.
+fn def_path_ends_with(id: &str, written: &str) -> bool {
+    let (id, written) = (id.as_bytes(), written.as_bytes());
+    if id.len() < written.len() {
+        return false;
+    }
+    let (head, tail) = id.split_at(id.len() - written.len());
+    let boundary = head.last().is_none_or(|&b| b == b'.' || b == b'+');
+    boundary
+        && tail
+            .iter()
+            .zip(written)
+            .all(|(&a, &b)| a == b || (a == b'+' && b == b'.'))
 }
 
 fn type_candidate(index: &DefIndex, name: &str, arity: Option<usize>) -> Option<usize> {
@@ -1738,7 +1786,8 @@ fn resolve_ref(
         // exact lookup and no prefix walk -- `using Ns = Some.Namespace;` makes
         // `Ns.MyEnum` read as `Some.Namespace.MyEnum`. A rewritten name that
         // finds nothing continues into step 1b under its expanded text.
-        let expanded: Option<String> = qualified
+        let written = written_type_path(qualified);
+        let expanded: Option<String> = written
             .split_once('.')
             .and_then(|(head, rest)| aliases.get(head).map(|target| format!("{target}.{rest}")));
         if let Some(expanded) = &expanded {
@@ -1757,9 +1806,19 @@ fn resolve_ref(
         // and finishing them External here is what keeps steps 2-4 -- all
         // three keyed on the bare `ref_.name` -- from binding them to an
         // unrelated same-named def. Arity is filtered exactly as step 4 does.
-        let written = expanded.as_deref().unwrap_or(qualified);
-        let suffix = format!(".{written}");
-        let matches: Vec<usize> = index
+        //
+        // The one path that legitimately does NOT end with the written text
+        // is a nested type named through a DERIVED type: `Derived.Item` for
+        // an `Item` declared inside `Base`. That is the dotted twin of the
+        // bare rule step 4 applies (`nested_candidate_visible_from_site`),
+        // with the qualifier standing in for the site's enclosing type: the
+        // qualifier is resolved as a type of its own, and a nested candidate
+        // is admitted when its enclosing def lies in that type's inheritance
+        // closure. The extra walk runs only when the suffix found nothing and
+        // a nested candidate exists at all, so an external name whose bare
+        // tail is not a nested def in the graph pays one hash lookup.
+        let written = expanded.as_deref().unwrap_or(&written);
+        let pool: Vec<usize> = index
             .simple_name_to_defs
             .get(&ref_.name)
             .into_iter()
@@ -1769,11 +1828,46 @@ fn resolve_ref(
                 ref_.type_arg_count
                     .is_none_or(|n| index.member_lists[*idx].type_params.len() == n)
             })
-            .filter(|idx| {
-                let path = index.defs[*idx].id.replace('+', ".");
-                path == written || path.ends_with(&suffix)
-            })
             .collect();
+        let mut matches: Vec<usize> = pool
+            .iter()
+            .copied()
+            .filter(|idx| def_path_ends_with(&index.defs[*idx].id, written))
+            .collect();
+        if matches.is_empty() && pool.iter().any(|idx| index.defs[*idx].id.contains('+')) {
+            if let Some((qualifier, _)) = written.rsplit_once('.') {
+                let (head, tail) = match qualifier.rsplit_once('.') {
+                    Some((_, tail)) => (Some(qualifier.to_string()), tail),
+                    None => (None, qualifier),
+                };
+                let probe = FragRef {
+                    name: tail.to_string(),
+                    qualified: head,
+                    ..name_probe(String::new(), ns, ref_.outer_types.clone())
+                };
+                if let Resolution::Resolved(qidx, _) =
+                    resolve_ref(&probe, usings, ns, index, aliases, file_contexts)
+                {
+                    matches = pool
+                        .iter()
+                        .copied()
+                        .filter(|idx| {
+                            index.defs[*idx]
+                                .id
+                                .rsplit_once('+')
+                                .and_then(|(enclosing, _)| {
+                                    index.qualified_name_to_def.get(enclosing)
+                                })
+                                .is_some_and(|&enclosing| {
+                                    inheritance_walk_matches(index, file_contexts, qidx, |i| {
+                                        i == enclosing
+                                    })
+                                })
+                        })
+                        .collect();
+                }
+            }
+        }
         return match matches.as_slice() {
             [idx] => Resolution::Resolved(*idx, Via::Global),
             [_, _, ..] => Resolution::Ambiguous(matches, Via::Global),
@@ -4919,6 +5013,17 @@ mod tests {
                     vec![],
                 ),
             ),
+            // A third same-named nested def whose path does NOT end with the
+            // written text: the suffix rule drops it from the pool, which is
+            // what makes the candidate list two rather than three.
+            (
+                "C/Holder.cs".to_string(),
+                frag(
+                    vec![def("App.C.Holder+Nested", "Nested", "App.C", "class")],
+                    vec![],
+                    vec![],
+                ),
+            ),
             (
                 "Consumers/Ambiguous.cs".to_string(),
                 frag(
@@ -4941,6 +5046,161 @@ mod tests {
         let g = resolve_graph(&no_git_root(), &files);
         assert!(g.edges.iter().all(|e| !matches!(e, Edge::UsesType { .. })));
         assert_eq!(g.stats.ambiguous_count, 1);
+        match find_edge(&g, |e| matches!(e, Edge::Ambiguous { .. })).unwrap() {
+            Edge::Ambiguous {
+                candidate_count,
+                candidates,
+                ..
+            } => {
+                assert_eq!(*candidate_count, 2);
+                assert_eq!(
+                    candidates.iter().map(|c| c.id.as_str()).collect::<Vec<_>>(),
+                    vec!["App.A.Outer+Nested", "App.B.Outer+Nested"]
+                );
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn generic_outer_type_written_with_its_arguments_still_reaches_the_nested_type() {
+        // The extractor strips type arguments off the TAIL only, so a nested
+        // type under a generic outer arrives as `Box<string>.Slot`; the
+        // suffix step reads it as `Box.Slot`.
+        let files = vec![
+            (
+                "Core/Box.cs".to_string(),
+                frag(
+                    vec![
+                        FragDef {
+                            type_params: vec!["T".into()],
+                            ..def("App.Core.Box", "Box", "App.Core", "class")
+                        },
+                        def("App.Core.Box+Slot", "Slot", "App.Core", "class"),
+                    ],
+                    vec![],
+                    vec![],
+                ),
+            ),
+            (
+                "Bus/Holder.cs".to_string(),
+                frag(
+                    vec![def("App.Bus.Holder", "Holder", "App.Bus", "class")],
+                    vec![],
+                    vec![type_ref(
+                        "uses-type",
+                        "Slot",
+                        Some("Box<string>.Slot"),
+                        "App.Bus",
+                    )],
+                ),
+            ),
+        ];
+        let g = resolve_graph(&no_git_root(), &files);
+        match find_edge(&g, |e| matches!(e, Edge::UsesType { .. })).expect("resolved edge present")
+        {
+            Edge::UsesType { to, .. } => assert_eq!(to, "App.Core.Box+Slot"),
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn global_alias_qualified_name_resolves_by_its_absolute_path() {
+        let files = vec![
+            (
+                "Core/Widget.cs".to_string(),
+                frag(
+                    vec![def("App.Core.Widget", "Widget", "App.Core", "class")],
+                    vec![],
+                    vec![],
+                ),
+            ),
+            (
+                "Bus/Holder.cs".to_string(),
+                frag(
+                    vec![def("App.Bus.Holder", "Holder", "App.Bus", "class")],
+                    vec![],
+                    vec![type_ref(
+                        "uses-type",
+                        "Widget",
+                        Some("global::App.Core.Widget"),
+                        "App.Bus",
+                    )],
+                ),
+            ),
+        ];
+        let g = resolve_graph(&no_git_root(), &files);
+        match find_edge(&g, |e| matches!(e, Edge::UsesType { .. })).expect("resolved edge present")
+        {
+            Edge::UsesType { to, .. } => assert_eq!(to, "App.Core.Widget"),
+            _ => unreachable!(),
+        }
+        assert_eq!(g.stats.unresolved_external_count, 0);
+    }
+
+    #[test]
+    fn nested_type_named_through_a_derived_type_is_admitted_by_the_inheritance_closure() {
+        // `Derived.Item` for an `Item` declared inside `Base` is legal C#, and
+        // no def path ends with `Derived.Item`; the qualifier resolves as a
+        // type of its own and the nested candidate's enclosing def must lie in
+        // its inheritance closure. `Unrelated.Item` -- a type with no such
+        // base -- stays external.
+        let core = |refs: Vec<FragRef>| {
+            vec![
+                (
+                    "Core/Types.cs".to_string(),
+                    frag(
+                        vec![
+                            def("App.Core.Base", "Base", "App.Core", "class"),
+                            def("App.Core.Base+Item", "Item", "App.Core", "class"),
+                            FragDef {
+                                bases: vec!["Base".into()],
+                                ..def("App.Core.Derived", "Derived", "App.Core", "class")
+                            },
+                            def("App.Core.Unrelated", "Unrelated", "App.Core", "class"),
+                        ],
+                        vec![],
+                        vec![],
+                    ),
+                ),
+                (
+                    "Bus/Holder.cs".to_string(),
+                    frag(
+                        vec![def("App.Bus.Holder", "Holder", "App.Bus", "class")],
+                        vec![FragUsing::Plain {
+                            text: "App.Core".into(),
+                            global: false,
+                        }],
+                        refs,
+                    ),
+                ),
+            ]
+        };
+        let g = resolve_graph(
+            &no_git_root(),
+            &core(vec![type_ref(
+                "uses-type",
+                "Item",
+                Some("Derived.Item"),
+                "App.Bus",
+            )]),
+        );
+        match find_edge(&g, |e| matches!(e, Edge::UsesType { .. })).expect("resolved edge present")
+        {
+            Edge::UsesType { to, .. } => assert_eq!(to, "App.Core.Base+Item"),
+            _ => unreachable!(),
+        }
+        let g = resolve_graph(
+            &no_git_root(),
+            &core(vec![type_ref(
+                "uses-type",
+                "Item",
+                Some("Unrelated.Item"),
+                "App.Bus",
+            )]),
+        );
+        assert!(find_edge(&g, |e| matches!(e, Edge::UsesType { .. })).is_none());
+        assert_eq!(g.stats.unresolved_external_count, 1);
     }
 
     #[test]
