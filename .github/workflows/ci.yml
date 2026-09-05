@@ -148,3 +148,28 @@ jobs:
           ./target/release/devscout -C "$RUNNER_TEMP/semantic-repo" map src tests
           ./target/release/devscout -C "$RUNNER_TEMP/semantic-repo" audit --semantic "$PWD/out/semantic/refs.jsonl" --units "$PWD/out/semantic/units.jsonl"
           ./target/release/devscout -C "$RUNNER_TEMP/semantic-repo" audit --semantic "$PWD/out/semantic/refs.jsonl" --units "$PWD/out/semantic/units.jsonl" --assert "$PWD/fixtures/csharp-semantic/expected.json"
+
+      # The base/interface direction fixture: its own solution, its own
+      # committed snapshot, the same oracle-diff-then-audit flow. Restored
+      # here rather than above so the two fixtures stay independent files.
+      - name: Run oracle on the direction fixture and diff the committed snapshot
+        run: |
+          dotnet restore fixtures/csharp-direction/Direction.sln
+          dotnet run --project tools/scout-semantic --no-build -c Release -- \
+            fixtures/csharp-direction/Direction.sln --root fixtures/csharp-direction \
+            --out out/direction/refs.jsonl --units out/direction/units.jsonl --strict
+          diff -u fixtures/csharp-direction/oracle/refs.jsonl  out/direction/refs.jsonl
+          diff -u fixtures/csharp-direction/oracle/units.jsonl out/direction/units.jsonl
+
+      - name: Index an isolated copy of the direction fixture and audit it
+        env:
+          HOME: ${{ runner.temp }}/home
+          SCOUT_REGISTRY: ${{ runner.temp }}/home/repos.json
+          SCOUT_CONTENT_DB: ${{ runner.temp }}/home/content.db
+        run: |
+          mkdir -p "$HOME" "$RUNNER_TEMP/direction-repo"
+          rsync -a --exclude bin --exclude obj fixtures/csharp-direction/src "$RUNNER_TEMP/direction-repo/"
+          ./target/release/devscout -C "$RUNNER_TEMP/direction-repo" init --no-hooks --no-map
+          ./target/release/devscout -C "$RUNNER_TEMP/direction-repo" map src
+          ./target/release/devscout -C "$RUNNER_TEMP/direction-repo" audit --semantic "$PWD/out/direction/refs.jsonl" --units "$PWD/out/direction/units.jsonl"
+          ./target/release/devscout -C "$RUNNER_TEMP/direction-repo" audit --semantic "$PWD/out/direction/refs.jsonl" --units "$PWD/out/direction/units.jsonl" --assert "$PWD/fixtures/csharp-direction/expected.json"
