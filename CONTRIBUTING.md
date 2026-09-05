@@ -1,0 +1,91 @@
+# Contributing to devscout
+
+Thanks for considering a contribution. This document covers how to build and test the
+project, the quality gates a pull request needs to pass, how to sign off your commits, and
+what the release gate actually checks.
+
+For anything not covered here, open a discussion or an issue first — especially before a
+large change, so the design can be agreed on before code is written.
+
+## Code of conduct
+
+Participation in this project is governed by the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+## Building and testing
+
+```sh
+cargo build --all-targets
+cargo test
+```
+
+`cargo test` runs the unit tests embedded in `src/` plus every integration test under
+`tests/`, including the public conformance suite described below. There are no test-only
+dependencies beyond a stable Rust toolchain; nothing in the test suite reaches the network.
+
+Before opening a pull request, run:
+
+```sh
+cargo fmt --all -- --check
+cargo clippy --all-targets
+```
+
+`cargo fmt --all -- --check` must be clean — CI enforces this on every pull request.
+
+`cargo clippy` is not yet a zero-warnings baseline project-wide (a pre-existing set of
+`too_long_first_doc_paragraph` / missing-backtick rustdoc lints predates this contributing
+guide and CI does not gate on it yet — see [ROADMAP.md](ROADMAP.md)). What CI does expect,
+and what review will ask for, is that a pull request does not make clippy's opinion of the
+files it touches any worse than it found them, and that any new module you add is clean
+under `cargo clippy --all-targets -- -D warnings` on its own. When in doubt, run the
+deny-warnings form locally and treat every new warning your diff introduces as a defect to
+fix before requesting review.
+
+## Developer Certificate of Origin
+
+Every commit must carry a sign-off certifying you wrote it or otherwise have the right to
+submit it under the project's license, per the [Developer Certificate of
+Origin](https://developercertificate.org/). Add the sign-off with:
+
+```sh
+git commit -s
+```
+
+This appends a `Signed-off-by: Your Name <you@example.com>` trailer using the name and
+email from your git config. Pull requests with unsigned commits will be asked to amend and
+force-push before merge; CODEOWNERS review does not substitute for the DCO trailer.
+
+## Pull requests
+
+- Keep changes focused; unrelated cleanup belongs in its own PR.
+- Add or update tests for behavior you add or change.
+- Update `CHANGELOG.md` under `[Unreleased]` for anything user-visible.
+- Fill in the pull request template, including the DCO checkbox.
+
+## Reaching release-gate confidence locally
+
+Releases are additionally checked, before a tag is pushed, against a private behavioral
+parity corpus that pins this project's graph contract against a second, non-public
+implementation of the same contract. That corpus is not published, so a contributor outside
+the maintainer team cannot re-run it directly — but nothing you need to trust a change
+depends on it being public.
+
+The public equivalent lives in this repository and runs in CI on every pull request:
+
+- **`tests/conformance.rs`**, backed by the invented fixtures under
+  `fixtures/conformance/`, exercises the same command surface the private corpus pins —
+  `map`, `find`, `refs`, `impact`, and `tests` — across both a C# and a TypeScript file in
+  one pass. Run it on its own with `cargo test --test conformance`.
+- The rest of the suite under `tests/` and the unit tests in `src/` cover the extraction and
+  resolution behavior in depth (generic arity, nested-type binding, preprocessor handling,
+  freshness, and more).
+
+A green `cargo test` locally is the same signal CI produces, and CI's `build-and-test` job
+is what a maintainer checks before cutting a release — the private corpus is an additional,
+maintainer-side check on top of that, not a replacement for it. If you can make `cargo test`
+pass, you have reached the same public confidence bar the release process starts from.
+
+## License
+
+By contributing, you agree that your contributions are licensed under the same terms as the
+project: MIT OR Apache-2.0 (see [README.md](README.md#license)). The project will not be
+relicensed away from those terms — see [GOVERNANCE.md](GOVERNANCE.md).
