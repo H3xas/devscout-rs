@@ -1,0 +1,46 @@
+# cargo-deny configuration: https://embarkstudios.github.io/cargo-deny/
+#
+# Run locally with:
+#   cargo install cargo-deny --locked
+#   cargo deny check
+#
+# CI runs the same check via EmbarkStudios/cargo-deny-action on every push
+# and pull request (.github/workflows/ci.yml).
+
+[graph]
+all-features = false
+no-default-features = false
+
+[advisories]
+version = 2
+# A yanked version is a signal to upgrade, not necessarily a vulnerability;
+# kept as a warning so it doesn't block CI on its own. A RUSTSEC advisory
+# matching a dependency is still a hard failure by default — that default is
+# intentionally left alone here.
+yanked = "warn"
+ignore = []
+
+[licenses]
+version = 2
+confidence-threshold = 0.8
+# The full set of licenses actually present in this crate's dependency graph
+# today (verified via `cargo metadata`): MIT, Apache-2.0, MIT/Apache-2.0
+# dual-license variants, Unicode-3.0 (pulled in as part of unicode-ident's
+# combined expression), Unlicense/MIT (aho-corasick, memchr), and Zlib
+# (foldhash). Anything outside this list fails the check rather than being
+# silently accepted.
+allow = ["MIT", "Apache-2.0", "Unicode-3.0", "Unlicense", "Zlib"]
+
+[bans]
+# Duplicate versions of a crate in the graph are noise more often than a
+# real problem for a small, mostly-leaf dependency tree; warn rather than
+# fail so a transitive bump doesn't block an unrelated PR.
+multiple-versions = "warn"
+# Every dependency in Cargo.toml is exact-pinned (`=x.y.z`); a wildcard
+# version requirement should never appear here.
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
