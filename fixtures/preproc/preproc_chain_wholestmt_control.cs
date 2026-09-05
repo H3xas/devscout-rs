@@ -1,10 +1,10 @@
-// KG-1 control fixture -- a `#if DEBUG` wrapping a WHOLE statement (not
-// interrupting an expression/fluent chain mid-way). This is the common,
-// well-formed use of conditional compilation and both engines already parse
-// it identically without the preproc_promoted_qualifier compensation. Kept
-// as a fixture to guard against the compensation over-firing on ordinary
-// statement-level `#if` blocks.
+// A `#if DEBUG` block wraps a WHOLE statement rather than interrupting a
+// fluent chain mid-expression. Before parsing, an inactive block -- and
+// its `#if`/`#endif` directive lines -- is blanked with spaces.
 //
+// With no build symbols defined, `DEBUG` is false, so the guarded call on
+// line 17 is absent from the extracted refs; the unguarded call on line
+// 15 is untouched.
 // Fully synthetic -- no identifiers below come from any real codebase.
 namespace Fixtures.Preproc
 {

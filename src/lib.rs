@@ -26,6 +26,9 @@ pub mod mapcmd;
 pub mod markup;
 /// Tree-sitter parsing and source-span collection.
 pub mod parse;
+/// C# conditional-compilation pre-pass: blanks the inactive arms of
+/// `#if`/`#elif`/`#else`/`#endif` groups before the source is parsed.
+pub mod preproc;
 /// Hand-scanned csproj/Directory.Build.props project model: discovery,
 /// project units, and reference closure.
 pub mod project;
