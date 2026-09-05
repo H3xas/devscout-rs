@@ -3,7 +3,7 @@
 // a mismatch makes reuse break silently.
 //
 // This module owns every serde struct for graph.json + the fragments-cache
-// pair (fragments-v16.json, fragments-index-v16.json), plus their path resolution,
+// pair (fragments-v17.json, fragments-index-v17.json), plus their path resolution,
 // atomic I/O, and the cache-then-resolve-then-write orchestration
 // (`rebuild_graph`). The pure resolution ladder that
 // turns fragments into `defs`/`edges` lives in `resolve.rs` and returns the
@@ -139,16 +139,20 @@ pub fn project_units_path(root: &Path) -> PathBuf {
 // rather than skipping it. v16 added the ref `receiverBase` flag, set only
 // for a `base.` qualifier -- a cached v15 fragment carries none, so every
 // `base.` receiver would silently resolve (or fail to resolve) as if it
-// were a plain `this.` receiver. The rename IS the invalidation mechanism:
+// were a plain `this.` receiver. v17 added def `methodParams` and ref
+// `receiverLambda`, the untyped-lambda-parameter callee slot -- a cached
+// v16 fragment carries neither, so every per-overload parameter shape and
+// every untyped-lambda callee-slot lookup they back would silently see no
+// candidates. The rename IS the invalidation mechanism:
 // pre-bump caches stop being found, every file reparses
 // once, no reader carries version-compat logic. Writers delete every
 // superseded generation (see `remove_superseded_caches`).
 fn fragments_cache_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-v16.json")
+    graph_dir(root).join("fragments-v17.json")
 }
 
 fn fragments_index_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-index-v16.json")
+    graph_dir(root).join("fragments-index-v17.json")
 }
 
 // Every generation below the current one, not just the immediately previous:
@@ -185,6 +189,8 @@ const SUPERSEDED_CACHE_FILES: &[&str] = &[
     "fragments-index-v14.json",
     "fragments-v15.json",
     "fragments-index-v15.json",
+    "fragments-v16.json",
+    "fragments-index-v16.json",
 ];
 
 fn remove_superseded_caches(root: &Path) {
@@ -1032,6 +1038,25 @@ pub struct FragDef {
         skip_serializing_if = "OrderedMap::is_empty"
     )]
     pub method_arities: OrderedMap<Vec<(usize, i64)>>,
+    /// Method name -> per-overload parameter type descriptors, one
+    /// `Vec<String>` per overload in declaration order -- covers every
+    /// method, public and non-public alike, same method set as
+    /// `methodArities` (see `extract::DefRecord::method_params`). A
+    /// position naming a type parameter of the enclosing method or class is
+    /// recorded as `"*"`; a parameter carrying the `this` modifier is
+    /// written `"this <descriptor>"`. A `delegate` def carries exactly one
+    /// entry here, keyed `"Invoke"`. An `OrderedMap` for the same reason
+    /// `methodArities` is one: the serialized key order is significant.
+    /// Appended LAST of all, after `methodArities`, omitted when empty.
+    /// Joined the schema with the v17 cache bump: a v16 fragment read back
+    /// carries none, and every overload-shape/`this`-marker/callee-slot
+    /// lookup this field backs would silently see no candidates.
+    #[serde(
+        default,
+        rename = "methodParams",
+        skip_serializing_if = "OrderedMap::is_empty"
+    )]
+    pub method_params: OrderedMap<Vec<Vec<String>>>,
     #[serde(default, rename = "endLine", skip_serializing_if = "is_zero")]
     /// The end line value.
     pub end_line: usize,
@@ -1073,6 +1098,27 @@ pub struct FragExtensionMethod {
     /// key otherwise), so a non-generic entry keeps four fields exactly.
     #[serde(default, rename = "thisArgs", skip_serializing_if = "Option::is_none")]
     pub this_args: Option<Vec<String>>,
+}
+
+/// One untyped lambda parameter's callee slot (see extract.rs's
+/// `LambdaSlot`). Field order (`owner`, `member`, `argCount`, `argIndex`,
+/// `arity`, `index`) is significant: serde emits struct fields in
+/// declaration order under `#[serde(rename_all = "camelCase")]`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FragLambdaSlot {
+    /// The callee's type-name text.
+    pub owner: String,
+    /// The callee method name.
+    pub member: String,
+    /// The argument count of the callee invocation.
+    pub arg_count: usize,
+    /// The position of the lambda among the callee invocation's arguments.
+    pub arg_index: usize,
+    /// The lambda's own parameter count.
+    pub arity: usize,
+    /// This parameter's position inside the lambda's parameter list.
+    pub index: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1230,6 +1276,20 @@ pub struct FragRef {
     /// cache-version bump.
     #[serde(default, rename = "receiverLocal", skip_serializing_if = "is_false")]
     pub receiver_local: bool,
+    /// Set when this ref's qualifier is an untyped lambda parameter whose
+    /// type is a delegate parameter of some OTHER callee (see extract.rs's
+    /// `RefRecord`). Never present alongside `receiverType` or
+    /// `receiverCallOwner`. Appended LAST of all, after `receiverLocal`,
+    /// omitted when absent. Joined the schema with the v17 cache bump: a
+    /// v16 fragment read back carries none, and every untyped-lambda
+    /// callee-slot lookup this field backs would silently see no
+    /// candidate.
+    #[serde(
+        default,
+        rename = "receiverLambda",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub receiver_lambda: Option<FragLambdaSlot>,
 }
 
 fn is_false(b: &bool) -> bool {
@@ -1387,6 +1447,13 @@ pub fn fragment_from_extraction(e: &extract::Extraction) -> Fragment {
                     }
                     m
                 },
+                method_params: {
+                    let mut m = OrderedMap::new();
+                    for (name, overloads) in &d.method_params {
+                        m.insert(name.clone(), overloads.clone());
+                    }
+                    m
+                },
                 end_line: d.end_line,
             })
             .collect(),
@@ -1432,6 +1499,14 @@ pub fn fragment_from_extraction(e: &extract::Extraction) -> Fragment {
                 receiver_base: r.receiver_base,
                 receiver_awaited: r.receiver_awaited,
                 receiver_local: r.receiver_local,
+                receiver_lambda: r.receiver_lambda.as_ref().map(|s| FragLambdaSlot {
+                    owner: s.owner.clone(),
+                    member: s.member.clone(),
+                    arg_count: s.arg_count,
+                    arg_index: s.arg_index,
+                    arity: s.arity,
+                    index: s.index,
+                }),
             })
             .collect(),
         names: e
@@ -1483,6 +1558,7 @@ pub fn markup_fragment(root: &Path, rel: &str) -> Option<Fragment> {
                 method_return_args: OrderedMap::new(),
                 non_public_methods: Vec::new(),
                 method_arities: OrderedMap::new(),
+                method_params: OrderedMap::new(),
                 end_line: d.line,
             })
             .collect(),
@@ -1513,6 +1589,7 @@ pub fn markup_fragment(root: &Path, rel: &str) -> Option<Fragment> {
                 receiver_base: false,
                 receiver_awaited: false,
                 receiver_local: false,
+                receiver_lambda: None,
             })
             .collect(),
         names: facts
@@ -1821,6 +1898,7 @@ mod tests {
             method_return_args: OrderedMap::new(),
             non_public_methods: Vec::new(),
             method_arities: OrderedMap::new(),
+            method_params: OrderedMap::new(),
             test_methods: Vec::new(),
             end_line: 0,
         }
@@ -2067,6 +2145,7 @@ mod tests {
             receiver_base: false,
             receiver_awaited: false,
             receiver_local: false,
+            receiver_lambda: None,
         }
     }
 
@@ -2792,6 +2871,7 @@ mod tests {
                 method_return_args: OrderedMap::new(),
                 non_public_methods: vec![],
                 method_arities: OrderedMap::new(),
+                method_params: OrderedMap::new(),
                 end_line: 1,
             }],
             usings: vec![],
@@ -2844,7 +2924,7 @@ mod tests {
         // receiverCallMember pair, so a v12 fragment read back carries none and
         // every property hop and every var-from-invocation receiver would
         // silently stay unresolved.
-        assert_eq!(SUPERSEDED_CACHE_FILES.len(), 30, "v1..v15 pairs");
+        assert_eq!(SUPERSEDED_CACHE_FILES.len(), 32, "v1..v16 pairs");
         for stale in SUPERSEDED_CACHE_FILES {
             fs::write(graph_dir(&dir).join(stale), b"{}").unwrap();
         }
@@ -2870,6 +2950,7 @@ mod tests {
                 method_return_args: OrderedMap::new(),
                 non_public_methods: vec![],
                 method_arities: OrderedMap::new(),
+                method_params: OrderedMap::new(),
                 end_line: 1,
             }],
             usings: vec![],
@@ -2885,11 +2966,11 @@ mod tests {
         rebuild_graph(&dir, &graph_files, &fresh, true, None).unwrap();
 
         assert!(
-            graph_dir(&dir).join("fragments-v16.json").exists(),
-            "the v16 payload cache is what gets written"
+            graph_dir(&dir).join("fragments-v17.json").exists(),
+            "the v17 payload cache is what gets written"
         );
         assert!(
-            graph_dir(&dir).join("fragments-index-v16.json").exists(),
+            graph_dir(&dir).join("fragments-index-v17.json").exists(),
             "and its mtime-only index alongside it"
         );
         for stale in SUPERSEDED_CACHE_FILES {
@@ -2900,32 +2981,32 @@ mod tests {
         }
     }
 
-    // --- The v16 cache generation --------------------------
+    // --- The v17 cache generation --------------------------
 
     #[test]
-    fn fragments_cache_v16_supersedes_v15() {
-        let dir = temp_dir("fragments-cache-v16-paths");
+    fn fragments_cache_v17_supersedes_v16() {
+        let dir = temp_dir("fragments-cache-v17-paths");
         assert_eq!(
             fragments_cache_path(&dir),
-            graph_dir(&dir).join("fragments-v16.json")
+            graph_dir(&dir).join("fragments-v17.json")
         );
         assert_eq!(
             fragments_index_path(&dir),
-            graph_dir(&dir).join("fragments-index-v16.json")
+            graph_dir(&dir).join("fragments-index-v17.json")
         );
         assert!(
-            SUPERSEDED_CACHE_FILES.contains(&"fragments-v15.json"),
-            "v15 joined the superseded list when the v16 bump landed"
+            SUPERSEDED_CACHE_FILES.contains(&"fragments-v16.json"),
+            "v16 joined the superseded list when the v17 bump landed"
         );
         assert!(
-            SUPERSEDED_CACHE_FILES.contains(&"fragments-index-v15.json"),
+            SUPERSEDED_CACHE_FILES.contains(&"fragments-index-v16.json"),
             "its index pairs with it, same as every other generation"
         );
 
-        let dir = temp_dir("rebuild-v16");
+        let dir = temp_dir("rebuild-v17");
         fs::create_dir_all(graph_dir(&dir)).unwrap();
-        fs::write(graph_dir(&dir).join("fragments-v15.json"), b"{}").unwrap();
-        fs::write(graph_dir(&dir).join("fragments-index-v15.json"), b"{}").unwrap();
+        fs::write(graph_dir(&dir).join("fragments-v16.json"), b"{}").unwrap();
+        fs::write(graph_dir(&dir).join("fragments-index-v16.json"), b"{}").unwrap();
 
         let fragment = Fragment {
             defs: vec![],
@@ -2941,13 +3022,13 @@ mod tests {
         }];
         rebuild_graph(&dir, &graph_files, &fresh, true, None).unwrap();
 
-        assert!(graph_dir(&dir).join("fragments-v16.json").exists());
-        assert!(graph_dir(&dir).join("fragments-index-v16.json").exists());
+        assert!(graph_dir(&dir).join("fragments-v17.json").exists());
+        assert!(graph_dir(&dir).join("fragments-index-v17.json").exists());
         assert!(
-            !graph_dir(&dir).join("fragments-v15.json").exists(),
-            "the v15 pair is deleted -- rename IS the invalidation"
+            !graph_dir(&dir).join("fragments-v16.json").exists(),
+            "the v16 pair is deleted -- rename IS the invalidation"
         );
-        assert!(!graph_dir(&dir).join("fragments-index-v15.json").exists());
+        assert!(!graph_dir(&dir).join("fragments-index-v16.json").exists());
     }
 
     // --- v8: FragRef's outerTypes, appended last -----------------------------
@@ -3024,5 +3105,68 @@ mod tests {
         )
         .unwrap();
         assert!(pre_v8.outer_types.is_empty());
+    }
+
+    // --- v17: FragDef's methodParams and FragRef's receiverLambda -----------
+
+    #[test]
+    fn fragment_round_trip_keeps_method_params_and_receiver_lambda() {
+        let mut method_params = OrderedMap::new();
+        method_params.insert(
+            "Register".to_string(),
+            vec![
+                vec!["Action<Options>".to_string()],
+                vec!["string".to_string(), "Func<Options,bool>".to_string()],
+            ],
+        );
+        let d = FragDef {
+            method_params: method_params.clone(),
+            ..frag_def(&[], &[], &[], &[], &[])
+        };
+        let d_json = serde_json::to_string(&d).unwrap();
+        assert!(
+            d_json.ends_with(
+                r#""methodParams":{"Register":[["Action<Options>"],["string","Func<Options,bool>"]]}}"#
+            ),
+            "methodParams is appended last, after methodArities: {d_json}"
+        );
+        let d_reparsed: FragDef = serde_json::from_str(&d_json).unwrap();
+        assert_eq!(d_reparsed.method_params, method_params);
+
+        // Absent when empty, and an absent key deserializes back to empty --
+        // the safe default for every fragment cached before this field
+        // existed.
+        let d_plain_json = serde_json::to_string(&frag_def(&[], &[], &[], &[], &[])).unwrap();
+        assert!(!d_plain_json.contains("methodParams"), "{d_plain_json}");
+        let d_plain_reparsed: FragDef = serde_json::from_str(&d_plain_json).unwrap();
+        assert!(d_plain_reparsed.method_params.is_empty());
+
+        let slot = FragLambdaSlot {
+            owner: "Registrar".to_string(),
+            member: "Register".to_string(),
+            arg_count: 1,
+            arg_index: 0,
+            arity: 1,
+            index: 0,
+        };
+        let r = FragRef {
+            receiver_lambda: Some(slot.clone()),
+            ..frag_ref(false, None, None)
+        };
+        let r_json = serde_json::to_string(&r).unwrap();
+        assert!(
+            r_json.ends_with(
+                r#""receiverLambda":{"owner":"Registrar","member":"Register","argCount":1,"argIndex":0,"arity":1,"index":0}}"#
+            ),
+            "receiverLambda is appended last, after receiverLocal: {r_json}"
+        );
+        let r_reparsed: FragRef = serde_json::from_str(&r_json).unwrap();
+        assert_eq!(r_reparsed.receiver_lambda, Some(slot));
+
+        // Absent when `None`, and an absent key deserializes back to `None`.
+        let r_plain_json = serde_json::to_string(&frag_ref(false, None, None)).unwrap();
+        assert!(!r_plain_json.contains("receiverLambda"), "{r_plain_json}");
+        let r_plain_reparsed: FragRef = serde_json::from_str(&r_plain_json).unwrap();
+        assert_eq!(r_plain_reparsed.receiver_lambda, None);
     }
 }

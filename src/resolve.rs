@@ -199,6 +199,26 @@ pub struct MemberLists {
     /// by `declares_member`/`declares_member_any_visibility` for a ref that
     /// carries an `argCount`.
     pub method_arities: OrderedMap<Vec<(usize, i64)>>,
+    /// Method name -> the overloads' own parameter-descriptor lists, each
+    /// paired with the file whose fragment declared it -- see
+    /// `FragDef.method_params`. Merged across a partial class as a UNION per
+    /// NAME, the way `method_arities` is: every declaring part contributes
+    /// the overloads it declares, an overload whose `params` list already
+    /// exists for that name skipped (first file wins for duplicates). In
+    /// memory only; nothing here is serialized.
+    pub method_params: HashMap<String, Vec<MethodOverloadParams>>,
+}
+
+/// One method overload's parameter-descriptor list plus the file whose
+/// fragment declared it -- the (params, file) pair
+/// `MemberLists::method_params` keeps per method name. In-memory resolution
+/// input only; nothing here is serialized.
+pub struct MethodOverloadParams {
+    /// The parameter type descriptors, in order (see extract.rs's
+    /// `type_descriptor`/`DefRecord::method_params`).
+    pub params: Vec<String>,
+    /// The fragment-relative file path that declared this overload.
+    pub file: String,
 }
 
 fn build_def_index(fragments_by_file: &[(String, Fragment)]) -> DefIndex {
@@ -293,6 +313,22 @@ fn build_def_index(fragments_by_file: &[(String, Fragment)]) -> DefIndex {
                         method_return_args: d.method_return_args.clone(),
                         non_public_methods: d.non_public_methods.clone(),
                         method_arities: d.method_arities.clone(),
+                        method_params: {
+                            let mut m: HashMap<String, Vec<MethodOverloadParams>> = HashMap::new();
+                            for (name, overloads) in d.method_params.iter() {
+                                m.insert(
+                                    name.clone(),
+                                    overloads
+                                        .iter()
+                                        .map(|params| MethodOverloadParams {
+                                            params: params.clone(),
+                                            file: file.clone(),
+                                        })
+                                        .collect(),
+                                );
+                            }
+                            m
+                        },
                     });
                     for e in &d.extension_methods {
                         add_extension_method(&mut member_lists, &mut extension_index, idx, e);
@@ -422,6 +458,24 @@ fn build_def_index(fragments_by_file: &[(String, Fragment)]) -> DefIndex {
                             .method_arities
                             .insert(name.clone(), merged);
                     }
+                    // A UNION per NAME, same as `method_arities` just above:
+                    // every declaring part's overloads are admitted, an
+                    // overload whose `params` list a merged entry already
+                    // holds skipped -- first file wins for that duplicate.
+                    for (name, overloads) in d.method_params.iter() {
+                        let merged = member_lists[idx]
+                            .method_params
+                            .entry(name.clone())
+                            .or_default();
+                        for params in overloads {
+                            if !merged.iter().any(|o| &o.params == params) {
+                                merged.push(MethodOverloadParams {
+                                    params: params.clone(),
+                                    file: file.clone(),
+                                });
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -499,6 +553,7 @@ fn name_probe(name: String, namespace: &str, outer_types: Vec<String>) -> FragRe
         receiver_base: false,
         receiver_awaited: false,
         receiver_local: false,
+        receiver_lambda: None,
     }
 }
 
@@ -3326,6 +3381,7 @@ mod tests {
             method_return_args: crate::graph::OrderedMap::new(),
             non_public_methods: vec![],
             method_arities: crate::graph::OrderedMap::new(),
+            method_params: crate::graph::OrderedMap::new(),
             end_line: 0,
         }
     }
@@ -3390,6 +3446,7 @@ mod tests {
             receiver_base: false,
             receiver_awaited: false,
             receiver_local: false,
+            receiver_lambda: None,
         }
     }
 
@@ -3414,6 +3471,7 @@ mod tests {
             receiver_base: false,
             receiver_awaited: false,
             receiver_local: false,
+            receiver_lambda: None,
         }
     }
 
@@ -8087,6 +8145,7 @@ mod tests {
                     receiver_base: false,
                     receiver_awaited: false,
                     receiver_local: false,
+                    receiver_lambda: None,
                 }],
             ),
         )];
@@ -8138,6 +8197,7 @@ mod tests {
                             receiver_base: false,
                             receiver_awaited: false,
                             receiver_local: false,
+                            receiver_lambda: None,
                         },
                     ],
                 ),
