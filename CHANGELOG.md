@@ -110,7 +110,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Declarations and references inside an inactive preprocessor arm are no longer indexed.**
   The C# extractor now evaluates `#if`/`#elif`/`#else`/`#endif` before parsing, with the
   no-build symbol model: no symbol is predefined (`DEBUG` and `TRACE` included), `#define`
-  and `#undef` inside the file are honored, and every other symbol is false, so exactly one
+  and `#undef` inside the file are honored, and every other symbol is false, so at most one
   arm of every group reaches the parser. A file whose namespace or a member header is
   chosen by a symbol previously yielded every type under a doubled namespace and every ref
   from both arms; it now yields each once, under the arm the compiler keeps. Inactive lines

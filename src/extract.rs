@@ -843,9 +843,8 @@ fn member_qualifier_info(
 // non-call out of the arity-matched extension tier entirely.
 //
 // Because the test reads `node`'s OWN parent, every ref site gets its own
-// answer for free: a flattened chain window and a promoted qualifier both
-// ask the question of their own position in the tree and can never inherit a
-// neighbour's count. Node identity is compared here by byte-range: two
+// answer for free: a flattened chain window asks the question of its own
+// position in the tree and can never inherit a neighbour's count. Node identity is compared here by byte-range: two
 // distinct nodes of one tree cannot share both a start and an end byte AND a
 // kind at the same tree position.
 fn invocation_arg_count(node: Node) -> Option<usize> {
@@ -3485,7 +3484,7 @@ fn walk<'a>(
 /// so only the arm that would actually compile is indexed.
 pub fn extract(source: &str) -> Extraction {
     let mut parser = new_parser();
-    // Exactly one arm of every `#if` group reaches the parser (see `preproc`).
+    // At most one arm of every `#if` group reaches the parser (see `preproc`).
     let source = crate::preproc::strip_inactive(source);
     let source = source.as_ref();
     let units = crate::parse::utf16_units(source);
@@ -5954,7 +5953,7 @@ mod tests {
     }
 
     #[test]
-    fn preproc_ifelse_group_leaves_only_the_active_arms_own_refs() {
+    fn preproc_ifelse_group_drops_the_dead_arm_and_leaves_the_chain_tail_intact() {
         let e = extract_src(IFELSE_DIRECTIVE_CHAIN);
         let refs = uses_member_refs(&e);
         // `TRACE` is undefined, so the `#if` arm's `.WriteTo.Trace()` (line
@@ -7014,14 +7013,14 @@ public class Host
     }
 
     #[test]
-    fn stage2b_each_duplicated_header_arm_keeps_its_own_receiver_facts() {
+    fn stage2b_the_surviving_header_arm_supplies_receiver_facts_at_both_nesting_levels() {
         // The duplicate-header preproc shape (see
         // DUPLICATE_HEADER_HOST_WITH_NESTED_EMITTER_SRC), at both nesting
-        // levels. `WIDGET_V2` is undefined, so only the `#else` arm's
-        // `IReadOnlyList<Widget> items` parameter reaches the parser in
-        // either method -- both `items` refs vouch through that same
-        // parameter, and `sink` vouches through the inner method's own
-        // (unconditional) parameter.
+        // levels. `WIDGET_V2` is undefined, so in each of the two methods
+        // only the `#else` arm's `IReadOnlyList<Widget> items` parameter
+        // reaches the parser -- each `items` ref vouches through its own
+        // method's parameter, and `sink` vouches through the inner
+        // method's own (unconditional) parameter.
         let e = extract_src(DUPLICATE_HEADER_HOST_WITH_NESTED_EMITTER_SRC);
         let facts: Vec<(&str, Option<&str>)> = e
             .refs
@@ -7186,12 +7185,13 @@ public class Chain
     }
 
     #[test]
-    fn stage3_a_ref_inside_a_blanked_if_arm_carries_no_arg_count_because_it_carries_no_ref_at_all()
-    {
+    fn stage3_a_chain_ref_never_inherits_the_wrapping_calls_arg_count() {
         // With the inactive `#if DEBUG` arm blanked before parsing (see the
         // `#if`/`#if-else` fluent-chain tests above), every surviving
         // `uses-member` ref in this chain is a plain value read, not an
-        // invocation, so none of them records an argCount.
+        // invocation, so none of them records an argCount. The load-bearing
+        // row is `Interval.Day`: it sits inside the seven-argument
+        // `.File(...)` argument list and must not inherit that call's count.
         let e = extract_src(IF_DIRECTIVE_CHAIN);
         assert_eq!(
             e.refs

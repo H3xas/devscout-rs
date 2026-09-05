@@ -221,7 +221,7 @@ Known, rather than hidden:
 - **Conditional compilation uses the no-build symbol model.** `#if`/`#elif`/`#else`/`#endif`
   are evaluated before parsing with no symbol predefined — not `DEBUG`, not `TRACE`, not a
   target-framework symbol — so `#if SYMBOL` is inactive, `#else` and `#if !SYMBOL` are active,
-  and exactly one arm of every group is indexed. `#define`/`#undef` inside the file are
+  and at most one arm of every group is indexed. `#define`/`#undef` inside the file are
   honored; `DefineConstants` from a `.csproj` is not read. Inactive lines are blanked in place
   (line numbers and offsets do not move), `#region`/`#pragma`/`#nullable`/`#line` are left to
   the parser, and a directive-looking line inside a block comment, a verbatim string, or a raw

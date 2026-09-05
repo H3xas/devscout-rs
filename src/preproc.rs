@@ -16,8 +16,8 @@
 // (#region, #pragma, #nullable, #line, #error, #warning) is left to the
 // parser, which already treats it as an extra. Byte
 // offsets and line numbers of the surviving text are therefore identical to
-// the original source, and a parser fed the result sees exactly one arm per
-// group.
+// the original source, and a parser fed the result sees at most one arm per
+// group (none when a false `#if` has no `#else`).
 
 use std::borrow::Cow;
 use std::collections::HashSet;
@@ -40,12 +40,7 @@ pub fn strip_inactive_with<'a>(source: &'a str, predefined: &[&str]) -> Cow<'a, 
     let mut out: Option<Vec<u8>> = None;
 
     for (idx, &(start, end)) in spans.iter().enumerate() {
-        let content_end = if end > start && bytes[end - 1] == b'\r' {
-            end - 1
-        } else {
-            end
-        };
-        let line = &bytes[start..content_end];
+        let line = &bytes[start..end];
         let region_active = current_active(&stack);
         let is_first_line = idx == 0;
 
@@ -62,18 +57,18 @@ pub fn strip_inactive_with<'a>(source: &'a str, predefined: &[&str]) -> Cow<'a, 
         match directive {
             Some(d) if is_conditional_keyword(d.keyword) => {
                 process_conditional(d.keyword, d.rest, &mut stack, &mut symbols);
-                blank(&mut out, bytes, start, content_end);
+                blank(&mut out, bytes, start, end);
             }
             Some(_non_conditional) => {
                 if !region_active {
-                    blank(&mut out, bytes, start, content_end);
+                    blank(&mut out, bytes, start, end);
                 }
             }
             None => {
                 if region_active {
                     state = scan_line(state, line);
                 } else {
-                    blank(&mut out, bytes, start, content_end);
+                    blank(&mut out, bytes, start, end);
                 }
             }
         }
@@ -109,11 +104,11 @@ fn blank(out: &mut Option<Vec<u8>>, original: &[u8], start: usize, end: usize) {
     }
 }
 
-// Byte ranges of each line in `bytes`, split on `\n` only. A range excludes
-// its terminating `\n` but may still include a trailing `\r`. A source that
-// ends with `\n` gets no phantom empty line after it; a source with no
-// trailing `\n` still yields a final range for its last (possibly empty)
-// line.
+// Byte ranges of each line in `bytes`, split on `\n`, `\r\n`, or a lone
+// `\r`. A range excludes its terminator entirely, so it never ends in `\r`.
+// A source that ends with a terminator gets no phantom empty line after it;
+// a source with no trailing terminator still yields a final range for its
+// last (possibly empty) line.
 fn line_spans(bytes: &[u8]) -> Vec<(usize, usize)> {
     let len = bytes.len();
     let mut spans = Vec::new();
