@@ -2582,7 +2582,7 @@ fn collect_member_facts(
         // it settles) can only ever read as "no such shape" here, same as
         // an ordinary unresolvable receiver. The collection-element rule
         // (Unit C) is tried FIRST and, when it declines, the callee slot
-        // (Wave B) is the fallback -- `orders.Where(o => o.Validate())`
+        // is the fallback -- `orders.Where(o => o.Validate())`
         // types `o` as the element and never records a slot for it.
         let fact = d
             .collection
@@ -2624,8 +2624,8 @@ struct DeferredForeach {
 // sitting as the FIRST argument of an invocation on a bare-identifier
 // receiver -- carrying that receiver's bare identifier, resolved into an
 // element-type fact by `lambda_receiver_element_fact`. `slot` is the
-// broader Wave B shape -- ANY untyped lambda parameter sitting as an
-// invocation argument -- carrying the callee coordinates `lambda_slot_fact`
+// broader shape -- ANY untyped lambda parameter sitting as an invocation
+// argument -- carrying the callee coordinates `lambda_slot_fact`
 // turns into a `LambdaSlot`. When both are set, the collection-element
 // fact wins and the slot is never consulted (see the deferred-lambda loop
 // in `collect_member_facts`).
@@ -2706,7 +2706,7 @@ fn lambda_first_arg_receiver(n: Node) -> Option<Node> {
 
 // `n` (a `parameter` or `implicit_parameter` node) is an UNTYPED lambda
 // parameter sitting somewhere inside a lambda that is itself an
-// `invocation_expression` argument -- the broader Wave B shape
+// `invocation_expression` argument -- the broader shape
 // `lambda_first_arg_receiver` above declines whenever the lambda is not the
 // sole first argument on a bare-identifier member-access receiver. Purely
 // structural, never consulting a fact table: the qualifier's OWN type is
@@ -3163,6 +3163,9 @@ fn collection_element_fact(locals: &FactTable, type_facts: &FactTable, name: &st
 // it already falls through the generic-argument arm to `None`, and
 // `is_array` is always `false` for one too (never set by anything but
 // `type_fact`) -- both refusals happen for free, no explicit check needed.
+// A lambda-slot fact (an untyped lambda parameter whose type the resolver
+// reads off its callee) lands in the same table with the same `args: None`
+// and `is_array: false`, so it falls through the same way.
 fn lambda_receiver_element_fact(
     locals: &FactTable,
     type_facts: &FactTable,

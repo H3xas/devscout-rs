@@ -1278,10 +1278,10 @@ fn bare_receiver_field_or_property_type(
 }
 
 // A parameter descriptor's own bare NAME: the head identifier with its
-// type-argument list, array brackets and nullable marker taken off, which is
-// the only half of a descriptor that names something this resolver can look
-// up. `Func<Options,bool>` is `Func`, `Options[]` is `Options`, `Options?` is
-// `Options`.
+// type-argument list and array brackets taken off, which is the only half of
+// a descriptor that names something this resolver can look up.
+// `Func<Options,bool>` is `Func`, `Options[]` is `Options`; the descriptor
+// for an unknown shape is `?`, whose head is empty.
 fn descriptor_head(text: &str) -> &str {
     let end = text.find(['<', '[', '?']).unwrap_or(text.len());
     &text[..end]
@@ -1338,7 +1338,6 @@ fn delegate_parameters(
     declaring_def: usize,
     declaring_file: &str,
 ) -> Option<Vec<String>> {
-    let text = text.strip_suffix('?').unwrap_or(text);
     if text.ends_with(']') {
         return None;
     }
@@ -1368,7 +1367,6 @@ fn delegate_invoke_parameters(
     declaring_def: usize,
     declaring_file: &str,
 ) -> Option<Vec<String>> {
-    let text = text.strip_suffix('?').unwrap_or(text);
     if text.ends_with(']') {
         return None;
     }
@@ -1505,10 +1503,12 @@ fn lambda_slot_receiver_type(
         }
     }
 
-    let mut agreed: Option<(String, usize, String)> = None;
-    let mut takers = 0usize;
+    let mut agreed: Option<(String, String, usize, String)> = None;
     for (overload, declaring_def, position) in candidates {
-        if slot.arg_count > overload.params.len() || position >= overload.params.len() {
+        // An extension overload's list starts with its `this` parameter, so
+        // the call's argument count is compared one slot further along.
+        let shift = position - slot.arg_index;
+        if slot.arg_count + shift > overload.params.len() || position >= overload.params.len() {
             continue;
         }
         // A static class's extension method may also be invoked statically,
@@ -1528,27 +1528,71 @@ fn lambda_slot_receiver_type(
         if params.len() != slot.arity || slot.index >= params.len() {
             continue;
         }
-        takers += 1;
         let head = descriptor_head(&params[slot.index]);
-        if head.is_empty() || head == "*" || head == "?" {
+        if head.is_empty() || head == "*" {
             return None;
         }
+        // Two overloads that both write `Action<Options>` agree only when the
+        // name means the same type from where each was written: a partial
+        // class or an extension bucket may span files with different usings,
+        // and the site binds to what the FIRST taker's file meant, so every
+        // other taker must resolve to that same def (or to the same name, when
+        // none resolves in-graph) before it counts as agreement.
+        let meaning = descriptor_meaning(index, file_contexts, declaring_def, &overload.file, head);
         match &agreed {
-            Some((known, _, _)) if known != head => return None,
+            Some((known, _, _, _)) if *known != meaning => return None,
             Some(_) => {}
-            None => agreed = Some((head.to_string(), declaring_def, overload.file.clone())),
+            None => {
+                agreed = Some((
+                    meaning,
+                    head.to_string(),
+                    declaring_def,
+                    overload.file.clone(),
+                ))
+            }
         }
     }
-    if takers == 0 {
-        return None;
-    }
     agreed.map(
-        |(type_name, declaring_def, declaring_file)| ReceiverFieldType {
+        |(_, type_name, declaring_def, declaring_file)| ReceiverFieldType {
             type_name,
             declaring_def,
             declaring_file,
         },
     )
+}
+
+// What a descriptor head names from the file that wrote it: the def it
+// resolves to under that file's usings, aliases, namespace and nesting, or
+// the bare name itself when nothing in the graph answers. Only used to
+// compare takers with each other; the tier below re-resolves the winner
+// under the same context.
+fn descriptor_meaning(
+    index: &DefIndex,
+    file_contexts: &HashMap<String, FileContext>,
+    declaring_def: usize,
+    declaring_file: &str,
+    head: &str,
+) -> String {
+    let def = &index.defs[declaring_def];
+    let resolved = file_contexts.get(declaring_file).and_then(|ctx| {
+        let probe = name_probe(
+            head.to_string(),
+            def.namespace.as_str(),
+            def_outer_types(def),
+        );
+        match resolve_ref(
+            &probe,
+            &ctx.usings,
+            def.namespace.as_str(),
+            index,
+            &ctx.aliases,
+            file_contexts,
+        ) {
+            Resolution::Resolved(didx, _) => Some(index.defs[didx].id.clone()),
+            _ => None,
+        }
+    });
+    resolved.unwrap_or_else(|| format!("?{head}"))
 }
 
 // The scored tier's own receiver test, and the mirror image of the veto above:
@@ -10938,6 +10982,78 @@ mod tests {
             "the delegate types its parameter with the method's own type parameter, which names \
              nothing: {:?}",
             member_edges_named(&g, "App/Host.cs", "Configure")
+        );
+        // The wildcard yields NO receiver type rather than a `*` one: a named
+        // receiver that resolves to nothing would silence the scored tier,
+        // and the site is still an ordinary untyped `g.Configure()` to it.
+        assert!(
+            heuristic_member_edges_from(&g, "App/Host.cs")
+                .iter()
+                .any(|(_, line)| *line == 13),
+            "the untyped site still reaches the scored tier: {:?}",
+            heuristic_member_edges_from(&g, "App/Host.cs")
+        );
+    }
+
+    #[test]
+    fn stage7_overloads_spelling_one_name_for_different_types_leave_the_lambda_untyped() {
+        // Both parts of a partial class write `Action<Options>`, but each
+        // file imports a different `Options`. The heads agree; what they name
+        // does not, so binding to either file's meaning would be a guess.
+        let files = fragments_for(&[
+            (
+                "Alpha/Options.cs",
+                "namespace App.Alpha { public class Options { public void Configure() { } } }",
+            ),
+            (
+                "Beta/Options.cs",
+                "namespace App.Beta { public class Options { public void Configure() { } } }",
+            ),
+            (
+                "Domain/Registrar.Alpha.cs",
+                "\nusing System;\nusing App.Alpha;\n\nnamespace App.Domain;\n\npublic partial class Registrar\n{\n    public void Attach(Action<Options> a) { }\n}\n",
+            ),
+            (
+                "Domain/Registrar.Beta.cs",
+                "\nusing System;\nusing App.Beta;\n\nnamespace App.Domain;\n\npublic partial class Registrar\n{\n    public void Attach(Action<Options> a, bool eager) { }\n}\n",
+            ),
+            (
+                "App/Host.cs",
+                "\nusing System;\nusing App.Domain;\n\nnamespace App.Hosting;\n\npublic class Host\n{\n    private readonly Registrar _registrar;\n\n    public void Run()\n    {\n        _registrar.Attach(a => a.Configure());\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert!(
+            member_edges_named(&g, "App/Host.cs", "Configure").is_empty(),
+            "one spelling, two meanings: {:?}",
+            member_edges_named(&g, "App/Host.cs", "Configure")
+        );
+    }
+
+    #[test]
+    fn stage7_extension_callee_with_one_argument_too_many_leaves_the_lambda_untyped() {
+        // The extension's list starts with its `this` parameter, so a call
+        // that passes more arguments than the overload has left after it
+        // cannot be the one the lambda binds to.
+        let files = fragments_for(&[
+            (
+                "Domain/Endpoint.cs",
+                "namespace App.Domain { public class Endpoint { public void Bind() { } } }",
+            ),
+            (
+                "Domain/Registrar.cs",
+                "\nusing System;\n\nnamespace App.Domain;\n\npublic class Registrar { }\n\npublic static class RegistrarExtensions\n{\n    public static void Extend(this Registrar r, Action<Endpoint> configure) { }\n}\n",
+            ),
+            (
+                "App/Host.cs",
+                "\nusing System;\nusing App.Domain;\n\nnamespace App.Hosting;\n\npublic class Host\n{\n    private readonly Registrar _registrar;\n\n    public void Run()\n    {\n        _registrar.Extend(p => p.Bind(), true);\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert!(
+            member_edges_named(&g, "App/Host.cs", "Bind").is_empty(),
+            "two arguments against one non-receiver parameter: {:?}",
+            member_edges_named(&g, "App/Host.cs", "Bind")
         );
     }
 

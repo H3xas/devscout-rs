@@ -324,7 +324,7 @@ fn map_rerun_reuses_fragments_and_a_missing_cache_re_extracts_with_spans() {
     let v17 = graph_dir.join("fragments-v17.json");
     assert!(v17.exists(), "the current cache generation is on disk");
 
-    // Simulate the pre-bump world: only a v13 pair present. BOTH v16 files
+    // Simulate the pre-bump world: only a v16 pair present. BOTH v17 files
     // must go -- reuse is decided against the mtime-only index, so leaving it
     // behind would let every file look reusable off an empty payload cache.
     // The next map then finds nothing reusable, re-extracts every file,
