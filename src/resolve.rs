@@ -14,7 +14,8 @@
 //      innermost first, only for dotted references. A dotted reference the
 //      exact step misses gets ONE fallback (steps 1a/1b: an alias at its
 //      head rewritten to the alias target, then only a def whose full path
-//      ends with the written text) and never reaches steps 2-4.
+//      ends with the written text, or a nested def inside the inheritance
+//      closure of the type the qualifier names) and never reaches steps 2-4.
 //   2. File's usings (local ∪ every `global using`) + simple name, each
 //      using name itself tried at every enclosing-namespace prefix.
 //   3. The reference site's namespace and every ancestor of it, innermost
