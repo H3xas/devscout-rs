@@ -127,6 +127,17 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **A `base.`-qualified chain head hops through the base's method return.**
   `base.Make().Validate()` types the tail from the first in-graph base declaring `Make`,
   never from the enclosing type's own same-named member.
+- **A qualified or generic static qualifier binds the base that declares the member.**
+  `Ns.Derived.Create()` and `Derived<int>.Create()` used to bind `Derived` on type certainty
+  alone; the named type, then its in-graph base closure, is asked which def declares the
+  member first, and the certainty answer is kept only when neither does.
+- **An interface-typed receiver binds the base interface that declares the member.**
+  `IExtended : IContract`, `ext.Fulfil()` resolves precisely to `IContract` instead of
+  emitting nothing; a class-typed receiver still never binds an interface declaration at any
+  depth. Pinned by a second fixture solution, `fixtures/csharp-direction`, with its own
+  committed oracle snapshot, `expected.json`, and CI oracle diff, whose precise tier scores
+  every inheritance-direction shape the compiler decides along an `inherits` edge and names
+  its four remaining false positives (see the README's limitations).
 
 ### Benchmarks
 
