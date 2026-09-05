@@ -987,8 +987,9 @@ fn declares_in_base_closure(
 // re-applies the same rule at every recursive level. This is
 // `base_member_declared`'s own rule (a `base.` qualifier never names an
 // interface member; an interface can only ever extend other interfaces, so
-// skipping the whole base is equivalent to skipping its closure), and both
-// of this function's current callers pass `true`.
+// skipping the whole base is equivalent to skipping its closure);
+// `typed_receiver_base_member` passes `false` only for a receiver that is
+// itself an interface.
 fn first_base_declaring(
     index: &DefIndex,
     file_contexts: &HashMap<String, FileContext>,
@@ -1065,16 +1066,21 @@ fn base_member_declared(
 // resolved receiver def does not itself declare the member, the first def
 // in its in-graph base closure that does is the precise target -- exactly
 // the widening `base_member_declared` already does for `base.`, applied to
-// an ORDINARY typed receiver, `skip_interfaces = true` for the same reason
-// `base_member_declared` skips them, at every depth (Unit A4 item 1): an
-// interface's own method declaration has no body of its own to be the
-// target of an ordinary call (a C# 8+ default interface implementation is
-// indistinguishable from an abstract one at this def's own record, so
-// neither is treated as a precise bind target here) -- see
+// an ORDINARY typed receiver. Interfaces in the closure are skipped, at
+// every depth (Unit A4 item 1), for a CLASS or struct receiver, for the same
+// reason `base_member_declared` skips them: a class must supply a body for
+// every interface member it is called through, so the compiler binds that
+// body's declaring class, never the interface (a C# 8+ default interface
+// implementation is reachable only through the interface type, so it is not
+// a bind target for a class-typed receiver either) -- see
 // `stage3_veto_a_member_declared_by_the_receivers_interface_beats_a_matching_visible_extension`,
 // which pins exactly this: an interface-only ancestor must NOT earn a
-// precise edge, only veto the extension tier (which reads the closure
-// itself, not this function). `any_visibility` is the caller's own answer
+// precise edge from a class receiver, only veto the extension tier (which
+// reads the closure itself, not this function). An INTERFACE receiver is the
+// other half of the same rule: its closure holds nothing but interfaces, and
+// the compiler binds the base interface that declares the member
+// (`IExtended : IContract`, `ext.Fulfil()` is `IContract.Fulfil`), so the
+// walk keeps them for exactly that receiver kind. `any_visibility` is the caller's own answer
 // to "is this receiver the enclosing type itself" (the `this.` shape,
 // `receiver_type == outer_types.last()`): `true` walks
 // `declares_member_any_visibility`, `false` keeps the public-only
@@ -1091,13 +1097,20 @@ fn typed_receiver_base_member(
     arg_count: Option<usize>,
     any_visibility: bool,
 ) -> Option<usize> {
-    first_base_declaring(index, file_contexts, start, true, |index, idx| {
-        if any_visibility {
-            declares_member_any_visibility(index, idx, member, arg_count)
-        } else {
-            declares_member(index, idx, member, arg_count)
-        }
-    })
+    let skip_interfaces = index.defs[start].kind != "interface";
+    first_base_declaring(
+        index,
+        file_contexts,
+        start,
+        skip_interfaces,
+        |index, idx| {
+            if any_visibility {
+                declares_member_any_visibility(index, idx, member, arg_count)
+            } else {
+                declares_member(index, idx, member, arg_count)
+            }
+        },
+    )
 }
 
 // Unit A3 item 3: the extension bucket key tier (f) tries when the exact
@@ -2657,20 +2670,27 @@ pub fn resolve_graph_with_model(
                         } else {
                             declares_member(&index, idx, r.member.as_deref(), r.arg_count)
                         };
-                        if declares_here
-                            || (r.generic && r.qualified.is_none())
-                            || (r.qualified.is_some() && via == Via::Qualified)
-                        {
-                            edges.push(Edge::uses_member(
-                                file.clone(),
-                                r.line,
-                                index.defs[idx].id.clone(),
-                                index.defs[idx].file.clone(),
-                                r.member.clone(),
-                                None,
-                            ));
-                            edges_by_kind.uses_member += 1;
-                            emitted = true;
+                        // A qualifier that resolved as a TYPE binds the def
+                        // that DECLARES the member, in this order: the named
+                        // type itself; else the first in-graph base in its
+                        // closure (Unit A3 item 4 -- the widening
+                        // `base_member_declared` already does for `base.`,
+                        // applied to a receiver whose OWN type resolved
+                        // directly rather than through a `base.` qualifier);
+                        // else, on type certainty alone, the named type. A
+                        // type-argument list (`Cache<T>.x`) or an exact
+                        // qualified name (`Ns.Utils.Helper()`) is syntax
+                        // only a type can carry, so when nothing in the graph
+                        // declares the member it is still that type's as far
+                        // as this graph can see -- an extension, an external
+                        // base, an extractor gap. The certainty hatches come
+                        // LAST so that an inherited static member named
+                        // through a derived type (`Ns.Derived.Create()`,
+                        // `Derived<int>.Create()`) binds the base that
+                        // declares it, exactly as the same member named
+                        // through the bare derived name already does.
+                        let target = if declares_here {
+                            Some(idx)
                         } else if let Some(target) = typed_receiver_base_member(
                             &index,
                             &file_contexts,
@@ -2679,14 +2699,15 @@ pub fn resolve_graph_with_model(
                             r.arg_count,
                             this_shaped,
                         ) {
-                            // Unit A3 item 4: `idx` itself does not declare
-                            // the member (at the visibility this receiver
-                            // may see) -- the first in-graph base that does
-                            // is the precise target, exactly the widening
-                            // `base_member_declared` already does for
-                            // `base.`, applied here to a receiver whose OWN
-                            // type resolved directly rather than through a
-                            // `base.` qualifier.
+                            Some(target)
+                        } else if (r.generic && r.qualified.is_none())
+                            || (r.qualified.is_some() && via == Via::Qualified)
+                        {
+                            Some(idx)
+                        } else {
+                            None
+                        };
+                        if let Some(target) = target {
                             edges.push(Edge::uses_member(
                                 file.clone(),
                                 r.line,
@@ -12014,5 +12035,174 @@ mod tests {
              receiver_args, which would fail the length check"
         );
         assert_eq!(g.stats.heuristic_by_tier.ext, 1);
+    }
+
+    // --- Stage 8: declaring type along the base and interface direction ----
+    //
+    // The compiler binds a member to the type that DECLARES it in the
+    // receiver's static chain. Three shapes that used to fall short of that
+    // rule, each through real C# (`fragments_for`), plus the class-receiver
+    // control that keeps the interface half of the rule from widening.
+
+    #[test]
+    fn stage8_qualified_static_qualifier_binds_the_base_that_declares_the_member() {
+        // `App.Domain.Derived.Create()` names the derived type through an
+        // exact qualified name; Create is declared only on Base. The
+        // exact-qualified certainty hatch used to bind Derived itself; the
+        // declaring base wins now, the same answer a bare `Derived.Create()`
+        // already gives.
+        let files = fragments_for(&[
+            (
+                "Domain/Base.cs",
+                "namespace App.Domain { public class Base { public static Base Create() => new Base(); } }",
+            ),
+            (
+                "Domain/Derived.cs",
+                "namespace App.Domain { public class Derived : Base { } }",
+            ),
+            (
+                "Consumers/Runner.cs",
+                "\nnamespace App.Consumers;\n\npublic class Runner\n{\n    public void Run()\n    {\n        var a = App.Domain.Derived.Create();\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_from(&g, "Consumers/Runner.cs"),
+            vec![("App.Domain.Base", 8)],
+            "a qualified static qualifier binds the base that declares the member, not the \
+             derived type the source names"
+        );
+    }
+
+    #[test]
+    fn stage8_generic_static_qualifier_binds_the_base_that_declares_the_member() {
+        // `Derived<int>.Create()`: the type-argument list marks the
+        // qualifier as a type with certainty, and Create is declared only on
+        // the non-generic Base. The certainty hatch used to bind Derived;
+        // the declaring base wins now.
+        let files = fragments_for(&[
+            (
+                "Domain/Base.cs",
+                "namespace App.Domain { public class Base { public static Base Create() => new Base(); } }",
+            ),
+            (
+                "Domain/Derived.cs",
+                "namespace App.Domain { public class Derived<T> : Base { public T Item = default!; } }",
+            ),
+            (
+                "Consumers/Runner.cs",
+                "\nusing App.Domain;\n\nnamespace App.Consumers;\n\npublic class Runner\n{\n    public void Run()\n    {\n        var a = Derived<int>.Create();\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_from(&g, "Consumers/Runner.cs"),
+            vec![("App.Domain.Base", 10)],
+            "a generic static qualifier binds the base that declares the member"
+        );
+    }
+
+    #[test]
+    fn stage8_certainty_hatches_still_bind_the_named_type_when_no_base_declares_the_member() {
+        // The control for the two tests above: Derived has an in-graph base
+        // that does NOT declare Helper (it lives on an external base, or on
+        // nothing this graph can see), so both hatches keep today's answer
+        // -- the named type on type certainty alone.
+        let files = fragments_for(&[
+            (
+                "Domain/Base.cs",
+                "namespace App.Domain { public class Base { } }",
+            ),
+            (
+                "Domain/Derived.cs",
+                "namespace App.Domain { public class Derived<T> : Base { public T Item = default!; } }",
+            ),
+            (
+                "Consumers/Runner.cs",
+                "\nusing App.Domain;\n\nnamespace App.Consumers;\n\npublic class Runner\n{\n    public void Run()\n    {\n        var a = Derived<int>.Helper();\n        var b = App.Domain.Derived<int>.Helper();\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_from(&g, "Consumers/Runner.cs"),
+            vec![("App.Domain.Derived", 10), ("App.Domain.Derived", 11)],
+            "with no in-graph declaration anywhere in the closure, a type-certain qualifier still \
+             binds the type it names"
+        );
+    }
+
+    #[test]
+    fn stage8_interface_receiver_binds_the_base_interface_that_declares_the_member() {
+        // `IExtended : IContract`; Fulfil is declared on IContract only, and
+        // the receiver is typed IExtended. An interface's closure holds
+        // nothing but interfaces, so the walk keeps them for an interface
+        // receiver and binds IContract -- the compiler's own containing type.
+        // A class in the graph implements Fulfil too, and must not be named.
+        let files = fragments_for(&[
+            (
+                "Domain/IContract.cs",
+                "namespace App.Domain { public interface IContract { void Fulfil(); int Size { get; } } }",
+            ),
+            (
+                "Domain/IExtended.cs",
+                "namespace App.Domain { public interface IExtended : IContract { void Extra(); } }",
+            ),
+            (
+                "Domain/Both.cs",
+                "namespace App.Domain { public class Both : IExtended { public void Fulfil() { } public int Size => 0; public void Extra() { } } }",
+            ),
+            (
+                "Consumers/Runner.cs",
+                "\nusing App.Domain;\n\nnamespace App.Consumers;\n\npublic class Runner\n{\n    public void Run(IExtended ext)\n    {\n        ext.Fulfil();\n        var n = ext.Size;\n        ext.Extra();\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_from(&g, "Consumers/Runner.cs"),
+            vec![
+                ("App.Domain.IContract", 10),
+                ("App.Domain.IContract", 11),
+                ("App.Domain.IExtended", 12),
+            ],
+            "an interface-typed receiver binds the base interface that declares the member (a \
+             method and a property alike) and its own declaration for its own member; the \
+             implementing class is never named"
+        );
+        assert!(
+            heuristic_member_edges_from(&g, "Consumers/Runner.cs").is_empty(),
+            "every site is precise; nothing is left for the heuristic tiers"
+        );
+    }
+
+    #[test]
+    fn stage8_class_receiver_still_never_binds_an_interface_ancestor() {
+        // The other half of the interface rule, unchanged: a CLASS receiver
+        // whose closure reaches Fulfil only through an interface (the class
+        // itself implements it explicitly, which the def's public member
+        // list does not record) earns no precise edge to the interface.
+        let files = fragments_for(&[
+            (
+                "Domain/IContract.cs",
+                "namespace App.Domain { public interface IContract { void Fulfil(); } }",
+            ),
+            (
+                "Domain/IExtended.cs",
+                "namespace App.Domain { public interface IExtended : IContract { } }",
+            ),
+            (
+                "Domain/Explicit.cs",
+                "namespace App.Domain { public class Explicit : IExtended { void IContract.Fulfil() { } } }",
+            ),
+            (
+                "Consumers/Runner.cs",
+                "\nusing App.Domain;\n\nnamespace App.Consumers;\n\npublic class Runner\n{\n    public void Run(Explicit e) => e.Fulfil();\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert!(
+            member_edges_from(&g, "Consumers/Runner.cs").is_empty(),
+            "a class-typed receiver skips every interface in its closure, at any depth, even when \
+             the class itself only implements the member explicitly"
+        );
     }
 }

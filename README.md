@@ -220,6 +220,18 @@ Known, rather than hidden:
   is written on every `uses-member` edge, `tier` on the heuristic ones; `units` (the discovered
   `.csproj` projects) is appended last. A reserved `source` slot is set aside for a future
   semantic-provenance tag. A v1 graph.json is rebuilt automatically on the next `map`.
+- **A precise `uses-member` edge binds the type that declares the member, as far as names
+  and arity can tell.** The declaring type in the receiver's static chain — inherited,
+  overridden and hidden members, interface members through interface, implementing-class
+  and base-interface receivers, static members through bare, qualified and generic derived
+  type names — is what the edge targets. Four shapes are decided by information the graph
+  does not carry and bind the wrong side of an `inherits` edge: same-arity overloads split
+  across base and derived by parameter type; an `internal new` member hiding a public base
+  member (only `public` counts as visible to a receiver other than `this`, so an `internal
+  override` is a silent miss instead); a `private new` field shadowing a public base
+  property when read from outside its type; and `this.M()` in a class that both inherits a
+  public `M` and explicitly implements an interface's `M`. Each is pinned as a known false
+  positive in `fixtures/csharp-direction`.
 
 `devscout` began as the Rust half of a two-implementation tool, and a number of source comments
 still describe behaviour by reference to that original implementation. Those notes are history:
