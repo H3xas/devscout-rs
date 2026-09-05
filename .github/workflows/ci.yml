@@ -118,6 +118,7 @@ jobs:
         run: |
           dotnet restore tools/scout-semantic --locked-mode
           dotnet restore fixtures/csharp-semantic/Fixture.sln
+          dotnet restore fixtures/csharp-flowtrace/Fixture.sln
 
       - name: Build oracle
         run: dotnet build tools/scout-semantic --no-restore -c Release
@@ -132,6 +133,16 @@ jobs:
         run: |
           diff -u fixtures/csharp-semantic/oracle/refs.jsonl  out/semantic/refs.jsonl
           diff -u fixtures/csharp-semantic/oracle/units.jsonl out/semantic/units.jsonl
+
+      - name: Run the oracle in flow-tracer facts mode on its own fixture
+        run: |
+          dotnet run --project tools/scout-semantic --no-build -c Release -- \
+            fixtures/csharp-flowtrace/Fixture.sln --root fixtures/csharp-flowtrace \
+            --emit flowtrace-facts --facts out/facts/csharp-flowtrace.json \
+            --publish-calls SubmitJob --no-git --strict
+
+      - name: Facts output matches the committed snapshot
+        run: diff -u fixtures/csharp-flowtrace/facts.json out/facts/csharp-flowtrace.json
 
       - name: Build devscout
         run: cargo build --locked --release
