@@ -35,6 +35,7 @@ public class PrimaryUser
     public void Run()
     {
         var record = new PrimaryRecord("a", 1);
+        _ = record.Age;
         var derived = new DerivedPrimary("b");
         var dependency = new PrimaryDependency();
         var service = new PrimaryService(dependency);

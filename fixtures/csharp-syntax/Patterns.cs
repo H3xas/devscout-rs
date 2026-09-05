@@ -76,6 +76,9 @@ class PatternUser
             case PatternShape p when p.Width > 0:
                 fromExpr += p.Height;
                 break;
+            case PatternShape sized when sized.Area > 0:
+                fromExpr += sized.Area;
+                break;
             case PatternShape { Height: 0 }:
                 break;
             case PatternKind.A or PatternKind.B:

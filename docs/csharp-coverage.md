@@ -82,12 +82,12 @@ fixture must keep compiling) and re-measure every row whose node kind changed.
 | Generic constraints (`class`, `new()`, `unmanaged`, `notnull`, self-referential, `Enum`) | `type_parameter_constraints_clause` | type-ref | may | silent | — | `Generics.cs` | — |
 | Generic method with explicit and inferred type arguments at the call | `method_declaration`, `type_argument_list` | def, member-ref | must | produces | precise member | `Generics.cs` | asserted |
 | Variance annotations (`in`, `out`) | `type_parameter` | none | may | n-a | — | `Generics.cs` | — |
-| Record primary constructor (parameters as properties) | `record_declaration` > `parameter_list` | def | must | silent: the record is a def, its parameters never become property names, so `rec.Name` resolves to nothing | def index | `PrimaryConstructors.cs` | follow-up |
+| Record primary constructor (parameters as properties) | `record_declaration` > `parameter_list` | def | must | silent: the record is a def, its parameters never become property names, so `record.Age` resolves to nothing | def index | `PrimaryConstructors.cs` | follow-up |
 | Class and struct primary constructor, captured parameter | `class_declaration` > `parameter_list` | def, receiver-type | must | produces (the captured parameter types its member accesses) | precise member | `PrimaryConstructors.cs` | asserted |
 | Primary constructor base call `: Base(args)` | `primary_constructor_base_type` | type-ref | must | produces (`inherits`) | type ladder | `PrimaryConstructors.cs` | asserted |
 | Static class and its static members | `modifier` `static` | def | must | produces | def index, precise member | `StaticAndExtension.cs` | asserted |
 | Extension method declaration (`this` parameter) | `method_declaration` > `parameter` > `modifier` `this` | def | must | produces | def index, ext | `StaticAndExtension.cs` | asserted |
-| Extension call on a typed receiver | `invocation_expression` > `member_access_expression` | member-ref | must | partial: a local typed by `new` binds through the `ext` tier; a literal, an array literal, or a `new T()` receiver yields nothing | ext | `StaticAndExtension.cs` | asserted (working shape); follow-up |
+| Extension call on a typed receiver | `invocation_expression` > `member_access_expression` | member-ref | must | partial: a local typed by `new` binds through the `ext` tier; a literal or a `new T()` receiver yields nothing, an array-literal-typed local only a guess | ext | `StaticAndExtension.cs` | asserted (working shape); follow-up |
 | Extension method called as a static method | `invocation_expression` | member-ref | must | produces | precise member | `StaticAndExtension.cs` | asserted |
 | Fields: instance, static, readonly, const, volatile, multiple declarators | `field_declaration`, `variable_declarator` | def | must | produces (one name per declarator) | def index | `Members.cs` | asserted |
 | Properties: auto, backed, get-only, expression-bodied, private set | `property_declaration` | def | must | produces | def index | `Members.cs` | asserted |
@@ -163,7 +163,7 @@ fixture must keep compiling) and re-measure every row whose node kind changed.
 | Bare invocation or read of an own member `M()`, `Count` | `invocation_expression` > `identifier`, `identifier` | member-ref | must | silent | — | `PartialTypesB.cs`, `Usings.cs` | follow-up |
 | Receiver typed by `var x = new T()` | `variable_declaration` > `implicit_type` | receiver-type | must | produces | receiver facts, precise member | `MemberAccess.cs` | asserted |
 | Receiver typed by an explicit local type `T x = ...` | `variable_declaration` > `type` | receiver-type | must | produces | receiver facts, precise member | `MemberAccess.cs` | asserted |
-| Receiver typed by a parameter, field, property, or static property | `parameter`, `field_declaration`, `property_declaration` | receiver-type | must | produces | receiver facts, precise member | `MemberAccess.cs` | asserted |
+| Receiver typed by a parameter, field, property, or static property | `parameter`, `field_declaration`, `property_declaration` | receiver-type | must | produces | receiver facts, precise member | `MemberAccess.cs`, `PrimaryConstructors.cs` | asserted |
 | Object creation `new T()`, `new T(args)`, `new T<U>()` | `object_creation_expression` | type-ref | must | produces | type ladder | `ObjectCreation.cs` | asserted |
 | Target-typed `new()` on a typed local, field, or argument | `implicit_object_creation_expression` | receiver-type | must | produces (the declared type types the receiver; `new()` itself names nothing) | receiver facts, precise member | `ObjectCreation.cs` | asserted |
 | Object initializer `{ A = 1 }`, nested initializer | `initializer_expression` | member-ref | may | silent | — | `ObjectCreation.cs` | — |
@@ -191,14 +191,14 @@ fixture must keep compiling) and re-measure every row whose node kind changed.
 | List pattern with a slice designation `[.. var rest]` | `list_pattern` | none | may | grammar gap | — | `GrammarGaps.cs` | grammar pin |
 | Relational, `and`/`or`/`not`, constant, `var`, discard patterns | `relational_pattern`, `and_pattern`, `or_pattern`, `negated_pattern`, `constant_pattern`, `var_pattern` | none | must-not | n-a (correct) | — | `Patterns.cs` | — |
 | Switch expression arms and `when` guards walked | `switch_expression`, `switch_expression_arm`, `when_clause` | member-ref | must | produces | precise member | `Patterns.cs` | asserted |
-| Switch statement sections with patterns walked | `switch_statement`, `switch_section` | member-ref | must | produces | precise member | `Patterns.cs` | asserted |
+| Switch statement sections with patterns and `when` guards walked | `switch_statement`, `switch_section`, `when_clause` | member-ref | must | produces (a case-label declaration pattern types its variable) | precise member | `Patterns.cs` | asserted |
 | Enum member in a pattern or case label | `member_access_expression` | member-ref | must | produces | precise member | `Patterns.cs` | asserted |
 | Lambda with one implicit parameter as the first argument on an identifier receiver (`xs.Where(x => x.M())`) | `lambda_expression`, `implicit_parameter` | receiver-type | must | produces (receiver a field, parameter, local, array, or `IEnumerable<T>`) | receiver facts, precise member | `Lambdas.cs` | asserted |
 | Lambda parameter name reused by another lambda in the same member | `lambda_expression` | receiver-type | must | partial: a second lambda in the same member that reuses the name with an ineligible shape (two parameters, chained receiver) drops the fact for every lambda using that name | receiver facts | `Lambdas.cs` | follow-up |
 | Lambda with two implicit parameters or on a non-first argument | `lambda_expression` | receiver-type | may | silent | — | `Lambdas.cs` | — |
-| Lambda with an explicitly typed parameter `(T x) => x.M()` | `lambda_expression` > `parameter` | receiver-type | must | produces | receiver facts, precise member | `Lambdas.cs` | asserted |
+| Lambda with an explicitly typed parameter `(T x) => x.M()` | `lambda_expression` > `parameter` | receiver-type | must | partial: produces when the parameter name is unique within the member; a reused name falls under the name-reuse row above | receiver facts, precise member | `Lambdas.cs` | asserted (working shape); follow-up |
 | Lambda bodies (expression and block) walked | `lambda_expression` > `block` | member-ref | must | produces | precise member | `Lambdas.cs` | asserted |
-| Anonymous method `delegate (T i) { }` | `anonymous_method_expression` | receiver-type | must | produces | receiver facts, precise member | `Lambdas.cs` | asserted |
+| Anonymous method `delegate (T i) { }` | `anonymous_method_expression` | receiver-type | must | partial: same rule as the typed lambda, produces for a unique parameter name | receiver facts, precise member | `Lambdas.cs` | asserted (working shape); follow-up |
 | Static lambda, explicit return type, default and `params` parameters, discards | `lambda_expression` | none | must-not | n-a (correct) | — | `Lambdas.cs` | — |
 | Method group as a delegate value `Func<int,int> f = Twice;` | `identifier` | member-ref | may | silent | — | `Lambdas.cs` | — |
 | Lambdas inside chained LINQ calls (`xs.Where(...).Select(x => x.M())`) | chained `invocation_expression` | member-ref | must | partial: bodies are walked, but a lambda on a chained receiver has an untyped parameter, so its accesses are guesses | guess | `Lambdas.cs`, `Linq.cs` | follow-up |
@@ -222,7 +222,7 @@ fixture must keep compiling) and re-measure every row whose node kind changed.
 | Control-flow bodies walked (if/else, for, while, do, switch, try, labels, goto) | `if_statement`, `for_statement`, `while_statement`, `do_statement`, `try_statement`, `labeled_statement`, `goto_statement` | member-ref | must | produces | precise member | `StatementsAndScopes.cs` | asserted |
 | `catch (T e)` declaration and `when` filter | `catch_declaration`, `catch_filter_clause` | type-ref, receiver-type | must | partial: the caught type is not a type-ref and `e` is untyped, so the filter's access is a guess | guess | `StatementsAndScopes.cs` | follow-up |
 | `throw new T()`, throw expression `?? throw new T()`, rethrow | `throw_statement`, `throw_expression` | type-ref | must | produces | type ladder | `StatementsAndScopes.cs` | asserted |
-| `lock (x)`, `checked { }`, `unchecked { }` bodies walked | `lock_statement`, `checked_statement` | member-ref | must | produces (the lock target's own typing follows the local's rule) | precise member, guess | `StatementsAndScopes.cs` | asserted (any tier) |
+| `lock (x)`, `checked { }`, `unchecked { }` bodies and targets walked | `lock_statement`, `checked_statement` | member-ref | must | produces (the lock target's own typing follows the local's rule: a `??`-initialised local is a guess) | precise member, guess | `StatementsAndScopes.cs` | asserted (lock target, any tier) |
 | `using (var r = new R())` and `using var r = new R();` typing `r` | `using_statement`, `local_declaration_statement` | receiver-type | must | produces | receiver facts, precise member | `StatementsAndScopes.cs` | asserted |
 | Local declarations: `var` from `new`, explicit type, multiple declarators, `const` | `local_declaration_statement`, `variable_declaration` | receiver-type | must | produces (a local initialised by `??` or another inferred expression is untyped by design) | receiver facts | `StatementsAndScopes.cs`, `MemberAccess.cs` | asserted |
 | Conditional `?:`, `??`, `??=`, compound assignment operands walked | `conditional_expression`, `binary_expression`, `assignment_expression` | member-ref | must | n-a (the fixture's operands are primitives; walked by default recursion) | precise member | `StatementsAndScopes.cs` | — |
@@ -245,7 +245,7 @@ fixture must keep compiling) and re-measure every row whose node kind changed.
 | Construct | Node kind(s) | Verdict | Obligation | Base | Consumer | Fixture | Pin |
 |---|---|---|---|---|---|---|---|
 | `#if` / `#elif` / `#else` / `#endif` live branch walked | `preproc_if`, `preproc_elif`, `preproc_else` | none | must | produces | imports, precise member | `Preprocessor.cs` | asserted |
-| Dead `#if` branch (false symbol) | `preproc_if` | none | must-not | leaks: a class declared in a dead branch is a def, member references inside dead bodies are edges; only a dead method's own name is dropped | — | `Preprocessor.cs` | follow-up |
+| Dead `#if` branch (false symbol) | `preproc_if` | none | must-not | leaks: a class declared in a dead branch is a def with all its member names, and member references inside dead bodies are edges; only a dead method's own name is dropped | — | `Preprocessor.cs` | follow-up |
 | `#define` / `#undef` | `preproc_define`, `preproc_undef` | scope | may | silent (no symbol table; every branch is walked) | — | `Preprocessor.cs` | — |
 | Nested `#if` and `&&`/`!` conditions | `preproc_if` | none | must | produces (live bodies walked) | precise member | `Preprocessor.cs` | asserted |
 | `#if` inside an expression chain | `preproc_if` inside an expression | none | must | produces | precise member | `fixtures/preproc` | asserted elsewhere (extractor unit tests) |
@@ -259,7 +259,8 @@ fixture must keep compiling) and re-measure every row whose node kind changed.
 ## Follow-ups
 
 Rows whose obligation and base status disagree, grouped by the extractor change they wait for.
-None of them is asserted; the pin test covers only what produces today.
+Where a row is `partial`, the pin test asserts the shape that produces today and nothing about
+the missing shape; a `silent` or `leaks` row is not asserted in either direction.
 
 - **Receiver shapes with no fact**: `global::` qualified access; the hop after a second `?.`
   or a `!`; the tail of a member hop `a.B.M()`; invocations on a parenthesised `new T()`,
@@ -271,6 +272,8 @@ None of them is asserted; the pin test covers only what produces today.
 - **Declarations with no fact**: constructors and `: this(...)` chains; record primary
   constructor parameters as properties; primary constructor parameters as `ctor-di` seams.
 - **Type references with no edge**: attribute usages; array creation `new T[n]` and array
-  annotations; the generic type itself and any qualified nested type in a local's annotation;
-  the caught exception type; `using` aliases (the alias name is dropped) and alias-typed locals.
-- **Leak**: declarations and member references inside a dead `#if` branch.
+  annotations; a local's type annotation `T x = ...` (the local is typed, the annotation writes
+  no `uses-type`), including the generic type itself and any qualified nested type in it; the
+  caught exception type; `using` aliases (the alias name is dropped) and alias-typed locals.
+- **Leak**: a type declared inside a dead `#if` branch, all of its member names, and every
+  member reference inside a dead body.

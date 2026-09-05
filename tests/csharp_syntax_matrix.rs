@@ -289,6 +289,7 @@ const DEFS: &[(&str, &str, &str)] = &[
     ("TypeKinds.cs", "Syntax.Kinds.KindAbstract", "class"),
     ("TypeKinds.cs", "Syntax.Kinds.KindStatic", "class"),
     ("TypeKinds.cs", "Syntax.Kinds.KindFileLocal", "class"),
+    ("TypeKinds.cs", "Syntax.Kinds.KindSealed", "class"),
     // D04: struct, readonly struct, ref struct
     ("TypeKinds.cs", "Syntax.Kinds.KindStruct", "struct"),
     ("TypeKinds.cs", "Syntax.Kinds.KindRefStruct", "struct"),
@@ -377,6 +378,9 @@ const NAMES: &[(&str, &str, &str, &str)] = &[
     ("Members.cs", "Syntax.Members.MemberHost", "StaticMethod", "method"),
     ("Members.cs", "Syntax.Members.MemberHost", "Describe", "method"),
     ("Members.cs", "Syntax.Members.MemberBase", "Describe", "method"),
+    ("Members.cs", "Syntax.Members.MemberHost", "ExpressionMethod", "method"),
+    ("Members.cs", "Syntax.Members.MemberHost", "ProtectedInternalMethod", "method"),
+    ("Members.cs", "Syntax.Members.MemberHost", "Hide", "method"),
     // D37: Method overloads (arity)
     ("Members.cs", "Syntax.Members.MemberHost", "Add", "method"),
     // D49: Default interface member body
@@ -445,9 +449,10 @@ const EDGES: &[Edge] = &[
     Edge("InterfaceMembers.cs", 25, "inherits", "Syntax.Interfaces.IShapeContract", "", Tier::Precise),
     // U08: Type annotations on fields, properties, parameters, returns, locals
     Edge("Members.cs", 74, "uses-type", "Syntax.Members.IMemberDependency", "", Tier::Precise),
-    Edge("MemberAccess.cs", 8, "uses-type", "Syntax.Access.AccessTarget", "", Tier::Precise),
-    // U09: Generic type arguments in annotations (`List<T>`, nested)
+    Edge("Members.cs", 79, "uses-type", "Syntax.Members.IMemberDependency", "", Tier::Precise),
+    // U09: Generic type arguments in annotations and creations
     Edge("Generics.cs", 88, "uses-type", "Syntax.Generics.GenericItem", "", Tier::Precise),
+    Edge("Generics.cs", 94, "uses-type", "Syntax.Generics.GenericItem", "", Tier::Precise),
     // U10: Nullable and array annotations (`T?`, `T[]`, `T[][]`)
     Edge("MemberAccess.cs", 8, "uses-type", "Syntax.Access.AccessTarget", "", Tier::Precise),
     // U11: Tuple type annotation (`(int Id, string Name)`)
@@ -480,18 +485,20 @@ const EDGES: &[Edge] = &[
     Edge("MemberAccess.cs", 54, "uses-member", "Syntax.Access.AccessTarget", "Compute", Tier::Precise),
     // R20: Receiver typed by explicit local type `T x = ...`
     Edge("MemberAccess.cs", 56, "uses-member", "Syntax.Access.AccessTarget", "Compute", Tier::Precise),
-    // R21: Receiver typed by parameter, field, property, static property
-    Edge("MemberAccess.cs", 63, "uses-member", "Syntax.Access.AccessTarget", "Compute", Tier::Precise),
+    // R21: Receiver typed by a parameter, property, or static property (field: R01)
     Edge("MemberAccess.cs", 59, "uses-member", "Syntax.Access.AccessTarget", "Compute", Tier::Precise),
+    Edge("MemberAccess.cs", 60, "uses-member", "Syntax.Access.AccessTarget", "Compute", Tier::Precise),
+    Edge("MemberAccess.cs", 68, "uses-member", "Syntax.Access.AccessTarget", "Compute", Tier::Precise),
     // R22: Object creation `new T()`, `new T(args)`, generic `new T<U>()`
     Edge("ObjectCreation.cs", 27, "uses-type", "Syntax.Creation.CreatedItem", "", Tier::Precise),
     Edge("ObjectCreation.cs", 43, "uses-type", "Syntax.Creation.CreatedItem", "", Tier::Precise),
+    Edge("ObjectCreation.cs", 28, "uses-type", "Syntax.Creation.CreatedItem", "", Tier::Precise),
     // R23: Target-typed `new()` on a typed local / field / argument
     Edge("ObjectCreation.cs", 30, "uses-member", "Syntax.Creation.CreatedItem", "Tags", Tier::Precise),
     // R34: `typeof(T)`, `typeof(T[])`
     Edge("TypeOperators.cs", 19, "uses-type", "Syntax.TypeOps.TypeOpTarget", "", Tier::Precise),
     Edge("TypeOperators.cs", 24, "uses-type", "Syntax.TypeOps.TypeOpTarget", "", Tier::Precise),
-    // R35: `typeof(List<>)`, `typeof(Dictionary<,>)` unbound
+    // R35: `typeof(T<>)` unbound and `typeof(T<int>)` closed on an in-graph generic
     Edge("TypeOperators.cs", 21, "uses-type", "Syntax.TypeOps.TypeOpGeneric", "", Tier::Precise),
     // R39: Cast typing a local `var x = (T)o`
     Edge("TypeOperators.cs", 52, "uses-member", "Syntax.TypeOps.TypeOpTarget", "Value", Tier::Precise),
@@ -500,8 +507,8 @@ const EDGES: &[Edge] = &[
     // R47: Switch expression arms (incl. `when`, `_`) walked
     Edge("Patterns.cs", 68, "uses-member", "Syntax.Patterns.PatternShape", "Area", Tier::Precise),
     // R48: Switch statement sections with patterns walked
-    Edge("Patterns.cs", 81, "uses-member", "Syntax.Patterns.PatternKind.A", "A", Tier::Precise),
-    Edge("Patterns.cs", 81, "uses-member", "Syntax.Patterns.PatternKind.B", "B", Tier::Precise),
+    Edge("Patterns.cs", 79, "uses-member", "Syntax.Patterns.PatternShape", "Area", Tier::Precise),
+    Edge("Patterns.cs", 80, "uses-member", "Syntax.Patterns.PatternShape", "Area", Tier::Precise),
     // R49: Enum member in a pattern or case label
     Edge("Patterns.cs", 52, "uses-member", "Syntax.Patterns.PatternKind.A", "A", Tier::Precise),
     Edge("Patterns.cs", 53, "uses-member", "Syntax.Patterns.PatternKind.A", "A", Tier::Precise),
@@ -526,15 +533,14 @@ const EDGES: &[Edge] = &[
     Edge("AsyncAndYield.cs", 83, "uses-member", "Syntax.Async.AsyncService", "GetAsync", Tier::Precise),
     // R73: `foreach (var x in xs)` typing `x` from the element type
     Edge("StatementsAndScopes.cs", 185, "uses-member", "Syntax.Statements.StmtRes", "Touch", Tier::Precise),
-    // R74: `foreach (T x in xs)` explicit element type
-    Edge("StatementsAndScopes.cs", 181, "uses-type", "Syntax.Statements.StmtRes", "", Tier::Precise),
+    // R74: `foreach (T x in xs)` explicit element type (typed loop variable; no uses-type for the annotation)
     Edge("StatementsAndScopes.cs", 190, "uses-member", "Syntax.Statements.StmtRes", "Touch", Tier::Precise),
     // R75: Control flow bodies walked (if/else, for, while, do, switch, try, labels, goto)
     Edge("StatementsAndScopes.cs", 34, "uses-member", "Syntax.Statements.StmtGate", "Sync", Tier::Precise),
     // R77: `throw new T()`, throw expression `?? throw`, rethrow
     Edge("StatementsAndScopes.cs", 100, "uses-type", "Syntax.Statements.StmtError", "", Tier::Precise),
     Edge("StatementsAndScopes.cs", 125, "uses-type", "Syntax.Statements.StmtError", "", Tier::Precise),
-    // R78: `lock (x)`, `checked { }`, `unchecked { }` blocks walked
+    // R78: `lock (x)` target walked (any tier: the local comes from `??`)
     Edge("StatementsAndScopes.cs", 126, "uses-member", "Syntax.Statements.StmtGate", "Sync", Tier::Any),
     // R79: `using (var r = new R())` and `using var r = new R();` typing `r`
     Edge("StatementsAndScopes.cs", 133, "uses-member", "Syntax.Statements.StmtRes", "Touch", Tier::Precise),
