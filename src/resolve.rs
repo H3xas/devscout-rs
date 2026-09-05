@@ -1733,6 +1733,52 @@ fn resolve_ref(
                 return Resolution::Resolved(idx, Via::Qualified);
             }
         }
+        // Step 1a: the qualifier's head segment is a using alias. The alias
+        // target is already fully qualified, so the rewritten name gets one
+        // exact lookup and no prefix walk -- `using Ns = Some.Namespace;` makes
+        // `Ns.MyEnum` read as `Some.Namespace.MyEnum`. A rewritten name that
+        // finds nothing continues into step 1b under its expanded text.
+        let expanded: Option<String> = qualified
+            .split_once('.')
+            .and_then(|(head, rest)| aliases.get(head).map(|target| format!("{target}.{rest}")));
+        if let Some(expanded) = &expanded {
+            if let Some(idx) = type_candidate(index, expanded, ref_.type_arg_count) {
+                return Resolution::Resolved(idx, Via::Qualified);
+            }
+        }
+        // Step 1b: dotted suffix match, the ONLY fallback a dotted reference
+        // gets. A qualified name is always written relative to some enclosing
+        // scope, so its text is a dot-joined suffix of the full path of
+        // whatever it names -- `Outer.Inner` is `App.Widgets.Outer+Inner`
+        // read with `+` as `.`. A def whose path does not end that way cannot
+        // be what the reference means, however unique its bare last segment
+        // is in the graph: `RabbitMQ.Client.ExchangeType`, `System.Text.Json.
+        // JsonSerializer` and `expr.Member` name something outside the graph,
+        // and finishing them External here is what keeps steps 2-4 -- all
+        // three keyed on the bare `ref_.name` -- from binding them to an
+        // unrelated same-named def. Arity is filtered exactly as step 4 does.
+        let written = expanded.as_deref().unwrap_or(qualified);
+        let suffix = format!(".{written}");
+        let matches: Vec<usize> = index
+            .simple_name_to_defs
+            .get(&ref_.name)
+            .into_iter()
+            .flatten()
+            .copied()
+            .filter(|idx| {
+                ref_.type_arg_count
+                    .is_none_or(|n| index.member_lists[*idx].type_params.len() == n)
+            })
+            .filter(|idx| {
+                let path = index.defs[*idx].id.replace('+', ".");
+                path == written || path.ends_with(&suffix)
+            })
+            .collect();
+        return match matches.as_slice() {
+            [idx] => Resolution::Resolved(*idx, Via::Global),
+            [_, _, ..] => Resolution::Ambiguous(matches, Via::Global),
+            _ => Resolution::External,
+        };
     }
 
     // Step 2: file's usings (already the union of local + global by the time
@@ -1789,6 +1835,7 @@ fn resolve_ref(
     // class's previously-unambiguous references ambiguous. Nested definitions
     // remain in the pool, but a bare reference can see one only when its
     // enclosing type inherits from the nested definition's enclosing type.
+    // Only bare references reach this step: a dotted one finished at step 1b.
     let matches: Vec<usize> = index
         .simple_name_to_defs
         .get(&ref_.name)
@@ -1799,10 +1846,7 @@ fn resolve_ref(
             ref_.type_arg_count
                 .map_or(true, |n| index.member_lists[*idx].type_params.len() == n)
         })
-        .filter(|idx| {
-            ref_.qualified.is_some()
-                || nested_candidate_visible_from_site(ref_, ns, *idx, index, file_contexts)
-        })
+        .filter(|idx| nested_candidate_visible_from_site(ref_, ns, *idx, index, file_contexts))
         .collect();
     match matches.as_slice() {
         [idx] => Resolution::Resolved(*idx, Via::Global),
@@ -3908,13 +3952,12 @@ mod tests {
     }
 
     #[test]
-    fn namespace_alias_qualified_member_ref_resolves_only_via_global_uniqueness_not_a_genuine_alias_walk(
-    ) {
-        // Resolution-ladder subtlety: step 0 (the alias short-circuit) only
-        // ever fires for a BARE, non-dotted ref. "Ns.MyEnum" is dotted the
-        // moment it has 2+ segments, so "Ns" is never looked up in the alias
-        // map -- this resolves purely because "MyEnum" happens to be
-        // globally unique (step 4), not genuine alias resolution.
+    fn namespace_alias_qualified_member_ref_resolves_through_the_alias_target() {
+        // Step 0 (the alias short-circuit) only ever fires for a BARE,
+        // non-dotted ref. "Ns.MyEnum" is dotted, so it reaches step 1a
+        // instead, which rewrites the aliased head to its target and looks
+        // the whole name up exactly -- genuine alias resolution, not the
+        // bare-tail uniqueness a dotted ref no longer gets.
         let files = vec![
             (
                 "Enums/MyEnum.cs".to_string(),
@@ -3957,7 +4000,7 @@ mod tests {
         ];
         let g = resolve_graph(&no_git_root(), &files);
         let edge = find_edge(&g, |e| matches!(e, Edge::UsesMember { .. }))
-            .expect("resolves via step-4 global uniqueness of MyEnum, not the Ns alias");
+            .expect("resolves via the Ns alias rewritten to its target");
         match edge {
             Edge::UsesMember { to, .. } => assert_eq!(to, "Some.Namespace.MyEnum.Member"),
             _ => unreachable!(),
@@ -8291,9 +8334,11 @@ mod tests {
 
     #[test]
     fn v8_a_dotted_nested_ref_never_enters_the_nested_step() {
-        // BOUNDS: "." is not "+", and the ref text alone cannot say which was
-        // meant, so a dotted "Outer.Nested" stays on the qualified ladder and
-        // falls through to the global step -- ambiguous here, by design.
+        // BOUNDS: "." is not "+", so a dotted "Outer.Nested" stays on the
+        // qualified ladder and never enters step 0b. It is the dotted suffix
+        // step that reads the text: only the def whose path ends in
+        // `Outer.Nested` matches, so the same-named `Other+Nested` cannot
+        // make it ambiguous.
         let files = vec![(
             "Core/Types.cs".to_string(),
             frag(
@@ -8309,8 +8354,12 @@ mod tests {
             ),
         )];
         let g = resolve_graph(&no_git_root(), &files);
-        assert!(find_edge(&g, |e| matches!(e, Edge::UsesType { .. })).is_none());
-        assert_eq!(g.stats.ambiguous_count, 1);
+        match find_edge(&g, |e| matches!(e, Edge::UsesType { .. })).expect("resolved edge present")
+        {
+            Edge::UsesType { to, .. } => assert_eq!(to, "App.Core.Outer+Nested"),
+            _ => unreachable!(),
+        }
+        assert_eq!(g.stats.ambiguous_count, 0);
     }
 
     #[test]
