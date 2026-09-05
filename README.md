@@ -218,6 +218,11 @@ Known, rather than hidden:
   is written on every `uses-member` edge, `tier` on the heuristic ones; `units` (the discovered
   `.csproj` projects) is appended last. A reserved `source` slot is set aside for a future
   semantic-provenance tag. A v1 graph.json is rebuilt automatically on the next `map`.
+- **Which C# constructs produce facts is catalogued, not implied.**
+  [`docs/csharp-coverage.md`](docs/csharp-coverage.md) lists every construct the extractor
+  meets with a verdict (`must`, `may`, `must-not` produce a fact) and the measured status,
+  pinned by `fixtures/csharp-syntax/` and `tests/csharp_syntax_matrix.rs`; the rows that are
+  silent today are listed there as follow-ups rather than discovered by the next corpus.
 
 `devscout` began as the Rust half of a two-implementation tool, and a number of source comments
 still describe behaviour by reference to that original implementation. Those notes are history:

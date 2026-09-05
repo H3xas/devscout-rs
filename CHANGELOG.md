@@ -57,6 +57,15 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Method arities are recorded per overload.** Each declared method records the
   parameter-count range every overload accepts, an unbounded `params` overload left
   open-ended and optional parameters lowering the minimum.
+- **A C# construct catalogue with a pinned fixture.** `docs/csharp-coverage.md` enumerates
+  every C# construct the extractor meets, with its grammar node kinds, a syntactic verdict,
+  an obligation (`must` / `may` / `must-not` produce a fact), the status measured at this
+  release, and the fixture that shows it; `fixtures/csharp-syntax/` holds one compilable file
+  per construct group, and `tests/csharp_syntax_matrix.rs` fails when a fixture stops parsing
+  clean under the pinned grammar, when a producing `must` row stops producing, or when the
+  fixture set and the catalogue drift apart. The grammar's three known gaps (C# 14
+  `extension` blocks, `allows ref struct`, list-pattern slice designations) are recorded with
+  the crate version.
 
 ### Changed
 
