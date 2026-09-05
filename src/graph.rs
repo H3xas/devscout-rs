@@ -3,7 +3,7 @@
 // a mismatch makes reuse break silently.
 //
 // This module owns every serde struct for graph.json + the fragments-cache
-// pair (fragments-v16.json, fragments-index-v16.json), plus their path resolution,
+// pair (fragments-v17.json, fragments-index-v17.json), plus their path resolution,
 // atomic I/O, and the cache-then-resolve-then-write orchestration
 // (`rebuild_graph`). The pure resolution ladder that
 // turns fragments into `defs`/`edges` lives in `resolve.rs` and returns the
@@ -139,16 +139,21 @@ pub fn project_units_path(root: &Path) -> PathBuf {
 // rather than skipping it. v16 added the ref `receiverBase` flag, set only
 // for a `base.` qualifier -- a cached v15 fragment carries none, so every
 // `base.` receiver would silently resolve (or fail to resolve) as if it
-// were a plain `this.` receiver. The rename IS the invalidation mechanism:
+// were a plain `this.` receiver. v17 added no field: the extractor now
+// blanks the inactive arms of `#if`/`#else` groups before parsing, so a
+// cached v16 fragment of an unchanged file can carry twin defs and refs
+// from both arms that a fresh one no longer records -- the same
+// "disagrees for an unchanged file" case that moved v13, so it rides a
+// bump too. The rename IS the invalidation mechanism:
 // pre-bump caches stop being found, every file reparses
 // once, no reader carries version-compat logic. Writers delete every
 // superseded generation (see `remove_superseded_caches`).
 fn fragments_cache_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-v16.json")
+    graph_dir(root).join("fragments-v17.json")
 }
 
 fn fragments_index_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-index-v16.json")
+    graph_dir(root).join("fragments-index-v17.json")
 }
 
 // Every generation below the current one, not just the immediately previous:
@@ -185,6 +190,8 @@ const SUPERSEDED_CACHE_FILES: &[&str] = &[
     "fragments-index-v14.json",
     "fragments-v15.json",
     "fragments-index-v15.json",
+    "fragments-v16.json",
+    "fragments-index-v16.json",
 ];
 
 fn remove_superseded_caches(root: &Path) {
@@ -2844,7 +2851,7 @@ mod tests {
         // receiverCallMember pair, so a v12 fragment read back carries none and
         // every property hop and every var-from-invocation receiver would
         // silently stay unresolved.
-        assert_eq!(SUPERSEDED_CACHE_FILES.len(), 30, "v1..v15 pairs");
+        assert_eq!(SUPERSEDED_CACHE_FILES.len(), 32, "v1..v16 pairs");
         for stale in SUPERSEDED_CACHE_FILES {
             fs::write(graph_dir(&dir).join(stale), b"{}").unwrap();
         }
@@ -2885,11 +2892,11 @@ mod tests {
         rebuild_graph(&dir, &graph_files, &fresh, true, None).unwrap();
 
         assert!(
-            graph_dir(&dir).join("fragments-v16.json").exists(),
-            "the v16 payload cache is what gets written"
+            graph_dir(&dir).join("fragments-v17.json").exists(),
+            "the v17 payload cache is what gets written"
         );
         assert!(
-            graph_dir(&dir).join("fragments-index-v16.json").exists(),
+            graph_dir(&dir).join("fragments-index-v17.json").exists(),
             "and its mtime-only index alongside it"
         );
         for stale in SUPERSEDED_CACHE_FILES {
@@ -2900,32 +2907,32 @@ mod tests {
         }
     }
 
-    // --- The v16 cache generation --------------------------
+    // --- The v17 cache generation --------------------------
 
     #[test]
-    fn fragments_cache_v16_supersedes_v15() {
-        let dir = temp_dir("fragments-cache-v16-paths");
+    fn fragments_cache_v17_supersedes_v16() {
+        let dir = temp_dir("fragments-cache-v17-paths");
         assert_eq!(
             fragments_cache_path(&dir),
-            graph_dir(&dir).join("fragments-v16.json")
+            graph_dir(&dir).join("fragments-v17.json")
         );
         assert_eq!(
             fragments_index_path(&dir),
-            graph_dir(&dir).join("fragments-index-v16.json")
+            graph_dir(&dir).join("fragments-index-v17.json")
         );
         assert!(
-            SUPERSEDED_CACHE_FILES.contains(&"fragments-v15.json"),
-            "v15 joined the superseded list when the v16 bump landed"
+            SUPERSEDED_CACHE_FILES.contains(&"fragments-v16.json"),
+            "v16 joined the superseded list when the v17 bump landed"
         );
         assert!(
-            SUPERSEDED_CACHE_FILES.contains(&"fragments-index-v15.json"),
+            SUPERSEDED_CACHE_FILES.contains(&"fragments-index-v16.json"),
             "its index pairs with it, same as every other generation"
         );
 
-        let dir = temp_dir("rebuild-v16");
+        let dir = temp_dir("rebuild-v17");
         fs::create_dir_all(graph_dir(&dir)).unwrap();
-        fs::write(graph_dir(&dir).join("fragments-v15.json"), b"{}").unwrap();
-        fs::write(graph_dir(&dir).join("fragments-index-v15.json"), b"{}").unwrap();
+        fs::write(graph_dir(&dir).join("fragments-v16.json"), b"{}").unwrap();
+        fs::write(graph_dir(&dir).join("fragments-index-v16.json"), b"{}").unwrap();
 
         let fragment = Fragment {
             defs: vec![],
@@ -2941,13 +2948,13 @@ mod tests {
         }];
         rebuild_graph(&dir, &graph_files, &fresh, true, None).unwrap();
 
-        assert!(graph_dir(&dir).join("fragments-v16.json").exists());
-        assert!(graph_dir(&dir).join("fragments-index-v16.json").exists());
+        assert!(graph_dir(&dir).join("fragments-v17.json").exists());
+        assert!(graph_dir(&dir).join("fragments-index-v17.json").exists());
         assert!(
-            !graph_dir(&dir).join("fragments-v15.json").exists(),
-            "the v15 pair is deleted -- rename IS the invalidation"
+            !graph_dir(&dir).join("fragments-v16.json").exists(),
+            "the v16 pair is deleted -- rename IS the invalidation"
         );
-        assert!(!graph_dir(&dir).join("fragments-index-v15.json").exists());
+        assert!(!graph_dir(&dir).join("fragments-index-v16.json").exists());
     }
 
     // --- v8: FragRef's outerTypes, appended last -----------------------------
