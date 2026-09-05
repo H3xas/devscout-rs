@@ -2308,20 +2308,27 @@ pub fn resolve_graph_with_model(
                         } else {
                             declares_member(&index, idx, r.member.as_deref(), r.arg_count)
                         };
-                        if declares_here
-                            || (r.generic && r.qualified.is_none())
-                            || (r.qualified.is_some() && via == Via::Qualified)
-                        {
-                            edges.push(Edge::uses_member(
-                                file.clone(),
-                                r.line,
-                                index.defs[idx].id.clone(),
-                                index.defs[idx].file.clone(),
-                                r.member.clone(),
-                                None,
-                            ));
-                            edges_by_kind.uses_member += 1;
-                            emitted = true;
+                        // A qualifier that resolved as a TYPE binds the def
+                        // that DECLARES the member, in this order: the named
+                        // type itself; else the first in-graph base in its
+                        // closure (Unit A3 item 4 -- the widening
+                        // `base_member_declared` already does for `base.`,
+                        // applied to a receiver whose OWN type resolved
+                        // directly rather than through a `base.` qualifier);
+                        // else, on type certainty alone, the named type. A
+                        // type-argument list (`Cache<T>.x`) or an exact
+                        // qualified name (`Ns.Utils.Helper()`) is syntax
+                        // only a type can carry, so when nothing in the graph
+                        // declares the member it is still that type's as far
+                        // as this graph can see -- an extension, an external
+                        // base, an extractor gap. The certainty hatches come
+                        // LAST so that an inherited static member named
+                        // through a derived type (`Ns.Derived.Create()`,
+                        // `Derived<int>.Create()`) binds the base that
+                        // declares it, exactly as the same member named
+                        // through the bare derived name already does.
+                        let target = if declares_here {
+                            Some(idx)
                         } else if let Some(target) = typed_receiver_base_member(
                             &index,
                             &file_contexts,
@@ -2330,14 +2337,15 @@ pub fn resolve_graph_with_model(
                             r.arg_count,
                             this_shaped,
                         ) {
-                            // Unit A3 item 4: `idx` itself does not declare
-                            // the member (at the visibility this receiver
-                            // may see) -- the first in-graph base that does
-                            // is the precise target, exactly the widening
-                            // `base_member_declared` already does for
-                            // `base.`, applied here to a receiver whose OWN
-                            // type resolved directly rather than through a
-                            // `base.` qualifier.
+                            Some(target)
+                        } else if (r.generic && r.qualified.is_none())
+                            || (r.qualified.is_some() && via == Via::Qualified)
+                        {
+                            Some(idx)
+                        } else {
+                            None
+                        };
+                        if let Some(target) = target {
                             edges.push(Edge::uses_member(
                                 file.clone(),
                                 r.line,
@@ -10350,5 +10358,99 @@ mod tests {
              receiver_args, which would fail the length check"
         );
         assert_eq!(g.stats.heuristic_by_tier.ext, 1);
+    }
+
+    // --- Stage 8: declaring type along the base and interface direction ----
+    //
+    // The compiler binds a member to the type that DECLARES it in the
+    // receiver's static chain. Three shapes that used to fall short of that
+    // rule, each through real C# (`fragments_for`), plus the class-receiver
+    // control that keeps the interface half of the rule from widening.
+
+    #[test]
+    fn stage8_qualified_static_qualifier_binds_the_base_that_declares_the_member() {
+        // `App.Domain.Derived.Create()` names the derived type through an
+        // exact qualified name; Create is declared only on Base. The
+        // exact-qualified certainty hatch used to bind Derived itself; the
+        // declaring base wins now, the same answer a bare `Derived.Create()`
+        // already gives.
+        let files = fragments_for(&[
+            (
+                "Domain/Base.cs",
+                "namespace App.Domain { public class Base { public static Base Create() => new Base(); } }",
+            ),
+            (
+                "Domain/Derived.cs",
+                "namespace App.Domain { public class Derived : Base { } }",
+            ),
+            (
+                "Consumers/Runner.cs",
+                "\nnamespace App.Consumers;\n\npublic class Runner\n{\n    public void Run()\n    {\n        var a = App.Domain.Derived.Create();\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_from(&g, "Consumers/Runner.cs"),
+            vec![("App.Domain.Base", 8)],
+            "a qualified static qualifier binds the base that declares the member, not the \
+             derived type the source names"
+        );
+    }
+
+    #[test]
+    fn stage8_generic_static_qualifier_binds_the_base_that_declares_the_member() {
+        // `Derived<int>.Create()`: the type-argument list marks the
+        // qualifier as a type with certainty, and Create is declared only on
+        // the non-generic Base. The certainty hatch used to bind Derived;
+        // the declaring base wins now.
+        let files = fragments_for(&[
+            (
+                "Domain/Base.cs",
+                "namespace App.Domain { public class Base { public static Base Create() => new Base(); } }",
+            ),
+            (
+                "Domain/Derived.cs",
+                "namespace App.Domain { public class Derived<T> : Base { public T Item = default!; } }",
+            ),
+            (
+                "Consumers/Runner.cs",
+                "\nusing App.Domain;\n\nnamespace App.Consumers;\n\npublic class Runner\n{\n    public void Run()\n    {\n        var a = Derived<int>.Create();\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_from(&g, "Consumers/Runner.cs"),
+            vec![("App.Domain.Base", 10)],
+            "a generic static qualifier binds the base that declares the member"
+        );
+    }
+
+    #[test]
+    fn stage8_certainty_hatches_still_bind_the_named_type_when_no_base_declares_the_member() {
+        // The control for the two tests above: Derived has an in-graph base
+        // that does NOT declare Helper (it lives on an external base, or on
+        // nothing this graph can see), so both hatches keep today's answer
+        // -- the named type on type certainty alone.
+        let files = fragments_for(&[
+            (
+                "Domain/Base.cs",
+                "namespace App.Domain { public class Base { } }",
+            ),
+            (
+                "Domain/Derived.cs",
+                "namespace App.Domain { public class Derived<T> : Base { public T Item = default!; } }",
+            ),
+            (
+                "Consumers/Runner.cs",
+                "\nusing App.Domain;\n\nnamespace App.Consumers;\n\npublic class Runner\n{\n    public void Run()\n    {\n        var a = Derived<int>.Helper();\n        var b = App.Domain.Derived<int>.Helper();\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_from(&g, "Consumers/Runner.cs"),
+            vec![("App.Domain.Derived", 10), ("App.Domain.Derived", 11)],
+            "with no in-graph declaration anywhere in the closure, a type-certain qualifier still \
+             binds the type it names"
+        );
     }
 }
