@@ -137,6 +137,15 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   record carries; the precise tier, the base walks it shares with the extension veto, and the
   veto itself read the sibling the language names. A name with no def at that count anywhere
   keeps the arity-blind answer; a name shared by fewer than two defs costs one lookup as before.
+- **A static qualifier walks through nested types before its next segment is read as a
+  member.** `Outer.Inner.Leaf.Value`, with or without a namespace prefix on `Outer`, binds
+  the qualifier one nested-type segment at a time from the shortest head that names a type
+  and emits a single precise edge to `Outer+Inner+Leaf` with `member` `Value`. The shorter
+  windows of the same chain no longer emit an edge that names a nested type as if it were a
+  member of its container, which is where a namespace-qualified head used to produce a
+  precise edge to `Outer` with member `Inner`, and a nested type whose simple name repeats
+  across containers now binds to the container the qualifier names instead of dropping out
+  as ambiguous.
 
 ### Benchmarks
 
