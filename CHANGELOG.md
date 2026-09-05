@@ -133,8 +133,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `RabbitMQ.Client.ExchangeType.Fanout` no longer binds to an in-tree `ExchangeType`,
   `System.Text.Json.JsonSerializer.Serialize(x)` no longer binds to an in-tree
   `JsonSerializer`, and `expr.Member.Name` no longer binds to a nested type named `Member`.
-  `Outer.Inner` still reaches `Outer+Inner`, and a `using` alias at the head of a dotted name
-  is rewritten to its target and looked up exactly.
+  `Outer.Inner` still reaches `Outer+Inner`, `Box<string>.Slot` and `global::App.Widget` are
+  read as the def paths they spell, `Derived.Item` reaches an `Item` declared inside a base of
+  `Derived`, and a `using` alias at the head of a dotted name is rewritten to its target and
+  looked up exactly.
 
 ### Benchmarks
 
