@@ -47,9 +47,9 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use crate::graph::{
-    AlsoIn, Candidate, Def, Edge, EdgesByKind, FragExtensionMethod, FragFact, FragRef, FragUsing,
-    Fragment, Graph, GraphName, HeuristicByTier, HeuristicTier, OrderedMap, Percent1, Stats,
-    GRAPH_SCHEMA_VERSION,
+    AlsoIn, Candidate, Def, Edge, EdgesByKind, FragExtensionMethod, FragFact, FragLambdaSlot,
+    FragRef, FragUsing, Fragment, Graph, GraphName, HeuristicByTier, HeuristicTier, OrderedMap,
+    Percent1, Stats, GRAPH_SCHEMA_VERSION,
 };
 use crate::manifest;
 
@@ -209,6 +209,26 @@ pub struct MemberLists {
     /// by `declares_member`/`declares_member_any_visibility` for a ref that
     /// carries an `argCount`.
     pub method_arities: OrderedMap<Vec<(usize, i64)>>,
+    /// Method name -> the overloads' own parameter-descriptor lists, each
+    /// paired with the file whose fragment declared it -- see
+    /// `FragDef.method_params`. Merged across a partial class as a UNION per
+    /// NAME, the way `method_arities` is: every declaring part contributes
+    /// the overloads it declares, an overload whose `params` list already
+    /// exists for that name skipped (first file wins for duplicates). In
+    /// memory only; nothing here is serialized.
+    pub method_params: HashMap<String, Vec<MethodOverloadParams>>,
+}
+
+/// One method overload's parameter-descriptor list plus its declaring file.
+///
+/// The (params, file) pair `MemberLists::method_params` keeps per method
+/// name. In-memory resolution input only; nothing here is serialized.
+pub struct MethodOverloadParams {
+    /// The parameter type descriptors, in order (see extract.rs's
+    /// `type_descriptor`/`DefRecord::method_params`).
+    pub params: Vec<String>,
+    /// The fragment-relative file path that declared this overload.
+    pub file: String,
 }
 
 fn build_def_index(fragments_by_file: &[(String, Fragment)]) -> DefIndex {
@@ -303,6 +323,22 @@ fn build_def_index(fragments_by_file: &[(String, Fragment)]) -> DefIndex {
                         method_return_args: d.method_return_args.clone(),
                         non_public_methods: d.non_public_methods.clone(),
                         method_arities: d.method_arities.clone(),
+                        method_params: {
+                            let mut m: HashMap<String, Vec<MethodOverloadParams>> = HashMap::new();
+                            for (name, overloads) in d.method_params.iter() {
+                                m.insert(
+                                    name.clone(),
+                                    overloads
+                                        .iter()
+                                        .map(|params| MethodOverloadParams {
+                                            params: params.clone(),
+                                            file: file.clone(),
+                                        })
+                                        .collect(),
+                                );
+                            }
+                            m
+                        },
                     });
                     for e in &d.extension_methods {
                         add_extension_method(&mut member_lists, &mut extension_index, idx, e);
@@ -432,6 +468,24 @@ fn build_def_index(fragments_by_file: &[(String, Fragment)]) -> DefIndex {
                             .method_arities
                             .insert(name.clone(), merged);
                     }
+                    // A UNION per NAME, same as `method_arities` just above:
+                    // every declaring part's overloads are admitted, an
+                    // overload whose `params` list a merged entry already
+                    // holds skipped -- first file wins for that duplicate.
+                    for (name, overloads) in d.method_params.iter() {
+                        let merged = member_lists[idx]
+                            .method_params
+                            .entry(name.clone())
+                            .or_default();
+                        for params in overloads {
+                            if !merged.iter().any(|o| &o.params == params) {
+                                merged.push(MethodOverloadParams {
+                                    params: params.clone(),
+                                    file: file.clone(),
+                                });
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -509,6 +563,7 @@ fn name_probe(name: String, namespace: &str, outer_types: Vec<String>) -> FragRe
         receiver_base: false,
         receiver_awaited: false,
         receiver_local: false,
+        receiver_lambda: None,
     }
 }
 
@@ -1331,6 +1386,324 @@ fn bare_receiver_field_or_property_type(
         }
     }
     None
+}
+
+// A parameter descriptor's own bare NAME: the head identifier with its
+// type-argument list and array brackets taken off, which is the only half of
+// a descriptor that names something this resolver can look up.
+// `Func<Options,bool>` is `Func`, `Options[]` is `Options`; the descriptor
+// for an unknown shape is `?`, whose head is empty.
+fn descriptor_head(text: &str) -> &str {
+    let end = text.find(['<', '[', '?']).unwrap_or(text.len());
+    &text[..end]
+}
+
+// A descriptor's TOP-LEVEL type arguments, split on the commas that sit at
+// nesting depth zero so `Func<Options,Func<int,bool>>` yields two arguments
+// rather than three. Empty when the descriptor carries no argument list at
+// all; the descriptors this reads are written without spaces (see
+// `FragDef::method_params`), so no trimming is needed.
+fn descriptor_args(text: &str) -> Vec<String> {
+    let Some(open) = text.find('<') else {
+        return Vec::new();
+    };
+    if !text.ends_with('>') {
+        return Vec::new();
+    }
+    let inner = &text[open + 1..text.len() - 1];
+    let mut args: Vec<String> = Vec::new();
+    let mut depth = 0usize;
+    let mut start = 0usize;
+    for (i, ch) in inner.char_indices() {
+        match ch {
+            '<' => depth += 1,
+            '>' => depth = depth.saturating_sub(1),
+            ',' if depth == 0 => {
+                args.push(inner[start..i].to_string());
+                start = i + ch.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    args.push(inner[start..].to_string());
+    args
+}
+
+// The PARAMETER LIST of the delegate a parameter descriptor names, which is
+// where an untyped lambda's own parameter types are written down. The three
+// BCL delegate shapes are read structurally -- `Action<A,B>` takes its
+// arguments as they stand, `Func<A,B,R>` drops the return type, `Predicate<A>`
+// takes its single argument -- because no in-graph def declares them. Any
+// other head is a name: resolved under the DECLARING file's context (the
+// descriptor is a bare identifier, and only that file's usings, aliases and
+// nesting say what it meant) and answered only when it lands on a `delegate`
+// def, whose own list this reader keeps under `Invoke`.
+//
+// An ARRAY of delegates is not a delegate (`Action<Options>[]` takes a
+// collection, never a lambda), so a descriptor that ends in brackets answers
+// nothing at all.
+fn delegate_parameters(
+    text: &str,
+    index: &DefIndex,
+    file_contexts: &HashMap<String, FileContext>,
+    declaring_def: usize,
+    declaring_file: &str,
+) -> Option<Vec<String>> {
+    if text.ends_with(']') {
+        return None;
+    }
+    // `Expression<Func<Options,bool>>` is the expression-tree wrapper the LINQ
+    // shapes are written with; the delegate inside it is what the lambda binds
+    // to. Unwrapped exactly ONCE -- a doubly-wrapped expression is not a shape
+    // C# accepts a lambda for, and unwrapping again would invent a binding.
+    let args = descriptor_args(text);
+    if descriptor_head(text) == "Expression" && args.len() == 1 {
+        return delegate_invoke_parameters(
+            &args[0],
+            index,
+            file_contexts,
+            declaring_def,
+            declaring_file,
+        );
+    }
+    delegate_invoke_parameters(text, index, file_contexts, declaring_def, declaring_file)
+}
+
+// `delegate_parameters` minus the expression-tree unwrap -- split out so the
+// unwrap can never run twice.
+fn delegate_invoke_parameters(
+    text: &str,
+    index: &DefIndex,
+    file_contexts: &HashMap<String, FileContext>,
+    declaring_def: usize,
+    declaring_file: &str,
+) -> Option<Vec<String>> {
+    if text.ends_with(']') {
+        return None;
+    }
+    let head = descriptor_head(text);
+    let args = descriptor_args(text);
+    match head {
+        "Action" if !args.is_empty() => Some(args),
+        "Func" if args.len() >= 2 => {
+            let mut params = args;
+            params.pop();
+            Some(params)
+        }
+        "Predicate" if args.len() == 1 => Some(args),
+        "Action" | "Func" | "Predicate" | "" => None,
+        _ => {
+            let ctx = file_contexts.get(declaring_file)?;
+            let def = &index.defs[declaring_def];
+            let probe = name_probe(
+                head.to_string(),
+                def.namespace.as_str(),
+                def_outer_types(def),
+            );
+            let Resolution::Resolved(didx, _) = resolve_ref(
+                &probe,
+                &ctx.usings,
+                def.namespace.as_str(),
+                index,
+                &ctx.aliases,
+                file_contexts,
+            ) else {
+                return None;
+            };
+            if index.defs[didx].kind != "delegate" {
+                return None;
+            }
+            index.member_lists[didx]
+                .method_params
+                .get("Invoke")
+                .and_then(|overloads| overloads.first())
+                .map(|o| o.params.clone())
+        }
+    }
+}
+
+// One untyped lambda parameter's type, read off the CALLEE's own declared
+// parameter list. `_registrar.Register(x => x.Configure())` records nothing
+// about `x` at the site -- the extractor cannot see across files -- but the
+// overload the call lands on declares `Action<Options> configure`, and that
+// delegate's parameter list is where `x`'s type is written down. The answer
+// is shaped like any other bare-identifier receiver fact so the tier below
+// resolves it under the DECLARING file's usings, aliases, namespace and
+// nesting: the descriptor is a bare identifier that only means what the file
+// that wrote it meant, exactly as a field's declared type is.
+//
+// Nothing binds unless every overload that could take the lambda AGREES on
+// the parameter type. `Attach(Action<Options>)` beside `Attach(Action<Endpoint>)`
+// leaves the site as untyped as the extractor found it, because choosing
+// either would be a guess. An overload whose delegate takes a different
+// number of parameters than the lambda declares is not a binding candidate at
+// all and is dropped rather than counted as disagreement, which is what lets
+// `Same(string tag)` sit beside `Same(Action<Options>)` without silencing it.
+// An overload that DOES take the lambda but types the parameter with a type
+// parameter (`Action<T>`) still counts, and blocks: the site knows nothing
+// about what `T` is bound to, the same refusal every other wildcard
+// generic-arg fact in this file makes.
+fn lambda_slot_receiver_type(
+    index: &DefIndex,
+    file_contexts: &HashMap<String, FileContext>,
+    ns: &str,
+    usings: &HashSet<String>,
+    aliases: &HashMap<String, String>,
+    r: &FragRef,
+    slot: &FragLambdaSlot,
+) -> Option<ReceiverFieldType> {
+    let probe = name_probe(slot.owner.clone(), ns, r.outer_types.clone());
+    let owner = match resolve_ref(&probe, usings, ns, index, aliases, file_contexts) {
+        Resolution::Resolved(oidx, _) => Some(oidx),
+        _ => None,
+    };
+    // (overload, the def that declares it, the position the lambda fills in
+    // its parameter list). An extension method invoked through its receiver
+    // carries the receiver in position 0, so every argument the site wrote is
+    // one place further right.
+    let mut candidates: Vec<(&MethodOverloadParams, usize, usize)> = Vec::new();
+    if let Some(oidx) = owner {
+        let declaring = if index.member_lists[oidx]
+            .method_params
+            .contains_key(&slot.member)
+        {
+            Some(oidx)
+        } else {
+            base_member_declared(index, file_contexts, oidx, Some(&slot.member), None)
+        };
+        if let Some(didx) = declaring {
+            if let Some(overloads) = index.member_lists[didx].method_params.get(&slot.member) {
+                for overload in overloads {
+                    candidates.push((overload, didx, slot.arg_index));
+                }
+            }
+        }
+    }
+    if candidates.is_empty() {
+        // The owner is external, unresolved, or declares no such member --
+        // the shapes an extension method answers. The bucket key is the
+        // receiver's own closure key when the owner resolved (an extension
+        // written against a base or interface is reached the same way tier
+        // (f) reaches it) and the raw receiver-type text otherwise, which is
+        // all an external receiver ever offers.
+        let key = match owner {
+            Some(oidx) => {
+                extension_closure_key(index, file_contexts, oidx, &slot.member).map(|(k, _)| k)
+            }
+            None => Some(format!("{} {}", slot.member, slot.owner)),
+        };
+        if let Some(candidate_list) = key.and_then(|k| index.extension_index.get(&k)) {
+            for cand in candidate_list {
+                let Some(overloads) = index.member_lists[cand.def_idx]
+                    .method_params
+                    .get(&slot.member)
+                else {
+                    continue;
+                };
+                for overload in overloads {
+                    let matches_this = overload
+                        .params
+                        .first()
+                        .and_then(|p| p.strip_prefix("this "))
+                        .is_some_and(|t| descriptor_head(t) == cand.entry.this_type);
+                    if matches_this {
+                        candidates.push((overload, cand.def_idx, slot.arg_index + 1));
+                    }
+                }
+            }
+        }
+    }
+
+    let mut agreed: Option<(String, String, usize, String)> = None;
+    for (overload, declaring_def, position) in candidates {
+        // An extension overload's list starts with its `this` parameter, so
+        // the call's argument count is compared one slot further along.
+        let shift = position - slot.arg_index;
+        if slot.arg_count + shift > overload.params.len() || position >= overload.params.len() {
+            continue;
+        }
+        // A static class's extension method may also be invoked statically,
+        // in which case the `this` marker rides along on a descriptor read at
+        // its ordinary position.
+        let text = overload.params[position]
+            .strip_prefix("this ")
+            .unwrap_or(&overload.params[position]);
+        let Some(params) =
+            delegate_parameters(text, index, file_contexts, declaring_def, &overload.file)
+        else {
+            continue;
+        };
+        // The delegate must take exactly as many parameters as the lambda
+        // declares, or it is not the overload the lambda binds to at all --
+        // dropped rather than counted as disagreement.
+        if params.len() != slot.arity || slot.index >= params.len() {
+            continue;
+        }
+        let head = descriptor_head(&params[slot.index]);
+        if head.is_empty() || head == "*" {
+            return None;
+        }
+        // Two overloads that both write `Action<Options>` agree only when the
+        // name means the same type from where each was written: a partial
+        // class or an extension bucket may span files with different usings,
+        // and the site binds to what the FIRST taker's file meant, so every
+        // other taker must resolve to that same def (or to the same name, when
+        // none resolves in-graph) before it counts as agreement.
+        let meaning = descriptor_meaning(index, file_contexts, declaring_def, &overload.file, head);
+        match &agreed {
+            Some((known, _, _, _)) if *known != meaning => return None,
+            Some(_) => {}
+            None => {
+                agreed = Some((
+                    meaning,
+                    head.to_string(),
+                    declaring_def,
+                    overload.file.clone(),
+                ))
+            }
+        }
+    }
+    agreed.map(
+        |(_, type_name, declaring_def, declaring_file)| ReceiverFieldType {
+            type_name,
+            declaring_def,
+            declaring_file,
+        },
+    )
+}
+
+// What a descriptor head names from the file that wrote it: the def it
+// resolves to under that file's usings, aliases, namespace and nesting, or
+// the bare name itself when nothing in the graph answers. Only used to
+// compare takers with each other; the tier below re-resolves the winner
+// under the same context.
+fn descriptor_meaning(
+    index: &DefIndex,
+    file_contexts: &HashMap<String, FileContext>,
+    declaring_def: usize,
+    declaring_file: &str,
+    head: &str,
+) -> String {
+    let def = &index.defs[declaring_def];
+    let resolved = file_contexts.get(declaring_file).and_then(|ctx| {
+        let probe = name_probe(
+            head.to_string(),
+            def.namespace.as_str(),
+            def_outer_types(def),
+        );
+        match resolve_ref(
+            &probe,
+            &ctx.usings,
+            def.namespace.as_str(),
+            index,
+            &ctx.aliases,
+            file_contexts,
+        ) {
+            Resolution::Resolved(didx, _) => Some(index.defs[didx].id.clone()),
+            _ => None,
+        }
+    });
+    resolved.unwrap_or_else(|| format!("?{head}"))
 }
 
 // The scored tier's own receiver test, and the mirror image of the veto above:
@@ -2844,6 +3217,25 @@ pub fn resolve_graph_with_model(
                                 _ => returns,
                             };
                         }
+                    } else if let Some(slot) = &r.receiver_lambda {
+                        // The qualifier is an untyped lambda parameter: no
+                        // fact in THIS file can type it, because the type is
+                        // written on the callee's own delegate parameter, in
+                        // whatever file declares it. Reading it back yields
+                        // an ordinary bare-identifier receiver fact, so every
+                        // tier below -- precision, admission, narrowing --
+                        // treats the site exactly like any other typed
+                        // receiver.
+                        receiver_field = lambda_slot_receiver_type(
+                            &index,
+                            &file_contexts,
+                            ns,
+                            usings,
+                            aliases,
+                            r,
+                            slot,
+                        );
+                        receiver_type_name = receiver_field.as_ref().map(|f| f.type_name.clone());
                     } else if r.qualified.is_none() && !r.generic && !r.receiver_local {
                         // `receiver_type` AND `receiver_call_owner` are both
                         // `None` here, which `push_member_ref` produces in
@@ -3707,6 +4099,7 @@ mod tests {
             method_return_args: crate::graph::OrderedMap::new(),
             non_public_methods: vec![],
             method_arities: crate::graph::OrderedMap::new(),
+            method_params: crate::graph::OrderedMap::new(),
             end_line: 0,
         }
     }
@@ -3771,6 +4164,7 @@ mod tests {
             receiver_base: false,
             receiver_awaited: false,
             receiver_local: false,
+            receiver_lambda: None,
         }
     }
 
@@ -3795,6 +4189,7 @@ mod tests {
             receiver_base: false,
             receiver_awaited: false,
             receiver_local: false,
+            receiver_lambda: None,
         }
     }
 
@@ -9766,6 +10161,7 @@ mod tests {
                     receiver_base: false,
                     receiver_awaited: false,
                     receiver_local: false,
+                    receiver_lambda: None,
                 }],
             ),
         )];
@@ -9817,6 +10213,7 @@ mod tests {
                             receiver_base: false,
                             receiver_awaited: false,
                             receiver_local: false,
+                            receiver_lambda: None,
                         },
                     ],
                 ),
@@ -12203,6 +12600,466 @@ mod tests {
             member_edges_from(&g, "Consumers/Runner.cs").is_empty(),
             "a class-typed receiver skips every interface in its closure, at any depth, even when \
              the class itself only implements the member explicitly"
+        );
+    }
+
+    // --- Unit D: untyped lambda parameters typed from the callee's slot ----
+
+    /// One file's PRECISE uses-member edges that name a given member, as
+    /// (target def id, line). The lambda-slot fixtures below all call the
+    /// callee ON THE SAME LINE as the lambda body, so filtering by target
+    /// alone cannot tell the two refs apart.
+    fn member_edges_named<'a>(g: &'a Graph, from: &str, member: &str) -> Vec<(&'a str, usize)> {
+        g.edges
+            .iter()
+            .filter_map(|e| match e {
+                Edge::UsesMember {
+                    from_file,
+                    from_line,
+                    to,
+                    member: m,
+                    heuristic: false,
+                    ..
+                } if from_file == from && m.as_deref() == Some(member) => {
+                    Some((to.as_str(), *from_line))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn stage7_lambda_parameter_typed_from_an_action_parameter_of_an_in_graph_callee() {
+        // Nothing in Host.cs types `x`: the delegate it fills is declared in
+        // ANOTHER file, which is exactly the fact the extractor cannot see
+        // and the slot records instead.
+        let files = fragments_for(&[
+            (
+                "Domain/Options.cs",
+                "namespace App.Domain { public class Options { public void Configure() { } } }",
+            ),
+            (
+                "Domain/Registrar.cs",
+                "\nusing System;\n\nnamespace App.Domain;\n\npublic class Registrar\n{\n    public void Register(Action<Options> configure) { }\n}\n",
+            ),
+            (
+                "App/Host.cs",
+                "\nusing System;\nusing App.Domain;\n\nnamespace App.Hosting;\n\npublic class Host\n{\n    private readonly Registrar _registrar;\n\n    public void Run()\n    {\n        _registrar.Register(x => x.Configure());\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_named(&g, "App/Host.cs", "Configure"),
+            vec![("App.Domain.Options", 13)],
+            "Register's own Action<Options> parameter says what `x` is, so the lambda body binds \
+             precisely"
+        );
+        assert!(
+            heuristic_member_edges_from(&g, "App/Host.cs").is_empty(),
+            "a precise hit, not a guess"
+        );
+    }
+
+    #[test]
+    fn stage7_lambda_parameter_typed_from_a_func_and_an_expression_wrapped_func() {
+        // Func drops its RETURN type before the lambda's own parameters are
+        // read; Expression is a wrapper around the delegate, unwrapped once.
+        // The two lambdas sit in SEPARATE methods on purpose: sibling
+        // lambdas binding one name to two different callees conflict in the
+        // extractor's own fact table, which is a different rule than this
+        // one.
+        let files = fragments_for(&[
+            (
+                "Domain/Options.cs",
+                "namespace App.Domain { public class Options { public bool Enabled { get; set; } } }",
+            ),
+            (
+                "Domain/Registrar.cs",
+                "\nusing System;\nusing System.Linq.Expressions;\n\nnamespace App.Domain;\n\npublic class Registrar\n{\n    public void Pick(Func<Options, bool> f) { }\n    public void Select(Expression<Func<Options, object>> f) { }\n}\n",
+            ),
+            (
+                "App/Host.cs",
+                "\nusing System;\nusing App.Domain;\n\nnamespace App.Hosting;\n\npublic class Host\n{\n    private readonly Registrar _registrar;\n\n    public void Run()\n    {\n        _registrar.Pick(o => o.Enabled);\n    }\n\n    public void Project()\n    {\n        _registrar.Select(o => o.Enabled);\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_named(&g, "App/Host.cs", "Enabled"),
+            vec![("App.Domain.Options", 13), ("App.Domain.Options", 18)],
+            "Func<Options,bool> types `o` as Options once the return type is dropped, and \
+             Expression<Func<Options,object>> does the same one wrapper further out"
+        );
+    }
+
+    #[test]
+    fn stage7_lambda_parameter_typed_from_an_in_graph_delegate_declaration() {
+        // Neither Action nor Func: the parameter names a delegate this graph
+        // declares, whose own parameter list is kept under "Invoke".
+        let files = fragments_for(&[
+            (
+                "Domain/Channel.cs",
+                "namespace App.Domain { public class Channel { public void Open() { } } }",
+            ),
+            (
+                "Domain/Registrar.cs",
+                "\nnamespace App.Domain;\n\npublic delegate void Wiring(Channel channel);\n\npublic class Registrar\n{\n    public void Wire(Wiring w) { }\n}\n",
+            ),
+            (
+                "App/Host.cs",
+                "\nusing System;\nusing App.Domain;\n\nnamespace App.Hosting;\n\npublic class Host\n{\n    private readonly Registrar _registrar;\n\n    public void Run()\n    {\n        _registrar.Wire(c => c.Open());\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_named(&g, "App/Host.cs", "Open"),
+            vec![("App.Domain.Channel", 13)],
+            "Wiring resolves in the file that declared Wire, and its Invoke parameter list types \
+             `c` as Channel"
+        );
+    }
+
+    #[test]
+    fn stage7_second_lambda_parameter_is_typed_positionally() {
+        // The lambda is argument 1 of 2, and each of ITS OWN parameters
+        // reads its own position out of the delegate's list.
+        let files = fragments_for(&[
+            (
+                "Domain/Options.cs",
+                "namespace App.Domain { public class Options { public void Configure() { } } }",
+            ),
+            (
+                "Domain/Endpoint.cs",
+                "namespace App.Domain { public class Endpoint { public void Bind() { } } }",
+            ),
+            (
+                "Domain/Registrar.cs",
+                "\nusing System;\n\nnamespace App.Domain;\n\npublic class Registrar\n{\n    public void Route(string name, Action<Options, Endpoint> configure) { }\n}\n",
+            ),
+            (
+                "App/Host.cs",
+                "\nusing System;\nusing App.Domain;\n\nnamespace App.Hosting;\n\npublic class Host\n{\n    private readonly Registrar _registrar;\n\n    public void Run()\n    {\n        _registrar.Route(\"main\", (o, e) => e.Bind());\n        _registrar.Route(\"alt\", (o, e) => o.Configure());\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_named(&g, "App/Host.cs", "Bind"),
+            vec![("App.Domain.Endpoint", 13)],
+            "the SECOND lambda parameter reads the delegate's second argument"
+        );
+        assert_eq!(
+            member_edges_named(&g, "App/Host.cs", "Configure"),
+            vec![("App.Domain.Options", 14)],
+            "and the first reads the first, from the same slot"
+        );
+    }
+
+    #[test]
+    fn stage7_overloads_disagreeing_on_the_delegate_type_leave_the_lambda_untyped() {
+        let files = fragments_for(&[
+            (
+                "Domain/Options.cs",
+                "namespace App.Domain { public class Options { public void Configure() { } } }",
+            ),
+            (
+                "Domain/Endpoint.cs",
+                "namespace App.Domain { public class Endpoint { public void Configure() { } } }",
+            ),
+            (
+                "Domain/Registrar.cs",
+                "\nusing System;\n\nnamespace App.Domain;\n\npublic class Registrar\n{\n    public void Attach(Action<Options> a) { }\n    public void Attach(Action<Endpoint> a) { }\n}\n",
+            ),
+            (
+                "App/Host.cs",
+                "\nusing System;\nusing App.Domain;\n\nnamespace App.Hosting;\n\npublic class Host\n{\n    private readonly Registrar _registrar;\n\n    public void Run()\n    {\n        _registrar.Attach(a => a.Configure());\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert!(
+            member_edges_named(&g, "App/Host.cs", "Configure").is_empty(),
+            "both overloads accept the one-argument call and they name different delegate \
+             parameter types -- picking either would be a guess, so the site stays as untyped as \
+             the extractor found it: {:?}",
+            member_edges_named(&g, "App/Host.cs", "Configure")
+        );
+    }
+
+    #[test]
+    fn stage7_overloads_agreeing_on_the_delegate_type_bind() {
+        // Three overloads share the name; two of them take the lambda and
+        // agree, and the string one cannot take a lambda at all, so it is
+        // dropped rather than counted as disagreement.
+        let files = fragments_for(&[
+            (
+                "Domain/Options.cs",
+                "namespace App.Domain { public class Options { public void Tune() { } } }",
+            ),
+            (
+                "Domain/Registrar.cs",
+                "\nusing System;\n\nnamespace App.Domain;\n\npublic class Registrar\n{\n    public void Same(Action<Options> a) { }\n    public void Same(Action<Options> a, bool eager) { }\n    public void Same(string tag) { }\n}\n",
+            ),
+            (
+                "App/Host.cs",
+                "\nusing System;\nusing App.Domain;\n\nnamespace App.Hosting;\n\npublic class Host\n{\n    private readonly Registrar _registrar;\n\n    public void Run()\n    {\n        _registrar.Same(s => s.Tune());\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_named(&g, "App/Host.cs", "Tune"),
+            vec![("App.Domain.Options", 13)],
+            "every overload that could take the lambda names Action<Options>, so there is nothing \
+             left to guess at"
+        );
+    }
+
+    #[test]
+    fn stage7_generic_delegate_parameter_yields_no_edge() {
+        // Action<T> records its argument as a wildcard: nothing at this call
+        // site knows what T is bound to, the same refusal every other
+        // wildcard generic-arg fact in this file makes.
+        let files = fragments_for(&[
+            (
+                "Domain/Options.cs",
+                "namespace App.Domain { public class Options { public void Configure() { } } }",
+            ),
+            (
+                "Domain/Registrar.cs",
+                "\nusing System;\n\nnamespace App.Domain;\n\npublic class Registrar\n{\n    public void Generic<T>(Action<T> configure) { }\n}\n",
+            ),
+            (
+                "App/Host.cs",
+                "\nusing System;\nusing App.Domain;\n\nnamespace App.Hosting;\n\npublic class Host\n{\n    private readonly Registrar _registrar;\n\n    public void Run()\n    {\n        _registrar.Generic(g => g.Configure());\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert!(
+            member_edges_named(&g, "App/Host.cs", "Configure").is_empty(),
+            "the delegate types its parameter with the method's own type parameter, which names \
+             nothing: {:?}",
+            member_edges_named(&g, "App/Host.cs", "Configure")
+        );
+        // The wildcard yields NO receiver type rather than a `*` one: a named
+        // receiver that resolves to nothing would silence the scored tier,
+        // and the site is still an ordinary untyped `g.Configure()` to it.
+        assert!(
+            heuristic_member_edges_from(&g, "App/Host.cs")
+                .iter()
+                .any(|(_, line)| *line == 13),
+            "the untyped site still reaches the scored tier: {:?}",
+            heuristic_member_edges_from(&g, "App/Host.cs")
+        );
+    }
+
+    #[test]
+    fn stage7_overloads_spelling_one_name_for_different_types_leave_the_lambda_untyped() {
+        // Both parts of a partial class write `Action<Options>`, but each
+        // file imports a different `Options`. The heads agree; what they name
+        // does not, so binding to either file's meaning would be a guess.
+        let files = fragments_for(&[
+            (
+                "Alpha/Options.cs",
+                "namespace App.Alpha { public class Options { public void Configure() { } } }",
+            ),
+            (
+                "Beta/Options.cs",
+                "namespace App.Beta { public class Options { public void Configure() { } } }",
+            ),
+            (
+                "Domain/Registrar.Alpha.cs",
+                "\nusing System;\nusing App.Alpha;\n\nnamespace App.Domain;\n\npublic partial class Registrar\n{\n    public void Attach(Action<Options> a) { }\n}\n",
+            ),
+            (
+                "Domain/Registrar.Beta.cs",
+                "\nusing System;\nusing App.Beta;\n\nnamespace App.Domain;\n\npublic partial class Registrar\n{\n    public void Attach(Action<Options> a, bool eager) { }\n}\n",
+            ),
+            (
+                "App/Host.cs",
+                "\nusing System;\nusing App.Domain;\n\nnamespace App.Hosting;\n\npublic class Host\n{\n    private readonly Registrar _registrar;\n\n    public void Run()\n    {\n        _registrar.Attach(a => a.Configure());\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert!(
+            member_edges_named(&g, "App/Host.cs", "Configure").is_empty(),
+            "one spelling, two meanings: {:?}",
+            member_edges_named(&g, "App/Host.cs", "Configure")
+        );
+    }
+
+    #[test]
+    fn stage7_extension_callee_with_one_argument_too_many_leaves_the_lambda_untyped() {
+        // The extension's list starts with its `this` parameter, so a call
+        // that passes more arguments than the overload has left after it
+        // cannot be the one the lambda binds to.
+        let files = fragments_for(&[
+            (
+                "Domain/Endpoint.cs",
+                "namespace App.Domain { public class Endpoint { public void Bind() { } } }",
+            ),
+            (
+                "Domain/Registrar.cs",
+                "\nusing System;\n\nnamespace App.Domain;\n\npublic class Registrar { }\n\npublic static class RegistrarExtensions\n{\n    public static void Extend(this Registrar r, Action<Endpoint> configure) { }\n}\n",
+            ),
+            (
+                "App/Host.cs",
+                "\nusing System;\nusing App.Domain;\n\nnamespace App.Hosting;\n\npublic class Host\n{\n    private readonly Registrar _registrar;\n\n    public void Run()\n    {\n        _registrar.Extend(p => p.Bind(), true);\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert!(
+            member_edges_named(&g, "App/Host.cs", "Bind").is_empty(),
+            "two arguments against one non-receiver parameter: {:?}",
+            member_edges_named(&g, "App/Host.cs", "Bind")
+        );
+    }
+
+    #[test]
+    fn stage7_external_callee_leaves_the_lambda_untyped() {
+        // The owner resolves to nothing in-graph and no extension declares
+        // the member either, so there is no parameter list to read at all.
+        let files = fragments_for(&[
+            (
+                "Domain/Options.cs",
+                "namespace App.Domain { public class Options { public void Configure() { } } }",
+            ),
+            (
+                "App/Host.cs",
+                "\nusing System;\nusing App.Domain;\n\nnamespace App.Hosting;\n\npublic class Host\n{\n    public void Run(IServiceCollection services)\n    {\n        services.AddThing(x => x.Configure());\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert!(
+            member_edges_named(&g, "App/Host.cs", "Configure").is_empty(),
+            "an external callee's parameter list is not this graph's to read: {:?}",
+            member_edges_named(&g, "App/Host.cs", "Configure")
+        );
+    }
+
+    #[test]
+    fn stage7_bare_call_lambda_is_typed_through_the_enclosing_type_and_its_base() {
+        // A bare `M(...)` records the ENCLOSING type as the slot's owner, so
+        // the parameter list is looked up there first and then, exactly like
+        // any other member lookup, across its in-graph bases.
+        let options = (
+            "Domain/Options.cs",
+            "namespace App.Domain { public class Options { public void Configure() { } } }",
+        );
+        let inherited = fragments_for(&[
+            options,
+            (
+                "App/HostBase.cs",
+                "\nusing System;\nusing App.Domain;\n\nnamespace App.Hosting;\n\npublic class HostBase\n{\n    protected void Register(Action<Options> configure) { }\n}\n",
+            ),
+            (
+                "App/Host.cs",
+                "\nusing System;\nusing App.Domain;\n\nnamespace App.Hosting;\n\npublic class Host : HostBase\n{\n    public void Run()\n    {\n        Register(y => y.Configure());\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &inherited);
+        assert_eq!(
+            member_edges_named(&g, "App/Host.cs", "Configure"),
+            vec![("App.Domain.Options", 11)],
+            "the enclosing type declares no Register of its own, so the base that does supplies \
+             the delegate parameter"
+        );
+
+        let own = fragments_for(&[
+            options,
+            (
+                "App/Host.cs",
+                "\nusing System;\nusing App.Domain;\n\nnamespace App.Hosting;\n\npublic class Host\n{\n    public void Run()\n    {\n        Register(y => y.Configure());\n    }\n\n    private void Register(Action<Options> configure) { }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &own);
+        assert_eq!(
+            member_edges_named(&g, "App/Host.cs", "Configure"),
+            vec![("App.Domain.Options", 11)],
+            "and a PRIVATE overload the enclosing type declares itself answers just as well -- the \
+             parameter table records every method, whatever its visibility"
+        );
+    }
+
+    #[test]
+    fn stage7_extension_callee_types_the_lambda_after_the_this_parameter() {
+        // An extension method's own parameter list carries the receiver in
+        // position 0, so every argument the SITE wrote sits one place
+        // further right.
+        let in_graph = fragments_for(&[
+            (
+                "Domain/Endpoint.cs",
+                "namespace App.Domain { public class Endpoint { public void Bind() { } } }",
+            ),
+            (
+                "Domain/Registrar.cs",
+                "namespace App.Domain { public class Registrar { } }",
+            ),
+            (
+                "Domain/RegistrarExtensions.cs",
+                "\nusing System;\n\nnamespace App.Domain;\n\npublic static class RegistrarExtensions\n{\n    public static void Extend(this Registrar r, Action<Endpoint> configure) { }\n}\n",
+            ),
+            (
+                "App/Host.cs",
+                "\nusing System;\nusing App.Domain;\n\nnamespace App.Hosting;\n\npublic class Host\n{\n    private readonly Registrar _registrar;\n\n    public void Run()\n    {\n        _registrar.Extend(p => p.Bind());\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &in_graph);
+        assert_eq!(
+            member_edges_named(&g, "App/Host.cs", "Bind"),
+            vec![("App.Domain.Endpoint", 13)],
+            "Registrar declares no Extend of its own, so the extension bucket answers -- and its \
+             second parameter, not its first, is the lambda's slot"
+        );
+
+        let external = fragments_for(&[
+            (
+                "Domain/Options.cs",
+                "namespace App.Domain { public class Options { public void Configure() { } } }",
+            ),
+            (
+                "Ext/ServiceExtensions.cs",
+                "\nusing System;\nusing App.Domain;\n\nnamespace App.Ext;\n\npublic static class ServiceExtensions\n{\n    public static void AddThing(this IServiceCollection s, Action<Options> configure) { }\n}\n",
+            ),
+            (
+                "App/Host.cs",
+                "\nusing System;\nusing App.Ext;\n\nnamespace App.Hosting;\n\npublic class Host\n{\n    public void Run(IServiceCollection services)\n    {\n        services.AddThing(x => x.Configure());\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &external);
+        assert_eq!(
+            member_edges_named(&g, "App/Host.cs", "Configure"),
+            vec![("App.Domain.Options", 11)],
+            "an EXTERNAL receiver still names its own bucket key, and the extension declared \
+             against it types the lambda from its own file's context"
+        );
+    }
+
+    #[test]
+    fn stage7_lambda_receiver_type_resolves_in_the_declaring_file_context() {
+        // Two types share the simple name Options. The callee's file imports
+        // one, the site's file imports the other -- and the descriptor is a
+        // bare identifier that only means what the file that WROTE it meant.
+        let files = fragments_for(&[
+            (
+                "Alpha/Options.cs",
+                "namespace Domain.Alpha { public class Options { public void Configure() { } } }",
+            ),
+            (
+                "Beta/Options.cs",
+                "namespace Domain.Beta { public class Options { public void Configure() { } } }",
+            ),
+            (
+                "Domain/Registrar.cs",
+                "\nusing System;\nusing Domain.Alpha;\n\nnamespace App.Domain;\n\npublic class Registrar\n{\n    public void Register(Action<Options> configure) { }\n}\n",
+            ),
+            (
+                "App/Host.cs",
+                "\nusing App.Domain;\nusing Domain.Beta;\n\nnamespace App.Hosting;\n\npublic class Host\n{\n    private readonly Registrar _registrar;\n\n    public void Run()\n    {\n        _registrar.Register(x => x.Configure());\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_named(&g, "App/Host.cs", "Configure"),
+            vec![("Domain.Alpha.Options", 13)],
+            "the declaring file imports Domain.Alpha, so that is the Options its parameter names \
+             -- resolving the descriptor under the SITE's own usings would answer Domain.Beta"
         );
     }
 }

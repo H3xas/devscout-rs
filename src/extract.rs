@@ -379,6 +379,20 @@ pub struct DefRecord {
     /// extension tier. A read (no `argCount`) never consults this table.
     /// Appended LAST of all, after `non_public_methods`.
     pub method_arities: Vec<(String, Vec<(usize, i64)>)>,
+    /// Method name -> per-overload parameter type descriptors (see
+    /// `type_descriptor`), one `Vec<String>` per overload in declaration
+    /// order -- covers EVERY `method_declaration`, public and non-public
+    /// alike, same method set as `method_arities`. A position naming the
+    /// enclosing method's or type's own type parameter is recorded as `"*"`
+    /// (wildcard); a parameter carrying the `this` modifier is written
+    /// `"this <descriptor>"` (the extension-method marker). For a
+    /// `delegate` def this carries exactly one entry, keyed `"Invoke"`,
+    /// built from the delegate's own parameter list (a delegate has no
+    /// body, so it is not one of the `method_declaration` overloads this
+    /// otherwise iterates). A `Vec` of pairs, not a map, for the same
+    /// reason `method_returns` is one: the serialized key order is
+    /// significant. Appended LAST of all, after `method_arities`.
+    pub method_params: Vec<(String, Vec<Vec<String>>)>,
     /// 1-based last line of the complete declaration node.
     pub end_line: usize,
 }
@@ -514,6 +528,14 @@ pub struct RefRecord {
     /// every ref kind but `uses-member`. Appended LAST of all, after
     /// `receiver_awaited`.
     pub receiver_local: bool,
+    /// Set when this ref's qualifier is an untyped lambda parameter whose
+    /// type is a delegate parameter of some OTHER callee -- a lookup only
+    /// the resolver can do. Never set alongside `receiver_type` or
+    /// `receiver_call_owner`: the three are mutually exclusive on one ref.
+    /// `receiver_local` still reads `true` for such a ref (the parameter
+    /// IS a member-scoped name), and `receiver_type` stays `None`. Appended
+    /// LAST of all, after `receiver_local`.
+    pub receiver_lambda: Option<LambdaSlot>,
 }
 
 /// Represents `UsingRecord`.
@@ -709,6 +731,75 @@ fn generic_arg_descriptors(
     Some(descriptors)
 }
 
+// A canonical, NESTED text descriptor for a type node -- unlike
+// `base_type_identifier`, which strips generic arguments to a bare name,
+// this one renders them recursively: `Action<Options>` records exactly
+// that, not `Action`. Used for `DefRecord::method_params`, where an
+// overload's shape has to distinguish `Action<Options>` from
+// `Func<Options,bool>` at a glance rather than collapsing both to `Action`/
+// `Func`. Never returns an empty string -- positions in a parameter list
+// must stay aligned, so an unreadable node still gets a one-character
+// placeholder rather than dropping out silently.
+//
+//   - `nullable_type` -- the descriptor of its inner `type` (the `?` is not
+//     part of the shape this records).
+//   - `array_type` -- the element's descriptor, plus a literal `[]`.
+//   - `qualified_name`/`alias_qualified_name` -- the descriptor of the
+//     `name` field only, exactly like `base_type_identifier`: the
+//     qualifier is dropped.
+//   - `generic_name` -- the identifier text, `<`, each named child of its
+//     `type_argument_list` recursively descriptor'd and joined by `,` (no
+//     spaces), then `>`.
+//   - `identifier` -- `*` when the name is one of `type_params` (the
+//     enclosing method's or type's own type parameter), else the text.
+//   - `predefined_type` -- its own text (`string`, `int`, ...).
+//   - anything else (a tuple type, a pointer, a function pointer, a
+//     missing node) -- `?`.
+fn type_descriptor(node: Option<Node>, src: &[u8], type_params: &HashSet<String>) -> String {
+    let Some(node) = node else {
+        return "?".to_string();
+    };
+    match node.kind() {
+        "nullable_type" => type_descriptor(node.child_by_field_name("type"), src, type_params),
+        "array_type" => {
+            let element = type_descriptor(node.child_by_field_name("type"), src, type_params);
+            format!("{element}[]")
+        }
+        "qualified_name" | "alias_qualified_name" => {
+            type_descriptor(node.child_by_field_name("name"), src, type_params)
+        }
+        "generic_name" => {
+            let ident = named_children(node)
+                .into_iter()
+                .find(|c| c.kind() == "identifier")
+                .map(|id| text(id, src))
+                .unwrap_or_default();
+            let args = named_children(node)
+                .into_iter()
+                .find(|c| c.kind() == "type_argument_list")
+                .map(|list| {
+                    named_children(list)
+                        .into_iter()
+                        .map(|a| type_descriptor(Some(a), src, type_params))
+                        .collect::<Vec<_>>()
+                        .join(",")
+                })
+                .unwrap_or_default();
+            format!("{ident}<{args}>")
+        }
+        "identifier" => {
+            let name = text(node, src);
+            if type_params.contains(&name) {
+                "*".to_string()
+            } else {
+                name
+            }
+        }
+        "predefined_type" => text(node, src),
+        _ => "?".to_string(),
+    }
+}
+
 // The type-parameter names a declaration introduces (`class Box<T>`,
 // `void Then<TSaga, TData>(...)`). Empty for every non-generic declaration.
 fn type_parameter_names(node: Node, src: &[u8]) -> HashSet<String> {
@@ -892,6 +983,7 @@ fn push_ref(
         receiver_base: false,
         receiver_awaited: false,
         receiver_local: false,
+        receiver_lambda: None,
     });
 }
 
@@ -927,6 +1019,7 @@ fn push_ctor_param_ref(
         receiver_base: false,
         receiver_awaited: false,
         receiver_local: false,
+        receiver_lambda: None,
     });
 }
 
@@ -985,25 +1078,36 @@ fn push_member_ref(
     receiver_base: bool,
     receiver_local: bool,
 ) {
-    // A call fact records the CALLEE it depends on and never a receiver type:
-    // the two are mutually exclusive on one ref, which is what lets every
-    // reader tell a recorded type from a lookup the resolver still owes.
-    let (receiver_type, receiver_args, receiver_call_owner, receiver_call_member, receiver_awaited) =
-        match receiver {
-            Some(Fact {
-                type_name,
-                call: Some(member),
-                awaited,
-                ..
-            }) => (None, None, Some(type_name), Some(member), awaited),
-            Some(Fact {
-                type_name,
-                args,
-                call: None,
-                ..
-            }) => (Some(type_name), args, None, None, false),
-            None => (None, None, None, None, false),
-        };
+    // A call fact records the CALLEE it depends on and never a receiver type;
+    // a lambda-slot fact records the SLOT this untyped parameter fills on a
+    // callee invocation and never either of the other two shapes. The three
+    // are mutually exclusive on one ref, which is what lets every reader
+    // tell a recorded type, a call lookup, and a lambda-slot lookup apart.
+    let (
+        receiver_type,
+        receiver_args,
+        receiver_call_owner,
+        receiver_call_member,
+        receiver_awaited,
+        receiver_lambda,
+    ) = match receiver {
+        Some(Fact {
+            lambda: Some(slot), ..
+        }) => (None, None, None, None, false, Some(slot)),
+        Some(Fact {
+            type_name,
+            call: Some(member),
+            awaited,
+            ..
+        }) => (None, None, Some(type_name), Some(member), awaited, None),
+        Some(Fact {
+            type_name,
+            args,
+            call: None,
+            ..
+        }) => (Some(type_name), args, None, None, false, None),
+        None => (None, None, None, None, false, None),
+    };
     match qualifier_text.rfind('.') {
         Some(dot) => refs.push(RefRecord {
             kind: "uses-member".to_string(),
@@ -1025,6 +1129,7 @@ fn push_member_ref(
             receiver_base,
             receiver_awaited,
             receiver_local,
+            receiver_lambda: receiver_lambda.clone(),
         }),
         None => refs.push(RefRecord {
             kind: "uses-member".to_string(),
@@ -1046,6 +1151,7 @@ fn push_member_ref(
             receiver_base,
             receiver_awaited,
             receiver_local,
+            receiver_lambda,
         }),
     }
 }
@@ -1224,6 +1330,107 @@ fn raw_method_arities(node: Node, src: &[u8]) -> Vec<(String, Vec<(usize, i64)>)
         }
     }
     pairs
+}
+
+// Every `method_declaration`'s own (name, per-overload parameter
+// descriptors) fact, regardless of accessibility -- same method set as
+// `raw_method_arities` (all visibilities, one entry per overload, in
+// declaration order). A parameter carrying the `this` modifier records
+// `"this <descriptor>"` -- the same modifier `raw_extension_methods` itself
+// reads off the first parameter -- and `params`/`ref`/`out`/`in` modifiers
+// are ignored (a plain descriptor). The type-parameter set for one method
+// is the enclosing type's own (`type_params`, the same set
+// `raw_extension_methods` starts its own per-method union from) plus this
+// method's OWN type parameters unioned on top, exactly like
+// `raw_extension_methods`'s `this_args` capture does.
+//
+// A `delegate_declaration` (no body at all) is the one caller-recognized
+// exception: it returns exactly one entry, `("Invoke", ...)`, built from
+// the delegate's own `parameters` field and its own type parameters unioned
+// onto `type_params` the same way -- callers pass an empty enclosing set for
+// a delegate, same as `record_type_def` does for every other
+// per-declaration fact of one.
+fn raw_method_params(
+    node: Node,
+    src: &[u8],
+    type_params: &HashSet<String>,
+) -> Vec<(String, Vec<Vec<String>>)> {
+    if node.kind() == "delegate_declaration" {
+        let Some(parameters) = node.child_by_field_name("parameters") else {
+            return Vec::new();
+        };
+        let mut own_type_params = type_params.clone();
+        own_type_params.extend(type_parameter_names(node, src));
+        return vec![(
+            "Invoke".to_string(),
+            vec![method_param_descriptors(parameters, src, &own_type_params)],
+        )];
+    }
+    let Some(body) = node.child_by_field_name("body") else {
+        return Vec::new();
+    };
+    let mut pairs: Vec<(String, Vec<Vec<String>>)> = Vec::new();
+    for c in named_children(body) {
+        if c.kind() != "method_declaration" {
+            continue;
+        }
+        let name = declared_name(c, src);
+        if name.is_empty() {
+            continue;
+        }
+        let mut own_type_params = type_params.clone();
+        own_type_params.extend(type_parameter_names(c, src));
+        let descriptors = match c.child_by_field_name("parameters") {
+            Some(parameters) => method_param_descriptors(parameters, src, &own_type_params),
+            None => Vec::new(),
+        };
+        match pairs.iter_mut().find(|(n, _)| *n == name) {
+            Some((_, overloads)) => overloads.push(descriptors),
+            None => pairs.push((name, vec![descriptors])),
+        }
+    }
+    pairs
+}
+
+// One parameter list's descriptors, in source order -- covers the ORDINARY
+// `parameter` node shape AND the flattened `params`-array shape the
+// grammar uses instead of wrapping a `params` parameter in its own
+// `parameter` node (see `parameter_arity_range`'s own doc comment: a
+// `params` array's `type`/`name` land as direct FIELD-tagged children of
+// the parameter_list itself, never inside a nested `parameter` node). A
+// `this` modifier writes `"this <descriptor>"`; every other modifier
+// (`params`, `ref`, `out`, `in`) is ignored -- a plain descriptor.
+fn method_param_descriptors(
+    parameters: Node,
+    src: &[u8],
+    type_params: &HashSet<String>,
+) -> Vec<String> {
+    let mut out = Vec::new();
+    for i in 0..parameters.child_count() as u32 {
+        let Some(c) = parameters.child(i) else {
+            continue;
+        };
+        if c.kind() == "parameter" {
+            let is_this = named_children(c)
+                .iter()
+                .any(|m| m.kind() == "modifier" && text(*m, src) == "this");
+            let descriptor = type_descriptor(c.child_by_field_name("type"), src, type_params);
+            out.push(if is_this {
+                format!("this {descriptor}")
+            } else {
+                descriptor
+            });
+            continue;
+        }
+        // The flattened `params`-array shape: its type is a direct child
+        // of the parameter_list tagged with the list's own `type` field
+        // (its `name` field carries the flattened parameter's NAME the
+        // same way -- skipped here, one descriptor per position, not two).
+        if parameters.field_name_for_child(i) == Some("type") {
+            out.push(type_descriptor(Some(c), src, type_params));
+        }
+    }
+    out
 }
 
 // Declared property names, source order, deduped. Indexers are
@@ -1890,8 +2097,9 @@ fn record_type_def(
     // -- then extensionMethods and (for the inheritance veto) bases, then
     // type_params and base_generic_args, then testMethods, then propertyTypes,
     // fieldTypes and methodReturnArgs, then nonPublicMethods, then
-    // methodArities. Each is omitted when empty, so a type with none of them
-    // serializes exactly as it did before those additions.
+    // methodArities, then methodParams. Each is omitted when empty, so a
+    // type with none of them serializes exactly as it did before those
+    // additions.
     defs.push(DefRecord {
         id,
         name,
@@ -1912,6 +2120,7 @@ fn record_type_def(
         method_return_args: raw_method_return_args(node, src, kind, type_params),
         non_public_methods: raw_non_public_method_names(node, src, kind),
         method_arities: raw_method_arities(node, src),
+        method_params: raw_method_params(node, src, type_params),
         end_line: node.end_position().row + 1,
     });
 }
@@ -1963,6 +2172,7 @@ fn record_enum_members(
             method_return_args: Vec::new(),
             non_public_methods: Vec::new(),
             method_arities: Vec::new(),
+            method_params: Vec::new(),
             end_line: member.end_position().row + 1,
         });
     }
@@ -2031,6 +2241,34 @@ fn record_using(node: Node, src: &[u8], usings: &mut Vec<UsingRecord>, refs: &mu
 // through to a same-named field of a different type.
 // ---------------------------------------------------------------------------
 
+/// One untyped lambda parameter's callee slot.
+///
+/// The name's type is the delegate parameter of the invocation the lambda
+/// sits inside as an argument -- a lookup only the resolver can do (it has
+/// to look up the callee's own delegate-typed parameter at `arg_index` and
+/// read ITS `index`-th parameter type). `owner`/`member` name the callee like
+/// a call fact's `type_name`/`call` do; `arg_count`/`arg_index` locate the
+/// lambda among the callee's arguments; `arity`/`index` locate this
+/// parameter inside the lambda itself.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LambdaSlot {
+    /// The type-name text the callee is invoked on: the identifier's
+    /// in-file fact type, the identifier itself when the name is not taken
+    /// (a static class), or the innermost enclosing type for `this.M(...)`
+    /// / bare `M(...)`.
+    pub owner: String,
+    /// The callee method name.
+    pub member: String,
+    /// The argument count of the callee invocation.
+    pub arg_count: usize,
+    /// The position of the lambda among the callee invocation's arguments.
+    pub arg_index: usize,
+    /// The lambda's own parameter count.
+    pub arity: usize,
+    /// This parameter's position inside the lambda's parameter list.
+    pub index: usize,
+}
+
 /// One receiver fact: the declared type NAME plus that type's top-level
 /// type-argument descriptors when it carried any. Two facts agree only when
 /// BOTH halves do, so `Box<int> a` and `Box<string> a` in sibling blocks
@@ -2066,6 +2304,13 @@ pub struct Fact {
     /// `Widget[]` apart from `Widget` even though both facts otherwise read
     /// identically. Part of the equality the table compares.
     pub is_array: bool,
+    /// When set, the name is an untyped lambda parameter whose type is the
+    /// corresponding delegate parameter of the callee this slot names -- a
+    /// lookup only the resolver can do; `type_name` is empty and `call` is
+    /// `None`. Part of the equality the table compares, so two sibling
+    /// lambdas binding the same parameter name to different callees
+    /// conflict exactly like two different type names would.
+    pub lambda: Option<LambdaSlot>,
 }
 
 // name -> `Some(fact)` when exactly one fact vouches for it, `None` when the
@@ -2105,6 +2350,7 @@ fn type_fact(type_node: Option<Node>, src: &[u8], type_params: &HashSet<String>)
         call: None,
         awaited: false,
         is_array,
+        lambda: None,
     })
 }
 
@@ -2257,6 +2503,7 @@ fn collect_member_facts(
     src: &[u8],
     class_type_params: &HashSet<String>,
     type_facts: &FactTable,
+    enclosing_type: Option<&str>,
 ) -> FactTable {
     let mut type_params = class_type_params.clone();
     type_params.extend(type_parameter_names(node, src));
@@ -2303,6 +2550,7 @@ fn collect_member_facts(
                 call: Some(d.member.clone()),
                 awaited: d.awaited,
                 is_array: false,
+                lambda: None,
             });
             add_fact(&mut table, Some(d.name.clone()), fact);
         }
@@ -2319,6 +2567,11 @@ fn collect_member_facts(
         let fact = collection_element_fact(&table, type_facts, &d.collection);
         add_fact(&mut table, Some(d.name.clone()), fact);
     }
+    // Same "refuse a half-settled sibling" rule as the deferred-call loop
+    // above, over the deferred lambda parameters' own names: a slot's
+    // qualifier that is itself one of these names is refused rather than
+    // read from a half-settled table (one hop, never a chain).
+    let pending_lambda: HashSet<&str> = deferred_lambda.iter().map(|d| d.name.as_str()).collect();
     for d in &deferred_lambda {
         // Same reasoning as the foreach loop above -- and the SAME
         // no-explicit-refusal shortcut applies for the same reason:
@@ -2326,8 +2579,19 @@ fn collect_member_facts(
         // single-argument generic, never a call fact, so a sibling
         // lambda parameter sharing this one's collection name (however
         // it settles) can only ever read as "no such shape" here, same as
-        // an ordinary unresolvable receiver.
-        let fact = lambda_receiver_element_fact(&table, type_facts, &d.collection);
+        // an ordinary unresolvable receiver. The collection-element rule
+        // (Unit C) is tried FIRST and, when it declines, the callee slot
+        // is the fallback -- `orders.Where(o => o.Validate())`
+        // types `o` as the element and never records a slot for it.
+        let fact = d
+            .collection
+            .as_deref()
+            .and_then(|c| lambda_receiver_element_fact(&table, type_facts, c))
+            .or_else(|| {
+                d.slot.as_ref().and_then(|s| {
+                    lambda_slot_fact(&table, type_facts, enclosing_type, &pending_lambda, s)
+                })
+            });
         add_fact(&mut table, Some(d.name.clone()), fact);
     }
     table
@@ -2352,14 +2616,36 @@ struct DeferredForeach {
     collection: String,
 }
 
-// One single-parameter lambda (`x => ...` or `(x) => ...`) sitting as the
-// FIRST argument of an invocation on a bare-identifier receiver, awaiting the
-// second pass: the parameter's own name, and the receiver's bare identifier
-// -- resolved into an element-type fact by `lambda_receiver_element_fact`
-// once every declaration in the member has settled.
+// One untyped lambda parameter awaiting the second pass: the parameter's own
+// name, plus whichever of the two shapes it matched (either or both --
+// `collection` and `slot` are independent structural reads of the SAME
+// node). `collection` is Unit C's own shape -- a single-parameter lambda
+// sitting as the FIRST argument of an invocation on a bare-identifier
+// receiver -- carrying that receiver's bare identifier, resolved into an
+// element-type fact by `lambda_receiver_element_fact`. `slot` is the
+// broader shape -- ANY untyped lambda parameter sitting as an invocation
+// argument -- carrying the callee coordinates `lambda_slot_fact`
+// turns into a `LambdaSlot`. When both are set, the collection-element
+// fact wins and the slot is never consulted (see the deferred-lambda loop
+// in `collect_member_facts`).
 struct DeferredLambdaParam {
     name: String,
-    collection: String,
+    collection: Option<String>,
+    slot: Option<PendingSlot>,
+}
+
+// One untyped lambda parameter's callee coordinates, read purely
+// structurally by `lambda_argument_slot` (never consulting a fact table --
+// the qualifier's OWN type is looked up separately, in the second pass,
+// once it has settled). `qualifier` is `None` for `this.M(...)` and a bare
+// `M(...)` callee, `Some` for `q.M(...)`.
+struct PendingSlot {
+    qualifier: Option<String>,
+    member: String,
+    arg_count: usize,
+    arg_index: usize,
+    arity: usize,
+    index: usize,
 }
 
 // `n` (a `parameter` or `implicit_parameter` node) is the SOLE, UNTYPED
@@ -2415,6 +2701,136 @@ fn lambda_first_arg_receiver(n: Node) -> Option<Node> {
         return None;
     }
     Some(receiver)
+}
+
+// `n` (a `parameter` or `implicit_parameter` node) is an UNTYPED lambda
+// parameter sitting somewhere inside a lambda that is itself an
+// `invocation_expression` argument -- the broader shape
+// `lambda_first_arg_receiver` above declines whenever the lambda is not the
+// sole first argument on a bare-identifier member-access receiver. Purely
+// structural, never consulting a fact table: the qualifier's OWN type is
+// looked up separately, once it has settled (`lambda_slot_fact`).
+//
+// The lambda's own parent must be an `argument` WITHOUT a `name` field -- a
+// named argument (`Register(configure: x => ...)`) yields `None`, since the
+// slot this would name is not necessarily the parameter position a
+// resolver's positional delegate lookup expects. The invocation's
+// `function` must be a bare `identifier` (a static-looking callee, no
+// qualifier) or a `member_access_expression` whose own `expression` is
+// either a bare `identifier` (`q.M(...)`) or the `this` keyword
+// (`this.M(...)`, qualifier `None`) -- anything else (a `generic_name`
+// member or function, a chained `invocation_expression`/
+// `member_access_expression` receiver, `base`, a conditional-access
+// binding) declines: none of those name a callee this slot can safely
+// resolve a positional delegate parameter against.
+fn lambda_argument_slot(n: Node, src: &[u8]) -> Option<PendingSlot> {
+    let (lambda, arity, index) = match n.kind() {
+        "implicit_parameter" => (n.parent()?, 1usize, 0usize),
+        "parameter" => {
+            if n.child_by_field_name("type").is_some() {
+                return None;
+            }
+            let list = n.parent()?;
+            if list.kind() != "parameter_list" {
+                return None;
+            }
+            let params = named_children(list);
+            let index = params.iter().position(|p| p.id() == n.id())?;
+            (list.parent()?, params.len(), index)
+        }
+        _ => return None,
+    };
+    if lambda.kind() != "lambda_expression" {
+        return None;
+    }
+    let argument = lambda.parent()?;
+    if argument.kind() != "argument" || argument.child_by_field_name("name").is_some() {
+        return None;
+    }
+    let argument_list = argument.parent()?;
+    if argument_list.kind() != "argument_list" {
+        return None;
+    }
+    let args = named_children(argument_list);
+    let arg_index = args.iter().position(|a| a.id() == argument.id())?;
+    let arg_count = args.len();
+    let invocation = argument_list.parent()?;
+    if invocation.kind() != "invocation_expression" {
+        return None;
+    }
+    let function = invocation.child_by_field_name("function")?;
+    let (qualifier, member) = match function.kind() {
+        "member_access_expression" => {
+            let expr = function.child_by_field_name("expression")?;
+            let qualifier = match expr.kind() {
+                "identifier" => Some(text(expr, src)),
+                "this" => None,
+                _ => return None,
+            };
+            let name_node = function.child_by_field_name("name")?;
+            if name_node.kind() != "identifier" {
+                return None;
+            }
+            (qualifier, text(name_node, src))
+        }
+        "identifier" => (None, text(function, src)),
+        _ => return None,
+    };
+    if member.is_empty() {
+        return None;
+    }
+    Some(PendingSlot {
+        qualifier,
+        member,
+        arg_count,
+        arg_index,
+        arity,
+        index,
+    })
+}
+
+// The settled `LambdaSlot` fact for one `PendingSlot`, once every
+// declaration in the member has settled: `owner` is the callee's type, read
+// the same three-way way `qualifier_type_name` reads `Q` in `var x =
+// Q.M()` (an in-file fact's type, the bare name itself when nothing claims
+// it -- the static-class shape -- or refused when something claims the
+// name but vouches for no type), except when the qualifier is itself one of
+// `pending`'s own deferred lambda parameter names, refused rather than read
+// from a half-settled table (one hop, never a chain, same as the
+// deferred-call loop's own qualifier refusal). A `None` qualifier (a bare
+// `M(...)` or `this.M(...)` callee) reads `owner` off `enclosing_type`
+// directly instead.
+fn lambda_slot_fact(
+    table: &FactTable,
+    type_facts: &FactTable,
+    enclosing_type: Option<&str>,
+    pending: &HashSet<&str>,
+    slot: &PendingSlot,
+) -> Option<Fact> {
+    let owner = match &slot.qualifier {
+        None => enclosing_type?.to_string(),
+        Some(q) => {
+            if pending.contains(q.as_str()) {
+                return None;
+            }
+            qualifier_type_name(table, type_facts, q)?
+        }
+    };
+    Some(Fact {
+        type_name: String::new(),
+        args: None,
+        call: None,
+        awaited: false,
+        is_array: false,
+        lambda: Some(LambdaSlot {
+            owner,
+            member: slot.member.clone(),
+            arg_count: slot.arg_count,
+            arg_index: slot.arg_index,
+            arity: slot.arity,
+            index: slot.index,
+        }),
+    })
 }
 
 // The names one LINQ query clause BINDS -- `from d in xs`, `join o in ys`,
@@ -2473,50 +2889,55 @@ fn visit_member_facts(
 ) {
     if n.kind() == "parameter" {
         let name = n.child_by_field_name("name").map(|x| text(x, src));
-        match lambda_first_arg_receiver(n) {
-            // Deferred to the second pass instead of recorded as
-            // taken-but-unknown here: recording it now (even as `None`)
-            // would permanently conflict with the settled element fact
-            // `add_fact` writes later for the SAME name.
-            Some(receiver) => {
-                if let Some(name) = name.filter(|nm| !nm.is_empty()) {
-                    deferred_lambda.push(DeferredLambdaParam {
-                        name,
-                        collection: text(receiver, src),
-                    });
-                }
+        let receiver = lambda_first_arg_receiver(n);
+        let slot = lambda_argument_slot(n, src);
+        // Deferred to the second pass instead of recorded as
+        // taken-but-unknown here whenever EITHER shape matched: recording
+        // it now (even as `None`) would permanently conflict with the
+        // settled element/slot fact `add_fact` writes later for the SAME
+        // name.
+        if receiver.is_some() || slot.is_some() {
+            if let Some(name) = name.filter(|nm| !nm.is_empty()) {
+                deferred_lambda.push(DeferredLambdaParam {
+                    name,
+                    collection: receiver.map(|r| text(r, src)),
+                    slot,
+                });
             }
-            None => add_fact(
+        } else {
+            add_fact(
                 table,
                 name,
                 type_fact(n.child_by_field_name("type"), src, type_params),
-            ),
+            );
         }
     } else if n.kind() == "implicit_parameter" {
         // An implicit lambda parameter (`x => ...`) has no `parameter` node
         // at all, so it never reaches the branch above.
         let name = text(n, src);
-        match lambda_first_arg_receiver(n) {
-            // Deferred for the reason the `parameter` branch defers: an
-            // entry written now would conflict with the element fact the
-            // second pass settles for this very name.
-            Some(receiver) => {
-                if !name.is_empty() {
-                    deferred_lambda.push(DeferredLambdaParam {
-                        name,
-                        collection: text(receiver, src),
-                    });
-                }
+        let receiver = lambda_first_arg_receiver(n);
+        let slot = lambda_argument_slot(n, src);
+        // Deferred for the reason the `parameter` branch defers: an entry
+        // written now would conflict with the element/slot fact the second
+        // pass settles for this very name.
+        if receiver.is_some() || slot.is_some() {
+            if !name.is_empty() {
+                deferred_lambda.push(DeferredLambdaParam {
+                    name,
+                    collection: receiver.map(|r| text(r, src)),
+                    slot,
+                });
             }
-            // Outside a qualifying invocation the element rule types
-            // nothing -- but the name is still DECLARED here, so it is
+        } else {
+            // Outside a qualifying invocation neither rule types anything
+            // -- but the name is still DECLARED here, so it is
             // taken-but-unknown rather than unentered. A lambda parameter
             // that shares its name with a field of the enclosing type
             // shadows that field in C#, and without the entry the
             // resolver's bare-identifier fallback would type it from the
             // field and emit a precise edge to a member the call can
             // never reach.
-            None => add_fact(table, Some(name), None),
+            add_fact(table, Some(name), None);
         }
     } else if n.kind() == "variable_declaration" {
         let type_node = n.child_by_field_name("type");
@@ -2675,14 +3096,18 @@ fn invocation_call(declarator: Node, src: &[u8]) -> Option<(String, String, bool
 
 // The type NAME a bare qualifier stands for, as far as the file can vouch: the
 // fact's own type when one vouches for the name; `None` when the name is taken
-// but nothing vouches for it, or when what vouches is itself a call
-// fact (one hop, never a chain); and the text itself when no declaration in
-// scope claims the name at all -- an unclaimed bare qualifier is a type name,
-// which is the static-call shape.
+// but nothing vouches for it, when what vouches is itself a call fact (one
+// hop, never a chain), or when what vouches is itself a lambda slot fact
+// (same one-hop refusal -- its `type_name` is an empty placeholder, never a
+// real type); and the text itself when no declaration in scope claims the
+// name at all -- an unclaimed bare qualifier is a type name, which is the
+// static-call shape.
 fn qualifier_type_name(locals: &FactTable, type_facts: &FactTable, name: &str) -> Option<String> {
     match locals.get(name).or_else(|| type_facts.get(name)) {
         None => Some(name.to_string()),
-        Some(Some(fact)) if fact.call.is_none() => Some(fact.type_name.clone()),
+        Some(Some(fact)) if fact.call.is_none() && fact.lambda.is_none() => {
+            Some(fact.type_name.clone())
+        }
         Some(_) => None,
     }
 }
@@ -2703,6 +3128,7 @@ fn collection_element_fact(locals: &FactTable, type_facts: &FactTable, name: &st
                 call: None,
                 awaited: false,
                 is_array: false,
+                lambda: None,
             }),
             _ => None,
         },
@@ -2736,6 +3162,9 @@ fn collection_element_fact(locals: &FactTable, type_facts: &FactTable, name: &st
 // it already falls through the generic-argument arm to `None`, and
 // `is_array` is always `false` for one too (never set by anything but
 // `type_fact`) -- both refusals happen for free, no explicit check needed.
+// A lambda-slot fact (an untyped lambda parameter whose type the resolver
+// reads off its callee) lands in the same table with the same `args: None`
+// and `is_array: false`, so it falls through the same way.
 fn lambda_receiver_element_fact(
     locals: &FactTable,
     type_facts: &FactTable,
@@ -2753,6 +3182,7 @@ fn lambda_receiver_element_fact(
                 call: None,
                 awaited: false,
                 is_array: false,
+                lambda: None,
             })
         } else {
             None
@@ -2765,6 +3195,7 @@ fn lambda_receiver_element_fact(
             call: None,
             awaited: false,
             is_array: false,
+            lambda: None,
         }),
         _ => None,
     }
@@ -2794,6 +3225,13 @@ struct Scope<'a> {
     /// same way. A member scope unions its own on top when it builds its
     /// member table (see `collect_member_facts`).
     type_params: Rc<HashSet<String>>,
+    /// The innermost enclosing type's own simple name (no namespace, no
+    /// nested-type "+" chain) -- `None` at the root scope (no enclosing
+    /// type at all), `Some` from `for_type` on and threaded unchanged
+    /// through every member scope opened under it. This is the `owner` an
+    /// untyped lambda parameter's bare `this.M(...)`/`M(...)` slot resolves
+    /// to (see `lambda_slot_fact`).
+    type_name: Option<String>,
     /// `None` at type-body level: a type body is not a member body.
     node: Option<Node<'a>>,
     /// Built on FIRST USE, not on scope entry: most member declarations in a
@@ -2808,6 +3246,7 @@ impl<'a> Scope<'a> {
         Scope {
             type_facts: Rc::new(FactTable::new()),
             type_params: Rc::new(HashSet::new()),
+            type_name: None,
             node: None,
             member_facts: OnceCell::new(),
         }
@@ -2815,9 +3254,11 @@ impl<'a> Scope<'a> {
 
     fn for_type(node: Node<'a>, src: &[u8]) -> Self {
         let type_params = type_parameter_names(node, src);
+        let name = declared_name(node, src);
         Scope {
             type_facts: Rc::new(collect_type_facts(node, src, &type_params)),
             type_params: Rc::new(type_params),
+            type_name: if name.is_empty() { None } else { Some(name) },
             node: None,
             member_facts: OnceCell::new(),
         }
@@ -2827,6 +3268,7 @@ impl<'a> Scope<'a> {
         Scope {
             type_facts: Rc::clone(&self.type_facts),
             type_params: Rc::clone(&self.type_params),
+            type_name: self.type_name.clone(),
             node: Some(node),
             member_facts: OnceCell::new(),
         }
@@ -2837,8 +3279,15 @@ impl<'a> Scope<'a> {
     // fall through to a same-named field of a different type.
     fn receiver_fact_for(&self, name: &str, src: &[u8]) -> Option<Fact> {
         let locals = self.member_facts.get_or_init(|| {
-            self.node
-                .map(|n| collect_member_facts(n, src, &self.type_params, &self.type_facts))
+            self.node.map(|n| {
+                collect_member_facts(
+                    n,
+                    src,
+                    &self.type_params,
+                    &self.type_facts,
+                    self.type_name.as_deref(),
+                )
+            })
         });
         if let Some(table) = locals {
             if let Some(found) = table.get(name) {
@@ -2859,8 +3308,15 @@ impl<'a> Scope<'a> {
     // one source of truth.
     fn has_local_fact(&self, name: &str, src: &[u8]) -> bool {
         let locals = self.member_facts.get_or_init(|| {
-            self.node
-                .map(|n| collect_member_facts(n, src, &self.type_params, &self.type_facts))
+            self.node.map(|n| {
+                collect_member_facts(
+                    n,
+                    src,
+                    &self.type_params,
+                    &self.type_facts,
+                    self.type_name.as_deref(),
+                )
+            })
         });
         locals
             .as_ref()
@@ -2941,6 +3397,7 @@ fn resolve_member_qualifier(
                 call: None,
                 awaited: false,
                 is_array: false,
+                lambda: None,
             }),
             text: qt,
             generic,
@@ -2975,7 +3432,7 @@ fn resolve_member_qualifier(
     let property_owner = dot_at
         .filter(|d| !qt[d + 1..].contains('.'))
         .and_then(|d| scope.receiver_fact_for(&qt[..d], src))
-        .filter(|fact| fact.call.is_none())
+        .filter(|fact| fact.call.is_none() && fact.lambda.is_none())
         .map(|fact| fact.type_name);
     Some(QualifierResolution {
         text: qt,
@@ -2992,15 +3449,16 @@ fn resolve_member_qualifier(
 // answer `qualifier_type_name` gives `Q` in `var x = Q.M()`, reused here
 // over `Scope`'s own tables since this runs from `walk()`, not from a
 // `collect_member_facts` pass: an in-file fact when one vouches for the
-// name (a call-shaped fact refused -- one hop, never a chain); the bare
-// name itself when nothing in scope claims it at all (the static-qualifier
-// shape, `Repo.Load().Validate()`); `None` when something claims the name
-// but vouches for no type.
+// name (a call-shaped or lambda-slot-shaped fact refused -- one hop, never
+// a chain); the bare name itself when nothing in scope claims it at all
+// (the static-qualifier shape, `Repo.Load().Validate()`); `None` when
+// something claims the name but vouches for no type.
 fn chain_tail_receiver_type(a_text: &str, scope: &Scope, src: &[u8]) -> Option<String> {
     match scope.receiver_fact_for(a_text, src) {
         Some(Fact {
             type_name,
             call: None,
+            lambda: None,
             ..
         }) => Some(type_name),
         Some(_) => None,
@@ -3460,6 +3918,7 @@ fn walk<'a>(
                                 call: Some(inner_member),
                                 awaited: false,
                                 is_array: false,
+                                lambda: None,
                             }),
                             invocation_arg_count(node),
                             type_stack,
@@ -9306,5 +9765,286 @@ public class Host
             call.receiver_type, None,
             "a two-argument generic receiver (Dictionary<K,V>) never types the lambda parameter"
         );
+    }
+
+    // --- method_params: per-overload parameter descriptors -----------------
+
+    #[test]
+    fn stage4_method_params_record_each_overload_with_type_parameters_as_wildcards() {
+        let e = extract_src(
+            r#"
+namespace App.MethodParams;
+
+public class Registrar<TKey>
+{
+    public void Register(Action<Options> configure) { }
+    public void Register(string name, Func<Options, bool> pick) { }
+    public void Register<T>(Action<T> configure, TKey key) { }
+    public void Ping() { }
+    private void Seed(List<Options>? items, Options[] more, Expression<Func<Options, object>> selector) { }
+}
+"#,
+        );
+        let d = find_def(&e, "App.MethodParams.Registrar").expect("Registrar def present");
+        let params: Vec<(&str, &[Vec<String>])> = d
+            .method_params
+            .iter()
+            .map(|(n, o)| (n.as_str(), o.as_slice()))
+            .collect();
+        assert_eq!(
+            params,
+            vec![
+                (
+                    "Register",
+                    &[
+                        vec!["Action<Options>".to_string()],
+                        vec!["string".to_string(), "Func<Options,bool>".to_string()],
+                        vec!["Action<*>".to_string(), "*".to_string()],
+                    ][..]
+                ),
+                ("Ping", &[vec![]][..]),
+                (
+                    "Seed",
+                    &[vec![
+                        "List<Options>".to_string(),
+                        "Options[]".to_string(),
+                        "Expression<Func<Options,object>>".to_string(),
+                    ]][..]
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn stage4_delegate_declaration_records_its_parameters_under_invoke() {
+        let e = extract_src(
+            r#"
+namespace App.Delegates;
+
+public delegate void Configure(Options options, int depth);
+"#,
+        );
+        let d = find_def(&e, "App.Delegates.Configure").expect("Configure delegate present");
+        assert_eq!(
+            d.method_params,
+            vec![(
+                "Invoke".to_string(),
+                vec![vec!["Options".to_string(), "int".to_string()]]
+            )]
+        );
+    }
+
+    #[test]
+    fn stage4_extension_method_params_mark_the_this_parameter() {
+        let e = extract_src(
+            r#"
+namespace App.Wiring;
+
+public static class Ext
+{
+    public static void Wire(this Host host, Action<Options> configure) { }
+}
+"#,
+        );
+        let d = find_def(&e, "App.Wiring.Ext").expect("Ext def present");
+        assert_eq!(
+            d.method_params,
+            vec![(
+                "Wire".to_string(),
+                vec![vec!["this Host".to_string(), "Action<Options>".to_string()]]
+            )]
+        );
+    }
+
+    // --- LambdaSlot: the site-side untyped-lambda callee slot ---------------
+
+    #[test]
+    fn stage4_untyped_lambda_argument_carries_its_callee_slot() {
+        let e = extract_src(
+            r#"
+namespace App.LambdaSlots;
+
+public class Host
+{
+    private Registrar reg;
+
+    public void RunOne()
+    {
+        reg.Register(x => x.Configure());
+    }
+
+    public void RunTwo()
+    {
+        Register2(x => { x.Configure(); });
+    }
+
+    public void RunThree()
+    {
+        this.Register3(x => x.Configure());
+    }
+}
+"#,
+        );
+        let slots: Vec<_> = e
+            .refs
+            .iter()
+            .filter(|r| r.kind == "uses-member" && r.member.as_deref() == Some("Configure"))
+            .collect();
+        assert_eq!(slots.len(), 3, "one Configure ref per call site");
+        let expected = [
+            LambdaSlot {
+                owner: "Registrar".to_string(),
+                member: "Register".to_string(),
+                arg_count: 1,
+                arg_index: 0,
+                arity: 1,
+                index: 0,
+            },
+            LambdaSlot {
+                owner: "Host".to_string(),
+                member: "Register2".to_string(),
+                arg_count: 1,
+                arg_index: 0,
+                arity: 1,
+                index: 0,
+            },
+            LambdaSlot {
+                owner: "Host".to_string(),
+                member: "Register3".to_string(),
+                arg_count: 1,
+                arg_index: 0,
+                arity: 1,
+                index: 0,
+            },
+        ];
+        for (r, want) in slots.iter().zip(expected.iter()) {
+            assert_eq!(r.receiver_lambda.as_ref(), Some(want));
+            assert_eq!(r.receiver_type, None);
+            assert!(r.receiver_local, "the parameter is a member-scoped name");
+        }
+    }
+
+    #[test]
+    fn stage4_lambda_slot_records_the_position_of_a_two_parameter_lambda() {
+        let e = extract_src(
+            r#"
+namespace App.LambdaSlots2;
+
+public class Host
+{
+    public void Run()
+    {
+        Bus.Configure("q", (ctx, cfg) => cfg.Bind());
+    }
+}
+"#,
+        );
+        let bind = e
+            .refs
+            .iter()
+            .find(|r| r.kind == "uses-member" && r.member.as_deref() == Some("Bind"))
+            .expect("cfg.Bind() still earns an ordinary ref");
+        assert_eq!(
+            bind.receiver_lambda,
+            Some(LambdaSlot {
+                owner: "Bus".to_string(),
+                member: "Configure".to_string(),
+                arg_count: 2,
+                arg_index: 1,
+                arity: 2,
+                index: 1,
+            })
+        );
+    }
+
+    #[test]
+    fn stage4_lambda_slot_yields_to_the_collection_element_rule() {
+        let e = extract_src(
+            r#"
+namespace App.LambdaSlots3;
+
+public class Host
+{
+    private List<Order> orders;
+
+    public void Run()
+    {
+        orders.Where(o => o.Validate());
+    }
+}
+"#,
+        );
+        let validate = e
+            .refs
+            .iter()
+            .find(|r| r.kind == "uses-member" && r.member.as_deref() == Some("Validate"))
+            .expect("o.Validate() still earns an ordinary ref");
+        assert_eq!(validate.receiver_type.as_deref(), Some("Order"));
+        assert_eq!(validate.receiver_lambda, None);
+    }
+
+    #[test]
+    fn stage4_lambda_slot_is_refused_for_named_chained_and_generic_callees() {
+        let e = extract_src(
+            r#"
+namespace App.LambdaSlots4;
+
+public class Host
+{
+    private Registrar reg;
+
+    public void Run()
+    {
+        reg.Register(configure: x => x.A());
+        reg.Build().Register(x => x.B());
+        reg.Register<Options>(x => x.C());
+    }
+}
+"#,
+        );
+        for member in ["A", "B", "C"] {
+            let r = e
+                .refs
+                .iter()
+                .find(|r| r.kind == "uses-member" && r.member.as_deref() == Some(member))
+                .unwrap_or_else(|| panic!("{member} ref present"));
+            assert_eq!(r.receiver_lambda, None, "{member} carries no slot");
+            assert_eq!(
+                r.receiver_type, None,
+                "{member} carries no receiver type either"
+            );
+        }
+    }
+
+    #[test]
+    fn stage4_two_lambdas_with_different_callees_and_one_name_conflict_to_no_slot() {
+        let e = extract_src(
+            r#"
+namespace App.LambdaSlots5;
+
+public class Host
+{
+    private Registrar reg;
+    private Widget other;
+
+    public void Run()
+    {
+        reg.Register(x => x.A());
+        other.Attach(x => x.B());
+    }
+}
+"#,
+        );
+        for member in ["A", "B"] {
+            let r = e
+                .refs
+                .iter()
+                .find(|r| r.kind == "uses-member" && r.member.as_deref() == Some(member))
+                .unwrap_or_else(|| panic!("{member} ref present"));
+            assert_eq!(
+                r.receiver_lambda, None,
+                "{member}'s parameter name conflicts across two different callees"
+            );
+        }
     }
 }
