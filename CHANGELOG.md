@@ -252,6 +252,15 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   understating both recall and precision; every corpus run now wipes the indexer state
   before mapping.
 
+### Docs
+
+- **Design for the compiler-backed enrichment layer.** `docs/design/compiler-enrichment.md`
+  settles, before any code, how a cached, out-of-process consumer of the oracle's per-site
+  records would enter `resolve`: the record contract, the `semantic-v1.json` cache and its
+  per-file content-hash validity, the `source: "semantic"` edge tag in the slot schema 2
+  reserved, how `audit --semantic` keeps the syntax-tier figures comparable, the sidecar
+  invocation model, and the gate the layer must clear to ship. No behaviour changes.
+
 ## [0.3.0] - 2026-08-27
 
 ### Added

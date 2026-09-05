@@ -127,6 +127,7 @@ untracked files and are shared correctly by worktrees:
 <git-common-dir>/scout/graph/graph.json           definitions, edges, and project units
 <git-common-dir>/scout/graph/fragments-v18.json   per-file extraction cache (incremental map)
 <git-common-dir>/scout/graph/project-units.json   csproj staleness sidecar (present only with a project model)
+<git-common-dir>/scout/graph/semantic-v1.json      planned: compiler-backed enrichment cache (see docs/design/compiler-enrichment.md)
 ```
 
 Outside a git repository the same tree is written to `<root>/.scout/` instead. `devscout init`

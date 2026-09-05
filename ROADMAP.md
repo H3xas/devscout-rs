@@ -37,3 +37,8 @@ of edge kinds than C# (see README → Limitations). Planned as three independent
 The C# side carries the same open gap as TS at the top end: no resolution through chained
 method calls, and no analysis inside external package internals. Revisited after the TS
 stages prove out the approach.
+
+The compiler-backed enrichment layer — an optional, cached input to `resolve` produced by
+the Roslyn oracle in `tools/scout-semantic` out of process, never on the hook path — is
+designed in [`docs/design/compiler-enrichment.md`](docs/design/compiler-enrichment.md),
+with the shipping gate it must clear written down before any implementation.
