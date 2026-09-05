@@ -4053,7 +4053,10 @@ pub fn resolve_graph_with_model(
         units: model.map(crate::project::graph_units).unwrap_or_default(),
     };
     if !ts_fragments_by_file.is_empty() {
-        let alias = crate::tsgraph::read_ts_path_aliases(root);
+        let alias = crate::tsgraph::read_ts_alias_scopes(
+            root,
+            ts_fragments_by_file.iter().map(|(f, _)| f.as_str()),
+        );
         let ts = crate::tsgraph::resolve_ts_graph(ts_fragments_by_file, &alias);
         graph.defs.extend(ts.defs);
         graph.edges.extend(ts.edges);

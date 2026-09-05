@@ -73,6 +73,20 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   callee's receiver is read one hop deep only (an in-file fact, a static class name, or the
   enclosing type), and a parameter name that two lambdas in one member bind to different
   callees records no slot. The fragment cache moves to v17.
+- **TypeScript aliases follow the nearest `tsconfig.json`.** A bare specifier resolves through
+  the `paths`/`baseUrl` chain of the closest ancestor `tsconfig.json` of the importing file,
+  so an app-level `@/*` inside a workspace resolves instead of falling out external; the
+  repo-root `tsconfig.json`/`tsconfig.base.json` chain stays the fallback for files under no
+  nested config or under one that declares neither option. A nested `paths` is a
+  whole-property override, TypeScript's own rule: it also turns the root's aliases off for
+  the files beneath it, so a specifier those files resolved through the root before now
+  resolves only if the nested `paths` names it.
+- **Chained TypeScript barrels are followed.** A name pulled through up to eight nested
+  `index.ts` re-exports (`export * from`, `export { X } from`) resolves to its declaring
+  file; a visited set makes a re-export cycle terminate. The barrel-followed `import` edge
+  still carries `via`, and a `jsx-use` or `call` edge bound through a two-hop barrel now
+  lands on the declaring file instead of resolving to nothing. `refs`/`impact` still fold
+  none of the TS edge kinds (README, Limitations). Pinned by `fixtures/ts-resolution/`.
 
 ### Changed
 
