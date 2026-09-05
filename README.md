@@ -241,6 +241,14 @@ graph contract; every release is gated on behavioral parity, and the committed t
 that contract byte-for-byte in this repository. You never need the reference implementation —
 everything required to build, test, and verify devscout is here.
 
+## Contributing
+
+Bug reports, feature requests, and pull requests are welcome. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for how to build, test, and submit changes;
+[GOVERNANCE.md](GOVERNANCE.md) and [MAINTAINERS.md](MAINTAINERS.md) for how the project is
+run; [SECURITY.md](SECURITY.md) for private vulnerability reporting; and
+[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for community expectations.
+
 ## License
 
 Licensed under either of
