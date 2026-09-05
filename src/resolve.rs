@@ -908,8 +908,9 @@ fn declares_in_base_closure(
 // re-applies the same rule at every recursive level. This is
 // `base_member_declared`'s own rule (a `base.` qualifier never names an
 // interface member; an interface can only ever extend other interfaces, so
-// skipping the whole base is equivalent to skipping its closure), and both
-// of this function's current callers pass `true`.
+// skipping the whole base is equivalent to skipping its closure);
+// `typed_receiver_base_member` passes `false` only for a receiver that is
+// itself an interface.
 fn first_base_declaring(
     index: &DefIndex,
     file_contexts: &HashMap<String, FileContext>,
@@ -980,16 +981,21 @@ fn base_member_declared(
 // resolved receiver def does not itself declare the member, the first def
 // in its in-graph base closure that does is the precise target -- exactly
 // the widening `base_member_declared` already does for `base.`, applied to
-// an ORDINARY typed receiver, `skip_interfaces = true` for the same reason
-// `base_member_declared` skips them, at every depth (Unit A4 item 1): an
-// interface's own method declaration has no body of its own to be the
-// target of an ordinary call (a C# 8+ default interface implementation is
-// indistinguishable from an abstract one at this def's own record, so
-// neither is treated as a precise bind target here) -- see
+// an ORDINARY typed receiver. Interfaces in the closure are skipped, at
+// every depth (Unit A4 item 1), for a CLASS or struct receiver, for the same
+// reason `base_member_declared` skips them: a class must supply a body for
+// every interface member it is called through, so the compiler binds that
+// body's declaring class, never the interface (a C# 8+ default interface
+// implementation is reachable only through the interface type, so it is not
+// a bind target for a class-typed receiver either) -- see
 // `stage3_veto_a_member_declared_by_the_receivers_interface_beats_a_matching_visible_extension`,
 // which pins exactly this: an interface-only ancestor must NOT earn a
-// precise edge, only veto the extension tier (which reads the closure
-// itself, not this function). `any_visibility` is the caller's own answer
+// precise edge from a class receiver, only veto the extension tier (which
+// reads the closure itself, not this function). An INTERFACE receiver is the
+// other half of the same rule: its closure holds nothing but interfaces, and
+// the compiler binds the base interface that declares the member
+// (`IExtended : IContract`, `ext.Fulfil()` is `IContract.Fulfil`), so the
+// walk keeps them for exactly that receiver kind. `any_visibility` is the caller's own answer
 // to "is this receiver the enclosing type itself" (the `this.` shape,
 // `receiver_type == outer_types.last()`): `true` walks
 // `declares_member_any_visibility`, `false` keeps the public-only
@@ -1006,13 +1012,20 @@ fn typed_receiver_base_member(
     arg_count: Option<usize>,
     any_visibility: bool,
 ) -> Option<usize> {
-    first_base_declaring(index, file_contexts, start, true, |index, idx| {
-        if any_visibility {
-            declares_member_any_visibility(index, idx, member, arg_count)
-        } else {
-            declares_member(index, idx, member, arg_count)
-        }
-    })
+    let skip_interfaces = index.defs[start].kind != "interface";
+    first_base_declaring(
+        index,
+        file_contexts,
+        start,
+        skip_interfaces,
+        |index, idx| {
+            if any_visibility {
+                declares_member_any_visibility(index, idx, member, arg_count)
+            } else {
+                declares_member(index, idx, member, arg_count)
+            }
+        },
+    )
 }
 
 // Unit A3 item 3: the extension bucket key tier (f) tries when the exact
@@ -10451,6 +10464,81 @@ mod tests {
             vec![("App.Domain.Derived", 10), ("App.Domain.Derived", 11)],
             "with no in-graph declaration anywhere in the closure, a type-certain qualifier still \
              binds the type it names"
+        );
+    }
+
+    #[test]
+    fn stage8_interface_receiver_binds_the_base_interface_that_declares_the_member() {
+        // `IExtended : IContract`; Fulfil is declared on IContract only, and
+        // the receiver is typed IExtended. An interface's closure holds
+        // nothing but interfaces, so the walk keeps them for an interface
+        // receiver and binds IContract -- the compiler's own containing type.
+        // A class in the graph implements Fulfil too, and must not be named.
+        let files = fragments_for(&[
+            (
+                "Domain/IContract.cs",
+                "namespace App.Domain { public interface IContract { void Fulfil(); int Size { get; } } }",
+            ),
+            (
+                "Domain/IExtended.cs",
+                "namespace App.Domain { public interface IExtended : IContract { void Extra(); } }",
+            ),
+            (
+                "Domain/Both.cs",
+                "namespace App.Domain { public class Both : IExtended { public void Fulfil() { } public int Size => 0; public void Extra() { } } }",
+            ),
+            (
+                "Consumers/Runner.cs",
+                "\nusing App.Domain;\n\nnamespace App.Consumers;\n\npublic class Runner\n{\n    public void Run(IExtended ext)\n    {\n        ext.Fulfil();\n        var n = ext.Size;\n        ext.Extra();\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_from(&g, "Consumers/Runner.cs"),
+            vec![
+                ("App.Domain.IContract", 10),
+                ("App.Domain.IContract", 11),
+                ("App.Domain.IExtended", 12),
+            ],
+            "an interface-typed receiver binds the base interface that declares the member (a \
+             method and a property alike) and its own declaration for its own member; the \
+             implementing class is never named"
+        );
+        assert!(
+            heuristic_member_edges_from(&g, "Consumers/Runner.cs").is_empty(),
+            "every site is precise; nothing is left for the heuristic tiers"
+        );
+    }
+
+    #[test]
+    fn stage8_class_receiver_still_never_binds_an_interface_ancestor() {
+        // The other half of the interface rule, unchanged: a CLASS receiver
+        // whose closure reaches Fulfil only through an interface (the class
+        // itself implements it explicitly, which the def's public member
+        // list does not record) earns no precise edge to the interface.
+        let files = fragments_for(&[
+            (
+                "Domain/IContract.cs",
+                "namespace App.Domain { public interface IContract { void Fulfil(); } }",
+            ),
+            (
+                "Domain/IExtended.cs",
+                "namespace App.Domain { public interface IExtended : IContract { } }",
+            ),
+            (
+                "Domain/Explicit.cs",
+                "namespace App.Domain { public class Explicit : IExtended { void IContract.Fulfil() { } } }",
+            ),
+            (
+                "Consumers/Runner.cs",
+                "\nusing App.Domain;\n\nnamespace App.Consumers;\n\npublic class Runner\n{\n    public void Run(Explicit e) => e.Fulfil();\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert!(
+            member_edges_from(&g, "Consumers/Runner.cs").is_empty(),
+            "a class-typed receiver skips every interface in its closure, at any depth, even when \
+             the class itself only implements the member explicitly"
         );
     }
 }
