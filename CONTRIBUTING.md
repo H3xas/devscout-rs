@@ -27,7 +27,13 @@ Before opening a pull request, run:
 ```sh
 cargo fmt --all -- --check
 cargo clippy --all-targets
+sh tools/check-architecture.sh
 ```
+
+[ARCHITECTURE.md](ARCHITECTURE.md) maps every module under `src/` to its responsibility and
+invariants and says where a change goes; read it before editing code, and keep its table
+current when you add, move, or remove a module. The check script fails when a module has no
+row or a row names a module that no longer exists, and CI runs it on every push.
 
 `cargo fmt --all -- --check` must be clean — CI enforces this on every pull request.
 
