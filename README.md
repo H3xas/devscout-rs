@@ -210,12 +210,13 @@ Known, rather than hidden:
   name-only tiers or not at all. The collection-element rule reads the receiver's shape, not
   its meaning: a call's first single-parameter lambda takes the element type of any array or
   single-type-argument generic receiver (`Task<T>`, `Lazy<T>`) the way `List<T>` gives it.
-  A lambda handed straight to an in-graph method is typed from that method's delegate
-  parameter (`Action<T>`, `Func<T, ..>`, `Predicate<T>`, `Expression<>` of those, or a
-  declared `delegate`) when every overload that can take it agrees; a callee outside the
-  graph, a generic delegate parameter, a callee reached through a chain or through another
-  untyped lambda parameter, a named argument, and a parameter name that two lambdas in one
-  member bind to different callees leave the parameter untyped.
+  A lambda handed straight to an in-graph method or extension method has each of its
+  parameters typed positionally from that method's delegate parameter (`Action<T, ..>`,
+  `Func<T, ..>`, `Predicate<T>`, `Expression<>` of those, or a declared `delegate`) when
+  every overload that can take it agrees; a callee outside the graph, a generic delegate
+  parameter, a callee reached through a chain or through another untyped lambda parameter, a
+  named argument, and a parameter name that two lambdas in one member bind to different
+  callees leave the parameter untyped.
 - **The project model reads only `.csproj` and `Directory.Build.props`.** It hand-scans
   `ProjectReference`, `Microsoft.NET.Test.Sdk`, and `IsTestProject` — no MSBuild evaluation, no
   conditions, no NuGet resolution, and no `.sln`. A file belongs to the nearest ancestor
