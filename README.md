@@ -343,7 +343,14 @@ The plumbing verb `devscout audit --semantic <refs.jsonl> [--units F] [--defs F]
 [--assert F]` scores an indexed repository's `uses-member` edges against those oracle records:
 precision per tier, recall over in-graph member sites, external-receiver leaks, structurally
 impossible edges, and fan-out. `--assert` reads a thresholds file and exits 1 on any
-violated or missing key, reporting every one, which is how CI holds the fixture's numbers.
+violated or missing key, reporting every one.
+
+Two fixture solutions carry an oracle snapshot and a thresholds file of their own:
+`fixtures/csharp-semantic/` holds the per-tier precision and recall numbers, and
+`fixtures/csharp-direction/` holds the base-and-interface direction shapes, including the four
+known false positives named under Limitations. CI regenerates each snapshot from the oracle,
+diffs it against the committed one, then indexes an isolated copy of the fixture and asserts its
+thresholds.
 
 ## Versioning and releases
 
