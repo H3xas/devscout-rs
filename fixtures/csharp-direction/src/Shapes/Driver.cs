@@ -1,7 +1,3 @@
-// Central probe driver. Run() declares one local per receiver shape used across this fixture
-// (class hierarchy, abstract/override, interface implementations, and the one generic case),
-// then reads or calls a member through each, one probe per source line with a `// case`
-// comment on the line above locating it against the oracle table.
 namespace Fixture.Shapes;
 
 public class Driver

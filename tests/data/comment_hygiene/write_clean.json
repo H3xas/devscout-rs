@@ -1,0 +1,8 @@
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Write",
+  "tool_input": {
+    "file_path": "src/probe.rs",
+    "content": "// Bare-name lookup must skip nested types to avoid ambiguous matches.\npub fn a() -> u8 {\n    1\n}\n"
+  }
+}

@@ -1,7 +1,3 @@
-// Second probe driver: declared-type-versus-initializer locals, chain tails, qualified and
-// generic static qualifiers, accessibility and explicit-implementation shapes, and a same-arity
-// overload split. One probe per source line, `// case` comment on the line above; the
-// chain-tail line (case H6) yields two oracle records, the inner call and the tail.
 namespace Fixture.Shapes;
 
 public class Driver2

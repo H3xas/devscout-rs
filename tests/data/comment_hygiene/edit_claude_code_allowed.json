@@ -1,0 +1,9 @@
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Edit",
+  "tool_input": {
+    "file_path": "src/initcmd.rs",
+    "old_string": "",
+    "new_string": "// Claude Code (or anything else reading it live) can observe mid-write.\npub fn a() {}\n"
+  }
+}
