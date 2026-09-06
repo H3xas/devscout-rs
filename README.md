@@ -276,11 +276,15 @@ Known, rather than hidden:
   are evaluated before parsing with no symbol predefined — not `DEBUG`, not `TRACE`, not a
   target-framework symbol — so `#if SYMBOL` is inactive, `#else` and `#if !SYMBOL` are active,
   and at most one arm of every group is indexed. `#define`/`#undef` inside the file are
-  honored; `DefineConstants` from a `.csproj` is not read. Inactive lines are blanked in place
-  (line numbers and offsets do not move), `#region`/`#pragma`/`#nullable`/`#line` are left to
-  the parser, and a directive-looking line inside a block comment, a verbatim string, or a raw
-  string literal is not treated as a directive. The `parse` and `spans` diagnostics show the
-  raw tree, both arms included.
+  honored; `DefineConstants` from a `.csproj` is not read. A condition combines symbols and the
+  `true`/`false` literals with `!`, `==`, `!=`, `&&`, `||` and parentheses, in that precedence
+  order. A condition that does not parse is inactive, an `#elif`/`#else`/`#endif` with no group
+  open is ignored, and an unclosed `#if` runs to the end of the file. Inactive lines are blanked
+  in place (line numbers and offsets do not move),
+  `#region`/`#pragma`/`#nullable`/`#line`/`#error`/`#warning` are left to the parser, and a
+  directive-looking line inside a block comment, a verbatim string, or a raw string literal is
+  not treated as a directive. The `parse` and `spans` diagnostics show the raw tree, both arms
+  included.
 - **Which C# constructs produce facts is catalogued, not implied.**
   [`docs/csharp-coverage.md`](docs/csharp-coverage.md) lists every construct the extractor
   meets with a verdict (`must`, `may`, `must-not` produce a fact) and the measured status,
