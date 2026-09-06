@@ -2,7 +2,9 @@
 
 A design, not an implementation. Nothing here exists in `src/` today: every artifact, flag, field
 and constant this document introduces is marked **new** or **proposed** where it is first named,
-and everything else is grep-verifiable at the commit carrying this file. The layer would let
+and everything else is grep-verifiable at `1774b1b`, the commit that introduced this file; the
+line numbers in its citations are that commit's, so on a later `main` search by the identifier
+named next to them. The layer would let
 `resolve` replace a name guess with a fact a real compiler already produced — for C# only, from a
 cache, out of process, never on the agent hook path.
 
