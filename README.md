@@ -31,7 +31,11 @@ the agent-hook integration. `devscout --help` lists everything.
 **Languages.** C# (`.cs`) is the complete story: declarations, inheritance, type and member
 usage, and preprocessor-aware extraction. TypeScript / TSX / JavaScript (`.ts`, `.tsx`, `.js`,
 `.jsx`) are indexed for `find` and file purposes, and are resolved into the graph with a
-narrower set of edge kinds — see [Limitations](#limitations).
+narrower set of edge kinds — see [Limitations](#limitations). Import specifiers resolve through
+the `paths` and `baseUrl` of the nearest `tsconfig.json` above the file (its `extends` chain
+included; a nested config that declares neither falls back to the root chain), and through
+re-export barrels up to eight hops deep, with the barrel the source names kept as `via` on the
+edge.
 
 ## Install
 
@@ -179,9 +183,10 @@ failure there never fails `init`.
 
 Known, rather than hidden:
 
-- **TypeScript reference queries fold fewer edge kinds than extraction records.** The TS/TSX
-  extractor records more relationships than the graph currently turns into queryable edges, so
-  `refs`/`impact` over TypeScript are narrower than over C#.
+- **TypeScript reference queries fold none of the TS edge kinds.** The graph carries `import`,
+  `call`, `jsx-use` and `dispatch` edges for TS/TSX files, but `refs` and `impact` read only the
+  C#-shaped `uses-type`/`uses-member` index, so those verbs answer for TypeScript defs without the
+  page-to-component and caller-to-callee rows that `graph.json` holds.
 - **Generic-delegate `typeParams` divergence is under review.** Type-parameter handling for
   generic delegate declarations does not yet agree with the rest of the generic ladder; the
   affected shapes are under review rather than pinned.
