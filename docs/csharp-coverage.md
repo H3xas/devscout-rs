@@ -12,7 +12,7 @@ or when the fixture set and this document drift apart.
 | Crate | Version |
 |---|---|
 | `tree-sitter-c-sharp` | 0.23.5 |
-| `tree-sitter` | 0.26.12 |
+| `tree-sitter` | 0.27.0 |
 
 The grammar parses every fixture file without an `ERROR` or `MISSING` node except
 `GrammarGaps.cs`, which deliberately holds the constructs it cannot parse (two `ERROR` nodes,

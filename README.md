@@ -293,7 +293,8 @@ Known, rather than hidden:
   included.
 - **Which C# constructs produce facts is catalogued, not implied.**
   [`docs/csharp-coverage.md`](docs/csharp-coverage.md) lists every construct the extractor
-  meets with a verdict (`must`, `may`, `must-not` produce a fact) and the measured status,
+  meets with a syntactic verdict, an obligation (`must`, `may`, `must-not` produce a fact) and
+  the measured status,
   pinned by `fixtures/csharp-syntax/` and `tests/csharp_syntax_matrix.rs`; the rows that are
   silent today are listed there as follow-ups rather than discovered by the next corpus.
 
