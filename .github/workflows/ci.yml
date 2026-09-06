@@ -16,6 +16,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Fixtures carry no narrative headers
+        run: '! git grep -nE ''^// Case|src/[a-z_]+\.rs:[0-9]+'' -- fixtures'
+
       - name: Install stable Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
