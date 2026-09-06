@@ -249,6 +249,18 @@ Known, rather than hidden:
   from a `foreach` variable or a lambda parameter, whose element type is recorded without its
   arguments, and the bare `IFoo` of `class X : IFoo, IFoo<int>`, whose base list keeps one
   entry per name and carries the generic one.
+- **A static qualifier walks through nested types before its next segment reads as a member.**
+  `Outer.Inner.Leaf.Value`, with or without a namespace prefix on `Outer`, binds one
+  nested-type segment at a time from the shortest head that names a type, and emits a single
+  precise edge to `Outer+Inner+Leaf` with `member` `Value`. The shorter windows of the same
+  chain no longer emit an edge that names a nested type as if it were a member of its
+  container, which is where a namespace-qualified head used to bind `Outer` with member
+  `Inner`, and a nested type whose simple name repeats across containers now binds the
+  container the qualifier names instead of dropping out as ambiguous. Both the walk and that
+  suppression stand aside for a qualifier the extractor already typed as an instance receiver,
+  whose name merely coincides with a type's. A chain with no segment after the nested type,
+  such as `nameof(Outer.Inner)`, emits no `uses-member` edge at all, and a generic nested type
+  is walked by its arity-less name.
 - **Conditional compilation uses the no-build symbol model.** `#if`/`#elif`/`#else`/`#endif`
   are evaluated before parsing with no symbol predefined — not `DEBUG`, not `TRACE`, not a
   target-framework symbol — so `#if SYMBOL` is inactive, `#else` and `#if !SYMBOL` are active,
