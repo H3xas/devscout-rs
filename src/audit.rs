@@ -413,7 +413,7 @@ fn target_matches(r: &OracleRef, edge_to: &str) -> bool {
 /// edge gets EXACTLY `target_matches`'s own verdict: the legacy path stays
 /// byte-identical. When the edge does name a member, a record sharing its
 /// `(file, startLine)` but naming a DIFFERENT member is not evidence for it
-/// -- the fixture's `tests/App.Tests/WorkerTests.cs:18` is the motivating
+/// -- the fixture's `tests/App.Tests/WorkerTests.cs` is the motivating
 /// case, `Order.Load("x").Validate()`: one line, two member references
 /// (`Load` on the `Order` qualifier, `Validate` on the chain's tail), and
 /// only the `member`-matching record may vouch for either edge.
@@ -1706,7 +1706,7 @@ mod tests {
     // --- member equality picks the right record at a shared site -----------
 
     /// The motivating case for the member-join refinement: a chain-tail call
-    /// (`Order.Load("x").Validate()`, `tests/App.Tests/WorkerTests.cs:18` in
+    /// (`Order.Load("x").Validate()`, `tests/App.Tests/WorkerTests.cs` in
     /// the fixture) puts TWO oracle records on one `(file, startLine)` --
     /// `Load` on the `Order` qualifier, `Validate` on the chain's tail -- but
     /// devscout's own extractor only ever emits an edge for the qualifier
