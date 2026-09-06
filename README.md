@@ -239,6 +239,16 @@ Known, rather than hidden:
   property when read from outside its type; and `this.M()` in a class that both inherits a
   public `M` and explicitly implements an interface's `M`. Each is pinned as a known false
   positive in `fixtures/csharp-direction`.
+- **A written type-argument count picks between same-named generic siblings.** A receiver
+  written `Foo<X>` and a base written `Foo` each bind the declaration with that many type
+  parameters, not whichever of `Foo` and `Foo<T>` the index met first; a name with no
+  declaration at that count keeps the count-blind answer. A name whose exact count is declared
+  only outside the site's imports now answers through the same global-uniqueness step a type
+  reference already uses, so a few such sites resolve elsewhere or turn external instead of
+  binding the wrong count. Two shapes still read as no type arguments: a receiver typed
+  from a `foreach` variable or a lambda parameter, whose element type is recorded without its
+  arguments, and the bare `IFoo` of `class X : IFoo, IFoo<int>`, whose base list keeps one
+  entry per name and carries the generic one.
 - **Conditional compilation uses the no-build symbol model.** `#if`/`#elif`/`#else`/`#endif`
   are evaluated before parsing with no symbol predefined — not `DEBUG`, not `TRACE`, not a
   target-framework symbol — so `#if SYMBOL` is inactive, `#else` and `#if !SYMBOL` are active,
