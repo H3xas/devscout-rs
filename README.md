@@ -31,7 +31,11 @@ the agent-hook integration. `devscout --help` lists everything.
 **Languages.** C# (`.cs`) is the complete story: declarations, inheritance, type and member
 usage, and preprocessor-aware extraction. TypeScript / TSX / JavaScript (`.ts`, `.tsx`, `.js`,
 `.jsx`) are indexed for `find` and file purposes, and are resolved into the graph with a
-narrower set of edge kinds — see [Limitations](#limitations).
+narrower set of edge kinds — see [Limitations](#limitations). Import specifiers resolve through
+the `paths` and `baseUrl` of the nearest `tsconfig.json` above the file (its `extends` chain
+included; a nested config that declares neither falls back to the root chain), and through
+re-export barrels up to eight hops deep, with the barrel the source names kept as `via` on the
+edge.
 
 ## Install
 
@@ -179,9 +183,10 @@ failure there never fails `init`.
 
 Known, rather than hidden:
 
-- **TypeScript reference queries fold fewer edge kinds than extraction records.** The TS/TSX
-  extractor records more relationships than the graph currently turns into queryable edges, so
-  `refs`/`impact` over TypeScript are narrower than over C#.
+- **TypeScript reference queries fold none of the TS edge kinds.** The graph carries `import`,
+  `call`, `jsx-use` and `dispatch` edges for TS/TSX files, but `refs` and `impact` read only the
+  C#-shaped `uses-type`/`uses-member` index, so those verbs answer for TypeScript defs without the
+  page-to-component and caller-to-callee rows that `graph.json` holds.
 - **Generic-delegate `typeParams` divergence is under review.** Type-parameter handling for
   generic delegate declarations does not yet agree with the rest of the generic ladder; the
   affected shapes are under review rather than pinned.
@@ -210,12 +215,13 @@ Known, rather than hidden:
   name-only tiers or not at all. The collection-element rule reads the receiver's shape, not
   its meaning: a call's first single-parameter lambda takes the element type of any array or
   single-type-argument generic receiver (`Task<T>`, `Lazy<T>`) the way `List<T>` gives it.
-  A lambda handed straight to an in-graph method is typed from that method's delegate
-  parameter (`Action<T>`, `Func<T, ..>`, `Predicate<T>`, `Expression<>` of those, or a
-  declared `delegate`) when every overload that can take it agrees; a callee outside the
-  graph, a generic delegate parameter, a callee reached through a chain or through another
-  untyped lambda parameter, a named argument, and a parameter name that two lambdas in one
-  member bind to different callees leave the parameter untyped.
+  A lambda handed straight to an in-graph method or extension method has each of its
+  parameters typed positionally from that method's delegate parameter (`Action<T, ..>`,
+  `Func<T, ..>`, `Predicate<T>`, `Expression<>` of those, or a declared `delegate`) when
+  every overload that can take it agrees; a callee outside the graph, a generic delegate
+  parameter, a callee reached through a chain or through another untyped lambda parameter, a
+  named argument, and a parameter name that two lambdas in one member bind to different
+  callees leave the parameter untyped.
 - **The project model reads only `.csproj` and `Directory.Build.props`.** It hand-scans
   `ProjectReference`, `Microsoft.NET.Test.Sdk`, and `IsTestProject` — no MSBuild evaluation, no
   conditions, no NuGet resolution, and no `.sln`. A file belongs to the nearest ancestor
@@ -249,6 +255,17 @@ Known, rather than hidden:
   from a `foreach` variable or a lambda parameter, whose element type is recorded without its
   arguments, and the bare `IFoo` of `class X : IFoo, IFoo<int>`, whose base list keeps one
   entry per name and carries the generic one.
+- **A fully qualified name never falls back to its bare last segment.** A dotted reference
+  whose exact-qualified lookup fails matches only a def whose full path (a nested type's `+`
+  read as `.`) ends with the text as written, and is external otherwise:
+  `RabbitMQ.Client.ExchangeType.Fanout` does not bind an in-tree `ExchangeType`,
+  `System.Text.Json.JsonSerializer.Serialize(x)` does not bind an in-tree `JsonSerializer`,
+  and `expr.Member.Name` does not bind a nested type named `Member`. `Outer.Inner` still
+  reaches `Outer+Inner`, `Box<string>.Slot` and `global::App.Widget` are read as the def
+  paths they spell, `Derived.Item` reaches an `Item` declared inside a base of `Derived`, and
+  a `using` alias at the head of a dotted name is rewritten to its target and looked up
+  exactly. A text that several def paths end with stays ambiguous. The scored `guess` tier is
+  unchanged, so a foreign dotted qualifier can still carry a tagged heuristic edge.
 - **A static qualifier walks through nested types before its next segment reads as a member.**
   `Outer.Inner.Leaf.Value`, with or without a namespace prefix on `Outer`, binds one
   nested-type segment at a time from the shortest head that names a type, and emits a single
@@ -265,14 +282,19 @@ Known, rather than hidden:
   are evaluated before parsing with no symbol predefined — not `DEBUG`, not `TRACE`, not a
   target-framework symbol — so `#if SYMBOL` is inactive, `#else` and `#if !SYMBOL` are active,
   and at most one arm of every group is indexed. `#define`/`#undef` inside the file are
-  honored; `DefineConstants` from a `.csproj` is not read. Inactive lines are blanked in place
-  (line numbers and offsets do not move), `#region`/`#pragma`/`#nullable`/`#line` are left to
-  the parser, and a directive-looking line inside a block comment, a verbatim string, or a raw
-  string literal is not treated as a directive. The `parse` and `spans` diagnostics show the
-  raw tree, both arms included.
+  honored; `DefineConstants` from a `.csproj` is not read. A condition combines symbols and the
+  `true`/`false` literals with `!`, `==`, `!=`, `&&`, `||` and parentheses, in that precedence
+  order. A condition that does not parse is inactive, an `#elif`/`#else`/`#endif` with no group
+  open is ignored, and an unclosed `#if` runs to the end of the file. Inactive lines are blanked
+  in place (line numbers and offsets do not move),
+  `#region`/`#pragma`/`#nullable`/`#line`/`#error`/`#warning` are left to the parser, and a
+  directive-looking line inside a block comment, a verbatim string, or a raw string literal is
+  not treated as a directive. The `parse` and `spans` diagnostics show the raw tree, both arms
+  included.
 - **Which C# constructs produce facts is catalogued, not implied.**
   [`docs/csharp-coverage.md`](docs/csharp-coverage.md) lists every construct the extractor
-  meets with a verdict (`must`, `may`, `must-not` produce a fact) and the measured status,
+  meets with a syntactic verdict, an obligation (`must`, `may`, `must-not` produce a fact) and
+  the measured status,
   pinned by `fixtures/csharp-syntax/` and `tests/csharp_syntax_matrix.rs`; the rows that are
   silent today are listed there as follow-ups rather than discovered by the next corpus.
 
@@ -325,14 +347,25 @@ The resolver-precision numbers come from a Roslyn oracle, [`tools/scout-semantic
 that compiles a solution and records every member reference with its resolved target. The same
 oracle has a second output mode, `--emit flowtrace-facts`, that writes the flow tracer's
 per-repository fact set with compilation-resolved types where a text pass runs out (primary
-constructors, locals, minimal-API lambdas); the fixture under `fixtures/csharp-flowtrace/` pins
-that output byte-for-byte. Roslyn stays in the sidecar -- the `devscout` binary never links it.
+constructors, locals, minimal-API lambdas). This cut emits eight fact kinds -- `message_class`,
+`consume`, `publish`, `ctor_field`, `di_binding`, `iface_impl`, `route` and `method_span` --
+under a header that names the producer, its version and the compilation; the facts carry no
+provenance of their own, and a recognised site whose type does not resolve is counted on stderr
+and fails the run under `--strict`. The fixture under `fixtures/csharp-flowtrace/` pins that
+output byte-for-byte in CI. Roslyn stays in the sidecar -- the `devscout` binary never links it.
 
 The plumbing verb `devscout audit --semantic <refs.jsonl> [--units F] [--defs F] [--json]
 [--assert F]` scores an indexed repository's `uses-member` edges against those oracle records:
 precision per tier, recall over in-graph member sites, external-receiver leaks, structurally
 impossible edges, and fan-out. `--assert` reads a thresholds file and exits 1 on any
-violated or missing key, reporting every one, which is how CI holds the fixture's numbers.
+violated or missing key, reporting every one.
+
+Two fixture solutions carry an oracle snapshot and a thresholds file of their own:
+`fixtures/csharp-semantic/` holds the per-tier precision and recall numbers, and
+`fixtures/csharp-direction/` holds the base-and-interface direction shapes, including the four
+known false positives named under Limitations. CI regenerates each snapshot from the oracle,
+diffs it against the committed one, then indexes an isolated copy of the fixture and asserts its
+thresholds.
 
 ## Versioning and releases
 
