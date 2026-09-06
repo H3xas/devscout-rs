@@ -1,16 +1,3 @@
-// A `#if DEBUG` directive interrupts a fluent member-access/invocation
-// chain midway through it. Before parsing, every byte of the inactive arm
-// -- and of the `#if`/`#endif` directive lines themselves -- is blanked
-// with spaces, so the chain reads as one uninterrupted statement running
-// straight from `.File(...)` into `.MinimumLevel.Override(...)`.
-//
-// With no build symbols defined, `DEBUG` is false, so the call inside the
-// arm -- `.WriteTo.Debug()` on line 31 -- must be absent from the
-// extracted refs entirely. The calls before and after the directive keep
-// their real line numbers and stay in ascending order: `Interval.Day`
-// (line 26) precedes the `MinimumLevel.Override` arguments (lines 33-34).
-//
-// Fully synthetic -- no identifiers below come from any real codebase.
 namespace Fixtures.Preproc
 {
   public class ChainWithIfDirective
