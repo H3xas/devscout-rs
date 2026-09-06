@@ -3,7 +3,7 @@
 // a mismatch makes reuse break silently.
 //
 // This module owns every serde struct for graph.json + the fragments-cache
-// pair (fragments-v15.json, fragments-index-v15.json), plus their path resolution,
+// pair (fragments-v18.json, fragments-index-v18.json), plus their path resolution,
 // atomic I/O, and the cache-then-resolve-then-write orchestration
 // (`rebuild_graph`). The pure resolution ladder that
 // turns fragments into `defs`/`edges` lives in `resolve.rs` and returns the
@@ -28,6 +28,29 @@
 //     candidate_count}`. Modeled as an internally-tagged enum
 //     (`#[serde(tag = "kind")]`) -- serde always emits the tag field first,
 //     matching every one of these shapes' field order.
+//   - a `uses-member` edge appends three more keys AFTER that shared prefix,
+//     in this exact order: `heuristic` (omitted when precise), `tier`, then
+//     `member`. `tier` names WHICH guess tier emitted the row and is present
+//     exactly when `heuristic` is; `member` names the member the reference
+//     reads or calls and is written on EVERY uses-member edge, the precise
+//     ones included -- it is the one fact the row never carried. Both are
+//     omit-when-`None`, so the append-last rule every other added key follows
+//     holds here too; the other two flagged kinds (inherits, uses-type) stay
+//     exactly as they were.
+//   - `schema_version` is `GRAPH_SCHEMA_VERSION`, which the `tier`/`member`
+//     append above moved to 2. `rebuild_graph`'s unchanged fast path reads
+//     the first bytes of an existing graph.json and refuses to reuse one
+//     written at an older version, so a stale artifact is rebuilt on the next
+//     `map` even when not one fragment moved.
+//   - `units` is the LAST key of the whole object, appended after `names`
+//     and omitted entirely (not `[]`) when the repo declares no `.csproj` --
+//     so a tree without one serializes byte-for-byte as it did before the
+//     project model existed. Each row's own key order is fixed too: `id`,
+//     `name`, then `refs` (omitted when the project references nothing) and
+//     `test` (omitted when false). A unit's DIRECTORY is not persisted: it
+//     is `id`'s parent, recomputed on read (`project::units_from_graph`),
+//     and neither is per-file/per-def membership -- that is derived from the
+//     unit list by `ProjectModel` rather than stored.
 //   - `stats.edges_by_kind` has a FIXED key order (inherits, uses-type,
 //     imports, uses-member, ctor-di) -- not
 //     alphabetical, not insertion order of first edge seen. A plain struct
@@ -56,6 +79,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::fs;
 use std::io;
+use std::io::Read;
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -86,6 +110,20 @@ pub fn graph_json_path(root: &Path) -> PathBuf {
     graph_dir(root).join("graph.json")
 }
 
+/// Path to the project-model staleness sidecar for `root`.
+///
+/// Holds exactly the bytes `graph.json`'s `units` array would carry -- the
+/// serialized `Vec<GraphUnit>` and nothing else. `map` compares this file
+/// against a freshly discovered model to notice a `.csproj` edit, which no
+/// mtime in the fragments index can see: `.csproj` is not a `SOURCE_EXT`, so
+/// editing one moves no graph file and `index_is_stale` stays false. Written
+/// by `rebuild_graph` only when a model exists and DELETED when one does not,
+/// so a repo that never had a `.csproj` never grows the file and one whose
+/// last `.csproj` was removed still sees a difference on the next run.
+pub fn project_units_path(root: &Path) -> PathBuf {
+    graph_dir(root).join("project-units.json")
+}
+
 // The version in both cache filenames is the fragment SCHEMA version, bumped
 // whenever the extractor starts recording something old cached fragments
 // lack -- v10 added def `type_params`/`base_generic_args` and the new
@@ -98,16 +136,28 @@ pub fn graph_json_path(root: &Path) -> PathBuf {
 // element-type fact -- no new field (it settles into the existing
 // `receiver_type`), but a cached fragment from before it can still disagree
 // with a fresh one for the same unchanged file, so it rides the same bump
-// rather than skipping it. The rename IS the invalidation mechanism:
+// rather than skipping it. v16 added the ref `receiverBase` flag, set only
+// for a `base.` qualifier -- a cached v15 fragment carries none, so every
+// `base.` receiver would silently resolve (or fail to resolve) as if it
+// were a plain `this.` receiver. v17 added no field: the extractor now
+// blanks the inactive arms of `#if`/`#else` groups before parsing, so a
+// cached v16 fragment of an unchanged file can carry twin defs and refs
+// from both arms that a fresh one no longer records -- the same
+// "disagrees for an unchanged file" case that moved v13, so it rides a
+// bump too. v18 added def `methodParams` and ref `receiverLambda`, the
+// untyped-lambda-parameter callee slot -- a cached v17 fragment carries
+// neither, so every per-overload parameter shape and every untyped-lambda
+// callee-slot lookup they back would silently see no candidates. The
+// rename IS the invalidation mechanism:
 // pre-bump caches stop being found, every file reparses
 // once, no reader carries version-compat logic. Writers delete every
 // superseded generation (see `remove_superseded_caches`).
 fn fragments_cache_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-v15.json")
+    graph_dir(root).join("fragments-v18.json")
 }
 
 fn fragments_index_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-index-v15.json")
+    graph_dir(root).join("fragments-index-v18.json")
 }
 
 // Every generation below the current one, not just the immediately previous:
@@ -142,6 +192,12 @@ const SUPERSEDED_CACHE_FILES: &[&str] = &[
     "fragments-index-v13.json",
     "fragments-v14.json",
     "fragments-index-v14.json",
+    "fragments-v15.json",
+    "fragments-index-v15.json",
+    "fragments-v16.json",
+    "fragments-index-v16.json",
+    "fragments-v17.json",
+    "fragments-index-v17.json",
 ];
 
 fn remove_superseded_caches(root: &Path) {
@@ -386,6 +442,22 @@ pub struct Candidate {
     pub file: String,
 }
 
+/// Which heuristic tier emitted a guess.
+///
+/// The two differ by an order of magnitude in precision and `heuristic: true`
+/// alone cannot tell them apart: `Ext` is C#'s own extension-method lookup run over a recorded
+/// `(member, this-type)` bucket -- a real rule, only unverifiable against an
+/// out-of-graph receiver -- while `Guess` is the scored tier picking by NAME
+/// among the defs that happen to declare a member so called.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum HeuristicTier {
+    /// Tier (f): extension-method lookup.
+    Ext,
+    /// The scored tier: a name guess.
+    Guess,
+}
+
 /// The guess tag, appended LAST on every edge kind that can
 /// carry it. `heuristic: true` is set only on an edge a heuristic tier
 /// emitted and never writes `heuristic: false`, so this side pairs
@@ -395,6 +467,19 @@ pub struct Candidate {
 /// `uses-member`), but the flag lives on all three targeted kinds because
 /// the query layer's heuristic adjacency is kind-keyed, so a future tier
 /// tagging a `uses-type` edge needs no schema change.
+///
+/// `uses-member` carries two more appended keys, `tier` then `member`, in
+/// that order and NOT mirrored onto the other two kinds: neither has a
+/// member to name, and no tier tags one today. `tier` splits the umbrella
+/// flag into the two tiers a reader can act on differently; `member` names
+/// the member the reference reads or calls and is written on every
+/// uses-member edge, precise ones included, because "which member" is a fact
+/// about the reference rather than about the guess. Both are
+/// omit-when-`None`, so a reader of the old shape sees only added keys.
+///
+/// The next slot on this variant is reserved for `source: Option<Provenance>`
+/// (`"semantic"` for an edge a real compiler vouched for), appended after
+/// `member` and omitted when empty, on the same rule.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind")]
 pub enum Edge {
@@ -442,6 +527,16 @@ pub enum Edge {
         #[serde(default, skip_serializing_if = "is_false")]
         /// The value value.
         heuristic: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        /// Which guess tier emitted this edge -- `Some` exactly when
+        /// `heuristic` is true. Build the variant through
+        /// `Edge::uses_member`, which derives one from the other.
+        tier: Option<HeuristicTier>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        /// The member this reference reads or calls, on precise and
+        /// heuristic edges alike. `None` only for a reference the extractor
+        /// recorded no member name for.
+        member: Option<String>,
     },
     #[serde(rename = "imports")]
     /// The value value.
@@ -561,6 +656,52 @@ pub enum Edge {
     },
 }
 
+impl Edge {
+    /// The guess tier that emitted this edge, or `None` on a precise one --
+    /// and on every kind that carries no tier at all, which is every kind but
+    /// `uses-member`.
+    pub fn tier(&self) -> Option<HeuristicTier> {
+        match self {
+            Edge::UsesMember { tier, .. } => *tier,
+            _ => None,
+        }
+    }
+
+    /// Whether the edge declares itself a guess, across the three kinds that
+    /// can carry the flag.
+    pub fn is_heuristic(&self) -> bool {
+        match self {
+            Edge::Inherits { heuristic, .. }
+            | Edge::UsesType { heuristic, .. }
+            | Edge::UsesMember { heuristic, .. } => *heuristic,
+            _ => false,
+        }
+    }
+
+    /// The one way to build a `uses-member` edge. `heuristic` is DERIVED from
+    /// `tier` rather than passed alongside it, so the two cannot disagree: a
+    /// tagged edge is always flagged, a flagged edge always names its tier,
+    /// and no emit site can grow a third state by forgetting a field.
+    pub fn uses_member(
+        from_file: String,
+        from_line: usize,
+        to: String,
+        to_file: String,
+        member: Option<String>,
+        tier: Option<HeuristicTier>,
+    ) -> Edge {
+        Edge::UsesMember {
+            from_file,
+            from_line,
+            to,
+            to_file,
+            heuristic: tier.is_some(),
+            tier,
+            member,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 /// Represents `EdgesByKind`.
 pub struct EdgesByKind {
@@ -594,6 +735,20 @@ pub struct EdgesByKind {
     pub dispatch: Option<usize>,
 }
 
+/// `heuristic_edge_count` split by the tier that emitted each edge, in the
+/// fixed key order every tier-keyed output uses (ext, then guess).
+///
+/// Both keys are always written, and `ext + guess` equals `heuristic_edge_count` --
+/// including after the heuristic-side dedup, which decrements the dropped
+/// edge's own tier.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+pub struct HeuristicByTier {
+    /// Edges tier (f) emitted.
+    pub ext: usize,
+    /// Edges the scored tier emitted.
+    pub guess: usize,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 /// Represents `Stats`.
 pub struct Stats {
@@ -621,11 +776,23 @@ pub struct Stats {
     /// so a partial test class split across two files is one test def.
     #[serde(default)]
     pub test_def_count: usize,
-    /// The TS resolver's own four counters, appended LAST inside
-    /// `stats` and omitted entirely when the repo carries no TS fragment (the
-    /// same omit-when-empty rule every other appended fact follows).
+    /// The TS resolver's own four counters, omitted entirely when the repo
+    /// carries no TS fragment (the same omit-when-empty rule every other
+    /// appended fact follows). Appended after `test_def_count`, and NOT last
+    /// any more: `heuristic_by_tier` below is the newer fact and takes the
+    /// tail, so a TS repo's stats block appends in the order the facts were
+    /// added rather than interleaving the newest one before an older key.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ts: Option<crate::tsgraph::TsStats>,
+    /// The tier split of `heuristic_edge_count`, appended LAST and always
+    /// serialized, like the two counters above it. `default` is for the READ
+    /// side only: a graph.json written before the tiers existed has no such
+    /// key and must read back as two zeros rather than fail to parse.
+    ///
+    /// A C#-only repo writes no `ts` key at all, so for such a tree this key
+    /// still follows `test_def_count` directly and the bytes are unchanged.
+    #[serde(default)]
+    pub heuristic_by_tier: HeuristicByTier,
 }
 
 /// One row of the full name index. Field order (`name`, `kind`,
@@ -647,6 +814,46 @@ pub struct GraphName {
     pub owner: String,
 }
 
+/// One `.csproj` project as graph.json persists it.
+///
+/// Field order (`id`, `name`, `refs`, `test`) is significant, and the last two are
+/// omit-when-empty/omit-when-false: a leaf project that references nothing
+/// and is not a test project serializes as just its `id` and `name`.
+///
+/// Deliberately NOT `project::Unit`: that type also carries `dir`, which is
+/// always `id`'s parent directory and so is recomputed on read rather than
+/// stored (`project::units_from_graph`). Nothing about which FILE belongs to
+/// which unit is persisted either -- `ProjectModel` derives that from the
+/// unit list.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GraphUnit {
+    /// Repo-relative path to the `.csproj` file, which is also this unit's
+    /// identity -- what `refs` entries name.
+    pub id: String,
+    /// The project name (the csproj file name without its extension).
+    pub name: String,
+    /// The `id`s of this project's DIRECT `ProjectReference` targets, not
+    /// transitively closed. Omitted when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub refs: Vec<String>,
+    /// Whether this is a test project. Omitted when false.
+    #[serde(default, skip_serializing_if = "is_not_test")]
+    pub test: bool,
+}
+
+fn is_not_test(b: &bool) -> bool {
+    !*b
+}
+
+/// The version stamped into every graph.json this build writes, and the one
+/// `rebuild_graph` demands before it reuses an artifact it did not just
+/// produce.
+///
+/// Bumped to 2 when `uses-member` edges gained `tier` and `member`:
+/// a schema-1 graph is READABLE (both keys default) but it is missing facts
+/// the query layer now reports, so it gets rebuilt rather than trusted.
+pub const GRAPH_SCHEMA_VERSION: u32 = 2;
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 /// Represents `Graph`.
 pub struct Graph {
@@ -665,6 +872,12 @@ pub struct Graph {
     /// set that declares no name byte-identical to what it was.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub names: Vec<GraphName>,
+    /// The repo's `.csproj` projects, sorted by `id` -- appended LAST, after
+    /// `names`, and omitted entirely when the repo declares none. A tree with
+    /// no `.csproj` therefore serializes exactly as it did before the project
+    /// model existed.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub units: Vec<GraphUnit>,
 }
 
 /// Reads and deserializes the repository graph, returning `None` on failure.
@@ -770,6 +983,92 @@ pub struct FragDef {
         skip_serializing_if = "OrderedMap::is_empty"
     )]
     pub property_types: OrderedMap<FragFact>,
+    /// Field name -> declared type fact, in source order and
+    /// under the same dedup as `fields`. Mirrors `propertyTypes` field for
+    /// field: an `OrderedMap` for the same reason (the serialized key order
+    /// is significant), a resolution input only, like `properties`/`fields`,
+    /// and this is a purely additive field -- an absent key reads back as
+    /// "no fields typed", the safe default for every fragment cached before
+    /// this field existed, so it joins the schema with no cache-version
+    /// bump. Appended right after `propertyTypes`, omitted when empty.
+    #[serde(
+        default,
+        rename = "fieldTypes",
+        skip_serializing_if = "OrderedMap::is_empty"
+    )]
+    pub field_types: OrderedMap<FragFact>,
+    /// Per method name `methodReturns` also carries an entry for,
+    /// that return type's top-level generic-arg descriptors -- the same
+    /// capture `baseGenericArgs` keeps beside `bases` (see extract.rs's
+    /// `DefRecord`). `methodReturns` itself is left exactly as it always
+    /// was (the bare return-type identifier, "Task" for
+    /// `Task<Order> GetAsync()`) so an UNAWAITED use of the same callee
+    /// keeps reading "Task" unchanged; this is a purely additive sibling
+    /// field, not a reshaping of `methodReturns`, which is what lets it
+    /// join the schema with no cache-version bump -- an absent key reads
+    /// back as "no generic args", the safe default for every fragment
+    /// cached before this field existed. Appended LAST of all, after
+    /// `fieldTypes`, omitted when empty.
+    #[serde(
+        default,
+        rename = "methodReturnArgs",
+        skip_serializing_if = "OrderedMap::is_empty"
+    )]
+    pub method_return_args: OrderedMap<Vec<String>>,
+    /// Declared method names `methods` does not carry because
+    /// `is_recorded_method` gates that list on a literal `public` modifier
+    /// (or `kind == "interface"`, where this list is always empty). Source
+    /// order, no dedup, same as `methods`. A resolution input only, like
+    /// `properties`/`fields`/`bases`: `resolve_graph` strips it before
+    /// graph.json's def rows. Consulted only for hierarchy-internal
+    /// receivers (`base.` and the `this.` shape's own base walk); the
+    /// scored tier keeps reading `methods` alone. Appended LAST of all,
+    /// after `methodReturnArgs`, omitted when empty -- purely additive, so
+    /// an absent key reads back as "no non-public methods", the safe
+    /// default for every fragment cached before this field existed, which
+    /// is what lets it join the schema with no cache-version bump.
+    #[serde(
+        default,
+        rename = "nonPublicMethods",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub non_public_methods: Vec<String>,
+    /// Method name -> the (min, max) argument-count range every overload
+    /// sharing that name accepts, one tuple per overload, in declaration
+    /// order -- covers every method, public and non-public alike (see
+    /// `extract::DefRecord::method_arities`). `max` is -1 for an unbounded
+    /// `params` overload, the same sentinel `FragExtensionMethod::arity_max`
+    /// already uses. An `OrderedMap` for the same reason `methodReturns` is
+    /// one: the serialized key order is significant. Appended LAST of all,
+    /// after `nonPublicMethods`, omitted when empty -- purely additive, so
+    /// an absent key reads back as "no arity facts", the safe default for
+    /// every fragment cached before this field existed, which is what lets
+    /// it join the schema with no cache-version bump.
+    #[serde(
+        default,
+        rename = "methodArities",
+        skip_serializing_if = "OrderedMap::is_empty"
+    )]
+    pub method_arities: OrderedMap<Vec<(usize, i64)>>,
+    /// Method name -> per-overload parameter type descriptors, one
+    /// `Vec<String>` per overload in declaration order -- covers every
+    /// method, public and non-public alike, same method set as
+    /// `methodArities` (see `extract::DefRecord::method_params`). A
+    /// position naming a type parameter of the enclosing method or class is
+    /// recorded as `"*"`; a parameter carrying the `this` modifier is
+    /// written `"this <descriptor>"`. A `delegate` def carries exactly one
+    /// entry here, keyed `"Invoke"`. An `OrderedMap` for the same reason
+    /// `methodArities` is one: the serialized key order is significant.
+    /// Appended LAST of all, after `methodArities`, omitted when empty.
+    /// Joined the schema with the v18 cache bump: a v17 fragment read back
+    /// carries none, and every overload-shape/`this`-marker/callee-slot
+    /// lookup this field backs would silently see no candidates.
+    #[serde(
+        default,
+        rename = "methodParams",
+        skip_serializing_if = "OrderedMap::is_empty"
+    )]
+    pub method_params: OrderedMap<Vec<Vec<String>>>,
     #[serde(default, rename = "endLine", skip_serializing_if = "is_zero")]
     /// The end line value.
     pub end_line: usize,
@@ -811,6 +1110,28 @@ pub struct FragExtensionMethod {
     /// key otherwise), so a non-generic entry keeps four fields exactly.
     #[serde(default, rename = "thisArgs", skip_serializing_if = "Option::is_none")]
     pub this_args: Option<Vec<String>>,
+}
+
+/// One untyped lambda parameter's callee slot (see extract.rs's `LambdaSlot`).
+///
+/// Field order (`owner`, `member`, `argCount`, `argIndex`,
+/// `arity`, `index`) is significant: serde emits struct fields in
+/// declaration order under `#[serde(rename_all = "camelCase")]`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FragLambdaSlot {
+    /// The callee's type-name text.
+    pub owner: String,
+    /// The callee method name.
+    pub member: String,
+    /// The argument count of the callee invocation.
+    pub arg_count: usize,
+    /// The position of the lambda among the callee invocation's arguments.
+    pub arg_index: usize,
+    /// The lambda's own parameter count.
+    pub arity: usize,
+    /// This parameter's position inside the lambda's parameter list.
+    pub index: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -933,6 +1254,55 @@ pub struct FragRef {
     )]
     /// The receiver call member value.
     pub receiver_call_member: Option<String>,
+    /// `true` for a `base.` qualifier -- the member lookup starts at the
+    /// enclosing type's bases and never considers the enclosing type
+    /// itself (see `extract.rs`'s `RefRecord`). Appended LAST of all, and
+    /// omitted when `false` -- an absent key reads back as `false`, the
+    /// same as a plain `this.` receiver and as every ref kind that never
+    /// sets it, and also what makes a v15 cached fragment parse safely.
+    #[serde(default, rename = "receiverBase", skip_serializing_if = "is_false")]
+    pub receiver_base: bool,
+    /// `true` when `receiverCallOwner`/`receiverCallMember` came from an
+    /// AWAITED call (see `extract.rs`'s `RefRecord`). Appended LAST of all,
+    /// after `receiverBase`, and omitted when `false` -- an absent key reads
+    /// back as `false`, the same as an unawaited call fact and as every ref
+    /// kind that never sets it, which is also what lets a cached fragment
+    /// from before this field existed parse safely with no cache-version
+    /// bump: it simply reads back as "not awaited", the same answer the
+    /// resolver gave before this field existed.
+    #[serde(default, rename = "receiverAwaited", skip_serializing_if = "is_false")]
+    pub receiver_awaited: bool,
+    /// `true` when this ref's qualifier is a bare identifier for which the
+    /// enclosing MEMBER's own fact table (locals, parameters, lambda
+    /// parameters, patterns, `out` designations) holds ANY entry for the
+    /// name, typed or taken-but-unknown (see `extract.rs`'s `RefRecord` and
+    /// `Scope::has_local_fact`). Read ONLY by the bare-identifier
+    /// field/property fallback: a member-scoped name always shadows a
+    /// same-named field, whether or not anything vouches for its type, so
+    /// that fallback never runs when this is `true`. `false` for every
+    /// dotted or generic qualifier, for `this.`/`base.` (never asked of the
+    /// enclosing scope's local table at all), and for every ref kind but
+    /// `uses-member`. Appended LAST of all, after `receiverAwaited`, and
+    /// omitted when `false` -- an absent key reads back as `false`, the
+    /// same as every ref kind that never sets it, which is also what lets a
+    /// cached fragment from before this field existed parse safely with no
+    /// cache-version bump.
+    #[serde(default, rename = "receiverLocal", skip_serializing_if = "is_false")]
+    pub receiver_local: bool,
+    /// Set when this ref's qualifier is an untyped lambda parameter whose
+    /// type is a delegate parameter of some OTHER callee (see extract.rs's
+    /// `RefRecord`). Never present alongside `receiverType` or
+    /// `receiverCallOwner`. Appended LAST of all, after `receiverLocal`,
+    /// omitted when absent. Joined the schema with the v18 cache bump: a
+    /// v17 fragment read back carries none, and every untyped-lambda
+    /// callee-slot lookup this field backs would silently see no
+    /// candidate.
+    #[serde(
+        default,
+        rename = "receiverLambda",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub receiver_lambda: Option<FragLambdaSlot>,
 }
 
 fn is_false(b: &bool) -> bool {
@@ -1062,6 +1432,41 @@ pub fn fragment_from_extraction(e: &extract::Extraction) -> Fragment {
                     }
                     m
                 },
+                field_types: {
+                    let mut m = OrderedMap::new();
+                    for (name, fact) in &d.field_types {
+                        m.insert(
+                            name.clone(),
+                            FragFact {
+                                type_name: fact.type_name.clone(),
+                                args: fact.args.clone(),
+                            },
+                        );
+                    }
+                    m
+                },
+                method_return_args: {
+                    let mut m = OrderedMap::new();
+                    for (name, args) in &d.method_return_args {
+                        m.insert(name.clone(), args.clone());
+                    }
+                    m
+                },
+                non_public_methods: d.non_public_methods.clone(),
+                method_arities: {
+                    let mut m = OrderedMap::new();
+                    for (name, ranges) in &d.method_arities {
+                        m.insert(name.clone(), ranges.clone());
+                    }
+                    m
+                },
+                method_params: {
+                    let mut m = OrderedMap::new();
+                    for (name, overloads) in &d.method_params {
+                        m.insert(name.clone(), overloads.clone());
+                    }
+                    m
+                },
                 end_line: d.end_line,
             })
             .collect(),
@@ -1104,6 +1509,17 @@ pub fn fragment_from_extraction(e: &extract::Extraction) -> Fragment {
                 receiver_property_owner: r.receiver_property_owner.clone(),
                 receiver_call_owner: r.receiver_call_owner.clone(),
                 receiver_call_member: r.receiver_call_member.clone(),
+                receiver_base: r.receiver_base,
+                receiver_awaited: r.receiver_awaited,
+                receiver_local: r.receiver_local,
+                receiver_lambda: r.receiver_lambda.as_ref().map(|s| FragLambdaSlot {
+                    owner: s.owner.clone(),
+                    member: s.member.clone(),
+                    arg_count: s.arg_count,
+                    arg_index: s.arg_index,
+                    arity: s.arity,
+                    index: s.index,
+                }),
             })
             .collect(),
         names: e
@@ -1151,6 +1567,11 @@ pub fn markup_fragment(root: &Path, rel: &str) -> Option<Fragment> {
                 base_generic_args: OrderedMap::new(),
                 test_methods: Vec::new(),
                 property_types: OrderedMap::new(),
+                field_types: OrderedMap::new(),
+                method_return_args: OrderedMap::new(),
+                non_public_methods: Vec::new(),
+                method_arities: OrderedMap::new(),
+                method_params: OrderedMap::new(),
                 end_line: d.line,
             })
             .collect(),
@@ -1178,6 +1599,10 @@ pub fn markup_fragment(root: &Path, rel: &str) -> Option<Fragment> {
                 receiver_property_owner: None,
                 receiver_call_owner: None,
                 receiver_call_member: None,
+                receiver_base: false,
+                receiver_awaited: false,
+                receiver_local: false,
+                receiver_lambda: None,
             })
             .collect(),
         names: facts
@@ -1263,18 +1688,68 @@ pub enum RebuildOutcome {
     Rebuilt(Graph),
 }
 
+/// Whether the graph.json already on disk was written at the CURRENT schema
+/// version. Reads the first 64 bytes and compares the literal
+/// `{"schema_version":N,` prefix rather than deserializing: `schema_version`
+/// is the first key `Graph` serializes, the artifact can be tens of
+/// megabytes, and this runs on the fast path whose whole point is not opening
+/// it. Anything else -- an older version, an unreadable or truncated file --
+/// answers false and costs a rebuild, which is the safe direction.
+fn graph_schema_is_current(root: &Path) -> bool {
+    let Ok(mut file) = fs::File::open(graph_json_path(root)) else {
+        return false;
+    };
+    let mut head = [0u8; 64];
+    let mut filled = 0;
+    while filled < head.len() {
+        match file.read(&mut head[filled..]) {
+            Ok(0) => break,
+            Ok(n) => filled += n,
+            Err(_) => return false,
+        }
+    }
+    head[..filled].starts_with(format!("{{\"schema_version\":{GRAPH_SCHEMA_VERSION},").as_bytes())
+}
+
+// Mirrors the model's units into the staleness sidecar. No model means the
+// repo declares no `.csproj`, and then the file must NOT exist: an empty
+// `[]` left behind would be indistinguishable from "no model" on the read
+// side, and the sidecar's whole job is telling those two apart.
+fn write_project_units(
+    root: &Path,
+    model: Option<&crate::project::ProjectModel>,
+) -> io::Result<()> {
+    match model {
+        Some(m) => atomic_write_json(&project_units_path(root), &crate::project::graph_units(m)),
+        None => {
+            let path = project_units_path(root);
+            match fs::remove_file(&path) {
+                Ok(()) => Ok(()),
+                Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+                Err(e) => Err(e),
+            }
+        }
+    }
+}
+
 /// `fresh_fragments`: fragments this run's extractor produced for files that
 /// needed reparsing (the same set that got a fresh purpose signature in the
 /// real `devscout map` flow -- `mapcmd::map_repo` assembles it). `changed`: from the
 /// caller's own `indexIsStale`-equivalent check against `csFiles`, passed in
 /// rather than recomputed so the unchanged path never opens any graph file.
+/// `model`: the repo's discovered `.csproj` projects, or `None` when it
+/// declares none -- serialized into `graph.units` and mirrored into the
+/// `project_units_path` staleness sidecar. The caller is expected to have
+/// already folded `project::sidecar_differs` into `changed`; this function
+/// only writes the sidecar, it never decides on it.
 pub fn rebuild_graph(
     root: &Path,
     graph_files: &[GraphFile],
     fresh_fragments: &HashMap<String, AnyFragment>,
     changed: bool,
+    model: Option<&crate::project::ProjectModel>,
 ) -> io::Result<RebuildOutcome> {
-    if !changed && graph_json_path(root).exists() {
+    if !changed && graph_json_path(root).exists() && graph_schema_is_current(root) {
         return Ok(RebuildOutcome::NotRebuilt);
     }
 
@@ -1306,8 +1781,9 @@ pub fn rebuild_graph(
         );
     }
 
-    let graph = crate::resolve::resolve_graph_with_ts(root, &merged_cs, &merged_ts);
+    let graph = crate::resolve::resolve_graph_with_model(root, &merged_cs, &merged_ts, model);
     write_graph(root, &graph)?;
+    write_project_units(root, model)?;
     write_fragments_cache(root, &new_cache)?;
     write_fragments_index(root, &new_cache)?;
     remove_superseded_caches(root);
@@ -1431,6 +1907,11 @@ mod tests {
             type_params: Vec::new(),
             base_generic_args: OrderedMap::new(),
             property_types: OrderedMap::new(),
+            field_types: OrderedMap::new(),
+            method_return_args: OrderedMap::new(),
+            non_public_methods: Vec::new(),
+            method_arities: OrderedMap::new(),
+            method_params: OrderedMap::new(),
             test_methods: Vec::new(),
             end_line: 0,
         }
@@ -1674,6 +2155,10 @@ mod tests {
             receiver_property_owner: None,
             receiver_call_owner: None,
             receiver_call_member: None,
+            receiver_base: false,
+            receiver_awaited: false,
+            receiver_local: false,
+            receiver_lambda: None,
         }
     }
 
@@ -1869,12 +2354,51 @@ mod tests {
             unresolved_external_count: 0,
             heuristic_edge_count: 0,
             test_def_count: 0,
+            heuristic_by_tier: HeuristicByTier::default(),
             ts: None,
         };
         let json = serde_json::to_string(&stats).unwrap();
         assert!(
-            json.ends_with(r#""heuristic_edge_count":0,"test_def_count":0}"#),
-            "test_def_count is LAST: {json}"
+            json.ends_with(
+                r#""heuristic_edge_count":0,"test_def_count":0,"heuristic_by_tier":{"ext":0,"guess":0}}"#
+            ),
+            "heuristic_by_tier is LAST, after test_def_count, and both its keys are always written: {json}"
+        );
+    }
+
+    /// The same append-last rule for a TS repo, which is the only tree where
+    /// the two optional tail keys can both appear: `ts` was added first and
+    /// `heuristic_by_tier` after it, so `heuristic_by_tier` still ends the
+    /// block and `ts` sits between it and `test_def_count`. A reader diffing a
+    /// TS graph against an older one sees each new fact appended, never
+    /// inserted ahead of an older key.
+    #[test]
+    fn stats_keeps_heuristic_by_tier_last_even_when_a_ts_block_is_present() {
+        let stats = Stats {
+            def_count: 0,
+            file_count: 0,
+            edges_by_kind: EdgesByKind::default(),
+            ambiguous_count: 0,
+            ambiguous_pct: Percent1::zero(),
+            unresolved_external_count: 0,
+            heuristic_edge_count: 0,
+            test_def_count: 0,
+            heuristic_by_tier: HeuristicByTier::default(),
+            ts: Some(crate::tsgraph::TsStats {
+                ts_file_count: 1,
+                ts_def_count: 2,
+                external_import_count: 3,
+                unresolved_ref_count: 4,
+            }),
+        };
+        let json = serde_json::to_string(&stats).unwrap();
+        assert!(
+            json.ends_with(concat!(
+                r#""test_def_count":0,"#,
+                r#""ts":{"ts_file_count":1,"ts_def_count":2,"external_import_count":3,"unresolved_ref_count":4},"#,
+                r#""heuristic_by_tier":{"ext":0,"guess":0}}"#
+            )),
+            "key order must be test_def_count, ts, heuristic_by_tier: {json}"
         );
     }
 
@@ -1921,6 +2445,8 @@ mod tests {
             to: "Ns.T".into(),
             to_file: "Ns/T.cs".into(),
             heuristic: false,
+            tier: None,
+            member: None,
         };
         assert_eq!(
             serde_json::to_string(&precise).unwrap(),
@@ -1932,20 +2458,100 @@ mod tests {
             to: "Ns.T".into(),
             to_file: "Ns/T.cs".into(),
             heuristic: true,
+            tier: Some(HeuristicTier::Guess),
+            member: Some("M".into()),
         };
         assert_eq!(
             serde_json::to_string(&guess).unwrap(),
-            r#"{"kind":"uses-member","from_file":"F.cs","from_line":1,"to":"Ns.T","to_file":"Ns/T.cs","heuristic":true}"#
+            r#"{"kind":"uses-member","from_file":"F.cs","from_line":1,"to":"Ns.T","to_file":"Ns/T.cs","heuristic":true,"tier":"guess","member":"M"}"#
+        );
+        let ext = Edge::UsesMember {
+            from_file: "F.cs".into(),
+            from_line: 1,
+            to: "Ns.T".into(),
+            to_file: "Ns/T.cs".into(),
+            heuristic: true,
+            tier: Some(HeuristicTier::Ext),
+            member: Some("M".into()),
+        };
+        assert_eq!(
+            serde_json::to_string(&ext).unwrap(),
+            r#"{"kind":"uses-member","from_file":"F.cs","from_line":1,"to":"Ns.T","to_file":"Ns/T.cs","heuristic":true,"tier":"ext","member":"M"}"#
         );
         // And it reads back: an edge written by either runtime round-trips
-        // with the flag intact, absent meaning precise.
+        // with the flag intact, absent meaning precise -- and now with its
+        // tier and member intact too, which is what makes an older graph.json
+        // (neither key written) still parse, as two `None`s.
         assert_eq!(
             serde_json::from_str::<Edge>(&serde_json::to_string(&guess).unwrap()).unwrap(),
             guess
         );
         assert_eq!(
+            serde_json::from_str::<Edge>(&serde_json::to_string(&ext).unwrap()).unwrap(),
+            ext
+        );
+        assert_eq!(
             serde_json::from_str::<Edge>(&serde_json::to_string(&precise).unwrap()).unwrap(),
             precise
+        );
+    }
+
+    // The append ORDER, pinned on its own: `heuristic`, then `tier`, then
+    // `member`, each omitted when it has nothing to say. A precise edge that
+    // does name its member -- which is every precise uses-member edge the
+    // resolver emits -- carries `member` and nothing else, so its bytes gain
+    // exactly one key over the pre-tier shape.
+    #[test]
+    fn uses_member_edge_appends_tier_then_member_after_heuristic_and_omits_both_when_precise() {
+        let precise = Edge::uses_member(
+            "F.cs".into(),
+            1,
+            "Ns.T".into(),
+            "Ns/T.cs".into(),
+            Some("M".into()),
+            None,
+        );
+        assert_eq!(
+            serde_json::to_string(&precise).unwrap(),
+            r#"{"kind":"uses-member","from_file":"F.cs","from_line":1,"to":"Ns.T","to_file":"Ns/T.cs","member":"M"}"#
+        );
+        assert!(!precise.is_heuristic(), "no tier means no guess");
+        assert_eq!(precise.tier(), None);
+
+        for (tier, word) in [(HeuristicTier::Ext, "ext"), (HeuristicTier::Guess, "guess")] {
+            let e = Edge::uses_member(
+                "F.cs".into(),
+                1,
+                "Ns.T".into(),
+                "Ns/T.cs".into(),
+                Some("M".into()),
+                Some(tier),
+            );
+            assert_eq!(
+                serde_json::to_string(&e).unwrap(),
+                format!(
+                    r#"{{"kind":"uses-member","from_file":"F.cs","from_line":1,"to":"Ns.T","to_file":"Ns/T.cs","heuristic":true,"tier":"{word}","member":"M"}}"#
+                ),
+                "heuristic, then tier, then member"
+            );
+            // The constructor is what makes the flag and the tier one fact:
+            // pass a tier and the edge is a guess, pass none and it is not.
+            assert!(e.is_heuristic());
+            assert_eq!(e.tier(), Some(tier));
+        }
+
+        // The two kinds that carry the flag but no tier answer `None` rather
+        // than guessing on the reader's behalf.
+        assert_eq!(
+            Edge::UsesType {
+                from_file: "F.cs".into(),
+                from_line: 1,
+                to: "Ns.T".into(),
+                to_file: "Ns/T.cs".into(),
+                heuristic: true,
+            }
+            .tier(),
+            None
         );
     }
 
@@ -1967,6 +2573,111 @@ mod tests {
             json,
             r#"{"kind":"ambiguous","origin":"uses-type","from_file":"F.cs","from_line":4,"raw":"Money","candidates":[{"id":"A.Money","file":"A/Money.cs"}],"candidate_count":2}"#
         );
+    }
+
+    // --- graph.json: `units` is appended after `names` --------------------
+
+    fn empty_stats() -> Stats {
+        Stats {
+            def_count: 0,
+            file_count: 0,
+            edges_by_kind: EdgesByKind::default(),
+            ambiguous_count: 0,
+            ambiguous_pct: Percent1::zero(),
+            unresolved_external_count: 0,
+            heuristic_edge_count: 0,
+            test_def_count: 0,
+            heuristic_by_tier: HeuristicByTier::default(),
+            ts: None,
+        }
+    }
+
+    // The two halves of the `units` contract in one place: a graph whose
+    // repo declares no project must serialize with NO `units` key at all
+    // (that is what keeps every csproj-less tree byte-identical to what it
+    // was), and one that does must carry `units` LAST -- after `names` --
+    // with each row keyed `id`, `name`, `refs`, `test` in that order and the
+    // last two omitted at their empty/false value. Byte literals on purpose:
+    // a golden recomputed by the code under test proves nothing.
+    #[test]
+    fn graph_omits_units_when_empty_and_appends_them_after_names_otherwise() {
+        let mut g = Graph {
+            schema_version: GRAPH_SCHEMA_VERSION,
+            built_at_head: None,
+            defs: Vec::new(),
+            edges: Vec::new(),
+            stats: empty_stats(),
+            names: vec![GraphName {
+                name: "A".to_string(),
+                kind: "class".to_string(),
+                file: "A/A.cs".to_string(),
+                line: 1,
+                owner: String::new(),
+            }],
+            units: Vec::new(),
+        };
+
+        const WITHOUT_UNITS: &str = concat!(
+            r#"{"schema_version":2,"built_at_head":null,"defs":[],"edges":[],"stats":{"def_count":0,"#,
+            r#""file_count":0,"edges_by_kind":{"inherits":0,"uses-type":0,"imports":0,"uses-member":0,"#,
+            r#""ctor-di":0},"ambiguous_count":0,"ambiguous_pct":0,"unresolved_external_count":0,"#,
+            r#""heuristic_edge_count":0,"test_def_count":0,"heuristic_by_tier":{"ext":0,"guess":0}},"#,
+            r#""names":[{"name":"A","kind":"class","file":"A/A.cs","line":1}]}"#,
+        );
+        assert_eq!(
+            serde_json::to_string(&g).unwrap(),
+            WITHOUT_UNITS,
+            "an empty unit list must not emit a `units` key at all"
+        );
+
+        g.units = vec![
+            GraphUnit {
+                id: "A/A.csproj".to_string(),
+                name: "A".to_string(),
+                refs: vec!["B/B.csproj".to_string()],
+                test: false,
+            },
+            GraphUnit {
+                id: "B/B.csproj".to_string(),
+                name: "B".to_string(),
+                refs: Vec::new(),
+                test: false,
+            },
+            GraphUnit {
+                id: "T/T.Tests.csproj".to_string(),
+                name: "T.Tests".to_string(),
+                refs: vec!["A/A.csproj".to_string()],
+                test: true,
+            },
+        ];
+
+        const WITH_UNITS: &str = concat!(
+            r#""names":[{"name":"A","kind":"class","file":"A/A.cs","line":1}],"#,
+            r#""units":[{"id":"A/A.csproj","name":"A","refs":["B/B.csproj"]},"#,
+            r#"{"id":"B/B.csproj","name":"B"},"#,
+            r#"{"id":"T/T.Tests.csproj","name":"T.Tests","refs":["A/A.csproj"],"test":true}]}"#,
+        );
+        let json = serde_json::to_string(&g).unwrap();
+        assert_eq!(
+            json,
+            format!(
+                "{}{}",
+                WITHOUT_UNITS
+                    .strip_suffix(
+                        r#""names":[{"name":"A","kind":"class","file":"A/A.cs","line":1}]}"#
+                    )
+                    .unwrap(),
+                WITH_UNITS
+            ),
+            "`units` is appended after `names` and changes nothing before it"
+        );
+
+        // And a graph.json written before `units` existed still reads back --
+        // the field defaults rather than failing the parse.
+        let reparsed: Graph = serde_json::from_str(WITHOUT_UNITS).unwrap();
+        assert!(reparsed.units.is_empty());
+        let round_tripped: Graph = serde_json::from_str(&json).unwrap();
+        assert_eq!(round_tripped.units, g.units);
     }
 
     // --- Stats: fixed edges_by_kind order ---------------------------------
@@ -2107,9 +2818,46 @@ mod tests {
     fn rebuild_graph_skips_when_unchanged_and_graph_already_exists() {
         let dir = temp_dir("rebuild-unchanged");
         fs::create_dir_all(graph_dir(&dir)).unwrap();
-        fs::write(graph_json_path(&dir), b"{\"schema_version\":1,\"built_at_head\":null,\"defs\":[],\"edges\":[],\"stats\":{\"def_count\":0,\"file_count\":0,\"edges_by_kind\":{\"inherits\":0,\"uses-type\":0,\"imports\":0,\"uses-member\":0},\"ambiguous_count\":0,\"ambiguous_pct\":0,\"unresolved_external_count\":0}}").unwrap();
-        let outcome = rebuild_graph(&dir, &[], &HashMap::new(), false).unwrap();
+        fs::write(graph_json_path(&dir), b"{\"schema_version\":2,\"built_at_head\":null,\"defs\":[],\"edges\":[],\"stats\":{\"def_count\":0,\"file_count\":0,\"edges_by_kind\":{\"inherits\":0,\"uses-type\":0,\"imports\":0,\"uses-member\":0},\"ambiguous_count\":0,\"ambiguous_pct\":0,\"unresolved_external_count\":0}}").unwrap();
+        let outcome = rebuild_graph(&dir, &[], &HashMap::new(), false, None).unwrap();
         assert!(matches!(outcome, RebuildOutcome::NotRebuilt));
+    }
+
+    // The other half of that fast path: "nothing changed" is not enough on
+    // its own. A graph.json written by a build that predates the current
+    // schema is missing facts every reader now expects, so it is rebuilt
+    // even though not one fragment moved -- the ONLY thing separating this
+    // case from the one above is the version in its first bytes.
+    #[test]
+    fn rebuild_graph_rebuilds_when_the_existing_graph_carries_an_older_schema_version() {
+        let dir = temp_dir("rebuild-old-schema");
+        fs::create_dir_all(graph_dir(&dir)).unwrap();
+        fs::write(graph_json_path(&dir), b"{\"schema_version\":1,\"built_at_head\":null,\"defs\":[],\"edges\":[],\"stats\":{\"def_count\":0,\"file_count\":0,\"edges_by_kind\":{\"inherits\":0,\"uses-type\":0,\"imports\":0,\"uses-member\":0},\"ambiguous_count\":0,\"ambiguous_pct\":0,\"unresolved_external_count\":0}}").unwrap();
+        let outcome = rebuild_graph(&dir, &[], &HashMap::new(), false, None).unwrap();
+        let RebuildOutcome::Rebuilt(graph) = outcome else {
+            panic!("an older-schema graph must be rebuilt on the unchanged path");
+        };
+        assert_eq!(graph.schema_version, GRAPH_SCHEMA_VERSION);
+        assert!(
+            fs::read_to_string(graph_json_path(&dir))
+                .unwrap()
+                .starts_with(r#"{"schema_version":2,"#),
+            "and the rebuilt artifact carries the current version on disk"
+        );
+    }
+
+    // A truncated or unreadable artifact answers the same way an older one
+    // does -- rebuild -- rather than being trusted or panicking.
+    #[test]
+    fn rebuild_graph_rebuilds_when_the_existing_graph_is_too_short_to_carry_a_version() {
+        let dir = temp_dir("rebuild-truncated");
+        fs::create_dir_all(graph_dir(&dir)).unwrap();
+        fs::write(graph_json_path(&dir), b"{").unwrap();
+        assert!(!graph_schema_is_current(&dir));
+        assert!(matches!(
+            rebuild_graph(&dir, &[], &HashMap::new(), false, None).unwrap(),
+            RebuildOutcome::Rebuilt(_)
+        ));
     }
 
     #[test]
@@ -2132,6 +2880,11 @@ mod tests {
                 base_generic_args: OrderedMap::new(),
                 test_methods: vec![],
                 property_types: OrderedMap::new(),
+                field_types: OrderedMap::new(),
+                method_return_args: OrderedMap::new(),
+                non_public_methods: vec![],
+                method_arities: OrderedMap::new(),
+                method_params: OrderedMap::new(),
                 end_line: 1,
             }],
             usings: vec![],
@@ -2145,13 +2898,13 @@ mod tests {
             rel: "A.cs".to_string(),
             mtime: 111,
         }];
-        let first = rebuild_graph(&dir, &graph_files, &fresh, true).unwrap();
+        let first = rebuild_graph(&dir, &graph_files, &fresh, true, None).unwrap();
         assert!(matches!(first, RebuildOutcome::Rebuilt(_)));
 
         // Second build: same mtime, EMPTY fresh_fragments -- must reuse the
         // cache, not silently drop the file from the graph.
         let empty: HashMap<String, AnyFragment> = HashMap::new();
-        let second = rebuild_graph(&dir, &graph_files, &empty, true).unwrap();
+        let second = rebuild_graph(&dir, &graph_files, &empty, true, None).unwrap();
         match second {
             RebuildOutcome::Rebuilt(g) => {
                 assert_eq!(g.defs.len(), 1, "cached fragment must still be used")
@@ -2184,7 +2937,7 @@ mod tests {
         // receiverCallMember pair, so a v12 fragment read back carries none and
         // every property hop and every var-from-invocation receiver would
         // silently stay unresolved.
-        assert_eq!(SUPERSEDED_CACHE_FILES.len(), 28, "v1..v14 pairs");
+        assert_eq!(SUPERSEDED_CACHE_FILES.len(), 34, "v1..v17 pairs");
         for stale in SUPERSEDED_CACHE_FILES {
             fs::write(graph_dir(&dir).join(stale), b"{}").unwrap();
         }
@@ -2206,6 +2959,11 @@ mod tests {
                 base_generic_args: OrderedMap::new(),
                 test_methods: vec![],
                 property_types: OrderedMap::new(),
+                field_types: OrderedMap::new(),
+                method_return_args: OrderedMap::new(),
+                non_public_methods: vec![],
+                method_arities: OrderedMap::new(),
+                method_params: OrderedMap::new(),
                 end_line: 1,
             }],
             usings: vec![],
@@ -2218,14 +2976,14 @@ mod tests {
             rel: "src/A.cs".to_string(),
             mtime: 222,
         }];
-        rebuild_graph(&dir, &graph_files, &fresh, true).unwrap();
+        rebuild_graph(&dir, &graph_files, &fresh, true, None).unwrap();
 
         assert!(
-            graph_dir(&dir).join("fragments-v15.json").exists(),
-            "the v15 payload cache is what gets written"
+            graph_dir(&dir).join("fragments-v18.json").exists(),
+            "the v18 payload cache is what gets written"
         );
         assert!(
-            graph_dir(&dir).join("fragments-index-v15.json").exists(),
+            graph_dir(&dir).join("fragments-index-v18.json").exists(),
             "and its mtime-only index alongside it"
         );
         for stale in SUPERSEDED_CACHE_FILES {
@@ -2234,6 +2992,56 @@ mod tests {
                 "{stale} must be deleted -- rename IS the invalidation"
             );
         }
+    }
+
+    // --- The v18 cache generation --------------------------
+
+    #[test]
+    fn fragments_cache_v18_supersedes_v17() {
+        let dir = temp_dir("fragments-cache-v18-paths");
+        assert_eq!(
+            fragments_cache_path(&dir),
+            graph_dir(&dir).join("fragments-v18.json")
+        );
+        assert_eq!(
+            fragments_index_path(&dir),
+            graph_dir(&dir).join("fragments-index-v18.json")
+        );
+        assert!(
+            SUPERSEDED_CACHE_FILES.contains(&"fragments-v17.json"),
+            "v17 joined the superseded list when the v18 bump landed"
+        );
+        assert!(
+            SUPERSEDED_CACHE_FILES.contains(&"fragments-index-v17.json"),
+            "its index pairs with it, same as every other generation"
+        );
+
+        let dir = temp_dir("rebuild-v18");
+        fs::create_dir_all(graph_dir(&dir)).unwrap();
+        fs::write(graph_dir(&dir).join("fragments-v17.json"), b"{}").unwrap();
+        fs::write(graph_dir(&dir).join("fragments-index-v17.json"), b"{}").unwrap();
+
+        let fragment = Fragment {
+            defs: vec![],
+            usings: vec![],
+            refs: vec![],
+            names: vec![],
+        };
+        let mut fresh = HashMap::new();
+        fresh.insert("src/A.cs".to_string(), AnyFragment::Cs(fragment));
+        let graph_files = vec![GraphFile {
+            rel: "src/A.cs".to_string(),
+            mtime: 1,
+        }];
+        rebuild_graph(&dir, &graph_files, &fresh, true, None).unwrap();
+
+        assert!(graph_dir(&dir).join("fragments-v18.json").exists());
+        assert!(graph_dir(&dir).join("fragments-index-v18.json").exists());
+        assert!(
+            !graph_dir(&dir).join("fragments-v17.json").exists(),
+            "the v17 pair is deleted -- rename IS the invalidation"
+        );
+        assert!(!graph_dir(&dir).join("fragments-index-v16.json").exists());
     }
 
     // --- v8: FragRef's outerTypes, appended last -----------------------------
@@ -2310,5 +3118,68 @@ mod tests {
         )
         .unwrap();
         assert!(pre_v8.outer_types.is_empty());
+    }
+
+    // --- v18: FragDef's methodParams and FragRef's receiverLambda -----------
+
+    #[test]
+    fn fragment_round_trip_keeps_method_params_and_receiver_lambda() {
+        let mut method_params = OrderedMap::new();
+        method_params.insert(
+            "Register".to_string(),
+            vec![
+                vec!["Action<Options>".to_string()],
+                vec!["string".to_string(), "Func<Options,bool>".to_string()],
+            ],
+        );
+        let d = FragDef {
+            method_params: method_params.clone(),
+            ..frag_def(&[], &[], &[], &[], &[])
+        };
+        let d_json = serde_json::to_string(&d).unwrap();
+        assert!(
+            d_json.ends_with(
+                r#""methodParams":{"Register":[["Action<Options>"],["string","Func<Options,bool>"]]}}"#
+            ),
+            "methodParams is appended last, after methodArities: {d_json}"
+        );
+        let d_reparsed: FragDef = serde_json::from_str(&d_json).unwrap();
+        assert_eq!(d_reparsed.method_params, method_params);
+
+        // Absent when empty, and an absent key deserializes back to empty --
+        // the safe default for every fragment cached before this field
+        // existed.
+        let d_plain_json = serde_json::to_string(&frag_def(&[], &[], &[], &[], &[])).unwrap();
+        assert!(!d_plain_json.contains("methodParams"), "{d_plain_json}");
+        let d_plain_reparsed: FragDef = serde_json::from_str(&d_plain_json).unwrap();
+        assert!(d_plain_reparsed.method_params.is_empty());
+
+        let slot = FragLambdaSlot {
+            owner: "Registrar".to_string(),
+            member: "Register".to_string(),
+            arg_count: 1,
+            arg_index: 0,
+            arity: 1,
+            index: 0,
+        };
+        let r = FragRef {
+            receiver_lambda: Some(slot.clone()),
+            ..frag_ref(false, None, None)
+        };
+        let r_json = serde_json::to_string(&r).unwrap();
+        assert!(
+            r_json.ends_with(
+                r#""receiverLambda":{"owner":"Registrar","member":"Register","argCount":1,"argIndex":0,"arity":1,"index":0}}"#
+            ),
+            "receiverLambda is appended last, after receiverLocal: {r_json}"
+        );
+        let r_reparsed: FragRef = serde_json::from_str(&r_json).unwrap();
+        assert_eq!(r_reparsed.receiver_lambda, Some(slot));
+
+        // Absent when `None`, and an absent key deserializes back to `None`.
+        let r_plain_json = serde_json::to_string(&frag_ref(false, None, None)).unwrap();
+        assert!(!r_plain_json.contains("receiverLambda"), "{r_plain_json}");
+        let r_plain_reparsed: FragRef = serde_json::from_str(&r_plain_json).unwrap();
+        assert_eq!(r_plain_reparsed.receiver_lambda, None);
     }
 }

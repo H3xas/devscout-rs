@@ -5,6 +5,9 @@
 //! rendering modules produce command results. The remaining modules locate
 //! repositories, persist artifacts, and implement CLI commands and hooks.
 
+/// `devscout audit --semantic`: scores `uses-member` graph edges against a
+/// Roslyn-derived oracle.
+pub mod audit;
 /// Command-line argument parsing and dispatch.
 pub mod cli;
 /// C# and TypeScript declaration and reference extraction.
@@ -23,6 +26,12 @@ pub mod mapcmd;
 pub mod markup;
 /// Tree-sitter parsing and source-span collection.
 pub mod parse;
+/// C# conditional-compilation pre-pass: blanks the inactive arms of
+/// `#if`/`#elif`/`#else`/`#endif` groups before the source is parsed.
+pub mod preproc;
+/// Hand-scanned csproj/Directory.Build.props project model: discovery,
+/// project units, and reference closure.
+pub mod project;
 /// Graph queries and their result models.
 pub mod query;
 /// Text rendering for query results.

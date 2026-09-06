@@ -8,7 +8,10 @@ the linked issues; anything not listed here is fair game for a proposal.
 - **Reproducible agent-lane benchmark harness, then a 0.3.0 benchmark round.** The
   tool-call proxy table in the benchmark docs currently lacks an in-repository
   reproduction path, and the published scorecard was measured on 0.2.0; the corpus pin,
-  lane harness, commands, and fresh numbers land together.
+  lane harness, commands, and fresh numbers land together. (A different benchmark family
+  already has this: [`bench/semantic.sh`](bench/semantic.sh) is a one-command, in-repo
+  reproduction path for the resolver-precision numbers — pinned fixture, one script, one
+  command. The agent-lane harness this item is about is still open.)
 - **Project-wide `cargo clippy -- -D warnings` in CI.** CI currently builds and tests but
   does not run clippy; locally, `cargo clippy --all-targets` reports a pre-existing baseline
   of style-level warnings (long first doc paragraphs, missing rustdoc backticks, and a
@@ -24,7 +27,11 @@ of edge kinds than C# (see README → Limitations). Planned as three independent
 
 1. **Resolution wins on the existing stack** — tsconfig path aliases, barrel-file
    (`index.ts` re-export) following, and JSX component-usage edges, all derived from the
-   AST already parsed today. No new dependencies.
+   AST already parsed today. No new dependencies. Aliases from the repo-root tsconfig chain,
+   one barrel hop, and `jsx-use` edges shipped in 0.2.0; nearest-`tsconfig.json` alias
+   scoping and chained barrels (up to eight hops, cycle-guarded) shipped in 0.4.0. Still
+   open in this stage: `export * as ns from` namespace re-exports, and bare specifiers that
+   name a workspace package by its `package.json` name.
 2. **Semantic binding via oxc** — adopt `oxc_parser`/`oxc_semantic`/`oxc_resolver` to
    replace name-based reference matching with real scope and symbol binding, and module
    resolution that understands the TypeScript config.
@@ -37,3 +44,8 @@ of edge kinds than C# (see README → Limitations). Planned as three independent
 The C# side carries the same open gap as TS at the top end: no resolution through chained
 method calls, and no analysis inside external package internals. Revisited after the TS
 stages prove out the approach.
+
+The compiler-backed enrichment layer — an optional, cached input to `resolve` produced by
+the Roslyn oracle in `tools/scout-semantic` out of process, never on the hook path — is
+designed in [`docs/design/compiler-enrichment.md`](docs/design/compiler-enrichment.md),
+with the shipping gate it must clear written down before any implementation.

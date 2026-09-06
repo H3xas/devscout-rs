@@ -18,6 +18,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Comment hygiene
+        run: python3 .claude/hooks/comment-hygiene.py --scan
+
+      - name: Comment hygiene (commit messages)
+        if: github.event_name == 'pull_request'
+        run: python3 .claude/hooks/comment-hygiene.py --scan-commits origin/${{ github.base_ref }}..HEAD
 
       - name: Install stable Rust toolchain
         uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
@@ -89,6 +98,108 @@ jobs:
       # publishing anything. Runs on every push/PR to main.
       - name: cargo publish --dry-run
         run: cargo publish --dry-run
+
+  semantic-audit:
+    name: Semantic oracle audit (fixture)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install stable Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          # Pinned to the feature band the oracle is built and snapshotted
+          # against; `9.0.x` would float across bands and can change Roslyn
+          # behaviour under the committed oracle diff.
+          dotnet-version: 9.0.3xx
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('tools/scout-semantic/packages.lock.json', 'fixtures/csharp-semantic/Directory.Packages.props') }}
+
+      - name: Restore (oracle locked, fixture CPM-pinned)
+        run: |
+          dotnet restore tools/scout-semantic --locked-mode
+          dotnet restore fixtures/csharp-semantic/Fixture.sln
+          dotnet restore fixtures/csharp-flowtrace/Fixture.sln
+
+      - name: Build oracle
+        run: dotnet build tools/scout-semantic --no-restore -c Release
+
+      - name: Run oracle on the fixture solution
+        run: |
+          dotnet run --project tools/scout-semantic --no-build -c Release -- \
+            fixtures/csharp-semantic/Fixture.sln --root fixtures/csharp-semantic \
+            --out out/semantic/refs.jsonl --units out/semantic/units.jsonl --strict
+
+      - name: Oracle output matches the committed snapshot
+        run: |
+          diff -u fixtures/csharp-semantic/oracle/refs.jsonl  out/semantic/refs.jsonl
+          diff -u fixtures/csharp-semantic/oracle/units.jsonl out/semantic/units.jsonl
+
+      - name: Run the oracle in flow-tracer facts mode on its own fixture
+        run: |
+          dotnet run --project tools/scout-semantic --no-build -c Release -- \
+            fixtures/csharp-flowtrace/Fixture.sln --root fixtures/csharp-flowtrace \
+            --emit flowtrace-facts --facts out/facts/csharp-flowtrace.json \
+            --publish-calls SubmitJob --no-git --strict
+
+      - name: Facts output matches the committed snapshot
+        run: diff -u fixtures/csharp-flowtrace/facts.json out/facts/csharp-flowtrace.json
+
+      - name: Build devscout
+        run: cargo build --locked --release
+
+      - name: Index an isolated copy of the fixture and audit it
+        env:
+          HOME: ${{ runner.temp }}/home
+          SCOUT_REGISTRY: ${{ runner.temp }}/home/repos.json
+          SCOUT_CONTENT_DB: ${{ runner.temp }}/home/content.db
+        run: |
+          mkdir -p "$HOME" "$RUNNER_TEMP/semantic-repo"
+          rsync -a --exclude bin --exclude obj fixtures/csharp-semantic/src fixtures/csharp-semantic/tests "$RUNNER_TEMP/semantic-repo/"
+          ./target/release/devscout -C "$RUNNER_TEMP/semantic-repo" init --no-hooks --no-map
+          ./target/release/devscout -C "$RUNNER_TEMP/semantic-repo" map src tests
+          ./target/release/devscout -C "$RUNNER_TEMP/semantic-repo" audit --semantic "$PWD/out/semantic/refs.jsonl" --units "$PWD/out/semantic/units.jsonl"
+          ./target/release/devscout -C "$RUNNER_TEMP/semantic-repo" audit --semantic "$PWD/out/semantic/refs.jsonl" --units "$PWD/out/semantic/units.jsonl" --assert "$PWD/fixtures/csharp-semantic/expected.json"
+
+      # The base/interface direction fixture: its own solution, its own
+      # committed snapshot, the same oracle-diff-then-audit flow. Restored
+      # here rather than above so the two fixtures stay independent files.
+      - name: Run oracle on the direction fixture and diff the committed snapshot
+        run: |
+          dotnet restore fixtures/csharp-direction/Direction.sln
+          dotnet run --project tools/scout-semantic --no-build -c Release -- \
+            fixtures/csharp-direction/Direction.sln --root fixtures/csharp-direction \
+            --out out/direction/refs.jsonl --units out/direction/units.jsonl --strict
+          diff -u fixtures/csharp-direction/oracle/refs.jsonl  out/direction/refs.jsonl
+          diff -u fixtures/csharp-direction/oracle/units.jsonl out/direction/units.jsonl
+
+      - name: Index an isolated copy of the direction fixture and audit it
+        env:
+          HOME: ${{ runner.temp }}/home-direction
+          SCOUT_REGISTRY: ${{ runner.temp }}/home-direction/repos.json
+          SCOUT_CONTENT_DB: ${{ runner.temp }}/home-direction/content.db
+        run: |
+          mkdir -p "$HOME" "$RUNNER_TEMP/direction-repo"
+          rsync -a --exclude bin --exclude obj fixtures/csharp-direction/src "$RUNNER_TEMP/direction-repo/"
+          ./target/release/devscout -C "$RUNNER_TEMP/direction-repo" init --no-hooks --no-map
+          ./target/release/devscout -C "$RUNNER_TEMP/direction-repo" map src
+          ./target/release/devscout -C "$RUNNER_TEMP/direction-repo" audit --semantic "$PWD/out/direction/refs.jsonl" --units "$PWD/out/direction/units.jsonl"
+          ./target/release/devscout -C "$RUNNER_TEMP/direction-repo" audit --semantic "$PWD/out/direction/refs.jsonl" --units "$PWD/out/direction/units.jsonl" --assert "$PWD/fixtures/csharp-direction/expected.json"
 
   supply-chain:
     name: cargo deny (licenses, advisories, bans, sources)

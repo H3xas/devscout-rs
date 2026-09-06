@@ -12,10 +12,15 @@ cache.db
 # Command output.
 out/
 
-# Assistant and private tooling; never published.
-.claude/
+# Assistant and private tooling; never published, except the comment-hygiene
+# hook script and settings, which are part of the repo's own CI gate.
 .claude*
-CLAUDE.md
+!.claude/
+.claude/*
+!.claude/settings.json
+!.claude/hooks/
+.claude/hooks/*
+!.claude/hooks/comment-hygiene.py
 CLAUDE.local.md
 MEMORY.md
 WORKTREE.md
@@ -26,7 +31,16 @@ WORKTREE.md
 # Benchmark corpora and isolated bench state; cloned by bench/clone-corpus.sh, never committed.
 # (bench/out/ is already covered by the out/ rule above.)
 bench/corpora/
+bench/clones/
 bench/state/
 
 # Local release tooling, not published.
 scripts/preflight.sh
+
+# .NET build output. Scoped to the two trees that hold C# projects rather than
+# ignored by bare name: `bin/`/`obj/` anywhere would also swallow a source
+# directory legitimately named `bin` or `obj` (a Rust `src/bin/` among them).
+fixtures/**/bin/
+fixtures/**/obj/
+tools/**/bin/
+tools/**/obj/

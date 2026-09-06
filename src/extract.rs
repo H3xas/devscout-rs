@@ -322,6 +322,77 @@ pub struct DefRecord {
     /// `method_returns` is one: the serialized key order is significant.
     /// Appended LAST, after `test_methods`.
     pub property_types: Vec<(String, Fact)>,
+    /// (field name, declared type fact) pairs for exactly the
+    /// fields `fields` records, in the same source order and under the same
+    /// dedup. A field whose declared type yields no fact (a predefined type)
+    /// has no entry, so the two lists are parallel but not equal in length.
+    /// Every declarator of one `field_declaration` shares that declaration's
+    /// own type node, so `private int a, b;` gives `a` and `b` the SAME
+    /// fact -- the same declarator sharing `fields`'s own collection loop
+    /// already relies on. A `Vec` of pairs, not a map, for the same reason
+    /// `property_types` is one: the serialized key order is significant.
+    /// Appended LAST, after `property_types`.
+    pub field_types: Vec<(String, Fact)>,
+    /// Per method name that `method_returns` also records an
+    /// entry for, that return type's top-level generic-arg descriptors --
+    /// the same capture `base_generic_args` keeps beside `bases`, for the
+    /// same reason: `method_returns` records only the return type's bare
+    /// identifier ("Task" for `Task<Order> GetAsync()`), and this is what
+    /// lets the resolver unwrap ONE `Task<...>`/`ValueTask<...>` layer off
+    /// an AWAITED call's callee without ever touching `method_returns`
+    /// itself, which an unawaited use of the very same callee reads
+    /// unchanged. A `Vec` of pairs, not a map, for the same reason
+    /// `method_returns` is one: the serialized key order is significant.
+    /// Appended LAST of all, after `field_types`; a method whose return
+    /// type carries no type-argument list at all contributes no entry.
+    pub method_return_args: Vec<(String, Vec<String>)>,
+    /// Declared METHOD names this type does NOT record in `methods`,
+    /// because `is_recorded_method` gates that list on a literal `public`
+    /// modifier (or `kind == "interface"`, where every method already
+    /// counts as public and this list is always empty). Same predicate,
+    /// same `method_declaration` node kind, same source order and dedup as
+    /// `methods` -- the two lists partition a type's method declarations
+    /// with no overlap and no gap. Unlike `properties`/`fields`, which
+    /// already carry every accessibility with no filter at all, `methods`
+    /// needed a counterpart list for a non-public method (protected,
+    /// internal, private or no-modifier/private-by-default) to be
+    /// recorded anywhere. Consulted by the resolver ONLY for
+    /// hierarchy-internal receivers -- a `base.` lookup and the `this.`
+    /// shape's own typed-receiver walk -- never by the scored tier's
+    /// vouching or veto, which keep reading `methods` alone. Appended
+    /// LAST of all, after `method_return_args`.
+    pub non_public_methods: Vec<String>,
+    /// Method name -> the (min, max) argument-count RANGE every overload
+    /// sharing that name accepts, one tuple per overload, in declaration
+    /// order -- covers EVERY `method_declaration`, public and non-public
+    /// alike (unlike `methods`/`non_public_methods`, which only say a name
+    /// exists, this says what a CALL of that name needs to look like).
+    /// `min` excludes a parameter carrying a default value or the `params`
+    /// modifier; `max` is the total parameter count, or -1 (unbounded) when
+    /// the trailing parameter is a `params` array -- the same sentinel
+    /// `ExtensionMethod::arity_max` already uses. A `Vec` of pairs, not a
+    /// map, for the same reason `method_returns` is one: the serialized key
+    /// order is significant. Consulted by the resolver's arity-aware call
+    /// vouching: a ref carrying an `argCount` binds to `methods`/
+    /// `non_public_methods` only when SOME overload's range admits it: a
+    /// same-named instance member at the wrong arity does not shadow the
+    /// extension tier. A read (no `argCount`) never consults this table.
+    /// Appended LAST of all, after `non_public_methods`.
+    pub method_arities: Vec<(String, Vec<(usize, i64)>)>,
+    /// Method name -> per-overload parameter type descriptors (see
+    /// `type_descriptor`), one `Vec<String>` per overload in declaration
+    /// order -- covers EVERY `method_declaration`, public and non-public
+    /// alike, same method set as `method_arities`. A position naming the
+    /// enclosing method's or type's own type parameter is recorded as `"*"`
+    /// (wildcard); a parameter carrying the `this` modifier is written
+    /// `"this <descriptor>"` (the extension-method marker). For a
+    /// `delegate` def this carries exactly one entry, keyed `"Invoke"`,
+    /// built from the delegate's own parameter list (a delegate has no
+    /// body, so it is not one of the `method_declaration` overloads this
+    /// otherwise iterates). A `Vec` of pairs, not a map, for the same
+    /// reason `method_returns` is one: the serialized key order is
+    /// significant. Appended LAST of all, after `method_arities`.
+    pub method_params: Vec<(String, Vec<Vec<String>>)>,
     /// 1-based last line of the complete declaration node.
     pub end_line: usize,
 }
@@ -425,6 +496,46 @@ pub struct RefRecord {
     pub receiver_call_owner: Option<String>,
     /// The receiver call member value.
     pub receiver_call_member: Option<String>,
+    /// `true` for a `base.M` qualifier -- the member lookup starts at the
+    /// enclosing type's bases and never considers the enclosing type
+    /// itself. `false` for every other ref kind, including a plain `this.M`
+    /// qualifier (which resolves through the ordinary typed-receiver path
+    /// against the enclosing type itself). Appended LAST of all.
+    pub receiver_base: bool,
+    /// `true` when this ref's `receiver_call_owner`/`receiver_call_member`
+    /// pair came from an AWAITED call (`var x = await Q.M()`, `_client` a
+    /// field: `var order = await _client.FetchAsync()`) -- the resolver reads
+    /// it to decide whether to unwrap exactly one `Task<...>`/`ValueTask<...>`
+    /// layer off `M`'s recorded return type before typing the local. `false`
+    /// for an unawaited call fact and for every ref carrying no call fact at
+    /// all, which is what keeps `var t = x.FetchAsync(); t.Wait();` typed as
+    /// `Task` rather than unwrapped. Appended LAST of all, after
+    /// `receiver_base`.
+    pub receiver_awaited: bool,
+    /// `true` when this ref's qualifier is a bare identifier for which the
+    /// enclosing MEMBER's own fact table -- `Scope::has_local_fact`, the
+    /// SAME `member_facts` table `receiver_fact_for` reads first -- holds
+    /// ANY entry for the name: a local, a parameter, an explicitly-typed
+    /// lambda parameter, a pattern designation, or an `out` designation,
+    /// typed or taken-but-unknown. A member-scoped name always shadows a
+    /// same-named field regardless of whether anything vouches for its
+    /// type, so the resolver's bare-identifier field/property fallback
+    /// (Unit B) reads this to refuse running at all when it is `true` --
+    /// the one shape a resolved `receiver_type`/`receiver_call_owner` of
+    /// `None` cannot itself distinguish from "no fact anywhere for this
+    /// name". `false` for a dotted or generic qualifier, for `this.`/
+    /// `base.` (never asked of the enclosing scope's local table), and for
+    /// every ref kind but `uses-member`. Appended LAST of all, after
+    /// `receiver_awaited`.
+    pub receiver_local: bool,
+    /// Set when this ref's qualifier is an untyped lambda parameter whose
+    /// type is a delegate parameter of some OTHER callee -- a lookup only
+    /// the resolver can do. Never set alongside `receiver_type` or
+    /// `receiver_call_owner`: the three are mutually exclusive on one ref.
+    /// `receiver_local` still reads `true` for such a ref (the parameter
+    /// IS a member-scoped name), and `receiver_type` stays `None`. Appended
+    /// LAST of all, after `receiver_local`.
+    pub receiver_lambda: Option<LambdaSlot>,
 }
 
 /// Represents `UsingRecord`.
@@ -620,6 +731,75 @@ fn generic_arg_descriptors(
     Some(descriptors)
 }
 
+// A canonical, NESTED text descriptor for a type node -- unlike
+// `base_type_identifier`, which strips generic arguments to a bare name,
+// this one renders them recursively: `Action<Options>` records exactly
+// that, not `Action`. Used for `DefRecord::method_params`, where an
+// overload's shape has to distinguish `Action<Options>` from
+// `Func<Options,bool>` at a glance rather than collapsing both to `Action`/
+// `Func`. Never returns an empty string -- positions in a parameter list
+// must stay aligned, so an unreadable node still gets a one-character
+// placeholder rather than dropping out silently.
+//
+//   - `nullable_type` -- the descriptor of its inner `type` (the `?` is not
+//     part of the shape this records).
+//   - `array_type` -- the element's descriptor, plus a literal `[]`.
+//   - `qualified_name`/`alias_qualified_name` -- the descriptor of the
+//     `name` field only, exactly like `base_type_identifier`: the
+//     qualifier is dropped.
+//   - `generic_name` -- the identifier text, `<`, each named child of its
+//     `type_argument_list` recursively descriptor'd and joined by `,` (no
+//     spaces), then `>`.
+//   - `identifier` -- `*` when the name is one of `type_params` (the
+//     enclosing method's or type's own type parameter), else the text.
+//   - `predefined_type` -- its own text (`string`, `int`, ...).
+//   - anything else (a tuple type, a pointer, a function pointer, a
+//     missing node) -- `?`.
+fn type_descriptor(node: Option<Node>, src: &[u8], type_params: &HashSet<String>) -> String {
+    let Some(node) = node else {
+        return "?".to_string();
+    };
+    match node.kind() {
+        "nullable_type" => type_descriptor(node.child_by_field_name("type"), src, type_params),
+        "array_type" => {
+            let element = type_descriptor(node.child_by_field_name("type"), src, type_params);
+            format!("{element}[]")
+        }
+        "qualified_name" | "alias_qualified_name" => {
+            type_descriptor(node.child_by_field_name("name"), src, type_params)
+        }
+        "generic_name" => {
+            let ident = named_children(node)
+                .into_iter()
+                .find(|c| c.kind() == "identifier")
+                .map(|id| text(id, src))
+                .unwrap_or_default();
+            let args = named_children(node)
+                .into_iter()
+                .find(|c| c.kind() == "type_argument_list")
+                .map(|list| {
+                    named_children(list)
+                        .into_iter()
+                        .map(|a| type_descriptor(Some(a), src, type_params))
+                        .collect::<Vec<_>>()
+                        .join(",")
+                })
+                .unwrap_or_default();
+            format!("{ident}<{args}>")
+        }
+        "identifier" => {
+            let name = text(node, src);
+            if type_params.contains(&name) {
+                "*".to_string()
+            } else {
+                name
+            }
+        }
+        "predefined_type" => text(node, src),
+        _ => "?".to_string(),
+    }
+}
+
 // The type-parameter names a declaration introduces (`class Box<T>`,
 // `void Then<TSaga, TData>(...)`). Empty for every non-generic declaration.
 fn type_parameter_names(node: Node, src: &[u8]) -> HashSet<String> {
@@ -694,7 +874,23 @@ fn type_parameter_names_ordered(node: Node, src: &[u8]) -> Vec<String> {
 // anywhere in the qualifier is syntax only a
 // TYPE can carry (locals, fields, and properties cannot), so the resolver
 // uses `generic` as a type-certainty signal for non-enum member emission.
-fn member_qualifier_info(node: Option<Node>, src: &[u8]) -> Option<(String, bool)> {
+// `type_stack` resolves the two keyword qualifiers, `this` and `base`
+// (bare anonymous tokens in this grammar -- neither wraps in a
+// `this_expression`/`base_expression` rule, so `node.kind()` for either is
+// literally "this"/"base"; verified against the shipped grammar, not
+// assumed) into the innermost enclosing type's own simple name. Both read
+// the SAME name: the walk() caller tells them apart by re-inspecting the
+// qualifier node's own kind when it needs the `base`-vs-`this` distinction
+// (a receiver_base flag, a lookup starting point) -- this function only
+// ever answers "what NAME does this qualifier denote", never "which
+// keyword". Outside any type (`type_stack` empty) neither keyword denotes
+// anything, so both return `None`, same as every other unresolvable
+// qualifier.
+fn member_qualifier_info(
+    node: Option<Node>,
+    src: &[u8],
+    type_stack: &[String],
+) -> Option<(String, bool)> {
     let node = node?;
     match node.kind() {
         "identifier" | "qualified_name" => Some((text(node, src), false)),
@@ -702,8 +898,10 @@ fn member_qualifier_info(node: Option<Node>, src: &[u8]) -> Option<(String, bool
             .into_iter()
             .find(|c| c.kind() == "identifier")
             .map(|id| (text(id, src), true)),
+        "this" | "base" => type_stack.last().cloned().map(|name| (name, false)),
         "member_access_expression" => {
-            let inner = member_qualifier_info(node.child_by_field_name("expression"), src);
+            let inner =
+                member_qualifier_info(node.child_by_field_name("expression"), src, type_stack);
             let name_node = node.child_by_field_name("name")?;
             let (inner_text, inner_generic) = inner?;
             if name_node.kind() == "generic_name" {
@@ -736,9 +934,8 @@ fn member_qualifier_info(node: Option<Node>, src: &[u8]) -> Option<(String, bool
 // non-call out of the arity-matched extension tier entirely.
 //
 // Because the test reads `node`'s OWN parent, every ref site gets its own
-// answer for free: a flattened chain window and a promoted qualifier both
-// ask the question of their own position in the tree and can never inherit a
-// neighbour's count. Node identity is compared here by byte-range: two
+// answer for free: a flattened chain window asks the question of its own
+// position in the tree and can never inherit a neighbour's count. Node identity is compared here by byte-range: two
 // distinct nodes of one tree cannot share both a start and an end byte AND a
 // kind at the same tree position.
 fn invocation_arg_count(node: Node) -> Option<usize> {
@@ -783,6 +980,10 @@ fn push_ref(
         receiver_property_owner: None,
         receiver_call_owner: None,
         receiver_call_member: None,
+        receiver_base: false,
+        receiver_awaited: false,
+        receiver_local: false,
+        receiver_lambda: None,
     });
 }
 
@@ -815,6 +1016,10 @@ fn push_ctor_param_ref(
         receiver_property_owner: None,
         receiver_call_owner: None,
         receiver_call_member: None,
+        receiver_base: false,
+        receiver_awaited: false,
+        receiver_local: false,
+        receiver_lambda: None,
     });
 }
 
@@ -839,6 +1044,26 @@ fn push_ctor_param_ref(
 //
 // `outer_types` is appended LAST of all, after `receiver_args` -- see
 // push_ref for what it carries.
+//
+// `receiver_base` is appended LAST of all, after `outer_types` -- `true`
+// only for a `base.M` qualifier, `false` for everything else including a
+// plain `this.M` qualifier.
+//
+// `receiver_awaited` travels with the call fact, not with the function's own
+// parameters -- it comes out of the SAME `Fact` `receiver_type`/
+// `receiver_call_owner` do, read from the fact's own `awaited` bit rather
+// than threaded in separately, which is what keeps a call fact and its
+// awaited-ness from ever landing on two different refs. Appended LAST of
+// all, after `receiver_base`.
+//
+// `receiver_local`, unlike every field above it, is NOT derivable from
+// `receiver: Option<Fact>` -- a `None` receiver means either "no fact
+// anywhere for this name" or "a same-named local/parameter is taken but
+// nothing vouches for its type", and those two cases must answer this
+// field differently. It is threaded in as its own explicit parameter,
+// computed by the caller (`resolve_member_qualifier`, which has the
+// `Scope` this function does not). Appended LAST of all, after
+// `receiver_awaited`.
 fn push_member_ref(
     refs: &mut Vec<RefRecord>,
     qualifier_text: &str,
@@ -850,22 +1075,38 @@ fn push_member_ref(
     arg_count: Option<usize>,
     type_stack: &[String],
     property_owner: Option<String>,
+    receiver_base: bool,
+    receiver_local: bool,
 ) {
-    // A call fact records the CALLEE it depends on and never a receiver type:
-    // the two are mutually exclusive on one ref, which is what lets every
-    // reader tell a recorded type from a lookup the resolver still owes.
-    let (receiver_type, receiver_args, receiver_call_owner, receiver_call_member) = match receiver {
+    // A call fact records the CALLEE it depends on and never a receiver type;
+    // a lambda-slot fact records the SLOT this untyped parameter fills on a
+    // callee invocation and never either of the other two shapes. The three
+    // are mutually exclusive on one ref, which is what lets every reader
+    // tell a recorded type, a call lookup, and a lambda-slot lookup apart.
+    let (
+        receiver_type,
+        receiver_args,
+        receiver_call_owner,
+        receiver_call_member,
+        receiver_awaited,
+        receiver_lambda,
+    ) = match receiver {
+        Some(Fact {
+            lambda: Some(slot), ..
+        }) => (None, None, None, None, false, Some(slot)),
         Some(Fact {
             type_name,
             call: Some(member),
+            awaited,
             ..
-        }) => (None, None, Some(type_name), Some(member)),
+        }) => (None, None, Some(type_name), Some(member), awaited, None),
         Some(Fact {
             type_name,
             args,
             call: None,
-        }) => (Some(type_name), args, None, None),
-        None => (None, None, None, None),
+            ..
+        }) => (Some(type_name), args, None, None, false, None),
+        None => (None, None, None, None, false, None),
     };
     match qualifier_text.rfind('.') {
         Some(dot) => refs.push(RefRecord {
@@ -885,6 +1126,10 @@ fn push_member_ref(
             receiver_property_owner: property_owner.clone(),
             receiver_call_owner: receiver_call_owner.clone(),
             receiver_call_member: receiver_call_member.clone(),
+            receiver_base,
+            receiver_awaited,
+            receiver_local,
+            receiver_lambda: receiver_lambda.clone(),
         }),
         None => refs.push(RefRecord {
             kind: "uses-member".to_string(),
@@ -903,6 +1148,10 @@ fn push_member_ref(
             receiver_property_owner: property_owner,
             receiver_call_owner,
             receiver_call_member,
+            receiver_base,
+            receiver_awaited,
+            receiver_local,
+            receiver_lambda,
         }),
     }
 }
@@ -1022,6 +1271,168 @@ fn is_recorded_method(node: Node, src: &[u8], kind: &str) -> bool {
     node.kind() == "method_declaration" && (kind == "interface" || is_public(node, src))
 }
 
+// `non_public_methods`: the exact complement of `is_recorded_method` among
+// method_declaration nodes -- every method NOT recorded in `methods`. An
+// interface's methods are ALL recorded as public by `is_recorded_method`
+// (the `kind == "interface"` short-circuit), so this list is always empty
+// for an interface, by construction rather than by a second check here.
+fn raw_non_public_method_names(node: Node, src: &[u8], kind: &str) -> Vec<String> {
+    let Some(body) = node.child_by_field_name("body") else {
+        return Vec::new();
+    };
+    named_children(body)
+        .into_iter()
+        .filter(|c| c.kind() == "method_declaration" && !is_recorded_method(*c, src, kind))
+        .map(|c| declared_name(c, src))
+        .filter(|n| !n.is_empty())
+        .collect()
+}
+
+// Every `method_declaration`'s own (name, arity RANGE) fact, regardless of
+// accessibility -- unlike `raw_method_returns`/`is_recorded_method`, this is
+// NOT filtered to public methods: the resolver's arity-aware call vouching
+// (Unit A4 item 2) needs an overload's range whether `methods` or
+// `non_public_methods` is the list answering "does this def declare the
+// name". One (name, ranges) pair per DISTINCT name, in first-occurrence
+// source order (a `Vec` of pairs, not a map: the serialized key order is
+// significant, same reason as `method_returns`); `ranges` collects EVERY
+// overload sharing that name, each its own (min, max) tuple, in declaration
+// order -- unlike `method_returns`'s first-wins gate, a later overload's
+// range is never discarded, since the resolver needs the OR of every
+// overload to answer "does some overload admit N arguments". `max` uses the
+// same -1-for-unbounded sentinel as `ExtensionMethod::arity_max`. A
+// `parameters` field that cannot be read (not expected for a valid
+// `method_declaration`, but the extractor never assumes a shape it has not
+// verified) contributes the unbounded range (0, -1) rather than no entry at
+// all -- precision-first: an arity fact the extractor could not read must
+// never silently NARROW a call the resolver would otherwise decline to
+// widen.
+fn raw_method_arities(node: Node, src: &[u8]) -> Vec<(String, Vec<(usize, i64)>)> {
+    let Some(body) = node.child_by_field_name("body") else {
+        return Vec::new();
+    };
+    let mut pairs: Vec<(String, Vec<(usize, i64)>)> = Vec::new();
+    for c in named_children(body) {
+        if c.kind() != "method_declaration" {
+            continue;
+        }
+        let name = declared_name(c, src);
+        if name.is_empty() {
+            continue;
+        }
+        let range = match c.child_by_field_name("parameters") {
+            Some(parameters) => method_arity_range(parameters, src),
+            None => (0, -1),
+        };
+        match pairs.iter_mut().find(|(n, _)| *n == name) {
+            Some((_, ranges)) => ranges.push(range),
+            None => pairs.push((name, vec![range])),
+        }
+    }
+    pairs
+}
+
+// Every `method_declaration`'s own (name, per-overload parameter
+// descriptors) fact, regardless of accessibility -- same method set as
+// `raw_method_arities` (all visibilities, one entry per overload, in
+// declaration order). A parameter carrying the `this` modifier records
+// `"this <descriptor>"` -- the same modifier `raw_extension_methods` itself
+// reads off the first parameter -- and `params`/`ref`/`out`/`in` modifiers
+// are ignored (a plain descriptor). The type-parameter set for one method
+// is the enclosing type's own (`type_params`, the same set
+// `raw_extension_methods` starts its own per-method union from) plus this
+// method's OWN type parameters unioned on top, exactly like
+// `raw_extension_methods`'s `this_args` capture does.
+//
+// A `delegate_declaration` (no body at all) is the one caller-recognized
+// exception: it returns exactly one entry, `("Invoke", ...)`, built from
+// the delegate's own `parameters` field and its own type parameters unioned
+// onto `type_params` the same way -- callers pass an empty enclosing set for
+// a delegate, same as `record_type_def` does for every other
+// per-declaration fact of one.
+fn raw_method_params(
+    node: Node,
+    src: &[u8],
+    type_params: &HashSet<String>,
+) -> Vec<(String, Vec<Vec<String>>)> {
+    if node.kind() == "delegate_declaration" {
+        let Some(parameters) = node.child_by_field_name("parameters") else {
+            return Vec::new();
+        };
+        let mut own_type_params = type_params.clone();
+        own_type_params.extend(type_parameter_names(node, src));
+        return vec![(
+            "Invoke".to_string(),
+            vec![method_param_descriptors(parameters, src, &own_type_params)],
+        )];
+    }
+    let Some(body) = node.child_by_field_name("body") else {
+        return Vec::new();
+    };
+    let mut pairs: Vec<(String, Vec<Vec<String>>)> = Vec::new();
+    for c in named_children(body) {
+        if c.kind() != "method_declaration" {
+            continue;
+        }
+        let name = declared_name(c, src);
+        if name.is_empty() {
+            continue;
+        }
+        let mut own_type_params = type_params.clone();
+        own_type_params.extend(type_parameter_names(c, src));
+        let descriptors = match c.child_by_field_name("parameters") {
+            Some(parameters) => method_param_descriptors(parameters, src, &own_type_params),
+            None => Vec::new(),
+        };
+        match pairs.iter_mut().find(|(n, _)| *n == name) {
+            Some((_, overloads)) => overloads.push(descriptors),
+            None => pairs.push((name, vec![descriptors])),
+        }
+    }
+    pairs
+}
+
+// One parameter list's descriptors, in source order -- covers the ORDINARY
+// `parameter` node shape AND the flattened `params`-array shape the
+// grammar uses instead of wrapping a `params` parameter in its own
+// `parameter` node (see `parameter_arity_range`'s own doc comment: a
+// `params` array's `type`/`name` land as direct FIELD-tagged children of
+// the parameter_list itself, never inside a nested `parameter` node). A
+// `this` modifier writes `"this <descriptor>"`; every other modifier
+// (`params`, `ref`, `out`, `in`) is ignored -- a plain descriptor.
+fn method_param_descriptors(
+    parameters: Node,
+    src: &[u8],
+    type_params: &HashSet<String>,
+) -> Vec<String> {
+    let mut out = Vec::new();
+    for i in 0..parameters.child_count() as u32 {
+        let Some(c) = parameters.child(i) else {
+            continue;
+        };
+        if c.kind() == "parameter" {
+            let is_this = named_children(c)
+                .iter()
+                .any(|m| m.kind() == "modifier" && text(*m, src) == "this");
+            let descriptor = type_descriptor(c.child_by_field_name("type"), src, type_params);
+            out.push(if is_this {
+                format!("this {descriptor}")
+            } else {
+                descriptor
+            });
+            continue;
+        }
+        // The flattened `params`-array shape: its type is a direct child
+        // of the parameter_list tagged with the list's own `type` field
+        // (its `name` field carries the flattened parameter's NAME the
+        // same way -- skipped here, one descriptor per position, not two).
+        if parameters.field_name_for_child(i) == Some("type") {
+            out.push(type_descriptor(Some(c), src, type_params));
+        }
+    }
+    out
+}
+
 // Declared property names, source order, deduped. Indexers are
 // a different grammar node (indexer_declaration) so they are excluded by
 // construction; expression-bodied properties are property_declaration like
@@ -1112,6 +1523,50 @@ fn raw_field_names(node: Node, src: &[u8]) -> Vec<String> {
     names
 }
 
+// (field name, fact) pairs for exactly the fields `raw_field_names`
+// records, in the same source order and under the same dedup -- a field
+// whose declared type yields no fact (a predefined type) simply has no
+// entry. Every declarator of one `field_declaration` shares that
+// declaration's own type node ("private int a, b;" gives `a` and `b` the
+// SAME fact), the same sharing `raw_field_names`'s own declarator loop
+// already relies on. Mirrors `raw_property_types` field for field, so a
+// field-typed receiver goes through the exact same resolution shape a
+// property-typed one already does.
+fn raw_field_types(node: Node, src: &[u8], type_params: &HashSet<String>) -> Vec<(String, Fact)> {
+    let Some(body) = node.child_by_field_name("body") else {
+        return Vec::new();
+    };
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut pairs = Vec::new();
+    for c in named_children(body) {
+        if c.kind() != "field_declaration" {
+            continue;
+        }
+        let Some(vd) = named_children(c)
+            .into_iter()
+            .find(|k| k.kind() == "variable_declaration")
+        else {
+            continue;
+        };
+        let Some(fact) = type_fact(vd.child_by_field_name("type"), src, type_params) else {
+            continue;
+        };
+        for decl in named_children(vd) {
+            if decl.kind() != "variable_declarator" {
+                continue;
+            }
+            let Some(name) = decl.child_by_field_name("name").map(|n| text(n, src)) else {
+                continue;
+            };
+            if name.is_empty() || !seen.insert(name.clone()) {
+                continue;
+            }
+            pairs.push((name, fact.clone()));
+        }
+    }
+    pairs
+}
+
 // (name, returnTypeName) pairs in first-declaration order, for
 // exactly the methods `raw_method_names` records. FIRST declaration of a name
 // claims the slot outright: a later overload with a different return type is
@@ -1140,17 +1595,61 @@ fn raw_method_returns(node: Node, src: &[u8], kind: &str) -> Vec<(String, String
     pairs
 }
 
-// The two halves of an extension method's acceptable argument COUNT, read off
-// the parameter list as
-// written:
-//   arity_min -- non-this parameters a caller cannot leave out: no default
-//     value AND no `params` modifier.
-//   arity_max -- the total non-this parameter count, or -1 (unbounded) when the
-//     trailing parameter is a `params` array.
+// The generic-argument descriptors `raw_method_returns` throws away, keyed
+// by the same method name, under the exact same first-declaration-wins gate
+// (a name's `seen` slot is claimed by its FIRST declaration whether or not
+// that declaration turns out to carry a type-argument list, so a later
+// overload can never contribute an entry `raw_method_returns` itself would
+// have ignored). Every name recorded here is one `raw_method_returns` also
+// recorded a plain return-type name for; a return type with no top-level
+// type-argument list at all contributes no entry, exactly like
+// `raw_base_generic_args` does for a non-generic base.
+fn raw_method_return_args(
+    node: Node,
+    src: &[u8],
+    kind: &str,
+    type_params: &HashSet<String>,
+) -> Vec<(String, Vec<String>)> {
+    let Some(body) = node.child_by_field_name("body") else {
+        return Vec::new();
+    };
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut pairs = Vec::new();
+    for c in named_children(body) {
+        if !is_recorded_method(c, src, kind) {
+            continue;
+        }
+        let name = declared_name(c, src);
+        if name.is_empty() || !seen.insert(name.clone()) {
+            continue;
+        }
+        let returns_node = c.child_by_field_name("returns");
+        if base_type_identifier(returns_node, src, false).is_none() {
+            continue;
+        }
+        if let Some(args) = generic_arg_descriptors(returns_node, src, type_params) {
+            pairs.push((name, args));
+        }
+    }
+    pairs
+}
+
+// The two halves of a parameter list's acceptable argument COUNT, read off
+// the list as written:
+//   min -- parameters a caller cannot leave out: no default value AND no
+//     `params` modifier.
+//   max -- the total parameter count, or -1 (unbounded) when the trailing
+//     parameter is a `params` array.
 // A single exact arity would under-match every optional-parameter and
-// `params` call site and -- worse -- make two classes look like ONE candidate
-// when only one of them could actually bind the call: the false-uniqueness
-// shape.
+// `params` call site and -- worse -- make two classes (or two overloads)
+// look like ONE candidate when only one of them could actually bind the
+// call: the false-uniqueness shape.
+//
+// `skip_first` is `extension_arity_range`'s own need: an extension method's
+// FIRST `parameter` node is its this-parameter (the caller has already
+// verified its `this` modifier), never counted toward either half.
+// `method_arity_range` (an ordinary, non-extension overload) passes `false`
+// -- every parameter counts, there is no this-parameter to skip.
 //
 // The loop reads ALL children, not named_children, because tree-sitter-c-sharp
 // does NOT wrap a `params` parameter in a `parameter` node: it emits a bare
@@ -1159,11 +1658,11 @@ fn raw_method_returns(node: Node, src: &[u8], kind: &str) -> Vec<(String, String
 // `(this T t, params X[] xs)` as THREE parameters and a `parameter`-node count
 // reads it as one; the token itself is the only reliable signal, and since C#
 // requires `params` to be last, seeing it at all means unbounded.
-fn extension_arity_range(parameters: Node, src: &[u8]) -> (usize, i64) {
+fn parameter_arity_range(parameters: Node, src: &[u8], skip_first: bool) -> (usize, i64) {
     let mut total: i64 = 0;
     let mut min: usize = 0;
     let mut unbounded = false;
-    let mut seen_this = false;
+    let mut skip_next = skip_first;
     let mut cursor = parameters.walk();
     for c in parameters.children(&mut cursor) {
         if c.kind() == "params" {
@@ -1173,11 +1672,8 @@ fn extension_arity_range(parameters: Node, src: &[u8]) -> (usize, i64) {
         if c.kind() != "parameter" {
             continue;
         }
-        // The first `parameter` node IS the this-parameter (the caller has
-        // already verified its `this` modifier), and a flattened `params` group
-        // can never occupy that slot.
-        if !seen_this {
-            seen_this = true;
+        if skip_next {
+            skip_next = false;
             continue;
         }
         total += 1;
@@ -1191,6 +1687,18 @@ fn extension_arity_range(parameters: Node, src: &[u8]) -> (usize, i64) {
         }
     }
     (min, if unbounded { -1 } else { total })
+}
+
+fn extension_arity_range(parameters: Node, src: &[u8]) -> (usize, i64) {
+    parameter_arity_range(parameters, src, true)
+}
+
+// The same range, for an ORDINARY (non-extension) method overload: every
+// parameter counts, there is no this-parameter to skip. Unit A4 item 2's own
+// input -- `raw_method_arities` calls this once per `method_declaration`,
+// public and non-public alike.
+fn method_arity_range(parameters: Node, src: &[u8]) -> (usize, i64) {
+    parameter_arity_range(parameters, src, false)
 }
 
 // A default value is an `=` token among the parameter's own children.
@@ -1587,9 +2095,11 @@ fn record_type_def(
     // id, name, namespace, kind, line, methods, then the member-fact additions
     // appended LAST in declaration order -- properties, fields, methodReturns
     // -- then extensionMethods and (for the inheritance veto) bases, then
-    // type_params and base_generic_args, then testMethods, then propertyTypes.
-    // Each is omitted when empty, so a type with none of them serializes
-    // exactly as it did before those additions.
+    // type_params and base_generic_args, then testMethods, then propertyTypes,
+    // fieldTypes and methodReturnArgs, then nonPublicMethods, then
+    // methodArities, then methodParams. Each is omitted when empty, so a
+    // type with none of them serializes exactly as it did before those
+    // additions.
     defs.push(DefRecord {
         id,
         name,
@@ -1606,6 +2116,11 @@ fn record_type_def(
         base_generic_args: raw_base_generic_args(node, src, type_params),
         test_methods: raw_test_methods(node, src, kind),
         property_types: raw_property_types(node, src, type_params),
+        field_types: raw_field_types(node, src, type_params),
+        method_return_args: raw_method_return_args(node, src, kind, type_params),
+        non_public_methods: raw_non_public_method_names(node, src, kind),
+        method_arities: raw_method_arities(node, src),
+        method_params: raw_method_params(node, src, type_params),
         end_line: node.end_position().row + 1,
     });
 }
@@ -1653,6 +2168,11 @@ fn record_enum_members(
             base_generic_args: Vec::new(),
             test_methods: Vec::new(),
             property_types: Vec::new(),
+            field_types: Vec::new(),
+            method_return_args: Vec::new(),
+            non_public_methods: Vec::new(),
+            method_arities: Vec::new(),
+            method_params: Vec::new(),
             end_line: member.end_position().row + 1,
         });
     }
@@ -1721,6 +2241,34 @@ fn record_using(node: Node, src: &[u8], usings: &mut Vec<UsingRecord>, refs: &mu
 // through to a same-named field of a different type.
 // ---------------------------------------------------------------------------
 
+/// One untyped lambda parameter's callee slot.
+///
+/// The name's type is the delegate parameter of the invocation the lambda
+/// sits inside as an argument -- a lookup only the resolver can do (it has
+/// to look up the callee's own delegate-typed parameter at `arg_index` and
+/// read ITS `index`-th parameter type). `owner`/`member` name the callee like
+/// a call fact's `type_name`/`call` do; `arg_count`/`arg_index` locate the
+/// lambda among the callee's arguments; `arity`/`index` locate this
+/// parameter inside the lambda itself.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LambdaSlot {
+    /// The type-name text the callee is invoked on: the identifier's
+    /// in-file fact type, the identifier itself when the name is not taken
+    /// (a static class), or the innermost enclosing type for `this.M(...)`
+    /// / bare `M(...)`.
+    pub owner: String,
+    /// The callee method name.
+    pub member: String,
+    /// The argument count of the callee invocation.
+    pub arg_count: usize,
+    /// The position of the lambda among the callee invocation's arguments.
+    pub arg_index: usize,
+    /// The lambda's own parameter count.
+    pub arity: usize,
+    /// This parameter's position inside the lambda's parameter list.
+    pub index: usize,
+}
+
 /// One receiver fact: the declared type NAME plus that type's top-level
 /// type-argument descriptors when it carried any. Two facts agree only when
 /// BOTH halves do, so `Box<int> a` and `Box<string> a` in sibling blocks
@@ -1737,6 +2285,32 @@ pub struct Fact {
     /// `var x = A.Build()` in sibling blocks conflict exactly like two
     /// different type names would.
     pub call: Option<String>,
+    /// `true` when this is a call fact (`call.is_some()`) built from an
+    /// AWAITED invocation (`var x = await Q.M()`); meaningless -- and always
+    /// `false` -- when `call` is `None`. Part of the equality the table
+    /// compares, so `var x = Q.M()` and `var x = await Q.M()` in sibling
+    /// blocks conflict exactly like two different callees would, rather than
+    /// silently picking one awaited-ness for a name the source gives two.
+    pub awaited: bool,
+    /// `true` when the declaration's own type node was, at its TOP level, an
+    /// `array_type` (`Widget[]`) -- set ONLY by `type_fact`, `false`
+    /// everywhere else (a call fact, a receiver-args unwrap, `this`/`base`'s
+    /// own fact: none of those can be an array). `base_type_identifier`
+    /// already collapses `Widget[]` to the same `type_name`/`args` shape a
+    /// plain `Widget` field would carry (the element type's own base
+    /// identifier, no type-argument list), so this bit is the ONLY signal
+    /// left that distinguishes "one Widget" from "an array of Widget" --
+    /// needed by the lambda-parameter element-typing rule, which must tell
+    /// `Widget[]` apart from `Widget` even though both facts otherwise read
+    /// identically. Part of the equality the table compares.
+    pub is_array: bool,
+    /// When set, the name is an untyped lambda parameter whose type is the
+    /// corresponding delegate parameter of the callee this slot names -- a
+    /// lookup only the resolver can do; `type_name` is empty and `call` is
+    /// `None`. Part of the equality the table compares, so two sibling
+    /// lambdas binding the same parameter name to different callees
+    /// conflict exactly like two different type names would.
+    pub lambda: Option<LambdaSlot>,
 }
 
 // name -> `Some(fact)` when exactly one fact vouches for it, `None` when the
@@ -1765,26 +2339,78 @@ fn add_fact(table: &mut FactTable, name: Option<String>, fact: Option<Fact>) {
 fn type_fact(type_node: Option<Node>, src: &[u8], type_params: &HashSet<String>) -> Option<Fact> {
     let type_name = base_type_identifier(type_node, src, false)?;
     let args = generic_arg_descriptors(type_node, src, type_params);
+    // The array bit is read off the type node's OWN top-level kind, before
+    // any unwrapping -- `base_type_identifier`/`generic_arg_descriptors`
+    // both already look THROUGH an `array_type` to its element, so this is
+    // the only place left that still knows the wrapper was there at all.
+    let is_array = type_node.is_some_and(|n| n.kind() == "array_type");
     Some(Fact {
         type_name,
         args,
         call: None,
+        awaited: false,
+        is_array,
+        lambda: None,
     })
+}
+
+// A direct named child of `node` with kind `target`, or -- when the direct
+// child is an `await_expression` -- that same kind one level INSIDE it:
+// `var x = await Q.M()` puts `await_expression` as the declarator's direct
+// child, with `invocation_expression`/`object_creation_expression` one
+// level further in (confirmed against the shipped grammar's own
+// `await_expression` -- a single unnamed `expression` child). Exactly one
+// level: an `await` wrapping another `await` does not unwrap twice. The
+// returned `bool` is `true` only when the match came from inside the
+// `await_expression` layer -- `invocation_call` reads it to record whether
+// the callee it found was awaited; `new_expression_fact` discards it, since
+// an object-creation fact never carries a call and awaited-ness has nothing
+// to unwrap there.
+fn find_child_through_await<'a>(node: Node<'a>, target: &str) -> Option<(Node<'a>, bool)> {
+    for c in named_children(node) {
+        if c.kind() == target {
+            return Some((c, false));
+        }
+        if c.kind() == "await_expression" {
+            if let Some(inner) = named_children(c).into_iter().find(|g| g.kind() == target) {
+                return Some((inner, true));
+            }
+        }
+    }
+    None
 }
 
 // `var x = new T(...)` -- the ONLY shape where an initializer is consulted.
 // An explicitly typed declaration is answered by its own type node, so
 // `object o = new Widget()` records `object` (a predefined type: no fact),
-// never `Widget`.
+// never `Widget`. `var x = await new T()` -- syntactically legal even
+// though never awaitable -- is looked through the same one level as
+// `invocation_call` looks through it.
 fn new_expression_fact(
     declarator: Node,
     src: &[u8],
     type_params: &HashSet<String>,
 ) -> Option<Fact> {
-    let init = named_children(declarator)
-        .into_iter()
-        .find(|c| c.kind() == "object_creation_expression")?;
+    let (init, _awaited) = find_child_through_await(declarator, "object_creation_expression")?;
     type_fact(init.child_by_field_name("type"), src, type_params)
+}
+
+// `var x = (T)e` -- same declarator scan as `new_expression_fact`, for a
+// cast's own `type` field. Not look-through-await: the design that asked
+// for the await unwrap (Unit A1 point 2) named only `invocation_call` and
+// `new_expression_fact`, and a declarator can carry at most one of
+// {object_creation_expression, invocation_expression, cast_expression} as
+// its direct initializer, so the three helpers never compete for the same
+// child.
+fn cast_expression_fact(
+    declarator: Node,
+    src: &[u8],
+    type_params: &HashSet<String>,
+) -> Option<Fact> {
+    let cast = named_children(declarator)
+        .into_iter()
+        .find(|c| c.kind() == "cast_expression")?;
+    type_fact(cast.child_by_field_name("type"), src, type_params)
 }
 
 // Fields and primary-constructor parameters of one type declaration. Direct
@@ -1877,6 +2503,7 @@ fn collect_member_facts(
     src: &[u8],
     class_type_params: &HashSet<String>,
     type_facts: &FactTable,
+    enclosing_type: Option<&str>,
 ) -> FactTable {
     let mut type_params = class_type_params.clone();
     type_params.extend(type_parameter_names(node, src));
@@ -1890,6 +2517,12 @@ fn collect_member_facts(
     // the collection may be a local declared anywhere in this same flat
     // table, including one declared AFTER this foreach in source order.
     let mut deferred_foreach: Vec<DeferredForeach> = Vec::new();
+    // A single-parameter lambda's element-type fact (Unit C) needs the same
+    // second pass, for the same reason: its collection receiver may itself
+    // be a local settled only below (a `Q.M()` callee owner, a foreach
+    // variable), or a field this function's OWN first-pass walk never sees
+    // at all until `type_facts` is consulted here.
+    let mut deferred_lambda: Vec<DeferredLambdaParam> = Vec::new();
     visit_member_facts(
         node,
         src,
@@ -1897,6 +2530,7 @@ fn collect_member_facts(
         &mut table,
         &mut deferred,
         &mut deferred_foreach,
+        &mut deferred_lambda,
     );
     if !deferred.is_empty() {
         let pending: HashSet<&str> = deferred.iter().map(|d| d.name.as_str()).collect();
@@ -1914,6 +2548,9 @@ fn collect_member_facts(
                 type_name,
                 args: None,
                 call: Some(d.member.clone()),
+                awaited: d.awaited,
+                is_array: false,
+                lambda: None,
             });
             add_fact(&mut table, Some(d.name.clone()), fact);
         }
@@ -1930,15 +2567,45 @@ fn collect_member_facts(
         let fact = collection_element_fact(&table, type_facts, &d.collection);
         add_fact(&mut table, Some(d.name.clone()), fact);
     }
+    // Same "refuse a half-settled sibling" rule as the deferred-call loop
+    // above, over the deferred lambda parameters' own names: a slot's
+    // qualifier that is itself one of these names is refused rather than
+    // read from a half-settled table (one hop, never a chain).
+    let pending_lambda: HashSet<&str> = deferred_lambda.iter().map(|d| d.name.as_str()).collect();
+    for d in &deferred_lambda {
+        // Same reasoning as the foreach loop above -- and the SAME
+        // no-explicit-refusal shortcut applies for the same reason:
+        // `lambda_receiver_element_fact` only ever unwraps an array or a
+        // single-argument generic, never a call fact, so a sibling
+        // lambda parameter sharing this one's collection name (however
+        // it settles) can only ever read as "no such shape" here, same as
+        // an ordinary unresolvable receiver. The collection-element rule
+        // (Unit C) is tried FIRST and, when it declines, the callee slot
+        // is the fallback -- `orders.Where(o => o.Validate())`
+        // types `o` as the element and never records a slot for it.
+        let fact = d
+            .collection
+            .as_deref()
+            .and_then(|c| lambda_receiver_element_fact(&table, type_facts, c))
+            .or_else(|| {
+                d.slot.as_ref().and_then(|s| {
+                    lambda_slot_fact(&table, type_facts, enclosing_type, &pending_lambda, s)
+                })
+            });
+        add_fact(&mut table, Some(d.name.clone()), fact);
+    }
     table
 }
 
-// One `var x = Q.M(...)` local awaiting the second pass: the local's name, and
-// the two halves of the callee its type depends on.
+// One `var x = Q.M(...)` local awaiting the second pass: the local's name,
+// the two halves of the callee its type depends on, and whether the call was
+// awaited (`var x = await Q.M()`) -- carried straight through to the settled
+// fact's own `awaited` bit.
 struct DeferredCall {
     name: String,
     qualifier: String,
     member: String,
+    awaited: bool,
 }
 
 // One `foreach (var item in collection)` local awaiting the
@@ -1949,6 +2616,268 @@ struct DeferredForeach {
     collection: String,
 }
 
+// One untyped lambda parameter awaiting the second pass: the parameter's own
+// name, plus whichever of the two shapes it matched (either or both --
+// `collection` and `slot` are independent structural reads of the SAME
+// node). `collection` is Unit C's own shape -- a single-parameter lambda
+// sitting as the FIRST argument of an invocation on a bare-identifier
+// receiver -- carrying that receiver's bare identifier, resolved into an
+// element-type fact by `lambda_receiver_element_fact`. `slot` is the
+// broader shape -- ANY untyped lambda parameter sitting as an invocation
+// argument -- carrying the callee coordinates `lambda_slot_fact`
+// turns into a `LambdaSlot`. When both are set, the collection-element
+// fact wins and the slot is never consulted (see the deferred-lambda loop
+// in `collect_member_facts`).
+struct DeferredLambdaParam {
+    name: String,
+    collection: Option<String>,
+    slot: Option<PendingSlot>,
+}
+
+// One untyped lambda parameter's callee coordinates, read purely
+// structurally by `lambda_argument_slot` (never consulting a fact table --
+// the qualifier's OWN type is looked up separately, in the second pass,
+// once it has settled). `qualifier` is `None` for `this.M(...)` and a bare
+// `M(...)` callee, `Some` for `q.M(...)`.
+struct PendingSlot {
+    qualifier: Option<String>,
+    member: String,
+    arg_count: usize,
+    arg_index: usize,
+    arity: usize,
+    index: usize,
+}
+
+// `n` (a `parameter` or `implicit_parameter` node) is the SOLE, UNTYPED
+// parameter of a `lambda_expression` sitting as the FIRST argument of an
+// `invocation_expression` whose function is a `member_access_expression` --
+// the shape `xs.Where(x => ...)` / `xs.Select((x) => ...)` asks for -- and
+// its receiver is a bare identifier: returns that receiver node. Purely
+// structural, never consulting a fact table (the receiver's OWN type is
+// looked up separately, in the second pass, once it has settled). `None`
+// for every other shape: an explicitly typed parameter (already handled by
+// the ordinary `type_fact` path below), a multi-parameter list, a lambda
+// that is not an invocation argument at all, a lambda argument that is not
+// the FIRST one, or a receiver that is not a bare identifier.
+fn lambda_first_arg_receiver(n: Node) -> Option<Node> {
+    let lambda = match n.kind() {
+        "implicit_parameter" => n.parent()?,
+        "parameter" => {
+            if n.child_by_field_name("type").is_some() {
+                return None;
+            }
+            let list = n.parent()?;
+            if list.kind() != "parameter_list" || named_children(list).len() != 1 {
+                return None;
+            }
+            list.parent()?
+        }
+        _ => return None,
+    };
+    if lambda.kind() != "lambda_expression" {
+        return None;
+    }
+    let argument = lambda.parent()?;
+    if argument.kind() != "argument" {
+        return None;
+    }
+    let argument_list = argument.parent()?;
+    if argument_list.kind() != "argument_list" {
+        return None;
+    }
+    if named_children(argument_list).first()?.id() != argument.id() {
+        return None;
+    }
+    let invocation = argument_list.parent()?;
+    if invocation.kind() != "invocation_expression" {
+        return None;
+    }
+    let function = invocation.child_by_field_name("function")?;
+    if function.kind() != "member_access_expression" {
+        return None;
+    }
+    let receiver = function.child_by_field_name("expression")?;
+    if receiver.kind() != "identifier" {
+        return None;
+    }
+    Some(receiver)
+}
+
+// `n` (a `parameter` or `implicit_parameter` node) is an UNTYPED lambda
+// parameter sitting somewhere inside a lambda that is itself an
+// `invocation_expression` argument -- the broader shape
+// `lambda_first_arg_receiver` above declines whenever the lambda is not the
+// sole first argument on a bare-identifier member-access receiver. Purely
+// structural, never consulting a fact table: the qualifier's OWN type is
+// looked up separately, once it has settled (`lambda_slot_fact`).
+//
+// The lambda's own parent must be an `argument` WITHOUT a `name` field -- a
+// named argument (`Register(configure: x => ...)`) yields `None`, since the
+// slot this would name is not necessarily the parameter position a
+// resolver's positional delegate lookup expects. The invocation's
+// `function` must be a bare `identifier` (a static-looking callee, no
+// qualifier) or a `member_access_expression` whose own `expression` is
+// either a bare `identifier` (`q.M(...)`) or the `this` keyword
+// (`this.M(...)`, qualifier `None`) -- anything else (a `generic_name`
+// member or function, a chained `invocation_expression`/
+// `member_access_expression` receiver, `base`, a conditional-access
+// binding) declines: none of those name a callee this slot can safely
+// resolve a positional delegate parameter against.
+fn lambda_argument_slot(n: Node, src: &[u8]) -> Option<PendingSlot> {
+    let (lambda, arity, index) = match n.kind() {
+        "implicit_parameter" => (n.parent()?, 1usize, 0usize),
+        "parameter" => {
+            if n.child_by_field_name("type").is_some() {
+                return None;
+            }
+            let list = n.parent()?;
+            if list.kind() != "parameter_list" {
+                return None;
+            }
+            let params = named_children(list);
+            let index = params.iter().position(|p| p.id() == n.id())?;
+            (list.parent()?, params.len(), index)
+        }
+        _ => return None,
+    };
+    if lambda.kind() != "lambda_expression" {
+        return None;
+    }
+    let argument = lambda.parent()?;
+    if argument.kind() != "argument" || argument.child_by_field_name("name").is_some() {
+        return None;
+    }
+    let argument_list = argument.parent()?;
+    if argument_list.kind() != "argument_list" {
+        return None;
+    }
+    let args = named_children(argument_list);
+    let arg_index = args.iter().position(|a| a.id() == argument.id())?;
+    let arg_count = args.len();
+    let invocation = argument_list.parent()?;
+    if invocation.kind() != "invocation_expression" {
+        return None;
+    }
+    let function = invocation.child_by_field_name("function")?;
+    let (qualifier, member) = match function.kind() {
+        "member_access_expression" => {
+            let expr = function.child_by_field_name("expression")?;
+            let qualifier = match expr.kind() {
+                "identifier" => Some(text(expr, src)),
+                "this" => None,
+                _ => return None,
+            };
+            let name_node = function.child_by_field_name("name")?;
+            if name_node.kind() != "identifier" {
+                return None;
+            }
+            (qualifier, text(name_node, src))
+        }
+        "identifier" => (None, text(function, src)),
+        _ => return None,
+    };
+    if member.is_empty() {
+        return None;
+    }
+    Some(PendingSlot {
+        qualifier,
+        member,
+        arg_count,
+        arg_index,
+        arity,
+        index,
+    })
+}
+
+// The settled `LambdaSlot` fact for one `PendingSlot`, once every
+// declaration in the member has settled: `owner` is the callee's type, read
+// the same three-way way `qualifier_type_name` reads `Q` in `var x =
+// Q.M()` (an in-file fact's type, the bare name itself when nothing claims
+// it -- the static-class shape -- or refused when something claims the
+// name but vouches for no type), except when the qualifier is itself one of
+// `pending`'s own deferred lambda parameter names, refused rather than read
+// from a half-settled table (one hop, never a chain, same as the
+// deferred-call loop's own qualifier refusal). A `None` qualifier (a bare
+// `M(...)` or `this.M(...)` callee) reads `owner` off `enclosing_type`
+// directly instead.
+fn lambda_slot_fact(
+    table: &FactTable,
+    type_facts: &FactTable,
+    enclosing_type: Option<&str>,
+    pending: &HashSet<&str>,
+    slot: &PendingSlot,
+) -> Option<Fact> {
+    let owner = match &slot.qualifier {
+        None => enclosing_type?.to_string(),
+        Some(q) => {
+            if pending.contains(q.as_str()) {
+                return None;
+            }
+            qualifier_type_name(table, type_facts, q)?
+        }
+    };
+    Some(Fact {
+        type_name: String::new(),
+        args: None,
+        call: None,
+        awaited: false,
+        is_array: false,
+        lambda: Some(LambdaSlot {
+            owner,
+            member: slot.member.clone(),
+            arg_count: slot.arg_count,
+            arg_index: slot.arg_index,
+            arity: slot.arity,
+            index: slot.index,
+        }),
+    })
+}
+
+// The names one LINQ query clause BINDS -- `from d in xs`, `join o in ys`,
+// `join ... into g`, `let n = ...`, and the query continuation `... into g`.
+// Every one is a range variable: a name the rest of the query reads and the
+// enclosing type never declared. Nothing here vouches for its TYPE (the
+// element type of the source sequence is exactly what this extractor cannot
+// compute), so the caller records each as taken-but-unknown -- which is the
+// whole point: without an entry, the resolver's bare-identifier fallback
+// would type `d` from a same-named field of the enclosing type or one of its
+// bases and emit a precise edge the language never binds.
+fn query_binding_names(n: Node, src: &[u8]) -> Vec<String> {
+    match n.kind() {
+        // `from [T] d in xs` -- the only clause that names its range
+        // variable with a field.
+        "from_clause" => n
+            .child_by_field_name("name")
+            .map(|x| text(x, src))
+            .into_iter()
+            .collect(),
+        // `join [T] o in ys on a equals b`, `let n = ...`, `into g`: the
+        // bound name is the FIRST bare identifier child that is not the
+        // optional type node (a type can itself be an `identifier`).
+        // Everything after it -- a `let`'s value, a join's source and its
+        // two key expressions -- is an expression this must not claim.
+        "join_clause" | "let_clause" | "join_into_clause" => {
+            let type_id = n.child_by_field_name("type").map(|t| t.id());
+            named_children(n)
+                .into_iter()
+                .find(|c| c.kind() == "identifier" && Some(c.id()) != type_id)
+                .map(|c| text(c, src))
+                .into_iter()
+                .collect()
+        }
+        // The query continuation `... into g` has no node of its own -- the
+        // grammar's query-body rule is hidden -- so its identifier sits as a
+        // direct child of the `query_expression`, the one place a bare
+        // identifier can appear there at all.
+        "query_expression" => named_children(n)
+            .into_iter()
+            .filter(|c| c.kind() == "identifier")
+            .map(|c| text(c, src))
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
 fn visit_member_facts(
     n: Node,
     src: &[u8],
@@ -1956,13 +2885,60 @@ fn visit_member_facts(
     table: &mut FactTable,
     deferred: &mut Vec<DeferredCall>,
     deferred_foreach: &mut Vec<DeferredForeach>,
+    deferred_lambda: &mut Vec<DeferredLambdaParam>,
 ) {
     if n.kind() == "parameter" {
-        add_fact(
-            table,
-            n.child_by_field_name("name").map(|x| text(x, src)),
-            type_fact(n.child_by_field_name("type"), src, type_params),
-        );
+        let name = n.child_by_field_name("name").map(|x| text(x, src));
+        let receiver = lambda_first_arg_receiver(n);
+        let slot = lambda_argument_slot(n, src);
+        // Deferred to the second pass instead of recorded as
+        // taken-but-unknown here whenever EITHER shape matched: recording
+        // it now (even as `None`) would permanently conflict with the
+        // settled element/slot fact `add_fact` writes later for the SAME
+        // name.
+        if receiver.is_some() || slot.is_some() {
+            if let Some(name) = name.filter(|nm| !nm.is_empty()) {
+                deferred_lambda.push(DeferredLambdaParam {
+                    name,
+                    collection: receiver.map(|r| text(r, src)),
+                    slot,
+                });
+            }
+        } else {
+            add_fact(
+                table,
+                name,
+                type_fact(n.child_by_field_name("type"), src, type_params),
+            );
+        }
+    } else if n.kind() == "implicit_parameter" {
+        // An implicit lambda parameter (`x => ...`) has no `parameter` node
+        // at all, so it never reaches the branch above.
+        let name = text(n, src);
+        let receiver = lambda_first_arg_receiver(n);
+        let slot = lambda_argument_slot(n, src);
+        // Deferred for the reason the `parameter` branch defers: an entry
+        // written now would conflict with the element/slot fact the second
+        // pass settles for this very name.
+        if receiver.is_some() || slot.is_some() {
+            if !name.is_empty() {
+                deferred_lambda.push(DeferredLambdaParam {
+                    name,
+                    collection: receiver.map(|r| text(r, src)),
+                    slot,
+                });
+            }
+        } else {
+            // Outside a qualifying invocation neither rule types anything
+            // -- but the name is still DECLARED here, so it is
+            // taken-but-unknown rather than unentered. A lambda parameter
+            // that shares its name with a field of the enclosing type
+            // shadows that field in C#, and without the entry the
+            // resolver's bare-identifier fallback would type it from the
+            // field and emit a precise edge to a member the call can
+            // never reach.
+            add_fact(table, Some(name), None);
+        }
     } else if n.kind() == "variable_declaration" {
         let type_node = n.child_by_field_name("type");
         let is_var = type_node.map(|t| t.kind()) == Some("implicit_type");
@@ -1978,6 +2954,7 @@ fn visit_member_facts(
             let name = decl.child_by_field_name("name").map(|x| text(x, src));
             let fact = if is_var {
                 new_expression_fact(decl, src, type_params)
+                    .or_else(|| cast_expression_fact(decl, src, type_params))
             } else {
                 declared.clone()
             };
@@ -1986,10 +2963,11 @@ fn visit_member_facts(
                 _ => None,
             };
             match call {
-                Some((qualifier, member)) => deferred.push(DeferredCall {
+                Some((qualifier, member, awaited)) => deferred.push(DeferredCall {
                     name: name.unwrap_or_default(),
                     qualifier,
                     member,
+                    awaited,
                 }),
                 None => add_fact(table, name, fact),
             }
@@ -2026,27 +3004,78 @@ fn visit_member_facts(
                 }
             }
         }
+    } else if matches!(
+        n.kind(),
+        "declaration_pattern" | "declaration_expression" | "catch_declaration"
+    ) {
+        // `if (e is T t)` (also switch statement case patterns and switch
+        // expression arms, same `declaration_pattern` node), `out T x`
+        // (`declaration_expression`) and `catch (T e)`
+        // (`catch_declaration`): each a {type, name} pair, the same shape
+        // as `parameter`, just in pattern/argument/handler position. A
+        // caught exception is as real a declaration as a local, and it
+        // shadows a same-named field of the enclosing type, so it gets the
+        // TYPE its handler names rather than merely taking the name. The
+        // designation is OPTIONAL for all three -- a discard `_`, a
+        // parenthesized deconstruction, a bare `catch (T)` -- and
+        // `add_fact` with `None` is already a no-op. `out var x`'s `type`
+        // field is `implicit_type`, which `type_fact` already answers with
+        // `None` for -- recorded as taken-but-unknown rather than left
+        // unentered, which is what lets it shadow a same-named field
+        // instead of silently inheriting that field's type.
+        add_fact(
+            table,
+            n.child_by_field_name("name").map(|x| text(x, src)),
+            type_fact(n.child_by_field_name("type"), src, type_params),
+        );
+    } else if matches!(
+        n.kind(),
+        "from_clause" | "join_clause" | "join_into_clause" | "let_clause" | "query_expression"
+    ) {
+        // Every name a LINQ query binds is taken-but-unknown: in scope for
+        // the rest of the query, never a field of the enclosing type, and
+        // with no type this extractor can read off the syntax. See
+        // `query_binding_names`.
+        for name in query_binding_names(n, src) {
+            add_fact(table, Some(name), None);
+        }
     }
     for c in named_children(n) {
-        visit_member_facts(c, src, type_params, table, deferred, deferred_foreach);
+        visit_member_facts(
+            c,
+            src,
+            type_params,
+            table,
+            deferred,
+            deferred_foreach,
+            deferred_lambda,
+        );
     }
 }
 
-// The (qualifier, member) halves of a `var x = Q.M(...)`
+// The (qualifier, member, awaited) triple of a `var x = Q.M(...)`
 // initializer, or `None` for every other shape. The qualifier must be BARE and
 // non-generic for the same reason a receiver fact's is: a dotted or computed
 // qualifier is not a name the ladder can put a type behind. A bare call
 // (`var x = M()`) has no qualifier at all and is deliberately not covered.
-fn invocation_call(declarator: Node, src: &[u8]) -> Option<(String, String)> {
-    let init = named_children(declarator)
-        .into_iter()
-        .find(|c| c.kind() == "invocation_expression")?;
+// `awaited` is `true` only when the invocation sat one level inside an
+// `await_expression` (`var x = await Q.M()`) -- straight from
+// `find_child_through_await`'s own signal, never re-derived.
+fn invocation_call(declarator: Node, src: &[u8]) -> Option<(String, String, bool)> {
+    let (init, awaited) = find_child_through_await(declarator, "invocation_expression")?;
     let function = init.child_by_field_name("function")?;
     if function.kind() != "member_access_expression" {
         return None;
     }
+    // This scan runs outside the walk()/type_stack traversal, so `this`/
+    // `base` qualifiers here have no enclosing type to resolve against and
+    // deliberately fall through to no candidate -- the same outcome an
+    // empty type_stack would give inside walk(), and unchanged from before
+    // `member_qualifier_info` learned those two keywords: `var x =
+    // this.M()` never earned a call fact before this branch existed and
+    // still does not.
     let (qualifier, generic) =
-        member_qualifier_info(function.child_by_field_name("expression"), src)?;
+        member_qualifier_info(function.child_by_field_name("expression"), src, &[])?;
     if generic || qualifier.contains('.') {
         return None;
     }
@@ -2062,19 +3091,23 @@ fn invocation_call(declarator: Node, src: &[u8]) -> Option<(String, String)> {
     if member.is_empty() {
         return None;
     }
-    Some((qualifier, member))
+    Some((qualifier, member, awaited))
 }
 
 // The type NAME a bare qualifier stands for, as far as the file can vouch: the
 // fact's own type when one vouches for the name; `None` when the name is taken
-// but nothing vouches for it, or when what vouches is itself a call
-// fact (one hop, never a chain); and the text itself when no declaration in
-// scope claims the name at all -- an unclaimed bare qualifier is a type name,
-// which is the static-call shape.
+// but nothing vouches for it, when what vouches is itself a call fact (one
+// hop, never a chain), or when what vouches is itself a lambda slot fact
+// (same one-hop refusal -- its `type_name` is an empty placeholder, never a
+// real type); and the text itself when no declaration in scope claims the
+// name at all -- an unclaimed bare qualifier is a type name, which is the
+// static-call shape.
 fn qualifier_type_name(locals: &FactTable, type_facts: &FactTable, name: &str) -> Option<String> {
     match locals.get(name).or_else(|| type_facts.get(name)) {
         None => Some(name.to_string()),
-        Some(Some(fact)) if fact.call.is_none() => Some(fact.type_name.clone()),
+        Some(Some(fact)) if fact.call.is_none() && fact.lambda.is_none() => {
+            Some(fact.type_name.clone())
+        }
         Some(_) => None,
     }
 }
@@ -2093,9 +3126,77 @@ fn collection_element_fact(locals: &FactTable, type_facts: &FactTable, name: &st
                 type_name: arg.clone(),
                 args: None,
                 call: None,
+                awaited: false,
+                is_array: false,
+                lambda: None,
             }),
             _ => None,
         },
+        _ => None,
+    }
+}
+
+// The element fact of a `xs.Where(x => ...)`-shaped lambda parameter's
+// COLLECTION receiver -- read the same two tables `collection_element_fact`
+// reads, over the SAME two shapes Unit C asks for, kept as its own function
+// rather than folded into `collection_element_fact` because the two rules
+// disagree on array handling (`foreach` never unwraps one, this rule
+// always does) and must never be conflated:
+//   - `T[]` (an array): `base_type_identifier`/`generic_arg_descriptors`
+//     already collapse the wrapper away at fact-recording time, so the
+//     ONLY signal left that a `Widget` fact denotes `Widget[]` rather than
+//     one `Widget` is `Fact::is_array` (see its own doc comment) --
+//     `args` is empty either way, since an array's OWN top-level generic
+//     name (if its element is itself generic, `List<Order>[]`) is a
+//     different, THIRD shape this rule declines rather than guesses at.
+//   - a generic type with EXACTLY one top-level type argument (`List<T>`,
+//     `IEnumerable<T>`, ...): the non-array branch below, identical to
+//     `collection_element_fact`'s own single-argument case. A two-argument
+//     generic (`Dictionary<K,V>`) and a wildcard argument (the enclosing
+//     declaration's own type parameter, nothing at this call site knows
+//     what it is bound to) both decline, same as `collection_element_fact`.
+// A call-shaped fact (`var xs = Q.GetItems();`, still unresolved at
+// extraction time -- the callee's return type lives in another file) is
+// never read as either shape: `fact.args` is always `None` for a call fact
+// by construction (`invocation_call`'s own Fact literal never sets it), so
+// it already falls through the generic-argument arm to `None`, and
+// `is_array` is always `false` for one too (never set by anything but
+// `type_fact`) -- both refusals happen for free, no explicit check needed.
+// A lambda-slot fact (an untyped lambda parameter whose type the resolver
+// reads off its callee) lands in the same table with the same `args: None`
+// and `is_array: false`, so it falls through the same way.
+fn lambda_receiver_element_fact(
+    locals: &FactTable,
+    type_facts: &FactTable,
+    name: &str,
+) -> Option<Fact> {
+    let fact = match locals.get(name).or_else(|| type_facts.get(name)) {
+        Some(Some(fact)) => fact,
+        _ => return None,
+    };
+    if fact.is_array {
+        return if fact.args.is_none() {
+            Some(Fact {
+                type_name: fact.type_name.clone(),
+                args: None,
+                call: None,
+                awaited: false,
+                is_array: false,
+                lambda: None,
+            })
+        } else {
+            None
+        };
+    }
+    match fact.args.as_deref() {
+        Some([arg]) if arg != "*" => Some(Fact {
+            type_name: arg.clone(),
+            args: None,
+            call: None,
+            awaited: false,
+            is_array: false,
+            lambda: None,
+        }),
         _ => None,
     }
 }
@@ -2124,6 +3225,13 @@ struct Scope<'a> {
     /// same way. A member scope unions its own on top when it builds its
     /// member table (see `collect_member_facts`).
     type_params: Rc<HashSet<String>>,
+    /// The innermost enclosing type's own simple name (no namespace, no
+    /// nested-type "+" chain) -- `None` at the root scope (no enclosing
+    /// type at all), `Some` from `for_type` on and threaded unchanged
+    /// through every member scope opened under it. This is the `owner` an
+    /// untyped lambda parameter's bare `this.M(...)`/`M(...)` slot resolves
+    /// to (see `lambda_slot_fact`).
+    type_name: Option<String>,
     /// `None` at type-body level: a type body is not a member body.
     node: Option<Node<'a>>,
     /// Built on FIRST USE, not on scope entry: most member declarations in a
@@ -2138,6 +3246,7 @@ impl<'a> Scope<'a> {
         Scope {
             type_facts: Rc::new(FactTable::new()),
             type_params: Rc::new(HashSet::new()),
+            type_name: None,
             node: None,
             member_facts: OnceCell::new(),
         }
@@ -2145,9 +3254,11 @@ impl<'a> Scope<'a> {
 
     fn for_type(node: Node<'a>, src: &[u8]) -> Self {
         let type_params = type_parameter_names(node, src);
+        let name = declared_name(node, src);
         Scope {
             type_facts: Rc::new(collect_type_facts(node, src, &type_params)),
             type_params: Rc::new(type_params),
+            type_name: if name.is_empty() { None } else { Some(name) },
             node: None,
             member_facts: OnceCell::new(),
         }
@@ -2157,6 +3268,7 @@ impl<'a> Scope<'a> {
         Scope {
             type_facts: Rc::clone(&self.type_facts),
             type_params: Rc::clone(&self.type_params),
+            type_name: self.type_name.clone(),
             node: Some(node),
             member_facts: OnceCell::new(),
         }
@@ -2167,8 +3279,15 @@ impl<'a> Scope<'a> {
     // fall through to a same-named field of a different type.
     fn receiver_fact_for(&self, name: &str, src: &[u8]) -> Option<Fact> {
         let locals = self.member_facts.get_or_init(|| {
-            self.node
-                .map(|n| collect_member_facts(n, src, &self.type_params, &self.type_facts))
+            self.node.map(|n| {
+                collect_member_facts(
+                    n,
+                    src,
+                    &self.type_params,
+                    &self.type_facts,
+                    self.type_name.as_deref(),
+                )
+            })
         });
         if let Some(table) = locals {
             if let Some(found) = table.get(name) {
@@ -2177,6 +3296,233 @@ impl<'a> Scope<'a> {
         }
         self.type_facts.get(name).cloned().flatten()
     }
+
+    // `true` when the enclosing MEMBER's own fact table -- locals,
+    // parameters, explicitly-typed lambda parameters, patterns and `out`
+    // designations, every shape `collect_member_facts` records -- holds ANY
+    // entry for `name`, typed or taken-but-unknown. Deliberately never
+    // consults `type_facts` (the enclosing TYPE's own fields/properties/
+    // primary-ctor params): this answers "is `name` a local in scope", not
+    // "does the enclosing scope have a type fact for `name`" --
+    // `receiver_fact_for` already answers the latter. This is `receiver_local`'s
+    // one source of truth.
+    fn has_local_fact(&self, name: &str, src: &[u8]) -> bool {
+        let locals = self.member_facts.get_or_init(|| {
+            self.node.map(|n| {
+                collect_member_facts(
+                    n,
+                    src,
+                    &self.type_params,
+                    &self.type_facts,
+                    self.type_name.as_deref(),
+                )
+            })
+        });
+        locals
+            .as_ref()
+            .is_some_and(|table| table.contains_key(name))
+    }
+
+    // `true` when SOME declaration in scope claims `name` at all -- a local
+    // or parameter (`has_local_fact`) OR a field/primary-ctor parameter of
+    // the enclosing TYPE -- typed or not. Mirrors `qualifier_type_name`'s own
+    // "claimed at all" test (used for `var x = Q.M()`'s call-owner fallback)
+    // over `Scope`'s two tables instead of a `collect_member_facts` pass's
+    // raw pair: the chain-tail rule (Unit C) needs exactly this to tell "no
+    // declaration anywhere claims this bare name, so treat it as a static
+    // type reference" apart from "something claims it but vouches for
+    // nothing", which `receiver_fact_for` alone collapses into the same
+    // `None`.
+    fn name_is_claimed(&self, name: &str, src: &[u8]) -> bool {
+        self.has_local_fact(name, src) || self.type_facts.contains_key(name)
+    }
+}
+
+// The member name half of a member-access-shaped ref, normalizing a
+// `generic_name` name node ("Foo.Bar<T>(...)") to its bare identifier --
+// shared by the direct `a.B` window and the `?.B` binding, which carry the
+// member in the same node shape (`identifier` or `generic_name`).
+fn member_name_text(node: Option<Node>, src: &[u8]) -> Option<String> {
+    node.map(|n| {
+        if n.kind() == "generic_name" {
+            named_children(n)
+                .into_iter()
+                .find(|c| c.kind() == "identifier")
+                .map(|id| text(id, src))
+                .unwrap_or_default()
+        } else {
+            text(n, src)
+        }
+    })
+}
+
+// The receiver-side fields a member-access-shaped ref derives from its
+// qualifier node -- shared by the direct `a.B` window and the `a?.B`
+// conditional-access window so the two produce byte-identical fields for an
+// otherwise-identical qualifier.
+struct QualifierResolution {
+    text: String,
+    generic: bool,
+    receiver: Option<Fact>,
+    property_owner: Option<String>,
+    receiver_base: bool,
+    receiver_local: bool,
+}
+
+fn resolve_member_qualifier(
+    qualifier: Option<Node>,
+    src: &[u8],
+    type_stack: &[String],
+    scope: &Scope,
+) -> Option<QualifierResolution> {
+    let kind = qualifier?.kind();
+    let (qt, generic) = member_qualifier_info(qualifier, src, type_stack)?;
+    // `this`/`base` are bare anonymous tokens in this grammar (verified
+    // against the shipped grammar: neither wraps in a
+    // `this_expression`/`base_expression` rule), and the ONLY qualifier
+    // shape whose receiver is asked of `type_stack` directly rather than of
+    // the enclosing scope's local/field fact table -- a coincidentally
+    // same-named local or field must never stand in for the enclosing type
+    // itself.
+    if kind == "this" || kind == "base" {
+        let receiver_args = if scope.type_params.is_empty() {
+            None
+        } else {
+            Some(vec!["*".to_string(); scope.type_params.len()])
+        };
+        return Some(QualifierResolution {
+            receiver: Some(Fact {
+                type_name: qt.clone(),
+                args: receiver_args,
+                call: None,
+                awaited: false,
+                is_array: false,
+                lambda: None,
+            }),
+            text: qt,
+            generic,
+            property_owner: None,
+            receiver_base: kind == "base",
+            receiver_local: false,
+        });
+    }
+    // A receiver fact is asked for ONLY for a bare, non-generic qualifier:
+    // a dotted qualifier is a flattened chain window (whose head's fact it
+    // must never inherit) or a namespace path, and a type-argument list is
+    // syntax no local, parameter, or field can carry.
+    let dot_at = if generic { None } else { qt.find('.') };
+    let bare = dot_at.is_none() && !generic;
+    let receiver = if bare {
+        scope.receiver_fact_for(&qt, src)
+    } else {
+        None
+    };
+    // `receiver_local`: does the enclosing MEMBER's own fact table hold ANY
+    // entry for this bare name at all, typed or taken-but-unknown? Answered
+    // independently of `receiver` above -- a `None` receiver alone cannot
+    // tell "no fact anywhere for this name" apart from "a same-named local
+    // is taken but nothing vouches for its type", and the resolver's
+    // bare-identifier field/property fallback (Unit B) needs exactly that
+    // distinction to let a local always shadow a same-named field.
+    let receiver_local = bare && scope.has_local_fact(&qt, src);
+    // The head of a TWO-segment chain, and only when the scope vouches for
+    // its type: "a.Settings" asks what `a` is, while "x.y.Settings" and a
+    // namespace path ask nothing, because a head this file cannot type is a
+    // head no property lookup can start from.
+    let property_owner = dot_at
+        .filter(|d| !qt[d + 1..].contains('.'))
+        .and_then(|d| scope.receiver_fact_for(&qt[..d], src))
+        .filter(|fact| fact.call.is_none() && fact.lambda.is_none())
+        .map(|fact| fact.type_name);
+    Some(QualifierResolution {
+        text: qt,
+        generic,
+        receiver,
+        property_owner,
+        receiver_base: false,
+        receiver_local,
+    })
+}
+
+// The type NAME a chain-tail's HEAD (`a` in `a.B().C()`, for the `.C`
+// window) stands for, as far as the file can vouch -- the exact three-way
+// answer `qualifier_type_name` gives `Q` in `var x = Q.M()`, reused here
+// over `Scope`'s own tables since this runs from `walk()`, not from a
+// `collect_member_facts` pass: an in-file fact when one vouches for the
+// name (a call-shaped or lambda-slot-shaped fact refused -- one hop, never
+// a chain); the bare name itself when nothing in scope claims it at all
+// (the static-qualifier shape, `Repo.Load().Validate()`); `None` when
+// something claims the name but vouches for no type.
+fn chain_tail_receiver_type(a_text: &str, scope: &Scope, src: &[u8]) -> Option<String> {
+    match scope.receiver_fact_for(a_text, src) {
+        Some(Fact {
+            type_name,
+            call: None,
+            lambda: None,
+            ..
+        }) => Some(type_name),
+        Some(_) => None,
+        None if scope.name_is_claimed(a_text, src) => None,
+        None => Some(a_text.to_string()),
+    }
+}
+
+// The chain-tail shape (Unit C): `.C` in `a.B().C()`, whose OWN qualifier is
+// the invocation `a.B()`. Returns `(owner, member)` -- the SAME two fields
+// `var x = Q.M()` produces for its local, feeding the identical one-hop
+// `method_returns` resolver path -- for
+//   - a qualifier that is an `invocation_expression`,
+//   - whose OWN `function` is a `member_access_expression` (`a.B`) --
+//     anything else (a bare call `B()`, a delegate-shaped `Get()()`) is not
+//     this shape, and
+//   - whose `a` resolves through `member_qualifier_info` to a BARE,
+//     non-generic, non-dotted name with a typed receiver (see
+//     `chain_tail_receiver_type`).
+// A chain of chains (`a.B().C().D()`'s `.D`, whose own `a` is `a.B().C()`,
+// an `invocation_expression` `member_qualifier_info` has no arm for) never
+// reaches the receiver-typing step at all: `member_qualifier_info` returns
+// `None` for it, same as every other shape this function declines.
+//
+// The third half of the answer is whether `a` was the `base` keyword. A
+// `base.` head types as the ENCLOSING type (that is what `type_stack` gives
+// it), but the method the hop has to read a return type from is the BASE's,
+// not the enclosing type's -- an enclosing type that hides the inherited
+// member with one of its own returns something else entirely. The resolver
+// reads the bit off the ref's `receiverBase` and starts the hop at the
+// bases; `this.` keeps `false` and keeps hopping through the enclosing type.
+fn resolve_call_chain_tail(
+    qualifier: Node,
+    src: &[u8],
+    type_stack: &[String],
+    scope: &Scope,
+) -> Option<(String, String, bool)> {
+    if qualifier.kind() != "invocation_expression" {
+        return None;
+    }
+    let function = qualifier.child_by_field_name("function")?;
+    if function.kind() != "member_access_expression" {
+        return None;
+    }
+    let head = function.child_by_field_name("expression");
+    let head_is_base = head.is_some_and(|h| h.kind() == "base");
+    let (a_text, a_generic) = member_qualifier_info(head, src, type_stack)?;
+    if a_generic || a_text.contains('.') {
+        return None;
+    }
+    let name_node = function.child_by_field_name("name")?;
+    let inner_member = if name_node.kind() == "generic_name" {
+        named_children(name_node)
+            .into_iter()
+            .find(|c| c.kind() == "identifier")
+            .map(|id| text(id, src))?
+    } else {
+        text(name_node, src)
+    };
+    if inner_member.is_empty() {
+        return None;
+    }
+    let owner = chain_tail_receiver_type(&a_text, scope, src)?;
+    Some((owner, inner_member, head_is_base))
 }
 
 // walk_list mutates its local `ns` mid-iteration for a FILE-SCOPED
@@ -2516,56 +3862,126 @@ fn walk<'a>(
             // The member itself can be a generic_name too ("Foo.Bar<T>(...)"):
             // normalize to the bare method name so the resolver's method-list
             // membership check sees the name the def actually recorded.
-            let member = node.child_by_field_name("name").map(|n| {
-                if n.kind() == "generic_name" {
-                    named_children(n)
-                        .into_iter()
-                        .find(|c| c.kind() == "identifier")
-                        .map(|id| text(id, src))
-                        .unwrap_or_default()
-                } else {
-                    text(n, src)
-                }
-            });
-            let normal_qualifier = member_qualifier_info(expr_field, src);
-            if let (Some((qt, generic)), Some(m)) = (&normal_qualifier, &member) {
+            let member = member_name_text(node.child_by_field_name("name"), src);
+            let qualifier = resolve_member_qualifier(expr_field, src, type_stack, scope);
+            if let (Some(q), Some(m)) = (&qualifier, &member) {
                 if !m.is_empty() {
-                    // A receiver fact is asked for ONLY for a bare,
-                    // non-generic qualifier: a dotted qualifier is a
-                    // flattened chain window (whose head's fact it must never
-                    // inherit) or a namespace path, and a type-argument list
-                    // is syntax no local, parameter, or field can carry.
-                    let dot_at = if *generic { None } else { qt.find('.') };
-                    let bare = dot_at.is_none() && !*generic;
-                    let receiver = if bare {
-                        scope.receiver_fact_for(qt, src)
-                    } else {
-                        None
-                    };
-                    // The head of a TWO-segment chain, and only when
-                    // the scope vouches for its type: "a.Settings" asks what
-                    // `a` is, while "x.y.Settings" and a namespace path ask
-                    // nothing, because a head this file cannot type is a head
-                    // no property lookup can start from.
-                    let property_owner = dot_at
-                        .filter(|d| !qt[d + 1..].contains('.'))
-                        .and_then(|d| scope.receiver_fact_for(&qt[..d], src))
-                        .filter(|fact| fact.call.is_none())
-                        .map(|fact| fact.type_name);
                     push_member_ref(
                         &mut out.refs,
-                        qt,
+                        &q.text,
                         m.clone(),
                         node.start_position().row + 1,
                         ns.to_string(),
-                        *generic,
-                        receiver,
+                        q.generic,
+                        q.receiver.clone(),
                         // Asked of THIS node, so a chain window answers for its
                         // own call and never for the one wrapping it.
                         invocation_arg_count(node),
                         type_stack,
-                        property_owner,
+                        q.property_owner.clone(),
+                        q.receiver_base,
+                        q.receiver_local,
                     );
+                }
+            } else if let (Some(qn), Some(m)) = (expr_field, &member) {
+                // Unit C, chain tail: `resolve_member_qualifier` structurally
+                // NEVER succeeds here (`member_qualifier_info` has no arm
+                // for `invocation_expression`), so this is a true fallback,
+                // never a double emission for the same window.
+                if !m.is_empty() {
+                    if let Some((owner, inner_member, head_is_base)) =
+                        resolve_call_chain_tail(qn, src, type_stack, scope)
+                    {
+                        push_member_ref(
+                            &mut out.refs,
+                            // The qualifier's OWN source text ("a.B()",
+                            // "Repo.Load()", ...) rather than a name that
+                            // could coincidentally collide with a real
+                            // type: an invocation_expression's span always
+                            // ends at its own closing ')', a character no
+                            // C# identifier or dotted type name can ever
+                            // contain, so `push_member_ref`'s `name`/
+                            // `qualified` split can never accidentally
+                            // resolve as a real def. `receiver_type` stays
+                            // `None` (a call-shaped Fact, not a resolved
+                            // type) -- resolution goes through the same
+                            // one-hop `method_returns` path a `var x =
+                            // Q.M()` local already uses.
+                            &text(qn, src),
+                            m.clone(),
+                            node.start_position().row + 1,
+                            ns.to_string(),
+                            false,
+                            Some(Fact {
+                                type_name: owner,
+                                args: None,
+                                call: Some(inner_member),
+                                awaited: false,
+                                is_array: false,
+                                lambda: None,
+                            }),
+                            invocation_arg_count(node),
+                            type_stack,
+                            None,
+                            // `base.Make().Validate()`: the hop must read
+                            // Make's return type off the BASE that declares
+                            // it, never off an enclosing type that hides
+                            // Make with its own.
+                            head_is_base,
+                            false,
+                        );
+                    }
+                }
+            }
+            walk_list(
+                named_children(node),
+                ns.to_string(),
+                type_stack,
+                src,
+                out,
+                scope,
+            );
+        }
+        // `a?.B` / `a?.B(...)` -- a conditional-access window emits the
+        // SAME uses-member ref an unconditional `a.B` would, through the
+        // identical qualifier resolution (`resolve_member_qualifier`); only
+        // the line (this node's own start row) and the arg-count/binding
+        // shapes differ structurally. `member_binding_expression` is a
+        // CHILD of this node, not a field (confirmed against the shipped
+        // grammar's node-types), so it is found by kind rather than
+        // `child_by_field_name`. `element_binding_expression` (`a?[i]`) is
+        // the conditional_access_expression's other possible child and is
+        // not a member access at all -- no ref for it here.
+        "conditional_access_expression" => {
+            let condition = node.child_by_field_name("condition");
+            let binding = named_children(node)
+                .into_iter()
+                .find(|c| c.kind() == "member_binding_expression");
+            if let Some(binding) = binding {
+                let member = member_name_text(binding.child_by_field_name("name"), src);
+                let qualifier = resolve_member_qualifier(condition, src, type_stack, scope);
+                if let (Some(q), Some(m)) = (&qualifier, &member) {
+                    if !m.is_empty() {
+                        push_member_ref(
+                            &mut out.refs,
+                            &q.text,
+                            m.clone(),
+                            node.start_position().row + 1,
+                            ns.to_string(),
+                            q.generic,
+                            q.receiver.clone(),
+                            // Asked of the conditional_access_expression
+                            // itself -- that is the node an enclosing
+                            // `invocation_expression`'s `function` field
+                            // names when the binding is invoked
+                            // (`a?.B()`), never the inner binding.
+                            invocation_arg_count(node),
+                            type_stack,
+                            q.property_owner.clone(),
+                            q.receiver_base,
+                            q.receiver_local,
+                        );
+                    }
                 }
             }
             walk_list(
@@ -2609,8 +4025,14 @@ fn walk<'a>(
 
 /// Extract both outputs from one parse of C# `source`: the file's purpose
 /// signature and its graph fragment (defs, usings, refs, names).
+///
+/// The source is first stripped of inactive conditional-compilation arms,
+/// so only the arm that would actually compile is indexed.
 pub fn extract(source: &str) -> Extraction {
     let mut parser = new_parser();
+    // At most one arm of every `#if` group reaches the parser (see `preproc`).
+    let source = crate::preproc::strip_inactive(source);
+    let source = source.as_ref();
     let units = crate::parse::utf16_units(source);
     let utf16 = crate::parse::utf16_bytes(&units);
     let tree = parser
@@ -2905,7 +4327,7 @@ fn def_to_json(d: &DefRecord) -> Json {
             ),
         ));
     }
-    // Appended LAST, after testMethods, entry keys in source order.
+    // Appended after testMethods, entry keys in source order.
     if !d.property_types.is_empty() {
         fields.push((
             "propertyTypes",
@@ -2913,6 +4335,23 @@ fn def_to_json(d: &DefRecord) -> Json {
                 d.property_types
                     .iter()
                     .map(|(name, fact)| (name.clone(), fact_to_json(fact)))
+                    .collect(),
+            ),
+        ));
+    }
+    // Appended LAST of all, after propertyTypes, entry keys in source order.
+    if !d.method_return_args.is_empty() {
+        fields.push((
+            "methodReturnArgs",
+            Json::Map(
+                d.method_return_args
+                    .iter()
+                    .map(|(k, v)| {
+                        (
+                            k.clone(),
+                            Json::Arr(v.iter().map(|a| Json::Str(a.clone())).collect()),
+                        )
+                    })
                     .collect(),
             ),
         ));
@@ -4999,27 +6438,19 @@ mod tests {
         assert!(uses_type_names.contains(&"GadgetBase"));
     }
 
-    // --- #if/#elif/#else interrupting a fluent chain -----------------
+    // --- `#if`/`#if-else` interrupting a fluent chain ------------------
     //
-    // Native tree-sitter's error recovery for these fixtures swallows the
-    // directive as a small ERROR-node extra child while continuing the
-    // interrupted chain as ONE uninterrupted subtree, rather than the clean
-    // statement split a non-recovering parse would produce (see
-    // `preproc_promoted_qualifier`'s doc comment for the full mechanism).
-    // The fixtures live in fixtures/preproc/ and are `include_str!`ed
-    // here, so this fast unit test and the differential check run on the
-    // identical bytes -- divergence between them would mean the fixture
-    // drifted from what this test asserts, not a real behavior change.
-    // They sit under fixtures/ rather than beside the harness because
-    // this test is part of the crate and has to compile wherever the crate
-    // does.
+    // Each fixture below has a conditional-compilation group sitting in the
+    // middle of a fluent member-access/invocation chain. Before parsing,
+    // `preproc::strip_inactive` blanks every inactive arm -- and the
+    // directive lines themselves -- with spaces, so by the time the parser
+    // sees the file the chain reads as one uninterrupted statement running
+    // straight from the call before the group into the call after it.
     //
-    // Both fixtures need this much surrounding chain complexity to actually
-    // reach the ERROR-node recovery path in native tree-sitter -- a much
-    // shorter chain (e.g. a bare two-call `.Step1() #if DEBUG .DebugStep()
-    // #endif .Step2()`) was verified to take a completely different, more
-    // broken error-recovery path instead, so trimming these fixtures down is
-    // NOT safe without re-verifying against the expected output.
+    // The fixtures live in fixtures/preproc/ and are `include_str!`ed here,
+    // so the assertions below are pinned to the exact same bytes a real
+    // extraction would see; a line number changing under them means the
+    // fixture drifted, not that the extractor's behavior changed.
 
     const IF_DIRECTIVE_CHAIN: &str =
         include_str!("../fixtures/preproc/preproc_chain_interrupt_if.cs");
@@ -5039,90 +6470,131 @@ mod tests {
     }
 
     #[test]
-    fn preproc_if_interrupting_chain_promotes_qualifier_at_the_resumed_identifiers_own_line() {
-        let e = extract_src(IF_DIRECTIVE_CHAIN);
-        // Line 31 is `.WriteTo.Debug()` itself -- NOT line 7 where the
-        // interrupted chain's own `new Pipeline()` starts. Native
-        // tree-sitter's enclosing (unsplit) node inherits that earlier
-        // start position, which is exactly the bug this line guards: using
-        // the wrong node's start position after promotion.
-        assert!(uses_member_refs(&e).contains(&("WriteTo", "Debug", 31)));
-    }
-
-    #[test]
-    fn preproc_if_interrupting_chain_places_promoted_ref_after_the_original_chains_own_arguments() {
+    fn preproc_if_arm_inside_a_chain_is_not_indexed_and_the_chain_continues() {
         let e = extract_src(IF_DIRECTIVE_CHAIN);
         let refs = uses_member_refs(&e);
-        let debug_pos = refs
-            .iter()
-            .position(|r| *r == ("WriteTo", "Debug", 31))
-            .expect("promoted ref present");
-        let interval_day_pos = refs
-            .iter()
-            .position(|r| *r == ("Interval", "Day", 26))
-            .expect("Interval/Day ref present");
-        let minimum_level_pos = refs
-            .iter()
-            .position(|r| *r == ("Level", "Information", 33))
-            .expect("first MinimumLevel.Override argument ref present");
-        // A cleanly-split tree walks the interrupted chain's OWN call
-        // arguments (Interval.Day, part of the pre-`#if` `.File(...)` call)
-        // before it ever reaches the promoted ref, because that ref lives in
-        // what a clean parse treats as a separate, later statement.
-        // Native tree-sitter has no such split -- without the deferred
-        // (post-recursion) push in the walk's member_access_expression arm,
-        // the promoted ref lands far too early in this array instead.
-        assert!(
-            interval_day_pos < debug_pos,
-            "Interval/Day ({interval_day_pos}) should precede WriteTo/Debug ({debug_pos})"
-        );
-        assert!(debug_pos < minimum_level_pos, "WriteTo/Debug ({debug_pos}) should precede the first MinimumLevel.Override argument ref ({minimum_level_pos})");
-    }
-
-    #[test]
-    fn preproc_ifelse_interrupting_chain_promotes_qualifier_in_both_arms_but_not_across_endif() {
-        let e = extract_src(IFELSE_DIRECTIVE_CHAIN);
-        let refs = uses_member_refs(&e);
-        // Both the `#if` arm (line 23) and the `#else` arm (line 25) are
-        // opening directives and each promotes its own qualifier.
-        assert!(refs.contains(&("WriteTo", "Trace", 23)));
-        assert!(refs.contains(&("WriteTo", "Console", 25)));
-        // `#endif` never promotes: a clean parse absorbs it as a
-        // trailing token rather than splitting the statement there, so
-        // there is no "MinimumLevel"/"Override" candidate on either side.
-        assert!(!refs.iter().any(|(_, member, _)| *member == "Override"));
-        assert!(!refs.iter().any(|(name, _, _)| *name == "MinimumLevel"));
-    }
-
-    #[test]
-    fn preproc_promotion_does_not_fire_on_nested_if_in_if_chain_interrupt() {
-        // A `#if` nested inside another `#if` interrupting the same kind of
-        // chain already parses cleanly WITHOUT the
-        // compensation (native tree-sitter happens to build a proper
-        // preproc_if node here too) -- this guards against the
-        // compensation over-firing on this shape and introducing a spurious
-        // ref.
-        let e = extract_src(NESTED_IF_DIRECTIVE_CHAIN_CONTROL);
-        let refs = uses_member_refs(&e);
-        assert!(refs.contains(&("WriteTo", "Trace", 25)));
-        assert!(!refs
-            .iter()
-            .any(|(name, member, _)| *name == "WriteTo" && *member == "Debug"));
-    }
-
-    #[test]
-    fn preproc_promotion_does_not_fire_on_whole_statement_if_guard() {
-        // An ordinary statement-level `#if DEBUG { ... }` (not interrupting
-        // an expression) already parses cleanly -- guards against the
-        // compensation over-firing there too. Both
-        // calls resolve as ordinary `registry.Attach(...)` member accesses,
-        // untouched by the directive between them.
-        let e = extract_src(WHOLESTMT_DIRECTIVE_CONTROL);
-        let refs = uses_member_refs(&e);
+        // `DEBUG` is undefined, so the `#if` arm -- `.WriteTo.Debug()` on
+        // line 18 -- is blanked before parsing and contributes no ref at
+        // all: neither "Debug" as a member name...
+        assert!(!refs.iter().any(|(_, member, _)| *member == "Debug"));
+        // ...nor "WriteTo" as a qualifier (the fluent chain itself is
+        // rooted in a `new Pipeline()`, so none of its own `.Enrich`,
+        // `.Filter`, `.WriteTo` or `.MinimumLevel` steps ever produce a
+        // ref -- only their call arguments do, which is exactly the shape
+        // asserted below).
+        assert!(!refs.iter().any(|(name, _, _)| *name == "WriteTo"));
+        // The chain parses as a single statement spanning the blanked
+        // lines, so every call argument keeps its real line number and the
+        // whole array stays in ascending line order.
         assert_eq!(
             refs,
-            vec![("registry", "Attach", 15), ("registry", "Attach", 17)]
+            vec![
+                ("e", "Level", 9),
+                ("Level", "Error", 9),
+                ("Interval", "Day", 13),
+                ("Level", "Information", 20),
+                ("Level", "Information", 21),
+            ]
         );
+    }
+
+    #[test]
+    fn preproc_ifelse_group_drops_the_dead_arm_and_leaves_the_chain_tail_intact() {
+        let e = extract_src(IFELSE_DIRECTIVE_CHAIN);
+        let refs = uses_member_refs(&e);
+        // `TRACE` is undefined, so the `#if` arm's `.WriteTo.Trace()` (line
+        // 13) is blanked before parsing. The `#else` arm's
+        // `.WriteTo.Console()` (line 15) survives the pre-pass and keeps
+        // the chain intact, but -- like every other fluent qualifier on
+        // this `new Pipeline()` chain -- neither call produces a ref of
+        // its own; only the trailing `.MinimumLevel.Override(...)`
+        // argument does.
+        assert!(!refs.iter().any(|(_, member, _)| *member == "Trace"));
+        assert!(!refs.iter().any(|(_, member, _)| *member == "Console"));
+        assert_eq!(refs, vec![("Level", "Information", 17)]);
+    }
+
+    #[test]
+    fn preproc_nested_if_in_if_leaves_the_whole_inner_group_absent() {
+        // The outer `#if DEBUG` is undefined, so the entire group -- the
+        // nested `#if TRACE`/`#endif` and both `.WriteTo.Trace()` (line 14)
+        // and `.WriteTo.Debug()` (line 16) -- is blanked before parsing,
+        // regardless of the inner symbol. Only the trailing
+        // `.MinimumLevel.Override(...)` argument after the group remains.
+        let e = extract_src(NESTED_IF_DIRECTIVE_CHAIN_CONTROL);
+        let refs = uses_member_refs(&e);
+        assert!(!refs.iter().any(|(_, member, _)| *member == "Trace"));
+        assert!(!refs.iter().any(|(_, member, _)| *member == "Debug"));
+        assert_eq!(refs, vec![("Level", "Information", 18)]);
+    }
+
+    #[test]
+    fn preproc_if_wrapping_a_whole_statement_removes_only_the_guarded_call() {
+        // An ordinary statement-level `#if DEBUG { ... }` guards a whole
+        // call rather than interrupting an expression. `DEBUG` is
+        // undefined, so the guarded call -- `registry.Attach(GetDebugSink())`
+        // on line 9 -- is blanked before parsing and produces no ref; the
+        // unguarded call on line 7 is untouched.
+        let e = extract_src(WHOLESTMT_DIRECTIVE_CONTROL);
+        let refs = uses_member_refs(&e);
+        assert_eq!(refs, vec![("registry", "Attach", 7)]);
+    }
+
+    const NAMESPACE_SELECTION_SRC: &str =
+        include_str!("../fixtures/preproc/preproc_namespace_selection.cs");
+
+    #[test]
+    fn preproc_namespace_selection_indexes_only_the_active_arm() {
+        let e = extract_src(NAMESPACE_SELECTION_SRC);
+
+        // The `#if` arm's namespace (`Fixtures.Preproc.LightLattice`) is
+        // undefined, so every type is indexed exactly once, under the
+        // `#else` arm's namespace only.
+        assert_eq!(e.defs.len(), 7);
+        let expected: Vec<(&str, &str, usize)> = vec![
+            ("Fixtures.Preproc.Lattice.LatticeCompiler", "class", 9),
+            (
+                "Fixtures.Preproc.Lattice.LatticeCompiler+EmitMode",
+                "enum",
+                18,
+            ),
+            (
+                "Fixtures.Preproc.Lattice.LatticeCompiler+EmitMode.Direct",
+                "enum-member",
+                20,
+            ),
+            (
+                "Fixtures.Preproc.Lattice.LatticeCompiler+EmitMode.Delegated",
+                "enum-member",
+                21,
+            ),
+            ("Fixtures.Preproc.Lattice.LatticeEmitter", "class", 25),
+            ("Fixtures.Preproc.Lattice.Closure", "class", 33),
+            ("Fixtures.Preproc.Lattice.Expression", "class", 38),
+        ];
+        for (id, kind, line) in &expected {
+            let d = find_def(&e, id).unwrap_or_else(|| panic!("def {id} present"));
+            assert_eq!(d.kind, *kind, "{id} kind");
+            assert_eq!(d.line, *line, "{id} line");
+            assert_eq!(d.namespace, "Fixtures.Preproc.Lattice", "{id} namespace");
+        }
+
+        assert!(e.defs.iter().all(|d| !d.id.contains("LightLattice")));
+
+        assert_eq!(e.usings.len(), 1);
+        match &e.usings[0] {
+            UsingRecord::Plain { text, global } => {
+                assert_eq!(text, "Fixtures.Preproc.Lattice.Expression");
+                assert!(!global);
+            }
+            UsingRecord::Alias { .. } => panic!("expected plain form"),
+        }
+
+        assert!(!e.refs.iter().any(|r| r.name.contains("LightLattice")
+            || r.qualified
+                .as_deref()
+                .unwrap_or("")
+                .contains("LightLattice")));
     }
 
     // --- TS/JS purposes (acceptance cases) -------
@@ -5359,29 +6831,22 @@ mod tests {
         assert!(ts_purpose("// just a comment, no code\n", TsGrammar::Typescript).is_none());
     }
 
-    // --- Duplicate-header preproc shape (the UTF-16 parse seam's motivating
-    // corpus case) ------------------------------------------------------
+    // --- Duplicate-header preproc shape ---------------------------------
     //
     // `#if X <header> { ... #else <header> { ... #endif <shared tail> }`
     // duplicates a member's header AND its opening brace across both arms
-    // while sharing one closing brace, so the text is unbalanced once the
-    // directives are treated as inert. Both engines' roots come back
-    // has_error() on it; what they must agree on is the repair, and they do
-    // only because both are handed the same UTF-16 view of the source (see
-    // parse::utf16_units). Parsing UTF-8 here instead made native recovery
-    // read the second arm's header as a local function nested inside the
-    // first arm's still-open block -- one member scope instead of two, so
-    // every receiver fact in them cancelled as a redeclaration conflict, and
-    // every type declared after the shape got swallowed as misread
-    // statements.
+    // while sharing one closing brace, so the raw text is unbalanced --
+    // reading both arms would leave two open braces and one close. The
+    // pre-pass blanks whichever arm is inactive, directive lines included,
+    // before the parser ever sees the file, so the parser is handed a
+    // single, well-formed header and body: no duplicated brace, no
+    // rebalancing to do.
     //
-    // These assertions are the expected output for these exact strings, not a
-    // description of any Rust-side compensation: there is none left to
-    // describe.
+    // These assertions are the expected output for these exact strings.
 
     // Two arms, one shared tail, one nested struct and one nested enum
-    // after it. At this scale the shared repair keeps the outer type and
-    // its "+"-nested members intact.
+    // after it. The nested struct and enum keep their real scope, under
+    // the outer type, regardless of which arm the pre-pass keeps.
     const DUPLICATE_HEADER_HOST_SRC: &str = "
 namespace Fixtures.Preproc
 {
@@ -5435,11 +6900,19 @@ namespace Fixtures.Preproc
         assert!(find_def(&e, "Fixtures.Preproc.WidgetCompiler+SlotStatus.Empty").is_some());
         assert!(find_def(&e, "Fixtures.Preproc.WidgetCompiler+SlotStatus.Filled").is_some());
 
-        // Both arms' parameter types are recorded; neither arm's refs are lost.
-        assert!(e
+        // `WIDGET_V2` is undefined, so the `#if` arm's parameter type and
+        // the field access inside it are blanked before parsing and never
+        // reach the refs...
+        assert!(!e
             .refs
             .iter()
             .any(|r| r.kind == "uses-type" && r.name == "IWidgetProvider"));
+        assert!(!e
+            .refs
+            .iter()
+            .any(|r| r.member.as_deref() == Some("WidgetCount")));
+        // ...while the `#else` arm's parameter type and field access are
+        // present, untouched.
         assert!(e
             .refs
             .iter()
@@ -5448,12 +6921,17 @@ namespace Fixtures.Preproc
             .refs
             .iter()
             .any(|r| r.kind == "uses-type" && r.name == "Widget"));
+        assert!(e
+            .refs
+            .iter()
+            .any(|r| r.kind == "uses-member" && r.member.as_deref() == Some("Count")));
     }
 
     #[test]
-    fn defs_and_refs_stay_in_ascending_line_order_on_a_pathological_file() {
-        // Document order is the artifact contract; a file whose root is
-        // has_error() is where it is easiest to lose, so it is pinned there.
+    fn defs_and_refs_stay_in_ascending_line_order_when_an_if_group_is_blanked() {
+        // Document order is the artifact contract; blanking an inactive arm
+        // in place (rather than removing it) is where a line could most
+        // easily drift out of order, so it is pinned here.
         let e = extract_src(DUPLICATE_HEADER_HOST_SRC);
         let def_lines: Vec<usize> = e.defs.iter().map(|d| d.line).collect();
         let mut sorted = def_lines.clone();
@@ -5482,12 +6960,9 @@ namespace Fixtures.Preproc
     }
 
     // Same shape, plus a SECOND nested type whose own body repeats the
-    // pattern. Two of them in one file is enough accumulated damage that the
-    // shared repair discards BOTH wrapping types: no WidgetCompiler def, no
-    // Emitter def, and everything that survives lands flat at namespace-less
-    // ambient scope. This drop is the correct output -- it is the shape the
-    // removed Rust-only recovery pass used to "rescue", inventing an `Emitter`
-    // def that must not appear.
+    // pattern one level deeper. Blanking each `#if` group independently
+    // keeps both wrapping types and both nested method bodies intact, no
+    // matter how many times the shape recurs in one file.
     const DUPLICATE_HEADER_HOST_WITH_NESTED_EMITTER_SRC: &str = "
 namespace Fixtures.Preproc
 {
@@ -5541,21 +7016,29 @@ namespace Fixtures.Preproc
 ";
 
     #[test]
-    fn stacked_duplicate_headers_drop_both_wrapping_types_like_the_reference() {
+    fn stacked_duplicate_headers_keep_both_wrapping_types_at_their_real_scope() {
         let e = extract_src(DUPLICATE_HEADER_HOST_WITH_NESTED_EMITTER_SRC);
 
-        assert!(e.defs.iter().all(|d| d.name != "WidgetCompiler"));
-        assert!(e.defs.iter().all(|d| d.name != "Emitter"));
+        assert!(find_def(&e, "Fixtures.Preproc.WidgetCompiler").is_some());
+        let emitter = find_def(&e, "Fixtures.Preproc.WidgetCompiler+Emitter")
+            .expect("Emitter kept, nested under WidgetCompiler");
+        assert_eq!(emitter.kind, "class");
+        assert_eq!(emitter.namespace, "Fixtures.Preproc");
 
-        let slot_info = find_def(&e, "SlotInfo").expect("SlotInfo survives, flat");
+        let slot_info = find_def(&e, "Fixtures.Preproc.WidgetCompiler+SlotInfo")
+            .expect("SlotInfo kept, nested under its type");
         assert_eq!(slot_info.kind, "struct");
-        assert_eq!(slot_info.namespace, "");
-        assert!(find_def(&e, "SlotStatus").is_some());
-        assert!(find_def(&e, "SlotStatus.Empty").is_some());
-        assert!(find_def(&e, "SlotStatus.Filled").is_some());
+        assert!(find_def(&e, "Fixtures.Preproc.WidgetCompiler+SlotStatus").is_some());
+        assert!(find_def(&e, "Fixtures.Preproc.WidgetCompiler+SlotStatus.Empty").is_some());
+        assert!(find_def(&e, "Fixtures.Preproc.WidgetCompiler+SlotStatus.Filled").is_some());
 
-        // The refs inside the innermost body still come through, at that
-        // same flat ambient scope.
+        // The inner method's `#if` group is blanked the same way as the
+        // outer one: no `IWidgetProvider` anywhere, and the refs inside the
+        // active arm's body come through at their real nested scope.
+        assert!(!e
+            .refs
+            .iter()
+            .any(|r| r.kind == "uses-type" && r.name == "IWidgetProvider"));
         assert!(e
             .refs
             .iter()
@@ -5754,7 +7237,7 @@ namespace App.NoFacts;
 
 public class Host
 {
-  public void Run(string text, System.Collections.Generic.List<Widget> items)
+  public void Run(string text, System.Collections.Generic.Dictionary<string, Widget> items)
   {
     var computed = Compute();
     int count = 0;
@@ -5786,9 +7269,14 @@ public class Host
                 ("text.Trim".to_string(), None),
                 ("count.ToString".to_string(), None),
                 // an explicitly typed parameter DOES earn a fact even when its
-                // declared type is qualified AND generic -- reduced to "List"
-                ("items.ForEach".to_string(), Some("List")),
-                // implicit lambda parameter: no type node, no fact
+                // declared type is qualified AND generic -- reduced to
+                // "Dictionary" (a TWO-argument generic, deliberately, so this
+                // window does NOT also qualify for the lambda-parameter
+                // element-typing rule below -- that positive case has its own
+                // dedicated stage4_first_single_parameter_lambda_... test)
+                ("items.ForEach".to_string(), Some("Dictionary")),
+                // implicit lambda parameter, first argument of a call whose
+                // receiver is a TWO-argument generic: still no fact
                 ("x.Do".to_string(), None),
             ]
         );
@@ -6071,14 +7559,14 @@ public class Host
     }
 
     #[test]
-    fn stage2b_each_duplicated_header_arm_keeps_its_own_receiver_facts() {
+    fn stage2b_the_surviving_header_arm_supplies_receiver_facts_at_both_nesting_levels() {
         // The duplicate-header preproc shape (see
-        // DUPLICATE_HEADER_HOST_WITH_NESTED_EMITTER_SRC). Each arm is its own
-        // method_declaration, so each arm's parameter list vouches for that
-        // arm's refs -- the two arms are NOT one flat scope in which `items`
-        // is a conflicting redeclaration. The inner type's two arms lose the
-        // parameter list along with their own header, so their
-        // `items` refs get no fact; `sink` does, from the surviving one.
+        // DUPLICATE_HEADER_HOST_WITH_NESTED_EMITTER_SRC), at both nesting
+        // levels. `WIDGET_V2` is undefined, so in each of the two methods
+        // only the `#else` arm's `IReadOnlyList<Widget> items` parameter
+        // reaches the parser -- each `items` ref vouches through its own
+        // method's parameter, and `sink` vouches through the inner
+        // method's own (unconditional) parameter.
         let e = extract_src(DUPLICATE_HEADER_HOST_WITH_NESTED_EMITTER_SRC);
         let facts: Vec<(&str, Option<&str>)> = e
             .refs
@@ -6089,10 +7577,8 @@ public class Host
         assert_eq!(
             facts,
             vec![
-                ("items", Some("IWidgetProvider")),
                 ("items", Some("IReadOnlyList")),
-                ("items", None),
-                ("items", None),
+                ("items", Some("IReadOnlyList")),
                 ("sink", Some("Sink")),
             ]
         );
@@ -6245,23 +7731,14 @@ public class Chain
     }
 
     #[test]
-    fn stage3_a_kg1_promoted_qualifier_computes_arg_count_from_its_own_invocation_parent() {
-        // The chain-promotion compensation supplies only the QUALIFIER text,
-        // from a DIFFERENT node than the one being walked. Its argCount must
-        // still come from the walked node's own invocation parent: the promoted
-        // `WriteTo.Debug()` call is a zero-argument call, and the surrounding
-        // `.File(...)` call's seven arguments, which this subtree still
-        // contains, must not leak into it.
+    fn stage3_a_chain_ref_never_inherits_the_wrapping_calls_arg_count() {
+        // With the inactive `#if DEBUG` arm blanked before parsing (see the
+        // `#if`/`#if-else` fluent-chain tests above), every surviving
+        // `uses-member` ref in this chain is a plain value read, not an
+        // invocation, so none of them records an argCount. The load-bearing
+        // row is `Interval.Day`: it sits inside the seven-argument
+        // `.File(...)` argument list and must not inherit that call's count.
         let e = extract_src(IF_DIRECTIVE_CHAIN);
-        let promoted = e
-            .refs
-            .iter()
-            .find(|r| r.name == "WriteTo" && r.member.as_deref() == Some("Debug"))
-            .expect("promoted ref present");
-        assert_eq!(promoted.arg_count, Some(0), "`.Debug()` takes no arguments; the wrapping `.File(...)` call's count must not leak in");
-        // And every ordinary ref in the same chain answers for itself. `Interval
-        // .Day` (line 26) sits INSIDE the seven-argument `.File(...)` list and
-        // is a plain value read, so it records no argCount at all.
         assert_eq!(
             e.refs
                 .iter()
@@ -6276,7 +7753,6 @@ public class Chain
                 ("e", "Level", None),
                 ("Level", "Error", None),
                 ("Interval", "Day", None),
-                ("WriteTo", "Debug", Some(0)),
                 ("Level", "Information", None),
                 ("Level", "Information", None),
             ]
@@ -7195,6 +8671,13 @@ public class Host
                 ("chained", None, None, None),
             ]
         );
+        assert!(
+            e.refs
+                .iter()
+                .filter(|r| r.kind == "uses-member" && r.member.as_deref() == Some("Render"))
+                .all(|r| !r.receiver_awaited),
+            "none of these calls are awaited, so none of their facts unwrap a Task later"
+        );
     }
 
     #[test]
@@ -7386,5 +8869,1182 @@ public class Host
 "#,
         );
         assert_eq!(member_facts(&e), vec![("Go", Some("Widget"))]);
+    }
+
+    // --- Stage 4: this/base/conditional receivers, await/cast/pattern facts ----
+
+    #[test]
+    fn stage4_this_qualifier_yields_a_uses_member_ref_typed_by_the_enclosing_type() {
+        let e = extract_src(
+            r#"
+namespace Fixtures.Recall;
+public class Order
+{
+    public void Describe()
+    {
+        this.Validate();
+    }
+}
+"#,
+        );
+        let r = e
+            .refs
+            .iter()
+            .find(|r| r.kind == "uses-member" && r.member.as_deref() == Some("Validate"))
+            .expect("this-qualified ref present");
+        assert_eq!(r.name, "Order");
+        assert_eq!(r.qualified, None);
+        assert_eq!(r.receiver_type.as_deref(), Some("Order"));
+        assert_eq!(r.receiver_args, None, "Order is not generic");
+        assert!(!r.receiver_base, "plain this. never starts at the bases");
+        assert_eq!(r.outer_types, vec!["Order".to_string()]);
+        assert!(!r.generic);
+
+        // A generic enclosing type's OWN type parameters vouch for
+        // receiver_args, one "*" wildcard per parameter.
+        let eg = extract_src(
+            r#"
+namespace Fixtures.Recall;
+public class Box<T>
+{
+    public void Use()
+    {
+        this.Reset();
+    }
+}
+"#,
+        );
+        let rg = eg
+            .refs
+            .iter()
+            .find(|r| r.kind == "uses-member" && r.member.as_deref() == Some("Reset"))
+            .expect("this-qualified ref present in the generic type");
+        assert_eq!(rg.receiver_type.as_deref(), Some("Box"), "no arity suffix");
+        assert_eq!(rg.receiver_args, Some(vec!["*".to_string()]));
+
+        // A `this.` site outside any type -- a top-level statement -- emits
+        // no ref at all: an empty type_stack denotes no enclosing type.
+        let top = extract_src("this.Validate();");
+        assert!(top
+            .refs
+            .iter()
+            .all(|r| !(r.kind == "uses-member" && r.member.as_deref() == Some("Validate"))));
+    }
+
+    #[test]
+    fn stage4_base_qualifier_yields_a_ref_that_starts_lookup_at_the_bases() {
+        let e = extract_src(
+            r#"
+namespace Fixtures.Recall;
+public class Order : Entity
+{
+    public void Describe()
+    {
+        base.Touch();
+        this.Touch();
+    }
+}
+"#,
+        );
+        let base_ref = e
+            .refs
+            .iter()
+            .find(|r| {
+                r.kind == "uses-member" && r.member.as_deref() == Some("Touch") && r.receiver_base
+            })
+            .expect("base-qualified ref present");
+        assert_eq!(base_ref.name, "Order");
+        assert_eq!(base_ref.receiver_type.as_deref(), Some("Order"));
+        assert!(base_ref.receiver_base);
+
+        let this_ref = e
+            .refs
+            .iter()
+            .find(|r| {
+                r.kind == "uses-member" && r.member.as_deref() == Some("Touch") && !r.receiver_base
+            })
+            .expect("plain this-qualified ref present");
+        assert!(
+            !this_ref.receiver_base,
+            "plain this. carries receiver_base == false"
+        );
+
+        // `receiverBase` is OMITTED from the serialized fragment JSON when
+        // false (the file's `is_false` idiom, see graph.rs), never written
+        // as `"receiverBase":false`.
+        let fragment = crate::graph::fragment_from_extraction(&e);
+        let touch_refs: Vec<&crate::graph::FragRef> = fragment
+            .refs
+            .iter()
+            .filter(|r| r.member.as_deref() == Some("Touch"))
+            .collect();
+        assert_eq!(touch_refs.len(), 2);
+        let jsons: Vec<String> = touch_refs
+            .iter()
+            .map(|r| serde_json::to_string(r).unwrap())
+            .collect();
+        assert!(
+            jsons.iter().any(|j| j.contains("\"receiverBase\":true")),
+            "the base. window carries receiverBase: {jsons:?}"
+        );
+        assert!(
+            jsons.iter().any(|j| !j.contains("receiverBase")),
+            "the plain this. window omits receiverBase entirely: {jsons:?}"
+        );
+    }
+
+    #[test]
+    fn stage4_receiver_local_is_recorded_for_a_shadowing_name_and_omitted_otherwise() {
+        let e = extract_src(
+            r#"
+namespace Fixtures.Recall;
+public class Widget
+{
+    public void Poke()
+    {
+        var order = Unknown();
+        order.Spin();
+        other.Spin();
+    }
+}
+"#,
+        );
+        // `Unknown()` is a BARE (undotted) call -- a shape `invocation_call`
+        // never matches -- so `order` settles as an ordinary
+        // taken-but-unknown member-table entry: no `Fact` vouches for its
+        // type, but the name IS in scope.
+        let order_ref = e
+            .refs
+            .iter()
+            .find(|r| {
+                r.kind == "uses-member" && r.name == "order" && r.member.as_deref() == Some("Spin")
+            })
+            .expect("order.Spin() ref present");
+        assert!(
+            order_ref.receiver_local,
+            "order is taken by an in-file member-table entry (untyped), so receiver_local is true"
+        );
+        assert!(order_ref.receiver_type.is_none());
+
+        let other_ref = e
+            .refs
+            .iter()
+            .find(|r| {
+                r.kind == "uses-member" && r.name == "other" && r.member.as_deref() == Some("Spin")
+            })
+            .expect("other.Spin() ref present");
+        assert!(
+            !other_ref.receiver_local,
+            "other has no in-file fact of any kind -- not even a taken-but-unknown entry -- so \
+             receiver_local is false"
+        );
+
+        // `receiverLocal` is OMITTED from the serialized fragment JSON when
+        // false (the file's `is_false` idiom, see graph.rs), never written
+        // as `"receiverLocal":false`.
+        let fragment = crate::graph::fragment_from_extraction(&e);
+        let spin_refs: Vec<&crate::graph::FragRef> = fragment
+            .refs
+            .iter()
+            .filter(|r| r.member.as_deref() == Some("Spin"))
+            .collect();
+        assert_eq!(spin_refs.len(), 2);
+        let jsons: Vec<String> = spin_refs
+            .iter()
+            .map(|r| serde_json::to_string(r).unwrap())
+            .collect();
+        assert!(
+            jsons.iter().any(|j| j.contains("\"receiverLocal\":true")),
+            "order.Spin() carries receiverLocal: {jsons:?}"
+        );
+        assert!(
+            jsons.iter().any(|j| !j.contains("receiverLocal")),
+            "other.Spin() omits receiverLocal entirely: {jsons:?}"
+        );
+    }
+
+    #[test]
+    fn stage4_conditional_access_yields_the_same_ref_as_plain_access() {
+        let plain = extract_src(
+            r#"
+namespace Fixtures.Recall;
+public class Client
+{
+    private Http _http;
+    public void Close()
+    {
+        _http.Dispose();
+    }
+}
+"#,
+        );
+        let cond = extract_src(
+            r#"
+namespace Fixtures.Recall;
+public class Client
+{
+    private Http _http;
+    public void Close()
+    {
+        _http?.Dispose();
+    }
+}
+"#,
+        );
+        let p = plain
+            .refs
+            .iter()
+            .find(|r| r.kind == "uses-member" && r.member.as_deref() == Some("Dispose"))
+            .expect("plain access ref present");
+        let c = cond
+            .refs
+            .iter()
+            .find(|r| r.kind == "uses-member" && r.member.as_deref() == Some("Dispose"))
+            .expect("conditional access ref present");
+        assert_eq!(c.kind, p.kind);
+        assert_eq!(c.name, p.name);
+        assert_eq!(c.qualified, p.qualified);
+        assert_eq!(c.member, p.member);
+        assert_eq!(c.namespace, p.namespace);
+        assert_eq!(c.type_arg_count, p.type_arg_count);
+        assert_eq!(c.generic, p.generic);
+        assert_eq!(c.receiver_type, p.receiver_type);
+        assert_eq!(c.receiver_type.as_deref(), Some("Http"));
+        assert_eq!(c.arg_count, p.arg_count);
+        assert_eq!(c.receiver_args, p.receiver_args);
+        assert_eq!(c.outer_types, p.outer_types);
+        assert_eq!(c.args, p.args);
+        assert_eq!(c.receiver_property_owner, p.receiver_property_owner);
+        assert_eq!(c.receiver_call_owner, p.receiver_call_owner);
+        assert_eq!(c.receiver_call_member, p.receiver_call_member);
+        assert_eq!(c.receiver_base, p.receiver_base);
+        assert_eq!(c.receiver_awaited, p.receiver_awaited);
+        // line deliberately not compared -- the two sources place the
+        // access on the same source line here, but the fields above are
+        // the actual guarantee.
+    }
+
+    #[test]
+    fn stage4_await_wrapped_invocation_and_creation_still_yield_a_fact() {
+        let call = extract_src(
+            r#"
+namespace Fixtures.Recall;
+public class Worker
+{
+    public async Task Run()
+    {
+        var order = await Repo.LoadAsync();
+        order.Validate();
+    }
+}
+"#,
+        );
+        let validate = call
+            .refs
+            .iter()
+            .find(|r| r.kind == "uses-member" && r.member.as_deref() == Some("Validate"))
+            .expect("order.Validate() ref present");
+        assert_eq!(
+            validate.receiver_call_owner.as_deref(),
+            Some("Repo"),
+            "the awaited call fact still records its callee's qualifier"
+        );
+        assert_eq!(validate.receiver_call_member.as_deref(), Some("LoadAsync"));
+        assert_eq!(validate.receiver_type, None);
+        assert!(
+            validate.receiver_awaited,
+            "the call fact came from an AWAITED invocation"
+        );
+
+        let creation = extract_src(
+            r#"
+namespace Fixtures.Recall;
+public class Worker
+{
+    public async Task Run()
+    {
+        var widget = await new Widget();
+        widget.Render();
+    }
+}
+"#,
+        );
+        let render = creation
+            .refs
+            .iter()
+            .find(|r| r.kind == "uses-member" && r.member.as_deref() == Some("Render"))
+            .expect("widget.Render() ref present");
+        assert_eq!(render.receiver_type.as_deref(), Some("Widget"));
+        assert!(
+            !render.receiver_awaited,
+            "a constructed-type receiver fact never carries a call, so it never carries awaited \
+             either"
+        );
+    }
+
+    #[test]
+    fn stage4_method_return_args_records_one_level_of_generic_args_for_task_wrapped_returns() {
+        let e = extract_src(
+            r#"
+namespace Fixtures.Recall;
+public class Repo
+{
+    public Task<Order> LoadAsync() => null;
+    public ValueTask<Order> LoadFastAsync() => null;
+    public Task<Task<Order>> LoadNestedAsync() => null;
+    public Order LoadSync() => null;
+    public void Nothing() { }
+}
+"#,
+        );
+        let d = find_def(&e, "Fixtures.Recall.Repo").expect("Repo def present");
+        assert_eq!(
+            d.method_returns,
+            vec![
+                ("LoadAsync".to_string(), "Task".to_string()),
+                ("LoadFastAsync".to_string(), "ValueTask".to_string()),
+                ("LoadNestedAsync".to_string(), "Task".to_string()),
+                ("LoadSync".to_string(), "Order".to_string()),
+            ],
+            "unchanged: the bare return-type identifier, generic args stripped, exactly as \
+             raw_method_returns has always recorded it"
+        );
+        let args: Vec<_> = d
+            .method_return_args
+            .iter()
+            .map(|(n, a)| (n.as_str(), a.as_slice()))
+            .collect();
+        assert_eq!(
+            args,
+            vec![
+                ("LoadAsync", &["Order".to_string()][..]),
+                ("LoadFastAsync", &["Order".to_string()][..]),
+                ("LoadNestedAsync", &["Task".to_string()][..]),
+            ],
+            "one level of generic-arg descriptors, present only for a name method_returns ALSO \
+             recorded an entry for -- LoadSync (non-generic) and Nothing (no method_returns entry \
+             at all) contribute nothing, and LoadNestedAsync's own descriptor is the INNER Task's \
+             bare name, never its own further-nested Order"
+        );
+    }
+
+    #[test]
+    fn stage4_field_declarations_record_field_types() {
+        let e = extract_src(
+            r#"
+namespace App.FieldTypes;
+
+public class Widget
+{
+  private Settings _config, _fallback;
+  private string _label;
+  private Box<Gadget> _slots;
+}
+"#,
+        );
+        let d = find_def(&e, "App.FieldTypes.Widget").expect("Widget def present");
+        assert_eq!(d.fields, vec!["_config", "_fallback", "_label", "_slots"]);
+        let recorded: Vec<_> = d
+            .field_types
+            .iter()
+            .map(|(n, f)| (n.as_str(), f.type_name.as_str(), f.args.as_ref()))
+            .collect();
+        // A predefined type vouches for nothing, exactly as it does for a
+        // property, local or method return, so `_label` has no entry -- the
+        // map is parallel to `fields` but not equal in length. `_config` and
+        // `_fallback` share ONE field_declaration's type node ("private
+        // Settings _config, _fallback;"), so they share the SAME fact.
+        assert_eq!(
+            recorded,
+            vec![
+                ("_config", "Settings", None),
+                ("_fallback", "Settings", None),
+                ("_slots", "Box", Some(&vec!["Gadget".to_string()])),
+            ]
+        );
+    }
+
+    #[test]
+    fn stage4_non_public_members_are_recorded_in_their_own_lists() {
+        let e = extract_src(
+            r#"
+namespace App.Visibility;
+
+public interface IWidget
+{
+    void Contract();
+}
+
+public class Widget : IWidget
+{
+    public void PublicMethod() { }
+    protected void ProtectedMethod() { }
+    internal void InternalMethod() { }
+    private void PrivateMethod() { }
+    void DefaultMethod() { }
+    public void Contract() { }
+}
+"#,
+        );
+        let d = find_def(&e, "App.Visibility.Widget").expect("Widget def present");
+        assert_eq!(
+            d.methods,
+            vec!["PublicMethod", "Contract"],
+            "the public list is unchanged by this unit"
+        );
+        assert_eq!(
+            d.non_public_methods,
+            vec![
+                "ProtectedMethod",
+                "InternalMethod",
+                "PrivateMethod",
+                "DefaultMethod",
+            ],
+            "the exact complement, same source order, same method_declaration nodes -- every \
+             method declaration lands in exactly one of the two lists"
+        );
+
+        let iface = find_def(&e, "App.Visibility.IWidget").expect("IWidget def present");
+        assert_eq!(iface.methods, vec!["Contract"]);
+        assert!(
+            iface.non_public_methods.is_empty(),
+            "every interface method already counts as public -- is_recorded_method's own \
+             kind == \"interface\" short-circuit -- so this list is always empty for an interface, \
+             by construction rather than by a second check"
+        );
+    }
+
+    #[test]
+    fn stage4_method_arities_are_recorded_per_overload_with_params_unbounded() {
+        let e = extract_src(
+            r#"
+namespace App.Arity;
+
+public class Mailer
+{
+    public void Touch() { }
+    public void Send(string to) { }
+    public void Send(string to, string cc = null) { }
+    public void Spray(params string[] recipients) { }
+    private void Log(string message) { }
+}
+"#,
+        );
+        let d = find_def(&e, "App.Arity.Mailer").expect("Mailer def present");
+        let arities: Vec<(&str, &[(usize, i64)])> = d
+            .method_arities
+            .iter()
+            .map(|(n, r)| (n.as_str(), r.as_slice()))
+            .collect();
+        assert_eq!(
+            arities,
+            vec![
+                ("Touch", &[(0, 0)][..]),
+                (
+                    "Send",
+                    // Two overloads sharing the name -- BOTH ranges recorded,
+                    // in declaration order: the required-only shape first,
+                    // the optional-parameter shape second. Neither discards
+                    // the other -- the resolver needs the OR of every
+                    // overload.
+                    &[(1, 1), (1, 2)][..]
+                ),
+                (
+                    "Spray",
+                    // A trailing `params` array is optional AND unbounded:
+                    // nothing forces it, nothing caps it -- the same -1
+                    // sentinel `ExtensionMethod::arity_max` already uses.
+                    &[(0, -1)][..]
+                ),
+                (
+                    "Log",
+                    // Non-public methods get an entry too: unlike `methods`,
+                    // `method_arities` is not filtered by accessibility --
+                    // the resolver's arity gate applies equally to a
+                    // `base.`/`this.` lookup against `non_public_methods`.
+                    &[(1, 1)][..]
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn stage4_cast_pattern_and_out_designations_yield_type_facts() {
+        let cast = extract_src(
+            r#"
+namespace Fixtures.Recall;
+public class Probe
+{
+    public void F(object e)
+    {
+        var x = (Widget)e;
+        x.Render();
+    }
+}
+"#,
+        );
+        let render = cast
+            .refs
+            .iter()
+            .find(|r| r.kind == "uses-member" && r.member.as_deref() == Some("Render"))
+            .expect("x.Render() ref present");
+        assert_eq!(render.receiver_type.as_deref(), Some("Widget"));
+
+        let pattern = extract_src(
+            r#"
+namespace Fixtures.Recall;
+public class Probe
+{
+    public void F(object e)
+    {
+        if (e is Widget t)
+        {
+            t.Render();
+        }
+    }
+}
+"#,
+        );
+        let render = pattern
+            .refs
+            .iter()
+            .find(|r| r.kind == "uses-member" && r.member.as_deref() == Some("Render"))
+            .expect("t.Render() ref present");
+        assert_eq!(render.receiver_type.as_deref(), Some("Widget"));
+
+        let out_typed = extract_src(
+            r#"
+namespace Fixtures.Recall;
+public class Probe
+{
+    public void F()
+    {
+        TryGet(out Widget x);
+        x.Render();
+    }
+}
+"#,
+        );
+        let render = out_typed
+            .refs
+            .iter()
+            .find(|r| r.kind == "uses-member" && r.member.as_deref() == Some("Render"))
+            .expect("x.Render() ref present");
+        assert_eq!(render.receiver_type.as_deref(), Some("Widget"));
+
+        // `out var x` stays fact-less.
+        let out_var = extract_src(
+            r#"
+namespace Fixtures.Recall;
+public class Probe
+{
+    public void F()
+    {
+        TryGet(out var x);
+        x.Render();
+    }
+}
+"#,
+        );
+        let render = out_var
+            .refs
+            .iter()
+            .find(|r| r.kind == "uses-member" && r.member.as_deref() == Some("Render"))
+            .expect("x.Render() ref present");
+        assert_eq!(render.receiver_type, None, "out var x earns no fact");
+    }
+
+    #[test]
+    fn stage4_catch_declaration_designation_yields_a_type_fact() {
+        let e = extract_src(
+            r#"
+namespace Fixtures.Recall;
+public class Probe
+{
+    public void F()
+    {
+        try { Work(); }
+        catch (WidgetException e) { e.Ship(); }
+    }
+}
+"#,
+        );
+        let ship = e
+            .refs
+            .iter()
+            .find(|r| r.kind == "uses-member" && r.member.as_deref() == Some("Ship"))
+            .expect("e.Ship() ref present");
+        assert_eq!(
+            ship.receiver_type.as_deref(),
+            Some("WidgetException"),
+            "a caught exception is a declaration like any other -- the handler names its type"
+        );
+        assert!(
+            ship.receiver_local,
+            "and the member's own fact table claims the name, so it shadows a same-named field"
+        );
+    }
+
+    #[test]
+    fn stage4_range_variables_and_untyped_lambda_parameters_take_the_name_without_a_type() {
+        // Every name below is DECLARED by the syntax that introduces it, so
+        // each has to claim a slot in the member's own fact table even
+        // though nothing here says what its type is. `receiver_local` is
+        // what the resolver reads to keep its field fallback off them.
+        let queried = extract_src(
+            r#"
+namespace Fixtures.Recall;
+public class Probe
+{
+    public void F()
+    {
+        var picked = from d in Items
+                     join o in Others on d equals o into g
+                     let n = Items
+                     select d.Ship();
+        var more = from x in Items select x into k select k.Ship();
+        g.Ship();
+        n.Ship();
+        o.Ship();
+    }
+}
+"#,
+        );
+        for name in ["d", "o", "g", "n", "k"] {
+            let r = queried
+                .refs
+                .iter()
+                .find(|r| {
+                    r.kind == "uses-member" && r.name == name && r.member.as_deref() == Some("Ship")
+                })
+                .unwrap_or_else(|| panic!("{name}.Ship() ref present"));
+            assert!(
+                r.receiver_local,
+                "{name} is a query range variable, so the member's fact table claims it"
+            );
+            assert_eq!(
+                r.receiver_type, None,
+                "{name} is claimed without a type -- the element type of the source sequence is \
+                 not something this extractor can compute"
+            );
+        }
+
+        let lambdas = extract_src(
+            r#"
+namespace Fixtures.Recall;
+public class Probe
+{
+    public void F()
+    {
+        Wrap(1, q => q.Ship());
+        var f = w => w.Ship();
+        Items.Select((a, b) => a.Ship());
+        Items.Select((Order z) => z.Ship());
+    }
+}
+"#,
+        );
+        for name in ["q", "w", "a"] {
+            let r = lambdas
+                .refs
+                .iter()
+                .find(|r| {
+                    r.kind == "uses-member" && r.name == name && r.member.as_deref() == Some("Ship")
+                })
+                .unwrap_or_else(|| panic!("{name}.Ship() ref present"));
+            assert!(
+                r.receiver_local,
+                "{name} is a lambda parameter the element rule declines -- a non-first argument, a \
+                 lambda that is no argument at all, a multi-parameter list -- and it is still a \
+                 declaration"
+            );
+            assert_eq!(r.receiver_type, None, "with no type the rule could give it");
+        }
+        let typed = lambdas
+            .refs
+            .iter()
+            .find(|r| r.kind == "uses-member" && r.name == "z")
+            .expect("z.Ship() ref present");
+        assert_eq!(
+            typed.receiver_type.as_deref(),
+            Some("Order"),
+            "an explicitly typed lambda parameter keeps the fact its own declaration gives"
+        );
+    }
+
+    // --- Unit C: chain-tail receivers and lambda-parameter element typing --
+
+    #[test]
+    fn stage4_call_chain_tail_carries_the_inner_call_as_its_receiver() {
+        let e = extract_src(
+            r#"
+namespace App.ChainTail;
+
+public class Host
+{
+  private Widget a;
+
+  public void Run()
+  {
+    var y = a.B().C();
+    var z = Repo.Load().Validate();
+  }
+}
+"#,
+        );
+        // `a`: an IN-FILE fact (the field `a: Widget`). `Repo`: nothing in
+        // scope claims the name, so its own bare text is the static-type
+        // candidate -- the "Static type qualifier ... counts as typed" case.
+        let c = e
+            .refs
+            .iter()
+            .find(|r| r.kind == "uses-member" && r.member.as_deref() == Some("C"))
+            .expect("a.B().C() earns a ref for its own window");
+        assert_eq!(
+            c.receiver_type, None,
+            "a call-shaped receiver, never a resolved type"
+        );
+        assert_eq!(c.receiver_call_owner.as_deref(), Some("Widget"));
+        assert_eq!(c.receiver_call_member.as_deref(), Some("B"));
+        assert!(!c.generic);
+        assert!(!c.receiver_base);
+        assert_eq!(c.arg_count, Some(0), "C() itself takes zero arguments");
+
+        let validate = e
+            .refs
+            .iter()
+            .find(|r| r.kind == "uses-member" && r.member.as_deref() == Some("Validate"))
+            .expect("Repo.Load().Validate() earns a ref for its own window");
+        assert_eq!(validate.receiver_type, None);
+        assert_eq!(validate.receiver_call_owner.as_deref(), Some("Repo"));
+        assert_eq!(validate.receiver_call_member.as_deref(), Some("Load"));
+    }
+
+    #[test]
+    fn stage4_base_qualified_chain_head_marks_the_tail_ref_as_base() {
+        let e = extract_src(
+            r#"
+namespace App.ChainTail;
+
+public class Use : BaseC
+{
+  public void Run()
+  {
+    base.Make().Validate();
+    this.Make().Validate();
+  }
+}
+"#,
+        );
+        let tails: Vec<(Option<&str>, bool)> = e
+            .refs
+            .iter()
+            .filter(|r| r.kind == "uses-member" && r.member.as_deref() == Some("Validate"))
+            .map(|r| (r.qualified.as_deref(), r.receiver_base))
+            .collect();
+        assert_eq!(
+            tails,
+            vec![(Some("base.Make()"), true), (Some("this.Make()"), false)],
+            "a base-qualified chain head marks its tail, so the resolver starts the \
+             method-return hop at the bases; a this-qualified one keeps hopping through the \
+             enclosing type"
+        );
+        for r in e
+            .refs
+            .iter()
+            .filter(|r| r.kind == "uses-member" && r.member.as_deref() == Some("Validate"))
+        {
+            assert_eq!(
+                r.receiver_call_owner.as_deref(),
+                Some("Use"),
+                "both heads type as the enclosing type -- the marker is what tells them apart"
+            );
+            assert_eq!(r.receiver_call_member.as_deref(), Some("Make"));
+        }
+    }
+
+    #[test]
+    fn stage4_second_hop_of_a_chain_emits_no_ref() {
+        let e = extract_src(
+            r#"
+namespace App.ChainOfChains;
+
+public class Host
+{
+  private Widget a;
+
+  public void Run()
+  {
+    var y = a.B().C().D();
+  }
+}
+"#,
+        );
+        // `.D`'s OWN qualifier is `a.B().C()`, itself a chain (its `function`
+        // is a member_access_expression whose own `expression` is the
+        // invocation `a.B()`, not a plain name) -- `member_qualifier_info`
+        // has no arm for an `invocation_expression` qualifier, so `.D` never
+        // reaches the chain-tail rule at all and earns no ref, precise or
+        // otherwise.
+        let d = e
+            .refs
+            .iter()
+            .find(|r| r.kind == "uses-member" && r.member.as_deref() == Some("D"));
+        assert!(
+            d.is_none(),
+            "a chain-of-chains qualifier earns no ref for its own tail"
+        );
+
+        // The NESTED `.C` window, walked independently, is an ordinary
+        // chain tail in its own right and still earns its own ref.
+        let c = e
+            .refs
+            .iter()
+            .find(|r| r.kind == "uses-member" && r.member.as_deref() == Some("C"))
+            .expect("the nested a.B().C() window still earns its own ref");
+        assert_eq!(c.receiver_call_owner.as_deref(), Some("Widget"));
+        assert_eq!(c.receiver_call_member.as_deref(), Some("B"));
+    }
+
+    #[test]
+    fn stage4_first_single_parameter_lambda_on_a_collection_receiver_gets_the_element_type() {
+        let e = extract_src(
+            r#"
+namespace App.LambdaElement;
+
+public class Host
+{
+  private Widget[] arr;
+  private List<Widget> list;
+
+  public void Run()
+  {
+    arr.Where(x => x.Go());
+    list.Where((y) => y.Go());
+  }
+}
+"#,
+        );
+        let go_types: Vec<_> = e
+            .refs
+            .iter()
+            .filter(|r| r.kind == "uses-member" && r.member.as_deref() == Some("Go"))
+            .map(|r| r.receiver_type.as_deref())
+            .collect();
+        assert_eq!(
+            go_types,
+            vec![Some("Widget"), Some("Widget")],
+            "an array's implicit lambda parameter (`x`) and a single-argument generic's \
+             parenthesized untyped parameter (`(y)`) both earn the element type"
+        );
+    }
+
+    #[test]
+    fn stage4_lambda_on_a_two_argument_generic_receiver_gets_no_fact() {
+        let e = extract_src(
+            r#"
+namespace App.LambdaNoFact;
+
+public class Host
+{
+  private Dictionary<string, Widget> dict;
+
+  public void Run()
+  {
+    dict.Where(kv => kv.Deconstruct());
+  }
+}
+"#,
+        );
+        let call = e
+            .refs
+            .iter()
+            .find(|r| r.kind == "uses-member" && r.member.as_deref() == Some("Deconstruct"))
+            .expect("kv.Deconstruct() still earns an ordinary ref");
+        assert_eq!(
+            call.receiver_type, None,
+            "a two-argument generic receiver (Dictionary<K,V>) never types the lambda parameter"
+        );
+    }
+
+    // --- method_params: per-overload parameter descriptors -----------------
+
+    #[test]
+    fn stage4_method_params_record_each_overload_with_type_parameters_as_wildcards() {
+        let e = extract_src(
+            r#"
+namespace App.MethodParams;
+
+public class Registrar<TKey>
+{
+    public void Register(Action<Options> configure) { }
+    public void Register(string name, Func<Options, bool> pick) { }
+    public void Register<T>(Action<T> configure, TKey key) { }
+    public void Ping() { }
+    private void Seed(List<Options>? items, Options[] more, Expression<Func<Options, object>> selector) { }
+}
+"#,
+        );
+        let d = find_def(&e, "App.MethodParams.Registrar").expect("Registrar def present");
+        let params: Vec<(&str, &[Vec<String>])> = d
+            .method_params
+            .iter()
+            .map(|(n, o)| (n.as_str(), o.as_slice()))
+            .collect();
+        assert_eq!(
+            params,
+            vec![
+                (
+                    "Register",
+                    &[
+                        vec!["Action<Options>".to_string()],
+                        vec!["string".to_string(), "Func<Options,bool>".to_string()],
+                        vec!["Action<*>".to_string(), "*".to_string()],
+                    ][..]
+                ),
+                ("Ping", &[vec![]][..]),
+                (
+                    "Seed",
+                    &[vec![
+                        "List<Options>".to_string(),
+                        "Options[]".to_string(),
+                        "Expression<Func<Options,object>>".to_string(),
+                    ]][..]
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn stage4_delegate_declaration_records_its_parameters_under_invoke() {
+        let e = extract_src(
+            r#"
+namespace App.Delegates;
+
+public delegate void Configure(Options options, int depth);
+"#,
+        );
+        let d = find_def(&e, "App.Delegates.Configure").expect("Configure delegate present");
+        assert_eq!(
+            d.method_params,
+            vec![(
+                "Invoke".to_string(),
+                vec![vec!["Options".to_string(), "int".to_string()]]
+            )]
+        );
+    }
+
+    #[test]
+    fn stage4_extension_method_params_mark_the_this_parameter() {
+        let e = extract_src(
+            r#"
+namespace App.Wiring;
+
+public static class Ext
+{
+    public static void Wire(this Host host, Action<Options> configure) { }
+}
+"#,
+        );
+        let d = find_def(&e, "App.Wiring.Ext").expect("Ext def present");
+        assert_eq!(
+            d.method_params,
+            vec![(
+                "Wire".to_string(),
+                vec![vec!["this Host".to_string(), "Action<Options>".to_string()]]
+            )]
+        );
+    }
+
+    // --- LambdaSlot: the site-side untyped-lambda callee slot ---------------
+
+    #[test]
+    fn stage4_untyped_lambda_argument_carries_its_callee_slot() {
+        let e = extract_src(
+            r#"
+namespace App.LambdaSlots;
+
+public class Host
+{
+    private Registrar reg;
+
+    public void RunOne()
+    {
+        reg.Register(x => x.Configure());
+    }
+
+    public void RunTwo()
+    {
+        Register2(x => { x.Configure(); });
+    }
+
+    public void RunThree()
+    {
+        this.Register3(x => x.Configure());
+    }
+}
+"#,
+        );
+        let slots: Vec<_> = e
+            .refs
+            .iter()
+            .filter(|r| r.kind == "uses-member" && r.member.as_deref() == Some("Configure"))
+            .collect();
+        assert_eq!(slots.len(), 3, "one Configure ref per call site");
+        let expected = [
+            LambdaSlot {
+                owner: "Registrar".to_string(),
+                member: "Register".to_string(),
+                arg_count: 1,
+                arg_index: 0,
+                arity: 1,
+                index: 0,
+            },
+            LambdaSlot {
+                owner: "Host".to_string(),
+                member: "Register2".to_string(),
+                arg_count: 1,
+                arg_index: 0,
+                arity: 1,
+                index: 0,
+            },
+            LambdaSlot {
+                owner: "Host".to_string(),
+                member: "Register3".to_string(),
+                arg_count: 1,
+                arg_index: 0,
+                arity: 1,
+                index: 0,
+            },
+        ];
+        for (r, want) in slots.iter().zip(expected.iter()) {
+            assert_eq!(r.receiver_lambda.as_ref(), Some(want));
+            assert_eq!(r.receiver_type, None);
+            assert!(r.receiver_local, "the parameter is a member-scoped name");
+        }
+    }
+
+    #[test]
+    fn stage4_lambda_slot_records_the_position_of_a_two_parameter_lambda() {
+        let e = extract_src(
+            r#"
+namespace App.LambdaSlots2;
+
+public class Host
+{
+    public void Run()
+    {
+        Bus.Configure("q", (ctx, cfg) => cfg.Bind());
+    }
+}
+"#,
+        );
+        let bind = e
+            .refs
+            .iter()
+            .find(|r| r.kind == "uses-member" && r.member.as_deref() == Some("Bind"))
+            .expect("cfg.Bind() still earns an ordinary ref");
+        assert_eq!(
+            bind.receiver_lambda,
+            Some(LambdaSlot {
+                owner: "Bus".to_string(),
+                member: "Configure".to_string(),
+                arg_count: 2,
+                arg_index: 1,
+                arity: 2,
+                index: 1,
+            })
+        );
+    }
+
+    #[test]
+    fn stage4_lambda_slot_yields_to_the_collection_element_rule() {
+        let e = extract_src(
+            r#"
+namespace App.LambdaSlots3;
+
+public class Host
+{
+    private List<Order> orders;
+
+    public void Run()
+    {
+        orders.Where(o => o.Validate());
+    }
+}
+"#,
+        );
+        let validate = e
+            .refs
+            .iter()
+            .find(|r| r.kind == "uses-member" && r.member.as_deref() == Some("Validate"))
+            .expect("o.Validate() still earns an ordinary ref");
+        assert_eq!(validate.receiver_type.as_deref(), Some("Order"));
+        assert_eq!(validate.receiver_lambda, None);
+    }
+
+    #[test]
+    fn stage4_lambda_slot_is_refused_for_named_chained_and_generic_callees() {
+        let e = extract_src(
+            r#"
+namespace App.LambdaSlots4;
+
+public class Host
+{
+    private Registrar reg;
+
+    public void Run()
+    {
+        reg.Register(configure: x => x.A());
+        reg.Build().Register(x => x.B());
+        reg.Register<Options>(x => x.C());
+    }
+}
+"#,
+        );
+        for member in ["A", "B", "C"] {
+            let r = e
+                .refs
+                .iter()
+                .find(|r| r.kind == "uses-member" && r.member.as_deref() == Some(member))
+                .unwrap_or_else(|| panic!("{member} ref present"));
+            assert_eq!(r.receiver_lambda, None, "{member} carries no slot");
+            assert_eq!(
+                r.receiver_type, None,
+                "{member} carries no receiver type either"
+            );
+        }
+    }
+
+    #[test]
+    fn stage4_two_lambdas_with_different_callees_and_one_name_conflict_to_no_slot() {
+        let e = extract_src(
+            r#"
+namespace App.LambdaSlots5;
+
+public class Host
+{
+    private Registrar reg;
+    private Widget other;
+
+    public void Run()
+    {
+        reg.Register(x => x.A());
+        other.Attach(x => x.B());
+    }
+}
+"#,
+        );
+        for member in ["A", "B"] {
+            let r = e
+                .refs
+                .iter()
+                .find(|r| r.kind == "uses-member" && r.member.as_deref() == Some(member))
+                .unwrap_or_else(|| panic!("{member} ref present"));
+            assert_eq!(
+                r.receiver_lambda, None,
+                "{member}'s parameter name conflicts across two different callees"
+            );
+        }
     }
 }

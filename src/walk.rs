@@ -73,17 +73,33 @@ pub const SOURCE_EXT: &[&str] = &[
     ".ts", ".tsx", ".js", ".jsx", ".cs", ".json", ".md", ".xaml", ".resw", ".resx",
 ];
 
-/// Enumerates source files under each scope directory. `root` must already be
-/// an absolute, normalized path (the caller's responsibility; root discovery
-/// always hands back an absolute path).
+/// Enumerates source files (`SOURCE_EXT`) under each scope directory.
+///
+/// `root` must already be an absolute, normalized path (the caller's
+/// responsibility; root discovery always hands back an absolute path). Thin
+/// wrapper over `list_files_with_ext`; see that function for the full
+/// scope-resolution, ordering, symlink and error-propagation contract
+/// (identical here, just pinned to the source extension set).
+pub fn list_source_files(root: &Path, dirs: &[String]) -> io::Result<Vec<String>> {
+    list_files_with_ext(root, dirs, SOURCE_EXT)
+}
+
+/// Enumerates files under each scope directory whose extension matches `exts`.
+///
+/// The extension (including the leading dot) is matched against the
+/// substring from the file name's *last* `.` onward -- same rule as
+/// `SOURCE_EXT`.
 ///
 /// `dirs` elements are directory-scope names relative to `root`; `"."` means
 /// `root` itself. Returns repo-relative (`/`-joined) paths in the deterministic
-/// sorted depth-first order described in the module docs.
+/// sorted depth-first order described in the module docs -- one call walks
+/// each directory tree once, so a mixed `exts` list comes back interleaved in
+/// that same per-directory sorted order rather than grouped by extension.
 ///
 /// Returns `Err` and abandons the whole call on the first unreadable directory
-/// or non-directory scope element (see module docs).
-pub fn list_source_files(root: &Path, dirs: &[String]) -> io::Result<Vec<String>> {
+/// or non-directory scope element (see module docs). A nonexistent `dirs`
+/// scope element is silently skipped, not an error (also module docs).
+pub fn list_files_with_ext(root: &Path, dirs: &[String], exts: &[&str]) -> io::Result<Vec<String>> {
     let mut out = Vec::new();
     for d in dirs {
         let abs = if d == "." {
@@ -92,13 +108,13 @@ pub fn list_source_files(root: &Path, dirs: &[String]) -> io::Result<Vec<String>
             root.join(d)
         };
         if abs.exists() {
-            walk(root, &abs, &mut out)?;
+            walk_with(root, &abs, exts, &mut out)?;
         }
     }
     Ok(out)
 }
 
-fn walk(root: &Path, dir: &Path, out: &mut Vec<String>) -> io::Result<()> {
+fn walk_with(root: &Path, dir: &Path, exts: &[&str], out: &mut Vec<String>) -> io::Result<()> {
     let mut entries: Vec<DirEntry> = fs::read_dir(dir)?.collect::<io::Result<Vec<_>>>()?;
     // Sort each directory's entries by name for a deterministic order (see
     // module docs). `OsStr`'s `Ord` is byte-wise UTF-8 comparison.
@@ -111,10 +127,10 @@ fn walk(root: &Path, dir: &Path, out: &mut Vec<String>) -> io::Result<()> {
             if is_skip_dir(&name) {
                 continue;
             }
-            walk(root, &entry.path(), out)?;
+            walk_with(root, &entry.path(), exts, out)?;
         } else if file_type.is_file() {
             let name_str = name.to_string_lossy();
-            if SOURCE_EXT.contains(&extension_of(&name_str)) {
+            if exts.contains(&extension_of(&name_str)) {
                 out.push(repo::rel_path(root, &entry.path()));
             }
         }
@@ -317,6 +333,47 @@ mod tests {
         assert_eq!(
             files,
             vec!["src/a.ts".to_string(), "src/sub/b.cs".to_string()]
+        );
+
+        fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn list_files_with_ext_lists_csproj_files_in_the_same_deterministic_order_as_source_files() {
+        let root = scratch_dir("ext-order");
+        // Interleave `.cs` and `.csproj` names so a naive "group by
+        // extension" implementation would disagree with plain sorted
+        // depth-first order, but a shared `walk_with` would not.
+        write_file(&root.join("src/A/A.cs"), "class A {}\n");
+        write_file(&root.join("src/A/A.csproj"), "<Project />\n");
+        write_file(&root.join("src/B.csproj"), "<Project />\n");
+        write_file(&root.join("src/Z.cs"), "class Z {}\n");
+        write_file(&root.join("src/bin/Skip.csproj"), "ignored");
+
+        let sources = list_source_files(&root, &["src".to_string()]).unwrap();
+        let csproj = list_files_with_ext(&root, &["src".to_string()], &[".csproj"]).unwrap();
+
+        assert_eq!(
+            sources,
+            vec!["src/A/A.cs".to_string(), "src/Z.cs".to_string()]
+        );
+        assert_eq!(
+            csproj,
+            vec!["src/A/A.csproj".to_string(), "src/B.csproj".to_string()]
+        );
+
+        // Both extension sets in one pass come back in the same sorted
+        // depth-first interleaving as the source-only and csproj-only lists
+        // above, not grouped by extension.
+        let mixed = list_files_with_ext(&root, &["src".to_string()], &[".cs", ".csproj"]).unwrap();
+        assert_eq!(
+            mixed,
+            vec![
+                "src/A/A.cs".to_string(),
+                "src/A/A.csproj".to_string(),
+                "src/B.csproj".to_string(),
+                "src/Z.cs".to_string(),
+            ]
         );
 
         fs::remove_dir_all(&root).ok();

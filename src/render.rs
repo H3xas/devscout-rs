@@ -22,28 +22,80 @@
 //   an absent table to exercise exactly this path; it is not reachable through
 //   the public render_* functions.
 
+use crate::graph::HeuristicTier;
 use crate::query;
 
 // The ONE place a heuristic row is marked in the default text renderer, and the
 // marker is a plain-language word rather than a symbol: the consumer is a model
 // reading a wall of `file:line kind` rows, and a sigil it has to look up is the
 // same as no marker at all. A row with no flag renders no suffix.
+//
+// This one is the UMBRELLA word: it stays what the headers and the summary
+// counts say, and it is what a row falls back to when it declares itself a
+// guess but names no tier -- a graph written before the tier tag existed.
 const HEURISTIC_SUFFIX: &str = " (heuristic)";
+
+// The two tiers spelled out, one word each. Telling them apart is the point:
+// an extension row is C#'s own lookup rule with only the receiver left
+// unverified, a guess row is the scored tier picking among the defs that
+// happen to declare a member of that name. A reader should never have to
+// remember which of two markers means which -- the word says it.
+const EXT_SUFFIX: &str = " (extension)";
+const GUESS_SUFFIX: &str = " (guess)";
 
 // The same shape of suffix as `HEURISTIC_SUFFIX`, for the hub-file class, so a
 // row carries its own reason and the two never need to be told apart by
 // position.
 const INFRA_SUFFIX: &str = " (infra)";
 
-// `HEURISTIC_SUFFIX` when the row is a guess, `""` otherwise. Applied inside each
-// row formatter rather than inside `ref_kind_block`, because the two tables that
-// can never hold a guess (imports, ambiguous) carry no flag to read -- they get
-// no suffix, the same as any non-guess row.
-fn heuristic_suffix(heuristic: bool) -> &'static str {
-    if heuristic {
-        HEURISTIC_SUFFIX
-    } else {
-        ""
+// `tests`-only: marks a row whose file earned its place through the project
+// model alone (`TestVia::Project`) rather than an attributed test def in the
+// file itself. Composes after the heuristic suffix, never instead of it -- a
+// row can be both a guess AND project-vouched.
+const TEST_PROJECT_SUFFIX: &str = " (test project)";
+
+// The row's own tier word when the row is a guess, `""` otherwise. Applied
+// inside each row formatter rather than inside `ref_kind_block`, because the two
+// tables that can never hold a guess (imports, ambiguous) carry no flag to read
+// -- they get no suffix, the same as any non-guess row.
+//
+// `tier` is read ONLY under `heuristic`: a precise row has nothing to declare
+// even if some future caller hands one a tier by mistake.
+fn heuristic_suffix(heuristic: bool, tier: Option<HeuristicTier>) -> &'static str {
+    match (heuristic, tier) {
+        (false, _) => "",
+        (true, Some(HeuristicTier::Ext)) => EXT_SUFFIX,
+        (true, Some(HeuristicTier::Guess)) => GUESS_SUFFIX,
+        (true, None) => HEURISTIC_SUFFIX,
+    }
+}
+
+// `tests`-only: the `TEST_PROJECT_SUFFIX` when the row's vouch is
+// `TestVia::Project`, `""` for `TestVia::Attribute`. Kept as its own function
+// (rather than folded into `heuristic_suffix`) because the two facts are
+// independent -- a row's vouch has nothing to do with whether its reference
+// was guessed.
+fn test_via_suffix(via: query::TestVia) -> &'static str {
+    match via {
+        query::TestVia::Attribute => "",
+        query::TestVia::Project => TEST_PROJECT_SUFFIX,
+    }
+}
+
+// `--compact`'s one-character spelling of the same fact, appended to a line
+// number (`5x`, `5h`). One character rather than the default renderer's word
+// because compact exists to spend as few bytes as possible; still mandatory,
+// because an unmarked guess sitting in a list of facts is exactly the failure
+// this resolver is built to avoid and a small output is no defence.
+//
+// The run-length collapse in `rle` composes with it without ambiguity: a `5x`
+// row appearing twice is `5xx2`, which reads as "line 5, extension, twice" --
+// the marker belongs to the value, the `x2` is the count.
+fn compact_marker(heuristic: bool, tier: Option<HeuristicTier>) -> &'static str {
+    match (heuristic, tier) {
+        (false, _) => "",
+        (true, Some(HeuristicTier::Ext)) => "x",
+        (true, _) => "h",
     }
 }
 
@@ -213,7 +265,7 @@ pub fn render_refs_text(model: &query::RefsModel) -> String {
                 "{}:{}  inherits{}{}",
                 r.file,
                 r.line,
-                heuristic_suffix(r.heuristic),
+                heuristic_suffix(r.heuristic, r.tier),
                 source_suffix(&r.source)
             )
         },
@@ -227,7 +279,7 @@ pub fn render_refs_text(model: &query::RefsModel) -> String {
                 "{}:{}  uses-type{}{}",
                 r.file,
                 r.line,
-                heuristic_suffix(r.heuristic),
+                heuristic_suffix(r.heuristic, r.tier),
                 source_suffix(&r.source)
             )
         },
@@ -241,7 +293,7 @@ pub fn render_refs_text(model: &query::RefsModel) -> String {
                 "{}:{}  uses-member{}{}",
                 r.file,
                 r.line,
-                heuristic_suffix(r.heuristic),
+                heuristic_suffix(r.heuristic, r.tier),
                 source_suffix(&r.source)
             )
         },
@@ -273,7 +325,7 @@ pub fn render_refs_text(model: &query::RefsModel) -> String {
                     r.file,
                     r.line,
                     r.to_file,
-                    heuristic_suffix(r.heuristic),
+                    heuristic_suffix(r.heuristic, r.tier),
                     source_suffix(&r.source)
                 )
             },
@@ -288,7 +340,7 @@ pub fn render_refs_text(model: &query::RefsModel) -> String {
                     r.file,
                     r.line,
                     r.to_file,
-                    heuristic_suffix(r.heuristic),
+                    heuristic_suffix(r.heuristic, r.tier),
                     source_suffix(&r.source)
                 )
             },
@@ -303,7 +355,7 @@ pub fn render_refs_text(model: &query::RefsModel) -> String {
                     r.file,
                     r.line,
                     r.to_file,
-                    heuristic_suffix(r.heuristic),
+                    heuristic_suffix(r.heuristic, r.tier),
                     source_suffix(&r.source)
                 )
             },
@@ -435,7 +487,7 @@ pub fn render_impact_text(query: &str, model: &query::ImpactModel) -> String {
             "{}  {}  {via}  {syms}{iface_via}{}{class_suffix}",
             r.file,
             r.hop,
-            heuristic_suffix(r.heuristic)
+            heuristic_suffix(r.heuristic, r.tier)
         ));
     }
     // A trailer, not a footnote: the rows above are NARROWER than the graph
@@ -495,24 +547,17 @@ pub fn render_refs_compact(model: &query::RefsModel) -> String {
     // one concrete (non-reusable) lifetime instead, which then fails to
     // coerce back down at `compact_block`'s `fn` parameter on the second
     // and later call sites below.
-    // Compact mode exists to spend as few bytes as possible, so the marker
-    // here is one character rather than the default renderer's word. It is
-    // still mandatory: an unmarked guess sitting in a list of facts is the
-    // exact failure this resolver is built to avoid, and a small output is no
-    // defence. `5h` never collides with a line number, and the run-length
-    // collapse treats `5` and `5h` as the distinct entries they are.
+    // The one-character marker is `compact_marker`'s (`x` extension, `h`
+    // guess); neither collides with a line number, and the run-length collapse
+    // treats `5`, `5h` and `5x` as the three distinct entries they are -- a `5x`
+    // seen twice reads `5xx2`.
     //
     // Compact groups a file's hits into one `path:line,line` entry, which
     // leaves no slot for a per-hit source line -- the snippet is a
     // default-renderer and `--json` affordance only.
     let file_of_ib: fn(&query::InboundRow) -> &str = |r| r.file.as_str();
-    let line_ib = |r: &query::InboundRow| {
-        if r.heuristic {
-            format!("{}h", r.line)
-        } else {
-            r.line.to_string()
-        }
-    };
+    let line_ib =
+        |r: &query::InboundRow| format!("{}{}", r.line, compact_marker(r.heuristic, r.tier));
     compact_block(
         &mut out,
         "in:inherits",
@@ -537,13 +582,8 @@ pub fn render_refs_compact(model: &query::RefsModel) -> String {
 
     if let Some(ob) = &model.outbound {
         let file_of_ob: fn(&query::OutboundRow) -> &str = |r| r.file.as_str();
-        let line_ob = |r: &query::OutboundRow| {
-            if r.heuristic {
-                format!("{}h", r.line)
-            } else {
-                r.line.to_string()
-            }
-        };
+        let line_ob =
+            |r: &query::OutboundRow| format!("{}{}", r.line, compact_marker(r.heuristic, r.tier));
         compact_block(
             &mut out,
             "out:inherits",
@@ -725,9 +765,14 @@ pub fn render_impact_compact(query: &str, model: &query::ImpactModel) -> String 
                 // A heuristic-only row has a viaCount of zero by definition, so
                 // printing `via=0` would say "reached by nothing". It reports
                 // the guess count it was actually reached by instead, marked
-                // with the same `h`.
+                // with the same one-character tier marker the refs tables use.
                 if r.heuristic {
-                    return format!("{} via={}h", r.file, r.heuristic_count);
+                    return format!(
+                        "{} via={}{}",
+                        r.file,
+                        r.heuristic_count,
+                        compact_marker(r.heuristic, r.tier)
+                    );
                 }
                 let via = if r.ambiguous_count != 0 {
                     format!("{}(+{}amb)", r.via_count, r.ambiguous_count)
@@ -817,15 +862,27 @@ pub fn render_tests_text(model: &query::TestsModel) -> String {
     ));
     out.push(String::new());
     for r in &model.rows {
-        out.push(format!("{}{}", r.file, heuristic_suffix(r.heuristic)));
+        out.push(format!(
+            "{}{}{}",
+            r.file,
+            heuristic_suffix(r.heuristic, r.tier),
+            test_via_suffix(r.via)
+        ));
         let lines = r
             .lines
             .iter()
             .map(|l| l.to_string())
             .collect::<Vec<_>>()
             .join(", ");
-        for def_id in &r.test_defs {
-            out.push(format!("  {def_id}  lines: {lines}"));
+        if r.test_defs.is_empty() {
+            // A `Project`-vouched row can carry no attributed def at all --
+            // still one line, so the file's referencing lines are never
+            // silently dropped.
+            out.push(format!("  lines: {lines}"));
+        } else {
+            for def_id in &r.test_defs {
+                out.push(format!("  {def_id}  lines: {lines}"));
+            }
         }
     }
     out.join("\n")
@@ -833,7 +890,7 @@ pub fn render_tests_text(model: &query::TestsModel) -> String {
 
 /// `--compact` `devscout tests` output. The same model with the def ids and the
 /// per-file indentation dropped: one header line carrying every count, then one
-/// line per file. The `h` line marker is the compact renderer's existing
+/// line per file. The `x`/`h` line marker is the compact renderer's existing
 /// convention for a guess.
 pub fn render_tests_compact(model: &query::TestsModel) -> String {
     let heur = if model.heuristic_file_count != 0 {
@@ -849,13 +906,7 @@ pub fn render_tests_compact(model: &query::TestsModel) -> String {
         let lines = r
             .lines
             .iter()
-            .map(|l| {
-                if r.heuristic {
-                    format!("{l}h")
-                } else {
-                    l.to_string()
-                }
-            })
+            .map(|l| format!("{l}{}", compact_marker(r.heuristic, r.tier)))
             .collect::<Vec<_>>()
             .join(",");
         out.push(format!("{} {lines}", r.file));
@@ -934,6 +985,7 @@ mod tests {
                 file: "src/Foo.cs".into(),
                 line: 5,
                 heuristic: false,
+                tier: None,
                 source: String::new(),
             }],
             0,
@@ -946,6 +998,7 @@ mod tests {
                 to_file: "src/Bar.cs".into(),
                 to: "App.Bar".into(),
                 heuristic: false,
+                tier: None,
                 source: String::new(),
             }],
             0,
@@ -977,6 +1030,7 @@ mod tests {
                     to_file: "src/IWidget.cs".into(),
                     to: "App.IWidget".into(),
                     heuristic: false,
+                    tier: None,
                     source: String::new(),
                 },
                 OutboundRow {
@@ -985,6 +1039,7 @@ mod tests {
                     to_file: "src/IGadget.cs".into(),
                     to: "App.IGadget".into(),
                     heuristic: false,
+                    tier: None,
                     source: String::new(),
                 },
             ],
@@ -1004,24 +1059,28 @@ mod tests {
                     file: "src/Consumers/Big.cs".into(),
                     line: 12,
                     heuristic: false,
+                    tier: None,
                     source: String::new(),
                 },
                 InboundRow {
                     file: "src/Consumers/Big.cs".into(),
                     line: 40,
                     heuristic: false,
+                    tier: None,
                     source: String::new(),
                 },
                 InboundRow {
                     file: "src/Consumers/Big.cs".into(),
                     line: 40,
                     heuristic: false,
+                    tier: None,
                     source: String::new(),
                 },
                 InboundRow {
                     file: "src/Consumers/Small.cs".into(),
                     line: 3,
                     heuristic: false,
+                    tier: None,
                     source: String::new(),
                 },
             ],
@@ -1048,12 +1107,14 @@ mod tests {
                     file: "src/A.cs".into(),
                     line: 1,
                     heuristic: false,
+                    tier: None,
                     source: String::new(),
                 },
                 InboundRow {
                     file: "src/B.cs".into(),
                     line: 2,
                     heuristic: false,
+                    tier: None,
                     source: String::new(),
                 },
             ],
@@ -1126,6 +1187,7 @@ mod tests {
             score,
             heuristic_count: 0,
             heuristic: false,
+            tier: None,
             iface_via: vec![],
             from_lines: vec![],
             infra: false,
@@ -1240,6 +1302,7 @@ mod tests {
                 file: "a.cs".into(),
                 line: 1,
                 heuristic: false,
+                tier: None,
                 source: String::new(),
             }],
             2,
@@ -1353,12 +1416,14 @@ mod tests {
                     file: "src/Fact.cs".into(),
                     line: 4,
                     heuristic: false,
+                    tier: None,
                     source: String::new(),
                 },
                 InboundRow {
                     file: "src/Guess.cs".into(),
                     line: 9,
                     heuristic: true,
+                    tier: None,
                     source: String::new(),
                 },
             ],
@@ -1372,6 +1437,7 @@ mod tests {
                 to_file: "src/Widget.cs".into(),
                 to: "App.Widget".into(),
                 heuristic: true,
+                tier: None,
                 source: String::new(),
             }],
             0,
@@ -1407,6 +1473,43 @@ mod tests {
     }
 
     #[test]
+    fn refs_text_marks_an_extension_row_and_a_guess_row_with_their_own_words() {
+        let row = |file: &str, line: usize, tier: Option<HeuristicTier>| InboundRow {
+            file: file.into(),
+            line,
+            heuristic: tier.is_some(),
+            tier,
+            source: String::new(),
+        };
+        let mut inbound = empty_inbound();
+        inbound.uses_member = table(
+            vec![
+                row("src/Fact.cs", 4, None),
+                row("src/Ext.cs", 7, Some(HeuristicTier::Ext)),
+                row("src/Guess.cs", 9, Some(HeuristicTier::Guess)),
+            ],
+            0,
+        );
+        let out = render_refs_text(&refs_model(inbound, empty_outbound(), empty_ambiguous(), 0));
+        assert!(out.contains("    src/Fact.cs:4  uses-member\n"), "{out}");
+        assert!(
+            out.contains("    src/Ext.cs:7  uses-member (extension)"),
+            "{out}"
+        );
+        assert!(
+            out.contains("    src/Guess.cs:9  uses-member (guess)"),
+            "{out}"
+        );
+        // The two tiers are told apart by their own words, and neither borrows
+        // the umbrella one: a row saying `(heuristic)` now means only "guessed,
+        // tier unknown", which no row built from a schema-2 graph can be.
+        assert_eq!(out.matches("(heuristic)").count(), 0, "{out}");
+        // The HEADER keeps the umbrella word regardless -- one vocabulary with
+        // two levels of detail, not two competing labels.
+        assert!(out.contains("  uses-member (3):"), "{out}");
+    }
+
+    #[test]
     fn refs_compact_marks_a_heuristic_row_with_a_trailing_h_and_rle_keeps_them_distinct() {
         let mut inbound = empty_inbound();
         inbound.uses_member = table(
@@ -1415,18 +1518,21 @@ mod tests {
                     file: "src/A.cs".into(),
                     line: 5,
                     heuristic: false,
+                    tier: None,
                     source: String::new(),
                 },
                 InboundRow {
                     file: "src/A.cs".into(),
                     line: 5,
                     heuristic: true,
+                    tier: None,
                     source: String::new(),
                 },
                 InboundRow {
                     file: "src/A.cs".into(),
                     line: 5,
                     heuristic: true,
+                    tier: None,
                     source: String::new(),
                 },
             ],
@@ -1436,6 +1542,35 @@ mod tests {
         assert!(
             out.contains("in:uses-member (3):\n  src/A.cs:5,5hx2"),
             "`5` and `5h` are distinct RLE entries\n{out}"
+        );
+    }
+
+    #[test]
+    fn refs_compact_marks_ext_with_x_and_guess_with_h_and_rle_keeps_them_distinct() {
+        let row = |line: usize, tier: Option<HeuristicTier>| InboundRow {
+            file: "src/A.cs".into(),
+            line,
+            heuristic: tier.is_some(),
+            tier,
+            source: String::new(),
+        };
+        let mut inbound = empty_inbound();
+        inbound.uses_member = table(
+            vec![
+                row(5, None),
+                row(5, Some(HeuristicTier::Ext)),
+                row(5, Some(HeuristicTier::Ext)),
+                row(5, Some(HeuristicTier::Guess)),
+            ],
+            0,
+        );
+        let out = render_refs_compact(&refs_model(inbound, empty_outbound(), empty_ambiguous(), 0));
+        // Three distinct RLE entries off ONE line number: the marker belongs to
+        // the value, so the run-length `x2` on `5x` reads `5xx2` and still
+        // collapses only rows that agree on both line AND tier.
+        assert!(
+            out.contains("in:uses-member (4):\n  src/A.cs:5,5xx2,5h"),
+            "{out}"
         );
     }
 
@@ -1473,6 +1608,45 @@ mod tests {
             "byte-unchanged when there is nothing to declare\n{out}"
         );
         assert!(!out.contains("heuristic"), "{out}");
+    }
+
+    #[test]
+    fn impact_text_marks_a_row_reached_only_by_an_extension_guess_as_extension() {
+        let tiered = |file: &str, count: u32, tier: HeuristicTier| ImpactRow {
+            heuristic_count: count,
+            heuristic: true,
+            tier: Some(tier),
+            ..impact_row(file, 1, 0, 0, &["Widget"], 0, 0.0)
+        };
+        let model = impact_model(
+            vec![
+                impact_row("src/Direct.cs", 1, 1, 0, &["Widget"], 0, 0.5),
+                tiered("src/Extended.cs", 2, HeuristicTier::Ext),
+                tiered("src/Guessed.cs", 3, HeuristicTier::Guess),
+            ],
+            1,
+            0,
+            0,
+        );
+        let out = render_impact_text("Widget", &model);
+        // The SUMMARY keeps the umbrella word and the umbrella count -- both
+        // tiers are still "not a fact" as far as `affected` is concerned.
+        assert!(
+            out.contains("affected files: 1 (+2 heuristic)  shown: 3  dropped: 0"),
+            "{out}"
+        );
+        assert!(
+            out.contains("src/Extended.cs  1  2  Widget (extension)"),
+            "{out}"
+        );
+        assert!(
+            out.contains("src/Guessed.cs  1  3  Widget (guess)"),
+            "{out}"
+        );
+        // Compact says the same thing in one character each.
+        let compact = render_impact_compact("Widget", &model);
+        assert!(compact.contains("src/Extended.cs via=2x"), "{compact}");
+        assert!(compact.contains("src/Guessed.cs via=3h"), "{compact}");
     }
 
     #[test]
@@ -1536,6 +1710,8 @@ mod tests {
             lines: lines.to_vec(),
             ref_count: lines.len(),
             heuristic,
+            tier: None,
+            via: query::TestVia::Attribute,
         }
     }
 
@@ -1587,6 +1763,64 @@ mod tests {
         assert!(
             out.ends_with(
                 "tests/Partial.Extra.cs (heuristic)\n  App.Orders.Tests.PartialTests  lines: 9"
+            ),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn tests_text_suffix_follows_the_row_tier() {
+        let tiered = |file: &str, tier: Option<HeuristicTier>| TestRow {
+            tier,
+            heuristic: tier.is_some(),
+            ..test_row(file, &["App.Orders.Tests.T"], &[9], tier.is_some())
+        };
+        let model = tests_model(vec![
+            tiered("tests/Precise.cs", None),
+            tiered("tests/Ext.cs", Some(HeuristicTier::Ext)),
+            tiered("tests/Guess.cs", Some(HeuristicTier::Guess)),
+        ]);
+        let out = render_tests_text(&model);
+        assert!(out.contains("\ntests/Precise.cs\n"), "{out}");
+        assert!(out.contains("\ntests/Ext.cs (extension)\n"), "{out}");
+        assert!(out.contains("\ntests/Guess.cs (guess)\n"), "{out}");
+        // The header's counts stay precise-only and keep the umbrella word, the
+        // same split the refs and impact renderers make.
+        assert!(
+            out.contains("covered by 1 test file(s), 1 reference(s)"),
+            "{out}"
+        );
+        assert_eq!(
+            render_tests_compact(&model),
+            "tests App.Orders.OrderService files=1 refs=1 heuristic=2\ntests/Precise.cs 9\ntests/Ext.cs 9x\ntests/Guess.cs 9h"
+        );
+    }
+
+    #[test]
+    fn tests_text_marks_a_project_vouched_row_with_the_test_project_suffix_and_lists_its_lines_without_a_def_id(
+    ) {
+        let harness = TestRow {
+            via: query::TestVia::Project,
+            ..test_row("tests/App.Tests/FakeServer.cs", &[], &[12, 34], false)
+        };
+        let model = tests_model(vec![
+            test_row(
+                "tests/OrderServiceTests.cs",
+                &["App.Orders.Tests.OrderServiceTests"],
+                &[10],
+                false,
+            ),
+            harness,
+        ]);
+        let out = render_tests_text(&model);
+        assert!(
+            out.ends_with("tests/App.Tests/FakeServer.cs (test project)\n  lines: 12, 34"),
+            "{out}"
+        );
+        // The attribute-vouched row above it carries no such suffix.
+        assert!(
+            out.contains(
+                "tests/OrderServiceTests.cs\n  App.Orders.Tests.OrderServiceTests  lines: 10\n"
             ),
             "{out}"
         );

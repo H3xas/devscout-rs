@@ -1,0 +1,1224 @@
+{
+  "schemaVersion": 1,
+  "producer": "scout-semantic",
+  "version": "0.1.0",
+  "repo": "csharp-flowtrace",
+  "kind": "backend",
+  "generatedFrom": "scout-semantic 0.1.0",
+  "compilation": {
+    "solution": "Fixture.sln",
+    "units": [
+      "Api|net9.0",
+      "Shared|net9.0"
+    ],
+    "digest": "e18f1cdf4d76ce62e214c1050d8f2ad56bd8f3cd"
+  },
+  "facts": [
+    {
+      "type": "ctor_field",
+      "file": "src/Api/Billing/Invoice.cs",
+      "line": 7,
+      "class": "Invoice",
+      "field": "Amount",
+      "paramType": "decimal",
+      "paramTypeFqn": "System.Decimal"
+    },
+    {
+      "type": "ctor_field",
+      "file": "src/Api/Billing/Invoice.cs",
+      "line": 7,
+      "class": "Invoice",
+      "field": "Number",
+      "paramType": "string",
+      "paramTypeFqn": "System.String"
+    },
+    {
+      "type": "consume",
+      "file": "src/Api/Consumers/BatchConsumer.cs",
+      "line": 8,
+      "message": "ParcelDispatchedMessage",
+      "consumer": "ParcelBatchConsumer",
+      "fqn": "Courier.Api.Messaging.Messages.ParcelDispatchedMessage"
+    },
+    {
+      "type": "iface_impl",
+      "file": "src/Api/Consumers/BatchConsumer.cs",
+      "line": 8,
+      "class": "ParcelBatchConsumer",
+      "iface": "IConsumer",
+      "ifaceFqn": "Courier.Framework.IConsumer<Courier.Framework.Batch<Courier.Api.Messaging.Messages.ParcelDispatchedMessage>>"
+    },
+    {
+      "type": "method_span",
+      "file": "src/Api/Consumers/BatchConsumer.cs",
+      "line": 10,
+      "class": "ParcelBatchConsumer",
+      "method": "Consume",
+      "endLine": 17
+    },
+    {
+      "type": "iface_impl",
+      "file": "src/Api/Consumers/BatchConsumer.cs",
+      "line": 20,
+      "class": "AuditingConsumer",
+      "iface": "IConsumer",
+      "ifaceFqn": "Courier.Framework.IConsumer<T>"
+    },
+    {
+      "type": "consume",
+      "file": "src/Api/Consumers/DeliveryScheduledConsumer.cs",
+      "line": 11,
+      "message": "DeliveryScheduled",
+      "consumer": "DeliveryScheduledConsumer",
+      "fqn": "Courier.Api.Messaging.Messages.DeliveryScheduled"
+    },
+    {
+      "type": "method_span",
+      "file": "src/Api/Consumers/DeliveryScheduledConsumer.cs",
+      "line": 16,
+      "class": "DeliveryScheduledConsumer",
+      "method": "DeliveryScheduledConsumer",
+      "endLine": 20
+    },
+    {
+      "type": "ctor_field",
+      "file": "src/Api/Consumers/DeliveryScheduledConsumer.cs",
+      "line": 18,
+      "class": "DeliveryScheduledConsumer",
+      "field": "_repository",
+      "paramType": "IParcelRepository",
+      "paramTypeFqn": "Courier.Api.Repositories.IParcelRepository"
+    },
+    {
+      "type": "ctor_field",
+      "file": "src/Api/Consumers/DeliveryScheduledConsumer.cs",
+      "line": 19,
+      "class": "DeliveryScheduledConsumer",
+      "field": "_bus",
+      "paramType": "IPublishEndpoint",
+      "paramTypeFqn": "Courier.Framework.IPublishEndpoint"
+    },
+    {
+      "type": "method_span",
+      "file": "src/Api/Consumers/DeliveryScheduledConsumer.cs",
+      "line": 22,
+      "class": "DeliveryScheduledConsumer",
+      "method": "Consume",
+      "endLine": 22
+    },
+    {
+      "type": "method_span",
+      "file": "src/Api/Consumers/DeliveryScheduledConsumer.cs",
+      "line": 24,
+      "class": "DeliveryScheduledConsumer",
+      "method": "NotifyLost",
+      "endLine": 28
+    },
+    {
+      "type": "publish",
+      "file": "src/Api/Consumers/DeliveryScheduledConsumer.cs",
+      "line": 27,
+      "message": "ParcelLostEvent",
+      "fqn": "Courier.Api.Messaging.Events.ParcelLostEvent"
+    },
+    {
+      "type": "consume",
+      "file": "src/Api/Consumers/ParcelDispatchedConsumer.cs",
+      "line": 11,
+      "message": "ParcelDispatchedMessage",
+      "consumer": "ParcelDispatchedConsumer",
+      "fqn": "Courier.Api.Messaging.Messages.ParcelDispatchedMessage"
+    },
+    {
+      "type": "iface_impl",
+      "file": "src/Api/Consumers/ParcelDispatchedConsumer.cs",
+      "line": 11,
+      "class": "ParcelDispatchedConsumer",
+      "iface": "IConsumer",
+      "ifaceFqn": "Courier.Framework.IConsumer<Courier.Api.Messaging.Messages.ParcelDispatchedMessage>"
+    },
+    {
+      "type": "ctor_field",
+      "file": "src/Api/Consumers/ParcelDispatchedConsumer.cs",
+      "line": 12,
+      "class": "ParcelDispatchedConsumer",
+      "field": "bus",
+      "paramType": "IPublishEndpoint",
+      "paramTypeFqn": "Courier.Framework.IPublishEndpoint"
+    },
+    {
+      "type": "ctor_field",
+      "file": "src/Api/Consumers/ParcelDispatchedConsumer.cs",
+      "line": 12,
+      "class": "ParcelDispatchedConsumer",
+      "field": "repository",
+      "paramType": "IParcelRepository",
+      "paramTypeFqn": "Courier.Api.Repositories.IParcelRepository"
+    },
+    {
+      "type": "method_span",
+      "file": "src/Api/Consumers/ParcelDispatchedConsumer.cs",
+      "line": 13,
+      "class": "ParcelDispatchedConsumer",
+      "method": "Consume",
+      "endLine": 20
+    },
+    {
+      "type": "publish",
+      "file": "src/Api/Consumers/ParcelDispatchedConsumer.cs",
+      "line": 18,
+      "message": "RouteNote",
+      "fqn": "Courier.Api.Messaging.Messages.RouteNote"
+    },
+    {
+      "type": "publish",
+      "file": "src/Api/Consumers/ParcelDispatchedConsumer.cs",
+      "line": 19,
+      "message": "ParcelLostEvent",
+      "fqn": "Courier.Api.Messaging.Events.ParcelLostEvent"
+    },
+    {
+      "type": "method_span",
+      "file": "src/Api/Consumers/ReturnRequestedConsumer.Audit.cs",
+      "line": 8,
+      "class": "ReturnRequestedConsumer",
+      "method": "Record",
+      "endLine": 11
+    },
+    {
+      "type": "consume",
+      "file": "src/Api/Consumers/ReturnRequestedConsumer.cs",
+      "line": 10,
+      "message": "ReturnRequested",
+      "consumer": "ReturnRequestedConsumer",
+      "fqn": "Courier.Api.Messaging.Events.ReturnRequested"
+    },
+    {
+      "type": "iface_impl",
+      "file": "src/Api/Consumers/ReturnRequestedConsumer.cs",
+      "line": 10,
+      "class": "ReturnRequestedConsumer",
+      "iface": "IConsumer",
+      "ifaceFqn": "Courier.Framework.IConsumer<Courier.Api.Messaging.Events.ReturnRequested>"
+    },
+    {
+      "type": "method_span",
+      "file": "src/Api/Consumers/ReturnRequestedConsumer.cs",
+      "line": 12,
+      "class": "ReturnRequestedConsumer",
+      "method": "Consume",
+      "endLine": 16
+    },
+    {
+      "type": "ctor_field",
+      "file": "src/Api/Contracts/CreateParcel.cs",
+      "line": 5,
+      "class": "CreateParcel",
+      "field": "Address",
+      "paramType": "string",
+      "paramTypeFqn": "System.String"
+    },
+    {
+      "type": "ctor_field",
+      "file": "src/Api/Contracts/CreateParcel.cs",
+      "line": 5,
+      "class": "CreateParcel",
+      "field": "Recipient",
+      "paramType": "string",
+      "paramTypeFqn": "System.String"
+    },
+    {
+      "type": "method_span",
+      "file": "src/Api/Controllers/ParcelsController.cs",
+      "line": 18,
+      "class": "ParcelsController",
+      "method": "ParcelsController",
+      "endLine": 22
+    },
+    {
+      "type": "ctor_field",
+      "file": "src/Api/Controllers/ParcelsController.cs",
+      "line": 20,
+      "class": "ParcelsController",
+      "field": "_repository",
+      "paramType": "IParcelRepository",
+      "paramTypeFqn": "Courier.Api.Repositories.IParcelRepository"
+    },
+    {
+      "type": "ctor_field",
+      "file": "src/Api/Controllers/ParcelsController.cs",
+      "line": 21,
+      "class": "ParcelsController",
+      "field": "_bus",
+      "paramType": "IPublishEndpoint",
+      "paramTypeFqn": "Courier.Framework.IPublishEndpoint"
+    },
+    {
+      "type": "route",
+      "file": "src/Api/Controllers/ParcelsController.cs",
+      "line": 24,
+      "controller": "ParcelsController",
+      "action": "Get",
+      "verb": "GET",
+      "template": "api/Parcels/{id}"
+    },
+    {
+      "type": "method_span",
+      "file": "src/Api/Controllers/ParcelsController.cs",
+      "line": 25,
+      "class": "ParcelsController",
+      "method": "Get",
+      "endLine": 29
+    },
+    {
+      "type": "route",
+      "file": "src/Api/Controllers/ParcelsController.cs",
+      "line": 31,
+      "controller": "ParcelsController",
+      "action": "Create",
+      "verb": "POST",
+      "template": "api/Parcels"
+    },
+    {
+      "type": "method_span",
+      "file": "src/Api/Controllers/ParcelsController.cs",
+      "line": 32,
+      "class": "ParcelsController",
+      "method": "Create",
+      "endLine": 36
+    },
+    {
+      "type": "publish",
+      "file": "src/Api/Controllers/ParcelsController.cs",
+      "line": 34,
+      "message": "ParcelDispatchedMessage",
+      "fqn": "Courier.Api.Messaging.Messages.ParcelDispatchedMessage"
+    },
+    {
+      "type": "route",
+      "file": "src/Api/Controllers/ParcelsController.cs",
+      "line": 38,
+      "controller": "ParcelsController",
+      "action": "Search",
+      "verb": "GET",
+      "template": "api/Parcels/search"
+    },
+    {
+      "type": "route",
+      "file": "src/Api/Controllers/ParcelsController.cs",
+      "line": 38,
+      "controller": "ParcelsController",
+      "action": "Search",
+      "verb": "POST",
+      "template": "api/Parcels/search"
+    },
+    {
+      "type": "method_span",
+      "file": "src/Api/Controllers/ParcelsController.cs",
+      "line": 41,
+      "class": "ParcelsController",
+      "method": "Search",
+      "endLine": 41
+    },
+    {
+      "type": "route",
+      "file": "src/Api/Controllers/ParcelsController.cs",
+      "line": 43,
+      "controller": "ParcelsController",
+      "action": "Archive",
+      "verb": "ANY",
+      "template": "api/Parcels/Archive"
+    },
+    {
+      "type": "method_span",
+      "file": "src/Api/Controllers/ParcelsController.cs",
+      "line": 44,
+      "class": "ParcelsController",
+      "method": "Archive",
+      "endLine": 44
+    },
+    {
+      "type": "method_span",
+      "file": "src/Api/Controllers/ParcelsController.cs",
+      "line": 46,
+      "class": "ParcelsController",
+      "method": "BuildParcelId",
+      "endLine": 46
+    },
+    {
+      "type": "method_span",
+      "file": "src/Api/Endpoints/ParcelEndpoints.cs",
+      "line": 12,
+      "class": "ParcelEndpoints",
+      "method": "Delete",
+      "endLine": 12
+    },
+    {
+      "type": "method_span",
+      "file": "src/Api/Endpoints/ParcelEndpoints.cs",
+      "line": 14,
+      "class": "ParcelEndpoints",
+      "method": "Update",
+      "endLine": 14
+    },
+    {
+      "type": "method_span",
+      "file": "src/Api/Endpoints/ParcelEndpoints.cs",
+      "line": 16,
+      "class": "ParcelEndpoints",
+      "method": "Register",
+      "endLine": 20
+    },
+    {
+      "type": "ctor_field",
+      "file": "src/Api/Endpoints/ParcelEndpoints.cs",
+      "line": 18,
+      "class": "ParcelEndpoints",
+      "field": "repository",
+      "paramType": "IParcelRepository",
+      "paramTypeFqn": "Courier.Api.Repositories.IParcelRepository"
+    },
+    {
+      "type": "route",
+      "file": "src/Api/Endpoints/ParcelEndpoints.cs",
+      "line": 18,
+      "controller": "ParcelEndpoints",
+      "action": "Register",
+      "verb": "GET",
+      "template": "api/v2/parcels/{id}"
+    },
+    {
+      "type": "route",
+      "file": "src/Api/Endpoints/ParcelEndpoints.cs",
+      "line": 19,
+      "controller": "ParcelEndpoints",
+      "action": "Register",
+      "verb": "GET",
+      "template": "right/left/cycle"
+    },
+    {
+      "type": "ctor_field",
+      "file": "src/Api/Handlers/GetParcelHandler.cs",
+      "line": 8,
+      "class": "GetParcelQuery",
+      "field": "Id",
+      "paramType": "int",
+      "paramTypeFqn": "System.Int32"
+    },
+    {
+      "type": "iface_impl",
+      "file": "src/Api/Handlers/GetParcelHandler.cs",
+      "line": 8,
+      "class": "GetParcelQuery",
+      "iface": "IRequest",
+      "ifaceFqn": "Courier.Framework.IRequest<Courier.Api.Handlers.ParcelDto>"
+    },
+    {
+      "type": "ctor_field",
+      "file": "src/Api/Handlers/GetParcelHandler.cs",
+      "line": 10,
+      "class": "ParcelDto",
+      "field": "Description",
+      "paramType": "string",
+      "paramTypeFqn": "System.String"
+    },
+    {
+      "type": "ctor_field",
+      "file": "src/Api/Handlers/GetParcelHandler.cs",
+      "line": 10,
+      "class": "ParcelDto",
+      "field": "Id",
+      "paramType": "int",
+      "paramTypeFqn": "System.Int32"
+    },
+    {
+      "type": "di_binding",
+      "file": "src/Api/Handlers/GetParcelHandler.cs",
+      "line": 12,
+      "iface": "GetParcelQuery",
+      "impl": "GetParcelHandler",
+      "ifaceFqn": "Courier.Api.Handlers.GetParcelQuery",
+      "implFqn": "Courier.Api.Handlers.GetParcelHandler"
+    },
+    {
+      "type": "iface_impl",
+      "file": "src/Api/Handlers/GetParcelHandler.cs",
+      "line": 12,
+      "class": "GetParcelHandler",
+      "iface": "IRequestHandler",
+      "ifaceFqn": "Courier.Framework.IRequestHandler<Courier.Api.Handlers.GetParcelQuery, Courier.Api.Handlers.ParcelDto>"
+    },
+    {
+      "type": "method_span",
+      "file": "src/Api/Handlers/GetParcelHandler.cs",
+      "line": 16,
+      "class": "GetParcelHandler",
+      "method": "GetParcelHandler",
+      "endLine": 19
+    },
+    {
+      "type": "ctor_field",
+      "file": "src/Api/Handlers/GetParcelHandler.cs",
+      "line": 18,
+      "class": "GetParcelHandler",
+      "field": "_repository",
+      "paramType": "IParcelRepository",
+      "paramTypeFqn": "Courier.Api.Repositories.IParcelRepository"
+    },
+    {
+      "type": "method_span",
+      "file": "src/Api/Handlers/GetParcelHandler.cs",
+      "line": 21,
+      "class": "GetParcelHandler",
+      "method": "Handle",
+      "endLine": 25
+    },
+    {
+      "type": "iface_impl",
+      "file": "src/Api/Messaging/Events/ParcelLostEvent.cs",
+      "line": 5,
+      "class": "ParcelLostEvent",
+      "iface": "IMessage",
+      "ifaceFqn": "Courier.Framework.IMessage"
+    },
+    {
+      "type": "message_class",
+      "file": "src/Api/Messaging/Events/ParcelLostEvent.cs",
+      "line": 6,
+      "name": "ParcelLostEvent",
+      "fqn": "Courier.Api.Messaging.Events.ParcelLostEvent"
+    },
+    {
+      "type": "method_span",
+      "file": "src/Api/Messaging/Events/ParcelLostEvent.cs",
+      "line": 7,
+      "class": "ParcelLostEvent",
+      "method": "ParcelLostEvent",
+      "endLine": 10
+    },
+    {
+      "type": "ctor_field",
+      "file": "src/Api/Messaging/Events/ParcelLostEvent.cs",
+      "line": 9,
+      "class": "ParcelLostEvent",
+      "field": "ParcelId",
+      "paramType": "string",
+      "paramTypeFqn": "System.String"
+    },
+    {
+      "type": "method_span",
+      "file": "src/Api/Messaging/Events/ParcelLostEvent.cs",
+      "line": 17,
+      "class": "DispatchAudit",
+      "method": "DispatchAudit",
+      "endLine": 21
+    },
+    {
+      "type": "ctor_field",
+      "file": "src/Api/Messaging/Events/ParcelLostEvent.cs",
+      "line": 19,
+      "class": "DispatchAudit",
+      "field": "ParcelId",
+      "paramType": "string",
+      "paramTypeFqn": "System.String"
+    },
+    {
+      "type": "ctor_field",
+      "file": "src/Api/Messaging/Events/ParcelLostEvent.cs",
+      "line": 20,
+      "class": "DispatchAudit",
+      "field": "RecordedAt",
+      "paramType": "DateTimeOffset",
+      "paramTypeFqn": "System.DateTimeOffset"
+    },
+    {
+      "type": "ctor_field",
+      "file": "src/Api/Messaging/Events/ReturnRequested.cs",
+      "line": 7,
+      "class": "ReturnRequested",
+      "field": "ParcelId",
+      "paramType": "string",
+      "paramTypeFqn": "System.String"
+    },
+    {
+      "type": "iface_impl",
+      "file": "src/Api/Messaging/Events/ReturnRequested.cs",
+      "line": 7,
+      "class": "ReturnRequested",
+      "iface": "IMessage",
+      "ifaceFqn": "Courier.Framework.IMessage"
+    },
+    {
+      "type": "message_class",
+      "file": "src/Api/Messaging/Events/ReturnRequested.cs",
+      "line": 7,
+      "name": "ReturnRequested",
+      "fqn": "Courier.Api.Messaging.Events.ReturnRequested"
+    },
+    {
+      "type": "iface_impl",
+      "file": "src/Api/Messaging/InMemoryBus.cs",
+      "line": 7,
+      "class": "InMemoryBus",
+      "iface": "IPublishEndpoint",
+      "ifaceFqn": "Courier.Framework.IPublishEndpoint"
+    },
+    {
+      "type": "method_span",
+      "file": "src/Api/Messaging/InMemoryBus.cs",
+      "line": 9,
+      "class": "InMemoryBus",
+      "method": "Publish",
+      "endLine": 9
+    },
+    {
+      "type": "method_span",
+      "file": "src/Api/Messaging/InMemoryBus.cs",
+      "line": 11,
+      "class": "InMemoryBus",
+      "method": "PublishAsync",
+      "endLine": 11
+    },
+    {
+      "type": "method_span",
+      "file": "src/Api/Messaging/InMemoryBus.cs",
+      "line": 13,
+      "class": "InMemoryBus",
+      "method": "SubmitJob",
+      "endLine": 13
+    },
+    {
+      "type": "ctor_field",
+      "file": "src/Api/Messaging/Messages/ParcelDispatchedMessage.cs",
+      "line": 5,
+      "class": "ParcelDispatchedMessage",
+      "field": "Carrier",
+      "paramType": "string",
+      "paramTypeFqn": "System.String"
+    },
+    {
+      "type": "ctor_field",
+      "file": "src/Api/Messaging/Messages/ParcelDispatchedMessage.cs",
+      "line": 5,
+      "class": "ParcelDispatchedMessage",
+      "field": "ParcelId",
+      "paramType": "string",
+      "paramTypeFqn": "System.String"
+    },
+    {
+      "type": "message_class",
+      "file": "src/Api/Messaging/Messages/ParcelDispatchedMessage.cs",
+      "line": 5,
+      "name": "ParcelDispatchedMessage",
+      "fqn": "Courier.Api.Messaging.Messages.ParcelDispatchedMessage"
+    },
+    {
+      "type": "iface_impl",
+      "file": "src/Api/Messaging/Messages/ParcelDispatchedMessage.cs",
+      "line": 7,
+      "class": "DeliveryScheduled",
+      "iface": "ICorrelatedMessage",
+      "ifaceFqn": "Courier.Framework.ICorrelatedMessage"
+    },
+    {
+      "type": "ctor_field",
+      "file": "src/Api/Messaging/Messages/ParcelDispatchedMessage.cs",
+      "line": 8,
+      "class": "DeliveryScheduled",
+      "field": "ParcelId",
+      "paramType": "string",
+      "paramTypeFqn": "System.String"
+    },
+    {
+      "type": "ctor_field",
+      "file": "src/Api/Messaging/Messages/ParcelDispatchedMessage.cs",
+      "line": 8,
+      "class": "DeliveryScheduled",
+      "field": "ScheduledFor",
+      "paramType": "DateTimeOffset",
+      "paramTypeFqn": "System.DateTimeOffset"
+    },
+    {
+      "type": "message_class",
+      "file": "src/Api/Messaging/Messages/ParcelDispatchedMessage.cs",
+      "line": 8,
+      "name": "DeliveryScheduled",
+      "fqn": "Courier.Api.Messaging.Messages.DeliveryScheduled"
+    },
+    {
+      "type": "message_class",
+      "file": "src/Api/Messaging/Messages/ParcelDispatchedMessage.cs",
+      "line": 13,
+      "name": "RouteNote",
+      "fqn": "Courier.Api.Messaging.Messages.RouteNote"
+    },
+    {
+      "type": "method_span",
+      "file": "src/Api/Messaging/Messages/ParcelDispatchedMessage.cs",
+      "line": 14,
+      "class": "RouteNote",
+      "method": "RouteNote",
+      "endLine": 18
+    },
+    {
+      "type": "ctor_field",
+      "file": "src/Api/Messaging/Messages/ParcelDispatchedMessage.cs",
+      "line": 16,
+      "class": "RouteNote",
+      "field": "ParcelId",
+      "paramType": "string",
+      "paramTypeFqn": "System.String"
+    },
+    {
+      "type": "ctor_field",
+      "file": "src/Api/Messaging/Messages/ParcelDispatchedMessage.cs",
+      "line": 17,
+      "class": "RouteNote",
+      "field": "Note",
+      "paramType": "string",
+      "paramTypeFqn": "System.String"
+    },
+    {
+      "type": "di_binding",
+      "file": "src/Api/Program.cs",
+      "line": 16,
+      "iface": "IParcelRepository",
+      "impl": "ParcelRepository",
+      "ifaceFqn": "Courier.Api.Repositories.IParcelRepository",
+      "implFqn": "Courier.Api.Repositories.ParcelRepository"
+    },
+    {
+      "type": "di_binding",
+      "file": "src/Api/Program.cs",
+      "line": 17,
+      "iface": "ILabelPrinter",
+      "impl": "ZplLabelPrinter",
+      "ifaceFqn": "Courier.Api.Repositories.ILabelPrinter",
+      "implFqn": "Courier.Api.Repositories.ZplLabelPrinter"
+    },
+    {
+      "type": "di_binding",
+      "file": "src/Api/Program.cs",
+      "line": 18,
+      "iface": "IPublishEndpoint",
+      "impl": "InMemoryBus",
+      "ifaceFqn": "Courier.Framework.IPublishEndpoint",
+      "implFqn": "Courier.Api.Messaging.InMemoryBus"
+    },
+    {
+      "type": "ctor_field",
+      "file": "src/Api/Program.cs",
+      "line": 21,
+      "class": "Program",
+      "field": "repository",
+      "paramType": "IParcelRepository",
+      "paramTypeFqn": "Courier.Api.Repositories.IParcelRepository"
+    },
+    {
+      "type": "method_span",
+      "file": "src/Api/Program.cs",
+      "line": 21,
+      "class": "Program",
+      "method": "MapGet",
+      "endLine": 21
+    },
+    {
+      "type": "route",
+      "file": "src/Api/Program.cs",
+      "line": 21,
+      "controller": "Program",
+      "action": "MapGet",
+      "verb": "GET",
+      "template": "api/parcels/{id}"
+    },
+    {
+      "type": "ctor_field",
+      "file": "src/Api/Program.cs",
+      "line": 22,
+      "class": "Program",
+      "field": "bus",
+      "paramType": "IPublishEndpoint",
+      "paramTypeFqn": "Courier.Framework.IPublishEndpoint"
+    },
+    {
+      "type": "ctor_field",
+      "file": "src/Api/Program.cs",
+      "line": 22,
+      "class": "Program",
+      "field": "request",
+      "paramType": "CreateParcel",
+      "paramTypeFqn": "Courier.Api.Contracts.CreateParcel"
+    },
+    {
+      "type": "method_span",
+      "file": "src/Api/Program.cs",
+      "line": 22,
+      "class": "Program",
+      "method": "MapPost",
+      "endLine": 26
+    },
+    {
+      "type": "route",
+      "file": "src/Api/Program.cs",
+      "line": 22,
+      "controller": "Program",
+      "action": "MapPost",
+      "verb": "POST",
+      "template": "api/parcels"
+    },
+    {
+      "type": "publish",
+      "file": "src/Api/Program.cs",
+      "line": 25,
+      "message": "ParcelDispatchedMessage",
+      "fqn": "Courier.Api.Messaging.Messages.ParcelDispatchedMessage"
+    },
+    {
+      "type": "route",
+      "file": "src/Api/Program.cs",
+      "line": 27,
+      "controller": "Program",
+      "action": "Delete",
+      "verb": "DELETE",
+      "template": "api/labels/{id}"
+    },
+    {
+      "type": "method_span",
+      "file": "src/Api/Program.cs",
+      "line": 28,
+      "class": "Program",
+      "method": "MapMethods",
+      "endLine": 28
+    },
+    {
+      "type": "route",
+      "file": "src/Api/Program.cs",
+      "line": 28,
+      "controller": "Program",
+      "action": "MapMethods",
+      "verb": "GET",
+      "template": "health"
+    },
+    {
+      "type": "route",
+      "file": "src/Api/Program.cs",
+      "line": 28,
+      "controller": "Program",
+      "action": "MapMethods",
+      "verb": "HEAD",
+      "template": "health"
+    },
+    {
+      "type": "route",
+      "file": "src/Api/Program.cs",
+      "line": 29,
+      "controller": "Program",
+      "action": "Update",
+      "verb": "PUT",
+      "template": "api/parcels/{id}"
+    },
+    {
+      "type": "ctor_field",
+      "file": "src/Api/Program.cs",
+      "line": 30,
+      "class": "Program",
+      "field": "invoice",
+      "paramType": "Invoice",
+      "paramTypeFqn": "Systematic.Billing.Invoice"
+    },
+    {
+      "type": "ctor_field",
+      "file": "src/Api/Program.cs",
+      "line": 30,
+      "class": "Program",
+      "field": "repository",
+      "paramType": "IParcelRepository",
+      "paramTypeFqn": "Courier.Api.Repositories.IParcelRepository"
+    },
+    {
+      "type": "method_span",
+      "file": "src/Api/Program.cs",
+      "line": 30,
+      "class": "Program",
+      "method": "MapPatch",
+      "endLine": 30
+    },
+    {
+      "type": "route",
+      "file": "src/Api/Program.cs",
+      "line": 30,
+      "controller": "Program",
+      "action": "MapPatch",
+      "verb": "PATCH",
+      "template": "api/parcels/{id}/invoice"
+    },
+    {
+      "type": "method_span",
+      "file": "src/Api/Program.cs",
+      "line": 32,
+      "class": "Program",
+      "method": "MapGet",
+      "endLine": 32
+    },
+    {
+      "type": "route",
+      "file": "src/Api/Program.cs",
+      "line": 32,
+      "controller": "Program",
+      "action": "MapGet",
+      "verb": "GET",
+      "template": "admin/stats"
+    },
+    {
+      "type": "iface_impl",
+      "file": "src/Api/Repositories/ParcelRepository.cs",
+      "line": 4,
+      "class": "ParcelRepository",
+      "iface": "IParcelRepository",
+      "ifaceFqn": "Courier.Api.Repositories.IParcelRepository"
+    },
+    {
+      "type": "method_span",
+      "file": "src/Api/Repositories/ParcelRepository.cs",
+      "line": 6,
+      "class": "ParcelRepository",
+      "method": "Find",
+      "endLine": 6
+    },
+    {
+      "type": "iface_impl",
+      "file": "src/Api/Repositories/ParcelRepository.cs",
+      "line": 9,
+      "class": "ZplLabelPrinter",
+      "iface": "ILabelPrinter",
+      "ifaceFqn": "Courier.Api.Repositories.ILabelPrinter"
+    },
+    {
+      "type": "method_span",
+      "file": "src/Api/Repositories/ParcelRepository.cs",
+      "line": 11,
+      "class": "ZplLabelPrinter",
+      "method": "Print",
+      "endLine": 11
+    },
+    {
+      "type": "iface_impl",
+      "file": "src/Shared/Bus.cs",
+      "line": 19,
+      "class": "Batch",
+      "iface": "IEnumerable",
+      "ifaceFqn": "System.Collections.Generic.IEnumerable<T>"
+    },
+    {
+      "type": "method_span",
+      "file": "src/Shared/Bus.cs",
+      "line": 23,
+      "class": "Batch",
+      "method": "Add",
+      "endLine": 23
+    },
+    {
+      "type": "method_span",
+      "file": "src/Shared/Bus.cs",
+      "line": 25,
+      "class": "Batch",
+      "method": "GetEnumerator",
+      "endLine": 25
+    },
+    {
+      "type": "method_span",
+      "file": "src/Shared/Bus.cs",
+      "line": 27,
+      "class": "Batch",
+      "method": "GetEnumerator",
+      "endLine": 27
+    },
+    {
+      "type": "iface_impl",
+      "file": "src/Shared/Bus.cs",
+      "line": 30,
+      "class": "BaseConsumer",
+      "iface": "IConsumer",
+      "ifaceFqn": "Courier.Framework.IConsumer<T>"
+    },
+    {
+      "type": "iface_impl",
+      "file": "src/Shared/Hosting.cs",
+      "line": 15,
+      "class": "RouteGroupBuilder",
+      "iface": "IEndpointRouteBuilder",
+      "ifaceFqn": "Courier.Framework.IEndpointRouteBuilder"
+    },
+    {
+      "type": "iface_impl",
+      "file": "src/Shared/Hosting.cs",
+      "line": 19,
+      "class": "WebApplication",
+      "iface": "IEndpointRouteBuilder",
+      "ifaceFqn": "Courier.Framework.IEndpointRouteBuilder"
+    },
+    {
+      "type": "method_span",
+      "file": "src/Shared/Hosting.cs",
+      "line": 21,
+      "class": "WebApplication",
+      "method": "Create",
+      "endLine": 21
+    },
+    {
+      "type": "method_span",
+      "file": "src/Shared/Hosting.cs",
+      "line": 25,
+      "class": "WebApplication",
+      "method": "Run",
+      "endLine": 27
+    },
+    {
+      "type": "iface_impl",
+      "file": "src/Shared/Hosting.cs",
+      "line": 29,
+      "class": "ServiceCollectionImpl",
+      "iface": "IServiceCollection",
+      "ifaceFqn": "Courier.Framework.IServiceCollection"
+    },
+    {
+      "type": "method_span",
+      "file": "src/Shared/Hosting.cs",
+      "line": 36,
+      "class": "ServiceCollectionExtensions",
+      "method": "AddScoped",
+      "endLine": 38
+    },
+    {
+      "type": "method_span",
+      "file": "src/Shared/Hosting.cs",
+      "line": 40,
+      "class": "ServiceCollectionExtensions",
+      "method": "AddSingleton",
+      "endLine": 41
+    },
+    {
+      "type": "method_span",
+      "file": "src/Shared/Hosting.cs",
+      "line": 43,
+      "class": "ServiceCollectionExtensions",
+      "method": "AddTransient",
+      "endLine": 45
+    },
+    {
+      "type": "method_span",
+      "file": "src/Shared/Hosting.cs",
+      "line": 47,
+      "class": "ServiceCollectionExtensions",
+      "method": "Register",
+      "endLine": 49
+    },
+    {
+      "type": "method_span",
+      "file": "src/Shared/Hosting.cs",
+      "line": 54,
+      "class": "EndpointExtensions",
+      "method": "MapGroup",
+      "endLine": 54
+    },
+    {
+      "type": "method_span",
+      "file": "src/Shared/Hosting.cs",
+      "line": 56,
+      "class": "EndpointExtensions",
+      "method": "MapGet",
+      "endLine": 56
+    },
+    {
+      "type": "method_span",
+      "file": "src/Shared/Hosting.cs",
+      "line": 58,
+      "class": "EndpointExtensions",
+      "method": "MapPost",
+      "endLine": 58
+    },
+    {
+      "type": "method_span",
+      "file": "src/Shared/Hosting.cs",
+      "line": 60,
+      "class": "EndpointExtensions",
+      "method": "MapPut",
+      "endLine": 60
+    },
+    {
+      "type": "method_span",
+      "file": "src/Shared/Hosting.cs",
+      "line": 62,
+      "class": "EndpointExtensions",
+      "method": "MapDelete",
+      "endLine": 62
+    },
+    {
+      "type": "method_span",
+      "file": "src/Shared/Hosting.cs",
+      "line": 64,
+      "class": "EndpointExtensions",
+      "method": "MapPatch",
+      "endLine": 64
+    },
+    {
+      "type": "method_span",
+      "file": "src/Shared/Hosting.cs",
+      "line": 66,
+      "class": "EndpointExtensions",
+      "method": "MapMethods",
+      "endLine": 66
+    },
+    {
+      "type": "ctor_field",
+      "file": "src/Shared/Mvc.cs",
+      "line": 8,
+      "class": "RouteAttribute",
+      "field": "Template",
+      "paramType": "string",
+      "paramTypeFqn": "System.String"
+    },
+    {
+      "type": "method_span",
+      "file": "src/Shared/Mvc.cs",
+      "line": 8,
+      "class": "RouteAttribute",
+      "method": "RouteAttribute",
+      "endLine": 8
+    },
+    {
+      "type": "ctor_field",
+      "file": "src/Shared/Mvc.cs",
+      "line": 16,
+      "class": "HttpGetAttribute",
+      "field": "Template",
+      "paramType": "string?",
+      "paramTypeFqn": "System.String"
+    },
+    {
+      "type": "method_span",
+      "file": "src/Shared/Mvc.cs",
+      "line": 16,
+      "class": "HttpGetAttribute",
+      "method": "HttpGetAttribute",
+      "endLine": 16
+    },
+    {
+      "type": "ctor_field",
+      "file": "src/Shared/Mvc.cs",
+      "line": 24,
+      "class": "HttpPostAttribute",
+      "field": "Template",
+      "paramType": "string?",
+      "paramTypeFqn": "System.String"
+    },
+    {
+      "type": "method_span",
+      "file": "src/Shared/Mvc.cs",
+      "line": 24,
+      "class": "HttpPostAttribute",
+      "method": "HttpPostAttribute",
+      "endLine": 24
+    },
+    {
+      "type": "ctor_field",
+      "file": "src/Shared/Mvc.cs",
+      "line": 32,
+      "class": "HttpPutAttribute",
+      "field": "Template",
+      "paramType": "string?",
+      "paramTypeFqn": "System.String"
+    },
+    {
+      "type": "method_span",
+      "file": "src/Shared/Mvc.cs",
+      "line": 32,
+      "class": "HttpPutAttribute",
+      "method": "HttpPutAttribute",
+      "endLine": 32
+    },
+    {
+      "type": "ctor_field",
+      "file": "src/Shared/Mvc.cs",
+      "line": 40,
+      "class": "HttpDeleteAttribute",
+      "field": "Template",
+      "paramType": "string?",
+      "paramTypeFqn": "System.String"
+    },
+    {
+      "type": "method_span",
+      "file": "src/Shared/Mvc.cs",
+      "line": 40,
+      "class": "HttpDeleteAttribute",
+      "method": "HttpDeleteAttribute",
+      "endLine": 40
+    },
+    {
+      "type": "ctor_field",
+      "file": "src/Shared/Mvc.cs",
+      "line": 48,
+      "class": "HttpPatchAttribute",
+      "field": "Template",
+      "paramType": "string?",
+      "paramTypeFqn": "System.String"
+    },
+    {
+      "type": "method_span",
+      "file": "src/Shared/Mvc.cs",
+      "line": 48,
+      "class": "HttpPatchAttribute",
+      "method": "HttpPatchAttribute",
+      "endLine": 48
+    },
+    {
+      "type": "iface_impl",
+      "file": "src/Shared/Mvc.cs",
+      "line": 72,
+      "class": "OkResult",
+      "iface": "IActionResult",
+      "ifaceFqn": "Courier.Framework.IActionResult"
+    },
+    {
+      "type": "ctor_field",
+      "file": "src/Shared/Mvc.cs",
+      "line": 74,
+      "class": "OkResult",
+      "field": "Value",
+      "paramType": "object?",
+      "paramTypeFqn": "System.Object"
+    },
+    {
+      "type": "method_span",
+      "file": "src/Shared/Mvc.cs",
+      "line": 74,
+      "class": "OkResult",
+      "method": "OkResult",
+      "endLine": 74
+    },
+    {
+      "type": "iface_impl",
+      "file": "src/Shared/Mvc.cs",
+      "line": 79,
+      "class": "NotFoundResult",
+      "iface": "IActionResult",
+      "ifaceFqn": "Courier.Framework.IActionResult"
+    },
+    {
+      "type": "method_span",
+      "file": "src/Shared/Mvc.cs",
+      "line": 85,
+      "class": "ControllerBase",
+      "method": "Ok",
+      "endLine": 85
+    },
+    {
+      "type": "method_span",
+      "file": "src/Shared/Mvc.cs",
+      "line": 87,
+      "class": "ControllerBase",
+      "method": "NotFound",
+      "endLine": 87
+    }
+  ]
+}

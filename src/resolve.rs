@@ -1,5 +1,6 @@
 // The resolution ladder, including ambiguous marking: `build_def_index`,
-// `resolve_ref`, `collect_global_usings`, `capped_candidates`, `resolve_graph`.
+// `resolve_ref`, `collect_global_usings_by_unit`, `capped_candidates`,
+// `resolve_graph`.
 // Pure: no file I/O, no tree-sitter -- the only I/O this module performs is the
 // single `git rev-parse HEAD` shell-out inside `resolve_graph`, delegated to
 // `manifest::git_head`. Artifact load/save and the fragments cache live in
@@ -10,7 +11,17 @@
 //      short-circuit before the ladder for bare (non-dotted) references --
 //      never ambiguous, never falls through.
 //   1. Exact qualified name, tried at every ENCLOSING namespace prefix,
-//      innermost first, only for dotted references.
+//      innermost first, only for dotted references. A dotted reference the
+//      exact step misses gets two further chances and never reaches steps
+//      2-4: steps 1a/1b (an alias at its head rewritten to the alias target,
+//      then only a def whose full path ends with the written text, or a
+//      nested def inside the inheritance closure of the type the qualifier
+//      names), and then step 1.5.
+//   1.5 A dotted qualifier walked through NESTED types: the shortest head
+//      that names a type, then one exact `{id}+{segment}` lookup per
+//      remaining segment. Skipped when the extractor vouches that the
+//      qualifier is an instance. A dotted reference this step cannot answer
+//      either finishes External rather than falling into steps 2-4.
 //   2. File's usings (local ∪ every `global using`) + simple name, each
 //      using name itself tried at every enclosing-namespace prefix.
 //   3. The reference site's namespace and every ancestor of it, innermost
@@ -36,8 +47,9 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use crate::graph::{
-    AlsoIn, Candidate, Def, Edge, EdgesByKind, FragExtensionMethod, FragFact, FragRef, FragUsing,
-    Fragment, Graph, GraphName, OrderedMap, Percent1, Stats,
+    AlsoIn, Candidate, Def, Edge, EdgesByKind, FragExtensionMethod, FragFact, FragLambdaSlot,
+    FragRef, FragUsing, Fragment, Graph, GraphName, HeuristicByTier, HeuristicTier, OrderedMap,
+    Percent1, Stats, GRAPH_SCHEMA_VERSION,
 };
 use crate::manifest;
 
@@ -153,6 +165,70 @@ pub struct MemberLists {
     /// Property name -> declared type fact, the second half of a property hop.
     /// Merged across a partial class exactly like `method_returns`.
     pub property_types: OrderedMap<FragFact>,
+    /// Field name -> declared type fact, the field half of a bare-identifier
+    /// receiver's type when the file that reads it carries no local/
+    /// parameter/field fact of its own for the name (a sibling partial-class
+    /// file's field, reached only through this merged table). Merged across
+    /// a partial class exactly like `property_types`.
+    pub field_types: OrderedMap<FragFact>,
+    /// The file whose declaration supplied each `property_types` /
+    /// `field_types` entry -- one key per key of the table beside it, filled
+    /// in at merge time. Purely an in-memory bookkeeping table (nothing here
+    /// is serialized), and the only record of WHERE a merged fact came from:
+    /// a partial class's def carries the FIRST declaring file, which is not
+    /// necessarily the file that declared any given member. The type name a
+    /// fact holds is a bare identifier that only means anything under the
+    /// `using` directives, aliases and namespace of the file that WROTE it,
+    /// so `bare_receiver_field_or_property_type`'s caller resolves it in
+    /// that file's context rather than the reading file's.
+    pub property_type_files: OrderedMap<String>,
+    /// The `field_types` half of `property_type_files`.
+    pub field_type_files: OrderedMap<String>,
+    /// Method name -> the generic-arg descriptors `method_returns` itself
+    /// strips off (see `FragDef.method_return_args`), read ONLY by the
+    /// awaited-call unwrap: an entry here exists exactly when the same name
+    /// has a `method_returns` entry AND that return type carried a
+    /// top-level type-argument list. Merged across a partial class exactly
+    /// like `method_returns`.
+    pub method_return_args: OrderedMap<Vec<String>>,
+    /// Declared method names `methods` (on `Def`) does not carry -- see
+    /// `FragDef.non_public_methods`. Merged across a partial class exactly
+    /// like `properties`/`fields` (union, first-insertion order). Read ONLY
+    /// by `declares_member_any_visibility`, itself read ONLY for
+    /// hierarchy-internal receivers (`base.` and the `this.` shape's own
+    /// base walk); every other caller of a "does this def declare the
+    /// member" question keeps reading `Def.methods` alone.
+    pub non_public_methods: Vec<String>,
+    /// Method name -> the (min, max) argument-count ranges the overloads
+    /// sharing that name accept -- see `FragDef.method_arities`. Merged
+    /// across a partial class as a UNION of ranges per NAME, the way
+    /// `Def.methods` unions the names themselves: every declaring part
+    /// contributes the overloads it declares, duplicates dropped, because
+    /// the parts of one partial class share a single overload set and a
+    /// call some part's overload accepts is a call the type accepts. Read
+    /// by `declares_member`/`declares_member_any_visibility` for a ref that
+    /// carries an `argCount`.
+    pub method_arities: OrderedMap<Vec<(usize, i64)>>,
+    /// Method name -> the overloads' own parameter-descriptor lists, each
+    /// paired with the file whose fragment declared it -- see
+    /// `FragDef.method_params`. Merged across a partial class as a UNION per
+    /// NAME, the way `method_arities` is: every declaring part contributes
+    /// the overloads it declares, an overload whose `params` list already
+    /// exists for that name skipped (first file wins for duplicates). In
+    /// memory only; nothing here is serialized.
+    pub method_params: HashMap<String, Vec<MethodOverloadParams>>,
+}
+
+/// One method overload's parameter-descriptor list plus its declaring file.
+///
+/// The (params, file) pair `MemberLists::method_params` keeps per method
+/// name. In-memory resolution input only; nothing here is serialized.
+pub struct MethodOverloadParams {
+    /// The parameter type descriptors, in order (see extract.rs's
+    /// `type_descriptor`/`DefRecord::method_params`).
+    pub params: Vec<String>,
+    /// The fragment-relative file path that declared this overload.
+    pub file: String,
 }
 
 fn build_def_index(fragments_by_file: &[(String, Fragment)]) -> DefIndex {
@@ -162,6 +238,18 @@ fn build_def_index(fragments_by_file: &[(String, Fragment)]) -> DefIndex {
     let mut qualified_name_and_arity_to_def: HashMap<(String, usize), usize> = HashMap::new();
     let mut simple_name_to_defs: HashMap<String, Vec<usize>> = HashMap::new();
     let mut extension_index: HashMap<String, Vec<ExtCandidate>> = HashMap::new();
+
+    // One entry per key of `map`, all naming `file` -- the shape
+    // `MemberLists::property_type_files`/`field_type_files` hold for a def's
+    // FIRST declaration, where every fact came from the same file by
+    // construction.
+    fn keys_mapped_to_file<V>(map: &OrderedMap<V>, file: &str) -> OrderedMap<String> {
+        let mut out = OrderedMap::new();
+        for (name, _) in map.iter() {
+            out.insert(name.clone(), file.to_string());
+        }
+        out
+    }
 
     // Dedupe on the def's OWN quadruple list FIRST, then push into the bucket --
     // the guard is what keeps one def out of the same bucket twice.
@@ -229,6 +317,28 @@ fn build_def_index(fragments_by_file: &[(String, Fragment)]) -> DefIndex {
                             .collect(),
                         method_returns: d.method_returns.clone(),
                         property_types: d.property_types.clone(),
+                        field_types: d.field_types.clone(),
+                        property_type_files: keys_mapped_to_file(&d.property_types, file),
+                        field_type_files: keys_mapped_to_file(&d.field_types, file),
+                        method_return_args: d.method_return_args.clone(),
+                        non_public_methods: d.non_public_methods.clone(),
+                        method_arities: d.method_arities.clone(),
+                        method_params: {
+                            let mut m: HashMap<String, Vec<MethodOverloadParams>> = HashMap::new();
+                            for (name, overloads) in d.method_params.iter() {
+                                m.insert(
+                                    name.clone(),
+                                    overloads
+                                        .iter()
+                                        .map(|params| MethodOverloadParams {
+                                            params: params.clone(),
+                                            file: file.clone(),
+                                        })
+                                        .collect(),
+                                );
+                            }
+                            m
+                        },
                     });
                     for e in &d.extension_methods {
                         add_extension_method(&mut member_lists, &mut extension_index, idx, e);
@@ -276,6 +386,11 @@ fn build_def_index(fragments_by_file: &[(String, Fragment)]) -> DefIndex {
                             member_lists[idx].fields.push(f.clone());
                         }
                     }
+                    for m in &d.non_public_methods {
+                        if !member_lists[idx].non_public_methods.contains(m) {
+                            member_lists[idx].non_public_methods.push(m.clone());
+                        }
+                    }
                     for e in &d.extension_methods {
                         add_extension_method(&mut member_lists, &mut extension_index, idx, e);
                     }
@@ -296,11 +411,79 @@ fn build_def_index(fragments_by_file: &[(String, Fragment)]) -> DefIndex {
                                 .insert(name.clone(), returns.clone());
                         }
                     }
+                    // The declaring FILE is recorded alongside each fact
+                    // it accepts -- see `MemberLists::property_type_files`:
+                    // a type name is only meaningful under the usings of
+                    // the file that wrote it, and for a partial class that
+                    // is not always the def's own first-declaring file.
                     for (name, fact) in d.property_types.iter() {
                         if member_lists[idx].property_types.get(name).is_none() {
                             member_lists[idx]
                                 .property_types
                                 .insert(name.clone(), fact.clone());
+                            member_lists[idx]
+                                .property_type_files
+                                .insert(name.clone(), file.clone());
+                        }
+                    }
+                    for (name, fact) in d.field_types.iter() {
+                        if member_lists[idx].field_types.get(name).is_none() {
+                            member_lists[idx]
+                                .field_types
+                                .insert(name.clone(), fact.clone());
+                            member_lists[idx]
+                                .field_type_files
+                                .insert(name.clone(), file.clone());
+                        }
+                    }
+                    for (name, args) in d.method_return_args.iter() {
+                        if member_lists[idx].method_return_args.get(name).is_none() {
+                            member_lists[idx]
+                                .method_return_args
+                                .insert(name.clone(), args.clone());
+                        }
+                    }
+                    // A UNION per NAME, unlike `method_returns` above: a
+                    // partial class's parts declare OVERLOADS of one name,
+                    // not competing answers for it, so `void Run()` in one
+                    // file and `void Run(int)` in another must both be
+                    // admitted -- first-declaration-wins here would have
+                    // hidden the sibling file's overload and made
+                    // `method_arity_admits` refuse a call the type really
+                    // accepts. Ranges already recorded are not repeated, so
+                    // a part re-declaring an overload the merged set holds
+                    // leaves the set unchanged.
+                    for (name, ranges) in d.method_arities.iter() {
+                        let mut merged = member_lists[idx]
+                            .method_arities
+                            .get(name)
+                            .cloned()
+                            .unwrap_or_default();
+                        for range in ranges {
+                            if !merged.contains(range) {
+                                merged.push(*range);
+                            }
+                        }
+                        member_lists[idx]
+                            .method_arities
+                            .insert(name.clone(), merged);
+                    }
+                    // A UNION per NAME, same as `method_arities` just above:
+                    // every declaring part's overloads are admitted, an
+                    // overload whose `params` list a merged entry already
+                    // holds skipped -- first file wins for that duplicate.
+                    for (name, overloads) in d.method_params.iter() {
+                        let merged = member_lists[idx]
+                            .method_params
+                            .entry(name.clone())
+                            .or_default();
+                        for params in overloads {
+                            if !merged.iter().any(|o| &o.params == params) {
+                                merged.push(MethodOverloadParams {
+                                    params: params.clone(),
+                                    file: file.clone(),
+                                });
+                            }
                         }
                     }
                 }
@@ -377,39 +560,237 @@ fn name_probe(name: String, namespace: &str, outer_types: Vec<String>) -> FragRe
         receiver_property_owner: None,
         receiver_call_owner: None,
         receiver_call_member: None,
+        receiver_base: false,
+        receiver_awaited: false,
+        receiver_local: false,
+        receiver_lambda: None,
     }
 }
 
-// The def's member lists, unioned: methods ∪ properties ∪ fields, which is what
-// lets a static PROPERTY access (MessageUrn.Prefix) and a const/static FIELD
-// access earn an edge on the same evidence a static method call already did.
-fn declares_member(index: &DefIndex, idx: usize, member: Option<&str>) -> bool {
-    let Some(member) = member else { return false };
-    index.defs[idx].methods.iter().any(|m| m == member)
-        || index.member_lists[idx]
-            .properties
-            .iter()
-            .any(|p| p == member)
-        || index.member_lists[idx].fields.iter().any(|f| f == member)
+// Resolve a probe built from a type NAME the resolver derived itself (a
+// receiver's declared type, a base-list entry) when the number of type
+// ARGUMENTS that name was written with is known. `Foo` and `Foo<T>` share one
+// id and one `qualified_name_to_def` slot (first-indexed wins), so the
+// arity-blind ladder answers for whichever sibling the index met first; the
+// arity-keyed ladder answers for the sibling the language names. `Resolved`
+// and `Ambiguous` from the exact-arity pass stand; `External` re-runs the
+// blind ladder, so a name whose exact arity has no in-graph def anywhere
+// keeps the arity-blind answer (an arity of 0 is inferred from an ABSENT
+// argument list, and the extractor records no descriptors for an argument
+// shape it cannot read). When the exact arity exists only outside the site's
+// imports, the ladder's global-uniqueness step answers exactly as it does for
+// the declaration's own type reference.
+//
+// The exact pass runs only when at least two defs share the name's simple
+// form (the alias target's, for an aliased name): with one def or none, the
+// two ladders provably agree -- a lone def of the right arity is found at the
+// same step by both, and a lone def of another arity leaves the exact pass
+// external at every step, including the global pool it filters by arity --
+// so an external receiver or base, the common case, costs one ladder as
+// before.
+fn resolve_ref_by_arity(
+    mut probe: FragRef,
+    arity: Option<usize>,
+    usings: &HashSet<String>,
+    ns: &str,
+    index: &DefIndex,
+    aliases: &HashMap<String, String>,
+    file_contexts: &HashMap<String, FileContext>,
+) -> Resolution {
+    if let Some(n) = arity {
+        let full = aliases.get(&probe.name).unwrap_or(&probe.name);
+        let simple = full.rsplit('.').next().unwrap_or(full);
+        let shared = index.simple_name_to_defs.get(simple).map_or(0, Vec::len) >= 2;
+        if shared {
+            probe.type_arg_count = Some(n);
+            let exact = resolve_ref(&probe, usings, ns, index, aliases, file_contexts);
+            if !matches!(exact, Resolution::External) {
+                return exact;
+            }
+            probe.type_arg_count = None;
+        }
+    }
+    resolve_ref(&probe, usings, ns, index, aliases, file_contexts)
 }
 
-// The membership test the SCORED tier uses: `declares_member` widened by the
-// extension-method names the def declares. A static class holding
-// `Render(this Widget w)` never "declares Render" in the instance sense
-// `declares_member` means, but it is exactly the def a `something.Render()`
-// guess should be allowed to name, so the scored tier counts it. Deliberately
-// NOT used by any precise tier: widening `declares_member` itself would let
-// tiers (a)/(e) emit a PRECISE edge on an extension name with none of tier
-// (f)'s arity, generic-unification or admission filters applied.
-fn member_vouched(index: &DefIndex, idx: usize, member: Option<&str>) -> bool {
-    if declares_member(index, idx, member) {
+// The type-argument count a `bases` entry of def `idx` was written with:
+// `base_generic_args` keeps the descriptors of a generic base and no entry
+// for a base written bare.
+fn base_arity(index: &DefIndex, idx: usize, base: &str) -> usize {
+    index.member_lists[idx]
+        .base_generic_args
+        .iter()
+        .find(|(k, _)| k == base)
+        .map_or(0, |(_, v)| v.len())
+}
+
+// Whether SOME overload's own (min, max) range admits exactly `arg_count`
+// arguments -- the OR every overload sharing a name contributes, since C#
+// overload resolution picks whichever member of the set actually accepts the
+// call. `max == -1` is the same unbounded-`params` sentinel
+// `arity_accepts` (the extension-method counterpart) already reads. No entry
+// for the name at all -- an arity fact `raw_method_arities` did not attach,
+// or a fragment cached before this table existed (`serde(default)` reads it
+// back empty) -- admits ANY count: an arity gate this resolver cannot answer
+// must never silently NARROW what `declares_member` would otherwise have
+// said, and must never turn a stale, un-remapped cache into a false miss.
+fn method_arity_admits(index: &DefIndex, idx: usize, member: &str, arg_count: usize) -> bool {
+    match index.member_lists[idx].method_arities.get(member) {
+        Some(ranges) => ranges
+            .iter()
+            .any(|&(min, max)| min <= arg_count && (max == -1 || (arg_count as i64) <= max)),
+        None => true,
+    }
+}
+
+// The def's member lists, unioned: methods ∪ properties ∪ fields for a READ
+// (`arg_count == None`), which is what lets a static PROPERTY access
+// (MessageUrn.Prefix) and a const/static FIELD access earn an edge on the
+// same evidence a static method call already did.
+//
+// A CALL (`arg_count == Some(n)`) is narrower on both axes (Unit A4 item 2):
+// properties and fields never satisfy a call (the rule `member_vouched`'s own
+// Call/Read split already enforces for the scored tier; this is where the
+// PRECISE tier gains it too), and `methods` alone is not enough either -- the
+// name must ALSO have an overload whose own arity range admits `n`
+// (`method_arity_admits`), or this answers `false` exactly as it would for a
+// name this def never declares at all. That is what lets tier (f)/the scored
+// tier run when a same-named instance member exists but at the WRONG
+// signature: the precise tier's own callers read `false` here as "nothing
+// declared", never mark the ref `emitted`, and every later tier proceeds
+// undisturbed.
+fn declares_member(
+    index: &DefIndex,
+    idx: usize,
+    member: Option<&str>,
+    arg_count: Option<usize>,
+) -> bool {
+    let Some(member) = member else { return false };
+    match arg_count {
+        Some(n) => {
+            index.defs[idx].methods.iter().any(|m| m == member)
+                && method_arity_admits(index, idx, member, n)
+        }
+        None => {
+            index.defs[idx].methods.iter().any(|m| m == member)
+                || index.member_lists[idx]
+                    .properties
+                    .iter()
+                    .any(|p| p == member)
+                || index.member_lists[idx].fields.iter().any(|f| f == member)
+        }
+    }
+}
+
+// `declares_member` widened by `non_public_methods` -- `properties`/`fields`
+// already carry every accessibility with no filter of their own (see
+// `DefRecord::properties`), so `methods` is the only list this widens, and
+// (Unit A4 item 2) the SAME arity gate applies to a non-public method: a
+// call whose `arg_count` no non-public overload admits is exactly as
+// undeclared as one whose PUBLIC overloads all decline. Read ONLY where the
+// SITE is inside the hierarchy the member lookup is walking:
+// `base_member_declared` (a `base.` qualifier never considers anything but
+// the enclosing type's own bases) and the typed-receiver precise tier's own
+// base walk, and even there ONLY when the receiver is the enclosing type
+// itself (the `this.` shape). Every other caller -- the scored tier's veto
+// and its `member_vouched` pool filter, tier (f)'s instance-member veto, and
+// an ordinary typed receiver's own base walk -- keeps asking `declares_member`
+// unchanged, so a guess can never start vouching through a member C# would
+// refuse it visibility to.
+fn declares_member_any_visibility(
+    index: &DefIndex,
+    idx: usize,
+    member: Option<&str>,
+    arg_count: Option<usize>,
+) -> bool {
+    if declares_member(index, idx, member, arg_count) {
         return true;
     }
     let Some(member) = member else { return false };
+    if !index.member_lists[idx]
+        .non_public_methods
+        .iter()
+        .any(|m| m == member)
+    {
+        return false;
+    }
+    match arg_count {
+        Some(n) => method_arity_admits(index, idx, member, n),
+        None => true,
+    }
+}
+
+// The two shapes a member reference can take, read straight off the ref's own
+// recorded fact: a CALL carries an `argCount` (the extractor only ever sets
+// one on the function half of an `invocation_expression`, see
+// `invocation_arg_count`), a READ carries none. C# will only ever bind a call
+// to something invocable, so the shape is what tells `member_vouched` whether
+// a property or field is even eligible to answer.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum MemberShape {
+    Call,
+    Read,
+}
+
+fn member_shape(r: &FragRef) -> MemberShape {
+    if r.arg_count.is_some() {
+        MemberShape::Call
+    } else {
+        MemberShape::Read
+    }
+}
+
+// The membership test the SCORED tier uses: `declares_member` widened by the
+// extension-method names the def declares, and -- for a CALL -- narrowed
+// first to the names that are actually invocable. A static class holding
+// `Render(this Widget w)` never "declares Render" in the instance sense
+// `declares_member` means, but it is exactly the def a `something.Render()`
+// guess should be allowed to name, so the scored tier counts it for a call.
+// A property or a field is never callable: `entity.Property(x => x.Id)`
+// cannot bind to a property or field under any C# overload resolution, so a
+// property/field-only def must not vouch for a ref shaped like a call, even
+// though the very same def is fair game for a READ of that same member name
+// (`entity.Property`). Deliberately NOT used by any precise tier: widening
+// `declares_member` itself would let tiers (a)/(e) emit a PRECISE edge on an
+// extension name with none of tier (f)'s arity, generic-unification or
+// admission filters applied.
+fn member_vouched(index: &DefIndex, idx: usize, member: Option<&str>, shape: MemberShape) -> bool {
+    let Some(member) = member else { return false };
+    let instance_vouches = match shape {
+        MemberShape::Call => index.defs[idx].methods.iter().any(|m| m == member),
+        MemberShape::Read => declares_member(index, idx, Some(member), None),
+    };
+    if instance_vouches {
+        return true;
+    }
     index.member_lists[idx]
         .extension_methods
         .iter()
         .any(|(name, ..)| name == member)
+}
+
+// The half of C#'s namespace visibility a `using` directive does NOT account
+// for: a type declared in an ENCLOSING namespace of the reference site is in
+// scope there with no import at all -- `App.Ext.LogExt` is nameable from
+// inside `namespace App.Ext.Deep`, and no file has to say so.
+//
+// Tier (f) needs this because its admission test is the only place in this
+// module that asks "is this def visible here" WITHOUT going through the
+// ladder (which has walked enclosing namespaces since step 3). Until the
+// project model arrived, the repo-wide `global using` pool papered over the
+// gap -- one file anywhere in the repo importing the namespace made it
+// visible everywhere, its own enclosing-namespace children included. Scoping
+// global usings per project removed that accident and left the real rule
+// missing, so here it is, stated.
+//
+// The global namespace is deliberately NOT treated as enclosing: a static
+// class declared with no namespace at all would otherwise become a candidate
+// at every ref site in the repo at once, which is a far wider change than the
+// lexical rule this implements.
+fn namespace_encloses(outer: &str, inner: &str) -> bool {
+    inner
+        .strip_prefix(outer)
+        .is_some_and(|rest| rest.starts_with('.'))
 }
 
 // The whole scoring function, deterministic by construction and with no tie
@@ -434,20 +815,44 @@ struct FileContext {
     aliases: HashMap<String, String>,
 }
 
-// Every file's own context (local ∪ every `global using`, with a local alias
-// shadowing a same-named global one), built once instead of once per ref. The
-// main loop needs it for the file it is walking; the instance-member veto needs
-// it for a DIFFERENT file -- the one that declares the base type it is resolving
-// -- which is why it is a map rather than two locals.
+// Every file's own context (local ∪ every `global using` IN SCOPE for it, with
+// a local alias shadowing a same-named global one), built once instead of once
+// per ref. The main loop needs it for the file it is walking; the
+// instance-member veto needs it for a DIFFERENT file -- the one that declares
+// the base type it is resolving -- which is why it is a map rather than two
+// locals.
+//
+// "In scope" is a project-model question. A `global using` belongs to the
+// COMPILATION that declares it and does not flow across a `ProjectReference`,
+// so with a model in hand each file OWNED BY A UNIT is seeded from that unit's
+// globals (`by_unit`) and sees nothing another project declared -- an owned
+// unit that declared none seeds from nothing at all.
+//
+// A file NO unit owns is the separate case: there is no compilation to read
+// boundaries from, so it falls open to the repo-wide pool, exactly as a resolve
+// with no model at all does. That is the documented over-approximation this
+// resolver has always used, and it is the only answer that does not silently
+// strip a loose file of every global using in the tree.
 fn build_file_contexts(
     fragments_by_file: &[(String, Fragment)],
-    global_usings: &HashSet<String>,
-    global_aliases: &HashMap<String, String>,
+    repo_wide: &GlobalUsings,
+    by_unit: Option<UnitGlobals<'_>>,
 ) -> HashMap<String, FileContext> {
     let mut contexts = HashMap::new();
+    // The seed for a file whose OWNING unit declared no `global using` at all:
+    // built once here so the match below can hand back a reference with the
+    // same lifetime as the real pools.
+    let empty: GlobalUsings = (HashSet::new(), HashMap::new());
     for (file, frag) in fragments_by_file {
-        let mut usings = global_usings.clone();
-        let mut aliases = global_aliases.clone();
+        let seed = match by_unit {
+            Some((unit_of_file, by_unit)) => match unit_of_file.get(file).copied().flatten() {
+                Some(u) => by_unit.get(&u).unwrap_or(&empty),
+                None => repo_wide,
+            },
+            None => repo_wide,
+        };
+        let mut usings = seed.0.clone();
+        let mut aliases = seed.1.clone();
         for u in &frag.usings {
             match u {
                 FragUsing::Alias { alias, target, .. } => {
@@ -480,17 +885,22 @@ fn build_file_contexts(
 // walked: an external base -- a BCL type, a NuGet type -- cannot be inspected,
 // so a member it declares cannot veto. That is the documented bound, and it is
 // the same one tier (e) already lives with.
-fn inheritance_walk_matches(
+// The same walk as `inheritance_walk_matches`, returning the matched def's
+// OWN index instead of a bare bool -- the primitive both that function and
+// the `receiver_base` bases-only lookup below are built on, so the walk
+// algorithm (cycle guard, lazy per-def base resolution) lives in exactly one
+// place.
+fn inheritance_walk_find(
     index: &DefIndex,
     file_contexts: &HashMap<String, FileContext>,
     start: usize,
     mut matches: impl FnMut(usize) -> bool,
-) -> bool {
+) -> Option<usize> {
     let mut seen: HashSet<usize> = HashSet::from([start]);
     let mut stack: Vec<usize> = vec![start];
     while let Some(cur) = stack.pop() {
         if matches(cur) {
-            return true;
+            return Some(cur);
         }
         let Some(ctx) = file_contexts.get(&index.defs[cur].file) else {
             continue;
@@ -500,16 +910,31 @@ fn inheritance_walk_matches(
             // The base-closure probe carries no stack: it walks BASE types,
             // not the lexical chain.
             let probe = name_probe(base.clone(), &ns, Vec::new());
-            if let Resolution::Resolved(bidx, _) =
-                resolve_ref(&probe, &ctx.usings, &ns, index, &ctx.aliases, file_contexts)
-            {
+            if let Resolution::Resolved(bidx, _) = resolve_ref_by_arity(
+                probe,
+                Some(base_arity(index, cur, base)),
+                &ctx.usings,
+                &ns,
+                index,
+                &ctx.aliases,
+                file_contexts,
+            ) {
                 if seen.insert(bidx) {
                     stack.push(bidx);
                 }
             }
         }
     }
-    false
+    None
+}
+
+fn inheritance_walk_matches(
+    index: &DefIndex,
+    file_contexts: &HashMap<String, FileContext>,
+    start: usize,
+    matches: impl FnMut(usize) -> bool,
+) -> bool {
+    inheritance_walk_find(index, file_contexts, start, matches).is_some()
 }
 
 fn inherited_member_declared(
@@ -517,10 +942,928 @@ fn inherited_member_declared(
     file_contexts: &HashMap<String, FileContext>,
     start: usize,
     member: Option<&str>,
+    arg_count: Option<usize>,
 ) -> bool {
     inheritance_walk_matches(index, file_contexts, start, |idx| {
-        declares_member(index, idx, member)
+        declares_member(index, idx, member, arg_count)
     })
+}
+
+// The recursive worker `first_base_declaring` drives (Unit A4 item 1): `cur`
+// is a def already known to be in-graph and, when `skip_interfaces`, already
+// known not to be an interface. Checked by `declares` FIRST -- so a base
+// that itself declares the member wins before its own bases are even looked
+// at -- then, only if that misses, each of `cur`'s OWN in-graph bases in
+// turn, EACH FULLY EXPLORED (this function calls itself) before the next
+// sibling base is even resolved: true depth-first, declaration order, the
+// first base string's entire subtree ahead of the second. Class bases are
+// tried before any interface AT EVERY LEVEL (not just `cur`'s own direct
+// bases -- every recursive call repeats the same split), and when
+// `skip_interfaces` an interface base is dropped ENTIRELY, its own closure
+// never walked either, so a class-typed receiver can never bind to an
+// interface's member declaration at any depth -- not only among `start`'s
+// direct bases, which is as far as the walk this replaces reached.
+//
+// `seen` is per BRANCH (see `first_base_declaring`'s own call site, which
+// seeds a fresh set for each of `start`'s direct bases): a cycle within one
+// direct base's own closure cannot re-enter that closure, but two SIBLING
+// direct bases sharing a common ancestor each see it once, from their own
+// branch -- exactly the guard the walk this replaces already gave. Each
+// branch's set also holds `start` itself from the outset, so a hierarchy
+// that names its own descendant (`class A : B`, `class B : A` -- invalid
+// C#, but a shape this parser reads happily) can never walk back INTO the
+// type the lookup started from and answer with it.
+fn declares_in_base_closure(
+    index: &DefIndex,
+    file_contexts: &HashMap<String, FileContext>,
+    cur: usize,
+    skip_interfaces: bool,
+    seen: &mut HashSet<usize>,
+    declares: &mut impl FnMut(&DefIndex, usize) -> bool,
+) -> Option<usize> {
+    if declares(index, cur) {
+        return Some(cur);
+    }
+    let ctx = file_contexts.get(&index.defs[cur].file)?;
+    let ns = index.defs[cur].namespace.clone();
+    let mut classes: Vec<usize> = Vec::new();
+    let mut interfaces: Vec<usize> = Vec::new();
+    for base in &index.member_lists[cur].bases {
+        let probe = name_probe(base.clone(), &ns, Vec::new());
+        let Resolution::Resolved(bidx, _) = resolve_ref_by_arity(
+            probe,
+            Some(base_arity(index, cur, base)),
+            &ctx.usings,
+            &ns,
+            index,
+            &ctx.aliases,
+            file_contexts,
+        ) else {
+            continue;
+        };
+        if !seen.insert(bidx) {
+            continue;
+        }
+        if index.defs[bidx].kind == "interface" {
+            if skip_interfaces {
+                continue;
+            }
+            interfaces.push(bidx);
+        } else {
+            classes.push(bidx);
+        }
+    }
+    for bidx in classes.into_iter().chain(interfaces) {
+        if let Some(found) =
+            declares_in_base_closure(index, file_contexts, bidx, skip_interfaces, seen, declares)
+        {
+            return Some(found);
+        }
+    }
+    None
+}
+
+// The shared shape both `base_member_declared` and the typed-receiver
+// precise tier's own base walk need: never `start` itself, only its OWN
+// direct bases -- read off `start`'s `MemberLists.bases`, in DECLARATION
+// order -- each fully explored (`declares_in_base_closure`) before the next
+// sibling base is even resolved, so a member declared on the base of the
+// base still resolves, and the FIRST base string in the source always wins
+// over a later one when both would otherwise answer (Unit A4 item 1 --
+// `inheritance_walk_find`'s LIFO stack, which this no longer uses, visited
+// bases in REVERSE declaration order). Returns the first in-graph def,
+// across that ordered search, for which `declares` answers true; `None`
+// when `start` resolves to nothing in-graph, when it declares no in-graph
+// base, or when no in-graph base's closure satisfies `declares` at all.
+//
+// `skip_interfaces` drops a base whose resolved def is itself an `interface`
+// -- and never walks into its closure either -- at EVERY depth the walk
+// reaches, not only among `start`'s own direct bases: `declares_in_base_closure`
+// re-applies the same rule at every recursive level. This is
+// `base_member_declared`'s own rule (a `base.` qualifier never names an
+// interface member; an interface can only ever extend other interfaces, so
+// skipping the whole base is equivalent to skipping its closure);
+// `typed_receiver_base_member` passes `false` only for a receiver that is
+// itself an interface.
+fn first_base_declaring(
+    index: &DefIndex,
+    file_contexts: &HashMap<String, FileContext>,
+    start: usize,
+    skip_interfaces: bool,
+    mut declares: impl FnMut(&DefIndex, usize) -> bool,
+) -> Option<usize> {
+    let ctx = file_contexts.get(&index.defs[start].file)?;
+    let ns = index.defs[start].namespace.clone();
+    let mut classes: Vec<usize> = Vec::new();
+    let mut interfaces: Vec<usize> = Vec::new();
+    for base in &index.member_lists[start].bases {
+        let probe = name_probe(base.clone(), &ns, Vec::new());
+        let Resolution::Resolved(bidx, _) = resolve_ref_by_arity(
+            probe,
+            Some(base_arity(index, start, base)),
+            &ctx.usings,
+            &ns,
+            index,
+            &ctx.aliases,
+            file_contexts,
+        ) else {
+            continue;
+        };
+        if index.defs[bidx].kind == "interface" {
+            if skip_interfaces {
+                continue;
+            }
+            interfaces.push(bidx);
+        } else {
+            classes.push(bidx);
+        }
+    }
+    for bidx in classes.into_iter().chain(interfaces) {
+        // Seeded with `start` as well as the branch's own root: this walk
+        // answers "which BASE declares it", so the starting type is out of
+        // bounds however a cyclic hierarchy leads back to it.
+        let mut seen: HashSet<usize> = HashSet::from([start, bidx]);
+        if let Some(found) = declares_in_base_closure(
+            index,
+            file_contexts,
+            bidx,
+            skip_interfaces,
+            &mut seen,
+            &mut declares,
+        ) {
+            return Some(found);
+        }
+    }
+    None
+}
+
+// The `receiver_base == true` lookup (`base.M`): `first_base_declaring` with
+// `skip_interfaces = true` (`base.` never names an interface member, at any
+// depth) and `declares_member_any_visibility` (a `base.` site is, by
+// construction, lexically inside the hierarchy it is walking, so a protected
+// or internal member is exactly as reachable as a public one), arity-gated
+// by the ref's own `arg_count` (Unit A4 item 2) exactly like the
+// typed-receiver walk below. `None` is the ordinary external-receiver
+// answer to the caller, never a candidate for a scored guess.
+fn base_member_declared(
+    index: &DefIndex,
+    file_contexts: &HashMap<String, FileContext>,
+    start: usize,
+    member: Option<&str>,
+    arg_count: Option<usize>,
+) -> Option<usize> {
+    first_base_declaring(index, file_contexts, start, true, |index, idx| {
+        declares_member_any_visibility(index, idx, member, arg_count)
+    })
+}
+
+// The typed-receiver precise tier's own base walk (Unit A3 item 4): when a
+// resolved receiver def does not itself declare the member, the first def
+// in its in-graph base closure that does is the precise target -- exactly
+// the widening `base_member_declared` already does for `base.`, applied to
+// an ORDINARY typed receiver. Interfaces in the closure are skipped, at
+// every depth (Unit A4 item 1), for a CLASS or struct receiver, for the same
+// reason `base_member_declared` skips them: a class must supply a body for
+// every interface member it is called through, so the compiler binds that
+// body's declaring class, never the interface (a C# 8+ default interface
+// implementation is reachable only through the interface type, so it is not
+// a bind target for a class-typed receiver either) -- see
+// `stage3_veto_a_member_declared_by_the_receivers_interface_beats_a_matching_visible_extension`,
+// which pins exactly this: an interface-only ancestor must NOT earn a
+// precise edge from a class receiver, only veto the extension tier (which
+// reads the closure itself, not this function). An INTERFACE receiver is the
+// other half of the same rule: its closure holds nothing but interfaces, and
+// the compiler binds the base interface that declares the member
+// (`IExtended : IContract`, `ext.Fulfil()` is `IContract.Fulfil`), so the
+// walk keeps them for exactly that receiver kind. `any_visibility` is the caller's own answer
+// to "is this receiver the enclosing type itself" (the `this.` shape,
+// `receiver_type == outer_types.last()`): `true` walks
+// `declares_member_any_visibility`, `false` keeps the public-only
+// `declares_member`, so a receiver typed by anything OTHER than the
+// enclosing type can only ever bind to a member C# would let it see from
+// outside. `arg_count` is the ref's own call-shape fact (Unit A4 item 2): a
+// base that declares the name at the WRONG arity is skipped exactly like
+// one that does not declare it at all.
+fn typed_receiver_base_member(
+    index: &DefIndex,
+    file_contexts: &HashMap<String, FileContext>,
+    start: usize,
+    member: Option<&str>,
+    arg_count: Option<usize>,
+    any_visibility: bool,
+) -> Option<usize> {
+    let skip_interfaces = index.defs[start].kind != "interface";
+    first_base_declaring(
+        index,
+        file_contexts,
+        start,
+        skip_interfaces,
+        |index, idx| {
+            if any_visibility {
+                declares_member_any_visibility(index, idx, member, arg_count)
+            } else {
+                declares_member(index, idx, member, arg_count)
+            }
+        },
+    )
+}
+
+// Unit A3 item 3: the extension bucket key tier (f) tries when the exact
+// `"{member} {receiverType}"` key names no bucket at all. Walks the
+// receiver's own nominal closure -- itself first, then its in-graph bases
+// transitively, the same DFS `inheritance_walk_find` uses everywhere else --
+// and at each visited def tries that def's own NAME as a key, then every RAW
+// base string it declares (an external interface included, whether or not
+// that name resolves in-graph: an extension's `thisType` is written against
+// the interface's bare name, and a raw base string is exactly that name,
+// unresolved or not). First key with an existing bucket wins and the walk
+// stops; which CANDIDATE within that bucket is right is still decided by
+// the caller's own unchanged arity/namespace/admission filters and veto --
+// this function only ever widens which key is looked up, never which
+// candidates a matched key returns.
+//
+// Unit A5 item 2: also returns the MATCHED node's own generic-argument
+// picture, since a key widened onto a base or ancestor names a DIFFERENT
+// type than the receiver -- the receiver's own type arguments (`r.receiver_
+// args`) describe the receiver, not the matched node, and comparing the
+// extension's `this`-parameter arguments against them is only correct on
+// the exact-key path, never here:
+//   - matched via one of `idx`'s own RAW base strings: `idx`'s own
+//     `base_generic_args` entry for that exact base -- the arguments `idx`
+//     declared THAT base with (`*` for a pass-through of `idx`'s own type
+//     parameters), absent entirely when the base carries no type-argument
+//     list at all (`raw_base_generic_args`'s own rule).
+//   - matched via `idx`'s own bare NAME (no base list is involved -- `idx`
+//     IS the matched node): a wildcard per `idx`'s own type parameter,
+//     `None` when `idx` is not generic at all -- so a non-generic matched
+//     node unifies with a non-generic `this` parameter regardless of what
+//     the receiver's own arguments were.
+fn extension_closure_key(
+    index: &DefIndex,
+    file_contexts: &HashMap<String, FileContext>,
+    start: usize,
+    member: &str,
+) -> Option<(String, Option<Vec<String>>)> {
+    let mut found: Option<(String, Option<Vec<String>>)> = None;
+    inheritance_walk_find(index, file_contexts, start, |idx| {
+        let own_key = format!("{member} {}", index.defs[idx].name);
+        if index.extension_index.contains_key(&own_key) {
+            let type_params = index.member_lists[idx].type_params.len();
+            let args = if type_params == 0 {
+                None
+            } else {
+                Some(vec!["*".to_string(); type_params])
+            };
+            found = Some((own_key, args));
+            return true;
+        }
+        for base in &index.member_lists[idx].bases {
+            let base_key = format!("{member} {base}");
+            if index.extension_index.contains_key(&base_key) {
+                let args = index.member_lists[idx]
+                    .base_generic_args
+                    .iter()
+                    .find(|(k, _)| k == base)
+                    .map(|(_, v)| v.clone());
+                found = Some((base_key, args));
+                return true;
+            }
+        }
+        false
+    });
+    found
+}
+
+// `true` exactly for the `this.` shape (precision rule (a)): a `uses-member`
+// ref whose recorded receiver type IS the innermost `outer_types` entry --
+// the enclosing type itself, whether the qualifier was literally `this.` or
+// an ordinary same-typed local/parameter/field (C#'s own private/protected
+// access rule reaches every expression of the declaring type from within
+// its own members, not only `this`). `false` whenever `receiver_type` is
+// unset (nothing to compare) or names a different type.
+// True when the extractor recorded any fact that types the qualifier as an
+// INSTANCE -- a scope-typed receiver, a member-scoped local (typed or not),
+// a property-owner hop, or a call receiver. Such a qualifier is never a type
+// path, so the nested-type walk and the nested-segment suppression both
+// stand aside and leave it to the receiver tiers.
+fn extractor_vouches_instance(r: &FragRef) -> bool {
+    r.receiver_type.is_some()
+        || r.receiver_local
+        || r.receiver_property_owner.is_some()
+        || r.receiver_call_owner.is_some()
+}
+
+fn is_this_shaped_receiver(r: &FragRef) -> bool {
+    match (&r.receiver_type, r.outer_types.last()) {
+        (Some(rt), Some(outer)) => rt == outer,
+        _ => false,
+    }
+}
+
+// One def's own field or property fact for `name`, field_types tried first
+// -- the order the caller's doc comment names. Never widens to the def's
+// bases; the walk that does is the caller's job.
+//
+// The declaring FILE rides along with the fact (see
+// `MemberLists::property_type_files`), because a type NAME is only
+// meaningful under that file's usings and aliases. A table built without
+// the companion map -- every `MemberLists` a test assembles by hand -- falls
+// back to the def's own first-declaring file, which is what a single-file
+// def has anyway.
+fn declared_field_or_property_type<'a>(
+    index: &'a DefIndex,
+    idx: usize,
+    name: &str,
+) -> Option<(&'a FragFact, &'a str)> {
+    let lists = &index.member_lists[idx];
+    let (fact, files) = match lists.field_types.get(name) {
+        Some(fact) => (fact, &lists.field_type_files),
+        None => (lists.property_types.get(name)?, &lists.property_type_files),
+    };
+    let file = files
+        .get(name)
+        .map_or(index.defs[idx].file.as_str(), String::as_str);
+    Some((fact, file))
+}
+
+// A bare-identifier receiver's type as some def's field or property table
+// answered it, with everything the answer needs to be read correctly: the
+// def that declares the member (its namespace and nesting chain) and the
+// FILE whose declaration wrote the type name down (its usings and aliases).
+struct ReceiverFieldType {
+    type_name: String,
+    declaring_def: usize,
+    declaring_file: String,
+}
+
+// The enclosing-type chain a ref written INSIDE `def`'s own body carries
+// (`FragRef::outer_types`): every nesting level from the outermost in,
+// ending with the def itself. A def id spells nesting exactly that way --
+// the namespace, a dot, then the chain joined with "+", which is how
+// `resolve_ref`'s step 0b rebuilds an id from a ref's chain -- so the chain
+// is the id with its namespace prefix taken off. A namespace-level def
+// yields a one-entry chain holding its own name.
+fn def_outer_types(def: &Def) -> Vec<String> {
+    let chain = if def.namespace.is_empty() {
+        def.id.as_str()
+    } else {
+        def.id
+            .strip_prefix(&format!("{}.", def.namespace))
+            .unwrap_or(def.name.as_str())
+    };
+    chain.split('+').map(str::to_string).collect()
+}
+
+// The bare-identifier receiver lookup a ref with NO in-file fact at all
+// falls back to: the innermost `outer_types` def's OWN merged field_types,
+// then property_types (a partial class's sibling-file field/property, the
+// current file cannot see for itself), then the same two tables on each
+// in-graph base of that def, in DECLARATION order, each followed by its own
+// inheritance walk -- exactly `base_member_declared`'s structure, except
+// this lookup checks `start` itself FIRST (unlike `base.`, an ordinary bare
+// identifier's own enclosing type is exactly where its fields live).
+// `None` when `outer_types` is empty (no enclosing type, so no field/
+// property table to consult), when the innermost entry does not resolve
+// in-graph, or when neither table on `start` nor on any in-graph base
+// answers for the name.
+//
+// The answer names the def and the file the fact came FROM, not the site
+// that read it: the type name is a bare identifier, and the caller has to
+// resolve it under the usings, aliases, namespace and nesting of the
+// declaration that wrote it down.
+fn bare_receiver_field_or_property_type(
+    index: &DefIndex,
+    ns: &str,
+    r: &FragRef,
+    usings: &HashSet<String>,
+    aliases: &HashMap<String, String>,
+    file_contexts: &HashMap<String, FileContext>,
+) -> Option<ReceiverFieldType> {
+    let innermost = r.outer_types.last()?;
+    let probe = name_probe(innermost.clone(), ns, r.outer_types.clone());
+    let Resolution::Resolved(start, _) =
+        resolve_ref(&probe, usings, ns, index, aliases, file_contexts)
+    else {
+        return None;
+    };
+    if let Some((fact, declaring_file)) = declared_field_or_property_type(index, start, &r.name) {
+        return Some(ReceiverFieldType {
+            type_name: fact.type_name.clone(),
+            declaring_def: start,
+            declaring_file: declaring_file.to_string(),
+        });
+    }
+    let ctx = file_contexts.get(&index.defs[start].file)?;
+    let base_ns = index.defs[start].namespace.clone();
+    for base in &index.member_lists[start].bases {
+        let probe = name_probe(base.clone(), &base_ns, Vec::new());
+        if let Resolution::Resolved(bidx, _) = resolve_ref_by_arity(
+            probe,
+            Some(base_arity(index, start, base)),
+            &ctx.usings,
+            &base_ns,
+            index,
+            &ctx.aliases,
+            file_contexts,
+        ) {
+            let mut found: Option<ReceiverFieldType> = None;
+            inheritance_walk_find(index, file_contexts, bidx, |idx| {
+                match declared_field_or_property_type(index, idx, &r.name) {
+                    Some((fact, declaring_file)) => {
+                        found = Some(ReceiverFieldType {
+                            type_name: fact.type_name.clone(),
+                            declaring_def: idx,
+                            declaring_file: declaring_file.to_string(),
+                        });
+                        true
+                    }
+                    None => false,
+                }
+            });
+            if found.is_some() {
+                return found;
+            }
+        }
+    }
+    None
+}
+
+// A parameter descriptor's own bare NAME: the head identifier with its
+// type-argument list and array brackets taken off, which is the only half of
+// a descriptor that names something this resolver can look up.
+// `Func<Options,bool>` is `Func`, `Options[]` is `Options`; the descriptor
+// for an unknown shape is `?`, whose head is empty.
+fn descriptor_head(text: &str) -> &str {
+    let end = text.find(['<', '[', '?']).unwrap_or(text.len());
+    &text[..end]
+}
+
+// A descriptor's TOP-LEVEL type arguments, split on the commas that sit at
+// nesting depth zero so `Func<Options,Func<int,bool>>` yields two arguments
+// rather than three. Empty when the descriptor carries no argument list at
+// all; the descriptors this reads are written without spaces (see
+// `FragDef::method_params`), so no trimming is needed.
+fn descriptor_args(text: &str) -> Vec<String> {
+    let Some(open) = text.find('<') else {
+        return Vec::new();
+    };
+    if !text.ends_with('>') {
+        return Vec::new();
+    }
+    let inner = &text[open + 1..text.len() - 1];
+    let mut args: Vec<String> = Vec::new();
+    let mut depth = 0usize;
+    let mut start = 0usize;
+    for (i, ch) in inner.char_indices() {
+        match ch {
+            '<' => depth += 1,
+            '>' => depth = depth.saturating_sub(1),
+            ',' if depth == 0 => {
+                args.push(inner[start..i].to_string());
+                start = i + ch.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    args.push(inner[start..].to_string());
+    args
+}
+
+// The PARAMETER LIST of the delegate a parameter descriptor names, which is
+// where an untyped lambda's own parameter types are written down. The three
+// BCL delegate shapes are read structurally -- `Action<A,B>` takes its
+// arguments as they stand, `Func<A,B,R>` drops the return type, `Predicate<A>`
+// takes its single argument -- because no in-graph def declares them. Any
+// other head is a name: resolved under the DECLARING file's context (the
+// descriptor is a bare identifier, and only that file's usings, aliases and
+// nesting say what it meant) and answered only when it lands on a `delegate`
+// def, whose own list this reader keeps under `Invoke`.
+//
+// An ARRAY of delegates is not a delegate (`Action<Options>[]` takes a
+// collection, never a lambda), so a descriptor that ends in brackets answers
+// nothing at all.
+fn delegate_parameters(
+    text: &str,
+    index: &DefIndex,
+    file_contexts: &HashMap<String, FileContext>,
+    declaring_def: usize,
+    declaring_file: &str,
+) -> Option<Vec<String>> {
+    if text.ends_with(']') {
+        return None;
+    }
+    // `Expression<Func<Options,bool>>` is the expression-tree wrapper the LINQ
+    // shapes are written with; the delegate inside it is what the lambda binds
+    // to. Unwrapped exactly ONCE -- a doubly-wrapped expression is not a shape
+    // C# accepts a lambda for, and unwrapping again would invent a binding.
+    let args = descriptor_args(text);
+    if descriptor_head(text) == "Expression" && args.len() == 1 {
+        return delegate_invoke_parameters(
+            &args[0],
+            index,
+            file_contexts,
+            declaring_def,
+            declaring_file,
+        );
+    }
+    delegate_invoke_parameters(text, index, file_contexts, declaring_def, declaring_file)
+}
+
+// `delegate_parameters` minus the expression-tree unwrap -- split out so the
+// unwrap can never run twice.
+fn delegate_invoke_parameters(
+    text: &str,
+    index: &DefIndex,
+    file_contexts: &HashMap<String, FileContext>,
+    declaring_def: usize,
+    declaring_file: &str,
+) -> Option<Vec<String>> {
+    if text.ends_with(']') {
+        return None;
+    }
+    let head = descriptor_head(text);
+    let args = descriptor_args(text);
+    match head {
+        "Action" if !args.is_empty() => Some(args),
+        "Func" if args.len() >= 2 => {
+            let mut params = args;
+            params.pop();
+            Some(params)
+        }
+        "Predicate" if args.len() == 1 => Some(args),
+        "Action" | "Func" | "Predicate" | "" => None,
+        _ => {
+            let ctx = file_contexts.get(declaring_file)?;
+            let def = &index.defs[declaring_def];
+            let probe = name_probe(
+                head.to_string(),
+                def.namespace.as_str(),
+                def_outer_types(def),
+            );
+            let Resolution::Resolved(didx, _) = resolve_ref(
+                &probe,
+                &ctx.usings,
+                def.namespace.as_str(),
+                index,
+                &ctx.aliases,
+                file_contexts,
+            ) else {
+                return None;
+            };
+            if index.defs[didx].kind != "delegate" {
+                return None;
+            }
+            index.member_lists[didx]
+                .method_params
+                .get("Invoke")
+                .and_then(|overloads| overloads.first())
+                .map(|o| o.params.clone())
+        }
+    }
+}
+
+// One untyped lambda parameter's type, read off the CALLEE's own declared
+// parameter list. `_registrar.Register(x => x.Configure())` records nothing
+// about `x` at the site -- the extractor cannot see across files -- but the
+// overload the call lands on declares `Action<Options> configure`, and that
+// delegate's parameter list is where `x`'s type is written down. The answer
+// is shaped like any other bare-identifier receiver fact so the tier below
+// resolves it under the DECLARING file's usings, aliases, namespace and
+// nesting: the descriptor is a bare identifier that only means what the file
+// that wrote it meant, exactly as a field's declared type is.
+//
+// Nothing binds unless every overload that could take the lambda AGREES on
+// the parameter type. `Attach(Action<Options>)` beside `Attach(Action<Endpoint>)`
+// leaves the site as untyped as the extractor found it, because choosing
+// either would be a guess. An overload whose delegate takes a different
+// number of parameters than the lambda declares is not a binding candidate at
+// all and is dropped rather than counted as disagreement, which is what lets
+// `Same(string tag)` sit beside `Same(Action<Options>)` without silencing it.
+// An overload that DOES take the lambda but types the parameter with a type
+// parameter (`Action<T>`) still counts, and blocks: the site knows nothing
+// about what `T` is bound to, the same refusal every other wildcard
+// generic-arg fact in this file makes.
+fn lambda_slot_receiver_type(
+    index: &DefIndex,
+    file_contexts: &HashMap<String, FileContext>,
+    ns: &str,
+    usings: &HashSet<String>,
+    aliases: &HashMap<String, String>,
+    r: &FragRef,
+    slot: &FragLambdaSlot,
+) -> Option<ReceiverFieldType> {
+    let probe = name_probe(slot.owner.clone(), ns, r.outer_types.clone());
+    let owner = match resolve_ref(&probe, usings, ns, index, aliases, file_contexts) {
+        Resolution::Resolved(oidx, _) => Some(oidx),
+        _ => None,
+    };
+    // (overload, the def that declares it, the position the lambda fills in
+    // its parameter list). An extension method invoked through its receiver
+    // carries the receiver in position 0, so every argument the site wrote is
+    // one place further right.
+    let mut candidates: Vec<(&MethodOverloadParams, usize, usize)> = Vec::new();
+    if let Some(oidx) = owner {
+        let declaring = if index.member_lists[oidx]
+            .method_params
+            .contains_key(&slot.member)
+        {
+            Some(oidx)
+        } else {
+            base_member_declared(index, file_contexts, oidx, Some(&slot.member), None)
+        };
+        if let Some(didx) = declaring {
+            if let Some(overloads) = index.member_lists[didx].method_params.get(&slot.member) {
+                for overload in overloads {
+                    candidates.push((overload, didx, slot.arg_index));
+                }
+            }
+        }
+    }
+    if candidates.is_empty() {
+        // The owner is external, unresolved, or declares no such member --
+        // the shapes an extension method answers. The bucket key is the
+        // receiver's own closure key when the owner resolved (an extension
+        // written against a base or interface is reached the same way tier
+        // (f) reaches it) and the raw receiver-type text otherwise, which is
+        // all an external receiver ever offers.
+        let key = match owner {
+            Some(oidx) => {
+                extension_closure_key(index, file_contexts, oidx, &slot.member).map(|(k, _)| k)
+            }
+            None => Some(format!("{} {}", slot.member, slot.owner)),
+        };
+        if let Some(candidate_list) = key.and_then(|k| index.extension_index.get(&k)) {
+            for cand in candidate_list {
+                let Some(overloads) = index.member_lists[cand.def_idx]
+                    .method_params
+                    .get(&slot.member)
+                else {
+                    continue;
+                };
+                for overload in overloads {
+                    let matches_this = overload
+                        .params
+                        .first()
+                        .and_then(|p| p.strip_prefix("this "))
+                        .is_some_and(|t| descriptor_head(t) == cand.entry.this_type);
+                    if matches_this {
+                        candidates.push((overload, cand.def_idx, slot.arg_index + 1));
+                    }
+                }
+            }
+        }
+    }
+
+    let mut agreed: Option<(String, String, usize, String)> = None;
+    for (overload, declaring_def, position) in candidates {
+        // An extension overload's list starts with its `this` parameter, so
+        // the call's argument count is compared one slot further along.
+        let shift = position - slot.arg_index;
+        if slot.arg_count + shift > overload.params.len() || position >= overload.params.len() {
+            continue;
+        }
+        // A static class's extension method may also be invoked statically,
+        // in which case the `this` marker rides along on a descriptor read at
+        // its ordinary position.
+        let text = overload.params[position]
+            .strip_prefix("this ")
+            .unwrap_or(&overload.params[position]);
+        let Some(params) =
+            delegate_parameters(text, index, file_contexts, declaring_def, &overload.file)
+        else {
+            continue;
+        };
+        // The delegate must take exactly as many parameters as the lambda
+        // declares, or it is not the overload the lambda binds to at all --
+        // dropped rather than counted as disagreement.
+        if params.len() != slot.arity || slot.index >= params.len() {
+            continue;
+        }
+        let head = descriptor_head(&params[slot.index]);
+        if head.is_empty() || head == "*" {
+            return None;
+        }
+        // Two overloads that both write `Action<Options>` agree only when the
+        // name means the same type from where each was written: a partial
+        // class or an extension bucket may span files with different usings,
+        // and the site binds to what the FIRST taker's file meant, so every
+        // other taker must resolve to that same def (or to the same name, when
+        // none resolves in-graph) before it counts as agreement.
+        let meaning = descriptor_meaning(index, file_contexts, declaring_def, &overload.file, head);
+        match &agreed {
+            Some((known, _, _, _)) if *known != meaning => return None,
+            Some(_) => {}
+            None => {
+                agreed = Some((
+                    meaning,
+                    head.to_string(),
+                    declaring_def,
+                    overload.file.clone(),
+                ))
+            }
+        }
+    }
+    agreed.map(
+        |(_, type_name, declaring_def, declaring_file)| ReceiverFieldType {
+            type_name,
+            declaring_def,
+            declaring_file,
+        },
+    )
+}
+
+// What a descriptor head names from the file that wrote it: the def it
+// resolves to under that file's usings, aliases, namespace and nesting, or
+// the bare name itself when nothing in the graph answers. Only used to
+// compare takers with each other; the tier below re-resolves the winner
+// under the same context.
+fn descriptor_meaning(
+    index: &DefIndex,
+    file_contexts: &HashMap<String, FileContext>,
+    declaring_def: usize,
+    declaring_file: &str,
+    head: &str,
+) -> String {
+    let def = &index.defs[declaring_def];
+    let resolved = file_contexts.get(declaring_file).and_then(|ctx| {
+        let probe = name_probe(
+            head.to_string(),
+            def.namespace.as_str(),
+            def_outer_types(def),
+        );
+        match resolve_ref(
+            &probe,
+            &ctx.usings,
+            def.namespace.as_str(),
+            index,
+            &ctx.aliases,
+            file_contexts,
+        ) {
+            Resolution::Resolved(didx, _) => Some(index.defs[didx].id.clone()),
+            _ => None,
+        }
+    });
+    resolved.unwrap_or_else(|| format!("?{head}"))
+}
+
+// The scored tier's own receiver test, and the mirror image of the veto above:
+// that one asks whether an in-graph receiver ALREADY declares the member (so a
+// guess would be wrong); this one asks whether a candidate is a type the
+// receiver could even be, which is the question an EXTERNAL receiver leaves
+// open. C# binds `x.M(...)` only to a member of a type `x` is assignable to, so
+// a candidate the receiver type cannot reach is a disproved guess rather than a
+// weak one.
+//
+// True when `start` IS `type_name`, when any def in its in-graph base closure
+// is, or when any def in that closure lists `type_name` as a RAW base string.
+// The last case carries the weight: a receiver typed by an external interface
+// has no def to walk to, so the only evidence available is the base name the
+// candidate wrote down. `bases` holds bare identifiers (a base written
+// `System.IDisposable` is recorded as `IDisposable`) and a receiver fact's type
+// name is bare the same way, so the two strings meet without either side being
+// resolved.
+//
+// `args_known` says whether the receiver's type ARGUMENTS are known at all. A
+// receiver read off a declaration carries both halves of the fact, so
+// `ILogger<Worker>` must not accept a candidate whose base is the non-generic
+// `ILogger`. A receiver inferred from a method's recorded RETURN type carries a
+// name and nothing else, and refusing every generic implementation on the
+// strength of an absence would be reading a fact the extractor never recorded --
+// so that case compares names only.
+fn nominally_assignable(
+    index: &DefIndex,
+    file_contexts: &HashMap<String, FileContext>,
+    start: usize,
+    type_name: &str,
+    receiver_args: Option<&Vec<String>>,
+    args_known: bool,
+) -> bool {
+    inheritance_walk_matches(index, file_contexts, start, |idx| {
+        (index.defs[idx].name == type_name
+            && (!args_known
+                || index.member_lists[idx].type_params.len() == receiver_args.map_or(0, Vec::len)))
+            || index.member_lists[idx].bases.iter().any(|b| {
+                b == type_name
+                    && (!args_known
+                        || generic_args_unify(
+                            index.member_lists[idx]
+                                .base_generic_args
+                                .iter()
+                                .find(|(k, _)| k == b)
+                                .map(|(_, v)| v),
+                            receiver_args,
+                        ))
+            })
+    })
+}
+
+/// Memo for `nominally_assignable`, one per resolve run. The walk is a
+/// transitive base closure with a ladder resolution at every hop, and a corpus
+/// asks the same `(candidate, receiver type)` question once per call site, so
+/// the answer is cached rather than recomputed. `args_known` is part of the key
+/// because it changes the answer for the same receiver name: an absent
+/// type-argument list means "no arguments" when the fact is a declaration and
+/// "unknown" when it is a return type.
+type AssignabilityCache = HashMap<(usize, String, Option<Vec<String>>, bool), bool>;
+
+fn nominally_assignable_cached(
+    cache: &mut AssignabilityCache,
+    index: &DefIndex,
+    file_contexts: &HashMap<String, FileContext>,
+    start: usize,
+    type_name: &str,
+    receiver_args: Option<&Vec<String>>,
+    args_known: bool,
+) -> bool {
+    let key = (
+        start,
+        type_name.to_string(),
+        receiver_args.cloned(),
+        args_known,
+    );
+    if let Some(&answer) = cache.get(&key) {
+        return answer;
+    }
+    let answer = nominally_assignable(
+        index,
+        file_contexts,
+        start,
+        type_name,
+        receiver_args,
+        args_known,
+    );
+    cache.insert(key, answer);
+    answer
+}
+
+// The whole receiver rule for ONE scored candidate, applied only when the ref
+// carries a receiver type that resolved to nothing in-graph. Two ways in, and a
+// candidate needs just one of them:
+//
+//   - as an INSTANCE member: the candidate declares the member (per the ref's
+//     shape) AND is nominally assignable to the receiver type.
+//   - as an EXTENSION method: the candidate declares an extension of that
+//     member name whose `this` parameter is the receiver type EXACTLY, type
+//     arguments unified and the call's argument count inside the declared
+//     arity -- the same (member, thisType) key and the same unification and
+//     arity filters tier (f) uses. Tier (f) declined this ref for one of its
+//     own reasons (most often the namespace test, which is narrower than the
+//     language), and re-admitting the candidate HERE, as a guess, is the
+//     honest answer: the this-parameter is direct evidence about this exact
+//     receiver type, which is more than the uniqueness pool alone ever had.
+//     Arity is NOT one of those reasons: a call the extension cannot accept
+//     has no binding under any import, so it stays refused.
+//
+// The two are OR-ed rather than tried in order because an extension method is
+// also an ordinary public static method, so the static class holding it
+// vouches through `methods` too -- requiring assignability of a candidate that
+// merely LOOKS instance-vouched would refuse every extension there is.
+//
+// Ten parameters, deliberately: every one is a distinct fact about the ONE
+// question asked here, and bundling them into a struct built per candidate
+// would add an allocation and a second name for each field without making any
+// caller shorter -- there is exactly one caller.
+#[allow(clippy::too_many_arguments)]
+fn receiver_admits_candidate(
+    index: &DefIndex,
+    file_contexts: &HashMap<String, FileContext>,
+    cache: &mut AssignabilityCache,
+    candidate: usize,
+    member: &str,
+    shape: MemberShape,
+    arg_count: Option<usize>,
+    receiver_type: &str,
+    receiver_args: Option<&Vec<String>>,
+    args_known: bool,
+) -> bool {
+    let instance_vouches = match shape {
+        MemberShape::Call => index.defs[candidate].methods.iter().any(|m| m == member),
+        MemberShape::Read => declares_member(index, candidate, Some(member), None),
+    };
+    if instance_vouches
+        && nominally_assignable_cached(
+            cache,
+            index,
+            file_contexts,
+            candidate,
+            receiver_type,
+            receiver_args,
+            args_known,
+        )
+    {
+        return true;
+    }
+    index
+        .extension_index
+        .get(&format!("{member} {receiver_type}"))
+        .map(Vec::as_slice)
+        .unwrap_or(&[])
+        .iter()
+        .any(|c| {
+            c.def_idx == candidate
+                && arg_count.is_none_or(|n| arity_accepts(&c.entry, n))
+                && generic_args_unify(c.entry.this_args.as_ref(), receiver_args)
+        })
 }
 
 fn nested_candidate_visible_from_site(
@@ -581,12 +1924,34 @@ fn generic_args_unify(
 // Global usings/aliases.
 // ---------------------------------------------------------------------------
 
-fn collect_global_usings(
+/// The per-unit half of the `global using` picture, as `build_file_contexts`
+/// takes it: which unit owns each file, and each unit's own pool.
+type UnitGlobals<'a> = (
+    &'a HashMap<String, Option<usize>>,
+    &'a HashMap<usize, GlobalUsings>,
+);
+
+/// One pool of `global using` facts: the plain namespaces, and the aliases
+/// keyed by alias name. Used both repo-wide and per project unit.
+type GlobalUsings = (HashSet<String>, HashMap<String, String>);
+
+// Every `global using` in the fragment set, collected twice over the same
+// single pass: once repo-wide (what a resolve with no project model uses, and
+// what a file no project owns falls back to) and once per owning unit (what a
+// resolve WITH a model uses, because a global using is a per-compilation fact).
+//
+// A file whose `unit_of_file` entry is absent or `None` contributes to the
+// repo-wide pool only: its globals are real, but there is no project to
+// attribute them to, and inventing one would leak them into whichever project
+// happened to be nearest.
+fn collect_global_usings_by_unit(
     fragments_by_file: &[(String, Fragment)],
-) -> (HashSet<String>, HashMap<String, String>) {
-    let mut global_usings: HashSet<String> = HashSet::new();
-    let mut global_aliases: HashMap<String, String> = HashMap::new();
-    for (_, frag) in fragments_by_file {
+    unit_of_file: &HashMap<String, Option<usize>>,
+) -> (GlobalUsings, HashMap<usize, GlobalUsings>) {
+    let mut repo_wide: GlobalUsings = (HashSet::new(), HashMap::new());
+    let mut by_unit: HashMap<usize, GlobalUsings> = HashMap::new();
+    for (file, frag) in fragments_by_file {
+        let unit = unit_of_file.get(file).copied().flatten();
         for u in &frag.usings {
             match u {
                 FragUsing::Alias {
@@ -597,21 +1962,89 @@ fn collect_global_usings(
                     if *global {
                         // First global alias for a given name wins -- NOT
                         // last-wins. `entry(..).or_insert(..)` only writes on a
-                        // vacant slot.
-                        global_aliases
+                        // vacant slot. The per-unit pools apply the same rule
+                        // within their own scope, so a unit's own first
+                        // declaration wins there even if some other unit
+                        // declared that alias earlier in file order.
+                        repo_wide
+                            .1
                             .entry(alias.clone())
                             .or_insert_with(|| target.clone());
+                        if let Some(idx) = unit {
+                            by_unit
+                                .entry(idx)
+                                .or_default()
+                                .1
+                                .entry(alias.clone())
+                                .or_insert_with(|| target.clone());
+                        }
                     }
                 }
                 FragUsing::Plain { text, global } => {
                     if *global {
-                        global_usings.insert(text.clone());
+                        repo_wide.0.insert(text.clone());
+                        if let Some(idx) = unit {
+                            by_unit.entry(idx).or_default().0.insert(text.clone());
+                        }
                     }
                 }
             }
         }
     }
-    (global_usings, global_aliases)
+    (repo_wide, by_unit)
+}
+
+// ---------------------------------------------------------------------------
+// Admission: the project model's veto over the two HEURISTIC tiers.
+// ---------------------------------------------------------------------------
+
+/// The structural gate the two heuristic tiers consult before naming a def.
+///
+/// A heuristic tier guesses from a member NAME; the project model is the one
+/// fact available here that can disprove such a guess without reading a single
+/// line of the candidate's body -- the site's assembly could not reference the
+/// candidate's assembly, so the call the guess describes could not compile,
+/// whatever the name says.
+///
+/// Two refusals, both structural:
+///   - REACHABILITY: the candidate's project is not on the transitive
+///     `ProjectReference` closure of the site's project.
+///   - TEST DIRECTION: the candidate's project is a test project and the
+///     site's is not. Production code never calls into a test assembly, and
+///     this half catches the fixture/helper classes that carry no test
+///     attribute of their own and so are invisible to def-level test
+///     detection.
+///
+/// Everything else FAILS OPEN, deliberately and in three places: no model at
+/// all (a repo with no `.csproj`), a site file no project owns, and a
+/// candidate file no project owns. Ownership here is path-based and knows
+/// nothing about linked or globbed `Compile Include` items, so an ownership
+/// answer this resolver could not compute must never delete an edge it would
+/// otherwise have emitted.
+///
+/// Only the heuristic tiers consult it. The precise tiers resolve a type
+/// first and emit on a FACT, and the ctor-DI resolver picks an implementor
+/// from an interface the site demonstrably names -- neither is a guess the
+/// model is entitled to overrule.
+struct Admission<'m> {
+    model: Option<&'m crate::project::ProjectModel>,
+    /// `unit_of_def[i]` is the unit owning `index.defs[i]`'s declaring file,
+    /// computed once per resolve rather than per candidate. Always `None`
+    /// when there is no model.
+    unit_of_def: Vec<Option<usize>>,
+}
+
+impl Admission<'_> {
+    fn admits(&self, site_unit: Option<usize>, cand: usize) -> bool {
+        let Some(model) = self.model else {
+            return true;
+        };
+        let (Some(site), Some(cand)) = (site_unit, self.unit_of_def.get(cand).copied().flatten())
+        else {
+            return true;
+        };
+        model.reachable(site, cand) && !(model.units[cand].test && !model.units[site].test)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -634,8 +2067,129 @@ enum Via {
 
 enum Resolution {
     Resolved(usize, Via),
-    Ambiguous(Vec<usize>),
+    /// Several same-named defs the ladder refused to choose between, plus the
+    /// step that pooled them -- only steps 1b, 2 and 4 can produce this, so
+    /// the `Via` is always `Usings` or `Global`. It rides along so
+    /// `narrow_by_reachability` can hand back a `Resolved` carrying the step
+    /// that actually answered instead of inventing one: the uses-member
+    /// emission tier reads that step (`via == Via::Qualified`) as one of its
+    /// type-certainty signals, and a narrowed resolution must be judged by the
+    /// same rule as any other.
+    Ambiguous(Vec<usize>, Via),
     External,
+}
+
+/// The project model's answer to an ambiguity the ladder could not settle:
+/// C# cannot name a type in an assembly this one does not reference, so such
+/// a candidate was never really a candidate. Applied at the ladder's THREE
+/// `Ambiguous` consumers rather than inside `resolve_ref`, because the ladder
+/// is a pure name-resolution function that knows nothing about projects and
+/// because two of its callers -- the base-closure probes and the ctor-DI
+/// resolver -- must keep seeing the unnarrowed answer.
+///
+/// Every other resolution passes through untouched, and so does every
+/// candidate when there is no model (`Admission::admits` then says yes to
+/// everything), which is what keeps a csproj-less repo's graph byte-identical.
+///
+/// One survivor is a FACT, not a guess: the ambiguity was only ever the
+/// ladder's refusal to choose, and the reference rule chose for it. Zero
+/// survivors is an ordinary `External` -- the same answer the ladder gives for
+/// a name it never found, which is exactly what a name whose every candidate
+/// is out of reach IS. Two or more stay ambiguous on the FILTERED list, so the
+/// reported candidates and `candidate_count` shrink together.
+fn narrow_by_reachability(
+    res: Resolution,
+    site_unit: Option<usize>,
+    admission: &Admission,
+) -> Resolution {
+    let Resolution::Ambiguous(candidates, via) = res else {
+        return res;
+    };
+    let reachable: Vec<usize> = candidates
+        .into_iter()
+        .filter(|&c| admission.admits(site_unit, c))
+        .collect();
+    match reachable.as_slice() {
+        [] => Resolution::External,
+        [idx] => Resolution::Resolved(*idx, via),
+        _ => Resolution::Ambiguous(reachable, via),
+    }
+}
+
+/// A narrowed resolution plus the one bit narrowing would otherwise destroy:
+/// whether an `External` means "the ladder never found this name" or "the
+/// ladder found candidates and the project model put every one of them out of
+/// reach".
+///
+/// The two are the same answer for a precise tier -- neither can produce an
+/// edge -- but they are opposite answers for the scored tier. A name the
+/// ladder never found may still be a member-name-uniqueness guess. A name
+/// whose every candidate was narrowed away has already been ANSWERED: the
+/// candidates were real, and the language rule says none of them is nameable
+/// here. Falling through to the graph-wide uniqueness pool there would answer
+/// a settled question with a stranger, so `narrowed_away` gets an empty pool
+/// and emits nothing.
+struct Narrowed {
+    res: Resolution,
+    narrowed_away: bool,
+}
+
+/// `narrow_by_reachability`, keeping the pre-narrowing shape as the flag
+/// `Narrowed` documents. Used at the two `uses-member` consumers, whose
+/// resolutions reach the scored tier; the plain type-reference consumer has no
+/// heuristic tier behind it and calls `narrow_by_reachability` directly.
+fn narrow_tracked(res: Resolution, site_unit: Option<usize>, admission: &Admission) -> Narrowed {
+    let was_ambiguous = matches!(res, Resolution::Ambiguous(..));
+    let res = narrow_by_reachability(res, site_unit, admission);
+    Narrowed {
+        narrowed_away: was_ambiguous && matches!(res, Resolution::External),
+        res,
+    }
+}
+
+// The dotted text of a qualified reference as a def path would spell it: an
+// alias qualifier (`global::`, an extern alias) dropped, and every type
+// argument list removed from every segment -- the extractor strips them off
+// the tail only, so `Box<string>.Slot` arrives as written. Borrowed when
+// there is nothing to strip, which is the common case.
+fn written_type_path(qualified: &str) -> std::borrow::Cow<'_, str> {
+    let body = match qualified.find("::") {
+        Some(at) => &qualified[at + 2..],
+        None => qualified,
+    };
+    if !body.contains('<') {
+        return std::borrow::Cow::Borrowed(body);
+    }
+    let mut out = String::with_capacity(body.len());
+    let mut depth = 0usize;
+    for c in body.chars() {
+        match c {
+            '<' => depth += 1,
+            '>' => depth = depth.saturating_sub(1),
+            _ if depth == 0 => out.push(c),
+            _ => {}
+        }
+    }
+    std::borrow::Cow::Owned(out)
+}
+
+// Whether a def id, read with `+` as `.`, ends with `written` at a segment
+// boundary -- `App.Widgets.Outer+Inner` ends with `Outer.Inner` and with
+// `App.Widgets.Outer.Inner`, never with `Widgets.Outer` or `ter.Inner`.
+// Byte-wise so no candidate costs an allocation: a `+`/`.` separator is
+// ASCII, and no continuation byte of a multi-byte character can equal one.
+fn def_path_ends_with(id: &str, written: &str) -> bool {
+    let (id, written) = (id.as_bytes(), written.as_bytes());
+    if id.len() < written.len() {
+        return false;
+    }
+    let (head, tail) = id.split_at(id.len() - written.len());
+    let boundary = head.last().is_none_or(|&b| b == b'.' || b == b'+');
+    boundary
+        && tail
+            .iter()
+            .zip(written)
+            .all(|(&a, &b)| a == b || (a == b'+' && b == b'.'))
 }
 
 fn type_candidate(index: &DefIndex, name: &str, arity: Option<usize>) -> Option<usize> {
@@ -714,6 +2268,187 @@ fn resolve_ref(
                 return Resolution::Resolved(idx, Via::Qualified);
             }
         }
+        // Step 1a: the qualifier's head segment is a using alias. The alias
+        // target is already fully qualified, so the rewritten name gets one
+        // exact lookup and no prefix walk -- `using Ns = Some.Namespace;` makes
+        // `Ns.MyEnum` read as `Some.Namespace.MyEnum`. A rewritten name that
+        // finds nothing continues into step 1b under its expanded text.
+        let written = written_type_path(qualified);
+        let expanded: Option<String> = written
+            .split_once('.')
+            .and_then(|(head, rest)| aliases.get(head).map(|target| format!("{target}.{rest}")));
+        if let Some(expanded) = &expanded {
+            if let Some(idx) = type_candidate(index, expanded, ref_.type_arg_count) {
+                return Resolution::Resolved(idx, Via::Qualified);
+            }
+        }
+        // Step 1b: dotted suffix match, the ONLY fallback a dotted reference
+        // gets. A qualified name is always written relative to some enclosing
+        // scope, so its text is a dot-joined suffix of the full path of
+        // whatever it names -- `Outer.Inner` is `App.Widgets.Outer+Inner`
+        // read with `+` as `.`. A def whose path does not end that way cannot
+        // be what the reference means, however unique its bare last segment
+        // is in the graph: `RabbitMQ.Client.ExchangeType`, `System.Text.Json.
+        // JsonSerializer` and `expr.Member` name something outside the graph,
+        // and finishing them External here is what keeps steps 2-4 -- all
+        // three keyed on the bare `ref_.name` -- from binding them to an
+        // unrelated same-named def. Arity is filtered exactly as step 4 does.
+        //
+        // The one path that legitimately does NOT end with the written text
+        // is a nested type named through a DERIVED type: `Derived.Item` for
+        // an `Item` declared inside `Base`. That is the dotted twin of the
+        // bare rule step 4 applies (`nested_candidate_visible_from_site`),
+        // with the qualifier standing in for the site's enclosing type: the
+        // qualifier is resolved as a type of its own, and a nested candidate
+        // is admitted when its enclosing def lies in that type's inheritance
+        // closure. The extra walk runs only when the suffix found nothing and
+        // a nested candidate exists at all, so an external name whose bare
+        // tail is not a nested def in the graph pays one hash lookup.
+        let written = expanded.as_deref().unwrap_or(&written);
+        let pool: Vec<usize> = index
+            .simple_name_to_defs
+            .get(&ref_.name)
+            .into_iter()
+            .flatten()
+            .copied()
+            .filter(|idx| {
+                ref_.type_arg_count
+                    .is_none_or(|n| index.member_lists[*idx].type_params.len() == n)
+            })
+            .collect();
+        let mut matches: Vec<usize> = pool
+            .iter()
+            .copied()
+            .filter(|idx| def_path_ends_with(&index.defs[*idx].id, written))
+            .collect();
+        if matches.is_empty() && pool.iter().any(|idx| index.defs[*idx].id.contains('+')) {
+            if let Some((qualifier, _)) = written.rsplit_once('.') {
+                let (head, tail) = match qualifier.rsplit_once('.') {
+                    Some((_, tail)) => (Some(qualifier.to_string()), tail),
+                    None => (None, qualifier),
+                };
+                let probe = FragRef {
+                    name: tail.to_string(),
+                    qualified: head,
+                    ..name_probe(String::new(), ns, ref_.outer_types.clone())
+                };
+                if let Resolution::Resolved(qidx, _) =
+                    resolve_ref(&probe, usings, ns, index, aliases, file_contexts)
+                {
+                    matches = pool
+                        .iter()
+                        .copied()
+                        .filter(|idx| {
+                            index.defs[*idx]
+                                .id
+                                .rsplit_once('+')
+                                .and_then(|(enclosing, _)| {
+                                    index.qualified_name_to_def.get(enclosing)
+                                })
+                                .is_some_and(|&enclosing| {
+                                    inheritance_walk_matches(index, file_contexts, qidx, |i| {
+                                        i == enclosing
+                                    })
+                                })
+                        })
+                        .collect();
+                }
+            }
+        }
+        match matches.as_slice() {
+            [idx] => return Resolution::Resolved(*idx, Via::Global),
+            [_, _, ..] => return Resolution::Ambiguous(matches, Via::Global),
+            // No suffix match: fall through to step 1.5, the one remaining
+            // step a dotted reference may take. Steps 2-4 stay closed to it
+            // -- the guard just past step 1.5 finishes any dotted reference
+            // that got this far as External.
+            _ => {}
+        }
+    }
+
+    // Step 1.5: a dotted qualifier crossing a TYPE boundary -- a nested
+    // static class or enum reached through a namespace- or using-qualified
+    // head, e.g. `App.Other.Outer.Middle.Leaf.Value`. Nested ids join with
+    // '+', so step 1's plain '.' walk can never answer past the outermost
+    // type. Walks the qualifier's segments left to right, SHORTEST head
+    // first: a longer head is itself a name the later steps (or step 1's own
+    // k>1 walk here) could answer via a tail-name fallback before the true
+    // nested type is ever considered. Once a head resolves to a type, its
+    // tail is walked one exact `{id}+{segment}` lookup per level; a head
+    // whose tail walk does not consume every remaining segment is dropped in
+    // favour of the next, longer head. A walk that consumes the whole tail is
+    // as certain as an exact qualified match, hence `Via::Qualified`.
+    //
+    // Two gates keep the walk off qualifiers it cannot apply to. A ref the
+    // extractor already typed as an INSTANCE (a local, field, property or
+    // call receiver) is never a type path, however much its name looks like
+    // one -- `Settings.Retry.Max` through a `JobSettings Settings` field must
+    // keep its receiver-typed edge, not bind a same-named type's nested
+    // `Retry`. And a chain whose last qualifier segment names no def at all
+    // (every BCL chain) can never complete, so it skips the recursion.
+    if let Some(qualified) = ref_
+        .qualified
+        .as_ref()
+        .filter(|_| !extractor_vouches_instance(ref_))
+    {
+        let segs: Vec<&str> = qualified.split('.').collect();
+        let leaf_known = segs
+            .last()
+            .is_some_and(|leaf| index.simple_name_to_defs.contains_key(*leaf));
+        for k in 1..segs.len() {
+            if !leaf_known {
+                break;
+            }
+            let head_idx = if k == 1 {
+                let mut head = ref_.clone();
+                head.name = segs[0].to_string();
+                head.qualified = None;
+                head.type_arg_count = None;
+                match resolve_ref(&head, usings, ns, index, aliases, file_contexts) {
+                    Resolution::Resolved(idx, _) => Some(idx),
+                    _ => None,
+                }
+            } else {
+                let head = segs[..k].join(".");
+                prefixes.iter().find_map(|prefix| {
+                    let candidate = if prefix.is_empty() {
+                        head.clone()
+                    } else {
+                        format!("{prefix}.{head}")
+                    };
+                    type_candidate(index, &candidate, None)
+                })
+            };
+            let Some(start) = head_idx else {
+                continue;
+            };
+            let mut cur = start;
+            let mut complete = true;
+            let last = segs.len() - 1;
+            for (i, seg) in segs.iter().enumerate().skip(k) {
+                // Only the leaf carries the ref's own arity; intermediate
+                // segments are looked up arity-less like any qualifier text.
+                let arity = if i == last { ref_.type_arg_count } else { None };
+                match type_candidate(index, &format!("{}+{}", index.defs[cur].id, seg), arity) {
+                    Some(next) => cur = next,
+                    None => {
+                        complete = false;
+                        break;
+                    }
+                }
+            }
+            if complete {
+                return Resolution::Resolved(cur, Via::Qualified);
+            }
+        }
+    }
+
+    // A dotted reference is finished here. Steps 1, 1a, 1b and 1.5 are the
+    // whole ladder it gets: steps 2-4 all key on the bare `ref_.name`, and
+    // letting `RabbitMQ.Client.ExchangeType` reach them is exactly how an
+    // out-of-graph name binds an unrelated same-named def.
+    if ref_.qualified.is_some() {
+        return Resolution::External;
     }
 
     // Step 2: file's usings (already the union of local + global by the time
@@ -746,7 +2481,7 @@ fn resolve_ref(
         return Resolution::Resolved(using_matches[0], Via::Usings);
     }
     if using_matches.len() >= 2 {
-        return Resolution::Ambiguous(using_matches);
+        return Resolution::Ambiguous(using_matches, Via::Usings);
     }
 
     // Step 3: the reference site's namespace AND every ancestor of it,
@@ -770,6 +2505,7 @@ fn resolve_ref(
     // class's previously-unambiguous references ambiguous. Nested definitions
     // remain in the pool, but a bare reference can see one only when its
     // enclosing type inherits from the nested definition's enclosing type.
+    // Only bare references reach this step: a dotted one finished at step 1b.
     let matches: Vec<usize> = index
         .simple_name_to_defs
         .get(&ref_.name)
@@ -780,14 +2516,11 @@ fn resolve_ref(
             ref_.type_arg_count
                 .map_or(true, |n| index.member_lists[*idx].type_params.len() == n)
         })
-        .filter(|idx| {
-            ref_.qualified.is_some()
-                || nested_candidate_visible_from_site(ref_, ns, *idx, index, file_contexts)
-        })
+        .filter(|idx| nested_candidate_visible_from_site(ref_, ns, *idx, index, file_contexts))
         .collect();
     match matches.as_slice() {
         [idx] => Resolution::Resolved(*idx, Via::Global),
-        [_, _, ..] => Resolution::Ambiguous(matches),
+        [_, _, ..] => Resolution::Ambiguous(matches, Via::Global),
         _ => Resolution::External,
     }
 }
@@ -886,7 +2619,9 @@ fn resolve_ctor_param(
     implementors_by_base_name: &HashMap<String, Vec<usize>>,
 ) -> CtorDiResolution {
     match resolve_ref(ref_, usings, ns, index, aliases, file_contexts) {
-        Resolution::Ambiguous(candidate_indices) => CtorDiResolution::Ambiguous(candidate_indices),
+        Resolution::Ambiguous(candidate_indices, _) => {
+            CtorDiResolution::Ambiguous(candidate_indices)
+        }
         Resolution::External => {
             if usings.iter().any(|u| is_infra_namespace(u)) {
                 CtorDiResolution::Infra
@@ -995,33 +2730,54 @@ fn type_edge(kind: &str, file: &str, line: usize, target: &Def) -> Edge {
 // The identity a heuristic edge is deduped on: everything its serialized form
 // carries. `None` for a precise edge, which is never a dedup subject. Field
 // order matches the edge's own, so two edges share a key exactly when they
-// serialize to the same bytes.
+// serialize to the same bytes -- which is why `tier` and `member` join the
+// key the moment they join the edge: two guesses that name DIFFERENT members
+// of the same target on one line are two distinct facts now, and collapsing
+// them would drop one.
 fn heuristic_edge_key(e: &Edge) -> Option<String> {
-    let (kind, from_file, from_line, to, to_file) = match e {
+    let (kind, from_file, from_line, to, to_file, tier, member) = match e {
         Edge::Inherits {
             from_file,
             from_line,
             to,
             to_file,
             heuristic: true,
-        } => ("inherits", from_file, from_line, to, to_file),
+        } => ("inherits", from_file, from_line, to, to_file, None, None),
         Edge::UsesType {
             from_file,
             from_line,
             to,
             to_file,
             heuristic: true,
-        } => ("uses-type", from_file, from_line, to, to_file),
+        } => ("uses-type", from_file, from_line, to, to_file, None, None),
         Edge::UsesMember {
             from_file,
             from_line,
             to,
             to_file,
             heuristic: true,
-        } => ("uses-member", from_file, from_line, to, to_file),
+            tier,
+            member,
+        } => (
+            "uses-member",
+            from_file,
+            from_line,
+            to,
+            to_file,
+            *tier,
+            member.as_deref(),
+        ),
         _ => return None,
     };
-    Some(format!("{kind} {from_file} {from_line} {to} {to_file}"))
+    let tier = match tier {
+        Some(HeuristicTier::Ext) => "ext",
+        Some(HeuristicTier::Guess) => "guess",
+        None => "-",
+    };
+    let member = member.unwrap_or("-");
+    Some(format!(
+        "{kind} {from_file} {from_line} {to} {to_file} {tier} {member}"
+    ))
 }
 
 /// Resolve C# fragments into a graph. Pure: `fragments_by_file` is
@@ -1031,7 +2787,7 @@ fn heuristic_edge_key(e: &Edge) -> Option<String> {
 /// set changed, and unit-testable without a parser (see this module's tests,
 /// which build `Fragment` values by hand).
 pub fn resolve_graph(root: &Path, fragments_by_file: &[(String, Fragment)]) -> Graph {
-    resolve_graph_with_ts(root, fragments_by_file, &[])
+    resolve_graph_with_model(root, fragments_by_file, &[], None)
 }
 
 /// The same resolve, with the TS/TSX half alongside. The caller passes the two
@@ -1048,9 +2804,46 @@ pub fn resolve_graph_with_ts(
     fragments_by_file: &[(String, Fragment)],
     ts_fragments_by_file: &[(String, crate::extract::TsFragment)],
 ) -> Graph {
+    resolve_graph_with_model(root, fragments_by_file, ts_fragments_by_file, None)
+}
+
+/// The same resolve again, now with the repo's `.csproj` project model
+/// alongside.
+///
+/// This is `devscout map`'s entry point, and the only one that can produce a
+/// graph carrying `units`. The other two wrap this one with `None`.
+///
+/// `model` is `None` for a repo that declares no `.csproj`, and a `None`
+/// model must leave the resolve BYTE-IDENTICAL to what it was: `units` is
+/// omitted when empty, so the whole artifact is unchanged for such a tree.
+pub fn resolve_graph_with_model(
+    root: &Path,
+    fragments_by_file: &[(String, Fragment)],
+    ts_fragments_by_file: &[(String, crate::extract::TsFragment)],
+    model: Option<&crate::project::ProjectModel>,
+) -> Graph {
     let index = build_def_index(fragments_by_file);
-    let (global_usings, global_aliases) = collect_global_usings(fragments_by_file);
-    let file_contexts = build_file_contexts(fragments_by_file, &global_usings, &global_aliases);
+    // Ownership, resolved once for every fragment file and then once for every
+    // def through its declaring file. `None` for every entry when there is no
+    // model, which is what makes every model-dependent rule below a no-op for
+    // a repo that declares no `.csproj`.
+    let unit_of_file: HashMap<String, Option<usize>> = fragments_by_file
+        .iter()
+        .map(|(file, _)| (file.clone(), model.and_then(|m| m.unit_of_file(file))))
+        .collect();
+    let unit_of_def: Vec<Option<usize>> = index
+        .defs
+        .iter()
+        .map(|d| unit_of_file.get(&d.file).copied().flatten())
+        .collect();
+    let admission = Admission { model, unit_of_def };
+    let (repo_wide_globals, globals_by_unit) =
+        collect_global_usings_by_unit(fragments_by_file, &unit_of_file);
+    let file_contexts = build_file_contexts(
+        fragments_by_file,
+        &repo_wide_globals,
+        model.map(|_| (&unit_of_file, &globals_by_unit)),
+    );
     // Built once, not per-ref: every ctor-param ref's implementor lookup shares
     // this one reverse index.
     let implementors_by_base_name = build_implementor_index(&index);
@@ -1064,12 +2857,23 @@ pub fn resolve_graph_with_ts(
     // `edges_by_kind['uses-member']` never has a guess folded into a fact. The
     // heuristic total is reported separately in the stats object.
     let mut heuristic_edge_count: usize = 0;
+    // The same total, split by emitting tier. Kept beside the total rather
+    // than derived from the edge array afterwards so the dedup below can
+    // decrement both in one place and neither can drift.
+    let mut heuristic_by_tier = HeuristicByTier::default();
+    // One memo for the whole run: the receiver rule below asks the same
+    // "is this candidate assignable to this receiver type" question once per
+    // call site, and the answer is a base-closure walk.
+    let mut assignable_cache: AssignabilityCache = HashMap::new();
 
     for (file, frag) in fragments_by_file {
         // Local alias shadows a same-named global one -- see
         // build_file_contexts, which builds every file's context once up front
         // so the veto walk can read a DIFFERENT file's context too.
         let FileContext { usings, aliases } = &file_contexts[file];
+        // The project this file belongs to, if any -- the left-hand side of
+        // every admission question the two heuristic tiers ask below.
+        let site_unit = unit_of_file.get(file).copied().flatten();
 
         for r in &frag.refs {
             if r.kind == "imports" {
@@ -1100,7 +2904,8 @@ pub fn resolve_graph_with_ts(
                 //   (b) the qualifier carried a type-argument list (syntax no
                 //       local/field/property can carry), or
                 //   (c) the qualifier was dotted AND answered at the
-                //       exact-qualified ladder step.
+                //       exact-qualified ladder step, or by step 1.5's
+                //       segment-by-segment walk through nested types.
                 // Everything else (ambiguous, external, or a non-enum
                 // resolution with no certainty signal) is dropped silently
                 // and deliberately NOT counted in ambiguous_count/
@@ -1114,9 +2919,60 @@ pub fn resolve_graph_with_ts(
                 // nothing-at-all) to decide which candidate pool it may draw
                 // from, and re-walking the ladder there would be a second
                 // resolution of the same name in the same file context.
-                let result = resolve_ref(r, usings, ns, &index, aliases, &file_contexts);
+                let Narrowed {
+                    res: result,
+                    narrowed_away: result_narrowed_away,
+                } = narrow_tracked(
+                    resolve_ref(r, usings, ns, &index, aliases, &file_contexts),
+                    site_unit,
+                    &admission,
+                );
                 let mut emitted = false;
-                if let Resolution::Resolved(idx, via) = &result {
+                // `base.M`: a receiver_base ref's `result` names the
+                // ENCLOSING type (the same resolution a plain `this.M` ref
+                // gets, from the same `receiver_type`/`name`), and this rule
+                // exists precisely so that type is never consulted for the
+                // member -- only its OWN bases, in declaration order, each
+                // with its own in-graph inheritance walk (see
+                // `base_member_declared`). `emitted` is forced `true`
+                // regardless of whether a base declared the member, which is
+                // what keeps every tier below (e, e2, f, scored) from ever
+                // treating a `base.` ref as an ordinary receiver fact: falling
+                // through to them would let the enclosing type's OWN
+                // `receiver_type` reintroduce the exact self-edge this rule
+                // forbids, or let the scored tier guess where the design
+                // requires silent external.
+                //
+                // A CHAIN TAIL carrying the bit (`base.Make().Validate()`,
+                // which sets both `receiverBase` and
+                // `receiverCallOwner`/`receiverCallMember`) is not this
+                // shape at all: its `name` is the inner invocation's own
+                // source text, which resolves to nothing, so this rule
+                // would only silence it. It belongs to the method-return
+                // hop below, which reads the same bit and starts the
+                // lookup at the bases for exactly the same reason.
+                if r.receiver_base && r.receiver_call_owner.is_none() {
+                    if let Resolution::Resolved(start, _) = &result {
+                        if let Some(target) = base_member_declared(
+                            &index,
+                            &file_contexts,
+                            *start,
+                            r.member.as_deref(),
+                            r.arg_count,
+                        ) {
+                            edges.push(Edge::uses_member(
+                                file.clone(),
+                                r.line,
+                                index.defs[target].id.clone(),
+                                index.defs[target].file.clone(),
+                                r.member.clone(),
+                                None,
+                            ));
+                            edges_by_kind.uses_member += 1;
+                        }
+                    }
+                    emitted = true;
+                } else if let Resolution::Resolved(idx, via) = &result {
                     let (idx, via) = (*idx, *via);
                     if index.defs[idx].kind == "enum" {
                         let member_key = format!(
@@ -1128,14 +2984,32 @@ pub fn resolve_graph_with_ts(
                             Some(&mi) => (index.defs[mi].id.clone(), index.defs[mi].file.clone()),
                             None => (index.defs[idx].id.clone(), index.defs[idx].file.clone()),
                         };
-                        edges.push(Edge::UsesMember {
-                            from_file: file.clone(),
-                            from_line: r.line,
+                        edges.push(Edge::uses_member(
+                            file.clone(),
+                            r.line,
                             to,
                             to_file,
-                            heuristic: false,
-                        });
+                            r.member.clone(),
+                            None,
+                        ));
                         edges_by_kind.uses_member += 1;
+                        emitted = true;
+                    } else if !extractor_vouches_instance(r)
+                        && r.member.as_deref().is_some_and(|m| {
+                            type_candidate(&index, &format!("{}+{}", index.defs[idx].id, m), None)
+                                .is_some()
+                        })
+                    {
+                        // C# forbids a member and a nested type sharing one
+                        // name on the same type, so a member name that
+                        // matches a nested type id under `idx` names a chain
+                        // SEGMENT, not a member -- the deeper window of the
+                        // same chain (step 1.5 above) carries the real edge.
+                        // Marking this window emitted keeps tiers (e)/(f)/
+                        // scored from guessing at it as a member access. A
+                        // qualifier the extractor typed as an instance is
+                        // exempt: its name merely coincides with a type's,
+                        // and the receiver tiers below own it.
                         emitted = true;
                     } else {
                         // generic counts only for BARE qualifiers: a
@@ -1143,19 +3017,78 @@ pub fn resolve_graph_with_ts(
                         // segment while ladder steps 2-4 resolve by the
                         // chain's TAIL name, which can name-match an
                         // unrelated type. Dotted
-                        // chains earn their edge via the member lists or the
-                        // exact-qualified step instead.
-                        if declares_member(&index, idx, r.member.as_deref())
-                            || (r.generic && r.qualified.is_none())
+                        // chains earn their edge via the member lists, the
+                        // exact-qualified step, or step 1.5's nested walk
+                        // instead.
+                        //
+                        // `this_shaped` is precision rule (a)'s guard: this
+                        // resolution arm is where a `this.M` ref lands (its
+                        // `name` IS the enclosing type, resolved through the
+                        // ordinary type ladder like any other bare type
+                        // name), so a member declared non-publicly on the
+                        // enclosing type itself, or on one of its bases,
+                        // must still bind precisely -- Unit A3 items 1 and
+                        // 4. Every other typed-qualified access reaching
+                        // this arm (`SomeType.Member`, an inherited STATIC
+                        // member named through a derived type) keeps the
+                        // public-only walk.
+                        let this_shaped = is_this_shaped_receiver(r);
+                        let declares_here = if this_shaped {
+                            declares_member_any_visibility(
+                                &index,
+                                idx,
+                                r.member.as_deref(),
+                                r.arg_count,
+                            )
+                        } else {
+                            declares_member(&index, idx, r.member.as_deref(), r.arg_count)
+                        };
+                        // A qualifier that resolved as a TYPE binds the def
+                        // that DECLARES the member, in this order: the named
+                        // type itself; else the first in-graph base in its
+                        // closure (Unit A3 item 4 -- the widening
+                        // `base_member_declared` already does for `base.`,
+                        // applied to a receiver whose OWN type resolved
+                        // directly rather than through a `base.` qualifier);
+                        // else, on type certainty alone, the named type. A
+                        // type-argument list (`Cache<T>.x`) or an exact
+                        // qualified name (`Ns.Utils.Helper()`) is syntax
+                        // only a type can carry, so when nothing in the graph
+                        // declares the member it is still that type's as far
+                        // as this graph can see -- an extension, an external
+                        // base, an extractor gap. The certainty hatches come
+                        // LAST so that an inherited static member named
+                        // through a derived type (`Ns.Derived.Create()`,
+                        // `Derived<int>.Create()`) binds the base that
+                        // declares it, exactly as the same member named
+                        // through the bare derived name already does.
+                        let target = if declares_here {
+                            Some(idx)
+                        } else if let Some(target) = typed_receiver_base_member(
+                            &index,
+                            &file_contexts,
+                            idx,
+                            r.member.as_deref(),
+                            r.arg_count,
+                            this_shaped,
+                        ) {
+                            Some(target)
+                        } else if (r.generic && r.qualified.is_none())
                             || (r.qualified.is_some() && via == Via::Qualified)
                         {
-                            edges.push(Edge::UsesMember {
-                                from_file: file.clone(),
-                                from_line: r.line,
-                                to: index.defs[idx].id.clone(),
-                                to_file: index.defs[idx].file.clone(),
-                                heuristic: false,
-                            });
+                            Some(idx)
+                        } else {
+                            None
+                        };
+                        if let Some(target) = target {
+                            edges.push(Edge::uses_member(
+                                file.clone(),
+                                r.line,
+                                index.defs[target].id.clone(),
+                                index.defs[target].file.clone(),
+                                r.member.clone(),
+                                None,
+                            ));
                             edges_by_kind.uses_member += 1;
                             emitted = true;
                         }
@@ -1175,9 +3108,13 @@ pub fn resolve_graph_with_ts(
                 // The resolution itself is hoisted into `receiver_def` so tier
                 // (f)'s instance-member veto can reuse it instead of walking the
                 // ladder a second time for the same name in the same file
-                // context. Tier (e) still requires the member on the EXACT
-                // receiver def, with no inheritance widening. The closure is a
-                // negative signal only.
+                // context. Tier (e) tries the EXACT receiver def first and,
+                // only when that def itself does not declare the member, its
+                // in-graph base closure (Unit A3 item 4, mirroring the
+                // widening `base_member_declared` already does for `base.`)
+                // -- public visibility, unless the receiver IS the enclosing
+                // type itself (`is_this_shaped_receiver`), which may also see
+                // a non-public member per precision rule (a).
                 //
                 // The FULL outcome is kept too, not just the def: the scored
                 // tier reads its status (ambiguous vs. nothing-at-all) for any
@@ -1186,6 +3123,7 @@ pub fn resolve_graph_with_ts(
                 // identifier itself.
                 let mut receiver_def: Option<usize> = None;
                 let mut receiver_result: Option<Resolution> = None;
+                let mut receiver_narrowed_away = false;
                 // A `var x = Q.M(...)` local carries the CALL, not a type: the
                 // extractor cannot know what `M` returns, and the def that can
                 // is in another file. Resolving the callee's owner through the
@@ -1197,6 +3135,13 @@ pub fn resolve_graph_with_ts(
                 // taken-but-unknown, which is the answer the extractor already
                 // gave.
                 let mut receiver_type_name = r.receiver_type.clone();
+                // Set only by the bare-identifier field/property fallback
+                // below, and only so the resolution of the name it produced
+                // can happen in the DECLARING file's context rather than
+                // this one's. Every other way `receiver_type_name` is
+                // filled reads a name off this file's own ref, so it stays
+                // `None` and the site's own context is used.
+                let mut receiver_field: Option<ReceiverFieldType> = None;
                 if receiver_type_name.is_none() {
                     if let (Some(owner), Some(member)) =
                         (&r.receiver_call_owner, &r.receiver_call_member)
@@ -1205,26 +3150,227 @@ pub fn resolve_graph_with_ts(
                         if let Resolution::Resolved(oidx, _) =
                             resolve_ref(&probe, usings, ns, &index, aliases, &file_contexts)
                         {
-                            receiver_type_name =
-                                index.member_lists[oidx].method_returns.get(member).cloned();
+                            // `base.Make().Validate()`: the owner the
+                            // extractor could name is the ENCLOSING type
+                            // (that is what a `base.` qualifier types as),
+                            // but the method being called is the first
+                            // in-graph base's, so its return type is the
+                            // one the hop must read. An enclosing type that
+                            // hides `Make` with an override or a `new`
+                            // declaration of its own returns something
+                            // else, and reading THAT would send the tail
+                            // to the wrong type. No in-graph base declares
+                            // the member -> no fact, exactly as an owner
+                            // with no recorded return already gives.
+                            // `this.` and every ordinary chain tail keep
+                            // hopping through the owner itself.
+                            //
+                            // Arity is deliberately not asked here: the
+                            // ref's own `arg_count` belongs to the OUTER
+                            // call (`Validate`), never to the inner one.
+                            let hop_owner = if r.receiver_base {
+                                base_member_declared(
+                                    &index,
+                                    &file_contexts,
+                                    oidx,
+                                    Some(member.as_str()),
+                                    None,
+                                )
+                            } else {
+                                Some(oidx)
+                            };
+                            let returns = hop_owner.and_then(|idx| {
+                                index.member_lists[idx].method_returns.get(member).cloned()
+                            });
+                            // An AWAITED callee returning `Task<T>`/
+                            // `ValueTask<T>` unwraps to `T` -- exactly ONE
+                            // layer, read off the same one-level generic-arg
+                            // capture every other base-identifier fact keeps
+                            // beside its own bare name
+                            // (`method_return_args`, never re-derived from
+                            // source). An UNAWAITED call keeps the bare
+                            // wrapper name unchanged (`var t = x.FetchAsync();
+                            // t.Wait();` must stay typed `Task`, never
+                            // `Order`), and a doubly-wrapped
+                            // `Task<Task<Order>>` return unwraps to the INNER
+                            // `Task`'s own bare name -- never twice -- because
+                            // `method_return_args` itself only ever records
+                            // one level of argument base identifiers. A
+                            // type-parameter pass-through ("*") is refused,
+                            // the same as every other wildcard generic-arg
+                            // fact in this file: nothing at THIS call site
+                            // knows what it is bound to.
+                            receiver_type_name = match &returns {
+                                Some(name)
+                                    if r.receiver_awaited
+                                        && (name == "Task" || name == "ValueTask") =>
+                                {
+                                    match hop_owner.and_then(|idx| {
+                                        index.member_lists[idx].method_return_args.get(member)
+                                    }) {
+                                        Some(args) if args.len() == 1 && args[0] != "*" => {
+                                            Some(args[0].clone())
+                                        }
+                                        _ => returns,
+                                    }
+                                }
+                                _ => returns,
+                            };
                         }
+                    } else if let Some(slot) = &r.receiver_lambda {
+                        // The qualifier is an untyped lambda parameter: no
+                        // fact in THIS file can type it, because the type is
+                        // written on the callee's own delegate parameter, in
+                        // whatever file declares it. Reading it back yields
+                        // an ordinary bare-identifier receiver fact, so every
+                        // tier below -- precision, admission, narrowing --
+                        // treats the site exactly like any other typed
+                        // receiver.
+                        receiver_field = lambda_slot_receiver_type(
+                            &index,
+                            &file_contexts,
+                            ns,
+                            usings,
+                            aliases,
+                            r,
+                            slot,
+                        );
+                        receiver_type_name = receiver_field.as_ref().map(|f| f.type_name.clone());
+                    } else if r.qualified.is_none() && !r.generic && !r.receiver_local {
+                        // `receiver_type` AND `receiver_call_owner` are both
+                        // `None` here, which `push_member_ref` produces in
+                        // two cases it cannot tell apart from ITS OWN two
+                        // fields alone: no local/parameter/field fact for the
+                        // name exists in this file at all, OR one exists but
+                        // is a TAKEN-BUT-UNTYPED entry (an unresolved call, a
+                        // predefined type, a conflicting re-declaration --
+                        // see `receiver_fact_for`'s own doc comment).
+                        // `r.receiver_local` is the signal that DOES tell
+                        // the two apart: `true` whenever the enclosing
+                        // MEMBER's own fact table holds ANY entry for the
+                        // name (typed or not -- `Scope::has_local_fact`), so
+                        // a same-named local or parameter ALWAYS shadows a
+                        // field here, exactly like a TYPED one already does
+                        // by leaving `receiver_type` set. Bare identifier
+                        // only (`r.qualified.is_none() && !r.generic`): a
+                        // dotted or generic qualifier is never a field or
+                        // property name. Typed from the enclosing def's OWN
+                        // field and property declarations, merged across
+                        // every file that declares it (a sibling
+                        // partial-class file), then the same two tables
+                        // walked across each in-graph base of that def, in
+                        // declaration order -- the field the CURRENT file
+                        // cannot see for itself.
+                        receiver_field = bare_receiver_field_or_property_type(
+                            &index,
+                            ns,
+                            r,
+                            usings,
+                            aliases,
+                            &file_contexts,
+                        );
+                        receiver_type_name = receiver_field.as_ref().map(|f| f.type_name.clone());
                     }
                 }
                 if !emitted {
                     if let Some(receiver_type) = &receiver_type_name {
-                        let probe = name_probe(receiver_type.clone(), ns, r.outer_types.clone());
-                        let rr = resolve_ref(&probe, usings, ns, &index, aliases, &file_contexts);
+                        // A field's declared type is a bare identifier that
+                        // only means what the file that WROTE it meant: its
+                        // usings, its aliases, its namespace, its nesting.
+                        // A fact merged in from a sibling partial-class file
+                        // or read off a base in another file therefore
+                        // resolves in THAT file's context -- resolving it
+                        // here would let a same-named type visible only from
+                        // the reading file answer for a declaration that
+                        // never saw it. The site's own admission filter
+                        // still applies: the edge is emitted from here, so
+                        // what this project may reference is still this
+                        // project's question.
+                        let declaring = receiver_field.as_ref().and_then(|f| {
+                            file_contexts
+                                .get(&f.declaring_file)
+                                .map(|ctx| (f.declaring_def, ctx))
+                        });
+                        let (probe_usings, probe_ns, probe_aliases, probe_outer) = match declaring {
+                            Some((didx, dctx)) => (
+                                &dctx.usings,
+                                index.defs[didx].namespace.as_str(),
+                                &dctx.aliases,
+                                def_outer_types(&index.defs[didx]),
+                            ),
+                            None => (usings, ns, aliases, r.outer_types.clone()),
+                        };
+                        let probe = name_probe(receiver_type.clone(), probe_ns, probe_outer);
+                        // A type the extractor read off a declaration carries
+                        // its argument list (`receiver_args`, absent for a
+                        // non-generic type); one the resolver derived (a call
+                        // hop's return type, a field typed on a base) carries
+                        // a bare name and stays arity-blind.
+                        let receiver_arity = r
+                            .receiver_type
+                            .as_ref()
+                            .map(|_| r.receiver_args.as_ref().map_or(0, Vec::len));
+                        let Narrowed {
+                            res: rr,
+                            narrowed_away,
+                        } = narrow_tracked(
+                            resolve_ref_by_arity(
+                                probe,
+                                receiver_arity,
+                                probe_usings,
+                                probe_ns,
+                                &index,
+                                probe_aliases,
+                                &file_contexts,
+                            ),
+                            site_unit,
+                            &admission,
+                        );
+                        receiver_narrowed_away = narrowed_away;
                         if let Resolution::Resolved(ridx, _) = &rr {
                             let ridx = *ridx;
                             receiver_def = Some(ridx);
-                            if declares_member(&index, ridx, r.member.as_deref()) {
-                                edges.push(Edge::UsesMember {
-                                    from_file: file.clone(),
-                                    from_line: r.line,
-                                    to: index.defs[ridx].id.clone(),
-                                    to_file: index.defs[ridx].file.clone(),
-                                    heuristic: false,
-                                });
+                            // Unit A3 item 4: the receiver's OWN def may not
+                            // declare the member while an in-graph base of
+                            // it does -- `IS_THIS_SHAPED` decides only
+                            // whether that base walk may see a non-public
+                            // member (precision rule (a)), never whether it
+                            // runs at all, so an ordinary field/local/
+                            // parameter receiver widens to its bases exactly
+                            // like the `this.` shape does, public visibility
+                            // only.
+                            let this_shaped = is_this_shaped_receiver(r);
+                            let declares_here = if this_shaped {
+                                declares_member_any_visibility(
+                                    &index,
+                                    ridx,
+                                    r.member.as_deref(),
+                                    r.arg_count,
+                                )
+                            } else {
+                                declares_member(&index, ridx, r.member.as_deref(), r.arg_count)
+                            };
+                            let target = if declares_here {
+                                Some(ridx)
+                            } else {
+                                typed_receiver_base_member(
+                                    &index,
+                                    &file_contexts,
+                                    ridx,
+                                    r.member.as_deref(),
+                                    r.arg_count,
+                                    this_shaped,
+                                )
+                            };
+                            if let Some(target) = target {
+                                edges.push(Edge::uses_member(
+                                    file.clone(),
+                                    r.line,
+                                    index.defs[target].id.clone(),
+                                    index.defs[target].file.clone(),
+                                    r.member.clone(),
+                                    None,
+                                ));
                                 edges_by_kind.uses_member += 1;
                                 // Tier (e) RECORDS its claim: the extension
                                 // tier below reads `emitted`, and that is
@@ -1235,6 +3381,46 @@ pub fn resolve_graph_with_ts(
                         }
                         receiver_result = Some(rr);
                     }
+                }
+                // Unit A5 item 1: a chain-tail ref (one carrying
+                // `receiver_call_owner`/`receiver_call_member`, `a.B().C`'s
+                // `.C`) resolves ONLY through the method-return hop above.
+                // `receiver_type_name` is `None` here in every way that hop
+                // can come up EMPTY -- the owner did not resolve, the owner
+                // resolved ambiguously, or the callee has no recorded return
+                // at all -- and for a chain-tail ref there is no OTHER fact
+                // to fall back on: `r.name` is the invocation's own source
+                // text (`"a.B()"`), which by construction never resolves as
+                // a real def (`push_member_ref`'s doc comment), so `result`
+                // is unconditionally `External` and unnarrowed. Left alone,
+                // that is exactly the shape the scored tier's UNFILTERED
+                // name-uniqueness fallback exists for -- every def
+                // graph-wide vouching for the OUTER member name, with no
+                // receiver to filter by, since the receiver-narrowing rule
+                // below only ever runs when `receiver_type_name` is `Some`.
+                // Forcing `emitted` the same way `receiver_base` does above
+                // finishes the ref as external right here instead: silent,
+                // never entering tier (f) (already gated on `Some`) and
+                // never falling into that unfiltered pool.
+                //
+                // A hop that DID produce a name -- in-graph OR a name this
+                // extractor cannot look inside (an external return type,
+                // e.g. `ILogger`) -- leaves `receiver_type_name` `Some` and
+                // this guard alone: tier (e) above may already have claimed
+                // it (in-graph case), and otherwise the ref keeps walking
+                // the ordinary typed-receiver path below (tier (f), and the
+                // scored tier's own RECEIVER rule, `receiver_admits_
+                // candidate`, which -- unlike this guard -- filters rather
+                // than silences, and is what an external-but-named receiver
+                // is supposed to get: `stage5_receiver_rule_a_call_hop_
+                // receiver_with_unknown_args_compares_by_name_only` pins
+                // exactly this case green).
+                if !emitted
+                    && r.receiver_call_owner.is_some()
+                    && r.receiver_call_member.is_some()
+                    && receiver_type_name.is_none()
+                {
+                    emitted = true;
                 }
                 // Tier (e2): the qualifier is a two-segment chain
                 // whose head the extractor could type (`_widget.Config.Reload()`
@@ -1272,14 +3458,20 @@ pub fn resolve_graph_with_ts(
                                 if let Resolution::Resolved(hidx, _) =
                                     resolve_ref(&hop, usings, ns, &index, aliases, &file_contexts)
                                 {
-                                    if declares_member(&index, hidx, r.member.as_deref()) {
-                                        edges.push(Edge::UsesMember {
-                                            from_file: file.clone(),
-                                            from_line: r.line,
-                                            to: index.defs[hidx].id.clone(),
-                                            to_file: index.defs[hidx].file.clone(),
-                                            heuristic: false,
-                                        });
+                                    if declares_member(
+                                        &index,
+                                        hidx,
+                                        r.member.as_deref(),
+                                        r.arg_count,
+                                    ) {
+                                        edges.push(Edge::uses_member(
+                                            file.clone(),
+                                            r.line,
+                                            index.defs[hidx].id.clone(),
+                                            index.defs[hidx].file.clone(),
+                                            r.member.clone(),
+                                            None,
+                                        ));
                                         edges_by_kind.uses_member += 1;
                                         emitted = true;
                                     }
@@ -1322,8 +3514,10 @@ pub fn resolve_graph_with_ts(
                 //
                 // Admission is the LANGUAGE's rule, not a proximity heuristic: a
                 // candidate counts only when its declaring static class's
-                // namespace is imported by this file (local or global using) or
-                // IS this file's namespace. Exactly one admitted candidate
+                // namespace is imported by this file (local or global using),
+                // IS this file's namespace, or encloses it -- and, when a
+                // project model exists, only when that class's project is one
+                // this site could reference. Exactly one admitted candidate
                 // emits. Zero or two-or-more emit nothing and are NOT counted as
                 // ambiguous -- the same silence every other uses-member miss
                 // keeps, since counting them would swamp the type-ref-quality
@@ -1337,7 +3531,7 @@ pub fn resolve_graph_with_ts(
                 // to fall inside the candidate's declared [arityMin, arityMax]
                 // range.
                 //
-                // Four filters, in this order. Every one of them can only ever
+                // Five filters, in this order. Every one of them can only ever
                 // REMOVE a candidate, and the tier emits only on exactly one
                 // survivor:
                 //   1. the bucket -- exact (member name, thisType) pair;
@@ -1348,9 +3542,12 @@ pub fn resolve_graph_with_ts(
                 //      type arguments against the receiver's, with "*" (either
                 //      side's own type parameters) matching anything, and a
                 //      generic-vs-non-generic pairing never matching at all;
-                //   4. admission -- the declaring static class's namespace is
-                //      imported by this file (local or global using) or IS this
-                //      file's namespace.
+                //   4. visibility -- the declaring static class's namespace is
+                //      imported by this file (local or global using), IS this
+                //      file's namespace, or ENCLOSES it;
+                //   5. project admission -- when a project model exists, the
+                //      declaring static class's project is one the ref site's
+                //      project can reference (see `Admission`).
                 // Candidates are counted as DISTINCT DECLARING CLASSES, not as
                 // entries: an edge names the class, so two overloads of one
                 // class both accepting this call agree on the answer and are
@@ -1367,15 +3564,17 @@ pub fn resolve_graph_with_ts(
                 // to the wrong def -- the base declares the member, the derived
                 // type is what the code names).
                 //
-                // Three documented bounds, each with a pinning negative test:
+                // Three documented bounds, each with a pinning test:
                 //   - thisType is matched by EXACT name. No base-class walk, no
                 //     interface widening on the POSITIVE side: `this
                 //     IEnumerable<T>` does not claim a receiver typed List,
                 //     `this BaseWidget` does not claim one typed Widget.
-                //   - the namespace test is exact too: a static class in an
-                //     ENCLOSING namespace of the ref site (App.Ext visible from
-                //     App.Ext.Deep) is not admitted, though real C# would.
-                //     Narrower than the language, never wider.
+                //   - the namespace test admits an ENCLOSING namespace of the
+                //     ref site as well as an imported one (App.Ext is visible
+                //     from App.Ext.Deep with no using at all, which is the
+                //     language's own rule -- see `namespace_encloses`), but
+                //     nothing wider: a SIBLING namespace still needs the
+                //     import, and the global namespace does not enclose.
                 //   - the veto can only see IN-GRAPH types. An external
                 //     receiver, or an external base of an in-graph receiver,
                 //     hides whatever members it declares, so no veto is
@@ -1384,7 +3583,38 @@ pub fn resolve_graph_with_ts(
                     if let (Some(receiver_type), Some(member), Some(arg_count)) =
                         (&receiver_type_name, r.member.as_deref(), r.arg_count)
                     {
-                        let key = format!("{member} {receiver_type}");
+                        let exact_key = format!("{member} {receiver_type}");
+                        // Unit A3 item 3: the exact key misses for an
+                        // extension whose `this` parameter is a BASE of the
+                        // receiver rather than the receiver's own exact
+                        // type -- widen to the receiver's nominal closure
+                        // only once the exact key itself names no bucket,
+                        // and only when the receiver resolved in-graph
+                        // (`receiver_def`, the same resolution tier (e)
+                        // already computed). Applies to every typed
+                        // receiver, `this.` included -- `receiver_def` is
+                        // set identically for both.
+                        //
+                        // Unit A5 item 2: the widened key names a DIFFERENT
+                        // type than the receiver (a base or an ancestor), so
+                        // filter 3 below must not unify against the
+                        // receiver's OWN type arguments once the key was
+                        // widened -- `unify_args` is whichever picture is
+                        // right for the key actually chosen: the receiver's
+                        // own arguments, unchanged, on the exact-key path;
+                        // the matched node's own arguments, from
+                        // `extension_closure_key`, on the widened path.
+                        let (key, unify_args): (String, Option<Vec<String>>) =
+                            if index.extension_index.contains_key(&exact_key) {
+                                (exact_key, r.receiver_args.clone())
+                            } else {
+                                match receiver_def.and_then(|ridx| {
+                                    extension_closure_key(&index, &file_contexts, ridx, member)
+                                }) {
+                                    Some((widened_key, args)) => (widened_key, args),
+                                    None => (exact_key, r.receiver_args.clone()),
+                                }
+                            };
                         let candidates: &[ExtCandidate] = index
                             .extension_index
                             .get(&key)
@@ -1395,39 +3625,59 @@ pub fn resolve_graph_with_ts(
                             if !arity_accepts(&c.entry, arg_count) {
                                 continue;
                             }
-                            if !generic_args_unify(
-                                c.entry.this_args.as_ref(),
-                                r.receiver_args.as_ref(),
-                            ) {
+                            if !generic_args_unify(c.entry.this_args.as_ref(), unify_args.as_ref())
+                            {
                                 continue;
                             }
                             let def_ns = &index.defs[c.def_idx].namespace;
-                            if !usings.contains(def_ns) && def_ns != ns {
+                            if !usings.contains(def_ns)
+                                && def_ns != ns
+                                && !namespace_encloses(def_ns, ns)
+                            {
+                                continue;
+                            }
+                            // Filter 5, the project model's: a static class in
+                            // an assembly this one cannot reference is not a
+                            // candidate at all. It runs BEFORE the distinct
+                            // count on purpose -- an unreachable duplicate that
+                            // merely counted would silence the tier on a
+                            // candidate that is otherwise the single right
+                            // answer.
+                            if !admission.admits(site_unit, c.def_idx) {
                                 continue;
                             }
                             if !distinct.contains(&c.def_idx) {
                                 distinct.push(c.def_idx);
                             }
                         }
+                        // Unit A4 item 2: arity-gated exactly like the
+                        // precise tier's own `declares_here` check -- a
+                        // same-named instance member at an arity `arg_count`
+                        // does not fall inside is not a veto, so this tier
+                        // runs "exactly as for an undeclared member" for
+                        // that name.
                         let vetoed = match receiver_def {
                             Some(ridx) => inherited_member_declared(
                                 &index,
                                 &file_contexts,
                                 ridx,
                                 r.member.as_deref(),
+                                r.arg_count,
                             ),
                             None => false,
                         };
                         if distinct.len() == 1 && !vetoed {
                             let didx = distinct[0];
-                            edges.push(Edge::UsesMember {
-                                from_file: file.clone(),
-                                from_line: r.line,
-                                to: index.defs[didx].id.clone(),
-                                to_file: index.defs[didx].file.clone(),
-                                heuristic: true,
-                            });
+                            edges.push(Edge::uses_member(
+                                file.clone(),
+                                r.line,
+                                index.defs[didx].id.clone(),
+                                index.defs[didx].file.clone(),
+                                r.member.clone(),
+                                Some(HeuristicTier::Ext),
+                            ));
                             heuristic_edge_count += 1;
+                            heuristic_by_tier.ext += 1;
                             emitted = true;
                         }
                     }
@@ -1456,6 +3706,14 @@ pub fn resolve_graph_with_ts(
                 //     name is common vocabulary (`Add`, `Name`, `Value`) and a
                 //     guess carries no information, so the tier refuses
                 //     outright rather than emitting its top three.
+                // A qualifier NARROWED AWAY -- the ladder DID find candidates
+                // and the project model put every one of them out of reach --
+                // is a third case and gets an EMPTY pool. It reaches this tier
+                // as an `External` like any other, but it is not an unanswered
+                // name: the answer is "none of the real candidates is nameable
+                // here", and reaching for a graph-wide stranger instead would
+                // contradict the language rule that produced it. `narrowed_away`
+                // is what tells the two apart (`Narrowed`).
                 // A qualifier that RESOLVED is deliberately in neither pool:
                 // the resolution is a fact, the precise tiers already had their
                 // chance at it, and a heuristic edge there would be a second
@@ -1484,14 +3742,28 @@ pub fn resolve_graph_with_ts(
                     } else {
                         &result
                     };
+                    // The same choice, for the flag that rides alongside the
+                    // resolution the pool is drawn from.
+                    let source_narrowed_away = if receiver_type_name.is_some() {
+                        receiver_narrowed_away
+                    } else {
+                        result_narrowed_away
+                    };
+                    // The ref's own call shape, read once and reused by both
+                    // pools below: a property or field never vouches for a
+                    // ref shaped like a call, no matter which pool it came
+                    // from.
+                    let shape = member_shape(r);
                     let pool: Option<Vec<usize>> = match source {
-                        Resolution::Ambiguous(candidates) => Some(
+                        Resolution::Ambiguous(candidates, _) => Some(
                             candidates
                                 .iter()
                                 .copied()
-                                .filter(|&d| member_vouched(&index, d, r.member.as_deref()))
+                                .filter(|&d| member_vouched(&index, d, r.member.as_deref(), shape))
                                 .collect(),
                         ),
+                        // Narrowed to nothing: answered, not unanswered.
+                        Resolution::External if source_narrowed_away => Some(Vec::new()),
                         Resolution::External => {
                             let named: Vec<usize> = match r
                                 .member
@@ -1501,14 +3773,77 @@ pub fn resolve_graph_with_ts(
                                 Some(list) => list.clone(),
                                 None => Vec::new(),
                             };
+                            // The uniqueness CAP is measured on the raw,
+                            // shape-blind bucket -- a member name common
+                            // enough to refuse a guess stays refused
+                            // regardless of how many of its declarers survive
+                            // the shape filter below. Only once the ref is
+                            // admitted at all does the shape rule get to
+                            // narrow which of those declarers actually vouch.
                             if named.len() <= SCORED_UNIQUENESS_CAP {
-                                Some(named)
+                                Some(
+                                    named
+                                        .into_iter()
+                                        .filter(|&d| {
+                                            member_vouched(&index, d, r.member.as_deref(), shape)
+                                        })
+                                        .collect(),
+                                )
                             } else {
                                 None
                             }
                         }
                         Resolution::Resolved(..) => None,
                     };
+                    // The RECEIVER rule, the pool's last filter and, like
+                    // every other filter here, purely subtractive -- it can
+                    // remove a candidate, never add one. It applies only where
+                    // the ref carries a receiver type that resolved to nothing
+                    // in-graph -- the shape that made the uniqueness pool a
+                    // pool of same-named strangers. An AMBIGUOUS receiver
+                    // (several in-graph candidates, none picked) is untouched:
+                    // there the pool already IS the receiver's own candidate
+                    // set, so assignability is not in question. A ref with no
+                    // receiver fact at all is untouched too -- there is nothing
+                    // to be assignable TO.
+                    let pool = match (&receiver_type_name, source, r.member.as_deref()) {
+                        (Some(receiver_type), Resolution::External, Some(member)) => {
+                            pool.map(|candidates| {
+                                candidates
+                                    .into_iter()
+                                    .filter(|&d| {
+                                        receiver_admits_candidate(
+                                            &index,
+                                            &file_contexts,
+                                            &mut assignable_cache,
+                                            d,
+                                            member,
+                                            shape,
+                                            r.arg_count,
+                                            receiver_type,
+                                            r.receiver_args.as_ref(),
+                                            r.receiver_type.is_some(),
+                                        )
+                                    })
+                                    .collect()
+                            })
+                        }
+                        _ => pool,
+                    };
+                    // The project model's filter, last and applying to BOTH
+                    // pools: the uniqueness pool because a same-named stranger
+                    // in an unreferenced assembly is exactly the guess it was
+                    // built to make, and the ambiguous pool because the ladder
+                    // pooled candidates by name too. Placed after the
+                    // uniqueness cap so that cap keeps measuring the name's
+                    // repo-wide commonness -- a name carried by five defs is
+                    // common vocabulary whether or not this project can see
+                    // four of them.
+                    let pool = pool.map(|c| {
+                        c.into_iter()
+                            .filter(|&d| admission.admits(site_unit, d))
+                            .collect::<Vec<usize>>()
+                    });
                     if let Some(pool) = pool {
                         let mut scored: Vec<(usize, u8)> = pool
                             .into_iter()
@@ -1521,14 +3856,16 @@ pub fn resolve_graph_with_ts(
                         for (d, _) in scored.into_iter().take(SCORED_EMIT_CAP).filter(|&(d, _)| {
                             !index.defs[d].id.contains('+') || index.defs[d].file == *file
                         }) {
-                            edges.push(Edge::UsesMember {
-                                from_file: file.clone(),
-                                from_line: r.line,
-                                to: index.defs[d].id.clone(),
-                                to_file: index.defs[d].file.clone(),
-                                heuristic: true,
-                            });
+                            edges.push(Edge::uses_member(
+                                file.clone(),
+                                r.line,
+                                index.defs[d].id.clone(),
+                                index.defs[d].file.clone(),
+                                r.member.clone(),
+                                Some(HeuristicTier::Guess),
+                            ));
                             heuristic_edge_count += 1;
+                            heuristic_by_tier.guess += 1;
                         }
                     }
                 }
@@ -1581,7 +3918,11 @@ pub fn resolve_graph_with_ts(
                 continue;
             }
 
-            match resolve_ref(r, usings, ns, &index, aliases, &file_contexts) {
+            match narrow_by_reachability(
+                resolve_ref(r, usings, ns, &index, aliases, &file_contexts),
+                site_unit,
+                &admission,
+            ) {
                 Resolution::Resolved(idx, _) => {
                     edges.push(type_edge(&r.kind, file, r.line, &index.defs[idx]));
                     match r.kind.as_str() {
@@ -1590,7 +3931,7 @@ pub fn resolve_graph_with_ts(
                         _ => {}
                     }
                 }
-                Resolution::Ambiguous(candidate_indices) => {
+                Resolution::Ambiguous(candidate_indices, _) => {
                     let candidate_count = candidate_indices.len();
                     edges.push(Edge::Ambiguous {
                         origin: r.kind.clone(),
@@ -1666,6 +4007,11 @@ pub fn resolve_graph_with_ts(
                 true
             } else {
                 heuristic_edge_count -= 1;
+                match e.tier() {
+                    Some(HeuristicTier::Ext) => heuristic_by_tier.ext -= 1,
+                    Some(HeuristicTier::Guess) => heuristic_by_tier.guess -= 1,
+                    None => {}
+                }
                 false
             }
         }
@@ -1674,7 +4020,7 @@ pub fn resolve_graph_with_ts(
     let type_ref_attempts = edges_by_kind.inherits + edges_by_kind.uses_type + ambiguous_count;
 
     let mut graph = Graph {
-        schema_version: 1,
+        schema_version: GRAPH_SCHEMA_VERSION,
         built_at_head: manifest::git_head(root),
         stats: Stats {
             def_count: index.defs.len(),
@@ -1693,14 +4039,24 @@ pub fn resolve_graph_with_ts(
                 .iter()
                 .filter(|d| !d.test_methods.is_empty())
                 .count(),
+            // Appended after the test counter, always written, and summing to
+            // `heuristic_edge_count` above: the two tiers are the whole
+            // population of guesses.
+            heuristic_by_tier,
             ts: None,
         },
         defs: index.defs,
         edges,
         names,
+        // Appended LAST and empty without a model, which is what keeps a
+        // csproj-less repo's graph.json byte-identical to what it was.
+        units: model.map(crate::project::graph_units).unwrap_or_default(),
     };
     if !ts_fragments_by_file.is_empty() {
-        let alias = crate::tsgraph::read_ts_path_aliases(root);
+        let alias = crate::tsgraph::read_ts_alias_scopes(
+            root,
+            ts_fragments_by_file.iter().map(|(f, _)| f.as_str()),
+        );
         let ts = crate::tsgraph::resolve_ts_graph(ts_fragments_by_file, &alias);
         graph.defs.extend(ts.defs);
         graph.edges.extend(ts.edges);
@@ -1742,6 +4098,11 @@ mod tests {
             base_generic_args: crate::graph::OrderedMap::new(),
             test_methods: vec![],
             property_types: crate::graph::OrderedMap::new(),
+            field_types: crate::graph::OrderedMap::new(),
+            method_return_args: crate::graph::OrderedMap::new(),
+            non_public_methods: vec![],
+            method_arities: crate::graph::OrderedMap::new(),
+            method_params: crate::graph::OrderedMap::new(),
             end_line: 0,
         }
     }
@@ -1803,6 +4164,10 @@ mod tests {
             receiver_property_owner: None,
             receiver_call_owner: None,
             receiver_call_member: None,
+            receiver_base: false,
+            receiver_awaited: false,
+            receiver_local: false,
+            receiver_lambda: None,
         }
     }
 
@@ -1824,6 +4189,10 @@ mod tests {
             receiver_property_owner: None,
             receiver_call_owner: None,
             receiver_call_member: None,
+            receiver_base: false,
+            receiver_awaited: false,
+            receiver_local: false,
+            receiver_lambda: None,
         }
     }
 
@@ -2318,13 +4687,12 @@ mod tests {
     }
 
     #[test]
-    fn namespace_alias_qualified_member_ref_resolves_only_via_global_uniqueness_not_a_genuine_alias_walk(
-    ) {
-        // Resolution-ladder subtlety: step 0 (the alias short-circuit) only
-        // ever fires for a BARE, non-dotted ref. "Ns.MyEnum" is dotted the
-        // moment it has 2+ segments, so "Ns" is never looked up in the alias
-        // map -- this resolves purely because "MyEnum" happens to be
-        // globally unique (step 4), not genuine alias resolution.
+    fn namespace_alias_qualified_member_ref_resolves_through_the_alias_target() {
+        // Step 0 (the alias short-circuit) only ever fires for a BARE,
+        // non-dotted ref. "Ns.MyEnum" is dotted, so it reaches step 1a
+        // instead, which rewrites the aliased head to its target and looks
+        // the whole name up exactly -- genuine alias resolution, not the
+        // bare-tail uniqueness a dotted ref no longer gets.
         let files = vec![
             (
                 "Enums/MyEnum.cs".to_string(),
@@ -2367,7 +4735,7 @@ mod tests {
         ];
         let g = resolve_graph(&no_git_root(), &files);
         let edge = find_edge(&g, |e| matches!(e, Edge::UsesMember { .. }))
-            .expect("resolves via step-4 global uniqueness of MyEnum, not the Ns alias");
+            .expect("resolves via the Ns alias rewritten to its target");
         match edge {
             Edge::UsesMember { to, .. } => assert_eq!(to, "Some.Namespace.MyEnum.Member"),
             _ => unreachable!(),
@@ -2809,6 +5177,715 @@ mod tests {
         )];
         let g = resolve_graph(&no_git_root(), &files);
         assert_eq!(g.stats.unresolved_external_count, 1);
+    }
+
+    // --- qualified (dotted) resolution: the suffix fallback -----------------
+
+    #[test]
+    fn foreign_qualified_enum_member_never_binds_to_a_same_named_in_tree_enum() {
+        // The RabbitMQ.Client.ExchangeType shape: an in-tree enum shares its
+        // bare name with a foreign one, and only the dotted TEXT tells them
+        // apart -- step 1b must reject it rather than let the enum's own
+        // unconditional-emission rule wave it through.
+        let files = vec![
+            (
+                "Fabric/ExchangeType.cs".to_string(),
+                frag(
+                    vec![
+                        def(
+                            "App.Transports.Fabric.ExchangeType",
+                            "ExchangeType",
+                            "App.Transports.Fabric",
+                            "enum",
+                        ),
+                        def(
+                            "App.Transports.Fabric.ExchangeType.Fanout",
+                            "Fanout",
+                            "App.Transports.Fabric",
+                            "enum-member",
+                        ),
+                        def(
+                            "App.Transports.Fabric.ExchangeType.Topic",
+                            "Topic",
+                            "App.Transports.Fabric",
+                            "enum-member",
+                        ),
+                    ],
+                    vec![],
+                    vec![],
+                ),
+            ),
+            (
+                "Bus/Configure.cs".to_string(),
+                frag(
+                    vec![def("App.Bus.Configure", "Configure", "App.Bus", "class")],
+                    vec![],
+                    vec![member_ref(
+                        "ExchangeType",
+                        Some("RabbitMQ.Client.ExchangeType"),
+                        "Fanout",
+                        "App.Bus",
+                    )],
+                ),
+            ),
+        ];
+        let g = resolve_graph(&no_git_root(), &files);
+        assert!(member_edge_targets(&g).is_empty());
+        // An enum MEMBER never lands in `member_name_to_defs` (built from
+        // methods/properties/fields only, see the module header's asymmetry
+        // note) -- so the scored tier has no pool to draw from either. The
+        // foreign qualifier is dropped silently, not guessed.
+        assert!(heuristic_member_edge_targets(&g).is_empty());
+    }
+
+    #[test]
+    fn own_namespace_relative_and_bare_qualified_enum_uses_still_resolve() {
+        // The suffix rule only forecloses a FOREIGN dotted qualifier -- every
+        // shape C# actually uses to name the SAME enum (an exact match, a
+        // relative qualification resolved by the enclosing-prefix walk at
+        // step 1, and a bare name through a using) must keep resolving.
+        let enum_defs = vec![
+            def(
+                "App.Transports.Fabric.ExchangeType",
+                "ExchangeType",
+                "App.Transports.Fabric",
+                "enum",
+            ),
+            def(
+                "App.Transports.Fabric.ExchangeType.Fanout",
+                "Fanout",
+                "App.Transports.Fabric",
+                "enum-member",
+            ),
+            def(
+                "App.Transports.Fabric.ExchangeType.Topic",
+                "Topic",
+                "App.Transports.Fabric",
+                "enum-member",
+            ),
+        ];
+        let files = vec![
+            (
+                "Fabric/ExchangeType.cs".to_string(),
+                frag(enum_defs, vec![], vec![]),
+            ),
+            (
+                "Bus/Exact.cs".to_string(),
+                frag(
+                    vec![def("App.Bus.Exact", "Exact", "App.Bus", "class")],
+                    vec![],
+                    vec![member_ref(
+                        "ExchangeType",
+                        Some("App.Transports.Fabric.ExchangeType"),
+                        "Topic",
+                        "App.Bus",
+                    )],
+                ),
+            ),
+            (
+                "Relative.cs".to_string(),
+                frag(
+                    vec![def("App.Relative", "Relative", "App", "class")],
+                    vec![],
+                    vec![member_ref(
+                        "ExchangeType",
+                        Some("Transports.Fabric.ExchangeType"),
+                        "Topic",
+                        "App",
+                    )],
+                ),
+            ),
+            (
+                "Bus/Bare.cs".to_string(),
+                frag(
+                    vec![def("App.Bus.Bare", "Bare", "App.Bus", "class")],
+                    vec![FragUsing::Plain {
+                        text: "App.Transports.Fabric".into(),
+                        global: false,
+                    }],
+                    vec![member_ref("ExchangeType", None, "Fanout", "App.Bus")],
+                ),
+            ),
+        ];
+        let g = resolve_graph(&no_git_root(), &files);
+        let mut targets = member_edge_targets(&g);
+        targets.sort_unstable();
+        let mut expected = vec![
+            "App.Transports.Fabric.ExchangeType.Fanout",
+            "App.Transports.Fabric.ExchangeType.Topic",
+            "App.Transports.Fabric.ExchangeType.Topic",
+        ];
+        expected.sort_unstable();
+        assert_eq!(targets, expected);
+    }
+
+    #[test]
+    fn foreign_qualified_static_call_never_binds_to_a_same_named_in_tree_class() {
+        let json = def_with(
+            "App.Infra.JsonSerializer",
+            "JsonSerializer",
+            "App.Infra",
+            "class",
+            &["Serialize"],
+            &[],
+            &[],
+        );
+        let foreign_ref = FragRef {
+            arg_count: Some(1),
+            ..member_ref(
+                "JsonSerializer",
+                Some("System.Text.Json.JsonSerializer"),
+                "Serialize",
+                "App.Svc",
+            )
+        };
+        let files = vec![
+            (
+                "Infra/JsonSerializer.cs".to_string(),
+                frag(vec![json.clone()], vec![], vec![]),
+            ),
+            (
+                "Svc/Foreign.cs".to_string(),
+                frag(
+                    vec![def("App.Svc.Foreign", "Foreign", "App.Svc", "class")],
+                    vec![],
+                    vec![foreign_ref],
+                ),
+            ),
+        ];
+        let g = resolve_graph(&no_git_root(), &files);
+        assert!(
+            member_edge_targets(&g).is_empty(),
+            "the foreign qualifier must never bind the precise edge to the in-tree class"
+        );
+        // The suffix rule only tightens the PRECISE ladder (step 1b); the
+        // scored tier's member-name uniqueness pool is a wholly separate
+        // path, and "Serialize" is unique in this graph -- so the guess
+        // still fires. This is deliberate: the suffix rule narrows certainty,
+        // it does not widen what the scored tier is willing to guess.
+        assert_eq!(
+            heuristic_member_edge_targets(&g),
+            vec!["App.Infra.JsonSerializer"]
+        );
+
+        let own_ref = FragRef {
+            arg_count: Some(1),
+            ..member_ref(
+                "JsonSerializer",
+                Some("App.Infra.JsonSerializer"),
+                "Serialize",
+                "App.Svc",
+            )
+        };
+        let files = vec![
+            (
+                "Infra/JsonSerializer.cs".to_string(),
+                frag(vec![json], vec![], vec![]),
+            ),
+            (
+                "Svc/Own.cs".to_string(),
+                frag(
+                    vec![def("App.Svc.Own", "Own", "App.Svc", "class")],
+                    vec![],
+                    vec![own_ref],
+                ),
+            ),
+        ];
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(member_edge_targets(&g), vec!["App.Infra.JsonSerializer"]);
+    }
+
+    #[test]
+    fn property_hop_through_an_external_intermediate_never_binds_a_same_named_type() {
+        // "expr.Member.Name" (an Expression-tree walk): the extractor
+        // flattens the qualifier to "expr.Member", which happens to share
+        // its tail with an in-tree type named "Member". Neither a top-level
+        // nor a NESTED same-named type may answer for it -- "expr" is not a
+        // namespace prefix at all, and the suffix rule only cares whether the
+        // def's own path ends with the written text.
+        let top_level = def_with(
+            "App.Model.Member",
+            "Member",
+            "App.Model",
+            "class",
+            &[],
+            &["Name"],
+            &[],
+        );
+        let files = vec![
+            (
+                "Model/Member.cs".to_string(),
+                frag(vec![top_level], vec![], vec![]),
+            ),
+            (
+                "Svc/Hop.cs".to_string(),
+                frag(
+                    vec![def("App.Svc.Hop", "Hop", "App.Svc", "class")],
+                    vec![],
+                    vec![member_ref("Member", Some("expr.Member"), "Name", "App.Svc")],
+                ),
+            ),
+        ];
+        let g = resolve_graph(&no_git_root(), &files);
+        assert!(member_edge_targets(&g).is_empty());
+
+        let nested = def_with(
+            "App.Model.Outer+Member",
+            "Member",
+            "App.Model",
+            "class",
+            &[],
+            &["Name"],
+            &[],
+        );
+        let files = vec![
+            (
+                "Model/Outer.cs".to_string(),
+                frag(vec![nested], vec![], vec![]),
+            ),
+            (
+                "Svc/Hop.cs".to_string(),
+                frag(
+                    vec![def("App.Svc.Hop", "Hop", "App.Svc", "class")],
+                    vec![],
+                    vec![member_ref("Member", Some("expr.Member"), "Name", "App.Svc")],
+                ),
+            ),
+        ];
+        let g = resolve_graph(&no_git_root(), &files);
+        assert!(member_edge_targets(&g).is_empty());
+    }
+
+    #[test]
+    fn foreign_qualified_base_type_is_external_not_an_inherits_edge() {
+        let files = vec![
+            (
+                "Messaging/DefaultBasicConsumer.cs".to_string(),
+                frag(
+                    vec![def(
+                        "App.Messaging.DefaultBasicConsumer",
+                        "DefaultBasicConsumer",
+                        "App.Messaging",
+                        "class",
+                    )],
+                    vec![],
+                    vec![],
+                ),
+            ),
+            (
+                "Bus/Consumer.cs".to_string(),
+                frag(
+                    vec![def("App.Bus.Consumer", "Consumer", "App.Bus", "class")],
+                    vec![],
+                    vec![type_ref(
+                        "inherits",
+                        "DefaultBasicConsumer",
+                        Some("RabbitMQ.Client.DefaultBasicConsumer"),
+                        "App.Bus",
+                    )],
+                ),
+            ),
+        ];
+        let g = resolve_graph(&no_git_root(), &files);
+        assert!(g.edges.iter().all(|e| !matches!(e, Edge::Inherits { .. })));
+        assert_eq!(g.stats.unresolved_external_count, 1);
+    }
+
+    #[test]
+    fn alias_qualified_name_whose_target_lacks_the_type_is_external_even_when_another_namespace_has_it(
+    ) {
+        // The alias rewrite (step 1a) hands step 1b the EXPANDED text, not
+        // the literal "Ns.MyEnum" -- an alias pointed at the wrong namespace
+        // must not fall back to matching some unrelated namespace's
+        // same-named enum by suffix.
+        let files = vec![
+            (
+                "Other/MyEnum.cs".to_string(),
+                frag(
+                    vec![
+                        def("App.Other.MyEnum", "MyEnum", "App.Other", "enum"),
+                        def("App.Other.MyEnum.On", "On", "App.Other", "enum-member"),
+                    ],
+                    vec![],
+                    vec![],
+                ),
+            ),
+            (
+                "Consumers/AliasMiss.cs".to_string(),
+                frag(
+                    vec![def(
+                        "App.Consumers.AliasMiss",
+                        "AliasMiss",
+                        "App.Consumers",
+                        "class",
+                    )],
+                    vec![FragUsing::Alias {
+                        alias: "Ns".into(),
+                        target: "Some.Namespace".into(),
+                        global: false,
+                    }],
+                    vec![member_ref(
+                        "MyEnum",
+                        Some("Ns.MyEnum"),
+                        "On",
+                        "App.Consumers",
+                    )],
+                ),
+            ),
+        ];
+        let g = resolve_graph(&no_git_root(), &files);
+        assert!(member_edge_targets(&g).is_empty());
+    }
+
+    #[test]
+    fn dotted_suffix_picks_the_def_whose_path_ends_with_the_written_text() {
+        let files = vec![
+            (
+                "Core/Outer.cs".to_string(),
+                frag(
+                    vec![def("App.Core.Outer+Nested", "Nested", "App.Core", "class")],
+                    vec![],
+                    vec![],
+                ),
+            ),
+            (
+                "Other/Holder.cs".to_string(),
+                frag(
+                    vec![def(
+                        "App.Other.Holder+Nested",
+                        "Nested",
+                        "App.Other",
+                        "class",
+                    )],
+                    vec![],
+                    vec![],
+                ),
+            ),
+            (
+                "Consumers/Picks.cs".to_string(),
+                frag(
+                    vec![def(
+                        "App.Consumers.Picks",
+                        "Picks",
+                        "App.Consumers",
+                        "class",
+                    )],
+                    vec![],
+                    vec![type_ref(
+                        "uses-type",
+                        "Nested",
+                        Some("Holder.Nested"),
+                        "App.Consumers",
+                    )],
+                ),
+            ),
+        ];
+        let g = resolve_graph(&no_git_root(), &files);
+        let edge = find_edge(&g, |e| matches!(e, Edge::UsesType { .. }))
+            .expect("suffix match resolves to the def whose path ends with the written text");
+        match edge {
+            Edge::UsesType { to, .. } => assert_eq!(to, "App.Other.Holder+Nested"),
+            _ => unreachable!(),
+        }
+        assert_eq!(g.stats.ambiguous_count, 0);
+
+        // Control: neither def's path ends with this unrelated written text.
+        let files = vec![
+            (
+                "Core/Outer.cs".to_string(),
+                frag(
+                    vec![def("App.Core.Outer+Nested", "Nested", "App.Core", "class")],
+                    vec![],
+                    vec![],
+                ),
+            ),
+            (
+                "Other/Holder.cs".to_string(),
+                frag(
+                    vec![def(
+                        "App.Other.Holder+Nested",
+                        "Nested",
+                        "App.Other",
+                        "class",
+                    )],
+                    vec![],
+                    vec![],
+                ),
+            ),
+            (
+                "Consumers/Misses.cs".to_string(),
+                frag(
+                    vec![def(
+                        "App.Consumers.Misses",
+                        "Misses",
+                        "App.Consumers",
+                        "class",
+                    )],
+                    vec![],
+                    vec![type_ref(
+                        "uses-type",
+                        "Nested",
+                        Some("Elsewhere.Nested"),
+                        "App.Consumers",
+                    )],
+                ),
+            ),
+        ];
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(g.stats.unresolved_external_count, 1);
+    }
+
+    #[test]
+    fn two_defs_whose_paths_both_end_with_the_written_text_stay_ambiguous() {
+        let files = vec![
+            (
+                "A/Outer.cs".to_string(),
+                frag(
+                    vec![def("App.A.Outer+Nested", "Nested", "App.A", "class")],
+                    vec![],
+                    vec![],
+                ),
+            ),
+            (
+                "B/Outer.cs".to_string(),
+                frag(
+                    vec![def("App.B.Outer+Nested", "Nested", "App.B", "class")],
+                    vec![],
+                    vec![],
+                ),
+            ),
+            // A third same-named nested def whose path does NOT end with the
+            // written text: the suffix rule drops it from the pool, which is
+            // what makes the candidate list two rather than three.
+            (
+                "C/Holder.cs".to_string(),
+                frag(
+                    vec![def("App.C.Holder+Nested", "Nested", "App.C", "class")],
+                    vec![],
+                    vec![],
+                ),
+            ),
+            (
+                "Consumers/Ambiguous.cs".to_string(),
+                frag(
+                    vec![def(
+                        "App.Consumers.Ambiguous",
+                        "Ambiguous",
+                        "App.Consumers",
+                        "class",
+                    )],
+                    vec![],
+                    vec![type_ref(
+                        "uses-type",
+                        "Nested",
+                        Some("Outer.Nested"),
+                        "App.Consumers",
+                    )],
+                ),
+            ),
+        ];
+        let g = resolve_graph(&no_git_root(), &files);
+        assert!(g.edges.iter().all(|e| !matches!(e, Edge::UsesType { .. })));
+        assert_eq!(g.stats.ambiguous_count, 1);
+        match find_edge(&g, |e| matches!(e, Edge::Ambiguous { .. })).unwrap() {
+            Edge::Ambiguous {
+                candidate_count,
+                candidates,
+                ..
+            } => {
+                assert_eq!(*candidate_count, 2);
+                assert_eq!(
+                    candidates.iter().map(|c| c.id.as_str()).collect::<Vec<_>>(),
+                    vec!["App.A.Outer+Nested", "App.B.Outer+Nested"]
+                );
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn generic_outer_type_written_with_its_arguments_still_reaches_the_nested_type() {
+        // The extractor strips type arguments off the TAIL only, so a nested
+        // type under a generic outer arrives as `Box<string>.Slot`; the
+        // suffix step reads it as `Box.Slot`.
+        let files = vec![
+            (
+                "Core/Box.cs".to_string(),
+                frag(
+                    vec![
+                        FragDef {
+                            type_params: vec!["T".into()],
+                            ..def("App.Core.Box", "Box", "App.Core", "class")
+                        },
+                        def("App.Core.Box+Slot", "Slot", "App.Core", "class"),
+                    ],
+                    vec![],
+                    vec![],
+                ),
+            ),
+            (
+                "Bus/Holder.cs".to_string(),
+                frag(
+                    vec![def("App.Bus.Holder", "Holder", "App.Bus", "class")],
+                    vec![],
+                    vec![type_ref(
+                        "uses-type",
+                        "Slot",
+                        Some("Box<string>.Slot"),
+                        "App.Bus",
+                    )],
+                ),
+            ),
+        ];
+        let g = resolve_graph(&no_git_root(), &files);
+        match find_edge(&g, |e| matches!(e, Edge::UsesType { .. })).expect("resolved edge present")
+        {
+            Edge::UsesType { to, .. } => assert_eq!(to, "App.Core.Box+Slot"),
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn global_alias_qualified_name_resolves_by_its_absolute_path() {
+        let files = vec![
+            (
+                "Core/Widget.cs".to_string(),
+                frag(
+                    vec![def("App.Core.Widget", "Widget", "App.Core", "class")],
+                    vec![],
+                    vec![],
+                ),
+            ),
+            (
+                "Bus/Holder.cs".to_string(),
+                frag(
+                    vec![def("App.Bus.Holder", "Holder", "App.Bus", "class")],
+                    vec![],
+                    vec![type_ref(
+                        "uses-type",
+                        "Widget",
+                        Some("global::App.Core.Widget"),
+                        "App.Bus",
+                    )],
+                ),
+            ),
+        ];
+        let g = resolve_graph(&no_git_root(), &files);
+        match find_edge(&g, |e| matches!(e, Edge::UsesType { .. })).expect("resolved edge present")
+        {
+            Edge::UsesType { to, .. } => assert_eq!(to, "App.Core.Widget"),
+            _ => unreachable!(),
+        }
+        assert_eq!(g.stats.unresolved_external_count, 0);
+    }
+
+    #[test]
+    fn nested_type_named_through_a_derived_type_is_admitted_by_the_inheritance_closure() {
+        // `Derived.Item` for an `Item` declared inside `Base` is legal C#, and
+        // no def path ends with `Derived.Item`; the qualifier resolves as a
+        // type of its own and the nested candidate's enclosing def must lie in
+        // its inheritance closure. `Unrelated.Item` -- a type with no such
+        // base -- stays external.
+        let core = |refs: Vec<FragRef>| {
+            vec![
+                (
+                    "Core/Types.cs".to_string(),
+                    frag(
+                        vec![
+                            def("App.Core.Base", "Base", "App.Core", "class"),
+                            def("App.Core.Base+Item", "Item", "App.Core", "class"),
+                            FragDef {
+                                bases: vec!["Base".into()],
+                                ..def("App.Core.Derived", "Derived", "App.Core", "class")
+                            },
+                            def("App.Core.Unrelated", "Unrelated", "App.Core", "class"),
+                        ],
+                        vec![],
+                        vec![],
+                    ),
+                ),
+                (
+                    "Bus/Holder.cs".to_string(),
+                    frag(
+                        vec![def("App.Bus.Holder", "Holder", "App.Bus", "class")],
+                        vec![FragUsing::Plain {
+                            text: "App.Core".into(),
+                            global: false,
+                        }],
+                        refs,
+                    ),
+                ),
+            ]
+        };
+        let g = resolve_graph(
+            &no_git_root(),
+            &core(vec![type_ref(
+                "uses-type",
+                "Item",
+                Some("Derived.Item"),
+                "App.Bus",
+            )]),
+        );
+        match find_edge(&g, |e| matches!(e, Edge::UsesType { .. })).expect("resolved edge present")
+        {
+            Edge::UsesType { to, .. } => assert_eq!(to, "App.Core.Base+Item"),
+            _ => unreachable!(),
+        }
+        let g = resolve_graph(
+            &no_git_root(),
+            &core(vec![type_ref(
+                "uses-type",
+                "Item",
+                Some("Unrelated.Item"),
+                "App.Bus",
+            )]),
+        );
+        assert!(find_edge(&g, |e| matches!(e, Edge::UsesType { .. })).is_none());
+        assert_eq!(g.stats.unresolved_external_count, 1);
+    }
+
+    #[test]
+    fn e2e_foreign_qualified_enum_and_property_hop_emit_no_precise_edge() {
+        // Real fixture, run through this crate's own extractor: a foreign
+        // qualifier reading the SAME simple name as an in-tree enum
+        // ("RabbitMQ.Client.ExchangeType.Fanout"), the in-tree enum reached
+        // through its own full name ("App.Transports.Fabric.ExchangeType.
+        // Topic"), and a property hop through an external intermediate
+        // ("expr.Member.Name") that happens to share a tail with an in-tree
+        // class named "Member".
+        let files = fragments_for(&[
+            (
+                "Fabric/ExchangeType.cs",
+                "namespace App.Transports.Fabric { public enum ExchangeType { Direct, Fanout, Topic } }",
+            ),
+            (
+                "Model/Member.cs",
+                "namespace App.Model { public class Member { public string Name { get; set; } } }",
+            ),
+            (
+                "Bus/Configure.cs",
+                "namespace App.Bus { public class Configure { public void Run(System.Linq.Expressions.MemberExpression expr) { var t = RabbitMQ.Client.ExchangeType.Fanout; var own = App.Transports.Fabric.ExchangeType.Topic; var n = expr.Member.Name; } } }",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_from(&g, "Bus/Configure.cs")
+                .into_iter()
+                .map(|(to, _)| to)
+                .collect::<Vec<_>>(),
+            vec!["App.Transports.Fabric.ExchangeType.Topic"],
+            "only the own-namespace fully-qualified access earns a precise edge"
+        );
+        assert!(
+            member_edge_targets(&g)
+                .iter()
+                .all(|t| *t != "App.Model.Member"),
+            "the property hop through the external \"expr\" receiver never binds the in-tree class"
+        );
+        // The scored tier is untouched by the suffix rule: "Name" is unique
+        // in this graph (declared only by App.Model.Member), so the property
+        // hop still earns a guess.
+        assert_eq!(heuristic_member_edge_targets(&g), vec!["App.Model.Member"]);
     }
 
     // --- namespace-proximity (step 3, exact match, not a walk) ------------
@@ -3705,6 +6782,23 @@ mod tests {
             .collect()
     }
 
+    /// The members named by one file's heuristic uses-member edges, in edge
+    /// order -- the fact `heuristic_member_edges_from` above cannot show.
+    fn heuristic_member_names_from<'a>(g: &'a Graph, from: &str) -> Vec<Option<&'a str>> {
+        g.edges
+            .iter()
+            .filter_map(|e| match e {
+                Edge::UsesMember {
+                    from_file,
+                    heuristic: true,
+                    member,
+                    ..
+                } if from_file == from => Some(member.as_deref()),
+                _ => None,
+            })
+            .collect()
+    }
+
     #[test]
     fn stage2_end_to_end_static_property_access_emits_and_an_undeclared_member_does_not() {
         let files = fragments_for(&[
@@ -3788,6 +6882,345 @@ mod tests {
         );
     }
 
+    // --- nested-qualifier chain: the qualifier ladder walking through
+    // nested types ---
+    //
+    // A qualified expression that crosses one or more nesting boundaries
+    // (`Outer.Inner.Value`, `Outer.Middle.Leaf.Value`) must bind to the LEAF
+    // def the compiler actually binds -- using the "+"-joined id `type_id`
+    // (extract.rs) gives every nested type -- never to an outer container
+    // with the next dotted segment misread as one of ITS members. Real
+    // fixtures run through this crate's own extractor, matching the tier
+    // (e) end-to-end tests above.
+
+    #[test]
+    fn end_to_end_two_level_nested_qualifier_binds_the_inner_type_and_its_const() {
+        let files = fragments_for(&[
+            (
+                "Other/Outer.cs",
+                "namespace App.Other { public static class Outer { public static class Inner { public const string Value = \"v\"; } } }",
+            ),
+            (
+                "Consumers/UsesNested.cs",
+                "\nusing App.Other;\n\nnamespace App.Consumers;\n\npublic class UsesNested\n{\n  public string Get() => Outer.Inner.Value;\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_from(&g, "Consumers/UsesNested.cs"),
+            vec![("App.Other.Outer+Inner", 8)],
+            "exactly one precise edge, targeting the nested type -- not Outer"
+        );
+        let edge = find_edge(&g, |e| matches!(e, Edge::UsesMember { .. }))
+            .expect("uses-member edge present");
+        match edge {
+            Edge::UsesMember { member, .. } => {
+                assert_eq!(member.as_deref(), Some("Value"))
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn end_to_end_three_level_nested_qualifier_binds_the_leaf_type_and_its_const() {
+        let files = fragments_for(&[
+            (
+                "Other/Outer.cs",
+                "namespace App.Other { public struct Outer { public struct Middle { public struct Leaf { public const string Value = \"v\"; } } } }",
+            ),
+            (
+                "Consumers/UsesNested.cs",
+                "\nusing App.Other;\n\nnamespace App.Consumers;\n\npublic class UsesNested\n{\n  public string Get() => Outer.Middle.Leaf.Value;\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_from(&g, "Consumers/UsesNested.cs"),
+            vec![("App.Other.Outer+Middle+Leaf", 8)],
+            "the whole chain binds to the LEAF struct, not the outermost container"
+        );
+        let edge = find_edge(&g, |e| matches!(e, Edge::UsesMember { .. }))
+            .expect("uses-member edge present");
+        match edge {
+            Edge::UsesMember { member, .. } => {
+                assert_eq!(member.as_deref(), Some("Value"))
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn end_to_end_nested_enum_member_binds_the_enum_and_not_the_enclosing_type() {
+        let files = fragments_for(&[
+            (
+                "Other/Outer.cs",
+                "namespace App.Other { public class Outer { public enum Kind { First, Second } } }",
+            ),
+            (
+                "Consumers/UsesNested.cs",
+                "\nusing App.Other;\n\nnamespace App.Consumers;\n\npublic class UsesNested\n{\n  public object Get() => Outer.Kind.First;\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        let edge = find_edge(&g, |e| matches!(e, Edge::UsesMember { .. }))
+            .expect("uses-member edge present");
+        match edge {
+            Edge::UsesMember {
+                to,
+                to_file,
+                member,
+                heuristic,
+                ..
+            } => {
+                assert_eq!(to, "App.Other.Outer+Kind.First");
+                assert_eq!(to_file, "Other/Outer.cs");
+                assert_eq!(member.as_deref(), Some("First"));
+                assert!(!heuristic, "the enum member itself is the precise target");
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn end_to_end_collision_a_namespace_type_must_not_shadow_a_same_named_nested_type() {
+        // "Config" names two unrelated defs: a top-level class in namespace
+        // Shared.Config, and a class nested in Outer. `Outer.Config.Value`
+        // can only ever mean the NESTED one -- "Outer" already names a
+        // specific type, so C# never even considers the unrelated
+        // namespace's same-named class. The smallest fixture that puts both
+        // candidates in the same simple-name pool: this only breaks once
+        // the global-uniqueness fallback sees a same-named type ANYWHERE in
+        // the corpus and cannot tell the two apart.
+        let files = fragments_for(&[
+            (
+                "Shared/Config.cs",
+                "namespace Shared.Config { public class Config { public const string Value = \"ns\"; } }",
+            ),
+            (
+                "Other/Outer.cs",
+                "namespace App.Other { public class Outer { public class Config { public const string Value = \"nested\"; } } }",
+            ),
+            (
+                "Consumers/UsesNested.cs",
+                "\nusing App.Other;\n\nnamespace App.Consumers;\n\npublic class UsesNested\n{\n  public string Get() => Outer.Config.Value;\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_from(&g, "Consumers/UsesNested.cs"),
+            vec![("App.Other.Outer+Config", 8)],
+            "Outer.Config.Value must bind precisely to the NESTED Config -- never guess at the unrelated namespace-level Config"
+        );
+        assert!(
+            !any_member_edge_targets(&g, "Shared.Config.Config"),
+            "no edge of any tier may reach the namespace-level Config"
+        );
+    }
+
+    #[test]
+    fn end_to_end_plain_const_on_the_outer_type_still_resolves_precisely() {
+        // Control: no nesting at all. Guards the ladder change against
+        // regressing the ordinary case.
+        let files = fragments_for(&[
+            (
+                "Other/Outer.cs",
+                "namespace App.Other { public static class Outer { public const string Value = \"v\"; } }",
+            ),
+            (
+                "Consumers/UsesNested.cs",
+                "\nusing App.Other;\n\nnamespace App.Consumers;\n\npublic class UsesNested\n{\n  public string Get() => Outer.Value;\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_from(&g, "Consumers/UsesNested.cs"),
+            vec![("App.Other.Outer", 8)]
+        );
+        let edge = find_edge(&g, |e| matches!(e, Edge::UsesMember { .. }))
+            .expect("uses-member edge present");
+        match edge {
+            Edge::UsesMember { member, .. } => {
+                assert_eq!(member.as_deref(), Some("Value"))
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    /// `true` when some uses-member edge out of `g`, precise or heuristic,
+    /// names `target` as its `to`. Used by the nested-qualifier chain tests
+    /// below to prove the outer container of a walked chain earns no edge at
+    /// all, not merely no PRECISE one -- `member_edges_from` and
+    /// `heuristic_member_edges_from` only ever show what DID emit.
+    fn any_member_edge_targets(g: &Graph, target: &str) -> bool {
+        g.edges.iter().any(|e| match e {
+            Edge::UsesMember { to, .. } => to == target,
+            _ => false,
+        })
+    }
+
+    #[test]
+    fn end_to_end_namespace_qualified_head_walks_nested_types_to_the_leaf() {
+        let files = fragments_for(&[
+            (
+                "Other/Outer.cs",
+                "namespace App.Other { public static class Outer { public static class Middle { public static class Leaf { public const string Value = \"v\"; } } } }",
+            ),
+            (
+                "Consumers/UsesNested.cs",
+                "\nnamespace App.Consumers;\n\npublic class UsesNested\n{\n  public string Get() => App.Other.Outer.Middle.Leaf.Value;\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_from(&g, "Consumers/UsesNested.cs"),
+            vec![("App.Other.Outer+Middle+Leaf", 6)],
+            "a namespace-qualified head walks every nested level to the leaf, with no using at all"
+        );
+        let edge = find_edge(&g, |e| matches!(e, Edge::UsesMember { .. }))
+            .expect("uses-member edge present");
+        match edge {
+            Edge::UsesMember { member, .. } => {
+                assert_eq!(member.as_deref(), Some("Value"))
+            }
+            _ => unreachable!(),
+        }
+        assert!(
+            !any_member_edge_targets(&g, "App.Other.Outer"),
+            "no uses-member edge, precise or heuristic, may target the outer container"
+        );
+    }
+
+    #[test]
+    fn end_to_end_repeated_nested_leaf_name_binds_the_named_container() {
+        let files = fragments_for(&[
+            (
+                "Other/Constants.cs",
+                "namespace App.Other { public static class Constants { public static class SalesInvoice { public static class FormField { public const string RecId = \"a\"; } } public static class PurchaseOrder { public static class FormField { public const string RecId = \"b\"; } } } }",
+            ),
+            (
+                "Consumers/UsesNested.cs",
+                "\nnamespace App.Consumers;\n\npublic class UsesNested\n{\n  public string Get() => App.Other.Constants.SalesInvoice.FormField.RecId;\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_from(&g, "Consumers/UsesNested.cs"),
+            vec![("App.Other.Constants+SalesInvoice+FormField", 6)],
+            "two same-named FormField leaves under different containers -- the qualifier's own container segment picks the right one"
+        );
+        let edge = find_edge(&g, |e| matches!(e, Edge::UsesMember { .. }))
+            .expect("uses-member edge present");
+        match edge {
+            Edge::UsesMember { member, .. } => {
+                assert_eq!(member.as_deref(), Some("RecId"))
+            }
+            _ => unreachable!(),
+        }
+        assert!(
+            !any_member_edge_targets(&g, "App.Other.Constants"),
+            "no uses-member edge, precise or heuristic, may target the outer container"
+        );
+    }
+
+    #[test]
+    fn end_to_end_repeated_nested_leaf_name_binds_through_a_using_head() {
+        let files = fragments_for(&[
+            (
+                "Other/Constants.cs",
+                "namespace App.Other { public static class Constants { public static class SalesInvoice { public static class FormField { public const string RecId = \"a\"; } } public static class PurchaseOrder { public static class FormField { public const string RecId = \"b\"; } } } }",
+            ),
+            (
+                "Consumers/UsesNested.cs",
+                "\nusing App.Other;\n\nnamespace App.Consumers;\n\npublic class UsesNested\n{\n  public string Get() => Constants.SalesInvoice.FormField.RecId;\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_from(&g, "Consumers/UsesNested.cs"),
+            vec![("App.Other.Constants+SalesInvoice+FormField", 8)],
+            "the same walk through a using-resolved head instead of a namespace-qualified one"
+        );
+        let edge = find_edge(&g, |e| matches!(e, Edge::UsesMember { .. }))
+            .expect("uses-member edge present");
+        match edge {
+            Edge::UsesMember { member, .. } => {
+                assert_eq!(member.as_deref(), Some("RecId"))
+            }
+            _ => unreachable!(),
+        }
+        assert!(
+            !any_member_edge_targets(&g, "App.Other.Constants"),
+            "no uses-member edge, precise or heuristic, may target the outer container"
+        );
+    }
+
+    #[test]
+    fn end_to_end_nested_enum_two_levels_deep_behind_a_namespace_qualified_head() {
+        let files = fragments_for(&[
+            (
+                "Other/Box.cs",
+                "namespace App.Other { public static class Box { public static class Inner { public enum Kind { First, Second } } } }",
+            ),
+            (
+                "Consumers/UsesNested.cs",
+                "\nnamespace App.Consumers;\n\npublic class UsesNested\n{\n  public object Get() => App.Other.Box.Inner.Kind.First;\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_from(&g, "Consumers/UsesNested.cs"),
+            vec![("App.Other.Box+Inner+Kind.First", 6)],
+            "the enum sits two nesting levels deep behind a namespace-qualified head"
+        );
+        let edge = find_edge(&g, |e| matches!(e, Edge::UsesMember { .. }))
+            .expect("uses-member edge present");
+        match edge {
+            Edge::UsesMember { member, .. } => {
+                assert_eq!(member.as_deref(), Some("First"))
+            }
+            _ => unreachable!(),
+        }
+        assert!(
+            !any_member_edge_targets(&g, "App.Other.Box"),
+            "no uses-member edge, precise or heuristic, may target the outer container"
+        );
+    }
+
+    #[test]
+    fn end_to_end_instance_receiver_named_like_a_type_keeps_its_receiver_typed_edge() {
+        // `Settings` is BOTH a field of type JobSettings in the reference
+        // site's class and a globally unique type name with a nested `Retry`.
+        // The extractor types the field, so the chain is an instance access:
+        // the nested walk and the nested-segment suppression must both stand
+        // aside and leave the receiver tiers to bind JobSettings.Retry.
+        let files = fragments_for(&[
+            (
+                "Domain/Settings.cs",
+                "namespace App.Domain { public class Settings { public class Retry { public const int Max = 3; } } }",
+            ),
+            (
+                "Web/Job.cs",
+                "\nnamespace App.Web;\n\npublic class RetryPolicy { public int Max { get; set; } }\npublic class JobSettings { public RetryPolicy Retry { get; set; } }\npublic class Job\n{\n  private readonly JobSettings Settings;\n  public int M() => Settings.Retry.Max;\n}\n",
+            ),
+        ]);
+        // The second window (`Settings.Retry` with member `Max`) is a
+        // separate matter: the tail-name fallback in step 4 still answers it
+        // by the globally unique `Retry`, which is the qualified-name
+        // fallback's own problem and not the nested walk's -- this test pins
+        // only the first window and the walk's abstention.
+        let g = resolve_graph(&no_git_root(), &files);
+        assert!(
+            !any_member_edge_targets(&g, "App.Domain.Settings"),
+            "the field access `Settings.Retry` never binds the same-named type: {:?}",
+            member_edges_from(&g, "Web/Job.cs")
+        );
+        assert!(
+            member_edges_from(&g, "Web/Job.cs").contains(&("App.Web.JobSettings", 9)),
+            "the receiver-typed edge to JobSettings.Retry survives: {:?}",
+            member_edges_from(&g, "Web/Job.cs")
+        );
+    }
+
     // --- tier (f): extension methods ---
     //
     // Real fixtures run through this crate's own extractor, so an extension fact
@@ -3836,8 +7269,8 @@ mod tests {
         }
         assert_eq!(
             serde_json::to_string(edge).unwrap(),
-            r#"{"kind":"uses-member","from_file":"Consumers/UsesExtension.cs","from_line":9,"to":"App.Ext.WidgetExtensions","to_file":"Ext/WidgetExtensions.cs","heuristic":true}"#,
-            "heuristic is appended LAST -- the exact field order Node's own byte assertion pins"
+            r#"{"kind":"uses-member","from_file":"Consumers/UsesExtension.cs","from_line":9,"to":"App.Ext.WidgetExtensions","to_file":"Ext/WidgetExtensions.cs","heuristic":true,"tier":"ext","member":"Render"}"#,
+            "heuristic, then tier, then member -- appended in that order after the shared prefix"
         );
         assert_eq!(
             g.stats.edges_by_kind.uses_member, 0,
@@ -3896,6 +7329,47 @@ mod tests {
                 .iter()
                 .any(|e| matches!(e, Edge::Ambiguous { origin, .. } if origin == "uses-member")),
             "a declined extension lookup is still never ambiguous noise"
+        );
+    }
+
+    // The positive half of the same rule, and the one thing tier (f)'s
+    // namespace test learned in stage 6: an ENCLOSING namespace needs no
+    // using directive, because in C# it is already in scope. Until global
+    // usings became per-project this gap was invisible -- any `global using`
+    // for the namespace, declared in any file anywhere in the repo, admitted
+    // the class here by accident.
+    #[test]
+    fn stage6_tier_f_an_extension_class_in_an_enclosing_namespace_needs_no_using() {
+        let files = fragments_for(&[
+            WIDGET_SRC,
+            (
+                "Ext/Registration.cs",
+                "namespace App.Ext { public static class WidgetExtensions { public static void Render(this Widget w) { } } }",
+            ),
+            (
+                "Ext/Deep/DeepRunner.cs",
+                "\nusing App.Other;\n\nnamespace App.Ext.Deep;\n\npublic class DeepRunner\n{\n  public void Run(Widget w) => w.Render();\n}\n",
+            ),
+            (
+                "Sibling/SiblingRunner.cs",
+                "\nusing App.Other;\n\nnamespace App.Sibling;\n\npublic class SiblingRunner\n{\n  public void Run(Widget w) => w.Render();\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+
+        assert_eq!(
+            heuristic_member_edges_from(&g, "Ext/Deep/DeepRunner.cs"),
+            vec![("App.Ext.WidgetExtensions", 8)],
+            "App.Ext encloses App.Ext.Deep, so the extension class is in scope with no import"
+        );
+        assert_eq!(
+            heuristic_member_tiers_from(&g, "Ext/Deep/DeepRunner.cs"),
+            vec![Some(HeuristicTier::Ext)],
+            "and tier (f) is what claims it -- not the scored tier's weaker second look"
+        );
+        assert!(
+            heuristic_member_edges_from(&g, "Sibling/SiblingRunner.cs").is_empty(),
+            "nothing wider than the lexical rule: a SIBLING namespace still needs the import"
         );
     }
 
@@ -4401,9 +7875,19 @@ mod tests {
             ),
         ]);
         let g = resolve_graph(&no_git_root(), &files);
-        assert!(
-            member_edges_from(&g, "Consumers/DeepVeto.cs").is_empty(),
-            "two hops up the chain is still an instance member"
+        // Two hops up the chain is still an instance member -- Unit A3 item 4
+        // is exactly this widening: Leaf itself declares nothing, but Root,
+        // reached through Leaf's transitive in-graph base closure, does, so
+        // the typed-receiver precise tier binds there instead of leaving the
+        // extension tier's veto as the only visible effect.
+        assert_eq!(
+            member_edges_from(&g, "Consumers/DeepVeto.cs"),
+            vec![("App.Other.Root", 9)],
+            "the precise tier now walks the closure the veto always could see"
+        );
+        assert_eq!(
+            g.stats.heuristic_edge_count, 0,
+            "the extension is still unreachable -- precise supersedes it, not joins it"
         );
     }
 
@@ -4743,6 +8227,532 @@ mod tests {
         assert!(heuristic_member_edges_from(&g, "Consumers/ResolvedMiss.cs").is_empty());
     }
 
+    // --- stage 5: the call-shape rule -------------------------------------
+    //
+    // A property or field is undeniable evidence for a READ of its own name,
+    // but no evidence at all for a CALL of that name -- C# simply has no
+    // overload-resolution path from `entity.Property(x => x.Id)` to a
+    // property or a field. Letting one vouch for a call anyway is exactly the
+    // false-positive shape a corpus audit surfaced: 41% of all heuristic
+    // edges were a call landing on a property/field-only def.
+
+    #[test]
+    fn stage5_shape_rule_a_call_never_vouches_through_a_property_or_field_in_the_uniqueness_pool() {
+        let files = fragments_for(&[
+            (
+                "Model/Customer.cs",
+                "namespace App.Model { public class Customer { public string Property { get; set; } } }",
+            ),
+            (
+                "Model/Order.cs",
+                "namespace App.Model { public class Order { public int Property; } }",
+            ),
+            (
+                "Consumers/CallShape.cs",
+                "\nnamespace App.Consumers;\n\npublic class CallShape\n{\n  public void Run()\n  {\n    var e = Entity();\n    e.Property(x => x.Id);\n    var p = e.Property;\n  }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            heuristic_member_edges_from(&g, "Consumers/CallShape.cs"),
+            vec![("App.Model.Customer", 10), ("App.Model.Order", 10)],
+            "the call at line 9 names neither a property nor a field -- only the read at line 10, which both a property and a field vouch for, survives"
+        );
+    }
+
+    #[test]
+    fn stage5_shape_rule_filters_the_ambiguous_pool_the_same_way() {
+        let files = fragments_for(&[
+            (
+                "One/Config.cs",
+                "namespace App.One { public class Config { public void Load() { } } }",
+            ),
+            (
+                "Two/Config.cs",
+                "namespace App.Two { public class Config { public string Load { get; } } }",
+            ),
+            (
+                "Consumers/AmbiguousCall.cs",
+                "\nnamespace App.Consumers;\n\npublic class AmbiguousCall\n{\n  public void Run() => Config.Load();\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert!(
+            member_edges_from(&g, "Consumers/AmbiguousCall.cs").is_empty(),
+            "the precise tiers still refuse to pick"
+        );
+        assert_eq!(
+            heuristic_member_edges_from(&g, "Consumers/AmbiguousCall.cs"),
+            vec![("App.One.Config", 6)],
+            "Config.Load() is a call -- App.Two.Config only ever declared Load as a property, so the shape rule drops it out of the ambiguous pool before scoring"
+        );
+    }
+
+    #[test]
+    fn stage5_shape_rule_a_method_or_extension_name_still_vouches_for_a_call() {
+        let files = fragments_for(&[
+            (
+                "A/Counter.cs",
+                "namespace App.A { public class Counter { public void Tally() { } } }",
+            ),
+            ("Other/Foo.cs", "namespace App.Other { public class Foo { } }"),
+            (
+                "Ext/FooExtensions.cs",
+                "namespace App.Ext { public static class FooExtensions { public static void Tally(this Foo f) { } } }",
+            ),
+            (
+                "Consumers/CallShapeOk.cs",
+                "\nnamespace App.Consumers;\n\npublic class CallShapeOk\n{\n  public void Run()\n  {\n    var x = Build();\n    x.Tally();\n  }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            heuristic_member_edge_targets(&g),
+            vec!["App.A.Counter", "App.Ext.FooExtensions"],
+            "a method name and an extension-method name both still vouch for a call -- the shape rule only ever removes candidates, never adds one"
+        );
+    }
+
+    // --- stage 5: the receiver-assignability rule --------------------------
+    //
+    // The scored tier's uniqueness pool is drawn by member NAME alone, so a
+    // ref whose receiver is typed but EXTERNAL (`private ILogger _logger;`
+    // where ILogger is a NuGet interface) used to name any in-graph class
+    // carrying a method of that name -- a log adapter implementing an
+    // unrelated interface, say. The receiver's type is a fact the extractor
+    // already recorded, and C# will only bind that call to a member of a type
+    // the receiver is assignable to, so a candidate the in-graph inheritance
+    // closure cannot connect to the receiver type is not a weak guess, it is a
+    // disproved one. The rule below refuses it.
+    //
+    // The connection is NOMINAL and deliberately shallow: a candidate answers
+    // when it IS the receiver type, when a def in its in-graph base closure
+    // is, or when any def in that closure merely NAMES the receiver type in
+    // its raw base list -- the last case being the one that matters, since the
+    // receiver type is usually external and so has no def to walk to.
+
+    #[test]
+    fn stage5_receiver_rule_an_external_receiver_refuses_a_candidate_not_assignable_to_it() {
+        let files = fragments_for(&[
+            (
+                "Logging/DbUpLogAdapter.cs",
+                "namespace App.Logging { public class DbUpLogAdapter : IUpgradeLog { public void LogInformation(string m) { } } }",
+            ),
+            (
+                "Consumers/Runner.cs",
+                "\nnamespace App.Consumers;\n\npublic class Runner\n{\n  private ILogger _logger;\n  public void Run() => _logger.LogInformation(\"x\");\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert!(
+            heuristic_member_edges_from(&g, "Consumers/Runner.cs").is_empty(),
+            "DbUpLogAdapter implements IUpgradeLog and nothing in its closure names ILogger -- the receiver's own type disproves the guess"
+        );
+        assert_eq!(g.stats.heuristic_edge_count, 0);
+    }
+
+    #[test]
+    fn stage5_receiver_rule_a_candidate_whose_base_closure_names_the_receiver_type_still_emits() {
+        let files = fragments_for(&[
+            (
+                "Logging/FileLogger.cs",
+                "namespace App.Logging { public class FileLogger : ILogger { public void LogInformation(string m) { } } }",
+            ),
+            (
+                "Logging/Base.cs",
+                "namespace App.Logging { public class Base : ILogger { } }",
+            ),
+            (
+                "Logging/Derived.cs",
+                "namespace App.Logging { public class Derived : Base { public void LogInformation(string m) { } } }",
+            ),
+            (
+                "Consumers/Runner.cs",
+                "\nnamespace App.Consumers;\n\npublic class Runner\n{\n  private ILogger _logger;\n  public void Run() => _logger.LogInformation(\"x\");\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            heuristic_member_edges_from(&g, "Consumers/Runner.cs"),
+            vec![("App.Logging.Derived", 7), ("App.Logging.FileLogger", 7)],
+            "FileLogger names ILogger directly; Derived reaches it one in-graph hop up, through Base"
+        );
+    }
+
+    #[test]
+    fn stage5_receiver_rule_generic_arguments_must_unify_on_the_matched_base() {
+        let files = fragments_for(&[
+            (
+                "Logging/Adapter.cs",
+                "namespace App.Logging { public class Adapter : ILogger { public void LogInformation(string m) { } } }",
+            ),
+            (
+                "Logging/Typed.cs",
+                "namespace App.Logging { public class Typed : ILogger<Worker> { public void LogInformation(string m) { } } }",
+            ),
+            (
+                "Logging/Open.cs",
+                "namespace App.Logging { public class Open<T> : ILogger<T> { public void LogInformation(string m) { } } }",
+            ),
+            (
+                "Consumers/Runner.cs",
+                "\nnamespace App.Consumers;\n\npublic class Runner\n{\n  private ILogger<Worker> _logger;\n  public void Run() => _logger.LogInformation(\"x\");\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            heuristic_member_edges_from(&g, "Consumers/Runner.cs"),
+            vec![("App.Logging.Open", 7), ("App.Logging.Typed", 7)],
+            "the base NAME matching is not enough: the non-generic `: ILogger` never binds an ILogger<Worker> receiver, while a closed and an open implementation both do"
+        );
+    }
+
+    #[test]
+    fn stage5_receiver_rule_a_call_hop_receiver_with_unknown_args_compares_by_name_only() {
+        let files = fragments_for(&[
+            (
+                "Logging/LoggerFactory.cs",
+                "namespace App.Logging { public class LoggerFactory { public static ILogger Make() { return null; } } }",
+            ),
+            (
+                "Logging/Typed.cs",
+                "namespace App.Logging { public class Typed : ILogger<Worker> { public void LogInformation(string m) { } } }",
+            ),
+            (
+                "Consumers/Runner.cs",
+                "\nusing App.Logging;\n\nnamespace App.Consumers;\n\npublic class Runner\n{\n  public void Run()\n  {\n    var l = LoggerFactory.Make();\n    l.LogInformation(\"x\");\n  }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            heuristic_member_edges_from(&g, "Consumers/Runner.cs"),
+            vec![("App.Logging.Typed", 11)],
+            "a method's recorded RETURN type carries a name and no type arguments, so the rule compares names only rather than refusing every generic implementation"
+        );
+    }
+
+    #[test]
+    fn stage5_receiver_rule_readmits_an_extension_of_the_receiver_type_declined_on_namespace() {
+        let files = fragments_for(&[
+            (
+                "Ext/LogExt.cs",
+                "namespace App.Ext { public static class LogExt { public static void LogInformation(this IOtherLogger l, string m) { } } }",
+            ),
+            (
+                "Registration/WidgetServiceExtensions.cs",
+                "namespace App.Registration { public static class WidgetServiceExtensions { public static void AddWidgets(this IServiceCollection s) { } } }",
+            ),
+            (
+                "Consumers/Startup.cs",
+                "\nnamespace App.Consumers;\n\npublic class Startup\n{\n  public void Run(ILogger logger, IServiceCollection services)\n  {\n    logger.LogInformation(\"x\");\n    services.AddWidgets();\n  }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            heuristic_member_edges_from(&g, "Consumers/Startup.cs"),
+            vec![("App.Registration.WidgetServiceExtensions", 9)],
+            "LogExt extends IOtherLogger, not ILogger, so no this-type of its own answers the receiver and nothing else connects it -- while AddWidgets extends the receiver type exactly and only tier (f)'s namespace test (App.Registration is not imported here) kept it out"
+        );
+    }
+
+    #[test]
+    fn stage5_receiver_rule_an_extension_tier_f_declined_on_arity_is_not_readmitted_as_a_guess() {
+        // `App.Ext` IS imported, so tier (f) reached its arity filter and
+        // declined there: `Trace(this IThing, string, string)` cannot take zero
+        // arguments under any import. The scored tier must not turn that into
+        // a guess -- the call has no binding at all.
+        let files = fragments_for(&[
+            (
+                "Ext/LogExt.cs",
+                "namespace App.Ext { public static class LogExt { public static void Trace(this IThing t, string a, string b) { } } }",
+            ),
+            (
+                "Consumers/Runner.cs",
+                "using App.Ext;\n\nnamespace App.Consumers;\n\npublic class Runner\n{\n  public void Run(IThing thing)\n  {\n    thing.Trace();\n    thing.Trace(\"a\", \"b\");\n  }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        let edges: Vec<(&str, usize, Option<HeuristicTier>)> = g
+            .edges
+            .iter()
+            .filter_map(|e| match e {
+                Edge::UsesMember {
+                    from_file,
+                    from_line,
+                    to,
+                    tier,
+                    ..
+                } if from_file == "Consumers/Runner.cs" => Some((to.as_str(), *from_line, *tier)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            edges,
+            vec![("App.Ext.LogExt", 10, Some(HeuristicTier::Ext))],
+            "line 9 has no binding and no edge; line 10 binds through tier (f) as before"
+        );
+    }
+
+    /// Every `UsesMember` edge from one file, as (target id, line, target
+    /// file, tier) -- the target file is what lets the arity-aware receiver
+    /// tests below tell the generic sibling of a type apart from the
+    /// non-generic one sharing its id.
+    fn member_edges_with_file<'a>(
+        g: &'a Graph,
+        from: &str,
+    ) -> Vec<(&'a str, usize, &'a str, Option<HeuristicTier>)> {
+        g.edges
+            .iter()
+            .filter_map(|e| match e {
+                Edge::UsesMember {
+                    from_file,
+                    from_line,
+                    to,
+                    to_file,
+                    tier,
+                    ..
+                } if from_file == from => Some((to.as_str(), *from_line, to_file.as_str(), *tier)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn stage5_receiver_rule_a_generic_receiver_binds_the_generic_sibling_not_the_first_indexed() {
+        // `Context` (non-generic) is indexed FIRST; `Context<T>` (its own
+        // generic sibling) SECOND. Both share the id `App.Contexts.Context`,
+        // so the arity-blind map alone would answer every bare `Context`
+        // lookup with the FIRST-indexed, non-generic def -- wrong for a
+        // receiver written `Context<Order>`, whose type-argument count names
+        // the generic sibling instead.
+        //
+        // Classes rather than interfaces here: the base walk that reaches
+        // Publish from the generic sibling (`typed_receiver_base_member`)
+        // deliberately never crosses an INTERFACE base (Unit A4's
+        // `skip_interfaces` rule, unrelated to this defect), so an
+        // interface-extends-interface pair would mask the very base-walk
+        // path this test means to exercise.
+        let files = fragments_for(&[
+            (
+                "Contexts/Context.cs",
+                "namespace App.Contexts { public class Context { public void Publish() { } } }",
+            ),
+            (
+                "Contexts/ContextOfT.cs",
+                "namespace App.Contexts { public class Context<T> : Context { public T Message { get; } } }",
+            ),
+            (
+                "Consumers/Handler.cs",
+                "\nusing App.Contexts;\n\nnamespace App.Consumers;\n\npublic class Handler\n{\n  public void Handle(Context<Order> ctx)\n  {\n    var m = ctx.Message;\n    ctx.Publish();\n  }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        let edges = member_edges_with_file(&g, "Consumers/Handler.cs");
+        assert_eq!(
+            edges,
+            vec![
+                ("App.Contexts.Context", 10, "Contexts/ContextOfT.cs", None),
+                ("App.Contexts.Context", 11, "Contexts/Context.cs", None),
+            ],
+            "ctx.Message binds to the generic sibling (the only one declaring Message); \
+             ctx.Publish binds through the generic sibling's own base to the non-generic \
+             sibling -- neither answer is the first-indexed def by accident"
+        );
+    }
+
+    #[test]
+    fn stage5_receiver_rule_a_non_generic_receiver_binds_the_non_generic_sibling_when_the_generic_was_indexed_first(
+    ) {
+        // Same pair of siblings, but `Context<T>` is indexed FIRST this time:
+        // a bare `Context ctx` receiver must still bind Publish to the
+        // NON-generic sibling and must never answer Message precisely --
+        // Message is declared only on the generic sibling, which a bare,
+        // arity-0 receiver is not assignable to.
+        let files = fragments_for(&[
+            (
+                "Contexts/ContextOfT.cs",
+                "namespace App.Contexts { public interface Context<T> : Context { T Message { get; } } }",
+            ),
+            (
+                "Contexts/Context.cs",
+                "namespace App.Contexts { public interface Context { void Publish(); } }",
+            ),
+            (
+                "Consumers/Handler.cs",
+                "\nusing App.Contexts;\n\nnamespace App.Consumers;\n\npublic class Handler\n{\n  public void Handle(Context ctx)\n  {\n    ctx.Publish();\n    var m = ctx.Message;\n  }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        let edges = member_edges_with_file(&g, "Consumers/Handler.cs");
+        assert_eq!(
+            edges
+                .iter()
+                .filter(|(_, _, _, tier)| tier.is_none())
+                .cloned()
+                .collect::<Vec<_>>(),
+            vec![("App.Contexts.Context", 10, "Contexts/Context.cs", None)],
+            "a bare Context receiver binds Publish to the non-generic sibling, and line 11 \
+             (ctx.Message) has no precise edge -- Message is declared only on the generic \
+             sibling, which a bare, arity-0 receiver is not assignable to; a guess-tier edge \
+             there, if the graph produces one, is not asserted against here"
+        );
+    }
+
+    #[test]
+    fn stage5_receiver_rule_a_base_written_without_arguments_walks_to_the_non_generic_sibling() {
+        // `Context<T>` indexed FIRST again. The receiver here is the GENERIC
+        // sibling (`Context<Order>`), and Publish is reached only by walking
+        // its base `Context` -- written bare, with no argument list -- which
+        // must resolve to the non-generic sibling (arity 0), not back to
+        // whichever sibling the blind map happened to index first.
+        //
+        // Classes rather than interfaces here for the same reason as the
+        // test above: the base walk must actually cross the `Context` base,
+        // which `skip_interfaces` would otherwise prune before it is ever
+        // tried.
+        let files = fragments_for(&[
+            (
+                "Contexts/ContextOfT.cs",
+                "namespace App.Contexts { public class Context<T> : Context { public T Message { get; } } }",
+            ),
+            (
+                "Contexts/Context.cs",
+                "namespace App.Contexts { public class Context { public void Publish() { } } }",
+            ),
+            (
+                "Consumers/Handler.cs",
+                "\nusing App.Contexts;\n\nnamespace App.Consumers;\n\npublic class Handler\n{\n  public void Handle(Context<Order> ctx)\n  {\n    ctx.Publish();\n  }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        let edges = member_edges_with_file(&g, "Consumers/Handler.cs");
+        assert_eq!(
+            edges,
+            vec![("App.Contexts.Context", 10, "Contexts/Context.cs", None)],
+            "the bare base name Context, carrying no argument list, walks to the \
+             non-generic sibling regardless of index order"
+        );
+    }
+
+    #[test]
+    fn stage5_receiver_rule_a_receiver_arity_with_no_in_graph_def_keeps_the_arity_blind_answer() {
+        // Only the non-generic `Repository` is in the graph; the receiver is
+        // written `Repository<Order>`. The exact-arity pass finds no def and
+        // the arity-blind ladder answers as it always has: the site keeps
+        // its precise edge rather than turning external on an arity the
+        // graph cannot confirm or refute.
+        let files = fragments_for(&[
+            (
+                "Data/Repository.cs",
+                "namespace App.Data { public class Repository { public void Save() { } } }",
+            ),
+            (
+                "Consumers/Handler.cs",
+                "\nusing App.Data;\n\nnamespace App.Consumers;\n\npublic class Handler\n{\n  public void Handle(Repository<Order> repo)\n  {\n    repo.Save();\n  }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_with_file(&g, "Consumers/Handler.cs"),
+            vec![("App.Data.Repository", 10, "Data/Repository.cs", None)],
+            "no def of arity 1 exists, so the arity-blind answer stands"
+        );
+    }
+
+    #[test]
+    fn stage5_receiver_rule_an_extension_stops_binding_when_the_generic_sibling_declares_the_member(
+    ) {
+        // `Context` (non-generic) indexed FIRST, `Context<T>` (declaring
+        // Respond) SECOND, plus an extension method of the same name and
+        // matching this-type. Before the fix, a `Context<Order>` receiver
+        // resolved arity-blind to the non-generic sibling, which does not
+        // declare Respond, so the call fell through to the extension tier.
+        // Arity-aware resolution must bind the receiver to the generic
+        // sibling directly, which declares Respond itself -- so the
+        // extension never gets a chance to answer.
+        let files = fragments_for(&[
+            (
+                "Contexts/Context.cs",
+                "namespace App.Contexts { public interface Context { void Publish(); } }",
+            ),
+            (
+                "Contexts/ContextOfT.cs",
+                "namespace App.Contexts { public interface Context<T> : Context { void Respond(string s); } }",
+            ),
+            (
+                "Ext/ContextExt.cs",
+                "namespace App.Ext { public static class ContextExt { public static void Respond<T>(this App.Contexts.Context<T> c, string s) { } } }",
+            ),
+            (
+                "Consumers/Handler.cs",
+                "\nusing App.Contexts;\nusing App.Ext;\n\nnamespace App.Consumers;\n\npublic class Handler\n{\n  public void Handle(Context<Order> ctx)\n  {\n    ctx.Respond(\"x\");\n  }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        let edges = member_edges_with_file(&g, "Consumers/Handler.cs");
+        assert_eq!(
+            edges,
+            vec![("App.Contexts.Context", 11, "Contexts/ContextOfT.cs", None)],
+            "the generic sibling declares Respond itself, so the receiver binds precisely \
+             to it rather than falling through to the extension"
+        );
+        assert!(
+            !g.edges.iter().any(|e| matches!(
+                e,
+                Edge::UsesMember { from_file, tier, .. }
+                    if from_file == "Consumers/Handler.cs" && *tier == Some(HeuristicTier::Ext)
+            )),
+            "no extension-tier edge from the consumer file -- tier (e) already claimed the call"
+        );
+    }
+
+    #[test]
+    fn stage5_receiver_rule_an_in_graph_receiver_still_resolves_precisely() {
+        let files = fragments_for(&[
+            (
+                "Widgets/Widget.cs",
+                "namespace App.Widgets { public class Widget { public void Render() { } } }",
+            ),
+            (
+                "Consumers/UsesWidget.cs",
+                "\nusing App.Widgets;\n\nnamespace App.Consumers;\n\npublic class UsesWidget\n{\n  private Widget _widget;\n  public void Run() => _widget.Render();\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_from(&g, "Consumers/UsesWidget.cs"),
+            vec![("App.Widgets.Widget", 9)],
+            "an in-graph receiver never reaches the scored tier at all -- tier (e) answers it precisely"
+        );
+        assert_eq!(g.stats.heuristic_edge_count, 0);
+    }
+
+    // The probe the design asked for: a base written with its namespace
+    // (`class Handle : System.IDisposable`) is recorded as the bare identifier
+    // `IDisposable`, and a receiver declared the same dotted way is recorded
+    // bare too, so the two raw strings meet and the rule admits the candidate.
+    // Both halves of that are extractor behaviour, which is why this runs real
+    // sources rather than hand-built facts.
+    #[test]
+    fn stage5_receiver_rule_a_dotted_base_name_meets_a_dotted_receiver_type_by_bare_identifier() {
+        let files = fragments_for(&[
+            (
+                "Io/Handle.cs",
+                "namespace App.Io { public class Handle : System.IDisposable { public void Dispose() { } } }",
+            ),
+            (
+                "Consumers/Closer.cs",
+                "\nnamespace App.Consumers;\n\npublic class Closer\n{\n  public void Run(System.IDisposable d) => d.Dispose();\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            heuristic_member_edges_from(&g, "Consumers/Closer.cs"),
+            vec![("App.Io.Handle", 6)],
+            "both sides reduce to the bare identifier IDisposable, so the raw base string answers the receiver type"
+        );
+    }
+
     // The byte-identity fixture: a fixed set of sources whose resolved edge and
     // stats bytes are pinned exactly.
     const BYTE_IDENTITY_FIXTURE: &[(&str, &str)] = &[
@@ -4771,8 +8781,8 @@ mod tests {
         r#"{"kind":"imports","from_file":"Consumers/Consumer.cs","from_line":3,"target":"App.Alpha"}"#,
         r#"{"kind":"imports","from_file":"Consumers/Consumer.cs","from_line":4,"target":"App.Beta"}"#,
         r#"{"kind":"uses-type","from_file":"Consumers/Consumer.cs","from_line":10,"to":"App.Core.Widget","to_file":"Core/Widget.cs"}"#,
-        r#"{"kind":"uses-member","from_file":"Consumers/Consumer.cs","from_line":14,"to":"App.Core.Widget","to_file":"Core/Widget.cs"}"#,
-        r#"{"kind":"uses-member","from_file":"Consumers/Consumer.cs","from_line":15,"to":"App.Core.Status.Active","to_file":"Core/Status.cs"}"#,
+        r#"{"kind":"uses-member","from_file":"Consumers/Consumer.cs","from_line":14,"to":"App.Core.Widget","to_file":"Core/Widget.cs","member":"Render"}"#,
+        r#"{"kind":"uses-member","from_file":"Consumers/Consumer.cs","from_line":15,"to":"App.Core.Status.Active","to_file":"Core/Status.cs","member":"Active"}"#,
     ];
 
     #[test]
@@ -4817,6 +8827,944 @@ mod tests {
         );
     }
 
+    // Stage 6 adds a project model the resolver may consult; a repo that
+    // declares no `.csproj` has none, and for such a repo the WHOLE artifact
+    // -- not just the edge array -- must serialize exactly as it did before
+    // stage 6 existed. Whole-graph bytes rather than a spot check on `units`:
+    // an omitted key is only half the guarantee, the other half is that
+    // threading the model through moved nothing else.
+    #[test]
+    fn stage6_without_a_project_model_the_byte_identity_fixture_serializes_exactly_as_before() {
+        let files = fragments_for(BYTE_IDENTITY_FIXTURE);
+        let root = no_git_root();
+
+        let legacy = serde_json::to_string(&resolve_graph(&root, &files)).unwrap();
+        let modelled =
+            serde_json::to_string(&resolve_graph_with_model(&root, &files, &[], None)).unwrap();
+        assert_eq!(
+            legacy, modelled,
+            "a None model must leave the artifact byte-identical, key for key"
+        );
+
+        assert!(
+            !legacy.contains(r#""units""#),
+            "no `.csproj`, no `units` key -- it is omit-when-empty precisely so a \
+             csproj-less repo's graph.json is unchanged: {legacy}"
+        );
+    }
+
+    // --- stage 6: the admission gate on the two heuristic tiers -----------
+    //
+    // A heuristic tier guesses from NAMES; the project model is the one fact
+    // that can disprove such a guess structurally -- a def the site's assembly
+    // could not reference even if the name were right. The gate is a filter
+    // like every other heuristic-tier rule: purely subtractive, and it fails
+    // OPEN (a file or a def outside every project admits everything), because
+    // an ownership answer this resolver cannot compute must never delete an
+    // edge it would otherwise have emitted.
+
+    /// One hand-built `Unit`: `id` is the repo-relative `.csproj` path, `dir`
+    /// is derived from it exactly as discovery derives it, `name` is the file
+    /// stem, and `refs` are the ids this project references DIRECTLY (the
+    /// model closes over them).
+    fn unit(id: &str, refs: &[&str], test: bool) -> crate::project::Unit {
+        let (dir, file) = match id.rfind('/') {
+            Some(i) => (&id[..i], &id[i + 1..]),
+            None => ("", id),
+        };
+        crate::project::Unit {
+            id: id.to_string(),
+            name: file.trim_end_matches(".csproj").to_string(),
+            dir: dir.to_string(),
+            refs: refs.iter().map(|r| (*r).to_string()).collect(),
+            test,
+        }
+    }
+
+    fn model_of(units: Vec<crate::project::Unit>) -> crate::project::ProjectModel {
+        crate::project::ProjectModel::from_units(units)
+    }
+
+    /// The tiers carried by one file's heuristic uses-member edges, in edge
+    /// order -- what `heuristic_member_edges_from` cannot show.
+    fn heuristic_member_tiers_from(g: &Graph, from: &str) -> Vec<Option<HeuristicTier>> {
+        g.edges
+            .iter()
+            .filter_map(|e| match e {
+                Edge::UsesMember {
+                    from_file,
+                    heuristic: true,
+                    tier,
+                    ..
+                } if from_file == from => Some(*tier),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn stage6_admission_a_scored_guess_never_names_a_def_in_a_project_the_site_cannot_reach() {
+        // `Build()` resolves to nothing, so `q` has no recorded type: the ref
+        // carries no receiver fact at all and lands in the scored tier's
+        // uniqueness pool, where the only evidence is the member NAME. Two
+        // projects declare `Enqueue`; only one of them is on the site's
+        // reference closure.
+        let files = fragments_for(&[
+            (
+                "src/Domain/Order.cs",
+                "namespace Fixture.Domain { public class Order { public void Enqueue(string m) { } } }",
+            ),
+            (
+                "src/Unreachable/Mailer.cs",
+                "namespace Fixture.Unreachable { public class Mailer { public void Enqueue(string m) { } } }",
+            ),
+            (
+                "src/App/Runner.cs",
+                "\nnamespace Fixture.App;\n\npublic class Runner\n{\n  public void Run()\n  {\n    var q = Build();\n    q.Enqueue(\"x\");\n  }\n}\n",
+            ),
+        ]);
+        let root = no_git_root();
+
+        assert_eq!(
+            heuristic_member_edge_targets(&resolve_graph(&root, &files)),
+            vec!["Fixture.Domain.Order", "Fixture.Unreachable.Mailer"],
+            "without a model the tier has only the member name to go on, and both declarers are equally plausible"
+        );
+
+        let model = model_of(vec![
+            unit("src/App/App.csproj", &["src/Domain/Domain.csproj"], false),
+            unit("src/Domain/Domain.csproj", &[], false),
+            unit("src/Unreachable/Unreachable.csproj", &[], false),
+        ]);
+        let g = resolve_graph_with_model(&root, &files, &[], Some(&model));
+        assert_eq!(
+            heuristic_member_edge_targets(&g),
+            vec!["Fixture.Domain.Order"],
+            "App references Domain and nothing references Unreachable -- Mailer.Enqueue is not a call App could ever have made"
+        );
+        assert_eq!(
+            g.stats.heuristic_edge_count, 1,
+            "the refused guess is dropped, not retagged"
+        );
+    }
+
+    #[test]
+    fn stage6_admission_a_non_test_site_never_names_a_def_in_a_test_project_even_when_it_has_no_test_methods(
+    ) {
+        // The fixture-class shape: a helper in a test project carrying no
+        // `[Fact]`/`[Test]` attribute at all, so `test_def_count` cannot see
+        // it and no attribute-based rule would refuse it. Reachability cannot
+        // refuse it either -- this model deliberately lets the production
+        // project reference the test one, so the ONLY thing standing between
+        // the guess and the edge is the test-project half of the gate.
+        let files = fragments_for(&[
+            (
+                "tests/App.Tests/AdapterFixture.cs",
+                "namespace Fixture.App.Tests { public class AdapterFixture { public void Reset() { } } }",
+            ),
+            (
+                "src/App/Runner.cs",
+                "\nnamespace Fixture.App;\n\npublic class Runner\n{\n  public void Run()\n  {\n    var h = Build();\n    h.Reset();\n  }\n}\n",
+            ),
+        ]);
+        let root = no_git_root();
+
+        assert_eq!(
+            heuristic_member_edges_from(&resolve_graph(&root, &files), "src/App/Runner.cs"),
+            vec![("Fixture.App.Tests.AdapterFixture", 9)],
+            "without a model the guess stands -- nothing in the sources says AdapterFixture is test-only"
+        );
+
+        let model = model_of(vec![
+            unit(
+                "src/App/App.csproj",
+                &["tests/App.Tests/App.Tests.csproj"],
+                false,
+            ),
+            unit("tests/App.Tests/App.Tests.csproj", &[], true),
+        ]);
+        let g = resolve_graph_with_model(&root, &files, &[], Some(&model));
+        assert_eq!(
+            g.stats.test_def_count, 0,
+            "AdapterFixture declares no test method, so def-level test detection never marked it -- the UNIT is what makes it test-only"
+        );
+        assert!(
+            heuristic_member_edges_from(&g, "src/App/Runner.cs").is_empty(),
+            "production code calling into a test assembly is not a thing the build allows, whatever the name says"
+        );
+    }
+
+    #[test]
+    fn stage6_admission_a_test_site_may_name_a_def_in_a_referenced_test_utility_project() {
+        // The other side of the same rule: test -> test is an ordinary
+        // reference, so the gate must not turn "is a test project" into a
+        // blanket refusal.
+        let files = fragments_for(&[
+            (
+                "tests/Test.Utilities/FakeServer.cs",
+                "namespace Fixture.Test.Utilities { public class FakeServer { public void Reset() { } } }",
+            ),
+            (
+                "tests/App.Tests/WorkerTests.cs",
+                "\nnamespace Fixture.App.Tests;\n\npublic class WorkerTests\n{\n  public void Run()\n  {\n    var h = Build();\n    h.Reset();\n  }\n}\n",
+            ),
+        ]);
+        let model = model_of(vec![
+            unit(
+                "tests/App.Tests/App.Tests.csproj",
+                &["tests/Test.Utilities/Test.Utilities.csproj"],
+                true,
+            ),
+            unit("tests/Test.Utilities/Test.Utilities.csproj", &[], true),
+        ]);
+        let g = resolve_graph_with_model(&no_git_root(), &files, &[], Some(&model));
+        assert_eq!(
+            heuristic_member_edges_from(&g, "tests/App.Tests/WorkerTests.cs"),
+            vec![("Fixture.Test.Utilities.FakeServer", 9)],
+            "a test site reaching a referenced test-utility project is exactly what that project is for"
+        );
+    }
+
+    #[test]
+    fn stage6_admission_tier_f_ignores_an_unreachable_duplicate_and_emits_the_reachable_one() {
+        // Tier (f) emits on exactly ONE distinct declaring class, so a second
+        // same-named extension method in the same namespace silences it
+        // entirely and the ref falls through to the scored tier, which names
+        // both. The gate runs BEFORE that count, which is why an unreachable
+        // duplicate stops being an ambiguity at all rather than merely losing
+        // a race -- and the edge that comes back is the EXT one, not the pair
+        // of guesses the fallthrough produced.
+        let files = fragments_for(&[
+            (
+                "src/Ext.Adapters/ServiceCollectionExtensions.cs",
+                "namespace Fixture.Registration { public static class ServiceCollectionExtensions { public static void AddWidgets(this IServiceCollection s) { } } }",
+            ),
+            (
+                "src/Unreachable/UnreachableExtensions.cs",
+                "namespace Fixture.Registration { public static class UnreachableExtensions { public static void AddWidgets(this IServiceCollection s) { } } }",
+            ),
+            (
+                "src/App/Startup.cs",
+                "\nusing Fixture.Registration;\n\nnamespace Fixture.App;\n\npublic class Startup\n{\n  public void Run(IServiceCollection s) => s.AddWidgets();\n}\n",
+            ),
+        ]);
+        let root = no_git_root();
+
+        let bare = resolve_graph(&root, &files);
+        assert_eq!(
+            heuristic_member_edges_from(&bare, "src/App/Startup.cs"),
+            vec![
+                ("Fixture.Registration.ServiceCollectionExtensions", 8),
+                ("Fixture.Registration.UnreachableExtensions", 8)
+            ],
+            "without a model both static classes clear every tier-(f) filter, two distinct classes is an ambiguity, and the tier stays silent"
+        );
+        assert_eq!(
+            heuristic_member_tiers_from(&bare, "src/App/Startup.cs"),
+            vec![Some(HeuristicTier::Guess), Some(HeuristicTier::Guess)],
+            "the two edges are the scored tier's, re-admitted by the receiver rule because each `this` parameter names the receiver type exactly"
+        );
+
+        let model = model_of(vec![
+            unit(
+                "src/App/App.csproj",
+                &["src/Ext.Adapters/Ext.Adapters.csproj"],
+                false,
+            ),
+            unit("src/Ext.Adapters/Ext.Adapters.csproj", &[], false),
+            unit("src/Unreachable/Unreachable.csproj", &[], false),
+        ]);
+        let g = resolve_graph_with_model(&root, &files, &[], Some(&model));
+        assert_eq!(
+            heuristic_member_edges_from(&g, "src/App/Startup.cs"),
+            vec![("Fixture.Registration.ServiceCollectionExtensions", 8)],
+            "one admitted candidate is one distinct class, and tier (f) emits"
+        );
+        assert_eq!(
+            heuristic_member_tiers_from(&g, "src/App/Startup.cs"),
+            vec![Some(HeuristicTier::Ext)],
+            "the edge is tier (f)'s, not the scored tier's second-guess"
+        );
+    }
+
+    #[test]
+    fn stage6_admission_a_file_outside_every_project_fails_open() {
+        // Both directions of "unknown": a candidate whose file no project
+        // owns, and a SITE whose file no project owns. Neither may lose an
+        // edge -- the gate refuses only on a positive answer.
+        let files = fragments_for(&[
+            (
+                "src/App/Widget.cs",
+                "namespace Fixture.App { public class Widget { public void Ping() { } } }",
+            ),
+            (
+                "tools/Helper.cs",
+                "namespace Fixture.Tools { public class Helper { public void Pong() { } } }",
+            ),
+            (
+                "src/App/Runner.cs",
+                "\nnamespace Fixture.App;\n\npublic class Runner\n{\n  public void Run()\n  {\n    var h = Build();\n    h.Pong();\n  }\n}\n",
+            ),
+            (
+                "tools/Script.cs",
+                "\nnamespace Fixture.Tools;\n\npublic class Script\n{\n  public void Run()\n  {\n    var w = Build();\n    w.Ping();\n  }\n}\n",
+            ),
+        ]);
+        let model = model_of(vec![unit("src/App/App.csproj", &[], false)]);
+        let g = resolve_graph_with_model(&no_git_root(), &files, &[], Some(&model));
+
+        assert_eq!(
+            heuristic_member_edges_from(&g, "src/App/Runner.cs"),
+            vec![("Fixture.Tools.Helper", 9)],
+            "the candidate sits outside every project, so nothing can be proven about reaching it"
+        );
+        assert_eq!(
+            heuristic_member_edges_from(&g, "tools/Script.cs"),
+            vec![("Fixture.App.Widget", 9)],
+            "the SITE sits outside every project -- same fail-open answer from the other side"
+        );
+    }
+
+    // --- stage 6: `global using` is a per-PROJECT fact ---------------------
+    //
+    // A `global using` is scoped to the compilation that declares it and does
+    // NOT flow across a ProjectReference. Without a model the resolver cannot
+    // see project boundaries and pools every global using repo-wide (the
+    // documented over-approximation); with one, each file is seeded from its
+    // OWN project's globals only.
+
+    // Two same-named `Config` classes, so the ladder's global-uniqueness step
+    // cannot answer `Config` on its own and the `global using` is the ONLY
+    // thing that can pick one -- which is what makes "who can see that global
+    // using" observable at all.
+    const SCOPED_GLOBAL_USING_FIXTURE: &[(&str, &str)] = &[
+        (
+            "src/Alpha/Config.cs",
+            "namespace Fixture.Alpha { public class Config { public void Load() { } } }",
+        ),
+        (
+            "src/Beta/Config.cs",
+            "namespace Fixture.Beta { public class Config { public void Load() { } } }",
+        ),
+        ("src/App/GlobalUsings.cs", "global using Fixture.Alpha;\n"),
+        (
+            "src/App/AppConsumer.cs",
+            "\nnamespace Fixture.App;\n\npublic class AppConsumer\n{\n  public void Run() => Config.Load();\n}\n",
+        ),
+        (
+            "src/Other/OtherConsumer.cs",
+            "\nnamespace Fixture.Other;\n\npublic class OtherConsumer\n{\n  public void Run() => Config.Load();\n}\n",
+        ),
+    ];
+
+    #[test]
+    fn stage6_global_usings_are_scoped_to_the_declaring_unit_when_a_model_exists() {
+        let files = fragments_for(SCOPED_GLOBAL_USING_FIXTURE);
+        // Both consumers reference both Alpha and Beta, so admission has
+        // nothing to say here: the only difference between the two files is
+        // which project declared the `global using`.
+        let model = model_of(vec![
+            unit("src/Alpha/Alpha.csproj", &[], false),
+            unit("src/Beta/Beta.csproj", &[], false),
+            unit(
+                "src/App/App.csproj",
+                &["src/Alpha/Alpha.csproj", "src/Beta/Beta.csproj"],
+                false,
+            ),
+            unit(
+                "src/Other/Other.csproj",
+                &["src/Alpha/Alpha.csproj", "src/Beta/Beta.csproj"],
+                false,
+            ),
+        ]);
+        let g = resolve_graph_with_model(&no_git_root(), &files, &[], Some(&model));
+
+        assert_eq!(
+            member_edges_from(&g, "src/App/AppConsumer.cs"),
+            vec![("Fixture.Alpha.Config", 6)],
+            "the declaring project's own files still see its global using"
+        );
+        assert!(
+            member_edges_from(&g, "src/Other/OtherConsumer.cs").is_empty(),
+            "the other project never wrote that global using, so `Config` names nothing there"
+        );
+        assert_eq!(
+            heuristic_member_edges_from(&g, "src/Other/OtherConsumer.cs"),
+            vec![("Fixture.Alpha.Config", 6), ("Fixture.Beta.Config", 6)],
+            "it degrades to the ordinary two-way ambiguity an unimported `Config` always is -- not to a precise edge borrowed from another project"
+        );
+    }
+
+    #[test]
+    fn stage6_global_usings_are_repo_wide_without_one() {
+        let files = fragments_for(SCOPED_GLOBAL_USING_FIXTURE);
+        let g = resolve_graph(&no_git_root(), &files);
+
+        assert_eq!(
+            member_edges_from(&g, "src/App/AppConsumer.cs"),
+            vec![("Fixture.Alpha.Config", 6)]
+        );
+        assert_eq!(
+            member_edges_from(&g, "src/Other/OtherConsumer.cs"),
+            vec![("Fixture.Alpha.Config", 6)],
+            "with no project boundaries to read, every global using is in scope everywhere -- the pre-stage-6 behaviour, unchanged"
+        );
+        assert_eq!(
+            g.stats.heuristic_edge_count, 0,
+            "both qualifiers resolved precisely, so no ref ever reached a heuristic tier"
+        );
+    }
+
+    #[test]
+    fn stage6_global_usings_fall_open_to_the_repo_wide_pool_for_a_file_no_project_owns() {
+        // A file under no project directory has no compilation whose global
+        // usings could be read, so it is NOT an owned unit that happened to
+        // declare none -- it is the no-model case in miniature, and it falls
+        // open to the repo-wide pool. Seeding it from nothing instead would
+        // strip a loose file of every global using in the tree and silently
+        // demote a resolvable name to a guess.
+        let mut files: Vec<(&str, &str)> = SCOPED_GLOBAL_USING_FIXTURE.to_vec();
+        files.push((
+            "Loose/LooseConsumer.cs",
+            "\nnamespace Fixture.Loose;\n\npublic class LooseConsumer\n{\n  public void Run() => Config.Load();\n}\n",
+        ));
+        let files = fragments_for(&files);
+        // Every unit lives under `src/`; `Loose/` is under none of them, so
+        // `unit_of_file` answers `None` for the consumer and admission -- which
+        // needs a site unit to filter anything -- has nothing to say either.
+        let model = model_of(vec![
+            unit("src/Alpha/Alpha.csproj", &[], false),
+            unit("src/Beta/Beta.csproj", &[], false),
+            unit(
+                "src/App/App.csproj",
+                &["src/Alpha/Alpha.csproj", "src/Beta/Beta.csproj"],
+                false,
+            ),
+            unit(
+                "src/Other/Other.csproj",
+                &["src/Alpha/Alpha.csproj", "src/Beta/Beta.csproj"],
+                false,
+            ),
+        ]);
+        let g = resolve_graph_with_model(&no_git_root(), &files, &[], Some(&model));
+
+        assert_eq!(
+            model.unit_of_file("Loose/LooseConsumer.cs"),
+            None,
+            "the fixture only means anything while this file is owned by no unit"
+        );
+        assert_eq!(
+            member_edges_from(&g, "Loose/LooseConsumer.cs"),
+            vec![("Fixture.Alpha.Config", 6)],
+            "the App project's `global using Fixture.Alpha;` is in the repo-wide pool, and an unowned file draws from that pool"
+        );
+        assert!(
+            heuristic_member_edges_from(&g, "Loose/LooseConsumer.cs").is_empty(),
+            "the name resolved precisely, so no tier ever had a guess to make"
+        );
+        assert_eq!(
+            member_edges_from(&g, "src/Other/OtherConsumer.cs"),
+            Vec::new(),
+            "a file an OWNED project holds still sees only its own unit's globals -- the fall-open is for unowned files alone"
+        );
+    }
+
+    // --- stage 6: narrowing an AMBIGUOUS resolution by reachability -------
+    //
+    // The ladder pools same-named defs and refuses to pick; the project model
+    // can settle some of those refusals with the language's own rule rather
+    // than a guess -- a type in a project this one does not reference cannot
+    // be named here at all, so it was never a candidate. The narrowing runs
+    // OUTSIDE the ladder, at the three places that consume an `Ambiguous`,
+    // which is why it can turn one into a PRECISE edge without any tier
+    // learning about projects.
+
+    // Two same-named `Config` classes in two different projects and one
+    // consumer that names `Config` twice: once as a plain type reference (the
+    // field declaration on line 6) and once as a uses-member qualifier
+    // (`Config.Load()` on line 8). No using is in scope, so both refs are
+    // answered at the ladder's global-simple-name step, where two candidates
+    // is exactly an ambiguity -- so one resolve shows what the model does to
+    // both consumers at once.
+    const CROSS_PROJECT_AMBIGUITY_FIXTURE: &[(&str, &str)] = &[
+        (
+            "src/Alpha/Config.cs",
+            "namespace Fixture.Alpha { public class Config { public void Load() { } } }",
+        ),
+        (
+            "src/Beta/Config.cs",
+            "namespace Fixture.Beta { public class Config { public void Load() { } } }",
+        ),
+        (
+            "src/App/Runner.cs",
+            "\nnamespace Fixture.App;\n\npublic class Runner\n{\n  private Config _config;\n\n  public void Run() => Config.Load();\n}\n",
+        ),
+    ];
+
+    /// Every `ambiguous` edge out of one file as (origin, raw, candidate ids,
+    /// `candidate_count`) -- the capped list AND the uncapped total, since
+    /// narrowing has to shrink both or neither.
+    fn ambiguous_edges_from<'a>(
+        g: &'a Graph,
+        from: &str,
+    ) -> Vec<(&'a str, &'a str, Vec<&'a str>, usize)> {
+        g.edges
+            .iter()
+            .filter_map(|e| match e {
+                Edge::Ambiguous {
+                    origin,
+                    from_file,
+                    raw,
+                    candidates,
+                    candidate_count,
+                    ..
+                } if from_file == from => Some((
+                    origin.as_str(),
+                    raw.as_str(),
+                    candidates.iter().map(|c| c.id.as_str()).collect(),
+                    *candidate_count,
+                )),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn stage6_narrowing_turns_a_two_project_ambiguity_into_a_precise_edge_when_only_one_is_reachable(
+    ) {
+        let files = fragments_for(CROSS_PROJECT_AMBIGUITY_FIXTURE);
+        let root = no_git_root();
+
+        let bare = resolve_graph(&root, &files);
+        assert_eq!(
+            ambiguous_edges_from(&bare, "src/App/Runner.cs"),
+            vec![(
+                "uses-type",
+                "Config",
+                vec!["Fixture.Alpha.Config", "Fixture.Beta.Config"],
+                2
+            )],
+            "without a model the two Configs are indistinguishable and the type ref stays an ambiguity"
+        );
+        assert_eq!(
+            heuristic_member_edges_from(&bare, "src/App/Runner.cs"),
+            vec![("Fixture.Alpha.Config", 8), ("Fixture.Beta.Config", 8)],
+            "and the qualifier's ambiguity is what feeds the scored tier's strong pool"
+        );
+
+        let model = model_of(vec![
+            unit("src/Alpha/Alpha.csproj", &[], false),
+            unit("src/App/App.csproj", &["src/Alpha/Alpha.csproj"], false),
+            unit("src/Beta/Beta.csproj", &[], false),
+        ]);
+        let g = resolve_graph_with_model(&root, &files, &[], Some(&model));
+
+        assert_eq!(
+            type_edge_targets_from(&g, "src/App/Runner.cs"),
+            vec!["Fixture.Alpha.Config"],
+            "App cannot reference Beta, so `Config` in this file has exactly one meaning and the type ref is a FACT"
+        );
+        assert_eq!(
+            member_edges_from(&g, "src/App/Runner.cs"),
+            vec![("Fixture.Alpha.Config", 8)],
+            "the same narrowing at the uses-member qualifier promotes the call out of the scored tier entirely"
+        );
+        assert!(
+            ambiguous_edges_from(&g, "src/App/Runner.cs").is_empty()
+                && g.stats.ambiguous_count == 0,
+            "a settled ambiguity is not an ambiguity: the edge and the count both go"
+        );
+        assert_eq!(
+            g.stats.heuristic_edge_count, 0,
+            "nothing is guessed when the language's own reference rule already answers"
+        );
+        assert_eq!(
+            g.stats.unresolved_external_count, 0,
+            "narrowed to ONE, not to zero -- the external counter must not move"
+        );
+    }
+
+    #[test]
+    fn stage6_narrowing_settles_the_receiver_probe_so_a_field_hop_lands_on_a_precise_edge() {
+        // The third consumer: tier (e) resolves the RECEIVER's recorded type
+        // through the same ladder, and an ambiguous answer there stops the hop
+        // dead -- the tier emits only on exactly one def. Narrowing the probe
+        // is what turns `_config.Load()` from two scored guesses into the one
+        // edge the compiler would bind.
+        let files = fragments_for(&[
+            (
+                "src/Alpha/Config.cs",
+                "namespace Fixture.Alpha { public class Config { public void Load() { } } }",
+            ),
+            (
+                "src/Beta/Config.cs",
+                "namespace Fixture.Beta { public class Config { public void Load() { } } }",
+            ),
+            (
+                "src/App/Runner.cs",
+                "\nnamespace Fixture.App;\n\npublic class Runner\n{\n  private Config _config;\n\n  public void Run() => _config.Load();\n}\n",
+            ),
+        ]);
+        let root = no_git_root();
+
+        assert_eq!(
+            heuristic_member_edges_from(&resolve_graph(&root, &files), "src/App/Runner.cs"),
+            vec![("Fixture.Alpha.Config", 8), ("Fixture.Beta.Config", 8)],
+            "without a model the receiver type is ambiguous, tier (e) declines and the scored tier names both"
+        );
+
+        let model = model_of(vec![
+            unit("src/Alpha/Alpha.csproj", &[], false),
+            unit("src/App/App.csproj", &["src/Alpha/Alpha.csproj"], false),
+            unit("src/Beta/Beta.csproj", &[], false),
+        ]);
+        let g = resolve_graph_with_model(&root, &files, &[], Some(&model));
+        assert_eq!(
+            member_edges_from(&g, "src/App/Runner.cs"),
+            vec![("Fixture.Alpha.Config", 8)],
+            "one reachable receiver type is one receiver type, and the field hop is precise again"
+        );
+        assert_eq!(
+            g.stats.heuristic_edge_count, 0,
+            "the guesses are replaced, not joined"
+        );
+    }
+
+    #[test]
+    fn stage6_narrowing_keeps_an_ambiguity_between_two_reachable_projects() {
+        // The gate is subtractive and nothing more: when the site can
+        // reference both projects the model has nothing to say, and the
+        // resolver must go on refusing to pick rather than inventing a
+        // tie-break.
+        let files = fragments_for(CROSS_PROJECT_AMBIGUITY_FIXTURE);
+        let root = no_git_root();
+        let model = model_of(vec![
+            unit("src/Alpha/Alpha.csproj", &[], false),
+            unit(
+                "src/App/App.csproj",
+                &["src/Alpha/Alpha.csproj", "src/Beta/Beta.csproj"],
+                false,
+            ),
+            unit("src/Beta/Beta.csproj", &[], false),
+        ]);
+        let g = resolve_graph_with_model(&root, &files, &[], Some(&model));
+
+        assert_eq!(
+            ambiguous_edges_from(&g, "src/App/Runner.cs"),
+            ambiguous_edges_from(&resolve_graph(&root, &files), "src/App/Runner.cs"),
+            "both candidates survive the filter, so the edge is the one the model-less resolve emits"
+        );
+        assert_eq!(g.stats.ambiguous_count, 1);
+        assert_eq!(
+            heuristic_member_edges_from(&g, "src/App/Runner.cs"),
+            vec![("Fixture.Alpha.Config", 8), ("Fixture.Beta.Config", 8)],
+            "and the qualifier still reaches the scored tier with both candidates in its pool"
+        );
+    }
+
+    #[test]
+    fn stage6_narrowing_never_touches_ctor_di_implementor_choice() {
+        // The ctor-DI resolver picks an IMPLEMENTATION of an interface the
+        // site names -- a different question from "which same-named type did
+        // this reference mean", and one the model is not entitled to answer:
+        // an unreachable implementor is still evidence that the interface has
+        // more than one, and silently promoting the reachable one would turn a
+        // reported ambiguity into a confident wrong answer whenever the
+        // path-based ownership guess is off.
+        let files = fragments_for(&[
+            (
+                "src/Contracts/IRepo.cs",
+                "namespace Fixture.Contracts { public interface IRepo { void Save(); } }",
+            ),
+            (
+                "src/Files/FileRepo.cs",
+                "using Fixture.Contracts;\n\nnamespace Fixture.Files { public class FileRepo : IRepo { public void Save() { } } }",
+            ),
+            (
+                "src/Sql/SqlRepo.cs",
+                "using Fixture.Contracts;\n\nnamespace Fixture.Sql { public class SqlRepo : IRepo { public void Save() { } } }",
+            ),
+            (
+                "src/App/Service.cs",
+                "using Fixture.Contracts;\n\nnamespace Fixture.App;\n\npublic class Service\n{\n  public Service(IRepo repo) { }\n}\n",
+            ),
+        ]);
+        let root = no_git_root();
+        // App can reach Sql and not Files -- exactly the shape that settles a
+        // ladder ambiguity, applied to a question the ladder never asked.
+        let model = model_of(vec![
+            unit(
+                "src/App/App.csproj",
+                &["src/Contracts/Contracts.csproj", "src/Sql/Sql.csproj"],
+                false,
+            ),
+            unit("src/Contracts/Contracts.csproj", &[], false),
+            unit(
+                "src/Files/Files.csproj",
+                &["src/Contracts/Contracts.csproj"],
+                false,
+            ),
+            unit(
+                "src/Sql/Sql.csproj",
+                &["src/Contracts/Contracts.csproj"],
+                false,
+            ),
+        ]);
+
+        let ctor_di = |g: &Graph| -> (String, Vec<String>) {
+            match find_edge(g, |e| matches!(e, Edge::CtorDi { .. })).expect("ctor-di edge present")
+            {
+                Edge::CtorDi {
+                    resolution,
+                    candidates,
+                    ..
+                } => (
+                    resolution.clone(),
+                    candidates.iter().map(|c| c.id.clone()).collect(),
+                ),
+                _ => unreachable!(),
+            }
+        };
+        assert_eq!(
+            ctor_di(&resolve_graph_with_model(&root, &files, &[], Some(&model))),
+            ctor_di(&resolve_graph(&root, &files)),
+            "two implementors is two implementors, model or no model"
+        );
+        assert_eq!(
+            ctor_di(&resolve_graph(&root, &files)),
+            (
+                "ambiguous".to_string(),
+                vec![
+                    "Fixture.Files.FileRepo".to_string(),
+                    "Fixture.Sql.SqlRepo".to_string()
+                ]
+            ),
+            "pinned so the assertion above cannot pass on two identically-broken answers"
+        );
+    }
+
+    #[test]
+    fn stage6_narrowing_to_zero_gives_the_scored_tier_an_empty_pool_not_a_graph_wide_guess() {
+        // Narrowing can also empty the candidate list, and the result is an
+        // ordinary External -- not a silently-kept ambiguity and not an
+        // invented pick. For the type ref that means the unresolved counter
+        // rather than the ambiguous one.
+        //
+        // For the QUALIFIER it means no heuristic edge at all. The ladder did
+        // find candidates here; the project model answered that none of them
+        // is nameable at this site. That is an answer, so the scored tier gets
+        // an empty pool rather than the graph-wide member-name uniqueness pool
+        // an unfound name would get. `Ledger` is the proof the tier really
+        // declines: it is not a `Config` at all, it is reachable from `App`,
+        // and it declares `Load` -- so it is exactly the stranger the
+        // uniqueness pool would have handed over.
+        let mut files: Vec<(&str, &str)> = CROSS_PROJECT_AMBIGUITY_FIXTURE.to_vec();
+        files.push((
+            "src/Shared/Ledger.cs",
+            "namespace Fixture.Shared { public class Ledger { public void Load() { } } }",
+        ));
+        let files = fragments_for(&files);
+        let root = no_git_root();
+
+        assert_eq!(
+            heuristic_member_edges_from(&resolve_graph(&root, &files), "src/App/Runner.cs"),
+            vec![("Fixture.Alpha.Config", 8), ("Fixture.Beta.Config", 8)],
+            "without a model the ladder's ambiguous pool wins and Ledger is never in the running"
+        );
+
+        let model = model_of(vec![
+            unit("src/Alpha/Alpha.csproj", &[], false),
+            unit("src/App/App.csproj", &["src/Shared/Shared.csproj"], false),
+            unit("src/Beta/Beta.csproj", &[], false),
+            unit("src/Shared/Shared.csproj", &[], false),
+        ]);
+        let g = resolve_graph_with_model(&root, &files, &[], Some(&model));
+
+        assert!(
+            ambiguous_edges_from(&g, "src/App/Runner.cs").is_empty(),
+            "neither Config is nameable here, so there is nothing left to be ambiguous between"
+        );
+        assert_eq!(
+            (g.stats.ambiguous_count, g.stats.unresolved_external_count),
+            (0, 1),
+            "the type ref moves from the ambiguous count to the external one, which is what an emptied pool MEANS"
+        );
+        assert!(
+            member_edges_from(&g, "src/App/Runner.cs").is_empty(),
+            "no precise edge is invented out of an empty candidate list"
+        );
+        assert!(
+            heuristic_member_edges_from(&g, "src/App/Runner.cs").is_empty(),
+            "every real `Config` candidate was ruled unreachable, which is an ANSWER -- the tier must not answer it again with a reachable stranger that merely declares `Load`"
+        );
+        assert_eq!(
+            g.stats.heuristic_edge_count, 0,
+            "and nothing counted either: a declined guess is not a guess"
+        );
+    }
+
+    #[test]
+    fn stage6_a_bare_qualifier_narrowed_to_zero_declines_while_an_unfound_one_still_guesses() {
+        // The two `External`s the scored tier must tell apart, in one resolve
+        // and one file:
+        //   `Foo.Bar()`     -- two real `Foo` candidates, neither reachable
+        //                      from `App`. Narrowed to zero, so the tier
+        //                      declines even though reachable `Ledger`
+        //                      declares `Bar`.
+        //   `Missing.Bar()` -- a name the ladder never found at all. Nothing
+        //                      was ever narrowed, so the member-name
+        //                      uniqueness pool applies as it always has and
+        //                      `Ledger` IS the guess.
+        // Without the split, both lines would guess `Ledger`.
+        let files = fragments_for(&[
+            (
+                "src/Alpha/Foo.cs",
+                "namespace Fixture.Alpha { public class Foo { public void Bar() { } } }",
+            ),
+            (
+                "src/Beta/Foo.cs",
+                "namespace Fixture.Beta { public class Foo { public void Bar() { } } }",
+            ),
+            (
+                "src/Shared/Ledger.cs",
+                "namespace Fixture.Shared { public class Ledger { public void Bar() { } } }",
+            ),
+            (
+                "src/App/Runner.cs",
+                "\nnamespace Fixture.App;\n\npublic class Runner\n{\n  public void Run()\n  {\n    Foo.Bar();\n    Missing.Bar();\n  }\n}\n",
+            ),
+        ]);
+        let root = no_git_root();
+
+        let model = model_of(vec![
+            unit("src/Alpha/Alpha.csproj", &[], false),
+            unit("src/App/App.csproj", &["src/Shared/Shared.csproj"], false),
+            unit("src/Beta/Beta.csproj", &[], false),
+            unit("src/Shared/Shared.csproj", &[], false),
+        ]);
+        let g = resolve_graph_with_model(&root, &files, &[], Some(&model));
+
+        assert_eq!(
+            heuristic_member_edges_from(&g, "src/App/Runner.cs"),
+            vec![("Fixture.Shared.Ledger", 9)],
+            "line 8's `Foo` was narrowed to zero and declines; line 9's `Missing` was never found and still reaches the uniqueness pool"
+        );
+        assert!(
+            member_edges_from(&g, "src/App/Runner.cs").is_empty(),
+            "no precise edge on either line"
+        );
+    }
+
+    // The three-tier fixture: one file whose three member references are
+    // claimed by three different tiers, so a single resolve exercises the whole
+    // schema. `_widget.Render()` is a precise field hop, `_widget.Tally()` is
+    // an extension call only tier (f) can claim, and `Config.Load()` is
+    // ambiguous between two imported namespaces and reaches the scored tier.
+    const THREE_TIER_FIXTURE: &[(&str, &str)] = &[
+        ("Core/Widget.cs", "namespace App.Core { public class Widget { public void Render() { } } }"),
+        (
+            "Ext/WidgetExtensions.cs",
+            "namespace App.Ext { public static class WidgetExtensions { public static void Tally(this Widget w) { } } }",
+        ),
+        ("Alpha/Config.cs", "namespace App.Alpha { public class Config { public void Load() { } } }"),
+        ("Beta/Config.cs", "namespace App.Beta { public class Config { public void Load() { } } }"),
+        (
+            "Consumers/Consumer.cs",
+            "\nusing App.Core;\nusing App.Ext;\nusing App.Alpha;\nusing App.Beta;\n\nnamespace App.Consumers;\n\npublic class Consumer\n{\n  private Widget _widget;\n\n  public void Run()\n  {\n    _widget.Render();\n    _widget.Tally();\n    Config.Load();\n  }\n}\n",
+        ),
+    ];
+
+    #[test]
+    fn stage5_schema_every_uses_member_edge_carries_its_member_and_only_heuristic_edges_carry_a_tier(
+    ) {
+        let files = fragments_for(THREE_TIER_FIXTURE);
+        let g = resolve_graph(&no_git_root(), &files);
+
+        let member_edges: Vec<&Edge> = g
+            .edges
+            .iter()
+            .filter(|e| matches!(e, Edge::UsesMember { .. }))
+            .collect();
+        for e in &member_edges {
+            let Edge::UsesMember {
+                heuristic,
+                tier,
+                member,
+                ..
+            } = e
+            else {
+                unreachable!()
+            };
+            assert!(
+                member.is_some(),
+                "every uses-member edge names its member, precise ones included: {e:?}"
+            );
+            assert_eq!(
+                *heuristic,
+                tier.is_some(),
+                "the flag and the tier are one fact -- `Edge::uses_member` derives one from the other: {e:?}"
+            );
+        }
+
+        let rows: Vec<(&str, Option<HeuristicTier>, Option<&str>)> = member_edges
+            .iter()
+            .map(|e| match e {
+                Edge::UsesMember {
+                    to, tier, member, ..
+                } => (to.as_str(), *tier, member.as_deref()),
+                _ => unreachable!(),
+            })
+            .collect();
+        assert_eq!(
+            rows,
+            vec![
+                ("App.Core.Widget", None, Some("Render")),
+                (
+                    "App.Ext.WidgetExtensions",
+                    Some(HeuristicTier::Ext),
+                    Some("Tally")
+                ),
+                ("App.Alpha.Config", Some(HeuristicTier::Guess), Some("Load")),
+                ("App.Beta.Config", Some(HeuristicTier::Guess), Some("Load")),
+            ]
+        );
+
+        // One serialized sample per tier, pinned: the precise row gains
+        // `member` and nothing else, and the two guess rows spell their tier
+        // between the flag and the member.
+        let bytes: Vec<String> = member_edges
+            .iter()
+            .map(|e| serde_json::to_string(e).unwrap())
+            .collect();
+        assert_eq!(
+            bytes[0],
+            r#"{"kind":"uses-member","from_file":"Consumers/Consumer.cs","from_line":15,"to":"App.Core.Widget","to_file":"Core/Widget.cs","member":"Render"}"#
+        );
+        assert_eq!(
+            bytes[1],
+            r#"{"kind":"uses-member","from_file":"Consumers/Consumer.cs","from_line":16,"to":"App.Ext.WidgetExtensions","to_file":"Ext/WidgetExtensions.cs","heuristic":true,"tier":"ext","member":"Tally"}"#
+        );
+        assert_eq!(
+            bytes[2],
+            r#"{"kind":"uses-member","from_file":"Consumers/Consumer.cs","from_line":17,"to":"App.Alpha.Config","to_file":"Alpha/Config.cs","heuristic":true,"tier":"guess","member":"Load"}"#
+        );
+
+        // And the counters partition the guesses: every heuristic edge is in
+        // exactly one tier, so the two add up to the total.
+        assert_eq!(
+            g.stats.heuristic_by_tier,
+            HeuristicByTier { ext: 1, guess: 2 }
+        );
+        assert_eq!(
+            g.stats.heuristic_by_tier.ext + g.stats.heuristic_by_tier.guess,
+            g.stats.heuristic_edge_count
+        );
+        assert_eq!(
+            g.schema_version, GRAPH_SCHEMA_VERSION,
+            "a graph carrying tier and member is a schema-2 graph"
+        );
+    }
+
     #[test]
     fn stage4_stats_heuristic_edge_count_is_appended_last_and_edges_by_kind_never_counts_a_guess() {
         let files = fragments_for(BYTE_IDENTITY_FIXTURE);
@@ -4826,8 +9774,8 @@ mod tests {
         // serialized `stats` keys appear in, and the values with them.
         assert_eq!(
             serde_json::to_string(&g.stats).unwrap(),
-            r#"{"def_count":9,"file_count":7,"edges_by_kind":{"inherits":1,"uses-type":1,"imports":4,"uses-member":2,"ctor-di":0},"ambiguous_count":0,"ambiguous_pct":0,"unresolved_external_count":0,"heuristic_edge_count":3,"test_def_count":0}"#,
-            "test_def_count is appended LAST -- the stats key order the Node reference pins"
+            r#"{"def_count":9,"file_count":7,"edges_by_kind":{"inherits":1,"uses-type":1,"imports":4,"uses-member":2,"ctor-di":0},"ambiguous_count":0,"ambiguous_pct":0,"unresolved_external_count":0,"heuristic_edge_count":3,"test_def_count":0,"heuristic_by_tier":{"ext":0,"guess":3}}"#,
+            "heuristic_by_tier is appended LAST, after test_def_count -- the stats key order graph.json pins"
         );
         assert_eq!(g.stats.heuristic_edge_count, 3);
         assert_eq!(
@@ -5000,12 +9948,12 @@ mod tests {
                 "Ext/Helpers.cs",
                 "\nnamespace App.Ext;\n\npublic static class Helpers\n{\n  public static string Slug(this Widget widget)\n  {\n    return \"s\";\n  }\n\n  public static string Tag(this Widget widget)\n  {\n    return \"t\";\n  }\n}\n",
             ),
-            // Two DIFFERENT extension calls on ONE line, both naming the same
-            // declaring static class: two guesses that serialize to the same
-            // bytes.
+            // The SAME extension call twice on ONE line: same declaring static
+            // class, same member, same line -- two guesses that serialize to
+            // the same bytes.
             (
                 "Ops/Caller.cs",
-                "\nusing App.Ext;\nusing App.Widgets;\n\nnamespace App.Ops;\n\npublic class Caller\n{\n  public string Run()\n  {\n    Widget widget = new Widget();\n    return widget.Tag() + widget.Slug();\n  }\n}\n",
+                "\nusing App.Ext;\nusing App.Widgets;\n\nnamespace App.Ops;\n\npublic class Caller\n{\n  public string Run()\n  {\n    Widget widget = new Widget();\n    return widget.Tag() + widget.Tag();\n  }\n}\n",
             ),
             ("Enums/Mode.cs", "namespace App.Enums { public enum Mode { On, Off } }"),
             // The precise counterpart: the same enum member read twice on one
@@ -5030,6 +9978,47 @@ mod tests {
         assert_eq!(
             g.stats.heuristic_edge_count, 1,
             "the dropped guess leaves the counter too"
+        );
+        assert_eq!(
+            g.stats.heuristic_by_tier,
+            HeuristicByTier { ext: 1, guess: 0 },
+            "and it leaves ITS tier's counter, not the other one"
+        );
+    }
+
+    // The other side of the same rule, and the reason `member` had to join the
+    // dedup key: two guesses that agree on every key the edge used to carry
+    // and differ ONLY in the member they name are two facts, not a duplicate.
+    // Before `member` existed these collapsed into one, and a reader lost a
+    // call.
+    #[test]
+    fn heuristic_side_dedup_keeps_two_guesses_that_name_different_members_of_one_target() {
+        let files = fragments_for(&[
+            ("Widgets/Widget.cs", "namespace App.Widgets { public class Widget { } }"),
+            (
+                "Ext/Helpers.cs",
+                "\nnamespace App.Ext;\n\npublic static class Helpers\n{\n  public static string Slug(this Widget widget)\n  {\n    return \"s\";\n  }\n\n  public static string Tag(this Widget widget)\n  {\n    return \"t\";\n  }\n}\n",
+            ),
+            (
+                "Ops/Caller.cs",
+                "\nusing App.Ext;\nusing App.Widgets;\n\nnamespace App.Ops;\n\npublic class Caller\n{\n  public string Run()\n  {\n    Widget widget = new Widget();\n    return widget.Tag() + widget.Slug();\n  }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            heuristic_member_edges_from(&g, "Ops/Caller.cs"),
+            vec![("App.Ext.Helpers", 12), ("App.Ext.Helpers", 12)],
+            "two calls, two edges -- identical but for the member each names"
+        );
+        assert_eq!(
+            heuristic_member_names_from(&g, "Ops/Caller.cs"),
+            vec![Some("Tag"), Some("Slug")],
+            "and the member is what tells them apart, in source order"
+        );
+        assert_eq!(g.stats.heuristic_edge_count, 2);
+        assert_eq!(
+            g.stats.heuristic_by_tier,
+            HeuristicByTier { ext: 2, guess: 0 }
         );
     }
 
@@ -5172,6 +10161,10 @@ mod tests {
                     receiver_property_owner: None,
                     receiver_call_owner: None,
                     receiver_call_member: None,
+                    receiver_base: false,
+                    receiver_awaited: false,
+                    receiver_local: false,
+                    receiver_lambda: None,
                 }],
             ),
         )];
@@ -5220,6 +10213,10 @@ mod tests {
                             receiver_property_owner: None,
                             receiver_call_owner: None,
                             receiver_call_member: None,
+                            receiver_base: false,
+                            receiver_awaited: false,
+                            receiver_local: false,
+                            receiver_lambda: None,
                         },
                     ],
                 ),
@@ -5373,9 +10370,11 @@ mod tests {
 
     #[test]
     fn v8_a_dotted_nested_ref_never_enters_the_nested_step() {
-        // BOUNDS: "." is not "+", and the ref text alone cannot say which was
-        // meant, so a dotted "Outer.Nested" stays on the qualified ladder and
-        // falls through to the global step -- ambiguous here, by design.
+        // BOUNDS: "." is not "+", so a dotted "Outer.Nested" stays on the
+        // qualified ladder and never enters step 0b. It is the dotted suffix
+        // step that reads the text: only the def whose path ends in
+        // `Outer.Nested` matches, so the same-named `Other+Nested` cannot
+        // make it ambiguous.
         let files = vec![(
             "Core/Types.cs".to_string(),
             frag(
@@ -5391,8 +10390,12 @@ mod tests {
             ),
         )];
         let g = resolve_graph(&no_git_root(), &files);
-        assert!(find_edge(&g, |e| matches!(e, Edge::UsesType { .. })).is_none());
-        assert_eq!(g.stats.ambiguous_count, 1);
+        match find_edge(&g, |e| matches!(e, Edge::UsesType { .. })).expect("resolved edge present")
+        {
+            Edge::UsesType { to, .. } => assert_eq!(to, "App.Core.Outer+Nested"),
+            _ => unreachable!(),
+        }
+        assert_eq!(g.stats.ambiguous_count, 0);
     }
 
     #[test]
@@ -6277,5 +11280,1789 @@ mod tests {
         // owner whose `Make` records no return type all leave the local exactly
         // as unknown as the extractor left it.
         assert!(member_edge_targets(&g).is_empty());
+    }
+
+    // --- Stage 7: this/base receiver typing, awaited Task unwrap ------------
+    //
+    // All four run real C# through the extractor (`fragments_for`), the same
+    // choice the tier-(e) end-to-end block above makes: a `this.`/`base.`
+    // qualifier's `receiverBase`/`receiverAwaited` bits and a method's
+    // `methodReturnArgs` are extractor facts, so a test that hand-built the
+    // fragments would take the extractor's word for them rather than proving
+    // them.
+
+    #[test]
+    fn stage7_this_member_resolves_to_the_declaring_def_across_partial_files() {
+        let files = fragments_for(&[
+            (
+                "Domain/Order.cs",
+                "\nnamespace App.Domain;\n\npublic partial class Order\n{\n    public string Name;\n}\n",
+            ),
+            (
+                "Domain/Order.Validation.cs",
+                "\nnamespace App.Domain;\n\npublic partial class Order\n{\n    public int Describe() => this.Name.Length;\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        let name_edges: Vec<(&str, &str, bool)> = g
+            .edges
+            .iter()
+            .filter_map(|e| match e {
+                Edge::UsesMember {
+                    from_file,
+                    to,
+                    member,
+                    heuristic,
+                    ..
+                } if from_file == "Domain/Order.Validation.cs"
+                    && member.as_deref() == Some("Name") =>
+                {
+                    Some((to.as_str(), member.as_deref().unwrap(), *heuristic))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            name_edges,
+            vec![("App.Domain.Order", "Name", false)],
+            "this.Name resolves through the ordinary typed-receiver path -- Name is declared in the \
+             OTHER partial-class file, which the merged member lists already cover; no self-edge \
+             rule was needed"
+        );
+    }
+
+    #[test]
+    fn stage7_base_member_resolves_to_the_first_base_that_declares_it() {
+        let files = fragments_for(&[
+            (
+                "Domain/GrandBase.cs",
+                "\nnamespace App.Domain;\n\npublic class GrandBase\n{\n    public void Touch() { }\n}\n",
+            ),
+            (
+                "Domain/Base.cs",
+                "\nnamespace App.Domain;\n\npublic class Base : GrandBase\n{\n}\n",
+            ),
+            (
+                "Domain/Order.cs",
+                "\nnamespace App.Domain;\n\npublic class Order : Base\n{\n    public void Touch() { }\n\n    public void Poke()\n    {\n        base.Touch();\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        let touch_edges: Vec<(&str, bool)> = g
+            .edges
+            .iter()
+            .filter_map(|e| match e {
+                Edge::UsesMember {
+                    from_file,
+                    to,
+                    member,
+                    heuristic,
+                    ..
+                } if from_file == "Domain/Order.cs" && member.as_deref() == Some("Touch") => {
+                    Some((to.as_str(), *heuristic))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            touch_edges,
+            vec![("App.Domain.GrandBase", false)],
+            "base.Touch() starts at Order's OWN bases -- Base does not declare Touch, so the walk \
+             continues to Base's own base GrandBase, which does; Order's OWN override (also named \
+             Touch) is never even considered"
+        );
+    }
+
+    #[test]
+    fn stage7_base_member_declared_nowhere_in_graph_resolves_external() {
+        let files = fragments_for(&[
+            (
+                "Domain/Base.cs",
+                "\nnamespace App.Domain;\n\npublic class Base\n{\n    public void Other() { }\n}\n",
+            ),
+            (
+                "Domain/Order.cs",
+                "\nnamespace App.Domain;\n\npublic class Order : Base\n{\n    public void Touch() { }\n\n    public void Poke()\n    {\n        base.Touch();\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        let touch_edges: Vec<&Edge> = g
+            .edges
+            .iter()
+            .filter(|e| {
+                matches!(e, Edge::UsesMember { from_file, member, .. }
+                    if from_file == "Domain/Order.cs" && member.as_deref() == Some("Touch"))
+            })
+            .collect();
+        assert!(
+            touch_edges.is_empty(),
+            "no in-graph base declares Touch -- base.Touch() is external like any other unresolved \
+             receiver, never a scored guess, even though Order itself declares Touch: {touch_edges:?}"
+        );
+        assert_eq!(g.stats.heuristic_edge_count, 0);
+    }
+
+    #[test]
+    fn stage7_base_member_lookup_on_a_cyclic_hierarchy_never_binds_the_enclosing_type() {
+        // `class A : B` / `class B : A` is not valid C#, but it parses, and a
+        // graph built from half-written source can hold it. Walking B's own
+        // bases leads straight back to A, and A declares Only -- so without a
+        // guard the `base.` lookup answers with the very type the call was
+        // written in, the self-edge a `base.` qualifier can never mean.
+        let files = fragments_for(&[
+            (
+                "Domain/A.cs",
+                "\nnamespace App.Domain;\n\npublic class A : B\n{\n    public void Only() { }\n\n    public void Go() { base.Only(); }\n}\n",
+            ),
+            (
+                "Domain/B.cs",
+                "\nnamespace App.Domain;\n\npublic class B : A\n{\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert!(
+            member_edges_from(&g, "Domain/A.cs").is_empty(),
+            "no in-graph BASE of A declares Only -- reaching A again through the cycle is not an \
+             answer, so base.Only() is external exactly like a member no base declares at all: \
+             {:?}",
+            member_edges_from(&g, "Domain/A.cs")
+        );
+        assert_eq!(
+            g.stats.heuristic_edge_count, 0,
+            "and a `base.` ref never falls through to a guess either"
+        );
+    }
+
+    #[test]
+    fn stage7_awaited_static_call_local_unwraps_task_once() {
+        let files = fragments_for(&[
+            (
+                "Domain/Order.cs",
+                "\nnamespace App.Domain;\n\npublic class Order\n{\n    public void Validate() { }\n}\n",
+            ),
+            (
+                "Infra/Repo.cs",
+                "\nnamespace App.Infra;\n\npublic static class Repo\n{\n    public static Task<Order> LoadAsync() => null;\n    public static Task<Task<Order>> LoadNestedAsync() => null;\n}\n",
+            ),
+            (
+                "App/Worker.cs",
+                "\nnamespace App.Workers;\n\npublic class Worker\n{\n    public async Task Run()\n    {\n        var order = await Repo.LoadAsync();\n        order.Validate();\n\n        var nested = await Repo.LoadNestedAsync();\n        nested.Validate();\n\n        var plain = Repo.LoadAsync();\n        plain.Validate();\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        let validate_edges: Vec<(&str, usize, bool)> = g
+            .edges
+            .iter()
+            .filter_map(|e| match e {
+                Edge::UsesMember {
+                    from_file,
+                    from_line,
+                    to,
+                    member,
+                    heuristic,
+                    ..
+                } if from_file == "App/Worker.cs" && member.as_deref() == Some("Validate") => {
+                    Some((to.as_str(), *from_line, *heuristic))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            validate_edges,
+            vec![("App.Domain.Order", 9, false)],
+            "the SINGLY-wrapped AWAITED call (`order`) unwraps Task<Order> to Order precisely; the \
+             DOUBLY-wrapped awaited call (`nested`) unwraps only once, landing on the bare name \
+             \"Task\" (never Order), and the UNAWAITED call (`plain`) is never unwrapped at all -- \
+             both of the latter two stay typed \"Task\", resolve to nothing in-graph, and earn no \
+             edge at all, guessed or otherwise"
+        );
+    }
+
+    // --- Unit C: chain-tail receivers -----------------------------------
+
+    #[test]
+    fn stage7_chain_tail_resolves_through_one_method_return_hop() {
+        let files = fragments_for(&[
+            (
+                "Domain/Order.cs",
+                "\nnamespace App.Domain;\n\npublic class Order\n{\n    public void Validate() { }\n}\n",
+            ),
+            (
+                "Infra/Repo.cs",
+                "\nnamespace App.Infra;\n\npublic static class Repo\n{\n    public static Order Load() => null;\n}\n",
+            ),
+            (
+                "App/Worker.cs",
+                "\nnamespace App.Workers;\n\npublic class Worker\n{\n    public void Run()\n    {\n        Repo.Load().Validate();\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        let validate_edges: Vec<(&str, bool)> = g
+            .edges
+            .iter()
+            .filter_map(|e| match e {
+                Edge::UsesMember {
+                    from_file,
+                    to,
+                    member,
+                    heuristic,
+                    ..
+                } if from_file == "App/Worker.cs" && member.as_deref() == Some("Validate") => {
+                    Some((to.as_str(), *heuristic))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            validate_edges,
+            vec![("App.Domain.Order", false)],
+            "the chain tail `.Validate()` resolves through the ONE method_returns hop off \
+             `Repo.Load()`, precisely and non-heuristically -- exactly like a `var x = \
+             Repo.Load(); x.Validate();` local already would"
+        );
+    }
+
+    // --- Unit B: cross-file field facts, the bare-identifier fallback -------
+    //
+    // All three run real C# through the extractor (`fragments_for`), the same
+    // choice the four stage-7 tests above make: a field's declared type is an
+    // extractor fact (`FragDef.fieldTypes`), so a test that hand-built the
+    // fragments would take the extractor's word for it rather than proving
+    // it end to end.
+
+    #[test]
+    fn stage7_partial_class_field_declared_in_a_sibling_file_types_the_receiver() {
+        let files = fragments_for(&[
+            (
+                "Infra/Widget.cs",
+                "\nnamespace App.Infra;\n\npublic class Widget\n{\n    public void Spin() { }\n}\n",
+            ),
+            (
+                "Domain/Order.cs",
+                "\nnamespace App.Domain;\n\npublic partial class Order\n{\n    private Widget _widget;\n}\n",
+            ),
+            (
+                "Domain/Order.Extra.cs",
+                "\nnamespace App.Domain;\n\npublic partial class Order\n{\n    public void Poke()\n    {\n        _widget.Spin();\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        let spin_edges: Vec<(&str, bool)> = g
+            .edges
+            .iter()
+            .filter_map(|e| match e {
+                Edge::UsesMember {
+                    from_file,
+                    to,
+                    member,
+                    heuristic,
+                    ..
+                } if from_file == "Domain/Order.Extra.cs" && member.as_deref() == Some("Spin") => {
+                    Some((to.as_str(), *heuristic))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            spin_edges,
+            vec![("App.Infra.Widget", false)],
+            "_widget.Spin() carries no in-file fact at all in Order.Extra.cs -- _widget is declared \
+             as a field only in the OTHER partial-class file -- so it is typed from the merged \
+             field_types table the resolver builds across both files instead"
+        );
+    }
+
+    #[test]
+    fn stage7_protected_field_declared_on_a_base_types_the_receiver() {
+        let files = fragments_for(&[
+            (
+                "Infra/Logger.cs",
+                "\nnamespace App.Infra;\n\npublic class Logger\n{\n    public void Log() { }\n}\n",
+            ),
+            (
+                "Domain/Base.cs",
+                "\nnamespace App.Domain;\n\npublic class Base\n{\n    protected Logger _logger;\n}\n",
+            ),
+            (
+                "Domain/Order.cs",
+                "\nnamespace App.Domain;\n\npublic class Order : Base\n{\n    public void Poke()\n    {\n        _logger.Log();\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        let log_edges: Vec<(&str, bool)> = g
+            .edges
+            .iter()
+            .filter_map(|e| match e {
+                Edge::UsesMember {
+                    from_file,
+                    to,
+                    member,
+                    heuristic,
+                    ..
+                } if from_file == "Domain/Order.cs" && member.as_deref() == Some("Log") => {
+                    Some((to.as_str(), *heuristic))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            log_edges,
+            vec![("App.Infra.Logger", false)],
+            "_logger.Log() has no in-file fact anywhere in Order.cs -- Order itself declares no \
+             _logger field at all -- so the fallback walks Order's OWN bases: Base declares it, \
+             typed Logger, which declares Log"
+        );
+    }
+
+    #[test]
+    fn stage7_a_cross_file_field_type_resolves_in_its_declaring_files_context() {
+        // Two types named Alpha, in two namespaces. The base declares the
+        // field under `using N1`; the derived file that reads it imports N2
+        // instead and has never heard of N1.Alpha. The field's declared type
+        // is a bare name that only means N1.Alpha, so the reading file's own
+        // imports must not be what decides which Alpha it names.
+        let files = fragments_for(&[
+            (
+                "N1/Alpha.cs",
+                "\nnamespace N1;\n\npublic class Alpha\n{\n    public void Ship() { }\n}\n",
+            ),
+            (
+                "N2/Alpha.cs",
+                "\nnamespace N2;\n\npublic class Alpha\n{\n    public void Ship() { }\n}\n",
+            ),
+            (
+                "App/BaseT.cs",
+                "\nusing N1;\n\nnamespace App;\n\npublic class BaseT\n{\n    protected Alpha _thing;\n}\n",
+            ),
+            (
+                "App/Derived.cs",
+                "\nusing N2;\n\nnamespace App;\n\npublic class Derived : BaseT\n{\n    public void Go() { _thing.Ship(); }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_from(&g, "App/Derived.cs"),
+            vec![("N1.Alpha", 8)],
+            "the field fact came from BaseT.cs, so its type name is resolved under BaseT.cs's own \
+             usings, namespace and nesting -- Derived.cs's `using N2` is not evidence about a \
+             declaration written in another file"
+        );
+    }
+
+    #[test]
+    fn stage7_a_catch_variable_shadows_a_same_named_base_field_fact() {
+        // The handler declares `e` as a WidgetException, a type this graph
+        // does not hold. A protected field on the base happens to share the
+        // name and IS in-graph -- and before the catch designation earned a
+        // fact of its own, the bare-identifier fallback typed the caught
+        // exception from that field and bound the call to it.
+        let files = fragments_for(&[
+            (
+                "Domain/Order.cs",
+                "\nnamespace App.Domain;\n\npublic class Order\n{\n    public void Ship() { }\n}\n",
+            ),
+            (
+                "Domain/BaseT.cs",
+                "\nnamespace App.Domain;\n\npublic class BaseT\n{\n    protected Order e;\n}\n",
+            ),
+            (
+                "Domain/Derived.cs",
+                "\nnamespace App.Domain;\n\npublic class Derived : BaseT\n{\n    public void Go()\n    {\n        try { Work(); }\n        catch (WidgetException e) { e.Ship(); }\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert!(
+            member_edges_from(&g, "Domain/Derived.cs").is_empty(),
+            "the caught exception shadows the base field, and its own type is out of graph -- so \
+             the site is an ordinary external miss, never a precise edge to Order.Ship: {:?}",
+            member_edges_from(&g, "Domain/Derived.cs")
+        );
+    }
+
+    #[test]
+    fn stage7_an_in_file_local_shadows_a_same_named_field_fact() {
+        let files = fragments_for(&[
+            (
+                "Infra/Widget.cs",
+                "\nnamespace App.Infra;\n\npublic class Widget\n{\n    public void Spin() { }\n}\n",
+            ),
+            (
+                "Infra/Gadget.cs",
+                "\nnamespace App.Infra;\n\npublic class Gadget\n{\n    public void Zap() { }\n}\n",
+            ),
+            (
+                "Domain/Base.cs",
+                "\nnamespace App.Domain;\n\npublic class Base\n{\n    protected Widget _item;\n}\n",
+            ),
+            (
+                "Domain/Order.cs",
+                "\nnamespace App.Domain;\n\npublic class Order : Base\n{\n    public void Poke()\n    {\n        var _item = new Gadget();\n        _item.Zap();\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        let zap_edges: Vec<(&str, bool)> = g
+            .edges
+            .iter()
+            .filter_map(|e| match e {
+                Edge::UsesMember {
+                    from_file,
+                    to,
+                    member,
+                    heuristic,
+                    ..
+                } if from_file == "Domain/Order.cs" && member.as_deref() == Some("Zap") => {
+                    Some((to.as_str(), *heuristic))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            zap_edges,
+            vec![("App.Infra.Gadget", false)],
+            "Poke's own local `_item` (typed Gadget, which declares Zap) is an in-file fact for the \
+             name, so the base's same-named field (typed Widget, which does NOT declare Zap) is \
+             never even consulted -- a local always shadows a same-named field fact, precisely \
+             because the fallback only ever runs when receiver_type is still unset"
+        );
+    }
+
+    #[test]
+    fn stage7_an_untyped_in_file_local_still_shadows_a_same_named_field_fact() {
+        // `var order = Unknown();` is a BARE (undotted) call -- a shape
+        // `invocation_call` never matches (it requires a dotted qualifier,
+        // "Q.M()") -- so `order` settles as an ordinary taken-but-unknown
+        // member-table entry: no `Fact` vouches for its type, but the name
+        // IS in scope, exactly like a real (typed) local. `Order.Fields.cs`
+        // declares a field of the SAME name in a SIBLING partial-class
+        // file, which is precisely the shape the field/property fallback
+        // exists to answer for a name with no in-file fact -- this proves
+        // it does NOT answer here, because `order` is one.
+        let with_field = fragments_for(&[
+            (
+                "Infra/Widget.cs",
+                "\nnamespace App.Infra;\n\npublic class Widget\n{\n    public void Spin() { }\n}\n",
+            ),
+            (
+                "Domain/Order.Fields.cs",
+                "\nnamespace App.Domain;\n\npublic partial class Order\n{\n    private Widget order;\n}\n",
+            ),
+            (
+                "Domain/Order.cs",
+                "\nnamespace App.Domain;\n\npublic partial class Order\n{\n    public void Poke()\n    {\n        var order = Unknown();\n        order.Spin();\n    }\n}\n",
+            ),
+        ]);
+        let without_field = fragments_for(&[
+            (
+                "Infra/Widget.cs",
+                "\nnamespace App.Infra;\n\npublic class Widget\n{\n    public void Spin() { }\n}\n",
+            ),
+            (
+                "Domain/Order.Fields.cs",
+                "\nnamespace App.Domain;\n\npublic partial class Order\n{\n}\n",
+            ),
+            (
+                "Domain/Order.cs",
+                "\nnamespace App.Domain;\n\npublic partial class Order\n{\n    public void Poke()\n    {\n        var order = Unknown();\n        order.Spin();\n    }\n}\n",
+            ),
+        ]);
+        let g_with = resolve_graph(&no_git_root(), &with_field);
+        let g_without = resolve_graph(&no_git_root(), &without_field);
+        // Scoped to `uses-member` edges: the field's OWN declared type earns
+        // an ordinary `uses-type` ref (see the walk's `field_declaration`
+        // arm) whether or not this test's concern holds, so comparing the
+        // WHOLE graph would differ by that one incidental edge every time --
+        // it is not what this test is about. What this test is about is
+        // whether the field ever gets to answer a `uses-member` ref it has
+        // no business answering.
+        fn uses_member_edges(g: &Graph) -> Vec<Edge> {
+            g.edges
+                .iter()
+                .filter(|e| matches!(e, Edge::UsesMember { .. }))
+                .cloned()
+                .collect()
+        }
+        assert_eq!(
+            uses_member_edges(&g_with),
+            uses_member_edges(&g_without),
+            "the untyped local `order` is a member-table entry for the name (taken, unknown) -- \
+             `receiver_local` -- so it shadows the sibling file's same-named field exactly like a \
+             typed local already does; the uses-member edge set must be identical whether or not \
+             that field exists at all"
+        );
+        // Both variants DO carry one `uses-member` edge for `order.Spin()` --
+        // `Spin` is declared by exactly one def anywhere in this fixture
+        // (Widget), so the SCORED tier's own uniqueness fallback (a
+        // wholly separate mechanism from the field/property fallback this
+        // test guards, reached only when a ref carries NO receiver fact at
+        // all) claims it as a heuristic guess in BOTH variants alike --
+        // proof by itself that the field played no part, since it fires
+        // identically whether or not the field exists. What distinguishes
+        // "the field answered" from "an unrelated tier guessed" is
+        // `heuristic`: the field/property fallback feeds the ordinary
+        // typed-receiver path, which only ever emits a PRECISE
+        // (non-heuristic) edge.
+        let edges = uses_member_edges(&g_with);
+        assert_eq!(
+            edges,
+            vec![Edge::UsesMember {
+                from_file: "Domain/Order.cs".to_string(),
+                from_line: 9,
+                to: "App.Infra.Widget".to_string(),
+                to_file: "Infra/Widget.cs".to_string(),
+                member: Some("Spin".to_string()),
+                heuristic: true,
+                tier: Some(HeuristicTier::Guess),
+            }],
+            "the one edge present is the SCORED tier's own heuristic guess, never a precise edge \
+             from the field/property fallback (which the shadowing rule keeps from ever running \
+             here): {edges:?}"
+        );
+    }
+
+    // --- Unit A3: non-public hierarchy-internal members, interface-skipped
+    // base lookup, tier (f)'s closure fallback, and the typed-receiver
+    // precise tier's own base walk -----------------------------------------
+
+    #[test]
+    fn stage7_base_member_that_is_protected_resolves_to_the_base_that_declares_it() {
+        let files = fragments_for(&[
+            (
+                "Domain/Base.cs",
+                "\nnamespace App.Domain;\n\npublic class Base\n{\n    protected void Touch() { }\n}\n",
+            ),
+            (
+                "Domain/Order.cs",
+                "\nnamespace App.Domain;\n\npublic class Order : Base\n{\n    public void Poke() => base.Touch();\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_from(&g, "Domain/Order.cs"),
+            vec![("App.Domain.Base", 6)],
+            "Touch is protected -- absent from Base's public `methods` list, present only in \
+             `nonPublicMethods` -- but a `base.` site is by construction inside the hierarchy it \
+             is walking, so base_member_declared reads any-visibility and resolves precisely \
+             anyway"
+        );
+        assert_eq!(g.stats.heuristic_edge_count, 0);
+    }
+
+    #[test]
+    fn stage7_base_lookup_skips_interface_bases() {
+        let files = fragments_for(&[
+            (
+                "Domain/IGreeter.cs",
+                "namespace App.Domain { public interface IGreeter { void Greet(); } }",
+            ),
+            (
+                "Domain/Base.cs",
+                "namespace App.Domain { public class Base { public void Greet() { } } }",
+            ),
+            (
+                "Domain/Order.cs",
+                "\nnamespace App.Domain;\n\npublic class Order : IGreeter, Base\n{\n    public void Greet() { }\n\n    public void Poke() => base.Greet();\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_from(&g, "Domain/Order.cs"),
+            vec![("App.Domain.Base", 8)],
+            "IGreeter is listed FIRST in Order's base list and also declares Greet, but base. \
+             never names an interface member -- base_member_declared skips it (and never walks \
+             its own closure) and continues to Base, the class, which is the right target. \
+             Order's own override (also named Greet) is never even considered, matching the \
+             existing non-interface base test."
+        );
+    }
+
+    #[test]
+    fn stage7_extension_declared_on_an_interface_binds_through_the_receivers_base_closure() {
+        let files = fragments_for(&[
+            (
+                "Domain/ISpecification.cs",
+                "namespace App.Domain { public interface ISpecification { } }",
+            ),
+            (
+                "Domain/BatchOptions.cs",
+                "\nusing App.Ext;\n\nnamespace App.Domain;\n\npublic class BatchOptions : ISpecification\n{\n    public void Validate() => this.Fail();\n}\n",
+            ),
+            (
+                "Ext/SpecExtensions.cs",
+                "namespace App.Ext { public static class SpecExtensions { public static void Fail(this ISpecification spec) { } } }",
+            ),
+            (
+                "Consumers/Runner.cs",
+                "\nusing App.Domain;\nusing App.Ext;\n\nnamespace App.Consumers;\n\npublic class Runner\n{\n    public void Run(BatchOptions opts) => opts.Fail();\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        // The `this` receiver: BatchOptions itself declares nothing named
+        // Fail, and typed_receiver_base_member's own base walk skips
+        // ISpecification (an interface, per its own rule) and finds nothing
+        // either -- so the exact-key lookup at tier (f) misses ("Fail
+        // BatchOptions" names no bucket) and the closure fallback (Unit A3
+        // item 3) tries BatchOptions's raw base string "ISpecification" next,
+        // which the extension actually keys on.
+        assert_eq!(
+            heuristic_member_edges_from(&g, "Domain/BatchOptions.cs"),
+            vec![("App.Ext.SpecExtensions", 8)],
+            "this.Fail() binds through BatchOptions's OWN raw base string, tried as a fallback key \
+             once the exact receiver-type key misses"
+        );
+        // The ordinary LOCAL receiver: `opts` is a ref with no this. shape at
+        // all (its enclosing type is Runner, not BatchOptions), proving the
+        // fallback is not `this.`-specific.
+        assert_eq!(
+            heuristic_member_edges_from(&g, "Consumers/Runner.cs"),
+            vec![("App.Ext.SpecExtensions", 9)],
+            "opts.Fail() -- an ordinary typed local, not this. -- binds through the exact same \
+             closure fallback: item 3 applies to every typed receiver"
+        );
+        assert_eq!(g.stats.heuristic_by_tier.ext, 2);
+    }
+
+    #[test]
+    fn stage7_typed_receiver_member_declared_on_an_in_graph_base_resolves_to_the_base() {
+        let files = fragments_for(&[
+            (
+                "Domain/Base.cs",
+                "namespace App.Domain { public class Base { public void Touch() { } } }",
+            ),
+            (
+                "Domain/Order.cs",
+                "namespace App.Domain { public class Order : Base { } }",
+            ),
+            (
+                "Consumers/Runner.cs",
+                "\nusing App.Domain;\n\nnamespace App.Consumers;\n\npublic class Runner\n{\n    public void Run(Order o) => o.Touch();\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_from(&g, "Consumers/Runner.cs"),
+            vec![("App.Domain.Base", 8)],
+            "Order itself declares nothing named Touch -- the typed-receiver precise tier \
+             (previously exact-def-only) now walks Order's in-graph base closure (Unit A3 item 4) \
+             and binds to Base, the first def that declares it. `o` is an ordinary parameter, not \
+             `this.`, so only the public list is consulted -- proven sufficient here since Touch \
+             is public."
+        );
+        assert_eq!(
+            g.stats.heuristic_edge_count, 0,
+            "a precise hit, not a guess"
+        );
+    }
+
+    #[test]
+    fn stage7_a_scored_guess_never_vouches_through_a_non_public_member() {
+        // Two same-named, same-shaped classes in different namespaces (no
+        // using imports either), so `_widget`'s declared type "Widget"
+        // resolves AMBIGUOUS -- the scored tier's ambiguous pool, filtered by
+        // `member_vouched`. Alpha.Widget declares Ping publicly; Beta.Widget
+        // declares the SAME name but only privately.
+        let files = fragments_for(&[
+            (
+                "Alpha/Widget.cs",
+                "namespace Fixture.Alpha { public class Widget { public void Ping() { } } }",
+            ),
+            (
+                "Beta/Widget.cs",
+                "namespace Fixture.Beta { public class Widget { private void Ping() { } } }",
+            ),
+            (
+                "App/Runner.cs",
+                "\nnamespace Fixture.App;\n\npublic class Runner\n{\n  private Widget _widget;\n\n  public void Run() => _widget.Ping();\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            heuristic_member_edges_from(&g, "App/Runner.cs"),
+            vec![("Fixture.Alpha.Widget", 8)],
+            "Beta.Widget also declares Ping, but only NON-publicly -- member_vouched (and the \
+             Call-shape `declares_member` it reads) is untouched by Unit A3's non-public tables, \
+             so Beta.Widget never enters the scored guess at all, even though it sits right in the \
+             ambiguous pool this ref's receiver resolved to; only Alpha.Widget, which declares \
+             Ping publicly, vouches"
+        );
+        assert_eq!(g.stats.heuristic_by_tier.guess, 1);
+    }
+
+    // --- Unit A4: base-walk declaration order (+ interface skip at any
+    // depth) and arity-aware call vouching -----------------------------
+
+    #[test]
+    fn stage7_base_walk_visits_class_bases_in_declaration_order_before_any_interface() {
+        // Endpoint : BaseEndpoint (a single class base). BaseEndpoint's OWN
+        // base list names its class base FIRST, an interface SECOND --
+        // BasePipe declares Go directly; IEndpoint reaches Go only through
+        // ITS OWN base, IPipe, two levels down. A walk that visits siblings
+        // in REVERSE declaration order (a LIFO stack popping the
+        // last-pushed base first) would explore IEndpoint's entire closure
+        // -- and find IPipe's Go -- before ever touching BasePipe, which is
+        // the correct C# answer.
+        let files = fragments_for(&[
+            (
+                "Domain/IPipe.cs",
+                "namespace App.Domain { public interface IPipe { void Go(); } }",
+            ),
+            (
+                "Domain/IEndpoint.cs",
+                "namespace App.Domain { public interface IEndpoint : IPipe { } }",
+            ),
+            (
+                "Domain/BasePipe.cs",
+                "namespace App.Domain { public class BasePipe { public void Go() { } } }",
+            ),
+            (
+                "Domain/BaseEndpoint.cs",
+                "namespace App.Domain { public class BaseEndpoint : BasePipe, IEndpoint { } }",
+            ),
+            (
+                "Domain/Endpoint.cs",
+                "namespace App.Domain { public class Endpoint : BaseEndpoint { } }",
+            ),
+            (
+                "Consumers/Runner.cs",
+                "\nusing App.Domain;\n\nnamespace App.Consumers;\n\npublic class Runner\n{\n    public void Run(Endpoint ep) => ep.Go();\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_from(&g, "Consumers/Runner.cs"),
+            vec![("App.Domain.BasePipe", 8)],
+            "BasePipe, BaseEndpoint's FIRST base, wins over IEndpoint's (SECOND base) own \
+             interface closure -- declaration order, not stack order"
+        );
+        assert_eq!(
+            g.stats.heuristic_edge_count, 0,
+            "a precise hit, not a guess"
+        );
+    }
+
+    #[test]
+    fn stage7_class_typed_receiver_never_binds_to_an_interface_declaration_at_any_depth() {
+        // Touch is declared ONLY on IHasTouch, an interface reached
+        // TRANSITIVELY through Base's own base list -- not a direct base of
+        // the class-typed receiver Derived at all (Derived -> Base ->
+        // IHasTouch, two levels down). Base implements IHasTouch but
+        // declares no override of its own, and Derived adds nothing either.
+        let files = fragments_for(&[
+            (
+                "Domain/IHasTouch.cs",
+                "namespace App.Domain { public interface IHasTouch { void Touch(); } }",
+            ),
+            (
+                "Domain/Base.cs",
+                "namespace App.Domain { public class Base : IHasTouch { } }",
+            ),
+            (
+                "Domain/Derived.cs",
+                "namespace App.Domain { public class Derived : Base { } }",
+            ),
+            (
+                "Consumers/Runner.cs",
+                "\nusing App.Domain;\n\nnamespace App.Consumers;\n\npublic class Runner\n{\n    public void Run(Derived d) => d.Touch();\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert!(
+            member_edges_from(&g, "Consumers/Runner.cs").is_empty(),
+            "the base walk must skip IHasTouch at EVERY depth it is reached, not only when it is \
+             Derived's own direct base -- an interface's member declaration is a contract, never a \
+             precise bind target, for a class-typed receiver"
+        );
+        assert!(
+            heuristic_member_edges_from(&g, "Consumers/Runner.cs").is_empty(),
+            "no extension method named Touch exists anywhere in this fixture either, so this is a \
+             silent miss, not a guess"
+        );
+    }
+
+    #[test]
+    fn stage7_a_call_whose_arity_matches_no_instance_overload_falls_through_to_the_extension_tier()
+    {
+        // Widget.Stop takes exactly one argument; the call passes two. No
+        // overload admits it, so the precise tier must decline -- and tier
+        // (f)'s own veto, reading the SAME arity-aware `declares_member`,
+        // must decline too, letting the two-argument extension bind.
+        let files = fragments_for(&[
+            (
+                "Domain/Widget.cs",
+                "namespace App.Domain { public class Widget { public void Stop(int a) { } } }",
+            ),
+            (
+                "Ext/WidgetExt.cs",
+                "using App.Domain;\n\nnamespace App.Ext { public static class WidgetExt { public static void Stop(this Widget w, int a, int b) { } } }",
+            ),
+            (
+                "Consumers/Runner.cs",
+                "\nusing App.Domain;\nusing App.Ext;\n\nnamespace App.Consumers;\n\npublic class Runner\n{\n    public void Run(Widget w) => w.Stop(1, 2);\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert!(
+            member_edges_from(&g, "Consumers/Runner.cs").is_empty(),
+            "Widget declares Stop, but only a ONE-argument overload -- the call passes two \
+             arguments, which no overload admits, so the precise tier must not claim the ref"
+        );
+        assert_eq!(
+            heuristic_member_edges_from(&g, "Consumers/Runner.cs"),
+            vec![("App.Ext.WidgetExt", 9)],
+            "the arity mismatch on the instance side also un-vetoes tier (f): Stop(this Widget w, \
+             int a, int b) admits two arguments and is the only candidate"
+        );
+    }
+
+    #[test]
+    fn stage7_a_call_admitted_by_a_params_or_optional_overload_binds_to_the_instance_member() {
+        let files = fragments_for(&[
+            (
+                "Domain/Widget.cs",
+                "namespace App.Domain { public class Widget { public void Send(int a, int b = 0) { } public void Spray(params int[] xs) { } } }",
+            ),
+            (
+                "Consumers/Runner.cs",
+                "\nusing App.Domain;\n\nnamespace App.Consumers;\n\npublic class Runner\n{\n    public void RunOptional(Widget w) => w.Send(1);\n    public void RunParams(Widget w) => w.Spray(1, 2, 3, 4, 5);\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_from(&g, "Consumers/Runner.cs"),
+            vec![("App.Domain.Widget", 8), ("App.Domain.Widget", 9)],
+            "Send(1) falls inside the OPTIONAL-parameter overload's (1, 2) range, and Spray(1, 2, \
+             3, 4, 5) falls inside the `params` overload's unbounded (0, -1) range -- both admit \
+             the call, so both bind precisely to the instance member"
+        );
+        assert_eq!(
+            g.stats.heuristic_edge_count, 0,
+            "two precise hits, no guess"
+        );
+    }
+
+    #[test]
+    fn stage7_partial_class_overloads_declared_in_sibling_files_both_admit_their_calls() {
+        // One partial class, one overload set, split across two files. The
+        // merged arity table has to hold BOTH overloads: either call is a
+        // call the type accepts, and the file that cannot see the other
+        // part's declaration is exactly the file that needs the merge.
+        let files = fragments_for(&[
+            (
+                "Domain/Svc.cs",
+                "\nnamespace App.Domain;\n\npublic partial class Svc\n{\n    public void Run() { }\n\n    public void First() { this.Run(1); }\n}\n",
+            ),
+            (
+                "Domain/Svc.More.cs",
+                "\nnamespace App.Domain;\n\npublic partial class Svc\n{\n    public void Run(int n) { }\n\n    public void Second() { this.Run(); }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_from(&g, "Domain/Svc.cs"),
+            vec![("App.Domain.Svc", 8)],
+            "this.Run(1) is admitted by the ONE-argument overload the SIBLING file declares --              merging the arity ranges per name is what lets the first-declaring part's              zero-argument range stop hiding it"
+        );
+        assert_eq!(
+            member_edges_from(&g, "Domain/Svc.More.cs"),
+            vec![("App.Domain.Svc", 8)],
+            "and the zero-argument call keeps binding from the other direction -- the merge is a              union, so neither part's overload set is lost"
+        );
+        assert_eq!(
+            g.stats.heuristic_edge_count, 0,
+            "two precise hits, no guess"
+        );
+    }
+
+    #[test]
+    fn stage7_a_read_of_a_property_is_still_name_only() {
+        let files = fragments_for(&[
+            (
+                "Domain/Sensor.cs",
+                "namespace App.Domain { public class Sensor { public string Label { get; } } }",
+            ),
+            (
+                "Consumers/Runner.cs",
+                "\nusing App.Domain;\n\nnamespace App.Consumers;\n\npublic class Runner\n{\n    public string Run(Sensor s) => s.Label;\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_from(&g, "Consumers/Runner.cs"),
+            vec![("App.Domain.Sensor", 8)],
+            "s.Label is a READ (no argCount at all) -- declares_member's arg_count == None branch \
+             is untouched by Unit A4 item 2's arity gate, so a property still resolves precisely on \
+             name alone, exactly as before"
+        );
+        assert_eq!(g.stats.heuristic_edge_count, 0);
+    }
+
+    // --- Unit A5: chain-tail hop failures, and closure-key generic
+    // unification against the MATCHED base's own arguments ------------------
+
+    #[test]
+    fn stage7_base_qualified_chain_tail_hops_through_the_base_method_return() {
+        // Use hides BaseC.Make with a `new` declaration returning a
+        // different type. `base.Make()` calls the BASE's Make, so the tail
+        // is an Order; `this.Make()` calls Use's own, so the tail is a
+        // Widget. Both heads type as the enclosing type -- only the ref's
+        // base marker separates them.
+        let files = fragments_for(&[
+            (
+                "Domain/Order.cs",
+                "\nnamespace App.Domain;\n\npublic class Order\n{\n    public void Validate() { }\n}\n",
+            ),
+            (
+                "Domain/Widget.cs",
+                "\nnamespace App.Domain;\n\npublic class Widget\n{\n    public void Validate() { }\n}\n",
+            ),
+            (
+                "Domain/BaseC.cs",
+                "\nnamespace App.Domain;\n\npublic class BaseC\n{\n    public virtual Order Make() { return null; }\n}\n",
+            ),
+            (
+                "Domain/Use.cs",
+                "\nnamespace App.Domain;\n\npublic class Use : BaseC\n{\n    public new Widget Make() { return null; }\n\n    public void Run()\n    {\n        base.Make().Validate();\n    }\n\n    public void RunThis()\n    {\n        this.Make().Validate();\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        let validate: Vec<(&str, usize)> = g
+            .edges
+            .iter()
+            .filter_map(|e| match e {
+                Edge::UsesMember {
+                    from_file,
+                    from_line,
+                    to,
+                    member,
+                    heuristic: false,
+                    ..
+                } if from_file == "Domain/Use.cs" && member.as_deref() == Some("Validate") => {
+                    Some((to.as_str(), *from_line))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            validate,
+            vec![("App.Domain.Order", 10), ("App.Domain.Widget", 15)],
+            "base.Make() reads its return type off the first in-graph base that declares Make, \
+             never off the enclosing type that hides it -- and this.Make() still reads the \
+             enclosing type's own"
+        );
+    }
+
+    #[test]
+    fn stage7_a_chain_tail_whose_hop_fails_emits_no_guess() {
+        // `Unknown` names no in-graph def at all, so the chain tail's own
+        // method-return hop cannot even resolve an OWNER, let alone a
+        // return type: `receiver_type_name` stays `None`. `Order.Validate`
+        // is the only in-graph def vouching for the member name "Validate"
+        // -- exactly the sole candidate a scored guess drawn from the raw,
+        // receiver-blind name-uniqueness pool would land on, since nothing
+        // can filter that pool by receiver when there IS no receiver type
+        // at all.
+        let files = fragments_for(&[
+            (
+                "Domain/Order.cs",
+                "\nnamespace App.Domain;\n\npublic class Order\n{\n    public void Validate() { }\n}\n",
+            ),
+            (
+                "App/Worker.cs",
+                "\nnamespace App.Workers;\n\npublic class Worker\n{\n    public void Run()\n    {\n        Unknown.Load().Validate();\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        let validate_edges: Vec<(&str, bool)> = g
+            .edges
+            .iter()
+            .filter_map(|e| match e {
+                Edge::UsesMember {
+                    from_file,
+                    to,
+                    member,
+                    heuristic,
+                    ..
+                } if from_file == "App/Worker.cs" && member.as_deref() == Some("Validate") => {
+                    Some((to.as_str(), *heuristic))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            validate_edges,
+            Vec::<(&str, bool)>::new(),
+            "Unknown.Load() never resolves an owner in-graph at all -- the hop yields NO receiver \
+             type, in-graph or otherwise -- so the chain tail `.Validate()` is finished as external \
+             right there: without this guard it would fall into the scored tier's unfiltered \
+             name-uniqueness pool and guess App.Domain.Order, the sole in-graph Validate"
+        );
+        assert_eq!(g.stats.heuristic_edge_count, 0);
+    }
+
+    #[test]
+    fn stage7_a_chain_tail_whose_hop_lands_on_an_external_type_is_silent() {
+        // `Repo.Load()` DOES resolve an in-graph owner and DOES have a
+        // recorded return type -- "ExternalWidget" -- so the hop is not the
+        // empty case the guard above catches: `receiver_type_name` is
+        // `Some("ExternalWidget")`, exactly like a `Q.M()` local's own call
+        // hop, and this ref keeps walking the ordinary typed-receiver path
+        // rather than being force-silenced. "ExternalWidget" is declared
+        // NOWHERE in this fixture, so that path itself comes up empty on
+        // its own: tier (f) finds no "Validate ExternalWidget" extension
+        // bucket, and the scored tier's own receiver rule
+        // (`receiver_admits_candidate`) correctly refuses the one same-named
+        // candidate (App.Domain.Order, which declares Validate) because
+        // Order is nominally assignable to nothing named "ExternalWidget" --
+        // no base, no name match. The observable result is the same silence
+        // Unit A5 item 1 requires, produced by the EXISTING filters rather
+        // than a new one: a chain tail with a real but external target type
+        // is still an answerable receiver, just one this corpus proves
+        // nothing about here.
+        let files = fragments_for(&[
+            (
+                "Domain/Order.cs",
+                "\nnamespace App.Domain;\n\npublic class Order\n{\n    public void Validate() { }\n}\n",
+            ),
+            (
+                "Infra/Repo.cs",
+                "\nnamespace App.Infra;\n\npublic static class Repo\n{\n    public static ExternalWidget Load() => null;\n}\n",
+            ),
+            (
+                "App/Worker.cs",
+                "\nnamespace App.Workers;\n\npublic class Worker\n{\n    public void Run()\n    {\n        Repo.Load().Validate();\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        let validate_edges: Vec<(&str, bool)> = g
+            .edges
+            .iter()
+            .filter_map(|e| match e {
+                Edge::UsesMember {
+                    from_file,
+                    to,
+                    member,
+                    heuristic,
+                    ..
+                } if from_file == "App/Worker.cs" && member.as_deref() == Some("Validate") => {
+                    Some((to.as_str(), *heuristic))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            validate_edges,
+            Vec::<(&str, bool)>::new(),
+            "the hop lands the receiver on \"ExternalWidget\", a real but external type name -- no \
+             extension binds it and App.Domain.Order (the only in-graph Validate) is not \
+             assignable to it, so the ref is silent"
+        );
+        assert_eq!(g.stats.heuristic_edge_count, 0);
+    }
+
+    #[test]
+    fn stage7_extension_on_an_implemented_interface_binds_for_a_generic_enclosing_type() {
+        // BatchOptions<T> is GENERIC (unlike Unit A3's own non-generic
+        // BatchOptions fixture), so `this.Fail()`'s receiver_args is
+        // `Some(["*"])` -- BatchOptions's own type parameter, wildcarded.
+        // ISpecification is written into BatchOptions's base list with NO
+        // type-argument list at all (it is not generic), so
+        // `base_generic_args` records no entry for it at all. Before Unit
+        // A5 item 2, filter 3 compared SpecExtensions's `this_args` (`None`
+        // -- Fail's `this ISpecification` is non-generic) against the
+        // RECEIVER's own `Some(["*"])`, a hard (None, Some) mismatch that
+        // dropped the edge; the fix compares against the matched base's own
+        // arguments (`None`, since ISpecification carries none), which
+        // unify with a non-generic `this` regardless of BatchOptions's own
+        // arity.
+        let files = fragments_for(&[
+            (
+                "Domain/ISpecification.cs",
+                "namespace App.Domain { public interface ISpecification { } }",
+            ),
+            (
+                "Domain/BatchOptions.cs",
+                "\nusing App.Ext;\n\nnamespace App.Domain;\n\npublic class BatchOptions<T> : ISpecification\n{\n    public void Validate() => this.Fail();\n}\n",
+            ),
+            (
+                "Ext/SpecExtensions.cs",
+                "namespace App.Ext { public static class SpecExtensions { public static void Fail(this ISpecification spec) { } } }",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            heuristic_member_edges_from(&g, "Domain/BatchOptions.cs"),
+            vec![("App.Ext.SpecExtensions", 8)],
+            "this.Fail() binds through BatchOptions's OWN raw base string \"ISpecification\", with \
+             the non-generic base's OWN (absent) arguments unifying against Fail's non-generic \
+             this-parameter -- BatchOptions's own generic arity never enters the comparison"
+        );
+        assert_eq!(g.stats.heuristic_by_tier.ext, 1);
+    }
+
+    #[test]
+    fn stage7_extension_unification_uses_the_matched_base_arguments() {
+        // Repository<TKey, TValue> implements IRepository<TValue> -- ONE of
+        // its own two type parameters, not both -- so `base_generic_args`
+        // records IRepository's own arity as a SINGLE wildcard
+        // (`Some(["*"])`), one element shorter than the receiver's own
+        // `receiver_args` (`Some(["*", "*"])`, both of Repository's own type
+        // parameters). RepoExtensions.Validate<T>(this IRepository<T> repo)
+        // is generic too, so `this_args` is also a single wildcard
+        // (`Some(["*"])`). Unifying against the RECEIVER's own two-element
+        // arguments (the pre-Unit-A5 behaviour) is a length mismatch that
+        // drops the edge; unifying against the matched base's own
+        // one-element arguments -- what Unit A5 item 2 wires -- matches.
+        let files = fragments_for(&[
+            (
+                "Domain/IRepository.cs",
+                "namespace App.Domain { public interface IRepository<T> { } }",
+            ),
+            (
+                "Domain/Repository.cs",
+                "\nusing App.Ext;\n\nnamespace App.Domain;\n\npublic class Repository<TKey, TValue> : IRepository<TValue>\n{\n    public void Poke() => this.Validate();\n}\n",
+            ),
+            (
+                "Ext/RepoExtensions.cs",
+                "namespace App.Ext { public static class RepoExtensions { public static void Validate<T>(this IRepository<T> repo) { } } }",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            heuristic_member_edges_from(&g, "Domain/Repository.cs"),
+            vec![("App.Ext.RepoExtensions", 8)],
+            "this.Validate() binds through IRepository, unifying Validate's own single wildcard \
+             this-argument against IRepository's own single wildcard argument AS Repository \
+             DECLARED IT (\"IRepository<TValue>\") -- not against Repository's own two-argument \
+             receiver_args, which would fail the length check"
+        );
+        assert_eq!(g.stats.heuristic_by_tier.ext, 1);
+    }
+
+    // --- Stage 8: declaring type along the base and interface direction ----
+    //
+    // The compiler binds a member to the type that DECLARES it in the
+    // receiver's static chain. Three shapes that used to fall short of that
+    // rule, each through real C# (`fragments_for`), plus the class-receiver
+    // control that keeps the interface half of the rule from widening.
+
+    #[test]
+    fn stage8_qualified_static_qualifier_binds_the_base_that_declares_the_member() {
+        // `App.Domain.Derived.Create()` names the derived type through an
+        // exact qualified name; Create is declared only on Base. The
+        // exact-qualified certainty hatch used to bind Derived itself; the
+        // declaring base wins now, the same answer a bare `Derived.Create()`
+        // already gives.
+        let files = fragments_for(&[
+            (
+                "Domain/Base.cs",
+                "namespace App.Domain { public class Base { public static Base Create() => new Base(); } }",
+            ),
+            (
+                "Domain/Derived.cs",
+                "namespace App.Domain { public class Derived : Base { } }",
+            ),
+            (
+                "Consumers/Runner.cs",
+                "\nnamespace App.Consumers;\n\npublic class Runner\n{\n    public void Run()\n    {\n        var a = App.Domain.Derived.Create();\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_from(&g, "Consumers/Runner.cs"),
+            vec![("App.Domain.Base", 8)],
+            "a qualified static qualifier binds the base that declares the member, not the \
+             derived type the source names"
+        );
+    }
+
+    #[test]
+    fn stage8_generic_static_qualifier_binds_the_base_that_declares_the_member() {
+        // `Derived<int>.Create()`: the type-argument list marks the
+        // qualifier as a type with certainty, and Create is declared only on
+        // the non-generic Base. The certainty hatch used to bind Derived;
+        // the declaring base wins now.
+        let files = fragments_for(&[
+            (
+                "Domain/Base.cs",
+                "namespace App.Domain { public class Base { public static Base Create() => new Base(); } }",
+            ),
+            (
+                "Domain/Derived.cs",
+                "namespace App.Domain { public class Derived<T> : Base { public T Item = default!; } }",
+            ),
+            (
+                "Consumers/Runner.cs",
+                "\nusing App.Domain;\n\nnamespace App.Consumers;\n\npublic class Runner\n{\n    public void Run()\n    {\n        var a = Derived<int>.Create();\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_from(&g, "Consumers/Runner.cs"),
+            vec![("App.Domain.Base", 10)],
+            "a generic static qualifier binds the base that declares the member"
+        );
+    }
+
+    #[test]
+    fn stage8_certainty_hatches_still_bind_the_named_type_when_no_base_declares_the_member() {
+        // The control for the two tests above: Derived has an in-graph base
+        // that does NOT declare Helper (it lives on an external base, or on
+        // nothing this graph can see), so both hatches keep today's answer
+        // -- the named type on type certainty alone.
+        let files = fragments_for(&[
+            (
+                "Domain/Base.cs",
+                "namespace App.Domain { public class Base { } }",
+            ),
+            (
+                "Domain/Derived.cs",
+                "namespace App.Domain { public class Derived<T> : Base { public T Item = default!; } }",
+            ),
+            (
+                "Consumers/Runner.cs",
+                "\nusing App.Domain;\n\nnamespace App.Consumers;\n\npublic class Runner\n{\n    public void Run()\n    {\n        var a = Derived<int>.Helper();\n        var b = App.Domain.Derived<int>.Helper();\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_from(&g, "Consumers/Runner.cs"),
+            vec![("App.Domain.Derived", 10), ("App.Domain.Derived", 11)],
+            "with no in-graph declaration anywhere in the closure, a type-certain qualifier still \
+             binds the type it names"
+        );
+    }
+
+    #[test]
+    fn stage8_interface_receiver_binds_the_base_interface_that_declares_the_member() {
+        // `IExtended : IContract`; Fulfil is declared on IContract only, and
+        // the receiver is typed IExtended. An interface's closure holds
+        // nothing but interfaces, so the walk keeps them for an interface
+        // receiver and binds IContract -- the compiler's own containing type.
+        // A class in the graph implements Fulfil too, and must not be named.
+        let files = fragments_for(&[
+            (
+                "Domain/IContract.cs",
+                "namespace App.Domain { public interface IContract { void Fulfil(); int Size { get; } } }",
+            ),
+            (
+                "Domain/IExtended.cs",
+                "namespace App.Domain { public interface IExtended : IContract { void Extra(); } }",
+            ),
+            (
+                "Domain/Both.cs",
+                "namespace App.Domain { public class Both : IExtended { public void Fulfil() { } public int Size => 0; public void Extra() { } } }",
+            ),
+            (
+                "Consumers/Runner.cs",
+                "\nusing App.Domain;\n\nnamespace App.Consumers;\n\npublic class Runner\n{\n    public void Run(IExtended ext)\n    {\n        ext.Fulfil();\n        var n = ext.Size;\n        ext.Extra();\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_from(&g, "Consumers/Runner.cs"),
+            vec![
+                ("App.Domain.IContract", 10),
+                ("App.Domain.IContract", 11),
+                ("App.Domain.IExtended", 12),
+            ],
+            "an interface-typed receiver binds the base interface that declares the member (a \
+             method and a property alike) and its own declaration for its own member; the \
+             implementing class is never named"
+        );
+        assert!(
+            heuristic_member_edges_from(&g, "Consumers/Runner.cs").is_empty(),
+            "every site is precise; nothing is left for the heuristic tiers"
+        );
+    }
+
+    #[test]
+    fn stage8_class_receiver_still_never_binds_an_interface_ancestor() {
+        // The other half of the interface rule, unchanged: a CLASS receiver
+        // whose closure reaches Fulfil only through an interface (the class
+        // itself implements it explicitly, which the def's public member
+        // list does not record) earns no precise edge to the interface.
+        let files = fragments_for(&[
+            (
+                "Domain/IContract.cs",
+                "namespace App.Domain { public interface IContract { void Fulfil(); } }",
+            ),
+            (
+                "Domain/IExtended.cs",
+                "namespace App.Domain { public interface IExtended : IContract { } }",
+            ),
+            (
+                "Domain/Explicit.cs",
+                "namespace App.Domain { public class Explicit : IExtended { void IContract.Fulfil() { } } }",
+            ),
+            (
+                "Consumers/Runner.cs",
+                "\nusing App.Domain;\n\nnamespace App.Consumers;\n\npublic class Runner\n{\n    public void Run(Explicit e) => e.Fulfil();\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert!(
+            member_edges_from(&g, "Consumers/Runner.cs").is_empty(),
+            "a class-typed receiver skips every interface in its closure, at any depth, even when \
+             the class itself only implements the member explicitly"
+        );
+    }
+
+    // --- Unit D: untyped lambda parameters typed from the callee's slot ----
+
+    /// One file's PRECISE uses-member edges that name a given member, as
+    /// (target def id, line). The lambda-slot fixtures below all call the
+    /// callee ON THE SAME LINE as the lambda body, so filtering by target
+    /// alone cannot tell the two refs apart.
+    fn member_edges_named<'a>(g: &'a Graph, from: &str, member: &str) -> Vec<(&'a str, usize)> {
+        g.edges
+            .iter()
+            .filter_map(|e| match e {
+                Edge::UsesMember {
+                    from_file,
+                    from_line,
+                    to,
+                    member: m,
+                    heuristic: false,
+                    ..
+                } if from_file == from && m.as_deref() == Some(member) => {
+                    Some((to.as_str(), *from_line))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn stage7_lambda_parameter_typed_from_an_action_parameter_of_an_in_graph_callee() {
+        // Nothing in Host.cs types `x`: the delegate it fills is declared in
+        // ANOTHER file, which is exactly the fact the extractor cannot see
+        // and the slot records instead.
+        let files = fragments_for(&[
+            (
+                "Domain/Options.cs",
+                "namespace App.Domain { public class Options { public void Configure() { } } }",
+            ),
+            (
+                "Domain/Registrar.cs",
+                "\nusing System;\n\nnamespace App.Domain;\n\npublic class Registrar\n{\n    public void Register(Action<Options> configure) { }\n}\n",
+            ),
+            (
+                "App/Host.cs",
+                "\nusing System;\nusing App.Domain;\n\nnamespace App.Hosting;\n\npublic class Host\n{\n    private readonly Registrar _registrar;\n\n    public void Run()\n    {\n        _registrar.Register(x => x.Configure());\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_named(&g, "App/Host.cs", "Configure"),
+            vec![("App.Domain.Options", 13)],
+            "Register's own Action<Options> parameter says what `x` is, so the lambda body binds \
+             precisely"
+        );
+        assert!(
+            heuristic_member_edges_from(&g, "App/Host.cs").is_empty(),
+            "a precise hit, not a guess"
+        );
+    }
+
+    #[test]
+    fn stage7_lambda_parameter_typed_from_a_func_and_an_expression_wrapped_func() {
+        // Func drops its RETURN type before the lambda's own parameters are
+        // read; Expression is a wrapper around the delegate, unwrapped once.
+        // The two lambdas sit in SEPARATE methods on purpose: sibling
+        // lambdas binding one name to two different callees conflict in the
+        // extractor's own fact table, which is a different rule than this
+        // one.
+        let files = fragments_for(&[
+            (
+                "Domain/Options.cs",
+                "namespace App.Domain { public class Options { public bool Enabled { get; set; } } }",
+            ),
+            (
+                "Domain/Registrar.cs",
+                "\nusing System;\nusing System.Linq.Expressions;\n\nnamespace App.Domain;\n\npublic class Registrar\n{\n    public void Pick(Func<Options, bool> f) { }\n    public void Select(Expression<Func<Options, object>> f) { }\n}\n",
+            ),
+            (
+                "App/Host.cs",
+                "\nusing System;\nusing App.Domain;\n\nnamespace App.Hosting;\n\npublic class Host\n{\n    private readonly Registrar _registrar;\n\n    public void Run()\n    {\n        _registrar.Pick(o => o.Enabled);\n    }\n\n    public void Project()\n    {\n        _registrar.Select(o => o.Enabled);\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_named(&g, "App/Host.cs", "Enabled"),
+            vec![("App.Domain.Options", 13), ("App.Domain.Options", 18)],
+            "Func<Options,bool> types `o` as Options once the return type is dropped, and \
+             Expression<Func<Options,object>> does the same one wrapper further out"
+        );
+    }
+
+    #[test]
+    fn stage7_lambda_parameter_typed_from_an_in_graph_delegate_declaration() {
+        // Neither Action nor Func: the parameter names a delegate this graph
+        // declares, whose own parameter list is kept under "Invoke".
+        let files = fragments_for(&[
+            (
+                "Domain/Channel.cs",
+                "namespace App.Domain { public class Channel { public void Open() { } } }",
+            ),
+            (
+                "Domain/Registrar.cs",
+                "\nnamespace App.Domain;\n\npublic delegate void Wiring(Channel channel);\n\npublic class Registrar\n{\n    public void Wire(Wiring w) { }\n}\n",
+            ),
+            (
+                "App/Host.cs",
+                "\nusing System;\nusing App.Domain;\n\nnamespace App.Hosting;\n\npublic class Host\n{\n    private readonly Registrar _registrar;\n\n    public void Run()\n    {\n        _registrar.Wire(c => c.Open());\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_named(&g, "App/Host.cs", "Open"),
+            vec![("App.Domain.Channel", 13)],
+            "Wiring resolves in the file that declared Wire, and its Invoke parameter list types \
+             `c` as Channel"
+        );
+    }
+
+    #[test]
+    fn stage7_second_lambda_parameter_is_typed_positionally() {
+        // The lambda is argument 1 of 2, and each of ITS OWN parameters
+        // reads its own position out of the delegate's list.
+        let files = fragments_for(&[
+            (
+                "Domain/Options.cs",
+                "namespace App.Domain { public class Options { public void Configure() { } } }",
+            ),
+            (
+                "Domain/Endpoint.cs",
+                "namespace App.Domain { public class Endpoint { public void Bind() { } } }",
+            ),
+            (
+                "Domain/Registrar.cs",
+                "\nusing System;\n\nnamespace App.Domain;\n\npublic class Registrar\n{\n    public void Route(string name, Action<Options, Endpoint> configure) { }\n}\n",
+            ),
+            (
+                "App/Host.cs",
+                "\nusing System;\nusing App.Domain;\n\nnamespace App.Hosting;\n\npublic class Host\n{\n    private readonly Registrar _registrar;\n\n    public void Run()\n    {\n        _registrar.Route(\"main\", (o, e) => e.Bind());\n        _registrar.Route(\"alt\", (o, e) => o.Configure());\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_named(&g, "App/Host.cs", "Bind"),
+            vec![("App.Domain.Endpoint", 13)],
+            "the SECOND lambda parameter reads the delegate's second argument"
+        );
+        assert_eq!(
+            member_edges_named(&g, "App/Host.cs", "Configure"),
+            vec![("App.Domain.Options", 14)],
+            "and the first reads the first, from the same slot"
+        );
+    }
+
+    #[test]
+    fn stage7_overloads_disagreeing_on_the_delegate_type_leave_the_lambda_untyped() {
+        let files = fragments_for(&[
+            (
+                "Domain/Options.cs",
+                "namespace App.Domain { public class Options { public void Configure() { } } }",
+            ),
+            (
+                "Domain/Endpoint.cs",
+                "namespace App.Domain { public class Endpoint { public void Configure() { } } }",
+            ),
+            (
+                "Domain/Registrar.cs",
+                "\nusing System;\n\nnamespace App.Domain;\n\npublic class Registrar\n{\n    public void Attach(Action<Options> a) { }\n    public void Attach(Action<Endpoint> a) { }\n}\n",
+            ),
+            (
+                "App/Host.cs",
+                "\nusing System;\nusing App.Domain;\n\nnamespace App.Hosting;\n\npublic class Host\n{\n    private readonly Registrar _registrar;\n\n    public void Run()\n    {\n        _registrar.Attach(a => a.Configure());\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert!(
+            member_edges_named(&g, "App/Host.cs", "Configure").is_empty(),
+            "both overloads accept the one-argument call and they name different delegate \
+             parameter types -- picking either would be a guess, so the site stays as untyped as \
+             the extractor found it: {:?}",
+            member_edges_named(&g, "App/Host.cs", "Configure")
+        );
+    }
+
+    #[test]
+    fn stage7_overloads_agreeing_on_the_delegate_type_bind() {
+        // Three overloads share the name; two of them take the lambda and
+        // agree, and the string one cannot take a lambda at all, so it is
+        // dropped rather than counted as disagreement.
+        let files = fragments_for(&[
+            (
+                "Domain/Options.cs",
+                "namespace App.Domain { public class Options { public void Tune() { } } }",
+            ),
+            (
+                "Domain/Registrar.cs",
+                "\nusing System;\n\nnamespace App.Domain;\n\npublic class Registrar\n{\n    public void Same(Action<Options> a) { }\n    public void Same(Action<Options> a, bool eager) { }\n    public void Same(string tag) { }\n}\n",
+            ),
+            (
+                "App/Host.cs",
+                "\nusing System;\nusing App.Domain;\n\nnamespace App.Hosting;\n\npublic class Host\n{\n    private readonly Registrar _registrar;\n\n    public void Run()\n    {\n        _registrar.Same(s => s.Tune());\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_named(&g, "App/Host.cs", "Tune"),
+            vec![("App.Domain.Options", 13)],
+            "every overload that could take the lambda names Action<Options>, so there is nothing \
+             left to guess at"
+        );
+    }
+
+    #[test]
+    fn stage7_generic_delegate_parameter_yields_no_edge() {
+        // Action<T> records its argument as a wildcard: nothing at this call
+        // site knows what T is bound to, the same refusal every other
+        // wildcard generic-arg fact in this file makes.
+        let files = fragments_for(&[
+            (
+                "Domain/Options.cs",
+                "namespace App.Domain { public class Options { public void Configure() { } } }",
+            ),
+            (
+                "Domain/Registrar.cs",
+                "\nusing System;\n\nnamespace App.Domain;\n\npublic class Registrar\n{\n    public void Generic<T>(Action<T> configure) { }\n}\n",
+            ),
+            (
+                "App/Host.cs",
+                "\nusing System;\nusing App.Domain;\n\nnamespace App.Hosting;\n\npublic class Host\n{\n    private readonly Registrar _registrar;\n\n    public void Run()\n    {\n        _registrar.Generic(g => g.Configure());\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert!(
+            member_edges_named(&g, "App/Host.cs", "Configure").is_empty(),
+            "the delegate types its parameter with the method's own type parameter, which names \
+             nothing: {:?}",
+            member_edges_named(&g, "App/Host.cs", "Configure")
+        );
+        // The wildcard yields NO receiver type rather than a `*` one: a named
+        // receiver that resolves to nothing would silence the scored tier,
+        // and the site is still an ordinary untyped `g.Configure()` to it.
+        assert!(
+            heuristic_member_edges_from(&g, "App/Host.cs")
+                .iter()
+                .any(|(_, line)| *line == 13),
+            "the untyped site still reaches the scored tier: {:?}",
+            heuristic_member_edges_from(&g, "App/Host.cs")
+        );
+    }
+
+    #[test]
+    fn stage7_overloads_spelling_one_name_for_different_types_leave_the_lambda_untyped() {
+        // Both parts of a partial class write `Action<Options>`, but each
+        // file imports a different `Options`. The heads agree; what they name
+        // does not, so binding to either file's meaning would be a guess.
+        let files = fragments_for(&[
+            (
+                "Alpha/Options.cs",
+                "namespace App.Alpha { public class Options { public void Configure() { } } }",
+            ),
+            (
+                "Beta/Options.cs",
+                "namespace App.Beta { public class Options { public void Configure() { } } }",
+            ),
+            (
+                "Domain/Registrar.Alpha.cs",
+                "\nusing System;\nusing App.Alpha;\n\nnamespace App.Domain;\n\npublic partial class Registrar\n{\n    public void Attach(Action<Options> a) { }\n}\n",
+            ),
+            (
+                "Domain/Registrar.Beta.cs",
+                "\nusing System;\nusing App.Beta;\n\nnamespace App.Domain;\n\npublic partial class Registrar\n{\n    public void Attach(Action<Options> a, bool eager) { }\n}\n",
+            ),
+            (
+                "App/Host.cs",
+                "\nusing System;\nusing App.Domain;\n\nnamespace App.Hosting;\n\npublic class Host\n{\n    private readonly Registrar _registrar;\n\n    public void Run()\n    {\n        _registrar.Attach(a => a.Configure());\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert!(
+            member_edges_named(&g, "App/Host.cs", "Configure").is_empty(),
+            "one spelling, two meanings: {:?}",
+            member_edges_named(&g, "App/Host.cs", "Configure")
+        );
+    }
+
+    #[test]
+    fn stage7_extension_callee_with_one_argument_too_many_leaves_the_lambda_untyped() {
+        // The extension's list starts with its `this` parameter, so a call
+        // that passes more arguments than the overload has left after it
+        // cannot be the one the lambda binds to.
+        let files = fragments_for(&[
+            (
+                "Domain/Endpoint.cs",
+                "namespace App.Domain { public class Endpoint { public void Bind() { } } }",
+            ),
+            (
+                "Domain/Registrar.cs",
+                "\nusing System;\n\nnamespace App.Domain;\n\npublic class Registrar { }\n\npublic static class RegistrarExtensions\n{\n    public static void Extend(this Registrar r, Action<Endpoint> configure) { }\n}\n",
+            ),
+            (
+                "App/Host.cs",
+                "\nusing System;\nusing App.Domain;\n\nnamespace App.Hosting;\n\npublic class Host\n{\n    private readonly Registrar _registrar;\n\n    public void Run()\n    {\n        _registrar.Extend(p => p.Bind(), true);\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert!(
+            member_edges_named(&g, "App/Host.cs", "Bind").is_empty(),
+            "two arguments against one non-receiver parameter: {:?}",
+            member_edges_named(&g, "App/Host.cs", "Bind")
+        );
+    }
+
+    #[test]
+    fn stage7_external_callee_leaves_the_lambda_untyped() {
+        // The owner resolves to nothing in-graph and no extension declares
+        // the member either, so there is no parameter list to read at all.
+        let files = fragments_for(&[
+            (
+                "Domain/Options.cs",
+                "namespace App.Domain { public class Options { public void Configure() { } } }",
+            ),
+            (
+                "App/Host.cs",
+                "\nusing System;\nusing App.Domain;\n\nnamespace App.Hosting;\n\npublic class Host\n{\n    public void Run(IServiceCollection services)\n    {\n        services.AddThing(x => x.Configure());\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert!(
+            member_edges_named(&g, "App/Host.cs", "Configure").is_empty(),
+            "an external callee's parameter list is not this graph's to read: {:?}",
+            member_edges_named(&g, "App/Host.cs", "Configure")
+        );
+    }
+
+    #[test]
+    fn stage7_bare_call_lambda_is_typed_through_the_enclosing_type_and_its_base() {
+        // A bare `M(...)` records the ENCLOSING type as the slot's owner, so
+        // the parameter list is looked up there first and then, exactly like
+        // any other member lookup, across its in-graph bases.
+        let options = (
+            "Domain/Options.cs",
+            "namespace App.Domain { public class Options { public void Configure() { } } }",
+        );
+        let inherited = fragments_for(&[
+            options,
+            (
+                "App/HostBase.cs",
+                "\nusing System;\nusing App.Domain;\n\nnamespace App.Hosting;\n\npublic class HostBase\n{\n    protected void Register(Action<Options> configure) { }\n}\n",
+            ),
+            (
+                "App/Host.cs",
+                "\nusing System;\nusing App.Domain;\n\nnamespace App.Hosting;\n\npublic class Host : HostBase\n{\n    public void Run()\n    {\n        Register(y => y.Configure());\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &inherited);
+        assert_eq!(
+            member_edges_named(&g, "App/Host.cs", "Configure"),
+            vec![("App.Domain.Options", 11)],
+            "the enclosing type declares no Register of its own, so the base that does supplies \
+             the delegate parameter"
+        );
+
+        let own = fragments_for(&[
+            options,
+            (
+                "App/Host.cs",
+                "\nusing System;\nusing App.Domain;\n\nnamespace App.Hosting;\n\npublic class Host\n{\n    public void Run()\n    {\n        Register(y => y.Configure());\n    }\n\n    private void Register(Action<Options> configure) { }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &own);
+        assert_eq!(
+            member_edges_named(&g, "App/Host.cs", "Configure"),
+            vec![("App.Domain.Options", 11)],
+            "and a PRIVATE overload the enclosing type declares itself answers just as well -- the \
+             parameter table records every method, whatever its visibility"
+        );
+    }
+
+    #[test]
+    fn stage7_extension_callee_types_the_lambda_after_the_this_parameter() {
+        // An extension method's own parameter list carries the receiver in
+        // position 0, so every argument the SITE wrote sits one place
+        // further right.
+        let in_graph = fragments_for(&[
+            (
+                "Domain/Endpoint.cs",
+                "namespace App.Domain { public class Endpoint { public void Bind() { } } }",
+            ),
+            (
+                "Domain/Registrar.cs",
+                "namespace App.Domain { public class Registrar { } }",
+            ),
+            (
+                "Domain/RegistrarExtensions.cs",
+                "\nusing System;\n\nnamespace App.Domain;\n\npublic static class RegistrarExtensions\n{\n    public static void Extend(this Registrar r, Action<Endpoint> configure) { }\n}\n",
+            ),
+            (
+                "App/Host.cs",
+                "\nusing System;\nusing App.Domain;\n\nnamespace App.Hosting;\n\npublic class Host\n{\n    private readonly Registrar _registrar;\n\n    public void Run()\n    {\n        _registrar.Extend(p => p.Bind());\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &in_graph);
+        assert_eq!(
+            member_edges_named(&g, "App/Host.cs", "Bind"),
+            vec![("App.Domain.Endpoint", 13)],
+            "Registrar declares no Extend of its own, so the extension bucket answers -- and its \
+             second parameter, not its first, is the lambda's slot"
+        );
+
+        let external = fragments_for(&[
+            (
+                "Domain/Options.cs",
+                "namespace App.Domain { public class Options { public void Configure() { } } }",
+            ),
+            (
+                "Ext/ServiceExtensions.cs",
+                "\nusing System;\nusing App.Domain;\n\nnamespace App.Ext;\n\npublic static class ServiceExtensions\n{\n    public static void AddThing(this IServiceCollection s, Action<Options> configure) { }\n}\n",
+            ),
+            (
+                "App/Host.cs",
+                "\nusing System;\nusing App.Ext;\n\nnamespace App.Hosting;\n\npublic class Host\n{\n    public void Run(IServiceCollection services)\n    {\n        services.AddThing(x => x.Configure());\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &external);
+        assert_eq!(
+            member_edges_named(&g, "App/Host.cs", "Configure"),
+            vec![("App.Domain.Options", 11)],
+            "an EXTERNAL receiver still names its own bucket key, and the extension declared \
+             against it types the lambda from its own file's context"
+        );
+    }
+
+    #[test]
+    fn stage7_lambda_receiver_type_resolves_in_the_declaring_file_context() {
+        // Two types share the simple name Options. The callee's file imports
+        // one, the site's file imports the other -- and the descriptor is a
+        // bare identifier that only means what the file that WROTE it meant.
+        let files = fragments_for(&[
+            (
+                "Alpha/Options.cs",
+                "namespace Domain.Alpha { public class Options { public void Configure() { } } }",
+            ),
+            (
+                "Beta/Options.cs",
+                "namespace Domain.Beta { public class Options { public void Configure() { } } }",
+            ),
+            (
+                "Domain/Registrar.cs",
+                "\nusing System;\nusing Domain.Alpha;\n\nnamespace App.Domain;\n\npublic class Registrar\n{\n    public void Register(Action<Options> configure) { }\n}\n",
+            ),
+            (
+                "App/Host.cs",
+                "\nusing App.Domain;\nusing Domain.Beta;\n\nnamespace App.Hosting;\n\npublic class Host\n{\n    private readonly Registrar _registrar;\n\n    public void Run()\n    {\n        _registrar.Register(x => x.Configure());\n    }\n}\n",
+            ),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            member_edges_named(&g, "App/Host.cs", "Configure"),
+            vec![("Domain.Alpha.Options", 13)],
+            "the declaring file imports Domain.Alpha, so that is the Options its parameter names \
+             -- resolving the descriptor under the SITE's own usings would answer Domain.Beta"
+        );
     }
 }

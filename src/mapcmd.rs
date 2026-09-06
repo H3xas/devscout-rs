@@ -88,6 +88,7 @@ use crate::graph::{self, AnyFragment, Fragment, GraphFile};
 use crate::manifest::{self, Value};
 use crate::markup;
 use crate::parse;
+use crate::project;
 use crate::repo;
 use crate::walk;
 
@@ -683,13 +684,34 @@ pub fn map_repo(root: &Path, scope_dirs: &[String], opts: MapOptions) -> io::Res
             mtime: p.cache_key,
         })
         .collect();
+    // The repo's `.csproj` projects, rediscovered on every run: the scan is
+    // cheap (a handful of files, hand-scanned) next to the extraction above,
+    // and it is the only way to notice a csproj edit at all -- `.csproj` is
+    // not a `SOURCE_EXT`, so no walked file's mtime moves when one changes.
+    // `None` when the repo declares no project, which keeps graph.json's
+    // bytes exactly as they were.
+    let project_model = project::discover(root, &scope)?;
+
     // `graph::index_is_stale` decides whether the graph must be rebuilt (any
     // graph file's cache key changed, or the set of graph files changed size),
-    // reused here rather than re-implemented.
-    let changed = graph::index_is_stale(&graph_index, &graph_files);
+    // reused here rather than re-implemented. The project model is the second
+    // half of that decision, for the reason above: `project::sidecar_differs`
+    // compares this run's model against the one the last rebuild persisted, so
+    // a `ProjectReference` added or dropped rebuilds the graph even though not
+    // one indexed file moved. Deliberately OR-ed, not short-circuited the
+    // other way: a repo with no csproj at all always answers false here and
+    // the whole check costs nothing.
+    let changed = graph::index_is_stale(&graph_index, &graph_files)
+        || project::sidecar_differs(root, project_model.as_ref());
 
     let graph_start = Instant::now();
-    let outcome = graph::rebuild_graph(root, &graph_files, &fresh_fragments, changed)?;
+    let outcome = graph::rebuild_graph(
+        root,
+        &graph_files,
+        &fresh_fragments,
+        changed,
+        project_model.as_ref(),
+    )?;
     let graph_seconds = graph_start.elapsed().as_secs_f64();
 
     let (graph_rebuilt, graph_def_count, graph_edge_count) = match &outcome {
@@ -1025,6 +1047,106 @@ mod tests {
         let report = map_repo(&root, &[], MapOptions::default()).unwrap();
         assert_eq!(report.removed, 1);
         assert_eq!(report.total_manifest_entries, 1);
+
+        fs::remove_dir_all(&root).ok();
+    }
+
+    // A `.csproj` is not a `SOURCE_EXT`: adding or editing one moves no
+    // walked file's mtime, so `index_is_stale` alone can never see it and the
+    // graph would keep a stale project model forever. The sidecar comparison
+    // is what closes that hole, and this walks the whole cycle -- no project
+    // at all, a project added, nothing touched, a reference dropped.
+    #[test]
+    fn a_csproj_edit_rebuilds_the_graph_and_lands_its_units_while_no_csproj_changes_nothing() {
+        let root = temp_dir("csproj-units");
+        write_file(
+            &root.join("A/A.cs"),
+            "namespace Fixtures.MapCmd.A { public class A {} }\n",
+        );
+        write_file(
+            &root.join("B/B.cs"),
+            "namespace Fixtures.MapCmd.B { public class B {} }\n",
+        );
+
+        let graph_json = graph::graph_json_path(&root);
+        let sidecar = graph::project_units_path(&root);
+
+        // 1. No `.csproj` anywhere: the graph must not grow a `units` key and
+        //    the sidecar must not be written at all -- an empty `[]` on disk
+        //    would be indistinguishable from "a model that has no projects".
+        let first = map_repo(&root, &[], MapOptions::default()).unwrap();
+        assert!(first.graph_rebuilt);
+        let json = fs::read_to_string(&graph_json).unwrap();
+        assert!(
+            !json.contains(r#""units""#),
+            "a repo with no csproj must serialize exactly as it did before the project model: {json}"
+        );
+        assert!(!sidecar.exists(), "no model, no sidecar");
+
+        // 2. A project added, referencing a second one. Not one indexed file
+        //    moved, so `index_is_stale` is false here and the rebuild is the
+        //    sidecar's doing alone.
+        write_file(
+            &root.join("A/A.csproj"),
+            "<Project Sdk=\"Microsoft.NET.Sdk\">\n  <ItemGroup>\n    <ProjectReference Include=\"..\\B\\B.csproj\" />\n  </ItemGroup>\n</Project>\n",
+        );
+        write_file(
+            &root.join("B/B.csproj"),
+            "<Project Sdk=\"Microsoft.NET.Sdk\">\n</Project>\n",
+        );
+
+        let second = map_repo(&root, &[], MapOptions::default()).unwrap();
+        assert!(
+            second.graph_rebuilt,
+            "a csproj appearing must rebuild the graph even though no source file changed"
+        );
+        let json = fs::read_to_string(&graph_json).unwrap();
+        assert!(
+            json.ends_with(
+                r#","units":[{"id":"A/A.csproj","name":"A","refs":["B/B.csproj"]},{"id":"B/B.csproj","name":"B"}]}"#
+            ),
+            "units are appended LAST, sorted by id, with the ref list normalized to repo-relative ids: {json}"
+        );
+        assert!(
+            sidecar.exists(),
+            "the model was written, so was the sidecar"
+        );
+
+        // The persisted rows really do rebuild a usable model, closure and
+        // all -- that is the whole point of storing them.
+        let graph_value = graph::read_graph(&root).unwrap();
+        let model =
+            project::ProjectModel::from_units(project::units_from_graph(&graph_value.units));
+        assert!(model.reachable(0, 1), "A references B");
+        assert!(!model.reachable(1, 0), "B does not reference A");
+        assert_eq!(model.unit_of_file("A/A.cs"), Some(0));
+        assert_eq!(model.unit_of_file("B/B.cs"), Some(1));
+
+        // 3. Nothing touched: the sidecar matches, so no rebuild.
+        let third = map_repo(&root, &[], MapOptions::default()).unwrap();
+        assert!(
+            !third.graph_rebuilt,
+            "an unchanged csproj must not force a rebuild on every run"
+        );
+
+        // 4. The reference dropped. Same file count, same mtimes on every
+        //    indexed file -- only the csproj's CONTENT changed.
+        write_file(
+            &root.join("A/A.csproj"),
+            "<Project Sdk=\"Microsoft.NET.Sdk\">\n</Project>\n",
+        );
+        let fourth = map_repo(&root, &[], MapOptions::default()).unwrap();
+        assert!(
+            fourth.graph_rebuilt,
+            "editing a csproj's references must rebuild the graph"
+        );
+        let json = fs::read_to_string(&graph_json).unwrap();
+        assert!(
+            json.ends_with(
+                r#","units":[{"id":"A/A.csproj","name":"A"},{"id":"B/B.csproj","name":"B"}]}"#
+            ),
+            "the dropped reference is gone and `refs` is omitted rather than emitted empty: {json}"
+        );
 
         fs::remove_dir_all(&root).ok();
     }

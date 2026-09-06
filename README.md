@@ -124,8 +124,10 @@ untracked files and are shared correctly by worktrees:
 ```
 <git-common-dir>/scout/manifest.json              file -> purpose + symbol index
 <git-common-dir>/scout/index-state.json           HEAD + timestamp the index was built at
-<git-common-dir>/scout/graph/graph.json           definitions and edges
-<git-common-dir>/scout/graph/fragments-v15.json   per-file extraction cache (incremental map)
+<git-common-dir>/scout/graph/graph.json           definitions, edges, and project units
+<git-common-dir>/scout/graph/fragments-v18.json   per-file extraction cache (incremental map)
+<git-common-dir>/scout/graph/project-units.json   csproj staleness sidecar (present only with a project model)
+<git-common-dir>/scout/graph/semantic-v1.json      planned: compiler-backed enrichment cache (see docs/design/compiler-enrichment.md)
 ```
 
 Outside a git repository the same tree is written to `<root>/.scout/` instead. `devscout init`
@@ -189,11 +191,76 @@ Known, rather than hidden:
   filesystem for you.
 - **Ordering is load-bearing but not a stability promise.** Artifact ordering is fixed and
   deterministic by design; do not rely on it staying byte-identical across minor versions.
+- **Heuristic `uses-member` edges carry a `tier`: `ext` or `guess`.** `ext` is C#'s own
+  extension-method lookup — an exact `(member, this-type)` bucket, matched arity, generic
+  unification, and namespace visibility including enclosing namespaces, vetoed the moment an
+  in-graph receiver already declares the member — whose one unverifiable case is a receiver
+  outside the graph that itself declares the member. `guess` is a name match among the defs
+  that declare the member, bounded by a uniqueness cap, the call-shape rule (a call is never
+  vouched by a property or field), and the receiver-assignability rule (an external receiver's
+  guess must be nominally assignable to it). Neither tier's edges become the premise of a
+  further `impact` hop; `--no-guess` drops the `guess` tier from `refs`/`read`/`impact`/`tests`
+  while keeping `ext`; compact output marks the two `x`/`h`. Precise edges carry neither
+  `heuristic` nor `tier`. Receiver typing covers `this.` and `base.` qualifiers, `?.`
+  bindings, a local's `await`ed initializer, cast- and pattern-designated locals, typed
+  `out` parameters, and a one-hop call-chain tail. A bare unqualified call, a chain more
+  than one hop deep or through `?.`, a lambda parameter other than a call's first
+  single-parameter one, a receiver typed only by inference the syntax itself does not show,
+  a `dynamic` receiver, and a `using static` import stay unrecorded, so those shapes resolve
+  through the untyped name-only tiers or not at all. The lambda rule reads the receiver's
+  shape, not its meaning: any single-type-argument generic (`Task<T>`, `Lazy<T>`) types the
+  parameter as its type argument the way `List<T>` does.
+  A lambda handed straight to an in-graph method is typed from that method's delegate
+  parameter (`Action<T>`, `Func<T, ..>`, `Predicate<T>`, `Expression<>` of those, or a
+  declared `delegate`) when every overload that can take it agrees; a callee outside the
+  graph, a generic delegate parameter, a callee reached through a chain or through another
+  untyped lambda parameter, a named argument, and a parameter name that two lambdas in one
+  member bind to different callees leave the parameter untyped.
+- **The project model reads only `.csproj` and `Directory.Build.props`.** It hand-scans
+  `ProjectReference`, `Microsoft.NET.Test.Sdk`, and `IsTestProject` — no MSBuild evaluation, no
+  conditions, no NuGet resolution, and no `.sln`. A file belongs to the nearest ancestor
+  directory holding exactly one `.csproj`; a directory holding two or more is left unmapped.
+  When a model exists, a guess never names a def in a project the reference site's project
+  cannot reach, nor a def in a test project from a non-test site, and a `global using` scopes
+  to the project that declared it. Without any `.csproj` files, nothing changes.
+- **Graph schema 2 adds `member`, `tier`, `units`, and `stats.heuristic_by_tier`.** `member`
+  is written on every `uses-member` edge, `tier` on the heuristic ones; `units` (the discovered
+  `.csproj` projects) is appended last. A reserved `source` slot is set aside for a future
+  semantic-provenance tag. A v1 graph.json is rebuilt automatically on the next `map`.
+- **A precise `uses-member` edge binds the type that declares the member, as far as names
+  and arity can tell.** The declaring type in the receiver's static chain — inherited,
+  overridden and hidden members, interface members through interface, implementing-class
+  and base-interface receivers, static members through bare, qualified and generic derived
+  type names — is what the edge targets. Four shapes are decided by information the graph
+  does not carry and bind the wrong side of an `inherits` edge: same-arity overloads split
+  across base and derived by parameter type; an `internal new` member hiding a public base
+  member (only `public` counts as visible to a receiver other than `this`, so an `internal
+  override` is a silent miss instead); a `private new` field shadowing a public base
+  property when read from outside its type; and `this.M()` in a class that both inherits a
+  public `M` and explicitly implements an interface's `M`. Each is pinned as a known false
+  positive in `fixtures/csharp-direction`.
+- **Conditional compilation uses the no-build symbol model.** `#if`/`#elif`/`#else`/`#endif`
+  are evaluated before parsing with no symbol predefined — not `DEBUG`, not `TRACE`, not a
+  target-framework symbol — so `#if SYMBOL` is inactive, `#else` and `#if !SYMBOL` are active,
+  and at most one arm of every group is indexed. `#define`/`#undef` inside the file are
+  honored; `DefineConstants` from a `.csproj` is not read. Inactive lines are blanked in place
+  (line numbers and offsets do not move), `#region`/`#pragma`/`#nullable`/`#line` are left to
+  the parser, and a directive-looking line inside a block comment, a verbatim string, or a raw
+  string literal is not treated as a directive. The `parse` and `spans` diagnostics show the
+  raw tree, both arms included.
+- **Which C# constructs produce facts is catalogued, not implied.**
+  [`docs/csharp-coverage.md`](docs/csharp-coverage.md) lists every construct the extractor
+  meets with a verdict (`must`, `may`, `must-not` produce a fact) and the measured status,
+  pinned by `fixtures/csharp-syntax/` and `tests/csharp_syntax_matrix.rs`; the rows that are
+  silent today are listed there as follow-ups rather than discovered by the next corpus.
 
 `devscout` began as the Rust half of a two-implementation tool, and a number of source comments
 still describe behaviour by reference to that original implementation. Those notes are history:
 this crate generates and reads its own artifacts, and interoperating with anything else is
 optional.
+
+**Fixtures.** Fixture sources carry no narrative headers; case notes live in the fixture
+directory's own `README.md`.
 
 ## Benchmarks
 
@@ -217,7 +284,9 @@ commands, and the preliminary-run caveats are in
 
 These numbers were measured on 0.2.0. Release 0.3.0 changes `find` output ordering and
 reference resolution (exact generic arity), and has not been re-benchmarked; treat the
-scorecard as 0.2.0-specific until the next round.
+scorecard as 0.2.0-specific until the next round. Release 0.4.0 changes resolver output again
+(heuristic tiers and recall), measured in
+[`docs/benchmarks/results/2026-09-resolver-precision.md`](docs/benchmarks/results/2026-09-resolver-precision.md).
 
 A separate scripted-lane run measured **tool calls issued per task**: the index arm used fewer
 calls in all four query kinds, largest on references (5.0 vs 11.8 per lane, ~2.4x) — single-run
@@ -229,6 +298,13 @@ well and cheaply by a skilled agent holding `rg`, with no index at all. Where a 
 plain `rg` baseline leads, the results say so. The dated results in
 [`docs/benchmarks/results/2026-08.md`](docs/benchmarks/results/2026-08.md) now include the first
 agentic (model-in-the-loop) round — preliminary, one run per cell, its integrity caveats leading.
+
+The resolver-precision numbers come from a Roslyn oracle, [`tools/scout-semantic`](tools/scout-semantic/README.md),
+that compiles a solution and records every member reference with its resolved target. The same
+oracle has a second output mode, `--emit flowtrace-facts`, that writes the flow tracer's
+per-repository fact set with compilation-resolved types where a text pass runs out (primary
+constructors, locals, minimal-API lambdas); the fixture under `fixtures/csharp-flowtrace/` pins
+that output byte-for-byte. Roslyn stays in the sidecar -- the `devscout` binary never links it.
 
 ## Versioning and releases
 

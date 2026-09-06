@@ -1,0 +1,9 @@
+{
+  // Aliases shared by every nested tsconfig in this repo.
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@core/*": ["packages/core/src/*"]
+    },
+  }
+}
