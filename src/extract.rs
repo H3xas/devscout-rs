@@ -6474,7 +6474,7 @@ mod tests {
         let e = extract_src(IF_DIRECTIVE_CHAIN);
         let refs = uses_member_refs(&e);
         // `DEBUG` is undefined, so the `#if` arm -- `.WriteTo.Debug()` on
-        // line 31 -- is blanked before parsing and contributes no ref at
+        // line 18 -- is blanked before parsing and contributes no ref at
         // all: neither "Debug" as a member name...
         assert!(!refs.iter().any(|(_, member, _)| *member == "Debug"));
         // ...nor "WriteTo" as a qualifier (the fluent chain itself is
@@ -6489,11 +6489,11 @@ mod tests {
         assert_eq!(
             refs,
             vec![
-                ("e", "Level", 22),
-                ("Level", "Error", 22),
-                ("Interval", "Day", 26),
-                ("Level", "Information", 33),
-                ("Level", "Information", 34),
+                ("e", "Level", 9),
+                ("Level", "Error", 9),
+                ("Interval", "Day", 13),
+                ("Level", "Information", 20),
+                ("Level", "Information", 21),
             ]
         );
     }
@@ -6503,29 +6503,29 @@ mod tests {
         let e = extract_src(IFELSE_DIRECTIVE_CHAIN);
         let refs = uses_member_refs(&e);
         // `TRACE` is undefined, so the `#if` arm's `.WriteTo.Trace()` (line
-        // 23) is blanked before parsing. The `#else` arm's
-        // `.WriteTo.Console()` (line 25) survives the pre-pass and keeps
+        // 13) is blanked before parsing. The `#else` arm's
+        // `.WriteTo.Console()` (line 15) survives the pre-pass and keeps
         // the chain intact, but -- like every other fluent qualifier on
         // this `new Pipeline()` chain -- neither call produces a ref of
         // its own; only the trailing `.MinimumLevel.Override(...)`
         // argument does.
         assert!(!refs.iter().any(|(_, member, _)| *member == "Trace"));
         assert!(!refs.iter().any(|(_, member, _)| *member == "Console"));
-        assert_eq!(refs, vec![("Level", "Information", 27)]);
+        assert_eq!(refs, vec![("Level", "Information", 17)]);
     }
 
     #[test]
     fn preproc_nested_if_in_if_leaves_the_whole_inner_group_absent() {
         // The outer `#if DEBUG` is undefined, so the entire group -- the
-        // nested `#if TRACE`/`#endif` and both `.WriteTo.Trace()` (line 25)
-        // and `.WriteTo.Debug()` (line 27) -- is blanked before parsing,
+        // nested `#if TRACE`/`#endif` and both `.WriteTo.Trace()` (line 14)
+        // and `.WriteTo.Debug()` (line 16) -- is blanked before parsing,
         // regardless of the inner symbol. Only the trailing
         // `.MinimumLevel.Override(...)` argument after the group remains.
         let e = extract_src(NESTED_IF_DIRECTIVE_CHAIN_CONTROL);
         let refs = uses_member_refs(&e);
         assert!(!refs.iter().any(|(_, member, _)| *member == "Trace"));
         assert!(!refs.iter().any(|(_, member, _)| *member == "Debug"));
-        assert_eq!(refs, vec![("Level", "Information", 29)]);
+        assert_eq!(refs, vec![("Level", "Information", 18)]);
     }
 
     #[test]
@@ -6533,11 +6533,11 @@ mod tests {
         // An ordinary statement-level `#if DEBUG { ... }` guards a whole
         // call rather than interrupting an expression. `DEBUG` is
         // undefined, so the guarded call -- `registry.Attach(GetDebugSink())`
-        // on line 17 -- is blanked before parsing and produces no ref; the
-        // unguarded call on line 15 is untouched.
+        // on line 9 -- is blanked before parsing and produces no ref; the
+        // unguarded call on line 7 is untouched.
         let e = extract_src(WHOLESTMT_DIRECTIVE_CONTROL);
         let refs = uses_member_refs(&e);
-        assert_eq!(refs, vec![("registry", "Attach", 15)]);
+        assert_eq!(refs, vec![("registry", "Attach", 7)]);
     }
 
     const NAMESPACE_SELECTION_SRC: &str =
@@ -6552,25 +6552,25 @@ mod tests {
         // `#else` arm's namespace only.
         assert_eq!(e.defs.len(), 7);
         let expected: Vec<(&str, &str, usize)> = vec![
-            ("Fixtures.Preproc.Lattice.LatticeCompiler", "class", 17),
+            ("Fixtures.Preproc.Lattice.LatticeCompiler", "class", 9),
             (
                 "Fixtures.Preproc.Lattice.LatticeCompiler+EmitMode",
                 "enum",
-                26,
+                18,
             ),
             (
                 "Fixtures.Preproc.Lattice.LatticeCompiler+EmitMode.Direct",
                 "enum-member",
-                28,
+                20,
             ),
             (
                 "Fixtures.Preproc.Lattice.LatticeCompiler+EmitMode.Delegated",
                 "enum-member",
-                29,
+                21,
             ),
-            ("Fixtures.Preproc.Lattice.LatticeEmitter", "class", 33),
-            ("Fixtures.Preproc.Lattice.Closure", "class", 41),
-            ("Fixtures.Preproc.Lattice.Expression", "class", 46),
+            ("Fixtures.Preproc.Lattice.LatticeEmitter", "class", 25),
+            ("Fixtures.Preproc.Lattice.Closure", "class", 33),
+            ("Fixtures.Preproc.Lattice.Expression", "class", 38),
         ];
         for (id, kind, line) in &expected {
             let d = find_def(&e, id).unwrap_or_else(|| panic!("def {id} present"));
