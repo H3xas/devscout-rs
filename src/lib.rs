@@ -4,6 +4,8 @@
 //! graph and resolution modules connect those fragments, and the query and
 //! rendering modules produce command results. The remaining modules locate
 //! repositories, persist artifacts, and implement CLI commands and hooks.
+//! `ARCHITECTURE.md` at the repository root maps every module to its
+//! responsibility and invariants and says where a change goes.
 
 /// `devscout audit --semantic`: scores `uses-member` graph edges against a
 /// Roslyn-derived oracle.
