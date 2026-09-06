@@ -7,6 +7,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-06
+
 ### Added
 
 - **`uses-member` edges carry `tier` and `member`.** `tier` names which heuristic tier
@@ -72,7 +74,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Overloads that can take the lambda must agree on the type, a `*` yields nothing, and the
   callee's receiver is read one hop deep only (an in-file fact, a static class name, or the
   enclosing type), and a parameter name that two lambdas in one member bind to different
-  callees records no slot. The fragment cache moves to v17.
+  callees records no slot. The fragment cache moves to v18.
 - **TypeScript aliases follow the nearest `tsconfig.json`.** A bare specifier resolves through
   the `paths`/`baseUrl` chain of the closest ancestor `tsconfig.json` of the importing file,
   so an app-level `@/*` inside a workspace resolves instead of falling out external; the

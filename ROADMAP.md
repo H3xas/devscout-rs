@@ -29,7 +29,7 @@ of edge kinds than C# (see README → Limitations). Planned as three independent
    (`index.ts` re-export) following, and JSX component-usage edges, all derived from the
    AST already parsed today. No new dependencies. Aliases from the repo-root tsconfig chain,
    one barrel hop, and `jsx-use` edges shipped in 0.2.0; nearest-`tsconfig.json` alias
-   scoping and chained barrels (up to eight hops, cycle-guarded) are in Unreleased. Still
+   scoping and chained barrels (up to eight hops, cycle-guarded) shipped in 0.4.0. Still
    open in this stage: `export * as ns from` namespace re-exports, and bare specifiers that
    name a workspace package by its `package.json` name.
 2. **Semantic binding via oxc** — adopt `oxc_parser`/`oxc_semantic`/`oxc_resolver` to
