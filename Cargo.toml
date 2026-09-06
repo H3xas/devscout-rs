@@ -27,7 +27,7 @@ sha2 = "=0.11.0"
 # latest tree-sitter (0.26.12) and latest tree-sitter-c-sharp (0.23.5) are a
 # valid pair: both implement/consume the same tree-sitter-language ABI, so
 # there is no version lock between them to satisfy beyond "recent enough".
-tree-sitter = "=0.26.12"
+tree-sitter = "=0.27.0"
 tree-sitter-c-sharp = "=0.23.5"
 # The TypeScript/JavaScript grammars, a second grammar set behind the same
 # seam. Both crates declare `tree-sitter-language` (^0.1) as their only
