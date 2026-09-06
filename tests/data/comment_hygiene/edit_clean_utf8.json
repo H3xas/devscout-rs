@@ -1,0 +1,9 @@
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Edit",
+  "tool_input": {
+    "file_path": "src/probe.rs",
+    "old_string": "",
+    "new_string": "// Decode the header as UTF-8 before hashing it.\npub fn a() {}\n"
+  }
+}

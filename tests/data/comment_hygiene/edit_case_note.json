@@ -1,0 +1,9 @@
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Edit",
+  "tool_input": {
+    "file_path": "src/probe.rs",
+    "old_string": "",
+    "new_string": "// Case a: Widget shares a name with Gadget -- probes bare-name lookup\npub fn a() {}\n"
+  }
+}
