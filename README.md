@@ -249,6 +249,17 @@ Known, rather than hidden:
   from a `foreach` variable or a lambda parameter, whose element type is recorded without its
   arguments, and the bare `IFoo` of `class X : IFoo, IFoo<int>`, whose base list keeps one
   entry per name and carries the generic one.
+- **A fully qualified name never falls back to its bare last segment.** A dotted reference
+  whose exact-qualified lookup fails matches only a def whose full path (a nested type's `+`
+  read as `.`) ends with the text as written, and is external otherwise:
+  `RabbitMQ.Client.ExchangeType.Fanout` does not bind an in-tree `ExchangeType`,
+  `System.Text.Json.JsonSerializer.Serialize(x)` does not bind an in-tree `JsonSerializer`,
+  and `expr.Member.Name` does not bind a nested type named `Member`. `Outer.Inner` still
+  reaches `Outer+Inner`, `Box<string>.Slot` and `global::App.Widget` are read as the def
+  paths they spell, `Derived.Item` reaches an `Item` declared inside a base of `Derived`, and
+  a `using` alias at the head of a dotted name is rewritten to its target and looked up
+  exactly. A text that several def paths end with stays ambiguous. The scored `guess` tier is
+  unchanged, so a foreign dotted qualifier can still carry a tagged heuristic edge.
 - **A static qualifier walks through nested types before its next segment reads as a member.**
   `Outer.Inner.Leaf.Value`, with or without a namespace prefix on `Outer`, binds one
   nested-type segment at a time from the shortest head that names a type, and emits a single
