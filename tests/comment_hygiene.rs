@@ -75,3 +75,9 @@ fn write_with_clean_rust_is_allowed() {
     let out = run_with_fixture("write_clean.json");
     assert_eq!(out.status.code(), Some(0), "expected exit 0, got {out:?}");
 }
+
+#[test]
+fn edit_naming_the_host_product_claude_code_is_allowed() {
+    let out = run_with_fixture("edit_claude_code_allowed.json");
+    assert_eq!(out.status.code(), Some(0), "expected exit 0, got {out:?}");
+}

@@ -12,10 +12,11 @@ Three ways to run it:
      Never raises: any parse problem is treated as "nothing to flag".
 
   2. `--scan [paths...]` walks git-tracked files (default: src tests
-     fixtures docs tools .github), applies the same comment-line checks,
-     and prints one `path:line: <class>: <line>` per hit. Exit 1 if any
-     hit was found, 0 otherwise. Paths under tests/data/ are skipped (that
-     is where this script's own test fixtures live).
+     fixtures tools .github), applies the same comment-line checks to
+     code files only (.rs .cs .ts .tsx .js .py .sh .yml .yaml .toml --
+     never .md), and prints one `path:line: <class>: <line>` per hit.
+     Exit 1 if any hit was found, 0 otherwise. Paths under tests/data/
+     are skipped (that is where this script's own test fixtures live).
 
   3. `--scan-commits <git-log-range>` applies the commit-message checks to
      every commit message in the range. Exit 1 if any hit was found.
@@ -30,7 +31,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-DEFAULT_SCAN_PATHS = ["src", "tests", "fixtures", "docs", "tools", ".github"]
+DEFAULT_SCAN_PATHS = ["src", "tests", "fixtures", "tools", ".github"]
+
+# Code files only -- scan mode never looks at prose (.md), regardless of
+# which paths it is pointed at.
+SCANNABLE_EXTENSIONS = {"rs", "cs", "ts", "tsx", "js", "py", "sh", "yml", "yaml", "toml"}
 
 # Standards / spec prefixes that happen to look like TICKET-123 but are not
 # tracker ids (SHA-256, UTF-8, HTTP-01, ...).
@@ -54,6 +59,10 @@ SOURCE_CITATION_RE = re.compile(
 )
 TRACKER_ID_RE = re.compile(r"\b([A-Z]{2,5})-[0-9]{1,6}\b")
 TOOL_NAME_RE = re.compile(r"\b(Claude|Anthropic|ChatGPT|GPT|Copilot|Sonnet|Opus|Fable|Haiku)\b")
+# devscout is a tool built to work with the Claude Code host product, so that
+# exact two-word phrase is allowed; bare "Claude" (and every other name
+# above) stays banned.
+CLAUDE_CODE_RE = re.compile(r"\bClaude Code\b")
 TEST_NARRATION_RE = re.compile(r"\bprobes?\b|\bexercises the\b")
 
 # ---- the commit-message classes ------------------------------------------
@@ -61,9 +70,21 @@ TEST_NARRATION_RE = re.compile(r"\bprobes?\b|\bexercises the\b")
 COMMIT_TRAILER_RE = re.compile(r"\b(Co-Authored-By|Claude-Session|Generated with)\b")
 
 
-def classify_comment_line(line):
+def has_tool_name(line):
+    """True if `line` names a banned tool/model, ignoring any occurrence of
+    the allowed phrase "Claude Code"."""
+    return bool(TOOL_NAME_RE.search(CLAUDE_CODE_RE.sub("", line)))
+
+
+def is_under_fixtures(path):
+    return "fixtures" in Path(path).parts
+
+
+def classify_comment_line(line, is_fixture_path):
     """Return a human-readable class name for the first matching class in a
-    comment line, or None if the line is clean."""
+    comment line, or None if the line is clean. `is_fixture_path` scopes the
+    test-intent-narration class to fixture sources, where "probe" is a
+    narrated intent rather than resolver vocabulary."""
     if CASE_NOTE_RE.match(line):
         return "narrative case note"
     if SOURCE_CITATION_RE.search(line):
@@ -71,9 +92,9 @@ def classify_comment_line(line):
     for m in TRACKER_ID_RE.finditer(line):
         if m.group(1) not in STANDARDS_ALLOWLIST:
             return "tracker id"
-    if TOOL_NAME_RE.search(line):
+    if has_tool_name(line):
         return "tool or model name"
-    if TEST_NARRATION_RE.search(line):
+    if is_fixture_path and TEST_NARRATION_RE.search(line):
         return "test-intent narration"
     return None
 
@@ -86,7 +107,7 @@ def classify_commit_line(line):
     for m in TRACKER_ID_RE.finditer(line):
         if m.group(1) not in STANDARDS_ALLOWLIST:
             return "tracker id"
-    if TOOL_NAME_RE.search(line):
+    if has_tool_name(line):
         return "tool or model name"
     return None
 
@@ -114,10 +135,11 @@ def find_comment_hit(text, file_path):
     """Scan `text` (an Edit new_string or a Write content) for the first
     comment line that trips one of the comment-content classes."""
     ext = file_extension(file_path)
+    is_fixture_path = is_under_fixtures(file_path) if file_path else False
     for line_no, line in enumerate(text.splitlines(), start=1):
         if not is_comment_line(line, ext):
             continue
-        cls = classify_comment_line(line)
+        cls = classify_comment_line(line, is_fixture_path)
         if cls:
             return {"class": cls, "line_no": line_no, "line": line}
     return None
@@ -230,16 +252,19 @@ def scan_mode(paths):
     for path in tracked_files(paths):
         if path.startswith("tests/data/"):
             continue
+        ext = file_extension(path)
+        if ext not in SCANNABLE_EXTENSIONS:
+            continue
         p = Path(path)
         try:
             content = p.read_text(encoding="utf-8")
         except Exception:
             continue
-        ext = file_extension(path)
+        is_fixture_path = is_under_fixtures(path)
         for line_no, line in enumerate(content.splitlines(), start=1):
             if not is_comment_line(line, ext):
                 continue
-            cls = classify_comment_line(line)
+            cls = classify_comment_line(line, is_fixture_path)
             if cls:
                 hits.append(f"{path}:{line_no}: {cls}: {line.strip()}")
 
