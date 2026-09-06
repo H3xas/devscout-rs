@@ -1,0 +1,12 @@
+devscout
+Copyright the devscout contributors.
+
+This product is licensed under either of the Apache License, Version 2.0, or the MIT
+license, at your option — see LICENSE-APACHE and LICENSE-MIT.
+
+This distribution includes third-party open-source components pulled in through Cargo
+dependencies and, for the `rusqlite` crate's "bundled" feature, a vendored copy of SQLite
+(Public Domain). A complete, versioned inventory of every third-party component in a given
+release is generated as a CycloneDX Software Bill of Materials and attached to that
+release's GitHub Release page; none of those components' license terms are altered by their
+inclusion here.

@@ -9,6 +9,13 @@ the linked issues; anything not listed here is fair game for a proposal.
   tool-call proxy table in the benchmark docs currently lacks an in-repository
   reproduction path, and the published scorecard was measured on 0.2.0; the corpus pin,
   lane harness, commands, and fresh numbers land together.
+- **Project-wide `cargo clippy -- -D warnings` in CI.** CI currently builds and tests but
+  does not run clippy; locally, `cargo clippy --all-targets` reports a pre-existing baseline
+  of style-level warnings (long first doc paragraphs, missing rustdoc backticks, and a
+  handful of complexity lints) that predates this entry. Closing that baseline to zero and
+  then adding a deny-warnings clippy job to CI is tracked here rather than done piecemeal,
+  so the gate lands already green. See CONTRIBUTING.md for what is expected of a pull
+  request in the meantime.
 
 ## TypeScript / JavaScript semantic coverage
 
