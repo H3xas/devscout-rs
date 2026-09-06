@@ -328,6 +328,12 @@ per-repository fact set with compilation-resolved types where a text pass runs o
 constructors, locals, minimal-API lambdas); the fixture under `fixtures/csharp-flowtrace/` pins
 that output byte-for-byte. Roslyn stays in the sidecar -- the `devscout` binary never links it.
 
+The plumbing verb `devscout audit --semantic <refs.jsonl> [--units F] [--defs F] [--json]
+[--assert F]` scores an indexed repository's `uses-member` edges against those oracle records:
+precision per tier, recall over in-graph member sites, external-receiver leaks, structurally
+impossible edges, and fan-out. `--assert` reads a thresholds file and exits 1 on any
+violated or missing key, reporting every one, which is how CI holds the fixture's numbers.
+
 ## Versioning and releases
 
 Semantic versioning. Releases are cut by pushing a `v*` tag (`v0.1.0`, `v0.2.0`, …), which builds
