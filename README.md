@@ -204,12 +204,12 @@ Known, rather than hidden:
   `heuristic` nor `tier`. Receiver typing covers `this.` and `base.` qualifiers, `?.`
   bindings, a local's `await`ed initializer, cast- and pattern-designated locals, typed
   `out` parameters, and a one-hop call-chain tail. A bare unqualified call, a chain more
-  than one hop deep or through `?.`, a lambda parameter other than a call's first
-  single-parameter one, a receiver typed only by inference the syntax itself does not show,
-  a `dynamic` receiver, and a `using static` import stay unrecorded, so those shapes resolve
-  through the untyped name-only tiers or not at all. The lambda rule reads the receiver's
-  shape, not its meaning: any single-type-argument generic (`Task<T>`, `Lazy<T>`) types the
-  parameter as its type argument the way `List<T>` does.
+  than one hop deep or through `?.`, a lambda parameter neither lambda rule below types, a
+  receiver typed only by inference the syntax itself does not show, a `dynamic` receiver, and
+  a `using static` import stay unrecorded, so those shapes resolve through the untyped
+  name-only tiers or not at all. The collection-element rule reads the receiver's shape, not
+  its meaning: a call's first single-parameter lambda takes the element type of any array or
+  single-type-argument generic receiver (`Task<T>`, `Lazy<T>`) the way `List<T>` gives it.
   A lambda handed straight to an in-graph method is typed from that method's delegate
   parameter (`Action<T>`, `Func<T, ..>`, `Predicate<T>`, `Expression<>` of those, or a
   declared `delegate`) when every overload that can take it agrees; a callee outside the
