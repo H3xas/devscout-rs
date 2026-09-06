@@ -15,9 +15,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Fixtures carry no narrative headers
-        run: '! git grep -nE ''^// Case|src/[a-z_]+\.rs:[0-9]+'' -- fixtures'
+      - name: Comment hygiene
+        run: python3 .claude/hooks/comment-hygiene.py --scan
+
+      - name: Comment hygiene (commit messages)
+        if: github.event_name == 'pull_request'
+        run: python3 .claude/hooks/comment-hygiene.py --scan-commits origin/${{ github.base_ref }}..HEAD
 
       - name: Install stable Rust toolchain
         uses: dtolnay/rust-toolchain@stable
