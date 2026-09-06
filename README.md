@@ -259,6 +259,9 @@ still describe behaviour by reference to that original implementation. Those not
 this crate generates and reads its own artifacts, and interoperating with anything else is
 optional.
 
+**Fixtures.** Fixture sources carry no narrative headers; case notes live in the fixture
+directory's own `README.md`.
+
 ## Benchmarks
 
 Every claim this project makes about speed, cost, or accuracy lives in
