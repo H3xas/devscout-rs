@@ -12,10 +12,15 @@ cache.db
 # Command output.
 out/
 
-# Assistant and private tooling; never published.
-.claude/
+# Assistant and private tooling; never published, except the comment-hygiene
+# hook script and settings, which are part of the repo's own CI gate.
 .claude*
-CLAUDE.md
+!.claude/
+.claude/*
+!.claude/settings.json
+!.claude/hooks/
+.claude/hooks/*
+!.claude/hooks/comment-hygiene.py
 CLAUDE.local.md
 MEMORY.md
 WORKTREE.md
