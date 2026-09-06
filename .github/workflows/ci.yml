@@ -28,6 +28,9 @@ jobs:
         if: github.event_name == 'pull_request'
         run: python3 .claude/hooks/comment-hygiene.py --scan-commits origin/${{ github.base_ref }}..HEAD
 
+      - name: Architecture guide names every module
+        run: sh tools/check-architecture.sh
+
       - name: Install stable Rust toolchain
         uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
         with:
