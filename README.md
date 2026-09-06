@@ -346,8 +346,12 @@ The resolver-precision numbers come from a Roslyn oracle, [`tools/scout-semantic
 that compiles a solution and records every member reference with its resolved target. The same
 oracle has a second output mode, `--emit flowtrace-facts`, that writes the flow tracer's
 per-repository fact set with compilation-resolved types where a text pass runs out (primary
-constructors, locals, minimal-API lambdas); the fixture under `fixtures/csharp-flowtrace/` pins
-that output byte-for-byte. Roslyn stays in the sidecar -- the `devscout` binary never links it.
+constructors, locals, minimal-API lambdas). This cut emits eight fact kinds -- `message_class`,
+`consume`, `publish`, `ctor_field`, `di_binding`, `iface_impl`, `route` and `method_span` --
+under a header that names the producer, its version and the compilation; the facts carry no
+provenance of their own, and a recognised site whose type does not resolve is counted on stderr
+and fails the run under `--strict`. The fixture under `fixtures/csharp-flowtrace/` pins that
+output byte-for-byte in CI. Roslyn stays in the sidecar -- the `devscout` binary never links it.
 
 The plumbing verb `devscout audit --semantic <refs.jsonl> [--units F] [--defs F] [--json]
 [--assert F]` scores an indexed repository's `uses-member` edges against those oracle records:
