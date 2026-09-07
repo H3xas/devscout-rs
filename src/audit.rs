@@ -34,7 +34,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use crate::cli::J;
+use crate::query::json::J;
 
 // ---------------------------------------------------------------------------
 // Data model
