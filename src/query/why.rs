@@ -44,11 +44,18 @@ pub enum Why {
     /// A `tests` row earned because the project model places the file's
     /// unit in a project marked `test`, with no attributed def of its own.
     TestProject,
+    /// An `impact` row reached only through an imported cross-repo edge --
+    /// never folded against the five kinds above, since a foreign file is
+    /// never also reached by one of this graph's own edges. The weakest
+    /// evidence this vocabulary names, below `uses-member-guess`: a foreign,
+    /// producer-asserted fact never outranks anything this crate resolved
+    /// for itself.
+    ImportedEdge,
 }
 
 impl Why {
     /// Every value, in the order the doc comment above lists them.
-    pub const ALL: [Why; 10] = [
+    pub const ALL: [Why; 11] = [
         Why::Inherits,
         Why::UsesType,
         Why::UsesMemberPrecise,
@@ -59,6 +66,7 @@ impl Why {
         Why::Declaration,
         Why::TestAttribute,
         Why::TestProject,
+        Why::ImportedEdge,
     ];
 
     /// The exact `--json` word for this value.
@@ -74,6 +82,7 @@ impl Why {
             Why::Declaration => "declaration",
             Why::TestAttribute => "test-attribute",
             Why::TestProject => "test-project",
+            Why::ImportedEdge => "imported-edge",
         }
     }
 }
@@ -141,6 +150,7 @@ mod tests {
             "declaration",
             "test-attribute",
             "test-project",
+            "imported-edge",
         ];
         let words: Vec<&str> = Why::ALL.iter().map(|w| w.as_str()).collect();
         for word in &words {
