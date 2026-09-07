@@ -269,7 +269,7 @@ fn usage_and_flag_conflicts_keep_their_own_codes_and_silence() {
     assert_eq!(missing.status.code(), Some(2), "{missing:?}");
     assert_eq!(
         stdout_of(&missing),
-        "usage: devscout read <symbol> [--no-guess] [--json|--compact]\n"
+        "usage: devscout read <symbol> [--no-guess] [--pick N] [--json|--compact]\n"
     );
 
     let conflict = fx.run(&["read", "IThing", "--compact", "--json"]);

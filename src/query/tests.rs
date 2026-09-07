@@ -17,6 +17,7 @@ mod impact_iface_brake;
 mod impact_misc;
 mod impact_ranking;
 mod index;
+mod member;
 mod read;
 mod refs_bare_member;
 mod refs_enum;

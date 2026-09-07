@@ -63,6 +63,12 @@ mod find;
 mod impact;
 mod index;
 mod infra;
+// `--json` rendering of every query model, moved here from `cli.rs` to keep
+// that file under its size ratchet; `pub(crate)` so `cli.rs` can still call
+// it as `query::json::...`.
+pub(crate) mod json;
+mod member;
+mod outcome;
 mod rank;
 mod read;
 mod refs;
@@ -82,6 +88,11 @@ pub use index::{
     GraphIndex, HeuristicEntry, InboundEntry, IndexOptions, OutboundEntry, SymbolRefs,
 };
 pub use infra::{is_infra_file, DEFAULT_HUB_MAX_INDEGREE};
+pub use member::{
+    qualified_member_owners, qualified_seed, resolve_member_seed, MemberCandidate,
+    MemberSeedResolution,
+};
+pub use outcome::Outcome;
 pub use rank::{personalized_page_rank, DEFAULT_DAMPING, DEFAULT_ITERATIONS};
 pub use read::{build_read_model, ReadModel, ReadResult, ReadSpan};
 pub use refs::{build_refs_model, LineCache, MemberRefEntry, MemberRefs, RefsModel, RefsResult};

@@ -4,6 +4,7 @@ use crate::graph;
 
 use super::index::{def_files, implemented_interfaces, GraphIndex};
 use super::infra::is_infra_file;
+use super::member::{self, MemberCandidate, MemberSeedResolution};
 use super::rank::{personalized_page_rank, DEFAULT_DAMPING, DEFAULT_ITERATIONS};
 use super::refs_tables::{cap_rows, edge_loc, row_tier};
 use super::seq::{SeqMap, SeqSet};
@@ -497,9 +498,31 @@ pub enum SeedResolution {
         /// The inferred seed kind.
         kind: SeedKind,
     },
+    /// A member seed whose name more than one type declares.
+    MemberAmbiguous(Vec<MemberCandidate>),
 }
 
-/// Resolve an impact-walk seed argument to a file's defs or a single symbol.
+// The member ladder, shared by both branches below: a member seed answers as
+// its unique declaring type; `not_found_kind` is the caller's own miss kind.
+fn member_fallback(index: &GraphIndex, arg: &str, not_found_kind: SeedKind) -> SeedResolution {
+    match member::resolve_member_seed(index, arg) {
+        MemberSeedResolution::Resolved(id) => SeedResolution::Resolved {
+            kind: SeedKind::Symbol,
+            ids: vec![id],
+        },
+        MemberSeedResolution::Ambiguous(candidates) => SeedResolution::MemberAmbiguous(candidates),
+        MemberSeedResolution::NotFound => SeedResolution::NotFound {
+            kind: not_found_kind,
+        },
+    }
+}
+
+/// Resolve an impact-walk seed to a file's defs or a single symbol. The type
+/// ladder ([`resolve_symbol`]) runs first; a member seed, tried only once it
+/// has missed, answers AS its unique declaring type -- `impact` has no
+/// member-shaped answer of its own. A dotted member seed looks like a file
+/// path under [`looks_like_file_path`], so it is tried on a file-path MISS
+/// instead: that branch never resolved a type before, so nothing changes.
 pub fn resolve_impact_seed(index: &GraphIndex, arg: &str) -> SeedResolution {
     if looks_like_file_path(arg) {
         return match index.by_file.get(arg) {
@@ -510,9 +533,7 @@ pub fn resolve_impact_seed(index: &GraphIndex, arg: &str) -> SeedResolution {
                     .map(|&i| index.graph.defs[i].id.clone())
                     .collect(),
             },
-            _ => SeedResolution::NotFound {
-                kind: SeedKind::File,
-            },
+            _ => member_fallback(index, arg, SeedKind::File),
         };
     }
     match resolve_symbol(index, arg) {
@@ -524,9 +545,7 @@ pub fn resolve_impact_seed(index: &GraphIndex, arg: &str) -> SeedResolution {
             kind: SeedKind::Symbol,
             ids,
         },
-        Resolution::NotFound => SeedResolution::NotFound {
-            kind: SeedKind::Symbol,
-        },
+        Resolution::NotFound => member_fallback(index, arg, SeedKind::Symbol),
     }
 }
 
@@ -626,6 +645,8 @@ pub enum ImpactResult {
         /// The inferred seed kind.
         kind: SeedKind,
     },
+    /// The seed named a member declared by more than one type.
+    MemberAmbiguous(Vec<MemberCandidate>),
 }
 
 // Assembles a row's per-kind representative lines. The resolved-over-ambiguous
@@ -669,6 +690,9 @@ pub fn build_impact_model(
         SeedResolution::Resolved { kind, ids } => (kind, ids),
         SeedResolution::Ambiguous { kind, ids } => return ImpactResult::Ambiguous { kind, ids },
         SeedResolution::NotFound { kind } => return ImpactResult::NotFound { kind },
+        SeedResolution::MemberAmbiguous(candidates) => {
+            return ImpactResult::MemberAmbiguous(candidates)
+        }
     };
 
     let walk = impact_walk(

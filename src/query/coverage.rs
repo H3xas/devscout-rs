@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use crate::graph;
 
 use super::index::{def_files, symbol_refs, GraphIndex};
+use super::member::{self, MemberCandidate, MemberSeedResolution};
 use super::refs_tables::{edge_loc, row_tier};
 use super::symbol::{resolve_symbol, Resolution};
 
@@ -79,6 +80,10 @@ pub enum TestsResult {
     Resolved(TestsModel),
     /// Represents `Ambiguous`.
     Ambiguous(Vec<String>),
+    /// The seed named a member declared by more than one type -- `tests`
+    /// answers as the member's unique declaring type, so this can only ever
+    /// arise from a member seed.
+    MemberAmbiguous(Vec<MemberCandidate>),
     /// Represents `NotFound`.
     NotFound,
 }
@@ -156,7 +161,17 @@ pub fn build_tests_model(index: &GraphIndex, query: &str) -> TestsResult {
     let id = match resolve_symbol(index, query) {
         Resolution::Resolved(id) => id,
         Resolution::Ambiguous(ids) => return TestsResult::Ambiguous(ids),
-        Resolution::NotFound => return TestsResult::NotFound,
+        // The member path is a FALLBACK, reached only when nothing in the
+        // graph declares `query` as a type -- same order `refs`/`impact`
+        // apply. `tests` has no member-shaped answer of its own: a member
+        // seed answers as its unique declaring type, exactly like `impact`.
+        Resolution::NotFound => match member::resolve_member_seed(index, query) {
+            MemberSeedResolution::Resolved(id) => id,
+            MemberSeedResolution::Ambiguous(candidates) => {
+                return TestsResult::MemberAmbiguous(candidates)
+            }
+            MemberSeedResolution::NotFound => return TestsResult::NotFound,
+        },
     };
     let refs = symbol_refs(index, &id);
 

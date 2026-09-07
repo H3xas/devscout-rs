@@ -207,9 +207,27 @@ fn build_refs_model_bare_member_refuses_a_longer_identifier_that_starts_with_the
 
 // `Approve` is declared on Ledger AND Journal, and both survive edge-line
 // verification (unlike the fixture's own `Post`, now single-owner): the
-// answer is the ambiguous candidate list, in name-index order, never a
-// `Members` block per type -- the same house rule of never guessing between
-// candidates that an ambiguous TYPE name already answers with.
+// answer is one candidate row per declaring type, in name-index order,
+// naming the member's OWN declaration site -- never a `Members` block per
+// type, and never the bare `{id, def site, kind}` list an ambiguous TYPE
+// name answers with.
+fn approve_candidates() -> Vec<MemberCandidate> {
+    vec![
+        MemberCandidate {
+            owner: "App.Books.Ledger".to_string(),
+            name: "Approve".to_string(),
+            file: "Books/Ledger.cs".to_string(),
+            line: 11,
+        },
+        MemberCandidate {
+            owner: "App.Books.Journal".to_string(),
+            name: "Approve".to_string(),
+            file: "Books/Journal.cs".to_string(),
+            line: 5,
+        },
+    ]
+}
+
 #[test]
 fn build_refs_model_bare_member_verified_on_several_types_answers_ambiguous_not_members() {
     let (g, root) = member_fixture();
@@ -224,13 +242,7 @@ fn build_refs_model_bare_member_verified_on_several_types_answers_ambiguous_not_
         false,
     );
 
-    assert_eq!(
-        model,
-        RefsResult::Ambiguous(vec![
-            "App.Books.Ledger".to_string(),
-            "App.Books.Journal".to_string()
-        ])
-    );
+    assert_eq!(model, RefsResult::MemberAmbiguous(approve_candidates()));
 }
 
 #[test]
@@ -248,13 +260,7 @@ fn build_refs_model_bare_member_ambiguous_across_types_answers_the_same_regardle
         false,
     );
 
-    assert_eq!(
-        model,
-        RefsResult::Ambiguous(vec![
-            "App.Books.Ledger".to_string(),
-            "App.Books.Journal".to_string()
-        ])
-    );
+    assert_eq!(model, RefsResult::MemberAmbiguous(approve_candidates()));
 }
 
 #[test]

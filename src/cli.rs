@@ -22,6 +22,7 @@ use crate::manifest;
 use crate::mapcmd;
 use crate::parse;
 use crate::query;
+use crate::query::json::J;
 use crate::render;
 use crate::store;
 use crate::suggest;
@@ -117,13 +118,28 @@ fn nearest_names(cwd: &Path, query: &str) -> Vec<String> {
     suggest::suggestion_lines(&g.names, query)
 }
 
-// The first non-flag argument -- the symbol `refs` takes. Shared with
-// `dispatch`, which needs the same string to build the suggestion block for a
-// query `cmd_refs` has already reported as a zero hit.
+// The first non-flag argument -- the symbol `refs`/`read`/`tests` take.
+// Shared with `dispatch`, which needs the same string to build the suggestion
+// block for a query `cmd_refs`/`cmd_read` has already reported as a zero hit.
+// Skips `--pick`'s OWN value: unlike every other flag these three verbs
+// accept, `--pick N` carries a value that does not start with `--` and so
+// would otherwise be mistaken for the query itself.
 fn first_positional(args: &[String]) -> Option<&str> {
-    args.iter()
-        .find(|a| !a.starts_with("--"))
-        .map(String::as_str)
+    let mut skip_next = false;
+    for a in args {
+        if skip_next {
+            skip_next = false;
+            continue;
+        }
+        if a == "--pick" {
+            skip_next = true;
+            continue;
+        }
+        if !a.starts_with("--") {
+            return Some(a.as_str());
+        }
+    }
+    None
 }
 
 // `devscout help` / `--help`. Written to stdout with exit 0 so a shell
@@ -143,10 +159,10 @@ index
 
 query
   find <query> [--resources] search the manifest by name or purpose
-  refs <symbol>              references to a symbol   [--out --all --no-guess --json|--compact]
-  read <symbol>              decl span + inbound refs [--no-guess --json|--compact]
-  impact <file|symbol>       blast radius             [--hops N --no-guess --json|--compact]
-  tests <symbol>             tests reaching a symbol  [--no-guess --json|--compact]
+  refs <symbol>              references to a symbol   [--out --all --no-guess --pick N --json|--compact]
+  read <symbol>              decl span + inbound refs [--no-guess --pick N --json|--compact]
+  impact <file|symbol>       blast radius             [--hops N --no-guess --pick N --json|--compact]
+  tests <symbol>             tests reaching a symbol  [--no-guess --pick N --json|--compact]
   stats                      index + cache summary for this repo
 
 plumbing
@@ -435,6 +451,93 @@ fn ambiguous_candidates_out(index: &query::GraphIndex, q: &str, ids: &[String]) 
     (1, out.join("\n"))
 }
 
+// Renders a member-ambiguous outcome (`RefsResult::MemberAmbiguous` and its
+// mirrors on `read`/`impact`/`tests`): one row per candidate, its declaring
+// type, file and line -- NEVER the bare `{id, def site, kind}` list
+// `ambiguous_candidates_out` renders for an ambiguous TYPE name. Unlike that
+// list, this one DOES respect `--json`: there was no JSON shape for a member
+// answer to keep unchanged, so carrying `outcome` here is purely additive.
+fn member_ambiguous_out(
+    q: &str,
+    candidates: &[query::MemberCandidate],
+    json: bool,
+) -> (i32, String) {
+    if json {
+        let out = J::Obj(vec![
+            (
+                "outcome",
+                J::Str(query::Outcome::Ambiguous.as_str().to_string()),
+            ),
+            ("query", J::Str(q.to_string())),
+            (
+                "candidates",
+                J::Arr(
+                    candidates
+                        .iter()
+                        .map(|c| {
+                            J::Obj(vec![
+                                ("owner", J::Str(c.owner.clone())),
+                                ("name", J::Str(c.name.clone())),
+                                ("file", J::Str(c.file.clone())),
+                                ("line", J::UInt(c.line as u64)),
+                            ])
+                        })
+                        .collect(),
+                ),
+            ),
+        ])
+        .to_json_string();
+        return (1, out);
+    }
+    let mut out = vec![format!(
+        "ambiguous member \"{q}\" — {} candidates:",
+        candidates.len()
+    )];
+    for c in candidates {
+        out.push(format!("{}.{}  {}:{}", c.owner, c.name, c.file, c.line));
+    }
+    (1, out.join("\n"))
+}
+
+// Renders a fully-unresolved query (`NotFound` on every one of `refs`/`read`/
+// `impact`/`tests`): `plain` unchanged under text/`--compact` -- the exact
+// bytes these verbs always printed here -- and, only under `--json`, a small
+// object naming the outcome. No JSON shape existed for this case before, so
+// this is additive the same way `member_ambiguous_out`'s JSON arm is.
+fn fallback_advised_out(q: &str, json: bool, plain: String) -> (i32, String) {
+    if json {
+        let out = J::Obj(vec![
+            (
+                "outcome",
+                J::Str(query::Outcome::FallbackAdvised.as_str().to_string()),
+            ),
+            ("query", J::Str(q.to_string())),
+        ])
+        .to_json_string();
+        (EXIT_NO_RESULT, out)
+    } else {
+        (EXIT_NO_RESULT, plain)
+    }
+}
+
+// `--pick <n>`, shared by `refs`/`read`/`impact`/`tests`: a strict positive
+// integer (unlike `--hops`'s lenient `parse_int_js` -- a candidate index is
+// never "close enough"). `Ok(None)` when the flag is absent, `Err(())` on a
+// missing, non-numeric, or zero value, which every call site turns into its
+// own usage error. Range-checking against the actual candidate count is the
+// caller's job: that count is only known once resolution has already
+// answered `MemberAmbiguous`.
+fn parse_pick(args: &[String]) -> Result<Option<usize>, ()> {
+    let Some(idx) = args.iter().position(|a| a == "--pick") else {
+        return Ok(None);
+    };
+    let raw = args.get(idx + 1).map(String::as_str).unwrap_or("");
+    match raw.parse::<usize>() {
+        Ok(n) if n >= 1 => Ok(Some(n)),
+        _ => Err(()),
+    }
+}
+
 // Lenient integer parse: skip nothing but a leading sign, take the longest
 // leading run of ASCII digits, ignore trailing garbage; no digits at all
 // (including an absent/empty string) is `None`. Used by the `--hops`,
@@ -476,6 +579,9 @@ fn index_options(args: &[String]) -> query::IndexOptions {
 // `require_repo`, THEN the graph-present check -- a query run with no repo
 // present reports the missing-repo error even if the query itself is also
 // absent-adjacent.
+const REFS_USAGE: &str =
+    "usage: devscout refs <symbol> [--out] [--all] [--no-guess] [--pick N] [--json|--compact]";
+
 fn cmd_refs(cwd: &Path, args: &[String]) -> (i32, String) {
     let json = args.iter().any(|a| a == "--json");
     let compact = args.iter().any(|a| a == "--compact");
@@ -485,12 +591,11 @@ fn cmd_refs(cwd: &Path, args: &[String]) -> (i32, String) {
             "devscout refs: --compact and --json are mutually exclusive".to_string(),
         );
     }
+    let Ok(pick) = parse_pick(args) else {
+        return (2, REFS_USAGE.to_string());
+    };
     let Some(q) = first_positional(args) else {
-        return (
-            2,
-            "usage: devscout refs <symbol> [--out] [--all] [--no-guess] [--json|--compact]"
-                .to_string(),
-        );
+        return (2, REFS_USAGE.to_string());
     };
     let out = args.iter().any(|a| a == "--out");
     // `--all` lifts only `query::OUTBOUND_CAP`; it is otherwise inert without
@@ -508,24 +613,46 @@ fn cmd_refs(cwd: &Path, args: &[String]) -> (i32, String) {
     };
     let index = query::load_graph_index_with(&g, &root, index_options(args));
 
-    match query::build_refs_model(
-        &index,
-        q,
-        out,
-        query::DEFAULT_CAP,
-        query::INBOUND_CAP,
-        query::OUTBOUND_CAP,
-        all_out,
-    ) {
-        query::RefsResult::NotFound => (EXIT_NO_RESULT, format!("no symbol matches \"{q}\"")),
+    let build = |seed: &str| {
+        query::build_refs_model(
+            &index,
+            seed,
+            out,
+            query::DEFAULT_CAP,
+            query::INBOUND_CAP,
+            query::OUTBOUND_CAP,
+            all_out,
+        )
+    };
+    // `--pick n` only ever narrows a `MemberAmbiguous` answer: it re-resolves
+    // against the SAME synthetic `Owner.Member` seed a caller could have typed
+    // by hand, rather than adding a second resolution path only `--pick`
+    // takes. An out-of-range `n` is a usage error; `--pick` is silently
+    // inert on every other outcome.
+    let result = match build(q) {
+        query::RefsResult::MemberAmbiguous(candidates) => match pick {
+            Some(n) if n <= candidates.len() => build(&query::qualified_seed(&candidates[n - 1])),
+            Some(_) => return (2, REFS_USAGE.to_string()),
+            None => query::RefsResult::MemberAmbiguous(candidates),
+        },
+        other => other,
+    };
+
+    match result {
+        query::RefsResult::NotFound => {
+            fallback_advised_out(q, json, format!("no symbol matches \"{q}\""))
+        }
         query::RefsResult::Ambiguous(ids) => ambiguous_candidates_out(&index, q, &ids),
+        query::RefsResult::MemberAmbiguous(candidates) => {
+            member_ambiguous_out(q, &candidates, json)
+        }
         // A bare member answers with one ordinary refs model per declaring type,
         // so each block renders through the very renderer a type uses and
         // `--json` wraps those same objects in an array rather than reshaping
         // them.
         query::RefsResult::Members(models) => {
             if json {
-                (0, member_refs_to_json(q, &models))
+                (0, query::json::member_refs_to_json(q, &models))
             } else if compact {
                 (
                     0,
@@ -548,7 +675,7 @@ fn cmd_refs(cwd: &Path, args: &[String]) -> (i32, String) {
         }
         query::RefsResult::Resolved(model) => {
             if json {
-                (0, refs_model_to_json(&model))
+                (0, query::json::refs_model_to_json(&model))
             } else if compact {
                 (0, render::render_refs_compact(&model))
             } else {
@@ -564,6 +691,8 @@ fn cmd_refs(cwd: &Path, args: &[String]) -> (i32, String) {
 // a name becomes an answer -- so the ambiguity and zero-hit discipline
 // cannot drift between the two verbs; only the resolved arm grows the
 // declaration span.
+const READ_USAGE: &str = "usage: devscout read <symbol> [--no-guess] [--pick N] [--json|--compact]";
+
 fn cmd_read(cwd: &Path, args: &[String]) -> (i32, String) {
     let json = args.iter().any(|a| a == "--json");
     let compact = args.iter().any(|a| a == "--compact");
@@ -573,11 +702,11 @@ fn cmd_read(cwd: &Path, args: &[String]) -> (i32, String) {
             "devscout read: --compact and --json are mutually exclusive".to_string(),
         );
     }
+    let Ok(pick) = parse_pick(args) else {
+        return (2, READ_USAGE.to_string());
+    };
     let Some(q) = first_positional(args) else {
-        return (
-            2,
-            "usage: devscout read <symbol> [--no-guess] [--json|--compact]".to_string(),
-        );
+        return (2, READ_USAGE.to_string());
     };
     let root = match require_repo(cwd) {
         Ok(r) => r,
@@ -591,16 +720,35 @@ fn cmd_read(cwd: &Path, args: &[String]) -> (i32, String) {
     };
     let index = query::load_graph_index_with(&g, &root, index_options(args));
 
-    match query::build_read_model(&index, q) {
-        query::ReadResult::NotFound => (EXIT_NO_RESULT, format!("no symbol matches \"{q}\"")),
+    // Same `--pick` narrowing rule `cmd_refs` applies: only a `MemberAmbiguous`
+    // answer is ever re-resolved, against the synthetic `Owner.Member` seed the
+    // picked candidate names.
+    let result = match query::build_read_model(&index, q) {
+        query::ReadResult::MemberAmbiguous(candidates) => match pick {
+            Some(n) if n <= candidates.len() => {
+                query::build_read_model(&index, &query::qualified_seed(&candidates[n - 1]))
+            }
+            Some(_) => return (2, READ_USAGE.to_string()),
+            None => query::ReadResult::MemberAmbiguous(candidates),
+        },
+        other => other,
+    };
+
+    match result {
+        query::ReadResult::NotFound => {
+            fallback_advised_out(q, json, format!("no symbol matches \"{q}\""))
+        }
         query::ReadResult::Ambiguous(ids) => ambiguous_candidates_out(&index, q, &ids),
+        query::ReadResult::MemberAmbiguous(candidates) => {
+            member_ambiguous_out(q, &candidates, json)
+        }
         // A bare member answers through refs' own member rendering in all
         // three forms: the member answer carries no declaration-span fact to
         // add, so reshaping it here would only create a second shape to keep
         // in step.
         query::ReadResult::Members(models) => {
             if json {
-                (0, member_refs_to_json(q, &models))
+                (0, query::json::member_refs_to_json(q, &models))
             } else if compact {
                 (
                     0,
@@ -623,7 +771,7 @@ fn cmd_read(cwd: &Path, args: &[String]) -> (i32, String) {
         }
         query::ReadResult::Resolved(model) => {
             if json {
-                (0, read_model_to_json(&model))
+                (0, query::json::read_model_to_json(&model))
             } else if compact {
                 (0, render::render_read_compact(&model))
             } else {
@@ -631,6 +779,90 @@ fn cmd_read(cwd: &Path, args: &[String]) -> (i32, String) {
             }
         }
     }
+}
+
+const IMPACT_USAGE: &str = "usage: devscout impact <file|symbol> [--hops N] [--no-iface] [--no-guess] [--iface-max-fanin N] [--hub-max-indegree N] [--pick N] [--json|--compact]";
+
+/// The numeric/positional argument parse `cmd_impact` needs before it can
+/// touch the repo or the graph: `--hops`/`--iface-max-fanin`/
+/// `--hub-max-indegree`/`--pick`, and the query -- the first non-flag
+/// argument that is not one of those four flags' own values.
+struct ImpactArgs<'a> {
+    hops: u32,
+    iface_max_fanin: usize,
+    hub_max_indegree: usize,
+    pick: Option<usize>,
+    query: &'a str,
+}
+
+fn parse_impact_args(args: &[String]) -> Result<ImpactArgs<'_>, (i32, String)> {
+    let usage_err = || (2, IMPACT_USAGE.to_string());
+
+    let mut hops: u32 = query::DEFAULT_HOPS;
+    if let Some(idx) = args.iter().position(|a| a == "--hops") {
+        let raw = args.get(idx + 1).map(String::as_str).unwrap_or("");
+        match parse_int_js(raw) {
+            Some(h) if h >= 1 => hops = h as u32,
+            _ => return Err(usage_err()),
+        }
+    }
+
+    // `--iface-max-fanin`'s own value is never the query. `0` is a legal value
+    // and does not start with `--`, so without the guard below it would be picked
+    // up as the seed. Parsed AFTER `--hops` and BEFORE the missing-query check.
+    let mut iface_max_fanin: usize = query::DEFAULT_IFACE_MAX_FANIN;
+    if let Some(idx) = args.iter().position(|a| a == "--iface-max-fanin") {
+        let raw = args.get(idx + 1).map(String::as_str).unwrap_or("");
+        match parse_int_js(raw) {
+            Some(n) if n >= 0 => iface_max_fanin = n as usize,
+            _ => return Err(usage_err()),
+        }
+    }
+
+    // The same rule as `--iface-max-fanin`: its own value is never the query, and
+    // `0` is a legal value that does not start with `--`.
+    let mut hub_max_indegree: usize = query::DEFAULT_HUB_MAX_INDEGREE;
+    if let Some(idx) = args.iter().position(|a| a == "--hub-max-indegree") {
+        let raw = args.get(idx + 1).map(String::as_str).unwrap_or("");
+        match parse_int_js(raw) {
+            Some(n) if n >= 0 => hub_max_indegree = n as usize,
+            _ => return Err(usage_err()),
+        }
+    }
+
+    let Ok(pick) = parse_pick(args) else {
+        return Err(usage_err());
+    };
+
+    // The first non-flag argument that is not the value of `--hops`,
+    // `--iface-max-fanin`, `--hub-max-indegree`, or `--pick`.
+    let mut query: Option<&str> = None;
+    for (i, a) in args.iter().enumerate() {
+        if a.starts_with("--") {
+            continue;
+        }
+        if i > 0
+            && (args[i - 1] == "--hops"
+                || args[i - 1] == "--iface-max-fanin"
+                || args[i - 1] == "--hub-max-indegree"
+                || args[i - 1] == "--pick")
+        {
+            continue;
+        }
+        query = Some(a.as_str());
+        break;
+    }
+    let Some(query) = query else {
+        return Err(usage_err());
+    };
+
+    Ok(ImpactArgs {
+        hops,
+        iface_max_fanin,
+        hub_max_indegree,
+        pick,
+        query,
+    })
 }
 
 // `impact`. Check order: `--compact`+`--json` conflict, `--hops` parse (usage
@@ -646,57 +878,15 @@ fn cmd_impact(cwd: &Path, args: &[String]) -> (i32, String) {
         );
     }
 
-    let mut hops: u32 = query::DEFAULT_HOPS;
-    if let Some(idx) = args.iter().position(|a| a == "--hops") {
-        let raw = args.get(idx + 1).map(String::as_str).unwrap_or("");
-        match parse_int_js(raw) {
-            Some(h) if h >= 1 => hops = h as u32,
-            _ => return (2, "usage: devscout impact <file|symbol> [--hops N] [--no-iface] [--no-guess] [--iface-max-fanin N] [--hub-max-indegree N] [--json|--compact]".to_string()),
-        }
-    }
-
-    // `--iface-max-fanin`'s own value is never the query. `0` is a legal value
-    // and does not start with `--`, so without the guard below it would be picked
-    // up as the seed. Parsed AFTER `--hops` and BEFORE the missing-query check.
-    let mut iface_max_fanin: usize = query::DEFAULT_IFACE_MAX_FANIN;
-    if let Some(idx) = args.iter().position(|a| a == "--iface-max-fanin") {
-        let raw = args.get(idx + 1).map(String::as_str).unwrap_or("");
-        match parse_int_js(raw) {
-            Some(n) if n >= 0 => iface_max_fanin = n as usize,
-            _ => return (2, "usage: devscout impact <file|symbol> [--hops N] [--no-iface] [--no-guess] [--iface-max-fanin N] [--hub-max-indegree N] [--json|--compact]".to_string()),
-        }
-    }
-
-    // The same rule as `--iface-max-fanin`: its own value is never the query, and
-    // `0` is a legal value that does not start with `--`.
-    let mut hub_max_indegree: usize = query::DEFAULT_HUB_MAX_INDEGREE;
-    if let Some(idx) = args.iter().position(|a| a == "--hub-max-indegree") {
-        let raw = args.get(idx + 1).map(String::as_str).unwrap_or("");
-        match parse_int_js(raw) {
-            Some(n) if n >= 0 => hub_max_indegree = n as usize,
-            _ => return (2, "usage: devscout impact <file|symbol> [--hops N] [--no-iface] [--no-guess] [--iface-max-fanin N] [--hub-max-indegree N] [--json|--compact]".to_string()),
-        }
-    }
-
-    // The first non-flag argument that is not the value of `--hops`,
-    // `--iface-max-fanin`, or `--hub-max-indegree`.
-    let mut q: Option<&str> = None;
-    for (i, a) in args.iter().enumerate() {
-        if a.starts_with("--") {
-            continue;
-        }
-        if i > 0
-            && (args[i - 1] == "--hops"
-                || args[i - 1] == "--iface-max-fanin"
-                || args[i - 1] == "--hub-max-indegree")
-        {
-            continue;
-        }
-        q = Some(a.as_str());
-        break;
-    }
-    let Some(q) = q else {
-        return (2, "usage: devscout impact <file|symbol> [--hops N] [--no-iface] [--no-guess] [--iface-max-fanin N] [--hub-max-indegree N] [--json|--compact]".to_string());
+    let ImpactArgs {
+        hops,
+        iface_max_fanin,
+        hub_max_indegree,
+        pick,
+        query: q,
+    } = match parse_impact_args(args) {
+        Ok(a) => a,
+        Err(e) => return e,
     };
 
     let root = match require_repo_for_path(cwd, Some(q)) {
@@ -713,23 +903,41 @@ fn cmd_impact(cwd: &Path, args: &[String]) -> (i32, String) {
     };
     let index = query::load_graph_index_with(&g, &root, index_options(args));
 
-    match query::build_impact_model(
-        &index,
-        q,
-        hops,
-        query::DEFAULT_CAP,
-        !args.iter().any(|a| a == "--no-iface"),
-        iface_max_fanin,
-        hub_max_indegree,
-    ) {
-        query::ImpactResult::NotFound { kind } => (
-            EXIT_NO_RESULT,
+    let build = |seed: &str| {
+        query::build_impact_model(
+            &index,
+            seed,
+            hops,
+            query::DEFAULT_CAP,
+            !args.iter().any(|a| a == "--no-iface"),
+            iface_max_fanin,
+            hub_max_indegree,
+        )
+    };
+    // Same `--pick` narrowing rule `cmd_refs` applies: only a `MemberAmbiguous`
+    // answer is ever re-resolved.
+    let result = match build(q) {
+        query::ImpactResult::MemberAmbiguous(candidates) => match pick {
+            Some(n) if n <= candidates.len() => build(&query::qualified_seed(&candidates[n - 1])),
+            Some(_) => return (2, IMPACT_USAGE.to_string()),
+            None => query::ImpactResult::MemberAmbiguous(candidates),
+        },
+        other => other,
+    };
+
+    match result {
+        query::ImpactResult::NotFound { kind } => fallback_advised_out(
+            q,
+            json,
             format!("no {} match for \"{q}\"", render::seed_kind_str(kind)),
         ),
         query::ImpactResult::Ambiguous { ids, .. } => ambiguous_candidates_out(&index, q, &ids),
+        query::ImpactResult::MemberAmbiguous(candidates) => {
+            member_ambiguous_out(q, &candidates, json)
+        }
         query::ImpactResult::Resolved(model) => {
             let out = if json {
-                impact_model_to_json(q, &model)
+                query::json::impact_model_to_json(q, &model)
             } else if compact {
                 render::render_impact_compact(q, &model)
             } else {
@@ -747,6 +955,9 @@ fn cmd_impact(cwd: &Path, args: &[String]) -> (i32, String) {
     }
 }
 
+const TESTS_USAGE: &str =
+    "usage: devscout tests <symbol> [--no-guess] [--pick N] [--json|--compact]";
+
 // `tests`. Mirrors `cmd_refs` -- same flag conflict, same missing-query usage
 // error, same `require_repo`/graph-present order, same notfound/ambiguous exits.
 fn cmd_tests(cwd: &Path, args: &[String]) -> (i32, String) {
@@ -758,11 +969,11 @@ fn cmd_tests(cwd: &Path, args: &[String]) -> (i32, String) {
             "devscout tests: --compact and --json are mutually exclusive".to_string(),
         );
     }
-    let Some(q) = args.iter().find(|a| !a.starts_with("--")) else {
-        return (
-            2,
-            "usage: devscout tests <symbol> [--no-guess] [--json|--compact]".to_string(),
-        );
+    let Ok(pick) = parse_pick(args) else {
+        return (2, TESTS_USAGE.to_string());
+    };
+    let Some(q) = first_positional(args) else {
+        return (2, TESTS_USAGE.to_string());
     };
     let root = match require_repo(cwd) {
         Ok(r) => r,
@@ -776,12 +987,30 @@ fn cmd_tests(cwd: &Path, args: &[String]) -> (i32, String) {
     };
     let index = query::load_graph_index_with(&g, &root, index_options(args));
 
-    match query::build_tests_model(&index, q) {
-        query::TestsResult::NotFound => (EXIT_NO_RESULT, format!("no symbol matches \"{q}\"")),
+    // Same `--pick` narrowing rule `cmd_refs` applies: only a `MemberAmbiguous`
+    // answer is ever re-resolved.
+    let result = match query::build_tests_model(&index, q) {
+        query::TestsResult::MemberAmbiguous(candidates) => match pick {
+            Some(n) if n <= candidates.len() => {
+                query::build_tests_model(&index, &query::qualified_seed(&candidates[n - 1]))
+            }
+            Some(_) => return (2, TESTS_USAGE.to_string()),
+            None => query::TestsResult::MemberAmbiguous(candidates),
+        },
+        other => other,
+    };
+
+    match result {
+        query::TestsResult::NotFound => {
+            fallback_advised_out(q, json, format!("no symbol matches \"{q}\""))
+        }
         query::TestsResult::Ambiguous(ids) => ambiguous_candidates_out(&index, q, &ids),
+        query::TestsResult::MemberAmbiguous(candidates) => {
+            member_ambiguous_out(q, &candidates, json)
+        }
         query::TestsResult::Resolved(model) => {
             if json {
-                (0, tests_model_to_json(&model))
+                (0, query::json::tests_model_to_json(&model))
             } else if compact {
                 (0, render::render_tests_compact(&model))
             } else {
@@ -1131,517 +1360,14 @@ fn js_math_round(x: f64) -> i64 {
     (x + 0.5).floor() as i64
 }
 
-// ---------------------------------------------------------------------------
-// `--json` output shaping. query.rs's model types deliberately derive no
-// `Serialize` (its own module header) -- the byte shape is built here, by hand,
-// key order included.
-//
-// This does NOT reuse `manifest::Value` (the crate's other order-preserving JSON
-// value): its `Number` variant serializes floats through serde_json's own
-// `Number::serialize`, which always keeps a decimal point (`1.0`, `100.0`) where
-// the target JSON shape drops it for integral values (`1`, `100`). `score` (a
-// `personalized_page_rank` output) is the only float anywhere in this output, so
-// a tiny local ordered-value type with a pre-formatted-number escape hatch
-// (`J::RawNum`) is used instead. String/key fields still delegate to
-// `serde_json::to_string` for escaping (control chars, `"`, `\`).
-// ---------------------------------------------------------------------------
-
-// `pub(crate)`: `audit.rs`'s `--json` rendering builds its own `J` tree with
-// this same encoder rather than hand-rolling a second one.
-pub(crate) enum J {
-    Str(String),
-    UInt(u64),
-    RawNum(String),
-    // Only ever built as `true`: `heuristic: true` is written and the key is
-    // omitted entirely otherwise, so a `false` never reaches this encoder.
-    Bool(bool),
-    Arr(Vec<J>),
-    Obj(Vec<(&'static str, J)>),
-}
-
-impl J {
-    fn write(&self, out: &mut String) {
-        match self {
-            J::Str(s) => {
-                out.push_str(&serde_json::to_string(s).expect("string JSON encoding cannot fail"))
-            }
-            J::UInt(n) => out.push_str(&n.to_string()),
-            J::RawNum(s) => out.push_str(s),
-            J::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
-            J::Arr(items) => {
-                out.push('[');
-                for (i, item) in items.iter().enumerate() {
-                    if i > 0 {
-                        out.push(',');
-                    }
-                    item.write(out);
-                }
-                out.push(']');
-            }
-            J::Obj(entries) => {
-                out.push('{');
-                for (i, (k, v)) in entries.iter().enumerate() {
-                    if i > 0 {
-                        out.push(',');
-                    }
-                    out.push_str(&serde_json::to_string(k).expect("key JSON encoding cannot fail"));
-                    out.push(':');
-                    v.write(out);
-                }
-                out.push('}');
-            }
-        }
-    }
-
-    pub(crate) fn to_json_string(&self) -> String {
-        let mut s = String::new();
-        self.write(&mut s);
-        s
-    }
-}
-
-// ECMA-262 `JSON.stringify` number formatting for a finite `f64`. Digit selection
-// is serde_json's shortest-round-trip float formatter, which agrees with the
-// ECMA-262 shortest-round-trip representation. Two adjustments bring it fully in
-// line: the decimal point is dropped for an integral value in plain notation
-// (`1`, not `1.0`), and zero is never signed (`-0` -> `"0"`); serde_json's
-// `Number` keeps a `.0` and would emit `-0`. Exponential notation already matches
-// (`1e+21`, `1e-7`) and passes through unchanged. `score` is always finite in
-// practice; the non-finite branch coerces `NaN`/`Infinity` to `null` (as
-// `JSON.stringify` does) as cheap insurance, not because personalized_page_rank
-// can produce one.
-fn js_float_string(v: f64) -> String {
-    if !v.is_finite() {
-        return "null".to_string();
-    }
-    if v == 0.0 {
-        return "0".to_string();
-    }
-    let s = serde_json::Number::from_f64(v)
-        .expect("finite, checked above")
-        .to_string();
-    if !s.contains('e') && s.ends_with(".0") {
-        s[..s.len() - 2].to_string()
-    } else {
-        s
-    }
-}
-
-fn j_table<R>(t: &query::Table<R>, row: impl Fn(&R) -> J) -> J {
-    J::Obj(vec![
-        ("total", J::UInt(t.total as u64)),
-        ("dropped", J::UInt(t.dropped as u64)),
-        ("rows", J::Arr(t.rows.iter().map(row).collect())),
-    ])
-}
-
-// `heuristic: true` then `tier` are appended LAST on a guessed row and BOTH
-// keys are ABSENT on a precise one -- they are added only in the heuristic
-// branch, so a precise row's JSON carries no trace of either. `tier` sits
-// immediately after `heuristic` because it refines it: a consumer reading only
-// `heuristic` sees the object it saw before, and one that wants the tier finds
-// it in the next slot rather than hunting the tail.
-//
-// A row that declares itself a guess but names no tier writes no `tier` key at
-// all -- the same omit-when-empty rule every optional field here follows, and
-// the same fallback the text renderer's umbrella `(heuristic)` word takes.
-fn push_heuristic(
-    fields: &mut Vec<(&'static str, J)>,
-    heuristic: bool,
-    tier: Option<graph::HeuristicTier>,
-) {
-    if !heuristic {
-        return;
-    }
-    fields.push(("heuristic", J::Bool(true)));
-    if let Some(tier) = tier {
-        let word = match tier {
-            graph::HeuristicTier::Ext => "ext",
-            graph::HeuristicTier::Guess => "guess",
-        };
-        fields.push(("tier", J::Str(word.to_string())));
-    }
-}
-
-fn j_inbound_row(r: &query::InboundRow) -> J {
-    let mut fields = vec![
-        ("file", J::Str(r.file.clone())),
-        ("line", J::UInt(r.line as u64)),
-    ];
-    push_heuristic(&mut fields, r.heuristic, r.tier);
-    // `source` is appended after `heuristic` and omitted when the line could not
-    // be read -- an absent key, never an empty string.
-    if !r.source.is_empty() {
-        fields.push(("source", J::Str(r.source.clone())));
-    }
-    J::Obj(fields)
-}
-fn j_outbound_row(r: &query::OutboundRow) -> J {
-    let mut fields = vec![
-        ("file", J::Str(r.file.clone())),
-        ("line", J::UInt(r.line as u64)),
-        ("toFile", J::Str(r.to_file.clone())),
-        ("to", J::Str(r.to.clone())),
-    ];
-    push_heuristic(&mut fields, r.heuristic, r.tier);
-    // `source` is appended after `heuristic`, the same append-last/omit-when-empty
-    // rule `j_inbound_row` follows.
-    if !r.source.is_empty() {
-        fields.push(("source", J::Str(r.source.clone())));
-    }
-    J::Obj(fields)
-}
-fn j_import_row(r: &query::ImportRow) -> J {
-    let mut fields = vec![
-        ("file", J::Str(r.file.clone())),
-        ("line", J::UInt(r.line as u64)),
-        ("target", J::Str(r.target.clone())),
-    ];
-    if !r.source.is_empty() {
-        fields.push(("source", J::Str(r.source.clone())));
-    }
-    J::Obj(fields)
-}
-fn j_ambiguous_row(r: &query::AmbiguousRow) -> J {
-    J::Obj(vec![
-        ("file", J::Str(r.file.clone())),
-        ("line", J::UInt(r.line as u64)),
-        ("origin", J::Str(r.origin.clone())),
-        ("raw", J::Str(r.raw.clone())),
-        ("candidateCount", J::UInt(r.candidate_count as u64)),
-    ])
-}
-
-// The resolved `refs` JSON shape (`build_refs_model`'s resolved return):
-// `{status, query, id, kind, sites, inbound, [outbound], ambiguous,
-// manifestGap}`, in that key order. `outbound` sits between `inbound` and
-// `ambiguous` only under `--out`; the key is either in that slot or absent
-// entirely.
-fn refs_model_to_json(model: &query::RefsModel) -> String {
-    refs_model_j(model).to_json_string()
-}
-
-// The resolved `read` JSON shape: exactly the refs shape with ONE key
-// inserted -- `"span"` sits between `kind` and `sites`, carrying `{file,
-// startLine, endLine, source}`. The key is ABSENT when no span is on record
-// (a def whose end line was never extracted), the same honest-absence rule
-// `outbound` follows; a caller cannot mistake a start-only answer for a
-// span.
-fn read_model_to_json(model: &query::ReadModel) -> String {
-    let mut fields = refs_model_fields(&model.refs);
-    // `split_off(4)` lifts everything after the first four keys
-    // (status/query/id/kind) so `span` can take their place in line.
-    let tail = fields.split_off(4);
-    if let Some(sp) = &model.span {
-        fields.push((
-            "span",
-            J::Obj(vec![
-                ("file", J::Str(sp.file.clone())),
-                ("startLine", J::UInt(sp.start_line as u64)),
-                ("endLine", J::UInt(sp.end_line as u64)),
-                ("source", J::Str(sp.source.clone())),
-            ]),
-        ));
-    }
-    fields.extend(tail);
-    J::Obj(fields).to_json_string()
-}
-
-// The bare-member `refs` JSON: `{status:'members', query, members}`, where each
-// member is `refs_model_j`'s object unchanged -- the bare-member answer reshapes
-// nothing, it only says how many declaring types answered.
-fn member_refs_to_json(query_str: &str, models: &[query::RefsModel]) -> String {
-    J::Obj(vec![
-        ("status", J::Str("members".to_string())),
-        ("query", J::Str(query_str.to_string())),
-        ("members", J::Arr(models.iter().map(refs_model_j).collect())),
-    ])
-    .to_json_string()
-}
-
-fn refs_model_j(model: &query::RefsModel) -> J {
-    J::Obj(refs_model_fields(model))
-}
-
-fn refs_model_fields(model: &query::RefsModel) -> Vec<(&'static str, J)> {
-    let mut fields = vec![
-        ("status", J::Str("resolved".to_string())),
-        ("query", J::Str(model.query.clone())),
-        ("id", J::Str(model.id.clone())),
-        ("kind", J::Str(model.kind.clone())),
-        (
-            "sites",
-            J::Arr(
-                model
-                    .sites
-                    .iter()
-                    .map(|s| {
-                        J::Obj(vec![
-                            ("file", J::Str(s.file.clone())),
-                            ("line", J::UInt(s.line as u64)),
-                        ])
-                    })
-                    .collect(),
-            ),
-        ),
-        (
-            "inbound",
-            J::Obj(vec![
-                ("inherits", j_table(&model.inbound.inherits, j_inbound_row)),
-                (
-                    "uses-type",
-                    j_table(&model.inbound.uses_type, j_inbound_row),
-                ),
-                (
-                    "uses-member",
-                    j_table(&model.inbound.uses_member, j_inbound_row),
-                ),
-            ]),
-        ),
-    ];
-    if let Some(ob) = &model.outbound {
-        fields.push((
-            "outbound",
-            J::Obj(vec![
-                ("inherits", j_table(&ob.inherits, j_outbound_row)),
-                ("uses-type", j_table(&ob.uses_type, j_outbound_row)),
-                ("uses-member", j_table(&ob.uses_member, j_outbound_row)),
-                ("imports", j_table(&ob.imports, j_import_row)),
-            ]),
-        ));
-    }
-    fields.push((
-        "ambiguous",
-        J::Obj(vec![
-            (
-                "inbound",
-                j_table(&model.ambiguous.inbound, j_ambiguous_row),
-            ),
-            (
-                "outbound",
-                j_table(&model.ambiguous.outbound, j_ambiguous_row),
-            ),
-        ]),
-    ));
-    fields.push(("manifestGap", J::UInt(model.manifest_gap as u64)));
-    // Appended LAST, after `manifestGap`, and only for an enum with member-level
-    // references; an absent key keeps every other symbol's `--json` bytes
-    // unchanged.
-    if let Some(m) = &model.member_refs {
-        fields.push((
-            "memberRefs",
-            J::Obj(vec![
-                ("total", J::UInt(m.total as u64)),
-                ("memberCount", J::UInt(m.member_count as u64)),
-                (
-                    "members",
-                    J::Arr(
-                        m.members
-                            .iter()
-                            .map(|e| {
-                                J::Obj(vec![
-                                    ("name", J::Str(e.name.clone())),
-                                    ("count", J::UInt(e.count as u64)),
-                                ])
-                            })
-                            .collect(),
-                    ),
-                ),
-                ("dropped", J::UInt(m.dropped as u64)),
-            ]),
-        ));
-    }
-    fields
-}
-
-fn j_impact_row(r: &query::ImpactRow) -> J {
-    let mut fields = vec![
-        ("file", J::Str(r.file.clone())),
-        ("hop", J::UInt(r.hop as u64)),
-        ("viaCount", J::UInt(r.via_count as u64)),
-        ("ambiguousCount", J::UInt(r.ambiguous_count as u64)),
-        (
-            "topSymbols",
-            J::Arr(r.top_symbols.iter().map(|s| J::Str(s.clone())).collect()),
-        ),
-        ("topSymbolsMore", J::UInt(r.top_symbols_more as u64)),
-        ("score", J::RawNum(js_float_string(r.score))),
-    ];
-    // `heuristicCount` then `heuristic` then `tier`, all appended after `score`
-    // and all present only on a heuristic-only row (JS assigns them inside the
-    // same `if`). The last two go through the shared `push_heuristic`, so their
-    // order relative to each other is stated once for all four row shapes --
-    // which lands `tier` BEFORE `ifaceVia` here, in the slot right after the
-    // flag it refines.
-    if r.heuristic {
-        fields.push(("heuristicCount", J::UInt(r.heuristic_count as u64)));
-    }
-    push_heuristic(&mut fields, r.heuristic, r.tier);
-    // Appended LAST, present only on a row the interface hop actually reached.
-    if !r.iface_via.is_empty() {
-        fields.push((
-            "ifaceVia",
-            J::Arr(r.iface_via.iter().map(|s| J::Str(s.clone())).collect()),
-        ));
-    }
-    // Appended after `ifaceVia`, present only when at least one edge kind could
-    // attribute a line to this row. Key order inside the object is the walk's own
-    // kind declaration order, fixed in `from_lines_of`, never a map iteration.
-    if !r.from_lines.is_empty() {
-        fields.push((
-            "fromLines",
-            J::Obj(
-                r.from_lines
-                    .iter()
-                    .map(|(kind, line)| (*kind, J::UInt(*line as u64)))
-                    .collect(),
-            ),
-        ));
-    }
-    // Appended LAST and only on a hub file, so every other row keeps the key
-    // order it had.
-    if r.infra {
-        fields.push(("class", J::Str("infra".to_string())));
-    }
-    J::Obj(fields)
-}
-
-// The resolved `impact` JSON shape (`build_impact_model`'s resolved return),
-// with the query key first: `{query, status, kind, seedFiles, hops,
-// totalAffected, rows, dropped, manifestGap, heuristicAffected}`, in that key
-// order.
-fn impact_model_to_json(query_str: &str, model: &query::ImpactModel) -> String {
-    J::Obj(
-        vec![
-            ("query", J::Str(query_str.to_string())),
-            ("status", J::Str("resolved".to_string())),
-            (
-                "kind",
-                J::Str(render::seed_kind_str(model.kind).to_string()),
-            ),
-            (
-                "seedFiles",
-                J::Arr(model.seed_files.iter().map(|f| J::Str(f.clone())).collect()),
-            ),
-            ("hops", J::UInt(model.hops as u64)),
-            ("totalAffected", J::UInt(model.total_affected as u64)),
-            (
-                "rows",
-                J::Arr(model.rows.iter().map(j_impact_row).collect()),
-            ),
-            ("dropped", J::UInt(model.dropped as u64)),
-            ("manifestGap", J::UInt(model.manifest_gap as u64)),
-            // Appended LAST after `manifestGap` -- always present, unlike the
-            // per-row flags.
-            (
-                "heuristicAffected",
-                J::UInt(model.heuristic_affected as u64),
-            ),
-            // Test-coverage stage, appended after it -- also always present.
-            ("testsAffected", J::UInt(model.tests_affected as u64)),
-        ]
-        .into_iter()
-        // Appended LAST and only when the brake actually fired, so every answer it
-        // never touched keeps the exact key order it had before. The file entries
-        // ride in the SAME array, after every interface entry, rather than in a
-        // second top-level key: a consumer already reading `braked` sees both brakes
-        // without a schema change.
-        .chain(
-            if model.braked.is_empty() && model.braked_files.is_empty() {
-                None
-            } else {
-                Some((
-                    "braked",
-                    J::Arr(
-                        model
-                            .braked
-                            .iter()
-                            .map(|b| {
-                                J::Obj(vec![
-                                    ("iface", J::Str(b.iface.clone())),
-                                    ("fanin", J::UInt(b.fanin as u64)),
-                                ])
-                            })
-                            .chain(model.braked_files.iter().map(|b| {
-                                J::Obj(vec![
-                                    ("file", J::Str(b.file.clone())),
-                                    ("indegree", J::UInt(b.indegree as u64)),
-                                ])
-                            }))
-                            .collect(),
-                    ),
-                ))
-            },
-        )
-        .collect::<Vec<_>>(),
-    )
-    .to_json_string()
-}
-
-// The resolved `tests` JSON shape (`build_tests_model`'s resolved return):
-// `{status, query, symbol, defFiles, rows, testFileCount, refCount,
-// heuristicFileCount, heuristicRefCount}`, in that key order, with the heuristic
-// pair LAST. Each row carries `via: "project"` as its own last key, appended
-// after `heuristic`/`tier`, ONLY when the row's vouch is the project model --
-// an attribute-vouched row emits no `via` key at all, so today's bytes for
-// every graph without a project model are unchanged.
-fn tests_model_to_json(model: &query::TestsModel) -> String {
-    J::Obj(vec![
-        ("status", J::Str("resolved".to_string())),
-        ("query", J::Str(model.query.clone())),
-        ("symbol", J::Str(model.symbol.clone())),
-        (
-            "defFiles",
-            J::Arr(model.def_files.iter().map(|f| J::Str(f.clone())).collect()),
-        ),
-        (
-            "rows",
-            J::Arr(
-                model
-                    .rows
-                    .iter()
-                    .map(|r| {
-                        let mut fields = vec![
-                            ("file", J::Str(r.file.clone())),
-                            (
-                                "testDefs",
-                                J::Arr(r.test_defs.iter().map(|d| J::Str(d.clone())).collect()),
-                            ),
-                            (
-                                "lines",
-                                J::Arr(r.lines.iter().map(|l| J::UInt(*l as u64)).collect()),
-                            ),
-                            ("refCount", J::UInt(r.ref_count as u64)),
-                        ];
-                        push_heuristic(&mut fields, r.heuristic, r.tier);
-                        // `via` is appended LAST, after `heuristic`/`tier`, and only
-                        // when the row's vouch is the project model: an
-                        // attribute-vouched row keeps today's exact bytes.
-                        if r.via == query::TestVia::Project {
-                            fields.push(("via", J::Str("project".to_string())));
-                        }
-                        J::Obj(fields)
-                    })
-                    .collect(),
-            ),
-        ),
-        ("testFileCount", J::UInt(model.test_file_count as u64)),
-        ("refCount", J::UInt(model.ref_count as u64)),
-        (
-            "heuristicFileCount",
-            J::UInt(model.heuristic_file_count as u64),
-        ),
-        (
-            "heuristicRefCount",
-            J::UInt(model.heuristic_ref_count as u64),
-        ),
-    ])
-    .to_json_string()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    // The `--json` builders (`J`, `refs_model_to_json`, `impact_model_to_json`,
+    // ...) moved to `query::json` to keep this file under its size ratchet;
+    // the tests pinning their byte shape stayed here rather than following
+    // them, so this brings the moved names back into scope unqualified.
+    use crate::query::json::*;
 
     #[test]
     fn js_float_string_matches_node_json_stringify_on_checked_values() {
@@ -1922,7 +1648,10 @@ mod tests {
             ),
             "{json}"
         );
-        assert!(json.ends_with("]}"), "{json}");
+        assert!(
+            json.ends_with(r#"}],"outcome":"hit"}"#),
+            "the wrapper's own outcome is appended last, after the members array: {json}"
+        );
         assert!(
             json.contains(&refs_model_to_json(&one)),
             "a member entry is the resolved object unchanged: {json}"
@@ -1975,7 +1704,7 @@ mod tests {
         );
         assert!(
             json.ends_with(
-                r#","dropped":0,"manifestGap":0,"heuristicAffected":1,"testsAffected":0}"#
+                r#","dropped":0,"manifestGap":0,"heuristicAffected":1,"testsAffected":0,"outcome":"hit"}"#
             ),
             "{json}"
         );

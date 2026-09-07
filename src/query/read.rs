@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use super::index::GraphIndex;
+use super::member::MemberCandidate;
 use super::refs::{build_refs_model_inner, RefsModel, RefsResult};
 use super::refs_tables::{DEFAULT_CAP, INBOUND_CAP, OUTBOUND_CAP};
 
@@ -51,6 +52,9 @@ pub enum ReadResult {
     Members(Vec<RefsModel>),
     /// Represents `Ambiguous`.
     Ambiguous(Vec<String>),
+    /// The `refs` outcome of the same name, unchanged (see
+    /// `RefsResult::MemberAmbiguous`).
+    MemberAmbiguous(Vec<MemberCandidate>),
     /// Represents `NotFound`.
     NotFound,
 }
@@ -114,6 +118,7 @@ pub fn build_read_model(index: &GraphIndex, query: &str) -> ReadResult {
         }
         RefsResult::Members(models) => ReadResult::Members(models),
         RefsResult::Ambiguous(ids) => ReadResult::Ambiguous(ids),
+        RefsResult::MemberAmbiguous(candidates) => ReadResult::MemberAmbiguous(candidates),
         RefsResult::NotFound => ReadResult::NotFound,
     }
 }
