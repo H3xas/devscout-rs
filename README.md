@@ -395,6 +395,10 @@ invariants it holds, and where a change goes; [GOVERNANCE.md](GOVERNANCE.md) and
 [SECURITY.md](SECURITY.md) for private vulnerability reporting; and
 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for community expectations.
 
+Every pull request is checked for formatting, for an architecture guide that still names each
+module, and against a size and complexity ratchet: 800 lines per file, 100 lines per function
+and a cognitive complexity of 25, with a fixed list of existing exceptions that only shrinks.
+
 ## License
 
 Licensed under either of

@@ -72,6 +72,11 @@ pub fn resolve_graph_with_ts(
 /// `model` is `None` for a repo that declares no `.csproj`, and a `None`
 /// model must leave the resolve BYTE-IDENTICAL to what it was: `units` is
 /// omitted when empty, so the whole artifact is unchanged for such a tree.
+#[allow(
+    clippy::too_many_lines,
+    clippy::cognitive_complexity,
+    reason = "one ordered resolve pipeline whose stages share the same def index and file contexts; the None-model byte-identical guarantee only holds if every stage stays in this one place"
+)]
 pub fn resolve_graph_with_model(
     root: &Path,
     fragments_by_file: &[(String, Fragment)],

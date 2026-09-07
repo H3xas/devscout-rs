@@ -113,6 +113,10 @@ fn json_string(s: &str) -> String {
     out
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "one ordered pass listing every DefRecord field in the shape the JSON output promises"
+)]
 pub(super) fn def_to_json(d: &DefRecord) -> Json {
     let mut fields: Vec<(&'static str, Json)> = vec![
         ("id", Json::Str(d.id.clone())),

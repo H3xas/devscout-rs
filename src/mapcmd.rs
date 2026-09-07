@@ -409,6 +409,10 @@ enum ParsedFile {
 /// graph.rs (resolve + graph) and manifest.rs. `scope_dirs` is the CLI's
 /// positional dir arguments with `--refresh` already stripped (module header) --
 /// an empty slice means "no explicit scope".
+#[allow(
+    clippy::too_many_lines,
+    reason = "one ordered pipeline stage by stage (walk, extract, resolve, manifest); the stages share state that would only be split apart by an artificial seam"
+)]
 pub fn map_repo(root: &Path, scope_dirs: &[String], opts: MapOptions) -> io::Result<MapReport> {
     let scope = manifest::scope_for(
         root,

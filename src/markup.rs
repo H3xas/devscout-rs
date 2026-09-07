@@ -197,6 +197,10 @@ struct XamlScan {
 // at the end has no such dependence on where the declaration sits. The prefix
 // table is a Vec of pairs, not a map, because first-declaration-wins is the rule
 // and iteration order has to stay fixed.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one single-pass scan collecting every markup fact in the fixed scan order later resolution depends on"
+)]
 fn scan_xaml(text: &str) -> XamlScan {
     let mut scan = XamlScan {
         names: Vec::new(),
