@@ -225,6 +225,11 @@ pub(super) fn type_candidate(index: &DefIndex, name: &str, arity: Option<usize>)
 // same as absent for both the step-1 prefix walk and the step-3 same-namespace
 // check, so folding `None` to `""` up front avoids re-deriving that check at
 // every call site.
+#[allow(
+    clippy::too_many_lines,
+    clippy::cognitive_complexity,
+    reason = "one ordered ladder of resolution steps tried in a fixed order; splitting it would separate steps whose fallthrough order is the whole point"
+)]
 pub(super) fn resolve_ref(
     ref_: &FragRef,
     usings: &HashSet<String>,

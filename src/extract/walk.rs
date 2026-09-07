@@ -52,6 +52,10 @@ fn walk_list<'a>(
 // type_stack (see type_id) also doubles as the "am I inside a type" signal
 // for nothing else -- ref extraction runs at every depth regardless of
 // nesting.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one recursive descent over every node kind the extractor cares about, sharing the same ns/type_stack/scope state at each depth"
+)]
 fn walk<'a>(
     node: Node<'a>,
     ns: &str,

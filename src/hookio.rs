@@ -418,6 +418,10 @@ fn content_dedup(
 }
 
 // The read hook's decision: stub, cross-repo stub, fresh record, or stale-manifest note.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one ordered decision tree over every read-hook outcome; the outcomes only make sense read against each other in the order they are tried"
+)]
 fn handle_read(input: &JVal) -> HookResult<String> {
     let file_path = input
         .get("tool_input")

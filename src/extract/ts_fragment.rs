@@ -263,6 +263,10 @@ fn ts_default_export_name(program_node: Node, src: &[u8]) -> Option<String> {
 // declaration it names. A name with no matching declaration in this file
 // contributes nothing: there is no line to point a caller at, and inventing
 // one is a guess.
+#[allow(
+    clippy::cognitive_complexity,
+    reason = "one flat dispatch over every export shape a top-level declaration can take; the shapes only make sense enumerated together"
+)]
 fn ts_exported_names(
     program_node: Node,
     decls: &HashMap<String, TsDecl>,
@@ -417,6 +421,11 @@ fn ts_require_import(decl_node: Node, src: &[u8]) -> Vec<TsImport> {
     out
 }
 
+#[allow(
+    clippy::too_many_lines,
+    clippy::cognitive_complexity,
+    reason = "one flat dispatch over every reference shape a TS node can carry; splitting it would separate branches that share the same consumed-set bookkeeping"
+)]
 fn ts_record_ref(
     node: Node,
     src: &[u8],

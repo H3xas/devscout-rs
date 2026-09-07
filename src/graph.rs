@@ -1377,6 +1377,10 @@ impl From<extract::TsFragment> for AnyFragment {
 /// Build a graph fragment from this crate's extractor output.
 /// `Extraction.purpose` has no fragment
 /// counterpart -- the fragment is graph-only.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one ordered field-by-field translation from Extraction into Fragment; splitting it would separate fields that must stay mapped consistently"
+)]
 pub fn fragment_from_extraction(e: &extract::Extraction) -> Fragment {
     Fragment {
         defs: e

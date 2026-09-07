@@ -616,6 +616,10 @@ struct AuditReport {
 
 /// Scores `inputs` into a full `AuditReport`. Pure: every branch below reads
 /// only `inputs` and locally built indexes over it.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one ordered scoring pass building every report tier from the same inputs; the tiers must stay in the order the report promises"
+)]
 fn score(inputs: Inputs) -> AuditReport {
     let root = inputs.root.display().to_string();
 
@@ -1022,6 +1026,10 @@ fn ratio_j(hits: usize, denom: usize) -> J {
     }
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "one ordered pass rendering every report section in the fixed order the text output promises"
+)]
 fn render_text(r: &AuditReport) -> String {
     let mut lines = Vec::new();
     lines.push(format!(
@@ -1142,6 +1150,10 @@ fn render_text(r: &AuditReport) -> String {
     lines.join("\n")
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "one ordered pass assembling every report field into the JSON shape render_text mirrors"
+)]
 fn render_json(r: &AuditReport) -> String {
     let mut tiers_fields: Vec<(&'static str, J)> = Vec::new();
     for tier in Tier::ORDER {

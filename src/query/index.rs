@@ -196,6 +196,10 @@ pub fn load_graph_index<'g>(graph: &'g graph::Graph, root: &Path) -> GraphIndex<
 /// [`load_graph_index`] with the caller's own [`IndexOptions`]. Everything is
 /// built the same way either way; `opts` only decides which heuristic edges earn
 /// a place in the heuristic adjacency.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one ordered pass building every index table over the same manifest and graph, so the tables stay mutually consistent"
+)]
 pub fn load_graph_index_with<'g>(
     graph: &'g graph::Graph,
     root: &Path,

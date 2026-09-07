@@ -163,6 +163,10 @@ plumbing
 ";
 
 /// Parses and executes a `devscout` command from its argument vector.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one flat match over every subcommand; splitting it would scatter the dispatch table across files"
+)]
 pub fn dispatch(args: Vec<String>) {
     let (cwd, args) = match apply_global_options(&current_dir(), &args) {
         Ok(v) => v,

@@ -421,6 +421,10 @@ fn outbound_foreign(def_project: &str, edges: &[graph::Edge], r: &RankedOutbound
 // carries the same trimmed source line an inbound hit does, read at the SAME
 // `from_line` an inbound row reads -- for an outbound edge that is a line in
 // the def's own file, the site actually making the reference, not the caller's.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one ordered ranking pass over all four outbound kinds, sharing the same cap and tie-break rule across them"
+)]
 fn build_outbound_tables(
     refs: &SymbolRefs,
     def_project: &str,
@@ -590,6 +594,10 @@ pub fn build_refs_model(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one ordered assembly of the refs model's inbound and outbound sections, sharing the same caps and options across both"
+)]
 pub(super) fn build_refs_model_inner(
     index: &GraphIndex,
     query: &str,

@@ -387,6 +387,10 @@ fn query_binding_names(n: Node, src: &[u8]) -> Vec<String> {
     }
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "one dispatch over every member-fact shape a node can carry; each shape's deferral rule only makes sense read against the others"
+)]
 fn visit_member_facts(
     n: Node,
     src: &[u8],

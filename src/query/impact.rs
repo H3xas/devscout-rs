@@ -162,6 +162,11 @@ fn add_adj(fwd_adj: &mut HashMap<String, HashSet<String>>, from: &str, to: &str)
 /// together -- a contract injected everywhere is also NAMED everywhere, so
 /// braking one alone leaves the radius just as wide. `0` disables the brake and
 /// restores unbraked widening.
+#[allow(
+    clippy::too_many_lines,
+    clippy::cognitive_complexity,
+    reason = "one breadth-first walk with both widening brakes inline; the brakes only work if they see the same frontier the walk itself sees"
+)]
 pub fn impact_walk(
     index: &GraphIndex,
     seed_ids: &[String],
