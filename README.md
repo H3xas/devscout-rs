@@ -389,8 +389,10 @@ same command surface with fixtures that ship in this repository.
 
 Bug reports, feature requests, and pull requests are welcome. See
 [CONTRIBUTING.md](CONTRIBUTING.md) for how to build, test, and submit changes;
-[GOVERNANCE.md](GOVERNANCE.md) and [MAINTAINERS.md](MAINTAINERS.md) for how the project is
-run; [SECURITY.md](SECURITY.md) for private vulnerability reporting; and
+[ARCHITECTURE.md](ARCHITECTURE.md) for what each module under `src/` owns, the
+invariants it holds, and where a change goes; [GOVERNANCE.md](GOVERNANCE.md) and
+[MAINTAINERS.md](MAINTAINERS.md) for how the project is run;
+[SECURITY.md](SECURITY.md) for private vulnerability reporting; and
 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for community expectations.
 
 ## License
