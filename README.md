@@ -361,6 +361,8 @@ reference resolution (exact generic arity), and has not been re-benchmarked; tre
 scorecard as 0.2.0-specific until the next round. Release 0.4.0 changes resolver output again
 (heuristic tiers and recall), measured in
 [`docs/benchmarks/results/2026-09-resolver-precision.md`](docs/benchmarks/results/2026-09-resolver-precision.md).
+Release 0.5.0 changes no resolver output: it produces a byte-identical `graph.json` on the
+pinned corpus, so those figures carry over unchanged.
 
 A separate scripted-lane run measured **tool calls issued per task**: the index arm used fewer
 calls in all four query kinds, largest on references (5.0 vs 11.8 per lane, ~2.4x) — single-run
