@@ -20,7 +20,6 @@ cognitive_complexity = 7
 
 [file_ceilings]
 "src/audit.rs" = 2484
-"src/cli.rs" = 2413
 "src/tsgraph.rs" = 1710
 "src/store.rs" = 1535
 "src/mapcmd.rs" = 1480
