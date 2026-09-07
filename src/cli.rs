@@ -464,6 +464,7 @@ fn member_ambiguous_out(
 ) -> (i32, String) {
     if json {
         let out = J::Obj(vec![
+            ("schema_version", J::UInt(query::SCHEMA_VERSION)),
             (
                 "outcome",
                 J::Str(query::Outcome::Ambiguous.as_str().to_string()),
@@ -507,6 +508,7 @@ fn member_ambiguous_out(
 fn fallback_advised_out(q: &str, json: bool, plain: String) -> (i32, String) {
     if json {
         let out = J::Obj(vec![
+            ("schema_version", J::UInt(query::SCHEMA_VERSION)),
             (
                 "outcome",
                 J::Str(query::Outcome::FallbackAdvised.as_str().to_string()),
@@ -1431,13 +1433,13 @@ mod tests {
         let json = tests_model_to_json(&model);
         assert!(
             json.contains(
-                r#"{"file":"tests/OrderServiceTests.cs","testDefs":["App.Orders.Tests.OrderServiceTests"],"lines":[10],"refCount":1}"#
+                r#"{"file":"tests/OrderServiceTests.cs","testDefs":["App.Orders.Tests.OrderServiceTests"],"lines":[10],"refCount":1,"why":"test-attribute"}"#
             ),
             "an attribute row carries no via key at all: {json}"
         );
         assert!(
             json.contains(
-                r#"{"file":"tests/App.Tests/FakeServer.cs","testDefs":[],"lines":[12,34],"refCount":2,"via":"project"}"#
+                r#"{"file":"tests/App.Tests/FakeServer.cs","testDefs":[],"lines":[12,34],"refCount":2,"via":"project","why":"test-project"}"#
             ),
             "a project row appends via LAST (no heuristic/tier on this row): {json}"
         );
@@ -1532,6 +1534,38 @@ mod tests {
     }
 
     #[test]
+    fn refs_json_leads_with_schema_version_ahead_of_every_existing_key() {
+        let model = json_refs_model(Vec::new(), false);
+        let json = refs_model_to_json(&model);
+        assert!(
+            json.starts_with(
+                r#"{"schema_version":1,"status":"resolved","query":"Widget","id":"App.Widget","kind":"class""#
+            ),
+            "schema_version is the first key and every existing key keeps its slot after it: {json}"
+        );
+    }
+
+    #[test]
+    fn read_json_leads_with_schema_version_and_keeps_span_right_after_kind() {
+        let model = query::ReadModel {
+            refs: json_refs_model(Vec::new(), false),
+            span: Some(query::ReadSpan {
+                file: "src/Widget.cs".to_string(),
+                start_line: 3,
+                end_line: 5,
+                source: "class Widget {}".to_string(),
+            }),
+        };
+        let json = read_model_to_json(&model);
+        assert!(
+            json.starts_with(
+                r#"{"schema_version":1,"status":"resolved","query":"Widget","id":"App.Widget","kind":"class","span":{"#
+            ),
+            "schema_version leads, and span still sits right after kind, unmoved: {json}"
+        );
+    }
+
+    #[test]
     fn refs_json_appends_heuristic_then_source_last_and_omits_each_when_it_has_no_value() {
         let model = json_refs_model(
             vec![
@@ -1555,7 +1589,7 @@ mod tests {
         let json = refs_model_to_json(&model);
         assert!(
             json.contains(
-                r#""rows":[{"file":"src/Fact.cs","line":4},{"file":"src/Guess.cs","line":9,"heuristic":true,"source":"var w = new Widget();"}]"#
+                r#""rows":[{"file":"src/Fact.cs","line":4,"why":"uses-member-precise"},{"file":"src/Guess.cs","line":9,"heuristic":true,"source":"var w = new Widget();","why":"uses-member-guess"}]"#
             ),
             "{json}"
         );
@@ -1584,7 +1618,7 @@ mod tests {
         // the flag it refines and still before `source`.
         assert!(
             json.contains(
-                r#""rows":[{"file":"src/Fact.cs","line":4},{"file":"src/Ext.cs","line":7,"heuristic":true,"tier":"ext"},{"file":"src/Guess.cs","line":9,"heuristic":true,"tier":"guess"}]"#
+                r#""rows":[{"file":"src/Fact.cs","line":4,"why":"uses-member-precise"},{"file":"src/Ext.cs","line":7,"heuristic":true,"tier":"ext","why":"uses-member-ext"},{"file":"src/Guess.cs","line":9,"heuristic":true,"tier":"guess","why":"uses-member-guess"}]"#
             ),
             "{json}"
         );
@@ -1644,9 +1678,9 @@ mod tests {
         let json = member_refs_to_json("Widget", std::slice::from_ref(&one));
         assert!(
             json.starts_with(
-                r#"{"status":"members","query":"Widget","members":[{"status":"resolved""#
+                r#"{"schema_version":1,"status":"members","query":"Widget","members":[{"schema_version":1,"status":"resolved""#
             ),
-            "{json}"
+            "schema_version is the first key, ahead of status, on both the wrapper and each member: {json}"
         );
         assert!(
             json.ends_with(r#"}],"outcome":"hit"}"#),
@@ -1655,6 +1689,47 @@ mod tests {
         assert!(
             json.contains(&refs_model_to_json(&one)),
             "a member entry is the resolved object unchanged: {json}"
+        );
+    }
+
+    #[test]
+    fn impact_json_leads_with_schema_version_ahead_of_query() {
+        let model = query::ImpactModel {
+            kind: query::SeedKind::Symbol,
+            seed_files: vec!["src/Widget.cs".to_string()],
+            hops: 2,
+            total_affected: 0,
+            rows: vec![],
+            dropped: 0,
+            manifest_gap: 0,
+            heuristic_affected: 0,
+            tests_affected: 0,
+            braked: vec![],
+            braked_files: vec![],
+        };
+        let json = impact_model_to_json("Widget", &model);
+        assert!(
+            json.starts_with(r#"{"schema_version":1,"query":"Widget","status":"resolved""#),
+            "schema_version leads, ahead of the query key that used to be first: {json}"
+        );
+    }
+
+    #[test]
+    fn tests_json_leads_with_schema_version_ahead_of_status() {
+        let model = query::TestsModel {
+            query: "Order".to_string(),
+            symbol: "App.Orders.Order".to_string(),
+            def_files: vec!["src/Order.cs".to_string()],
+            rows: vec![],
+            test_file_count: 0,
+            ref_count: 0,
+            heuristic_file_count: 0,
+            heuristic_ref_count: 0,
+        };
+        let json = tests_model_to_json(&model);
+        assert!(
+            json.starts_with(r#"{"schema_version":1,"status":"resolved","query":"Order""#),
+            "schema_version leads, ahead of the status key that used to be first: {json}"
         );
     }
 
@@ -1675,6 +1750,11 @@ mod tests {
             iface_via: vec![],
             from_lines: vec![],
             infra: false,
+            why: if heuristic {
+                query::Why::UsesMemberGuess
+            } else {
+                query::Why::UsesMemberPrecise
+            },
         };
         let model = query::ImpactModel {
             kind: query::SeedKind::Symbol,
@@ -1692,13 +1772,13 @@ mod tests {
         let json = impact_model_to_json("Widget", &model);
         assert!(
             json.contains(
-                r#"{"file":"src/Direct.cs","hop":1,"viaCount":1,"ambiguousCount":0,"topSymbols":["Widget"],"topSymbolsMore":0,"score":0.5}"#
+                r#"{"file":"src/Direct.cs","hop":1,"viaCount":1,"ambiguousCount":0,"topSymbols":["Widget"],"topSymbolsMore":0,"score":0.5,"why":"uses-member-precise"}"#
             ),
             "{json}"
         );
         assert!(
             json.contains(
-                r#"{"file":"src/Guessed.cs","hop":1,"viaCount":0,"ambiguousCount":0,"topSymbols":["Widget"],"topSymbolsMore":0,"score":0.5,"heuristicCount":2,"heuristic":true}"#
+                r#"{"file":"src/Guessed.cs","hop":1,"viaCount":0,"ambiguousCount":0,"topSymbols":["Widget"],"topSymbolsMore":0,"score":0.5,"heuristicCount":2,"heuristic":true,"why":"uses-member-guess"}"#
             ),
             "{json}"
         );
@@ -1726,6 +1806,10 @@ mod tests {
             iface_via: vec!["IWidget".to_string()],
             from_lines: vec![],
             infra: false,
+            why: match tier {
+                graph::HeuristicTier::Ext => query::Why::UsesMemberExt,
+                graph::HeuristicTier::Guess => query::Why::UsesMemberGuess,
+            },
         };
         let model = query::ImpactModel {
             kind: query::SeedKind::Symbol,
@@ -1749,13 +1833,13 @@ mod tests {
         // appended last stays appended last.
         assert!(
             json.contains(
-                r#""score":0.5,"heuristicCount":2,"heuristic":true,"tier":"ext","ifaceVia":["IWidget"]}"#
+                r#""score":0.5,"heuristicCount":2,"heuristic":true,"tier":"ext","ifaceVia":["IWidget"],"why":"uses-member-ext"}"#
             ),
             "{json}"
         );
         assert!(
             json.contains(
-                r#""score":0.5,"heuristicCount":2,"heuristic":true,"tier":"guess","ifaceVia":["IWidget"]}"#
+                r#""score":0.5,"heuristicCount":2,"heuristic":true,"tier":"guess","ifaceVia":["IWidget"],"why":"uses-member-guess"}"#
             ),
             "{json}"
         );

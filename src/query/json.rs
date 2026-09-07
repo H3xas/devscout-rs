@@ -17,6 +17,8 @@ use crate::graph;
 use crate::query;
 use crate::render;
 
+use super::why::{why_for_uses_member, Why};
+
 // `pub(crate)`: `audit.rs`'s `--json` rendering builds its own `J` tree with
 // this same encoder rather than hand-rolling a second one.
 pub(crate) enum J {
@@ -134,7 +136,32 @@ fn push_heuristic(
     }
 }
 
-fn j_inbound_row(r: &query::InboundRow) -> J {
+// The static ref kind behind an inbound/outbound row, known at the call site
+// building each of `refs_model_fields`'s three inbound / three outbound
+// (`imports` names its own fixed word directly, in `j_import_row`) tables --
+// never guessed from the row itself. Only `UsesMember` needs the row's own
+// `tier` to pick its exact `why` word (see `why_for_row`); the other two name
+// a fixed word regardless of whether the row was guessed, the same way
+// `heuristic`/`tier` already say THAT separately.
+#[derive(Debug, Clone, Copy)]
+enum RowKind {
+    Inherits,
+    UsesType,
+    UsesMember,
+}
+
+fn why_for_row(kind: RowKind, heuristic: bool, tier: Option<graph::HeuristicTier>) -> Why {
+    match kind {
+        RowKind::Inherits => Why::Inherits,
+        RowKind::UsesType => Why::UsesType,
+        RowKind::UsesMember => why_for_uses_member(heuristic, tier),
+    }
+}
+
+// `why` is appended absolute LAST on every row shape below, after `source`
+// (present or not) -- the same append-last convention every other additive
+// field in this file follows.
+fn j_inbound_row(r: &query::InboundRow, kind: RowKind) -> J {
     let mut fields = vec![
         ("file", J::Str(r.file.clone())),
         ("line", J::UInt(r.line as u64)),
@@ -145,9 +172,13 @@ fn j_inbound_row(r: &query::InboundRow) -> J {
     if !r.source.is_empty() {
         fields.push(("source", J::Str(r.source.clone())));
     }
+    fields.push((
+        "why",
+        J::Str(why_for_row(kind, r.heuristic, r.tier).as_str().to_string()),
+    ));
     J::Obj(fields)
 }
-fn j_outbound_row(r: &query::OutboundRow) -> J {
+fn j_outbound_row(r: &query::OutboundRow, kind: RowKind) -> J {
     let mut fields = vec![
         ("file", J::Str(r.file.clone())),
         ("line", J::UInt(r.line as u64)),
@@ -160,6 +191,10 @@ fn j_outbound_row(r: &query::OutboundRow) -> J {
     if !r.source.is_empty() {
         fields.push(("source", J::Str(r.source.clone())));
     }
+    fields.push((
+        "why",
+        J::Str(why_for_row(kind, r.heuristic, r.tier).as_str().to_string()),
+    ));
     J::Obj(fields)
 }
 fn j_import_row(r: &query::ImportRow) -> J {
@@ -171,6 +206,7 @@ fn j_import_row(r: &query::ImportRow) -> J {
     if !r.source.is_empty() {
         fields.push(("source", J::Str(r.source.clone())));
     }
+    fields.push(("why", J::Str(Why::Imports.as_str().to_string())));
     J::Obj(fields)
 }
 fn j_ambiguous_row(r: &query::AmbiguousRow) -> J {
@@ -202,9 +238,10 @@ pub(crate) fn refs_model_to_json(model: &query::RefsModel) -> String {
 // last regardless of where `span` is spliced in.
 pub(crate) fn read_model_to_json(model: &query::ReadModel) -> String {
     let mut fields = refs_model_fields(&model.refs);
-    // `split_off(4)` lifts everything after the first four keys
-    // (status/query/id/kind) so `span` can take their place in line.
-    let tail = fields.split_off(4);
+    // `split_off(5)` lifts everything after the first five keys
+    // (schema_version/status/query/id/kind) so `span` can take their place in
+    // line.
+    let tail = fields.split_off(5);
     if let Some(sp) = &model.span {
         fields.push((
             "span",
@@ -213,6 +250,7 @@ pub(crate) fn read_model_to_json(model: &query::ReadModel) -> String {
                 ("startLine", J::UInt(sp.start_line as u64)),
                 ("endLine", J::UInt(sp.end_line as u64)),
                 ("source", J::Str(sp.source.clone())),
+                ("why", J::Str(Why::Declaration.as_str().to_string())),
             ]),
         ));
     }
@@ -227,6 +265,7 @@ pub(crate) fn read_model_to_json(model: &query::ReadModel) -> String {
 // appended last so a caller reading only the top level still finds it there.
 pub(crate) fn member_refs_to_json(query_str: &str, models: &[query::RefsModel]) -> String {
     J::Obj(vec![
+        ("schema_version", J::UInt(query::SCHEMA_VERSION)),
         ("status", J::Str("members".to_string())),
         ("query", J::Str(query_str.to_string())),
         ("members", J::Arr(models.iter().map(refs_model_j).collect())),
@@ -239,8 +278,48 @@ fn refs_model_j(model: &query::RefsModel) -> J {
     J::Obj(refs_model_fields(model))
 }
 
+// The three inbound tables, each row tagged with the static kind its own
+// table names (see `RowKind`/`why_for_row`).
+fn j_inbound_tables(t: &query::InboundTables) -> J {
+    J::Obj(vec![
+        (
+            "inherits",
+            j_table(&t.inherits, |r| j_inbound_row(r, RowKind::Inherits)),
+        ),
+        (
+            "uses-type",
+            j_table(&t.uses_type, |r| j_inbound_row(r, RowKind::UsesType)),
+        ),
+        (
+            "uses-member",
+            j_table(&t.uses_member, |r| j_inbound_row(r, RowKind::UsesMember)),
+        ),
+    ])
+}
+
+// The four outbound tables, the same per-kind tagging `j_inbound_tables`
+// applies -- `imports` names its own fixed word directly (see `j_import_row`).
+fn j_outbound_tables(t: &query::OutboundTables) -> J {
+    J::Obj(vec![
+        (
+            "inherits",
+            j_table(&t.inherits, |r| j_outbound_row(r, RowKind::Inherits)),
+        ),
+        (
+            "uses-type",
+            j_table(&t.uses_type, |r| j_outbound_row(r, RowKind::UsesType)),
+        ),
+        (
+            "uses-member",
+            j_table(&t.uses_member, |r| j_outbound_row(r, RowKind::UsesMember)),
+        ),
+        ("imports", j_table(&t.imports, j_import_row)),
+    ])
+}
+
 fn refs_model_fields(model: &query::RefsModel) -> Vec<(&'static str, J)> {
     let mut fields = vec![
+        ("schema_version", J::UInt(query::SCHEMA_VERSION)),
         ("status", J::Str("resolved".to_string())),
         ("query", J::Str(model.query.clone())),
         ("id", J::Str(model.id.clone())),
@@ -260,31 +339,10 @@ fn refs_model_fields(model: &query::RefsModel) -> Vec<(&'static str, J)> {
                     .collect(),
             ),
         ),
-        (
-            "inbound",
-            J::Obj(vec![
-                ("inherits", j_table(&model.inbound.inherits, j_inbound_row)),
-                (
-                    "uses-type",
-                    j_table(&model.inbound.uses_type, j_inbound_row),
-                ),
-                (
-                    "uses-member",
-                    j_table(&model.inbound.uses_member, j_inbound_row),
-                ),
-            ]),
-        ),
+        ("inbound", j_inbound_tables(&model.inbound)),
     ];
     if let Some(ob) = &model.outbound {
-        fields.push((
-            "outbound",
-            J::Obj(vec![
-                ("inherits", j_table(&ob.inherits, j_outbound_row)),
-                ("uses-type", j_table(&ob.uses_type, j_outbound_row)),
-                ("uses-member", j_table(&ob.uses_member, j_outbound_row)),
-                ("imports", j_table(&ob.imports, j_import_row)),
-            ]),
-        ));
+        fields.push(("outbound", j_outbound_tables(ob)));
     }
     fields.push((
         "ambiguous",
@@ -383,6 +441,9 @@ fn j_impact_row(r: &query::ImpactRow) -> J {
     if r.infra {
         fields.push(("class", J::Str("infra".to_string())));
     }
+    // Appended absolute LAST, after `class`: the one rule or tier that best
+    // explains why this file was reached, always present.
+    fields.push(("why", J::Str(r.why.as_str().to_string())));
     J::Obj(fields)
 }
 
@@ -401,6 +462,7 @@ pub(crate) fn impact_model_to_json(query_str: &str, model: &query::ImpactModel) 
     };
     J::Obj(
         vec![
+            ("schema_version", J::UInt(query::SCHEMA_VERSION)),
             ("query", J::Str(query_str.to_string())),
             ("status", J::Str("resolved".to_string())),
             (
@@ -484,6 +546,7 @@ pub(crate) fn impact_model_to_json(query_str: &str, model: &query::ImpactModel) 
 // builder means the seed already resolved.
 pub(crate) fn tests_model_to_json(model: &query::TestsModel) -> String {
     J::Obj(vec![
+        ("schema_version", J::UInt(query::SCHEMA_VERSION)),
         ("status", J::Str("resolved".to_string())),
         ("query", J::Str(model.query.clone())),
         ("symbol", J::Str(model.symbol.clone())),
@@ -514,9 +577,15 @@ pub(crate) fn tests_model_to_json(model: &query::TestsModel) -> String {
                         // `via` is appended LAST, after `heuristic`/`tier`, and only
                         // when the row's vouch is the project model: an
                         // attribute-vouched row keeps today's exact bytes.
-                        if r.via == query::TestVia::Project {
+                        let why = if r.via == query::TestVia::Project {
                             fields.push(("via", J::Str("project".to_string())));
-                        }
+                            Why::TestProject
+                        } else {
+                            Why::TestAttribute
+                        };
+                        // Appended absolute LAST, after `via` when present: which of
+                        // the two ways `tests` reaches a file earned this row.
+                        fields.push(("why", J::Str(why.as_str().to_string())));
                         J::Obj(fields)
                     })
                     .collect(),

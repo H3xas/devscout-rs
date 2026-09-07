@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::graph;
 
+use super::impact_why::{self, Why, WhyTrack};
 use super::index::{def_files, implemented_interfaces, GraphIndex};
 use super::infra::is_infra_file;
 use super::member::{self, MemberCandidate, MemberSeedResolution};
@@ -44,30 +45,33 @@ pub struct KindLines {
     pub iface: usize,
 }
 
-// The lowest-line-wins guard applied at each of the walk's five edge sites.
-// Every edge of one kind reaching one file shares that file by construction, so
-// the minimum line is a total order that depends on nothing about iteration.
+// The lowest-line-wins guard for `ctor_di`, whose `why` is always `ctor-di`;
+// every other `KindLines` slot routes through `Hit`'s `note_*` methods instead.
 fn note_line(slot: &mut usize, line: usize) {
     if line > 0 && (*slot == 0 || line < *slot) {
         *slot = line;
     }
 }
 
+// `pub(super)` throughout: `impact_why::build_visited_entry` reads every
+// field of a finished `Hit` to assemble one `VisitedEntry`.
 #[derive(Debug, Clone, Default)]
-struct Hit {
-    via_count: u32,
-    ambiguous_count: u32,
-    heuristic_count: u32,
+pub(super) struct Hit {
+    pub(super) via_count: u32,
+    pub(super) ambiguous_count: u32,
+    pub(super) heuristic_count: u32,
     // How many of `heuristic_count` came from the EXTENSION tier. Counted
     // rather than flagged so the walk keeps one shape for both tiers, and one
     // is all the row needs to call itself an extension (see `row_tier`).
-    ext_count: u32,
-    symbols: SeqSet<String>,
+    pub(super) ext_count: u32,
+    pub(super) symbols: SeqSet<String>,
     // The `via` labels an interface-hop hit at this file carries
     // (`"IFoo (ctor-di)"` or bare `"IFoo"`), first-seen order.
-    iface_via: SeqSet<String>,
+    pub(super) iface_via: SeqSet<String>,
     // One representative line per edge kind (see `KindLines`).
-    lines: KindLines,
+    pub(super) lines: KindLines,
+    // Which edge explains each of `lines`' slots -- see `impact_why::WhyTrack`.
+    pub(super) why_track: WhyTrack,
 }
 
 /// One visited file's entry in an impact walk.
@@ -92,6 +96,8 @@ pub struct VisitedEntry {
     /// This file is a hub, so the walk recorded it as an affected file and
     /// stopped there instead of expanding through it.
     pub infra: bool,
+    /// Why this file was reached, folded across every kind that fired.
+    pub why: Why,
 }
 
 /// An interface the walk refused to widen through, and how many distinct
@@ -213,7 +219,7 @@ pub fn impact_walk(
                             let h = hits.get_or_insert_default(&from_file);
                             h.via_count += 1;
                             h.symbols.insert(def_id.clone());
-                            note_line(&mut h.lines.direct, loc_line);
+                            h.note_direct(loc_line, &index.graph.edges[ei]);
                         }
                         for sf in def_files(index, def_id) {
                             add_adj(&mut fwd_adj, &sf, &from_file);
@@ -228,7 +234,7 @@ pub fn impact_walk(
                     {
                         let h = hits.get_or_insert_default(&from_file);
                         h.ambiguous_count += 1;
-                        note_line(&mut h.lines.direct_amb, loc_line);
+                        h.note_direct_amb(loc_line, &index.graph.edges[ei]);
                     }
                     for sf in def_files(index, def_id) {
                         add_adj(&mut fwd_adj, &sf, &from_file);
@@ -303,7 +309,7 @@ pub fn impact_walk(
                                 h.via_count += 1;
                                 h.symbols.insert(def_id.clone());
                                 h.iface_via.insert(iface_name.clone());
-                                note_line(&mut h.lines.iface, loc_line);
+                                h.note_iface(loc_line, &index.graph.edges[ei]);
                             }
                             for sf in def_files(index, def_id) {
                                 add_adj(&mut fwd_adj, &sf, &from_file);
@@ -330,7 +336,7 @@ pub fn impact_walk(
                             h.ext_count += 1;
                         }
                         h.symbols.insert(def_id.clone());
-                        note_line(&mut h.lines.heuristic, loc_line);
+                        h.note_heuristic(loc_line, &index.graph.edges[ei]);
                     }
                 }
             }
@@ -348,20 +354,7 @@ pub fn impact_walk(
             let indegree = index.hub_indegree.get(file).copied().unwrap_or(0);
             let hub = is_infra_file(file) || (hub_max_indegree > 0 && indegree >= hub_max_indegree);
             if !visited.contains_key(file) && !seed_files.contains(file) {
-                visited.insert(
-                    file.clone(),
-                    VisitedEntry {
-                        hop,
-                        via_count: h.via_count,
-                        ambiguous_count: h.ambiguous_count,
-                        heuristic_count: h.heuristic_count,
-                        ext_count: h.ext_count,
-                        symbols: h.symbols.clone().into_vec(),
-                        iface_via: h.iface_via.clone().into_vec(),
-                        lines: h.lines.clone(),
-                        infra: hub,
-                    },
-                );
+                visited.insert(file.clone(), impact_why::build_visited_entry(hop, hub, h));
             }
             // Reached ONLY by heuristic edges: recorded above as an affected
             // file, never expanded. A file with even one precise or ambiguous
@@ -593,6 +586,8 @@ pub struct ImpactRow {
     /// walk stopped THERE rather than continuing through it. `false` means the
     /// key is absent in `--json`.
     pub infra: bool,
+    /// Why this file was reached, carried unchanged from `VisitedEntry`.
+    pub why: Why,
 }
 
 /// The resolved `impact` result for one seed.
@@ -755,6 +750,7 @@ pub fn build_impact_model(
                 iface_via: h.iface_via.clone(),
                 from_lines: from_lines_of(&h.lines),
                 infra: h.infra,
+                why: h.why,
             }
         })
         .collect();

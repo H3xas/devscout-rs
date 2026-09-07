@@ -4,6 +4,13 @@
 // `Outcome` value can only ever print one of the four words below, so no
 // caller can typo a fifth one into existence.
 
+/// The version of the `--json` answer shape every `refs`/`read`/`impact`/
+/// `tests` object carries as its first key. Bump it only when an existing key
+/// is renamed, removed, or given a different meaning -- adding a new key, as
+/// `schema_version` and `why` themselves were added, never requires a bump. A
+/// consumer should ignore any key it does not recognise.
+pub const SCHEMA_VERSION: u64 = 1;
+
 /// One of the four words a query verb's `--json` answer names its result
 /// with.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

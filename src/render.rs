@@ -928,7 +928,7 @@ mod tests {
     use crate::query::{
         AmbiguousRow, AmbiguousTables, DefSite, ImpactModel, ImpactRow, ImportRow, InboundRow,
         InboundTables, OutboundRow, OutboundTables, RefsModel, SeedKind, Table, TestRow,
-        TestsModel,
+        TestsModel, Why,
     };
 
     fn table<R>(rows: Vec<R>, dropped: usize) -> Table<R> {
@@ -1199,11 +1199,11 @@ mod tests {
             iface_via: vec![],
             from_lines: vec![],
             infra: false,
+            why: Why::UsesMemberPrecise,
         }
     }
 
-    /// A heuristic-ONLY row: reached by `heuristic_count` guesses and nothing
-    /// else, which is the only shape `buildImpactModel` ever flags.
+    /// A heuristic-ONLY row: reached only by guesses, the only shape flagged.
     fn heuristic_impact_row(
         file: &str,
         hop: u32,
