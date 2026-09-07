@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "format": "flowtrace-edges",
+  "tool": { "name": "flowtrace-cli", "version": "0.2.0" },
+  "provenance": {
+    "id": "a1b2c3d4e5f60718",
+    "producer": "flowtrace-cli 0.2.0",
+    "formatVersion": 1
+  },
+  "edges": [
+    {
+      "kind": "calls",
+      "from": { "repo": "ledger", "ref": "checkoutClient.placeOrder", "file": "checkoutClient.ts", "line": 1 },
+      "to": { "repo": "storefront", "ref": "CheckoutController.PlaceOrder", "file": "CheckoutController.cs", "line": 5 },
+      "key": null
+    },
+    {
+      "kind": "publishes",
+      "from": { "repo": "storefront", "ref": "CheckoutController.PlaceOrder", "file": "CheckoutController.cs", "line": 5 },
+      "to": { "repo": "message", "ref": "order-placed", "file": null, "line": null },
+      "key": "order-placed"
+    },
+    {
+      "kind": "consumes",
+      "from": { "repo": "message", "ref": "order-placed", "file": null, "line": null },
+      "to": { "repo": "ledger", "ref": "orderConsumer.onOrderPlaced", "file": "orderConsumer.ts", "line": 1 },
+      "key": "order-placed"
+    }
+  ]
+}

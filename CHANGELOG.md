@@ -7,6 +7,15 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `import-edges <file> --repo <id>` loads a versioned cross-repo edge export into an auxiliary
+  artifact beside `graph.json`. `impact` then names files reached only through an imported edge
+  -- directly, or composed across a fileless message node -- each row carrying `why:
+  "imported-edge"`, the foreign repo id, and the export's provenance id. A re-import always
+  replaces the prior set wholesale; `impact --no-imports` skips it. A repo with no import
+  configured answers exactly as it did before.
+
 ## [0.5.0] - 2026-09-07
 
 A code-organisation release: the three largest modules are split by concern, CI now holds
