@@ -217,11 +217,12 @@ pub(super) fn ambiguous_row(e: &graph::Edge) -> AmbiguousRow {
     }
 }
 
-/// The five inbound tables, one per kind (inherits/uses-type/uses-member/
-/// implements/overrides). `implements`/`overrides` are never heuristic, and
-/// a renderer shows either only when its own total is non-zero -- unlike
-/// the first three, which always show their header -- so a symbol untouched
-/// by dispatch edges renders byte-identical to before this pair existed.
+/// The five inbound tables, one per kind.
+///
+/// `implements`/`overrides` are never heuristic, and a renderer shows
+/// either only when its own total is non-zero -- unlike the first three,
+/// which always show their header -- so a symbol untouched by dispatch
+/// edges renders byte-identical to before this pair existed.
 #[derive(Debug, Clone, PartialEq)]
 pub struct InboundTables {
     /// The inherits value.

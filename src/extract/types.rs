@@ -353,14 +353,16 @@ pub struct Extraction {
     pub registrations: Vec<RegistrationRecord>,
 }
 
-/// One two-type-argument DI service registration: an invocation whose
-/// method name begins `Add` or `TryAdd` and ends `Singleton`, `Scoped` or
-/// `Transient`, carrying exactly two type arguments -- the first the
-/// service type, the second the implementation type. `service`/
-/// `implementation` carry the type argument's raw text verbatim (dotted
-/// when the source wrote it qualified); splitting a dotted name into its
-/// bare tail plus its full qualified form, the way an ordinary type
-/// reference does, is the resolver's job, not the extractor's.
+/// One two-type-argument DI service registration.
+///
+/// The shape is an invocation whose method name begins `Add` or `TryAdd`
+/// and ends `Singleton`, `Scoped` or `Transient`, carrying exactly two type
+/// arguments -- the first the service type, the second the implementation
+/// type. `service`/`implementation` carry the type argument's raw text
+/// verbatim (dotted when the source wrote it qualified); splitting a dotted
+/// name into its bare tail plus its full qualified form, the way an
+/// ordinary type reference does, is the resolver's job, not the
+/// extractor's.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RegistrationRecord {
     /// The service (first type argument) name, as written.

@@ -203,13 +203,14 @@ pub struct FragDef {
 }
 
 /// One two-type-argument DI service registration a file's invocations
-/// record: `service` is the first type argument (the interface),
-/// `implementation` the second (the concrete type) -- see
-/// `extract::RegistrationRecord`. Field order (`service`, `implementation`,
-/// `namespace`, `line`) is significant; neither type name carries its
-/// enclosing-namespace qualification here (that is the resolver's job,
-/// against the registration site's OWN using/alias context, read from
-/// `namespace`).
+/// record -- see `extract::RegistrationRecord`.
+///
+/// `service` is the first type argument (the interface), `implementation`
+/// the second (the concrete type). Field order (`service`,
+/// `implementation`, `namespace`, `line`) is significant; neither type name
+/// carries its enclosing-namespace qualification here (that is the
+/// resolver's job, against the registration site's OWN using/alias context,
+/// read from `namespace`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FragRegistration {
     /// The service (first type argument) name.
