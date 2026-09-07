@@ -128,10 +128,12 @@ its declaring type, file, and line — rather than guessing between them or
 printing a bare list of types. Pass `--pick N` (one-based) to select the nth
 row from that list; an out-of-range `N` is a usage error (exit code 2).
 
-Every `--json` answer on these four verbs carries a top-level `outcome`:
-`hit`, `zero-hit` (a resolved seed with an empty answer), `ambiguous`, or
-`fallback-advised` (nothing in the graph carries the seed at all, and the
-zero-hit note on stderr advises a text-search fallback instead).
+Every `--json` answer on these four verbs leads with a top-level `schema_version` and carries a
+top-level `outcome`: `hit`, `zero-hit` (a resolved seed with an empty answer), `ambiguous`, or
+`fallback-advised` (nothing in the graph carries the seed at all, and the zero-hit note on stderr
+advises a text-search fallback instead); every hit row also carries a `why` naming the rule or
+tier that produced it. See [`docs/answer-contract.md`](docs/answer-contract.md) for the full
+contract, the `why` vocabulary, and a worked example per verb.
 
 Re-run `devscout map .` after edits; it re-parses only what changed and leaves the graph alone
 when nothing moved (`... 0 new, 0 removed ...; graph unchanged`). If the index falls behind
