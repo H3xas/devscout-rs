@@ -1,0 +1,9 @@
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Edit",
+  "tool_input": {
+    "file_path": "src/probe.rs",
+    "old_string": "",
+    "new_string": "// Unit A3 item 4: widen to the receiver's in-graph base closure.\npub fn a() {}\n"
+  }
+}
