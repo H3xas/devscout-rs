@@ -38,12 +38,14 @@ them that way, and every `--json` answer says what it is and why.
   produced it, drawn from a closed vocabulary and derived from the edge the row came from.
   [`docs/answer-contract.md`](docs/answer-contract.md) documents the shape per verb with a
   worked example, and says that consumers should ignore unknown keys.
-- **Query telemetry behind `SCOUT_TELEMETRY=1`.** Each query verb appends one JSON line to
-  `scout/log/queries.jsonl` under the artifact directory: timestamp, record schema version,
-  verb, seed, outcome, elapsed milliseconds, result bytes and candidate count. Without the
-  variable nothing is created; an unwritable log changes neither exit code nor output;
-  `devscout init` writes the variable into the hook commands so the switch is visible in
-  the settings file.
+- **Query telemetry behind `SCOUT_TELEMETRY=1`.** Each answered `find`/`refs`/`read`/`impact`/
+  `tests` invocation appends one JSON line to `scout/log/queries.jsonl` under the artifact
+  directory: timestamp, record schema version, verb, seed, outcome, elapsed milliseconds,
+  result bytes and candidate count. A usage error or a seed with no resolved repository or
+  graph logs nothing; without the variable nothing is created; an unwritable log changes
+  neither exit code nor output. Telemetry is opt-in: export `SCOUT_TELEMETRY=1` in the shell
+  that runs the query verbs. The agent hooks never run those verbs, so `devscout init` does
+  not set the variable for them.
 
 ### Changed
 

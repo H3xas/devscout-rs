@@ -129,11 +129,13 @@ printing a bare list of types. Pass `--pick N` (one-based) to select the nth
 row from that list; an out-of-range `N` is a usage error (exit code 2).
 
 Every `--json` answer on these four verbs leads with a top-level `schema_version` and carries a
-top-level `outcome`: `hit`, `zero-hit` (a resolved seed with an empty answer), `ambiguous`, or
-`fallback-advised` (nothing in the graph carries the seed at all, and the zero-hit note on stderr
-advises a text-search fallback instead); every hit row also carries a `why` naming the rule or
-tier that produced it. See [`docs/answer-contract.md`](docs/answer-contract.md) for the full
-contract, the `why` vocabulary, and a worked example per verb.
+top-level `outcome`: `hit`, `zero-hit`, `ambiguous`, or `fallback-advised` (nothing in the graph
+carries the seed at all, and the zero-hit note on stderr advises a text-search fallback instead).
+`zero-hit` means the seed resolved and the answer is empty: `impact`'s empty blast radius, or a
+`refs`/`read` member declared by exactly one type with nothing referencing it; `tests` with no
+rows still answers `hit`. Every hit row also carries a `why` naming the rule or tier that produced
+it. See [`docs/answer-contract.md`](docs/answer-contract.md) for the full contract, the `why`
+vocabulary, and a worked example per verb.
 
 Re-run `devscout map .` after edits; it re-parses only what changed and leaves the graph alone
 when nothing moved (`... 0 new, 0 removed ...; graph unchanged`). If the index falls behind
@@ -157,7 +159,7 @@ untracked files and are shared correctly by worktrees:
 <git-common-dir>/scout/graph/fragments-v18.json   per-file extraction cache (incremental map)
 <git-common-dir>/scout/graph/project-units.json   csproj staleness sidecar (present only with a project model)
 <git-common-dir>/scout/graph/semantic-v1.json      planned: compiler-backed enrichment cache (see docs/design/compiler-enrichment.md)
-<git-common-dir>/scout/log/queries.jsonl          query-verb telemetry, one JSON line per invocation (SCOUT_TELEMETRY=1 only)
+<git-common-dir>/scout/log/queries.jsonl          query-verb telemetry, one JSON line per answered invocation (opt-in; SCOUT_TELEMETRY=1)
 ```
 
 Outside a git repository the same tree is written to `<root>/.scout/` instead. `devscout init`
@@ -179,7 +181,7 @@ Two stores live outside the repo:
 | `SCOUT_CONTENT_DB` | Path to the shared content-dedup SQLite database. Default `$HOME/.claude/scout/content.db`. |
 | `SCOUT_MTIME_REUSE` | `1` switches `map` from content-hash fragment reuse back to mtime-based reuse. |
 | `SCOUT_DEBUG` | `1` turns on hook debug output. Equivalent to creating a `.scout/debug` file. |
-| `SCOUT_TELEMETRY` | `1` appends one JSON line per `find`/`refs`/`read`/`impact`/`tests` invocation to `scout/log/queries.jsonl`. Unset (or any other value) writes nothing. |
+| `SCOUT_TELEMETRY` | Opt-in query telemetry. Export `1` in the shell that runs `find`/`refs`/`read`/`impact`/`tests` to append one JSON line per answered invocation to `scout/log/queries.jsonl`; a usage error or a seed with no resolved repository or graph logs nothing. Unset (or any other value) writes nothing. The agent hooks never run these verbs, so `devscout init` does not set this variable for them. |
 | `HOME` | Used to locate the registry, content database, and agent settings file. |
 
 ## Reading a symbol

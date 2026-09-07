@@ -29,9 +29,58 @@ enum so no caller can spell a fifth one into existence:
 | `outcome` | Meaning |
 | --- | --- |
 | `hit` | The seed resolved (a type, a member, or a file) and the answer is the ordinary shape a caller reads. |
-| `zero-hit` | The seed resolved but the answer itself is empty. Today this is only `impact`'s "resolved seed, zero affected rows" case. |
+| `zero-hit` | The seed resolved but the answer itself is empty: `impact`'s "resolved seed, zero affected rows" case, or `refs`/`read` on a member declared by exactly one type with nothing referencing it -- `read`'s answer there is `refs`' own inbound list, so the two are byte-identical on stdout. Exit code 3; `impact` adds its zero-hit note on stderr, `refs`/`read` leave stderr empty. |
 | `ambiguous` | The seed named more than one candidate (a type, or a member across more than one declaring type) and nothing was guessed between them. |
 | `fallback-advised` | Nothing in the graph carries the seed at all; the caller's zero-hit note advises a text-search fallback. |
+
+## The `ambiguous` envelope
+
+`refs`, `read`, `impact` and `tests` share one JSON shape for `ambiguous`, whichever of the two
+candidate vocabularies below produced it: `schema_version` first, `outcome: "ambiguous"`, the
+`query` string, and a `candidates` array, at exit code 1. A type seed's candidates carry `{id,
+file, line, kind}` (`ambiguous_candidates_out` in `src/cli.rs`); a member seed's carry `{owner,
+name, file, line}` (`member_ambiguous_out`), naming the declaring type and the member instead of
+a graph id.
+
+The two examples below are real `--json` runs, each against its own small scratch repo built to
+show the shape -- the shipped `fixtures/conformance/csharp/` corpus has no name that resolves
+ambiguously.
+
+A type seed (`Widget` declared in two namespaces):
+
+```
+devscout refs Widget --json
+```
+
+```json
+{
+  "schema_version": 1,
+  "outcome": "ambiguous",
+  "query": "Widget",
+  "candidates": [
+    { "id": "App.Alpha.Widget", "file": "src/A.cs", "line": 3, "kind": "class" },
+    { "id": "App.Beta.Widget", "file": "src/B.cs", "line": 3, "kind": "class" }
+  ]
+}
+```
+
+A member seed (`Run` declared on both `Widget` types above):
+
+```
+devscout refs Run --json
+```
+
+```json
+{
+  "schema_version": 1,
+  "outcome": "ambiguous",
+  "query": "Run",
+  "candidates": [
+    { "owner": "App.Alpha.Widget", "name": "Run", "file": "src/A.cs", "line": 5 },
+    { "owner": "App.Beta.Widget", "name": "Run", "file": "src/B.cs", "line": 5 }
+  ]
+}
+```
 
 ## `why`
 
@@ -55,7 +104,7 @@ why they are *unresolved*, a different question from which rule produced a settl
 | `test-attribute` | A `tests` row earned because a def declared in the file carries a test-runner attribute (`[Fact]`, `[Test]`, `[TestMethod]`, and their qualified/targeted/shared-bracket forms). |
 | `test-project` | A `tests` row earned because the project model places the file's unit inside a project marked `test`, with no attributed def of its own. |
 
-Two edge kinds this crate records never reach `why`: a TS/TSX-only edge (`import`/`call`/
+Four edge kinds this crate records never reach `why`: a TS/TSX-only edge (`import`/`call`/
 `jsx-use`/`dispatch`) is never admitted into the inbound/outbound adjacency any of these four
 verbs read (`query::index`'s `Edge::Import | Edge::Call | Edge::JsxUse | Edge::Dispatch => {}`
 arm), so a row built from one -- and a word for it -- never exists.
