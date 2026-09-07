@@ -67,6 +67,7 @@ mod dispatch;
 mod find;
 mod impact;
 mod impact_why;
+mod imported;
 mod index;
 mod infra;
 // `--json` rendering of every query model, moved here from `cli.rs` to keep
@@ -90,6 +91,7 @@ pub use impact::{
     BrakedIface, ImpactModel, ImpactResult, ImpactRow, ImpactWalkResult, KindLines, SeedKind,
     SeedResolution, VisitedEntry, DEFAULT_HOPS, DEFAULT_IFACE_MAX_FANIN,
 };
+pub use imported::{build_imported_section, ImportedRow, ImportedSection};
 pub use index::{
     def_files, def_sites, load_graph_index, load_graph_index_with, symbol_refs, DefSite,
     GraphIndex, HeuristicEntry, InboundEntry, IndexOptions, OutboundEntry, SymbolRefs,

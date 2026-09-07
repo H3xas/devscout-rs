@@ -16,6 +16,7 @@ mod coverage;
 mod dispatch;
 mod find;
 mod impact;
+mod import_edges;
 mod read;
 mod refs;
 mod root;

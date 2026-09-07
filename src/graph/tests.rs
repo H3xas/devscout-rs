@@ -14,6 +14,7 @@ mod cache;
 mod def;
 mod edge;
 mod fragment_types;
+mod imports;
 mod ordered;
 mod paths;
 mod rebuild;

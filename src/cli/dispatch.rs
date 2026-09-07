@@ -25,6 +25,7 @@ use super::args::first_positional;
 use super::coverage::cmd_tests;
 use super::find::cmd_find;
 use super::impact::cmd_impact;
+use super::import_edges::cmd_import_edges;
 use super::read::cmd_read;
 use super::refs::cmd_refs;
 use super::root::{apply_global_options, current_dir};
@@ -63,8 +64,9 @@ query
   find <query> [--resources] search the manifest by name or purpose
   refs <symbol>              references to a symbol   [--out --all --no-guess --no-dispatch --pick N --json|--compact]
   read <symbol>              decl span + inbound refs [--no-guess --no-dispatch --pick N --json|--compact]
-  impact <file|symbol>       blast radius             [--hops N --no-guess --no-dispatch --pick N --json|--compact]
+  impact <file|symbol>       blast radius             [--hops N --no-guess --no-dispatch --no-imports --pick N --json|--compact]
   tests <symbol>             tests reaching a symbol  [--no-guess --no-dispatch --pick N --json|--compact]
+  import-edges <file> --repo <id>  load a cross-repo edge export for `impact` to read
   stats                      index + cache summary for this repo
 
 plumbing
@@ -182,6 +184,11 @@ pub fn dispatch(args: Vec<String>) {
             emit_zero_hit_note(code, Some(ZERO_HIT_FIND), &cwd, Some(query_str.as_str()));
             process::exit(code);
         }
+        Some("import-edges") => {
+            let (code, out) = cmd_import_edges(&cwd, &args[2..]);
+            print_out(&out);
+            process::exit(code);
+        }
         Some("map") => {
             let (code, out) = cmd_map(&cwd, &args[2..]);
             print_out(&out);
@@ -203,7 +210,7 @@ pub fn dispatch(args: Vec<String>) {
             process::exit(code);
         }
         _ => {
-            eprintln!("usage: devscout <noop|parse|spans|extract-dump|hook|refs|read|impact|tests|find|map|stats|clear|init> [args]");
+            eprintln!("usage: devscout <noop|parse|spans|extract-dump|hook|refs|read|impact|tests|find|import-edges|map|stats|clear|init> [args]");
             process::exit(1);
         }
     }

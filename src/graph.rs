@@ -82,6 +82,7 @@ mod def;
 mod edge;
 mod fragment;
 mod fragment_types;
+mod imports;
 mod ordered;
 mod paths;
 mod rebuild;
@@ -94,6 +95,11 @@ pub use fragment::{fragment_from_extraction, markup_fragment};
 pub use fragment_types::{
     AnyFragment, FragDef, FragExtensionMethod, FragFact, FragLambdaSlot, FragName, FragRef,
     FragRegistration, FragUsing, Fragment,
+};
+pub use imports::{
+    imported_edges_json_path, parse_imported_edges, read_imported_edges, write_imported_edges,
+    EdgeEnd, ImportRecord, ImportedEdges, Provenance, IMPORTED_EDGES_FORMAT,
+    IMPORTED_EDGES_SCHEMA_VERSION, IMPORTED_EDGE_KINDS,
 };
 pub use ordered::{OrderedMap, Percent1};
 pub use paths::{graph_json_path, project_units_path};

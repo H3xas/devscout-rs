@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "format": "flowtrace-edges",
+  "tool": { "name": "flowtrace-cli", "version": "0.2.0" },
+  "provenance": {
+    "id": "9988776655443322",
+    "producer": "flowtrace-cli 0.2.0",
+    "formatVersion": 1
+  },
+  "edges": [
+    {
+      "kind": "calls",
+      "from": { "repo": "ledger", "ref": "checkoutClient.retryOrder", "file": "retryClient.ts", "line": 1 },
+      "to": { "repo": "storefront", "ref": "CheckoutController.PlaceOrder", "file": "CheckoutController.cs", "line": 5 },
+      "key": null
+    }
+  ]
+}
