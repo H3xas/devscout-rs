@@ -1,3 +1,4 @@
+use crate::graph;
 use crate::query;
 
 use super::blocks::rle;
@@ -226,4 +227,64 @@ pub fn render_impact_compact(query: &str, model: &query::ImpactModel) -> String 
         model.dropped
     ));
     out.join("\n")
+}
+
+// Shared by both renderers below: a new block, not a per-row splice into the
+// native table, which is what keeps the no-import case byte-identical --
+// callers reach this only when `imported.rows` is non-empty.
+fn render_imported_block(
+    imported: &query::ImportedSection,
+    provenance: &graph::Provenance,
+) -> String {
+    let mut out = vec![format!(
+        "imported: {} reached  shown: {}  dropped: {}  provenance {}",
+        imported.affected,
+        imported.rows.len(),
+        imported.dropped,
+        provenance.id
+    )];
+    out.push("file  hop  repo  via".to_string());
+    for r in &imported.rows {
+        out.push(format!(
+            "{}  {}  {}  {}",
+            r.file, r.hop, r.repo, r.imported_kind
+        ));
+    }
+    out.join("\n")
+}
+
+/// `render_impact_text`, plus the imported-edge section when an import is
+/// configured.
+///
+/// Byte-identical to [`render_impact_text`] when `imported.rows` is empty:
+/// the extra block is appended only when there is something to append.
+pub fn render_impact_text_with_imports(
+    query: &str,
+    model: &query::ImpactModel,
+    imported: &query::ImportedSection,
+    provenance: &graph::Provenance,
+) -> String {
+    let mut out = render_impact_text(query, model);
+    if !imported.rows.is_empty() {
+        out.push('\n');
+        out.push_str(&render_imported_block(imported, provenance));
+    }
+    out
+}
+
+/// `render_impact_compact`, plus the imported-edge section when an import is
+/// configured. Byte-identical to [`render_impact_compact`] when
+/// `imported.rows` is empty.
+pub fn render_impact_compact_with_imports(
+    query: &str,
+    model: &query::ImpactModel,
+    imported: &query::ImportedSection,
+    provenance: &graph::Provenance,
+) -> String {
+    let mut out = render_impact_compact(query, model);
+    if !imported.rows.is_empty() {
+        out.push('\n');
+        out.push_str(&render_imported_block(imported, provenance));
+    }
+    out
 }
