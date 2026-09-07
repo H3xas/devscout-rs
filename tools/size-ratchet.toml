@@ -19,7 +19,6 @@ too_many_lines = 23
 cognitive_complexity = 7
 
 [file_ceilings]
-"src/graph.rs" = 3189
 "src/audit.rs" = 2484
 "src/cli.rs" = 2413
 "src/render.rs" = 1971
