@@ -3,7 +3,7 @@
 // a mismatch makes reuse break silently.
 //
 // This module owns every serde struct for graph.json + the fragments-cache
-// pair (fragments-v18.json, fragments-index-v18.json), plus their path resolution,
+// pair (fragments-v19.json, fragments-index-v19.json), plus their path resolution,
 // atomic I/O, and the cache-then-resolve-then-write orchestration
 // (`rebuild_graph`). The pure resolution ladder that
 // turns fragments into `defs`/`edges` lives in `resolve.rs` and returns the
@@ -38,7 +38,8 @@
 //     holds here too; the other two flagged kinds (inherits, uses-type) stay
 //     exactly as they were.
 //   - `schema_version` is `GRAPH_SCHEMA_VERSION`, which the `tier`/`member`
-//     append above moved to 2. `rebuild_graph`'s unchanged fast path reads
+//     append above moved to 2, and which the `implements`/`overrides` edge
+//     kinds moved to 3. `rebuild_graph`'s unchanged fast path reads
 //     the first bytes of an existing graph.json and refuses to reuse one
 //     written at an older version, so a stale artifact is rebuilt on the next
 //     `map` even when not one fragment moved.
@@ -52,7 +53,7 @@
 //     and neither is per-file/per-def membership -- that is derived from the
 //     unit list by `ProjectModel` rather than stored.
 //   - `stats.edges_by_kind` has a FIXED key order (inherits, uses-type,
-//     imports, uses-member, ctor-di) -- not
+//     imports, uses-member, ctor-di, implements, overrides) -- not
 //     alphabetical, not insertion order of first edge seen. A plain struct
 //     with that declared field order reproduces it.
 //   - `stats.ambiguous_pct` is `round(x*1000)/10`: a number that prints
@@ -92,7 +93,7 @@ pub use edge::{Candidate, Edge, EdgesByKind, HeuristicByTier, HeuristicTier};
 pub use fragment::{fragment_from_extraction, markup_fragment};
 pub use fragment_types::{
     AnyFragment, FragDef, FragExtensionMethod, FragFact, FragLambdaSlot, FragName, FragRef,
-    FragUsing, Fragment,
+    FragRegistration, FragUsing, Fragment,
 };
 pub use ordered::{OrderedMap, Percent1};
 pub use paths::{graph_json_path, project_units_path};

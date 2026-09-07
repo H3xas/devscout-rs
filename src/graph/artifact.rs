@@ -109,10 +109,12 @@ fn is_not_test(b: &bool) -> bool {
 /// `rebuild_graph` demands before it reuses an artifact it did not just
 /// produce.
 ///
-/// Bumped to 2 when `uses-member` edges gained `tier` and `member`:
-/// a schema-1 graph is READABLE (both keys default) but it is missing facts
+/// Bumped to 2 when `uses-member` edges gained `tier` and `member`, and to 3
+/// when the `implements`/`overrides` edge kinds joined the graph: a
+/// schema-2 graph is READABLE (the two new `edges_by_kind` counters default to
+/// 0 and no edge of either new kind can be present) but it is missing facts
 /// the query layer now reports, so it gets rebuilt rather than trusted.
-pub const GRAPH_SCHEMA_VERSION: u32 = 2;
+pub const GRAPH_SCHEMA_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 /// Represents `Graph`.

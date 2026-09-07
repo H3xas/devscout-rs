@@ -8,7 +8,7 @@ use std::fs;
 fn rebuild_graph_skips_when_unchanged_and_graph_already_exists() {
     let dir = temp_dir("rebuild-unchanged");
     fs::create_dir_all(graph_dir(&dir)).unwrap();
-    fs::write(graph_json_path(&dir), b"{\"schema_version\":2,\"built_at_head\":null,\"defs\":[],\"edges\":[],\"stats\":{\"def_count\":0,\"file_count\":0,\"edges_by_kind\":{\"inherits\":0,\"uses-type\":0,\"imports\":0,\"uses-member\":0},\"ambiguous_count\":0,\"ambiguous_pct\":0,\"unresolved_external_count\":0}}").unwrap();
+    fs::write(graph_json_path(&dir), b"{\"schema_version\":3,\"built_at_head\":null,\"defs\":[],\"edges\":[],\"stats\":{\"def_count\":0,\"file_count\":0,\"edges_by_kind\":{\"inherits\":0,\"uses-type\":0,\"imports\":0,\"uses-member\":0},\"ambiguous_count\":0,\"ambiguous_pct\":0,\"unresolved_external_count\":0}}").unwrap();
     let outcome = rebuild_graph(&dir, &[], &HashMap::new(), false, None).unwrap();
     assert!(matches!(outcome, RebuildOutcome::NotRebuilt));
 }
@@ -31,7 +31,7 @@ fn rebuild_graph_rebuilds_when_the_existing_graph_carries_an_older_schema_versio
     assert!(
         fs::read_to_string(graph_json_path(&dir))
             .unwrap()
-            .starts_with(r#"{"schema_version":2,"#),
+            .starts_with(r#"{"schema_version":3,"#),
         "and the rebuilt artifact carries the current version on disk"
     );
 }
@@ -75,11 +75,13 @@ fn rebuild_graph_reuses_a_cached_fragment_at_matching_mtime() {
             non_public_methods: vec![],
             method_arities: OrderedMap::new(),
             method_params: OrderedMap::new(),
+            override_methods: vec![],
             end_line: 1,
         }],
         usings: vec![],
         refs: vec![],
         names: vec![],
+        registrations: vec![],
     };
     // First build: nothing cached, comes from fresh_fragments.
     let mut fresh = HashMap::new();

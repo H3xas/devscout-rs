@@ -26,7 +26,7 @@ fn rebuild_graph_writes_the_v13_caches_and_deletes_every_superseded_generation()
     // receiverCallMember pair, so a v12 fragment read back carries none and
     // every property hop and every var-from-invocation receiver would
     // silently stay unresolved.
-    assert_eq!(SUPERSEDED_CACHE_FILES.len(), 34, "v1..v17 pairs");
+    assert_eq!(SUPERSEDED_CACHE_FILES.len(), 36, "v1..v18 pairs");
     for stale in SUPERSEDED_CACHE_FILES {
         fs::write(graph_dir(&dir).join(stale), b"{}").unwrap();
     }
@@ -53,11 +53,13 @@ fn rebuild_graph_writes_the_v13_caches_and_deletes_every_superseded_generation()
             non_public_methods: vec![],
             method_arities: OrderedMap::new(),
             method_params: OrderedMap::new(),
+            override_methods: vec![],
             end_line: 1,
         }],
         usings: vec![],
         refs: vec![],
         names: vec![],
+        registrations: vec![],
     };
     let mut fresh = HashMap::new();
     fresh.insert("src/A.cs".to_string(), AnyFragment::Cs(fragment));
@@ -68,11 +70,11 @@ fn rebuild_graph_writes_the_v13_caches_and_deletes_every_superseded_generation()
     rebuild_graph(&dir, &graph_files, &fresh, true, None).unwrap();
 
     assert!(
-        graph_dir(&dir).join("fragments-v18.json").exists(),
-        "the v18 payload cache is what gets written"
+        graph_dir(&dir).join("fragments-v19.json").exists(),
+        "the v19 payload cache is what gets written"
     );
     assert!(
-        graph_dir(&dir).join("fragments-index-v18.json").exists(),
+        graph_dir(&dir).join("fragments-index-v19.json").exists(),
         "and its mtime-only index alongside it"
     );
     for stale in SUPERSEDED_CACHE_FILES {
@@ -83,38 +85,39 @@ fn rebuild_graph_writes_the_v13_caches_and_deletes_every_superseded_generation()
     }
 }
 
-// --- The v18 cache generation --------------------------
+// --- The v19 cache generation --------------------------
 
 #[test]
-fn fragments_cache_v18_supersedes_v17() {
-    let dir = temp_dir("fragments-cache-v18-paths");
+fn fragments_cache_v19_supersedes_v18() {
+    let dir = temp_dir("fragments-cache-v19-paths");
     assert_eq!(
         fragments_cache_path(&dir),
-        graph_dir(&dir).join("fragments-v18.json")
+        graph_dir(&dir).join("fragments-v19.json")
     );
     assert_eq!(
         fragments_index_path(&dir),
-        graph_dir(&dir).join("fragments-index-v18.json")
+        graph_dir(&dir).join("fragments-index-v19.json")
     );
     assert!(
-        SUPERSEDED_CACHE_FILES.contains(&"fragments-v17.json"),
-        "v17 joined the superseded list when the v18 bump landed"
+        SUPERSEDED_CACHE_FILES.contains(&"fragments-v18.json"),
+        "v18 joined the superseded list when the v19 bump landed"
     );
     assert!(
-        SUPERSEDED_CACHE_FILES.contains(&"fragments-index-v17.json"),
+        SUPERSEDED_CACHE_FILES.contains(&"fragments-index-v18.json"),
         "its index pairs with it, same as every other generation"
     );
 
-    let dir = temp_dir("rebuild-v18");
+    let dir = temp_dir("rebuild-v19");
     fs::create_dir_all(graph_dir(&dir)).unwrap();
-    fs::write(graph_dir(&dir).join("fragments-v17.json"), b"{}").unwrap();
-    fs::write(graph_dir(&dir).join("fragments-index-v17.json"), b"{}").unwrap();
+    fs::write(graph_dir(&dir).join("fragments-v18.json"), b"{}").unwrap();
+    fs::write(graph_dir(&dir).join("fragments-index-v18.json"), b"{}").unwrap();
 
     let fragment = Fragment {
         defs: vec![],
         usings: vec![],
         refs: vec![],
         names: vec![],
+        registrations: vec![],
     };
     let mut fresh = HashMap::new();
     fresh.insert("src/A.cs".to_string(), AnyFragment::Cs(fragment));
@@ -124,11 +127,11 @@ fn fragments_cache_v18_supersedes_v17() {
     }];
     rebuild_graph(&dir, &graph_files, &fresh, true, None).unwrap();
 
-    assert!(graph_dir(&dir).join("fragments-v18.json").exists());
-    assert!(graph_dir(&dir).join("fragments-index-v18.json").exists());
+    assert!(graph_dir(&dir).join("fragments-v19.json").exists());
+    assert!(graph_dir(&dir).join("fragments-index-v19.json").exists());
     assert!(
-        !graph_dir(&dir).join("fragments-v17.json").exists(),
-        "the v17 pair is deleted -- rename IS the invalidation"
+        !graph_dir(&dir).join("fragments-v18.json").exists(),
+        "the v18 pair is deleted -- rename IS the invalidation"
     );
     assert!(!graph_dir(&dir).join("fragments-index-v16.json").exists());
 }

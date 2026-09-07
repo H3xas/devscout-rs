@@ -61,6 +61,7 @@ fn frag_def_with_bases(
         non_public_methods: Vec::new(),
         method_arities: OrderedMap::new(),
         method_params: OrderedMap::new(),
+        override_methods: Vec::new(),
         test_methods: Vec::new(),
         end_line: 0,
     }
@@ -383,6 +384,7 @@ fn any_fragment_round_trips_both_shapes_and_never_reads_one_as_the_other() {
         usings: Vec::new(),
         refs: Vec::new(),
         names: Vec::new(),
+        registrations: Vec::new(),
     });
     let cs_json = serde_json::to_string(&cs).unwrap();
     assert_eq!(cs_json, r#"{"defs":[],"usings":[],"refs":[],"names":[]}"#);

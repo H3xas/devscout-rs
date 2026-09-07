@@ -223,6 +223,50 @@ pub enum Edge {
         /// The target file.
         to_file: String,
     },
+    /// The implementation of a service interface: either a type-level fact
+    /// (`member` absent) read off a two-type-argument DI registration call
+    /// (`services.AddScoped<IContract, Impl>()`), recorded against the
+    /// IMPLEMENTATION type's own declaring file and line -- the same
+    /// convention `inherits` uses for its own base-list reference, applied
+    /// here to a fact the resolver derived rather than one it read directly
+    /// off that type's own base list -- or a member-level fact (`member`
+    /// present, naming the satisfied interface member) connecting an
+    /// implementing member to the interface member it satisfies. Never a
+    /// guess: an ambiguous name-and-arity match emits nothing rather than
+    /// picking a candidate. `to`/`to_file` name the interface.
+    #[serde(rename = "implements")]
+    Implements {
+        /// The value value.
+        from_file: String,
+        /// The value value.
+        from_line: usize,
+        /// The value value.
+        to: String,
+        /// The value value.
+        to_file: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        /// The interface member this implementation satisfies; absent for
+        /// the type-level, registration-driven fact.
+        member: Option<String>,
+    },
+    /// An `override` member connected to the nearest in-graph base member of
+    /// the same name and arity, matched the same way `implements` is: two or
+    /// more candidates at that arity emit nothing. `to`/`to_file` name the
+    /// base type declaring the overridden member; `member` names it.
+    #[serde(rename = "overrides")]
+    Overrides {
+        /// The value value.
+        from_file: String,
+        /// The value value.
+        from_line: usize,
+        /// The value value.
+        to: String,
+        /// The value value.
+        to_file: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        /// The value value.
+        member: Option<String>,
+    },
 }
 
 impl Edge {
@@ -287,7 +331,15 @@ pub struct EdgesByKind {
     /// Appended LAST, matching the `ctor-di` slot in the fixed key order.
     #[serde(rename = "ctor-di")]
     pub ctor_di: usize,
-    /// The four TS edge counts, appended after `ctor-di` in this exact order
+    /// The type-level and member-level `implements` edges, counted
+    /// together -- appended after `ctor-di`, before the optional TS keys.
+    #[serde(default)]
+    pub implements: usize,
+    /// The member-level `overrides` edges, appended right after
+    /// `implements`, same rule.
+    #[serde(default)]
+    pub overrides: usize,
+    /// The four TS edge counts, appended after `overrides` in this exact order
     /// and ONLY when the repo carries a TS fragment at all. A C#-only repo's
     /// stats block omits them entirely -- which is why these are `Option` and
     /// not a plain `0`.

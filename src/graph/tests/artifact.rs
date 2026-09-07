@@ -104,9 +104,10 @@ fn graph_omits_units_when_empty_and_appends_them_after_names_otherwise() {
     };
 
     const WITHOUT_UNITS: &str = concat!(
-        r#"{"schema_version":2,"built_at_head":null,"defs":[],"edges":[],"stats":{"def_count":0,"#,
+        r#"{"schema_version":3,"built_at_head":null,"defs":[],"edges":[],"stats":{"def_count":0,"#,
         r#""file_count":0,"edges_by_kind":{"inherits":0,"uses-type":0,"imports":0,"uses-member":0,"#,
-        r#""ctor-di":0},"ambiguous_count":0,"ambiguous_pct":0,"unresolved_external_count":0,"#,
+        r#""ctor-di":0,"implements":0,"overrides":0},"ambiguous_count":0,"ambiguous_pct":0,"#,
+        r#""unresolved_external_count":0,"#,
         r#""heuristic_edge_count":0,"test_def_count":0,"heuristic_by_tier":{"ext":0,"guess":0}},"#,
         r#""names":[{"name":"A","kind":"class","file":"A/A.cs","line":1}]}"#,
     );
