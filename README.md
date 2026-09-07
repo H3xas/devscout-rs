@@ -22,6 +22,7 @@ much.
 | `devscout read <symbol>` | The symbol's declaration span and verbatim source plus the same inbound answer as `refs` |
 | `devscout impact <file\|symbol>` | Blast radius: the files reachable from a seed within N hops |
 | `devscout tests <symbol>` | The test files that reach a symbol |
+| `devscout <verb> <symbol> --pick N` | On any of the four verbs above, narrows a member seed with several declaring types to its nth candidate |
 | `devscout stats` | Index and cache summary for the current repo |
 | `devscout clear` | Drop freshness rows by age or by session |
 
@@ -110,6 +111,28 @@ hit, for piping). A zero-hit query is reported as a zero hit, not as an error �
 guesses a different symbol on your behalf, and an ambiguous name prints every candidate instead
 of picking one.
 
+### Member seeds
+
+`refs`, `read`, `impact` and `tests` all accept a bare member name (`Show`), a
+`Type.Member` spelling (`Widget.Show`), or a fully-qualified
+`Namespace.Type.Member` spelling (`App.Widgets.Widget.Show`) as a seed — the
+type-resolution ladder runs first, so a name that resolves to a type still
+answers as that type, and the member reading is only ever a fallback. A
+member seed naming exactly one declaring type answers as that member;
+`impact` and `tests` answer as the member's declaring type (they have no
+member-shaped answer of their own), while `refs` and `read` answer with the
+member's own inbound references.
+
+A member seed carried by more than one type lists one row per candidate —
+its declaring type, file, and line — rather than guessing between them or
+printing a bare list of types. Pass `--pick N` (one-based) to select the nth
+row from that list; an out-of-range `N` is a usage error (exit code 2).
+
+Every `--json` answer on these four verbs carries a top-level `outcome`:
+`hit`, `zero-hit` (a resolved seed with an empty answer), `ambiguous`, or
+`fallback-advised` (nothing in the graph carries the seed at all, and the
+zero-hit note on stderr advises a text-search fallback instead).
+
 Re-run `devscout map .` after edits; it re-parses only what changed and leaves the graph alone
 when nothing moved (`... 0 new, 0 removed ...; graph unchanged`). If the index falls behind
 `HEAD`, queries print a staleness warning on stderr rather than silently answering from stale
@@ -158,11 +181,14 @@ Two stores live outside the repo:
 ## Reading a symbol
 
 `devscout read <symbol>` returns the indexed declaration's start and end lines,
-the verbatim source in that span, and its inbound references. Use `--compact`
-for a line-oriented summary or `--json` for structured output. References that
-originate inside the target declaration itself are excluded from inbound rows
-and counts, so recursive and other self-references do not look like external
-callers.
+the verbatim source in that span, and its inbound references. `<symbol>` is a
+type name or a member seed (see [Member seeds](#member-seeds) — a bare name,
+`Type.Member`, or `Namespace.Type.Member`); a member seed answers with its own
+declaration line and inbound references, carrying no span (nothing records an
+end line for a member on its own). Use `--compact` for a line-oriented summary
+or `--json` for structured output. References that originate inside the
+target declaration itself are excluded from inbound rows and counts, so
+recursive and other self-references do not look like external callers.
 
 On the first agent-hook read of an indexed code file, devscout offers the
 nearest mapped symbol. A ranged read chooses the declaration nearest to the

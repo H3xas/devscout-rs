@@ -7,6 +7,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- `refs`, `read`, `impact` and `tests` accept a member seed (a bare member
+  name, `Type.Member`, or `Namespace.Type.Member`) once the type-resolution
+  ladder has found nothing; a member carried by more than one type lists one
+  candidate row per declaring type (never a bare type list), and `--pick N`
+  narrows to the nth. Every `--json` answer on these verbs now carries a
+  top-level `outcome` (`hit`, `zero-hit`, `ambiguous`, `fallback-advised`).
+
 ## [0.4.0] - 2026-09-06
 
 ### Added
