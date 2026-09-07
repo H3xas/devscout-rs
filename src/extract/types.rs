@@ -163,6 +163,12 @@ pub struct DefRecord {
     /// reason `method_returns` is one: the serialized key order is
     /// significant. Appended LAST of all, after `method_arities`.
     pub method_params: Vec<(String, Vec<Vec<String>>)>,
+    /// Declared method names carrying the literal `override` modifier,
+    /// source order, deduped. Appended LAST of all, after `method_params`.
+    /// Consulted only by the resolver's member-level `overrides` pass,
+    /// itself run only for a type the resolver already knows is a
+    /// registered DI implementation -- see `graph.rs`'s `FragDef`.
+    pub override_methods: Vec<String>,
     /// 1-based last line of the complete declaration node.
     pub end_line: usize,
 }
@@ -341,6 +347,30 @@ pub struct Extraction {
     /// Every member the file's types declare, appended LAST after
     /// `refs` in both the fragment and the `extract-dump` shape.
     pub names: Vec<NameRecord>,
+    /// Every two-type-argument DI service registration the file's
+    /// invocations record, appended LAST after `names`. See
+    /// `RegistrationRecord`.
+    pub registrations: Vec<RegistrationRecord>,
+}
+
+/// One two-type-argument DI service registration: an invocation whose
+/// method name begins `Add` or `TryAdd` and ends `Singleton`, `Scoped` or
+/// `Transient`, carrying exactly two type arguments -- the first the
+/// service type, the second the implementation type. `service`/
+/// `implementation` carry the type argument's raw text verbatim (dotted
+/// when the source wrote it qualified); splitting a dotted name into its
+/// bare tail plus its full qualified form, the way an ordinary type
+/// reference does, is the resolver's job, not the extractor's.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RegistrationRecord {
+    /// The service (first type argument) name, as written.
+    pub service: String,
+    /// The implementation (second type argument) name, as written.
+    pub implementation: String,
+    /// The registration call's enclosing namespace.
+    pub namespace: String,
+    /// The registration call's 1-based line.
+    pub line: usize,
 }
 
 /// One declared name and the line its own NAME TOKEN sits on. Deliberately

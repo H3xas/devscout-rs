@@ -8,7 +8,7 @@ use super::qualifiers::{
 use super::receivers::type_fact;
 use super::refs::{
     invocation_arg_count, push_ctor_param_ref, push_member_ref, record_base_list,
-    record_single_type, type_parameter_names,
+    record_single_type, registration_fact, type_parameter_names,
 };
 use super::text::{
     declared_name, format_segments, named_children, namespace_level_types, new_parser, text,
@@ -354,6 +354,16 @@ fn walk<'a>(
         // initializers -- because none of those container node types are
         // special-cased above, so they all reach here via the default walk.
         "member_access_expression" => {
+            // A registration fact (Unit B1) needs only that this access is
+            // actually invoked -- the shape rule itself (name pattern, exactly
+            // two type arguments) lives in `registration_fact`. Independent of
+            // the uses-member candidate built below: the same call keeps
+            // recording its ordinary uses-member/uses-type refs unchanged.
+            if invocation_arg_count(node).is_some() {
+                if let Some(reg) = registration_fact(node, ns, src) {
+                    out.registrations.push(reg);
+                }
+            }
             let expr_field = node.child_by_field_name("expression");
             // The member itself can be a generic_name too ("Foo.Bar<T>(...)"):
             // normalize to the bare method name so the resolver's method-list
@@ -548,6 +558,7 @@ pub fn extract(source: &str) -> Extraction {
         usings: Vec::new(),
         refs: Vec::new(),
         names: Vec::new(),
+        registrations: Vec::new(),
     };
     walk_list(
         named_children(root),

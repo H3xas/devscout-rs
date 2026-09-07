@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use tree_sitter::Node;
 
 use super::text::{named_children, text};
-use super::types::{Fact, RefRecord};
+use super::types::{Fact, RefRecord, RegistrationRecord};
 
 // Unwraps nullable/array/alias-qualified wrappers,
 // pulls the base identifier out of a generic_name (discarding its type
@@ -634,6 +634,52 @@ pub(super) fn record_single_type(
     if let Some(last) = refs.last_mut() {
         last.type_arg_count = arity;
     }
+}
+
+// The shape rule for a two-type-argument DI service registration (Unit B1):
+// the invoked name begins `Add` or `TryAdd` and ends `Singleton`, `Scoped` or
+// `Transient`. A prefix-and-suffix test rather than a fixed name list, so the
+// keyed spellings (`AddKeyedSingleton`, `TryAddKeyedScoped`, ...) and the
+// generic `TryAdd*` family match with no spelling of their own to maintain.
+fn is_registration_method_name(name: &str) -> bool {
+    (name.starts_with("Add") || name.starts_with("TryAdd"))
+        && (name.ends_with("Singleton") || name.ends_with("Scoped") || name.ends_with("Transient"))
+}
+
+// A registration fact for `node` when it is the callee of an invocation
+// whose generic method name matches `is_registration_method_name` and whose
+// type-argument list carries EXACTLY two arguments (Unit B1) -- a
+// one-type-argument form (or any other count) yields `None`, recording
+// nothing. `node` is a `member_access_expression`'s own node; the caller
+// confirms it is actually invoked (`invocation_arg_count(node).is_some()`)
+// before calling this, so the shape test here is purely the name-and-arity
+// rule.
+pub(super) fn registration_fact(node: Node, ns: &str, src: &[u8]) -> Option<RegistrationRecord> {
+    let name_node = node.child_by_field_name("name")?;
+    if name_node.kind() != "generic_name" {
+        return None;
+    }
+    let ident = named_children(name_node)
+        .into_iter()
+        .find(|c| c.kind() == "identifier")?;
+    if !is_registration_method_name(&text(ident, src)) {
+        return None;
+    }
+    let list = named_children(name_node)
+        .into_iter()
+        .find(|c| c.kind() == "type_argument_list")?;
+    let args = named_children(list);
+    if args.len() != 2 {
+        return None;
+    }
+    let service = outer_type_name(args[0], src)?;
+    let implementation = outer_type_name(args[1], src)?;
+    Some(RegistrationRecord {
+        service,
+        implementation,
+        namespace: ns.to_string(),
+        line: node.start_position().row + 1,
+    })
 }
 
 pub(super) fn record_base_list(

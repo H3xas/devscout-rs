@@ -25,6 +25,7 @@ mod preproc_fluent_chain;
 mod property_types_fact;
 mod qualifier_capture;
 mod receiver_facts;
+mod registration_fact;
 mod stage4_receivers;
 mod test_methods_fact;
 mod ts_purpose;

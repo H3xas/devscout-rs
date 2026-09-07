@@ -6,7 +6,7 @@ use super::receivers::type_fact;
 use super::refs::{
     base_type_identifier, generic_arg_descriptors, type_descriptor, type_parameter_names,
 };
-use super::text::{declared_name, is_public, named_children, text};
+use super::text::{declared_name, is_override, is_public, named_children, text};
 use super::types::{ExtensionMethod, Fact};
 
 // Deliberately NOT public_method_names: that one strips a trailing "Async"
@@ -46,6 +46,27 @@ pub(super) fn raw_non_public_method_names(node: Node, src: &[u8], kind: &str) ->
         .map(|c| declared_name(c, src))
         .filter(|n| !n.is_empty())
         .collect()
+}
+
+// Declared method names carrying the literal `override` modifier, source
+// order, deduped -- every visibility, the same population `raw_method_arities`
+// draws its names from, since an overridden member's own arity fact is read
+// off that same table rather than a second one kept here.
+pub(super) fn raw_override_method_names(node: Node, src: &[u8]) -> Vec<String> {
+    let Some(body) = node.child_by_field_name("body") else {
+        return Vec::new();
+    };
+    let mut names: Vec<String> = Vec::new();
+    for c in named_children(body) {
+        if c.kind() != "method_declaration" || !is_override(c, src) {
+            continue;
+        }
+        let name = declared_name(c, src);
+        if !name.is_empty() && !names.contains(&name) {
+            names.push(name);
+        }
+    }
+    names
 }
 
 // Every `method_declaration`'s own (name, arity RANGE) fact, regardless of
