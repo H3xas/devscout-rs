@@ -113,7 +113,7 @@ fn impact_and_map_stay_byte_identical_with_no_import_artifact_present() {
 
     let graph_json = fs::read_to_string(fx.root.join(".scout/graph/graph.json")).unwrap();
     assert!(
-        graph_json.starts_with(r#"{"schema_version":2,"#),
-        "GRAPH_SCHEMA_VERSION stays 2: {graph_json}"
+        graph_json.starts_with(r#"{"schema_version":3,"#),
+        "GRAPH_SCHEMA_VERSION stays 3: {graph_json}"
     );
 }
