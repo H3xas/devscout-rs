@@ -22,6 +22,7 @@ much.
 | `devscout read <symbol>` | The symbol's declaration span and verbatim source plus the same inbound answer as `refs` |
 | `devscout impact <file\|symbol>` | Blast radius: the files reachable from a seed within N hops |
 | `devscout tests <symbol>` | The test files that reach a symbol |
+| `devscout <verb> <symbol> --pick N` | On any of the four verbs above, narrows a member seed with several declaring types to its nth candidate |
 | `devscout stats` | Index and cache summary for the current repo |
 | `devscout clear` | Drop freshness rows by age or by session |
 
@@ -110,6 +111,32 @@ hit, for piping). A zero-hit query is reported as a zero hit, not as an error �
 guesses a different symbol on your behalf, and an ambiguous name prints every candidate instead
 of picking one.
 
+### Member seeds
+
+`refs`, `read`, `impact` and `tests` all accept a bare member name (`Show`), a
+`Type.Member` spelling (`Widget.Show`), or a fully-qualified
+`Namespace.Type.Member` spelling (`App.Widgets.Widget.Show`) as a seed — the
+type-resolution ladder runs first, so a name that resolves to a type still
+answers as that type, and the member reading is only ever a fallback. A
+member seed naming exactly one declaring type answers as that member;
+`impact` and `tests` answer as the member's declaring type (they have no
+member-shaped answer of their own), while `refs` and `read` answer with the
+member's own inbound references.
+
+A member seed carried by more than one type lists one row per candidate —
+its declaring type, file, and line — rather than guessing between them or
+printing a bare list of types. Pass `--pick N` (one-based) to select the nth
+row from that list; an out-of-range `N` is a usage error (exit code 2).
+
+Every `--json` answer on these four verbs leads with a top-level `schema_version` and carries a
+top-level `outcome`: `hit`, `zero-hit`, `ambiguous`, or `fallback-advised` (nothing in the graph
+carries the seed at all, and the zero-hit note on stderr advises a text-search fallback instead).
+`zero-hit` means the seed resolved and the answer is empty: `impact`'s empty blast radius, or a
+`refs`/`read` member declared by exactly one type with nothing referencing it; `tests` with no
+rows still answers `hit`. Every hit row also carries a `why` naming the rule or tier that produced
+it. See [`docs/answer-contract.md`](docs/answer-contract.md) for the full contract, the `why`
+vocabulary, and a worked example per verb.
+
 Re-run `devscout map .` after edits; it re-parses only what changed and leaves the graph alone
 when nothing moved (`... 0 new, 0 removed ...; graph unchanged`). If the index falls behind
 `HEAD`, queries print a staleness warning on stderr rather than silently answering from stale
@@ -132,6 +159,7 @@ untracked files and are shared correctly by worktrees:
 <git-common-dir>/scout/graph/fragments-v18.json   per-file extraction cache (incremental map)
 <git-common-dir>/scout/graph/project-units.json   csproj staleness sidecar (present only with a project model)
 <git-common-dir>/scout/graph/semantic-v1.json      planned: compiler-backed enrichment cache (see docs/design/compiler-enrichment.md)
+<git-common-dir>/scout/log/queries.jsonl          query-verb telemetry, one JSON line per answered invocation (opt-in; SCOUT_TELEMETRY=1)
 ```
 
 Outside a git repository the same tree is written to `<root>/.scout/` instead. `devscout init`
@@ -153,16 +181,20 @@ Two stores live outside the repo:
 | `SCOUT_CONTENT_DB` | Path to the shared content-dedup SQLite database. Default `$HOME/.claude/scout/content.db`. |
 | `SCOUT_MTIME_REUSE` | `1` switches `map` from content-hash fragment reuse back to mtime-based reuse. |
 | `SCOUT_DEBUG` | `1` turns on hook debug output. Equivalent to creating a `.scout/debug` file. |
+| `SCOUT_TELEMETRY` | Opt-in query telemetry. Export `1` in the shell that runs `find`/`refs`/`read`/`impact`/`tests` to append one JSON line per answered invocation to `scout/log/queries.jsonl`; a usage error or a seed with no resolved repository or graph logs nothing. Unset (or any other value) writes nothing. The agent hooks never run these verbs, so `devscout init` does not set this variable for them. |
 | `HOME` | Used to locate the registry, content database, and agent settings file. |
 
 ## Reading a symbol
 
 `devscout read <symbol>` returns the indexed declaration's start and end lines,
-the verbatim source in that span, and its inbound references. Use `--compact`
-for a line-oriented summary or `--json` for structured output. References that
-originate inside the target declaration itself are excluded from inbound rows
-and counts, so recursive and other self-references do not look like external
-callers.
+the verbatim source in that span, and its inbound references. `<symbol>` is a
+type name or a member seed (see [Member seeds](#member-seeds) — a bare name,
+`Type.Member`, or `Namespace.Type.Member`); a member seed answers with its own
+declaration line and inbound references, carrying no span (nothing records an
+end line for a member on its own). Use `--compact` for a line-oriented summary
+or `--json` for structured output. References that originate inside the
+target declaration itself are excluded from inbound rows and counts, so
+recursive and other self-references do not look like external callers.
 
 On the first agent-hook read of an indexed code file, devscout offers the
 nearest mapped symbol. A ranged read chooses the declaration nearest to the
@@ -331,6 +363,8 @@ reference resolution (exact generic arity), and has not been re-benchmarked; tre
 scorecard as 0.2.0-specific until the next round. Release 0.4.0 changes resolver output again
 (heuristic tiers and recall), measured in
 [`docs/benchmarks/results/2026-09-resolver-precision.md`](docs/benchmarks/results/2026-09-resolver-precision.md).
+Release 0.5.0 changes no resolver output: it produces a byte-identical `graph.json` on the
+pinned corpus, so those figures carry over unchanged.
 
 A separate scripted-lane run measured **tool calls issued per task**: the index arm used fewer
 calls in all four query kinds, largest on references (5.0 vs 11.8 per lane, ~2.4x) — single-run
@@ -389,9 +423,15 @@ same command surface with fixtures that ship in this repository.
 
 Bug reports, feature requests, and pull requests are welcome. See
 [CONTRIBUTING.md](CONTRIBUTING.md) for how to build, test, and submit changes;
-[GOVERNANCE.md](GOVERNANCE.md) and [MAINTAINERS.md](MAINTAINERS.md) for how the project is
-run; [SECURITY.md](SECURITY.md) for private vulnerability reporting; and
+[ARCHITECTURE.md](ARCHITECTURE.md) for what each module under `src/` owns, the
+invariants it holds, and where a change goes; [GOVERNANCE.md](GOVERNANCE.md) and
+[MAINTAINERS.md](MAINTAINERS.md) for how the project is run;
+[SECURITY.md](SECURITY.md) for private vulnerability reporting; and
 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for community expectations.
+
+Every pull request is checked for formatting, for an architecture guide that still names each
+module, and against a size and complexity ratchet: 800 lines per file, 100 lines per function
+and a cognitive complexity of 25, with a fixed list of existing exceptions that only shrinks.
 
 ## License
 

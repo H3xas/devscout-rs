@@ -242,6 +242,10 @@ fn member_refs_line(m: &query::MemberRefs) -> String {
 }
 
 /// Renders a reference-query model as human-readable text.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one ordered pass emitting every section of the refs model in the fixed order the text output promises"
+)]
 pub fn render_refs_text(model: &query::RefsModel) -> String {
     let mut out: Vec<String> = Vec::new();
     out.push(format!("{}  ({})", model.id, model.kind));
@@ -527,6 +531,10 @@ pub fn render_impact_text(query: &str, model: &query::ImpactModel) -> String {
 }
 
 /// `--compact` `refs` rendering.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one ordered pass mirroring render_refs_text's section order in the compact shape"
+)]
 pub fn render_refs_compact(model: &query::RefsModel) -> String {
     let mut out: Vec<String> = Vec::new();
     out.push(format!("{}  ({})", model.id, model.kind));
@@ -920,7 +928,7 @@ mod tests {
     use crate::query::{
         AmbiguousRow, AmbiguousTables, DefSite, ImpactModel, ImpactRow, ImportRow, InboundRow,
         InboundTables, OutboundRow, OutboundTables, RefsModel, SeedKind, Table, TestRow,
-        TestsModel,
+        TestsModel, Why,
     };
 
     fn table<R>(rows: Vec<R>, dropped: usize) -> Table<R> {
@@ -1191,11 +1199,11 @@ mod tests {
             iface_via: vec![],
             from_lines: vec![],
             infra: false,
+            why: Why::UsesMemberPrecise,
         }
     }
 
-    /// A heuristic-ONLY row: reached by `heuristic_count` guesses and nothing
-    /// else, which is the only shape `buildImpactModel` ever flags.
+    /// A heuristic-ONLY row: reached only by guesses, the only shape flagged.
     fn heuristic_impact_row(
         file: &str,
         hop: u32,

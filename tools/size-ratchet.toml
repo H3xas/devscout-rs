@@ -1,0 +1,34 @@
+# Ratchet for the size and complexity CI gate (tools/check-size-and-complexity.sh).
+#
+# Two things live here:
+#
+#  - allow_counts: the maximum number of #[allow(clippy::too_many_lines)] and
+#    #[allow(clippy::cognitive_complexity)] attributes permitted anywhere
+#    under src/. Each one marks a function clippy would otherwise reject at
+#    the thresholds in clippy.toml.
+#  - file_ceilings: a fixed allowlist of large files, each capped at its
+#    current line count. Every other file under src/ is capped by the flat
+#    line limit the checker script applies to non-listed files.
+#
+# This list only shrinks. A ceiling may drop when a file is trimmed, but
+# never rise, and no new file may be added to the allowlist -- a file that
+# needs splitting gets split, not grandfathered in here.
+
+[allow_counts]
+too_many_lines = 23
+cognitive_complexity = 7
+
+[file_ceilings]
+"src/graph.rs" = 3189
+"src/audit.rs" = 2484
+"src/cli.rs" = 2413
+"src/render.rs" = 1971
+"src/tsgraph.rs" = 1710
+"src/store.rs" = 1535
+"src/mapcmd.rs" = 1480
+"src/initcmd.rs" = 1468
+"src/hookio.rs" = 1341
+"src/resolve/assembly.rs" = 1332
+"src/manifest.rs" = 1289
+"src/project.rs" = 1126
+"src/preproc.rs" = 1093

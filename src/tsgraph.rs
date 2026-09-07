@@ -680,6 +680,10 @@ struct ResolvedReexport {
 }
 
 /// Resolves the TS/TSX graph: every file's reference fragments into edges.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one ordered pass building every def, export and edge table the resolution below reads from, all over the same fragment set"
+)]
 pub fn resolve_ts_graph(fragments: &[(String, TsFragment)], alias: &TsAliasScopes) -> TsGraph {
     let file_set: HashSet<&str> = fragments.iter().map(|(f, _)| f.as_str()).collect();
 

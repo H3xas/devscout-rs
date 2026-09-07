@@ -7,6 +7,65 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-07
+
+A code-organisation release: the three largest modules are split by concern, CI now holds
+them that way, and every `--json` answer says what it is and why.
+
+### Added
+
+- **`ARCHITECTURE.md`.** One row per module under `src/` giving its responsibility and its
+  invariants, plus a table saying where a change goes. `tools/check-architecture.sh` fails
+  when a module has no row or a row names a module that no longer exists, and CI runs it.
+- **Size and complexity gates.** `too_many_lines` (100) and `cognitive_complexity` (25) are
+  denied; each existing offender carries one `#[allow(..., reason = "...")]` attribute.
+  `tools/size-ratchet.toml` caps how many of those attributes the tree may hold and caps
+  every file under `src/` at 800 lines, except the large files it names individually at
+  their current length. Those numbers only shrink. `tools/check-size-and-complexity.sh`
+  enforces the ratchet, a self-test proves the checker rejects what it should, and CI runs
+  both alongside `cargo clippy --lib --bins --locked`.
+- **Member seeds on `refs`, `read`, `impact` and `tests`.** A bare member name,
+  `Type.Member` or `Namespace.Type.Member` resolves as a seed once the type-resolution
+  ladder has found nothing, so no answer a type seed used to give changes. A member carried
+  by more than one type lists one candidate row per declaring type with its file and line,
+  never a bare type list, and `--pick N` narrows to the nth. When the did-you-mean pass
+  holds an exact-name match it is answered instead of advising a text search.
+- **`outcome` on every `--json` answer.** One of `hit`, `zero-hit`, `ambiguous` or
+  `fallback-advised`, from a closed vocabulary, so a caller can count dead ends without
+  parsing prose.
+- **`schema_version` and per-row `why` on every `--json` answer.** `schema_version` is the
+  first key of the object; every hit row carries a `why` naming the rule or tier that
+  produced it, drawn from a closed vocabulary and derived from the edge the row came from.
+  [`docs/answer-contract.md`](docs/answer-contract.md) documents the shape per verb with a
+  worked example, and says that consumers should ignore unknown keys.
+- **Query telemetry behind `SCOUT_TELEMETRY=1`.** Each answered `find`/`refs`/`read`/`impact`/
+  `tests` invocation appends one JSON line to `scout/log/queries.jsonl` under the artifact
+  directory: timestamp, record schema version, verb, seed, outcome, elapsed milliseconds,
+  result bytes and candidate count. A usage error or a seed with no resolved repository or
+  graph logs nothing; without the variable nothing is created; an unwritable log changes
+  neither exit code nor output. Telemetry is opt-in: export `SCOUT_TELEMETRY=1` in the shell
+  that runs the query verbs. The agent hooks never run those verbs, so `devscout init` does
+  not set the variable for them.
+
+### Changed
+
+- **`src/resolve.rs` is a thin module root over `src/resolve/`** — the def index, arity
+  admission, member checks, file scope, receiver typing, the ladder, edge construction and
+  graph assembly, with the unit tests in per-topic files under `src/resolve/tests/`.
+- **`src/extract.rs` is a thin module root over `src/extract/`** — split by construct
+  family: types, type definitions, members, references, receivers, lambdas, qualifiers, the
+  extraction walk, the dump and JSON plumbing, and the TypeScript-family extraction.
+- **`src/query.rs` is a thin module root over `src/query/`** — one module per verb (`find`,
+  `refs`, `read`, `impact`, and `coverage` for the tests-reaching-a-symbol verb) over the
+  shared substrate they sit on: the graph index, symbol resolution, ranking, hub-file
+  classification and the ordered collections.
+- Every public item kept the path it had before the three splits, and `graph.json` is
+  byte-identical before and after each of them on the pinned corpus and on both audited
+  fixtures.
+- **An ambiguous member seed answers with candidate rows.** It previously rendered exactly
+  like an ambiguous type name and ignored `--json`; it now lists the member candidates and
+  emits JSON like every other answer.
+
 ## [0.4.0] - 2026-09-06
 
 ### Added

@@ -26,8 +26,10 @@ Before opening a pull request, run:
 
 ```sh
 cargo fmt --all -- --check
+cargo clippy --lib --bins
 cargo clippy --all-targets
 sh tools/check-architecture.sh
+sh tools/check-size-and-complexity.sh
 ```
 
 [ARCHITECTURE.md](ARCHITECTURE.md) maps every module under `src/` to its responsibility and
@@ -37,9 +39,21 @@ row or a row names a module that no longer exists, and CI runs it on every push.
 
 `cargo fmt --all -- --check` must be clean — CI enforces this on every pull request.
 
-`cargo clippy` is not yet a zero-warnings baseline project-wide (a pre-existing set of
+Two clippy lints are denied and CI gates on them: `too_many_lines` at 100 lines and
+`cognitive_complexity` at 25, with the thresholds in `clippy.toml`. Both gate library and
+binary code only — CI runs `cargo clippy --lib --bins --locked`, never against `--tests`, so
+test code is exempt by design and a long or complex test function trips neither lint. A
+function under `src/` that trips either is split; an existing one that cannot be is carried
+by a single `#[allow(...)]` attribute whose `reason` says why, and `tools/size-ratchet.toml`
+caps how many of those attributes the tree may hold. That same ratchet caps every file under
+`src/` at 800 lines, except the large files it names individually at their current length.
+Those numbers only shrink: a new file over the limit is split, never added to the list. CI
+runs `cargo clippy --lib --bins --locked`, the ratchet check, and a self-test proving the
+check rejects an oversized file and an extra exemption.
+
+`cargo clippy` is not otherwise a zero-warnings baseline project-wide (a pre-existing set of
 `too_long_first_doc_paragraph` / missing-backtick rustdoc lints predates this contributing
-guide and CI does not gate on it yet — see [ROADMAP.md](ROADMAP.md)). What CI does expect,
+guide and CI does not gate on it — see [ROADMAP.md](ROADMAP.md)). What CI does expect,
 and what review will ask for, is that a pull request does not make clippy's opinion of the
 files it touches any worse than it found them, and that any new module you add is clean
 under `cargo clippy --all-targets -- -D warnings` on its own. When in doubt, run the

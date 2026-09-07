@@ -163,19 +163,29 @@ fn a_bare_member_never_matches_a_longer_identifier_that_starts_with_it() {
 }
 
 #[test]
-fn a_member_no_edge_line_names_keeps_the_unchanged_zero_hit_exit() {
+fn a_member_no_edge_line_names_keeps_its_exit_code_and_resolves_to_an_empty_list() {
     let fx = Fixture::build("unverified");
     let out = fx.run(&["refs", "Reconcile"]);
     assert_eq!(out.status.code(), Some(3), "{out:?}");
-    assert_eq!(stdout_of(&out), "no symbol matches \"Reconcile\"\n");
+    assert_eq!(
+        stdout_of(&out),
+        "App.Books.Ledger.Reconcile  (member)\n\
+         def: src/Ledger.cs:9\n\
+         inbound:\n\
+         \x20 inherits (0):\n\
+         \x20 uses-type (0):\n\
+         \x20 uses-member (0):\n"
+    );
 }
 
 // `Approve` is a static method declared on two independent classes, each with
 // its own inbound call site, so both survive the same edge-line verification
 // `PostEx`/`Post` above rely on. More than one declaring type surviving is an
-// ambiguity `refs` refuses to guess through: the answer is the exact candidate
-// list an ambiguous TYPE name already renders (id, def site, kind; sorted;
-// exit 1), never a per-type `uses-member` block.
+// ambiguity `refs` refuses to guess through: the answer is one row per member
+// candidate (its declaring type, file and line -- the member's own
+// declaration site, never the bare `{id, def site, kind}` list an ambiguous
+// TYPE name renders), in name-index order, exit 1, never a per-type
+// `uses-member` block.
 const AMBIGUOUS_FILES: &[(&str, &str)] = &[
     (
         "src/Ledger.cs",
@@ -211,9 +221,13 @@ fn ambiguous_member_fixture(prefix: &str) -> Fixture {
     fixture
 }
 
-const AMBIGUOUS_APPROVE_OUT: &str = "ambiguous symbol \"Approve\" — 2 candidates:\n\
-                                      App.Books.Journal  src/Journal.cs:3  class\n\
-                                      App.Books.Ledger  src/Ledger.cs:3  class\n";
+const AMBIGUOUS_APPROVE_OUT: &str = "ambiguous member \"Approve\" — 2 candidates:\n\
+                                      App.Books.Journal.Approve  src/Journal.cs:5\n\
+                                      App.Books.Ledger.Approve  src/Ledger.cs:5\n";
+
+const AMBIGUOUS_APPROVE_JSON: &str = "{\"schema_version\":1,\"outcome\":\"ambiguous\",\"query\":\"Approve\",\"candidates\":[\
+    {\"owner\":\"App.Books.Journal\",\"name\":\"Approve\",\"file\":\"src/Journal.cs\",\"line\":5},\
+    {\"owner\":\"App.Books.Ledger\",\"name\":\"Approve\",\"file\":\"src/Ledger.cs\",\"line\":5}]}\n";
 
 #[test]
 fn a_bare_member_declared_on_two_types_renders_the_ambiguous_candidate_list_never_a_members_block()
@@ -224,11 +238,16 @@ fn a_bare_member_declared_on_two_types_renders_the_ambiguous_candidate_list_neve
     assert_eq!(stdout_of(&out), AMBIGUOUS_APPROVE_OUT);
 }
 
+// Unlike an ambiguous TYPE name (which always ignores `--json`/`--compact`
+// and prints the same plain text), a member ambiguity DOES respect `--json`:
+// there was no JSON shape for this answer to keep unchanged, so carrying
+// `outcome` is purely additive rather than a change to an existing key.
 #[test]
-fn an_ambiguous_bare_member_ignores_json_and_compact_same_as_an_ambiguous_type_name() {
+fn an_ambiguous_member_carries_outcome_under_json_and_keeps_the_plain_list_under_compact() {
     let fx = ambiguous_member_fixture("ambiguous-flags");
     let json = fx.run(&["refs", "Approve", "--json"]);
-    assert_eq!(stdout_of(&json), AMBIGUOUS_APPROVE_OUT);
+    assert_eq!(json.status.code(), Some(1), "{json:?}");
+    assert_eq!(stdout_of(&json), AMBIGUOUS_APPROVE_JSON);
     let compact = fx.run(&["refs", "Approve", "--compact"]);
     assert_eq!(stdout_of(&compact), AMBIGUOUS_APPROVE_OUT);
 }

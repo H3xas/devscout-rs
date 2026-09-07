@@ -2,9 +2,9 @@
 
 // Index freshness. `devscout map` stamps a repo-relative sidecar
 // (`index-state.json`, beside `manifest.json` under `.git/scout/`) with the
-// HEAD it ran against; `find`/`refs`/`impact` compare that against the live
-// HEAD and working tree on every call and warn on stderr, exactly once, when
-// they disagree.
+// HEAD it ran against; every query verb compares that against the live HEAD and
+// working tree on every call and warns on stderr, exactly once, when they
+// disagree.
 //
 // Every test here goes through the COMPILED BINARY as a subprocess -- same
 // reason tests/cli_zero_hit.rs does: stdout has to stay byte-identical to what
@@ -146,7 +146,7 @@ fn stderr_of(out: &Output) -> String {
 }
 
 #[test]
-fn fresh_index_prints_no_freshness_warning_on_any_of_the_three_verbs() {
+fn fresh_index_prints_no_freshness_warning_on_any_query_verb() {
     let (fx, _sha) = Fixture::build("fresh");
 
     let find = fx.run(&["find", "IWidget"]);
@@ -154,6 +154,9 @@ fn fresh_index_prints_no_freshness_warning_on_any_of_the_three_verbs() {
 
     let refs = fx.run(&["refs", "IWidget"]);
     assert_eq!(stderr_of(&refs), "", "{refs:?}");
+
+    let tests = fx.run(&["tests", "IWidget"]);
+    assert_eq!(stderr_of(&tests), "", "{tests:?}");
 
     let impact = fx.run(&["impact", "src/IWidget.cs"]);
     assert_eq!(stderr_of(&impact), "", "{impact:?}");
@@ -177,6 +180,20 @@ fn head_moved_since_map_prints_exactly_one_stale_index_line() {
         &new_sha[..7],
     );
     assert_eq!(stderr_of(&refs), want);
+}
+
+#[test]
+fn head_moved_since_map_is_reported_by_tests_too() {
+    let (fx, initial_sha) = Fixture::build("head-moved-tests");
+    let new_sha = fx.advance_head(&initial_sha);
+
+    let tests = fx.run(&["tests", "IWidget"]);
+    let want = format!(
+        "devscout: index for repo is stale (indexed at {}, HEAD {}; 0 changed files) — rebuild with devscout map\n",
+        &initial_sha[..7],
+        &new_sha[..7],
+    );
+    assert_eq!(stderr_of(&tests), want);
 }
 
 #[test]

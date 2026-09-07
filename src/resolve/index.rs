@@ -169,6 +169,11 @@ pub struct MethodOverloadParams {
     pub file: String,
 }
 
+#[allow(
+    clippy::too_many_lines,
+    clippy::cognitive_complexity,
+    reason = "one ordered pass building every lookup table the resolver ladder reads, so the tables stay mutually consistent"
+)]
 pub(super) fn build_def_index(fragments_by_file: &[(String, Fragment)]) -> DefIndex {
     let mut defs: Vec<Def> = Vec::new();
     let mut member_lists: Vec<MemberLists> = Vec::new();

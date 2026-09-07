@@ -480,6 +480,11 @@ fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
 
 // Scans one line's bytes (already excluding `\r`/`\n`) starting from
 // `state`, returning the state in effect at the start of the next line.
+#[allow(
+    clippy::too_many_lines,
+    clippy::cognitive_complexity,
+    reason = "one character-by-character state machine; each state transition only makes sense read against the others it can fall through to"
+)]
 fn scan_line(mut state: LexState, line: &[u8]) -> LexState {
     let n = line.len();
     let mut i = 0;
