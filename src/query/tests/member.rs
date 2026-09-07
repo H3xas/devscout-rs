@@ -19,8 +19,8 @@ fn name_row(name: &str, kind: &str, file: &str, line: usize, owner: &str) -> gra
 // `Cellar` and `Cask` both declare `Rack` (the ambiguous case); `Cellar`
 // alone declares `Uncork` (the unique case) and, oddly but on purpose, a
 // SECOND name row spells `Cellar` again as a method on `Sommelier` -- this is
-// what a query for the bare name `Cellar` must never reach, proving the type
-// ladder runs to completion before the member ladder is tried at all (C1).
+// what a query for the bare name `Cellar` must never reach: the type ladder
+// runs to completion before the member ladder is tried at all.
 fn member_seed_fixture() -> (graph::Graph, PathBuf) {
     let mut g = make_graph(
         vec![
