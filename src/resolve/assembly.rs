@@ -1,7 +1,6 @@
 use super::arity::{arity_accepts, generic_args_unify, resolve_ref_by_arity};
-use super::edges::{
-    build_implementor_index, heuristic_edge_key, resolve_ctor_param, type_edge, CtorDiResolution,
-};
+use super::dispatch::append_dispatch_edges;
+use super::edges::{build_implementor_index, heuristic_edge_key, resolve_ctor_param, type_edge};
 use super::index::{build_def_index, name_probe, ExtCandidate};
 use super::ladder::{
     capped_candidates, narrow_by_reachability, narrow_tracked, resolve_ref, type_candidate,
@@ -21,8 +20,8 @@ use super::scope::{
     FileContext,
 };
 use crate::graph::{
-    Candidate, Edge, EdgesByKind, Fragment, Graph, GraphName, HeuristicByTier, HeuristicTier,
-    Percent1, Stats, GRAPH_SCHEMA_VERSION,
+    Edge, EdgesByKind, Fragment, Graph, GraphName, HeuristicByTier, HeuristicTier, Percent1, Stats,
+    GRAPH_SCHEMA_VERSION,
 };
 use crate::manifest;
 use std::collections::{HashMap, HashSet};
@@ -1149,23 +1148,7 @@ pub fn resolve_graph_with_model(
                     &file_contexts,
                     &implementors_by_base_name,
                 );
-                let (resolution, to, candidates): (&str, Option<String>, Vec<Candidate>) =
-                    match classification {
-                        CtorDiResolution::Plain(i) => {
-                            ("plain", Some(index.defs[i].id.clone()), Vec::new())
-                        }
-                        CtorDiResolution::Closed(i) => {
-                            ("closed", Some(index.defs[i].id.clone()), Vec::new())
-                        }
-                        CtorDiResolution::OpenGeneric(i) => {
-                            ("open-generic", Some(index.defs[i].id.clone()), Vec::new())
-                        }
-                        CtorDiResolution::Ambiguous(idxs) => {
-                            ("ambiguous", None, capped_candidates(&index, idxs))
-                        }
-                        CtorDiResolution::Infra => ("infra", None, Vec::new()),
-                        CtorDiResolution::Unresolved => ("unresolved", None, Vec::new()),
-                    };
+                let (resolution, to, candidates) = classification.edge_parts(&index);
                 edges.push(Edge::CtorDi {
                     from_file: file.clone(),
                     from_line: r.line,
@@ -1210,6 +1193,14 @@ pub fn resolve_graph_with_model(
             }
         }
     }
+
+    append_dispatch_edges(
+        fragments_by_file,
+        &index,
+        &file_contexts,
+        &mut edges,
+        &mut edges_by_kind,
+    );
 
     // The full name index. Every name the mapped set declares, with the file
     // and line it is declared on: one entry per fragment def (its own `line`,

@@ -313,7 +313,7 @@ fn declares_in_base_closure(
 // skipping the whole base is equivalent to skipping its closure);
 // `typed_receiver_base_member` passes `false` only for a receiver that is
 // itself an interface.
-fn first_base_declaring(
+pub(super) fn first_base_declaring(
     index: &DefIndex,
     file_contexts: &HashMap<String, FileContext>,
     start: usize,
