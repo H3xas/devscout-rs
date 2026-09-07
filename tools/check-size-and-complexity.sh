@@ -3,6 +3,11 @@
 # every file under src/ not named there, a per-file ceiling for each file
 # that is, and a cap on how many too_many_lines / cognitive_complexity
 # clippy exemptions the tree may carry. CI runs this on every push.
+#
+# The two exemption counts below track deny lints that gate only library and
+# binary code (CI runs `cargo clippy --lib --bins`, never `--tests`), so an
+# `#[allow(...)]` attribute is only ever counted where it can matter; a
+# source comment that merely names one of the two lints is not counted.
 set -eu
 
 cd "$(dirname "$0")/.."
@@ -18,8 +23,12 @@ get_allow_ceiling() {
 too_many_lines_ceiling=$(get_allow_ceiling too_many_lines)
 cognitive_complexity_ceiling=$(get_allow_ceiling cognitive_complexity)
 
-too_many_lines_count=$(grep -rho 'clippy::too_many_lines' src --include='*.rs' | wc -l | tr -d ' ')
-cognitive_complexity_count=$(grep -rho 'clippy::cognitive_complexity' src --include='*.rs' | wc -l | tr -d ' ')
+# Anchored so a lint name only counts where it can gate a build (a single-line
+# `#[allow(clippy::...)]` attribute, or the lint's own line inside a
+# rustfmt-split attribute) -- a `//` comment or doc line that merely names the
+# lint does not match and is never counted.
+too_many_lines_count=$(grep -rhoE '^[[:space:]]*(#\[allow\()?clippy::too_many_lines\b' src --include='*.rs' | wc -l | tr -d ' ')
+cognitive_complexity_count=$(grep -rhoE '^[[:space:]]*(#\[allow\()?clippy::cognitive_complexity\b' src --include='*.rs' | wc -l | tr -d ' ')
 
 if [ "$too_many_lines_count" -gt "$too_many_lines_ceiling" ]; then
   echo "check-size-and-complexity: #[allow(clippy::too_many_lines)] count $too_many_lines_count exceeds ratchet ceiling $too_many_lines_ceiling"

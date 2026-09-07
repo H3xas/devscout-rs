@@ -40,14 +40,16 @@ row or a row names a module that no longer exists, and CI runs it on every push.
 `cargo fmt --all -- --check` must be clean — CI enforces this on every pull request.
 
 Two clippy lints are denied and CI gates on them: `too_many_lines` at 100 lines and
-`cognitive_complexity` at 25, with the thresholds in `clippy.toml`. A function that trips
-either is split; an existing one that cannot be is carried by a single `#[allow(...)]`
-attribute whose `reason` says why, and `tools/size-ratchet.toml` caps how many of those
-attributes the tree may hold. That same ratchet caps every file under `src/` at 800 lines,
-except the large files it names individually at their current length. Those numbers only
-shrink: a new file over the limit is split, never added to the list. CI runs
-`cargo clippy --lib --bins --locked`, the ratchet check, and a self-test proving the check
-rejects an oversized file and an extra exemption.
+`cognitive_complexity` at 25, with the thresholds in `clippy.toml`. Both gate library and
+binary code only — CI runs `cargo clippy --lib --bins --locked`, never against `--tests`, so
+test code is exempt by design and a long or complex test function trips neither lint. A
+function under `src/` that trips either is split; an existing one that cannot be is carried
+by a single `#[allow(...)]` attribute whose `reason` says why, and `tools/size-ratchet.toml`
+caps how many of those attributes the tree may hold. That same ratchet caps every file under
+`src/` at 800 lines, except the large files it names individually at their current length.
+Those numbers only shrink: a new file over the limit is split, never added to the list. CI
+runs `cargo clippy --lib --bins --locked`, the ratchet check, and a self-test proving the
+check rejects an oversized file and an extra exemption.
 
 `cargo clippy` is not otherwise a zero-warnings baseline project-wide (a pre-existing set of
 `too_long_first_doc_paragraph` / missing-backtick rustdoc lints predates this contributing
