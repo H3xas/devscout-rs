@@ -1,6 +1,6 @@
 use super::*;
 
-// --- B1: the registration shape rule ---------------------------------------
+// --- the registration shape rule -------------------------------------------
 
 #[test]
 fn a_two_type_argument_add_scoped_call_records_a_registration_fact() {

@@ -19,7 +19,7 @@ use std::collections::HashMap;
 /// One registration's outcome once both type arguments have been resolved
 /// against the graph: the def indices of the implementation and the
 /// service, used both to build the type-level `implements` edge and to
-/// scope the member-level pass to exactly these types (Unit B2/B3).
+/// scope the member-level pass to exactly these types.
 #[derive(Debug, Clone, Copy)]
 pub(super) struct ResolvedRegistration {
     pub implementation: usize,
@@ -53,8 +53,8 @@ fn resolve_registered_type(
     }
 }
 
-/// Turns every registration fact into a type-level `implements` edge (Unit
-/// B2), returning the edges alongside the resolved (implementation,
+/// Turns every registration fact into a type-level `implements` edge,
+/// returning the edges alongside the resolved (implementation,
 /// service) pairs the member-level pass (`resolve_member_dispatch`) scopes
 /// itself to. A registration whose service or implementation type does not
 /// resolve to exactly one in-graph def emits no edge and contributes no
@@ -147,8 +147,8 @@ fn matching_overload_count(index: &DefIndex, source: usize, target: usize, membe
         .sum()
 }
 
-// Member-level `implements` edges for one resolved registration (Unit B3,
-// first half): every method the registered SERVICE interface declares that
+// Member-level `implements` edges for one resolved registration: every
+// method the registered SERVICE interface declares that
 // the IMPLEMENTATION's own arity facts uniquely back.
 fn resolve_member_implements(index: &DefIndex, reg: ResolvedRegistration) -> (Vec<Edge>, usize) {
     let mut edges = Vec::new();
@@ -171,8 +171,8 @@ fn resolve_member_implements(index: &DefIndex, reg: ResolvedRegistration) -> (Ve
     (edges, count)
 }
 
-// Member-level `overrides` edges for one implementation type (Unit B3,
-// second half): every `override`-marked method paired with the nearest
+// Member-level `overrides` edges for one implementation type: every
+// `override`-marked method paired with the nearest
 // in-graph base member of the same name -- found the same way
 // `base_member_declared`'s own base walk is, class bases before interfaces,
 // depth-first -- that the arity facts uniquely back.
@@ -208,11 +208,11 @@ fn resolve_member_overrides(
     (edges, count)
 }
 
-/// Member-level `implements`/`overrides` edges (Unit B3), scoped to exactly
+/// Member-level `implements`/`overrides` edges, scoped to exactly
 /// the implementation types `resolve_registrations` resolved: a repository
 /// with no registration facts resolves this to nothing at all, which is
-/// what keeps its `graph.json` byte-identical apart from the schema version
-/// (Unit B2). `overrides` is computed once per implementation type, not once
+/// what keeps its `graph.json` byte-identical apart from the schema
+/// version. `overrides` is computed once per implementation type, not once
 /// per registration, so a type registered under two different service
 /// interfaces does not double its own override edges.
 pub(super) fn resolve_member_dispatch(

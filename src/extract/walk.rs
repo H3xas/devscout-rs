@@ -354,7 +354,7 @@ fn walk<'a>(
         // initializers -- because none of those container node types are
         // special-cased above, so they all reach here via the default walk.
         "member_access_expression" => {
-            // A registration fact (Unit B1) needs only that this access is
+            // A registration fact needs only that this access is
             // actually invoked -- the shape rule itself (name pattern, exactly
             // two type arguments) lives in `registration_fact`. Independent of
             // the uses-member candidate built below: the same call keeps

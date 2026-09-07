@@ -94,7 +94,7 @@ fn dispatch_fixture_root() -> PathBuf {
     root
 }
 
-// --- B5: refs/impact/tests expand through the new edges by default -------
+// --- refs/impact/tests expand through the new edges by default -----------
 
 #[test]
 fn refs_on_the_service_interface_lists_its_implementation_by_default() {
@@ -197,7 +197,7 @@ fn tests_expands_through_a_member_level_implements_edge() {
     assert_eq!(model.rows[0].file, "tests/WidgetTests.cs");
 }
 
-// --- B5: `--no-dispatch` restores the pre-change answer -------------------
+// --- `--no-dispatch` restores the pre-change answer ---------------------
 
 #[test]
 fn no_dispatch_excludes_implements_edges_from_refs_and_the_impact_interface_hop() {

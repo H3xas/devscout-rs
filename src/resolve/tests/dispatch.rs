@@ -43,7 +43,7 @@ fn registration(service: &str, implementation: &str, ns: &str, line: usize) -> F
     }
 }
 
-// --- B2: the type-level `implements` edge ---------------------------------
+// --- the type-level `implements` edge -------------------------------------
 
 #[test]
 fn registration_creates_a_type_level_implements_edge_from_implementation_to_service() {
@@ -192,7 +192,7 @@ fn a_repository_with_no_registration_facts_gains_no_dispatch_edges() {
         .any(|e| matches!(e, Edge::Implements { .. } | Edge::Overrides { .. })));
 }
 
-// --- B3: member-level `implements`/`overrides` -----------------------------
+// --- member-level `implements`/`overrides` ---------------------------------
 
 #[test]
 fn a_registered_implementation_gains_a_member_level_implements_edge_for_its_matching_method() {

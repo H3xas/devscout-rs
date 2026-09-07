@@ -636,8 +636,8 @@ pub(super) fn record_single_type(
     }
 }
 
-// The shape rule for a two-type-argument DI service registration (Unit B1):
-// the invoked name begins `Add` or `TryAdd` and ends `Singleton`, `Scoped` or
+// The shape rule for a two-type-argument DI service registration: the
+// invoked name begins `Add` or `TryAdd` and ends `Singleton`, `Scoped` or
 // `Transient`. A prefix-and-suffix test rather than a fixed name list, so the
 // keyed spellings (`AddKeyedSingleton`, `TryAddKeyedScoped`, ...) and the
 // generic `TryAdd*` family match with no spelling of their own to maintain.
@@ -648,7 +648,7 @@ fn is_registration_method_name(name: &str) -> bool {
 
 // A registration fact for `node` when it is the callee of an invocation
 // whose generic method name matches `is_registration_method_name` and whose
-// type-argument list carries EXACTLY two arguments (Unit B1) -- a
+// type-argument list carries EXACTLY two arguments -- a
 // one-type-argument form (or any other count) yields `None`, recording
 // nothing. `node` is a `member_access_expression`'s own node; the caller
 // confirms it is actually invoked (`invocation_arg_count(node).is_some()`)
