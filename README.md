@@ -157,6 +157,7 @@ untracked files and are shared correctly by worktrees:
 <git-common-dir>/scout/graph/fragments-v18.json   per-file extraction cache (incremental map)
 <git-common-dir>/scout/graph/project-units.json   csproj staleness sidecar (present only with a project model)
 <git-common-dir>/scout/graph/semantic-v1.json      planned: compiler-backed enrichment cache (see docs/design/compiler-enrichment.md)
+<git-common-dir>/scout/log/queries.jsonl          query-verb telemetry, one JSON line per invocation (SCOUT_TELEMETRY=1 only)
 ```
 
 Outside a git repository the same tree is written to `<root>/.scout/` instead. `devscout init`
@@ -178,6 +179,7 @@ Two stores live outside the repo:
 | `SCOUT_CONTENT_DB` | Path to the shared content-dedup SQLite database. Default `$HOME/.claude/scout/content.db`. |
 | `SCOUT_MTIME_REUSE` | `1` switches `map` from content-hash fragment reuse back to mtime-based reuse. |
 | `SCOUT_DEBUG` | `1` turns on hook debug output. Equivalent to creating a `.scout/debug` file. |
+| `SCOUT_TELEMETRY` | `1` appends one JSON line per `find`/`refs`/`read`/`impact`/`tests` invocation to `scout/log/queries.jsonl`. Unset (or any other value) writes nothing. |
 | `HOME` | Used to locate the registry, content database, and agent settings file. |
 
 ## Reading a symbol
