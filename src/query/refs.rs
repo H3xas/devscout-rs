@@ -4,6 +4,7 @@ use std::path::Path;
 use crate::graph;
 
 use super::index::{def_sites, symbol_refs, DefSite, GraphIndex, SymbolRefs};
+use super::member::{self, MemberCandidate};
 use super::refs_tables::{
     ambiguous_row, build_table, cap_rows, edge_loc, loc_cmp, row_tier, AmbiguousTables, ImportRow,
     InboundRow, InboundTables, OutboundRow, OutboundTables, Table, SOURCE_MAX,
@@ -118,6 +119,11 @@ pub enum RefsResult {
     Ambiguous(Vec<String>),
     /// A bare-member answer: one resolved-shaped model per declaring type.
     Members(Vec<RefsModel>),
+    /// A member seed (`Member`, `Type.Member`, `Namespace.Type.Member`) whose
+    /// name survives edge verification on more than one declaring type: one
+    /// row per candidate, never the bare type list [`RefsResult::Ambiguous`]
+    /// renders.
+    MemberAmbiguous(Vec<MemberCandidate>),
     /// Represents `NotFound`.
     NotFound,
 }
@@ -224,57 +230,136 @@ pub(super) fn line_has_token(line: &str, token: &str) -> bool {
     false
 }
 
-// Every type that declares `name`, in name-index order, each with the sites it
-// declares it at. Two overloads are two sites on ONE type, never two
-// candidates. Markup and resource rows carry no `owner`, so nothing a markup
-// file names can be mistaken for a member.
-fn member_owners(index: &GraphIndex, name: &str) -> Vec<(String, Vec<DefSite>)> {
-    let mut out: Vec<(String, Vec<DefSite>)> = Vec::new();
-    let mut at: HashMap<&str, usize> = HashMap::new();
-    for n in &index.graph.names {
-        if n.name != name || n.owner.is_empty() || !index.by_id.contains_key(&n.owner) {
-            continue;
-        }
-        let site = DefSite {
-            file: n.file.clone(),
-            line: n.line,
-        };
-        match at.get(n.owner.as_str()) {
-            Some(&i) => out[i].1.push(site),
-            None => {
-                at.insert(n.owner.as_str(), out.len());
-                out.push((n.owner.clone(), vec![site]));
-            }
-        }
-    }
-    out
-}
-
 // The two non-empty outcomes of `build_member_refs_models`: a plain models
 // array, or an ambiguity -- more than one declaring type surviving edge-line
 // verification is reported, never turned into several models.
 enum MemberRefsOutcome {
     Models(Vec<RefsModel>),
-    Ambiguous(Vec<String>),
+    Ambiguous(Vec<MemberCandidate>),
 }
 
-// `refs <bare member>`: the name index names the declaring type(s); each of
-// that type's inbound `uses-member` edges survives only if the line it starts
-// on carries the member as a whole token. A type whose edges all fail
-// verification contributes no model at all, and when none survives the caller
-// takes the zero-hit path.
+// `refs <member seed>` (`Member`, `Type.Member`, `Namespace.Type.Member`): the
+// name index names the declaring type(s) the seed's own qualifier admits
+// (`member::qualified_member_owners`); each candidate type's inbound
+// `uses-member` edges survives only if the line it starts on carries the
+// member as a whole token. A type whose edges all fail verification
+// contributes no model at all, and when none survives the caller takes the
+// zero-hit path.
 //
 // More than one declaring type surviving verification answers
-// `Ambiguous(owner_ids)`, in name-index order, rather than several models --
+// `Ambiguous(candidates)`, in name-index order, rather than several models --
 // the house rule of never guessing between candidates. Overloads of one name
 // on ONE type are one group (one entry in `owners`, several sites), never an
 // ambiguity.
+// One owner's inbound `uses-member` edges, kept only if the line they start
+// on carries `name` as a whole token, ranked the same way a type's own
+// inbound table is: precise before guessed, the declaring type's own project
+// before every other, then file, then line.
+fn verified_member_edges(
+    index: &GraphIndex,
+    edges: &[graph::Edge],
+    owner: &str,
+    name: &str,
+    cache: &mut LineCache,
+) -> Vec<(usize, bool)> {
+    let refs = symbol_refs(index, owner);
+    let owner_def = &index.graph.defs[index.by_id[owner]];
+    let owner_project = project_of(&owner_def.file).to_string();
+    let mut kept: Vec<(usize, bool)> = refs
+        .inbound_uses_member
+        .iter()
+        .map(|&e| (e, false))
+        .chain(
+            refs.heuristic_inbound_uses_member
+                .iter()
+                .map(|&e| (e, true)),
+        )
+        .collect();
+    kept.retain(|&(e, _)| {
+        let (file, line) = edge_loc(&edges[e]);
+        line_has_token(&cached_line(&index.root, file, line, cache), name)
+    });
+    let foreign = |e: usize| usize::from(project_of(edge_loc(&edges[e]).0) != owner_project);
+    kept.sort_by(|a, b| {
+        a.1.cmp(&b.1)
+            .then_with(|| foreign(a.0).cmp(&foreign(b.0)))
+            .then_with(|| loc_cmp(&edges[a.0], &edges[b.0]))
+    });
+    kept
+}
+
+fn empty_table<R>() -> Table<R> {
+    Table {
+        total: 0,
+        dropped: 0,
+        rows: Vec::new(),
+    }
+}
+
+// One declaring type's resolved-shaped model: `take` (bounded by the shared
+// `budget`, spent across every group in call order) of its verified edges
+// become inbound rows; the rest are counted in `dropped` but never shown.
+#[allow(clippy::too_many_arguments)]
+fn member_group_model(
+    index: &GraphIndex,
+    edges: &[graph::Edge],
+    seed: &str,
+    name: &str,
+    owner: String,
+    sites: Vec<DefSite>,
+    kept: Vec<(usize, bool)>,
+    budget: &mut usize,
+    cache: &mut LineCache,
+) -> RefsModel {
+    let take = (*budget).min(kept.len());
+    *budget -= take;
+    let mut rows = Vec::new();
+    for &(e, heuristic) in &kept[..take] {
+        let (file, line) = edge_loc(&edges[e]);
+        let source = clip_source(&cached_line(&index.root, file, line, cache));
+        rows.push(InboundRow {
+            file: file.to_string(),
+            line,
+            heuristic,
+            tier: row_tier(
+                heuristic,
+                edges[e].tier() == Some(graph::HeuristicTier::Ext),
+            ),
+            source,
+        });
+    }
+    let total = kept.len();
+    RefsModel {
+        query: seed.to_string(),
+        id: format!("{owner}.{name}"),
+        kind: "member".to_string(),
+        sites,
+        inbound: InboundTables {
+            inherits: empty_table(),
+            uses_type: empty_table(),
+            uses_member: Table {
+                total,
+                dropped: total - rows.len(),
+                rows,
+            },
+        },
+        outbound: None,
+        ambiguous: AmbiguousTables {
+            inbound: empty_table(),
+            outbound: empty_table(),
+        },
+        manifest_gap: index.flagged_files.len(),
+        member_refs: None,
+    }
+}
+
 fn build_member_refs_models(
     index: &GraphIndex,
-    name: &str,
+    seed: &str,
     inbound_cap: usize,
 ) -> Option<MemberRefsOutcome> {
-    let owners = member_owners(index, name);
+    let (name, qualifier) = member::split_member_seed(seed);
+    let owners = member::qualified_member_owners(index, name, qualifier);
     if owners.is_empty() {
         return None;
     }
@@ -282,29 +367,7 @@ fn build_member_refs_models(
     let mut cache: LineCache = HashMap::new();
     let mut groups: Vec<(String, Vec<DefSite>, Vec<(usize, bool)>)> = Vec::new();
     for (owner, sites) in owners {
-        let refs = symbol_refs(index, &owner);
-        let owner_def = &index.graph.defs[index.by_id[&owner]];
-        let owner_project = project_of(&owner_def.file).to_string();
-        let mut kept: Vec<(usize, bool)> = Vec::new();
-        for &e in &refs.inbound_uses_member {
-            kept.push((e, false));
-        }
-        for &e in &refs.heuristic_inbound_uses_member {
-            kept.push((e, true));
-        }
-        kept.retain(|&(e, _)| {
-            let (file, line) = edge_loc(&edges[e]);
-            line_has_token(&cached_line(&index.root, file, line, &mut cache), name)
-        });
-        // Same ranking a type's inbound table uses: precise before guessed, the
-        // declaring type's own project before every other, then file, then
-        // line.
-        let foreign = |e: usize| usize::from(project_of(edge_loc(&edges[e]).0) != owner_project);
-        kept.sort_by(|a, b| {
-            a.1.cmp(&b.1)
-                .then_with(|| foreign(a.0).cmp(&foreign(b.0)))
-                .then_with(|| loc_cmp(&edges[a.0], &edges[b.0]))
-        });
+        let kept = verified_member_edges(index, edges, &owner, name, &mut cache);
         if !kept.is_empty() {
             groups.push((owner, sites, kept));
         }
@@ -317,61 +380,35 @@ fn build_member_refs_models(
     // capped multi-block resolution.
     if groups.len() > 1 {
         return Some(MemberRefsOutcome::Ambiguous(
-            groups.into_iter().map(|(owner, _, _)| owner).collect(),
+            groups
+                .into_iter()
+                .map(|(owner, sites, _)| MemberCandidate {
+                    owner,
+                    name: name.to_string(),
+                    file: sites[0].file.clone(),
+                    line: sites[0].line,
+                })
+                .collect(),
         ));
     }
 
-    fn empty<R>() -> Table<R> {
-        Table {
-            total: 0,
-            dropped: 0,
-            rows: Vec::new(),
-        }
-    }
     let mut budget = inbound_cap;
-    let mut models = Vec::new();
-    for (owner, sites, kept) in groups {
-        let take = budget.min(kept.len());
-        budget -= take;
-        let mut rows = Vec::new();
-        for &(e, heuristic) in &kept[..take] {
-            let (file, line) = edge_loc(&edges[e]);
-            let source = clip_source(&cached_line(&index.root, file, line, &mut cache));
-            rows.push(InboundRow {
-                file: file.to_string(),
-                line,
-                heuristic,
-                tier: row_tier(
-                    heuristic,
-                    edges[e].tier() == Some(graph::HeuristicTier::Ext),
-                ),
-                source,
-            });
-        }
-        let total = kept.len();
-        models.push(RefsModel {
-            query: name.to_string(),
-            id: format!("{owner}.{name}"),
-            kind: "member".to_string(),
-            sites,
-            inbound: InboundTables {
-                inherits: empty(),
-                uses_type: empty(),
-                uses_member: Table {
-                    total,
-                    dropped: total - rows.len(),
-                    rows,
-                },
-            },
-            outbound: None,
-            ambiguous: AmbiguousTables {
-                inbound: empty(),
-                outbound: empty(),
-            },
-            manifest_gap: index.flagged_files.len(),
-            member_refs: None,
-        });
-    }
+    let models = groups
+        .into_iter()
+        .map(|(owner, sites, kept)| {
+            member_group_model(
+                index,
+                edges,
+                seed,
+                name,
+                owner,
+                sites,
+                kept,
+                &mut budget,
+                &mut cache,
+            )
+        })
+        .collect();
     Some(MemberRefsOutcome::Models(models))
 }
 
@@ -619,7 +656,9 @@ pub(super) fn build_refs_model_inner(
         Resolution::NotFound => {
             return match build_member_refs_models(index, query, inbound_cap) {
                 Some(MemberRefsOutcome::Models(models)) => RefsResult::Members(models),
-                Some(MemberRefsOutcome::Ambiguous(ids)) => RefsResult::Ambiguous(ids),
+                Some(MemberRefsOutcome::Ambiguous(candidates)) => {
+                    RefsResult::MemberAmbiguous(candidates)
+                }
                 None => RefsResult::NotFound,
             };
         }

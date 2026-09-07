@@ -16,7 +16,11 @@ use crate::graph::GraphName;
 // Kind buckets. Anything the index carries that is not a member, a markup
 // name or a resource key is a declaration of a type or a top-level TS/JS
 // entity, and ranks ahead of all three.
-const MEMBER_KINDS: &[&str] = &["method", "property", "field", "event", "enum-member"];
+//
+// `pub(crate)`: `query/member.rs`'s member-seed resolution restricts a
+// `graph.names` scan to these same kinds, so a member seed and a "did you
+// mean" suggestion agree on what counts as a member.
+pub(crate) const MEMBER_KINDS: &[&str] = &["method", "property", "field", "event", "enum-member"];
 // `markup-binding` (a `{Binding Path}` this index can name but not resolve)
 // sits in the same bucket as the other markup names.
 const MARKUP_KINDS: &[&str] = &["markup-class", "markup-name", "markup-binding"];
