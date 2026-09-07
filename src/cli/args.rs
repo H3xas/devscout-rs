@@ -69,18 +69,19 @@ pub(crate) fn parse_int_js(s: &str) -> Option<i64> {
     s[..idx].parse::<i64>().ok()
 }
 
-// `--no-guess`, shared by the four verbs that read the graph index. Spelled
-// once and read at INDEX BUILD rather than at each render site: a guess that
-// never entered the adjacency cannot leak back out through a consumer that
-// forgot to filter, which is the same reasoning that gives heuristic edges
-// their own buckets in the first place.
+// `--no-guess`/`--no-dispatch`, shared by the four verbs that read the graph
+// index. Spelled once and read at INDEX BUILD rather than at each render
+// site: a guess (or a dispatch edge) that never entered the adjacency cannot
+// leak back out through a consumer that forgot to filter, which is the same
+// reasoning that gives heuristic edges their own buckets in the first place.
 //
-// The flag is a plain presence test like `--json`/`--out`, so it takes no
-// value and can never be mistaken for the query -- no usage-error branch of
-// its own, which is why the four call sites below just call this.
+// Both flags are plain presence tests like `--json`/`--out`, so neither takes
+// a value and neither can be mistaken for the query -- no usage-error branch
+// of its own, which is why the four call sites below just call this.
 pub(crate) fn index_options(args: &[String]) -> query::IndexOptions {
     query::IndexOptions {
         include_guesses: !args.iter().any(|a| a == "--no-guess"),
+        include_dispatch: !args.iter().any(|a| a == "--no-dispatch"),
     }
 }
 

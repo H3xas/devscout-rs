@@ -61,10 +61,10 @@ index
 
 query
   find <query> [--resources] search the manifest by name or purpose
-  refs <symbol>              references to a symbol   [--out --all --no-guess --pick N --json|--compact]
-  read <symbol>              decl span + inbound refs [--no-guess --pick N --json|--compact]
-  impact <file|symbol>       blast radius             [--hops N --no-guess --pick N --json|--compact]
-  tests <symbol>             tests reaching a symbol  [--no-guess --pick N --json|--compact]
+  refs <symbol>              references to a symbol   [--out --all --no-guess --no-dispatch --pick N --json|--compact]
+  read <symbol>              decl span + inbound refs [--no-guess --no-dispatch --pick N --json|--compact]
+  impact <file|symbol>       blast radius             [--hops N --no-guess --no-dispatch --pick N --json|--compact]
+  tests <symbol>             tests reaching a symbol  [--no-guess --no-dispatch --pick N --json|--compact]
   stats                      index + cache summary for this repo
 
 plumbing

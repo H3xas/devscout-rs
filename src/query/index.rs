@@ -4,7 +4,8 @@ use std::path::Path;
 use crate::graph;
 use crate::manifest;
 
-use super::seq::{push_ordered_unique, SeqSet};
+use super::dispatch;
+use super::seq::push_ordered_unique;
 
 // ============================================================================
 // GraphIndex -- the built query index.
@@ -19,6 +20,12 @@ pub struct InboundEntry {
     pub uses_type: Vec<usize>,
     /// The uses member value.
     pub uses_member: Vec<usize>,
+    /// `implements` edges naming this def as their target -- never
+    /// heuristic, so `HeuristicEntry`'s own copy of this field is always
+    /// empty.
+    pub implements: Vec<usize>,
+    /// `overrides` edges naming this def as their target, same rule.
+    pub overrides: Vec<usize>,
 }
 
 /// The value shape of both `heuristic_inbound` and `heuristic_outbound_by_file`
@@ -36,6 +43,10 @@ pub struct OutboundEntry {
     pub uses_type: Vec<usize>,
     /// The uses member value.
     pub uses_member: Vec<usize>,
+    /// `implements` edges originating in this file -- never heuristic.
+    pub implements: Vec<usize>,
+    /// `overrides` edges originating in this file, same rule.
+    pub overrides: Vec<usize>,
     /// The imports value.
     pub imports: Vec<usize>,
 }
@@ -173,15 +184,24 @@ pub struct IndexOptions {
     /// -- a graph written before schema 2 -- is treated as the weaker of the
     /// two and drops with the guesses.
     pub include_guesses: bool,
+    /// Whether `implements`/`overrides` edges join `inbound`/
+    /// `outbound_by_file` at all. `false` (`--no-dispatch`) admits neither
+    /// kind into either adjacency, restoring the narrower pre-dispatch-edges
+    /// answer on `refs`/`read`/`impact`/`tests` -- the same "filter at index
+    /// build time" reasoning `include_guesses` already uses, applied to a
+    /// kind that is never itself a guess.
+    pub include_dispatch: bool,
 }
 
 impl Default for IndexOptions {
-    /// Guesses are IN by default: every caller that does not ask asked for the
-    /// whole index, and a default that quietly narrowed the answer would change
-    /// what `refs` means without anyone typing a flag.
+    /// Guesses and dispatch edges are IN by default: every caller that does
+    /// not ask asked for the whole index, and a default that quietly
+    /// narrowed the answer would change what `refs` means without anyone
+    /// typing a flag.
     fn default() -> Self {
         IndexOptions {
             include_guesses: true,
+            include_dispatch: true,
         }
     }
 }
@@ -427,6 +447,46 @@ pub fn load_graph_index_with<'g>(
                     inbound.entry(to.clone()).or_default().uses_member.push(i);
                 }
             }
+            // `implements`/`overrides` join `inbound`/`outbound_by_file`
+            // exactly like `inherits` does -- recorded against the
+            // IMPLEMENTATION/`override` type's own declaring file and line
+            // (see `graph.rs`'s `Edge::Implements`/`Edge::Overrides`), so the
+            // same file-attribution `symbol_refs`/`impact_walk` already use
+            // for `inherits` finds them with no changes to either. Gated by
+            // `include_dispatch` (`--no-dispatch`) the same way a heuristic
+            // edge is gated by `include_guesses`: an edge `--no-dispatch`
+            // refuses earns no bucket at all, in either adjacency.
+            graph::Edge::Implements {
+                from_file,
+                to,
+                to_file,
+                ..
+            }
+            | graph::Edge::Overrides {
+                from_file,
+                to,
+                to_file,
+                ..
+            } => {
+                note_file(&mut flagged_files, manifest_paths_ref, from_file);
+                note_file(&mut flagged_files, manifest_paths_ref, to_file);
+                if !to_file.is_empty() && !from_file.is_empty() && to_file != from_file {
+                    hub_referrers_by_file
+                        .entry(to_file.clone())
+                        .or_default()
+                        .insert(from_file.clone());
+                }
+                if opts.include_dispatch {
+                    dispatch::record_dispatch_edge(
+                        e,
+                        i,
+                        from_file,
+                        to,
+                        &mut outbound_by_file,
+                        &mut inbound,
+                    );
+                }
+            }
             // 'ctor-di' is deliberately NOT one of the kinds `refs`/`impact`
             // render -- that kind list is fixed to
             // inherits/uses-type/uses-member -- so it earns no `inbound`/
@@ -497,34 +557,6 @@ pub fn load_graph_index_with<'g>(
     }
 }
 
-// The interface def id(s) a class def's OWN file(s) declare an `inherits` edge
-// to, restricted to a def of kind `"interface"` -- a plain base class is not
-// part of the interface hop. Reuses `outbound_by_file`'s file-level union
-// rather than attributing an edge to one specific def in a multi-type file (an
-// accepted imprecision). Insertion order is `def_files(def_id)` order, then
-// that file's own inherits-edge array order -- the first-seen order of the
-// `via` labels a widened hit carries.
-pub(super) fn implemented_interfaces(index: &GraphIndex, def_id: &str) -> Vec<String> {
-    let mut seen: SeqSet<String> = SeqSet::new();
-    for file in def_files(index, def_id) {
-        let Some(o) = index.outbound_by_file.get(&file) else {
-            continue;
-        };
-        for &ei in &o.inherits {
-            let graph::Edge::Inherits { to, .. } = &index.graph.edges[ei] else {
-                continue;
-            };
-            if seen.contains(to) {
-                continue;
-            }
-            if index.def(to).map(|d| d.kind.as_str()) != Some("interface") {
-                continue;
-            }
-            seen.insert(to.clone());
-        }
-    }
-    seen.into_vec()
-}
 // ============================================================================
 // def_files / def_sites.
 // ============================================================================
@@ -592,12 +624,23 @@ pub struct SymbolRefs {
     pub inbound_uses_type: Vec<usize>,
     /// The inbound uses member value.
     pub inbound_uses_member: Vec<usize>,
+    /// `implements` edges naming this symbol as their target -- never
+    /// heuristic, so there is no `heuristic_inbound_implements` counterpart.
+    pub inbound_implements: Vec<usize>,
+    /// `overrides` edges naming this symbol as their target, same rule.
+    pub inbound_overrides: Vec<usize>,
     /// The outbound inherits value.
     pub outbound_inherits: Vec<usize>,
     /// The outbound uses type value.
     pub outbound_uses_type: Vec<usize>,
     /// The outbound uses member value.
     pub outbound_uses_member: Vec<usize>,
+    /// `implements` edges originating in one of this symbol's own declaring
+    /// files.
+    pub outbound_implements: Vec<usize>,
+    /// `overrides` edges originating in one of this symbol's own declaring
+    /// files.
+    pub outbound_overrides: Vec<usize>,
     /// The outbound imports value.
     pub outbound_imports: Vec<usize>,
     /// The same two tables again over the HEURISTIC adjacency, built by the
@@ -631,6 +674,11 @@ pub fn symbol_refs(index: &GraphIndex, def_id: &str) -> SymbolRefs {
     let inbound_inherits = base.inherits.clone();
     let inbound_uses_type = base.uses_type.clone();
     let mut inbound_uses_member = base.uses_member.clone();
+    // Neither kind ever fires on an enum (C# forbids an enum implementing an
+    // interface or overriding anything), so unlike `inbound_uses_member`
+    // below, neither needs the enum-member union.
+    let inbound_implements = base.implements.clone();
+    let inbound_overrides = base.overrides.clone();
 
     if let Some(&i) = index.by_id.get(def_id) {
         if index.graph.defs[i].kind == "enum" {
@@ -649,12 +697,16 @@ pub fn symbol_refs(index: &GraphIndex, def_id: &str) -> SymbolRefs {
     let mut outbound_inherits = Vec::new();
     let mut outbound_uses_type = Vec::new();
     let mut outbound_uses_member = Vec::new();
+    let mut outbound_implements = Vec::new();
+    let mut outbound_overrides = Vec::new();
     let mut outbound_imports = Vec::new();
     for file in def_files(index, def_id) {
         if let Some(o) = index.outbound_by_file.get(&file) {
             outbound_inherits.extend(o.inherits.iter().copied());
             outbound_uses_type.extend(o.uses_type.iter().copied());
             outbound_uses_member.extend(o.uses_member.iter().copied());
+            outbound_implements.extend(o.implements.iter().copied());
+            outbound_overrides.extend(o.overrides.iter().copied());
             outbound_imports.extend(o.imports.iter().copied());
         }
     }
@@ -704,9 +756,13 @@ pub fn symbol_refs(index: &GraphIndex, def_id: &str) -> SymbolRefs {
         inbound_inherits,
         inbound_uses_type,
         inbound_uses_member,
+        inbound_implements,
+        inbound_overrides,
         outbound_inherits,
         outbound_uses_type,
         outbound_uses_member,
+        outbound_implements,
+        outbound_overrides,
         outbound_imports,
         heuristic_inbound_inherits,
         heuristic_inbound_uses_type,

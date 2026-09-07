@@ -74,6 +74,23 @@ pub(crate) fn ref_kind_block<R>(
     }
 }
 
+// `implements`/`overrides` print their header only when their own total is
+// non-zero -- unlike the three original kinds, which always show their
+// header even at zero -- so a symbol untouched by dispatch edges renders
+// byte-identical to before this pair existed, the same rule `member_refs`'s
+// own line already follows.
+pub(crate) fn ref_kind_block_if_any<R>(
+    out: &mut Vec<String>,
+    label: &str,
+    table: &query::Table<R>,
+    row_fmt: impl Fn(&R) -> String,
+) {
+    if table.total == 0 {
+        return;
+    }
+    ref_kind_block(out, label, Some(table), row_fmt);
+}
+
 // Used by `--compact`: a missing OR present-but-EMPTY table prints nothing at
 // all, unlike `ref_kind_block` above.
 pub(crate) fn compact_block<R>(

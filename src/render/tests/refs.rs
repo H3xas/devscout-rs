@@ -5,6 +5,8 @@ fn empty_inbound() -> InboundTables {
         inherits: table(vec![], 0),
         uses_type: table(vec![], 0),
         uses_member: table(vec![], 0),
+        implements: table(vec![], 0),
+        overrides: table(vec![], 0),
     }
 }
 fn empty_outbound() -> OutboundTables {
@@ -12,6 +14,8 @@ fn empty_outbound() -> OutboundTables {
         inherits: table(vec![], 0),
         uses_type: table(vec![], 0),
         uses_member: table(vec![], 0),
+        implements: table(vec![], 0),
+        overrides: table(vec![], 0),
         imports: table(vec![], 0),
     }
 }

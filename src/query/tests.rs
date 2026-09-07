@@ -8,6 +8,7 @@ use super::refs_tables::edge_loc;
 use crate::graph;
 
 mod coverage;
+mod dispatch;
 mod find;
 mod heuristic_ordering;
 mod impact_from_lines;

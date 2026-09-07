@@ -42,6 +42,8 @@ pub(super) fn edge_loc(e: &graph::Edge) -> (&str, usize) {
         graph::Edge::Inherits { from_file, from_line, .. }
         | graph::Edge::UsesType { from_file, from_line, .. }
         | graph::Edge::UsesMember { from_file, from_line, .. }
+        | graph::Edge::Implements { from_file, from_line, .. }
+        | graph::Edge::Overrides { from_file, from_line, .. }
         | graph::Edge::Imports { from_file, from_line, .. }
         | graph::Edge::Ambiguous { from_file, from_line, .. }
         // Never actually reached: 'ctor-di' edges are never pushed into any
@@ -215,7 +217,11 @@ pub(super) fn ambiguous_row(e: &graph::Edge) -> AmbiguousRow {
     }
 }
 
-/// The three inbound tables, one per kind (inherits/uses-type/uses-member).
+/// The five inbound tables, one per kind (inherits/uses-type/uses-member/
+/// implements/overrides). `implements`/`overrides` are never heuristic, and
+/// a renderer shows either only when its own total is non-zero -- unlike
+/// the first three, which always show their header -- so a symbol untouched
+/// by dispatch edges renders byte-identical to before this pair existed.
 #[derive(Debug, Clone, PartialEq)]
 pub struct InboundTables {
     /// The inherits value.
@@ -224,9 +230,14 @@ pub struct InboundTables {
     pub uses_type: Table<InboundRow>,
     /// The uses member value.
     pub uses_member: Table<InboundRow>,
+    /// The implements value.
+    pub implements: Table<InboundRow>,
+    /// The overrides value.
+    pub overrides: Table<InboundRow>,
 }
 
-/// The four outbound tables: three by kind plus imports.
+/// The six outbound tables: three by kind, `implements`/`overrides`, plus
+/// imports.
 #[derive(Debug, Clone, PartialEq)]
 pub struct OutboundTables {
     /// The inherits value.
@@ -235,6 +246,10 @@ pub struct OutboundTables {
     pub uses_type: Table<OutboundRow>,
     /// The uses member value.
     pub uses_member: Table<OutboundRow>,
+    /// The implements value.
+    pub implements: Table<OutboundRow>,
+    /// The overrides value.
+    pub overrides: Table<OutboundRow>,
     /// The imports value.
     pub imports: Table<ImportRow>,
 }

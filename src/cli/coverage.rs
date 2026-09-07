@@ -15,7 +15,7 @@ use super::args::{first_positional, index_options, output_flags, parse_pick};
 use super::root::{require_graph, require_repo};
 
 const TESTS_USAGE: &str =
-    "usage: devscout tests <symbol> [--no-guess] [--pick N] [--json|--compact]";
+    "usage: devscout tests <symbol> [--no-guess] [--no-dispatch] [--pick N] [--json|--compact]";
 
 // `tests`. Mirrors `cmd_refs` -- same flag conflict, same missing-query usage
 // error, same `require_repo`/graph-present order, same notfound/ambiguous exits.

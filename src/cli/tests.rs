@@ -58,11 +58,15 @@ fn json_refs_model(rows: Vec<query::InboundRow>, out: bool) -> query::RefsModel 
                 dropped: 0,
                 rows,
             },
+            implements: empty_in(),
+            overrides: empty_in(),
         },
         outbound: out.then(|| query::OutboundTables {
             inherits: empty_out(),
             uses_type: empty_out(),
             uses_member: empty_out(),
+            implements: empty_out(),
+            overrides: empty_out(),
             imports: query::Table {
                 total: 0,
                 dropped: 0,

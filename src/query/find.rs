@@ -127,10 +127,15 @@ pub fn file_inbound_counts(graph: &graph::Graph) -> HashMap<String, usize> {
                 from_file, to_file, ..
             } => (from_file, to_file),
             // Listed rather than caught by a wildcard so a future edge kind
-            // still fails the exhaustiveness check here.
+            // still fails the exhaustiveness check here. `implements`/
+            // `overrides` sit out for the same reason `ctor-di` does: DI/
+            // dispatch wiring, not an ordinary reference this centrality
+            // measure counts.
             graph::Edge::Imports { .. }
             | graph::Edge::Import { .. }
             | graph::Edge::CtorDi { .. }
+            | graph::Edge::Implements { .. }
+            | graph::Edge::Overrides { .. }
             | graph::Edge::Ambiguous { .. } => continue,
         };
         if from_file == to_file {

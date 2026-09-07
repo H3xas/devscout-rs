@@ -1,6 +1,6 @@
 use crate::query;
 
-use super::blocks::{compact_block, ref_kind_block};
+use super::blocks::{compact_block, ref_kind_block, ref_kind_block_if_any};
 use super::markers::{compact_marker, heuristic_suffix, source_suffix};
 
 // The one line that splits an enum's inbound member edges by which MEMBER they
@@ -88,14 +88,42 @@ pub fn render_refs_text(model: &query::RefsModel) -> String {
             )
         },
     );
-    // One trailer for the three kinds, because they share one cap: the
+    ref_kind_block_if_any(
+        &mut out,
+        "implements",
+        &model.inbound.implements,
+        |r: &query::InboundRow| {
+            format!(
+                "{}:{}  implements{}",
+                r.file,
+                r.line,
+                source_suffix(&r.source)
+            )
+        },
+    );
+    ref_kind_block_if_any(
+        &mut out,
+        "overrides",
+        &model.inbound.overrides,
+        |r: &query::InboundRow| {
+            format!(
+                "{}:{}  overrides{}",
+                r.file,
+                r.line,
+                source_suffix(&r.source)
+            )
+        },
+    );
+    // One trailer for the five kinds, because they share one cap: the
     // per-kind headers say how much each kind lost, this says what the call as
     // a whole did not return. `--all` lifts this cap too, the same lever the
     // outbound trailer below names, but the text here already reports the true
     // drop count and is unchanged whether or not `--all` is set.
     let inbound_dropped = model.inbound.inherits.dropped
         + model.inbound.uses_type.dropped
-        + model.inbound.uses_member.dropped;
+        + model.inbound.uses_member.dropped
+        + model.inbound.implements.dropped
+        + model.inbound.overrides.dropped;
     if inbound_dropped != 0 {
         out.push(format!("  +{inbound_dropped} more"));
     }
@@ -150,6 +178,34 @@ pub fn render_refs_text(model: &query::RefsModel) -> String {
                 )
             },
         );
+        ref_kind_block_if_any(
+            &mut out,
+            "implements",
+            &ob.implements,
+            |r: &query::OutboundRow| {
+                format!(
+                    "{}:{}  implements  -> {}{}",
+                    r.file,
+                    r.line,
+                    r.to_file,
+                    source_suffix(&r.source)
+                )
+            },
+        );
+        ref_kind_block_if_any(
+            &mut out,
+            "overrides",
+            &ob.overrides,
+            |r: &query::OutboundRow| {
+                format!(
+                    "{}:{}  overrides  -> {}{}",
+                    r.file,
+                    r.line,
+                    r.to_file,
+                    source_suffix(&r.source)
+                )
+            },
+        );
         ref_kind_block(
             &mut out,
             "imports",
@@ -164,7 +220,7 @@ pub fn render_refs_text(model: &query::RefsModel) -> String {
                 )
             },
         );
-        // One trailer for the four outbound kinds, because they share one cap
+        // One trailer for the six outbound kinds, because they share one cap
         // (mirrors the inbound trailer above). Printing only ever happens when
         // `--all` would actually return more rows, so the hint is never dead
         // advice -- true of the inbound trailer above too, which is why that one
@@ -172,6 +228,8 @@ pub fn render_refs_text(model: &query::RefsModel) -> String {
         let outbound_dropped = ob.inherits.dropped
             + ob.uses_type.dropped
             + ob.uses_member.dropped
+            + ob.implements.dropped
+            + ob.overrides.dropped
             + ob.imports.dropped;
         if outbound_dropped != 0 {
             out.push(format!("  +{outbound_dropped} more, use --all"));
@@ -262,6 +320,20 @@ pub fn render_refs_compact(model: &query::RefsModel) -> String {
         file_of_ib,
         line_ib,
     );
+    compact_block(
+        &mut out,
+        "in:implements",
+        Some(&model.inbound.implements),
+        file_of_ib,
+        line_ib,
+    );
+    compact_block(
+        &mut out,
+        "in:overrides",
+        Some(&model.inbound.overrides),
+        file_of_ib,
+        line_ib,
+    );
 
     if let Some(ob) = &model.outbound {
         let file_of_ob: fn(&query::OutboundRow) -> &str = |r| r.file.as_str();
@@ -285,6 +357,20 @@ pub fn render_refs_compact(model: &query::RefsModel) -> String {
             &mut out,
             "out:uses-member",
             Some(&ob.uses_member),
+            file_of_ob,
+            line_ob,
+        );
+        compact_block(
+            &mut out,
+            "out:implements",
+            Some(&ob.implements),
+            file_of_ob,
+            line_ob,
+        );
+        compact_block(
+            &mut out,
+            "out:overrides",
+            Some(&ob.overrides),
             file_of_ob,
             line_ob,
         );
@@ -317,21 +403,41 @@ pub fn render_refs_compact(model: &query::RefsModel) -> String {
     let edges = model.inbound.inherits.total
         + model.inbound.uses_type.total
         + model.inbound.uses_member.total
-        + ob_sum(|o| o.inherits.total + o.uses_type.total + o.uses_member.total + o.imports.total);
+        + model.inbound.implements.total
+        + model.inbound.overrides.total
+        + ob_sum(|o| {
+            o.inherits.total
+                + o.uses_type.total
+                + o.uses_member.total
+                + o.implements.total
+                + o.overrides.total
+                + o.imports.total
+        });
     let shown = model.inbound.inherits.rows.len()
         + model.inbound.uses_type.rows.len()
         + model.inbound.uses_member.rows.len()
+        + model.inbound.implements.rows.len()
+        + model.inbound.overrides.rows.len()
         + ob_sum(|o| {
             o.inherits.rows.len()
                 + o.uses_type.rows.len()
                 + o.uses_member.rows.len()
+                + o.implements.rows.len()
+                + o.overrides.rows.len()
                 + o.imports.rows.len()
         });
     let dropped = model.inbound.inherits.dropped
         + model.inbound.uses_type.dropped
         + model.inbound.uses_member.dropped
+        + model.inbound.implements.dropped
+        + model.inbound.overrides.dropped
         + ob_sum(|o| {
-            o.inherits.dropped + o.uses_type.dropped + o.uses_member.dropped + o.imports.dropped
+            o.inherits.dropped
+                + o.uses_type.dropped
+                + o.uses_member.dropped
+                + o.implements.dropped
+                + o.overrides.dropped
+                + o.imports.dropped
         });
     let ambiguous = amb_in.total + amb_out.total;
     let gap = if model.manifest_gap != 0 {

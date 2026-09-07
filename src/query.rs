@@ -54,11 +54,16 @@
 // themselves: `find`, `refs`/`refs_tables` (the row/table shaping `read`
 // reuses), `read`, `coverage` (test coverage for a symbol -- named to avoid
 // colliding with this module's own `tests`), and `impact` (plus `infra`, the
-// hub-file name-pattern classification `impact` widens against). Every
+// hub-file name-pattern classification `impact` widens against). `dispatch`
+// holds the `implements`/`overrides` plumbing `index.rs` and `refs.rs` both
+// call into (index-build-time adjacency, the bare-member fallback's
+// exact-match half) -- split out to keep those two files under this crate's
+// per-file line budget, not a verb of its own. Every
 // public item keeps the path it had before the split via the `pub use`s
 // below.
 
 mod coverage;
+mod dispatch;
 mod find;
 mod impact;
 mod impact_why;
