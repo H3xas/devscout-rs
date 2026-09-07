@@ -225,13 +225,13 @@ fn hooks_install_adds_both_entries_with_correct_shape_and_creates_backup() {
     assert!(
         commands
             .iter()
-            .any(|c| c.ends_with(" hook read") && c.starts_with("SCOUT_TELEMETRY=1 /")),
+            .any(|c| c.ends_with(" hook read") && c.starts_with('/')),
         "commands: {commands:?}"
     );
     assert!(
         commands
             .iter()
-            .any(|c| c.ends_with(" hook bash") && c.starts_with("SCOUT_TELEMETRY=1 /")),
+            .any(|c| c.ends_with(" hook bash") && c.starts_with('/')),
         "commands: {commands:?}"
     );
     // The pre-existing, unrelated entries must survive untouched.

@@ -756,7 +756,7 @@ fn hook_entry(matcher: &str, bin: &str, subcmd: &str) -> manifest::Value {
                 ("type", manifest::Value::string("command")),
                 (
                     "command",
-                    manifest::Value::string(format!("SCOUT_TELEMETRY=1 {bin} hook {subcmd}")),
+                    manifest::Value::string(format!("{bin} hook {subcmd}")),
                 ),
             ])]),
         ),
@@ -1411,8 +1411,8 @@ mod tests {
             serde_json::from_str(&snippet).expect("snippet must be valid JSON");
         let ptu = parsed.get("hooks").unwrap().get("PostToolUse").unwrap();
         assert!(matches!(ptu, manifest::Value::Array(items) if items.len() == 2));
-        assert!(snippet.contains("SCOUT_TELEMETRY=1 /abs/devscout hook read"));
-        assert!(snippet.contains("SCOUT_TELEMETRY=1 /abs/devscout hook bash"));
+        assert!(snippet.contains("/abs/devscout hook read"));
+        assert!(snippet.contains("/abs/devscout hook bash"));
     }
 
     // -- now_stamp / backup_settings / write_settings ---------------------
