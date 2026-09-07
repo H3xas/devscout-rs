@@ -77,9 +77,9 @@ fn stage7_extension_declared_on_an_interface_binds_through_the_receivers_base_cl
     // Fail, and typed_receiver_base_member's own base walk skips
     // ISpecification (an interface, per its own rule) and finds nothing
     // either -- so the exact-key lookup at tier (f) misses ("Fail
-    // BatchOptions" names no bucket) and the closure fallback (Unit A3
-    // item 3) tries BatchOptions's raw base string "ISpecification" next,
-    // which the extension actually keys on.
+    // BatchOptions" names no bucket) and the closure fallback tries
+    // BatchOptions's raw base string "ISpecification" next, which the
+    // extension actually keys on.
     assert_eq!(
         heuristic_member_edges_from(&g, "Domain/BatchOptions.cs"),
         vec![("App.Ext.SpecExtensions", 8)],
@@ -93,7 +93,7 @@ fn stage7_extension_declared_on_an_interface_binds_through_the_receivers_base_cl
         heuristic_member_edges_from(&g, "Consumers/Runner.cs"),
         vec![("App.Ext.SpecExtensions", 9)],
         "opts.Fail() -- an ordinary typed local, not this. -- binds through the exact same \
-         closure fallback: item 3 applies to every typed receiver"
+         closure fallback, which applies to every typed receiver, not just the this. shape"
     );
     assert_eq!(g.stats.heuristic_by_tier.ext, 2);
 }
@@ -119,7 +119,7 @@ fn stage7_typed_receiver_member_declared_on_an_in_graph_base_resolves_to_the_bas
         member_edges_from(&g, "Consumers/Runner.cs"),
         vec![("App.Domain.Base", 8)],
         "Order itself declares nothing named Touch -- the typed-receiver precise tier \
-         (previously exact-def-only) now walks Order's in-graph base closure (Unit A3 item 4) \
+         (previously exact-def-only) now walks Order's in-graph base closure \
          and binds to Base, the first def that declares it. `o` is an ordinary parameter, not \
          `this.`, so only the public list is consulted -- proven sufficient here since Touch \
          is public."
@@ -156,7 +156,7 @@ fn stage7_a_scored_guess_never_vouches_through_a_non_public_member() {
         heuristic_member_edges_from(&g, "App/Runner.cs"),
         vec![("Fixture.Alpha.Widget", 8)],
         "Beta.Widget also declares Ping, but only NON-publicly -- member_vouched (and the \
-         Call-shape `declares_member` it reads) is untouched by Unit A3's non-public tables, \
+         Call-shape `declares_member` it reads) is untouched by the non-public member tables, \
          so Beta.Widget never enters the scored guess at all, even though it sits right in the \
          ambiguous pool this ref's receiver resolved to; only Alpha.Widget, which declares \
          Ping publicly, vouches"
@@ -164,7 +164,7 @@ fn stage7_a_scored_guess_never_vouches_through_a_non_public_member() {
     assert_eq!(g.stats.heuristic_by_tier.guess, 1);
 }
 
-// --- Unit A4: base-walk declaration order (+ interface skip at any
+// --- Base-walk declaration order (+ interface skip at any
 // depth) and arity-aware call vouching -----------------------------
 
 #[test]
@@ -365,13 +365,13 @@ fn stage7_a_read_of_a_property_is_still_name_only() {
         member_edges_from(&g, "Consumers/Runner.cs"),
         vec![("App.Domain.Sensor", 8)],
         "s.Label is a READ (no argCount at all) -- declares_member's arg_count == None branch \
-         is untouched by Unit A4 item 2's arity gate, so a property still resolves precisely on \
+         is untouched by the arity gate, so a property still resolves precisely on \
          name alone, exactly as before"
     );
     assert_eq!(g.stats.heuristic_edge_count, 0);
 }
 
-// --- Unit A5: chain-tail hop failures, and closure-key generic
+// --- Chain-tail hop failures, and closure-key generic
 // unification against the MATCHED base's own arguments ------------------
 
 #[test]
@@ -489,10 +489,10 @@ fn stage7_a_chain_tail_whose_hop_lands_on_an_external_type_is_silent() {
     // candidate (App.Domain.Order, which declares Validate) because
     // Order is nominally assignable to nothing named "ExternalWidget" --
     // no base, no name match. The observable result is the same silence
-    // Unit A5 item 1 requires, produced by the EXISTING filters rather
-    // than a new one: a chain tail with a real but external target type
-    // is still an answerable receiver, just one this corpus proves
-    // nothing about here.
+    // a resolved-but-external chain-tail owner requires, produced by
+    // the EXISTING filters rather than a new one: a chain tail with a
+    // real but external target type is still an answerable receiver,
+    // just one this corpus proves nothing about here.
     let files = fragments_for(&[
         (
             "Domain/Order.cs",
@@ -536,13 +536,13 @@ fn stage7_a_chain_tail_whose_hop_lands_on_an_external_type_is_silent() {
 
 #[test]
 fn stage7_extension_on_an_implemented_interface_binds_for_a_generic_enclosing_type() {
-    // BatchOptions<T> is GENERIC (unlike Unit A3's own non-generic
+    // BatchOptions<T> is GENERIC (unlike the earlier non-generic
     // BatchOptions fixture), so `this.Fail()`'s receiver_args is
     // `Some(["*"])` -- BatchOptions's own type parameter, wildcarded.
     // ISpecification is written into BatchOptions's base list with NO
     // type-argument list at all (it is not generic), so
-    // `base_generic_args` records no entry for it at all. Before Unit
-    // A5 item 2, filter 3 compared SpecExtensions's `this_args` (`None`
+    // `base_generic_args` records no entry for it at all. Before this
+    // fix, filter 3 compared SpecExtensions's `this_args` (`None`
     // -- Fail's `this ISpecification` is non-generic) against the
     // RECEIVER's own `Some(["*"])`, a hard (None, Some) mismatch that
     // dropped the edge; the fix compares against the matched base's own
@@ -584,9 +584,9 @@ fn stage7_extension_unification_uses_the_matched_base_arguments() {
     // parameters). RepoExtensions.Validate<T>(this IRepository<T> repo)
     // is generic too, so `this_args` is also a single wildcard
     // (`Some(["*"])`). Unifying against the RECEIVER's own two-element
-    // arguments (the pre-Unit-A5 behaviour) is a length mismatch that
+    // arguments (the old behaviour) is a length mismatch that
     // drops the edge; unifying against the matched base's own
-    // one-element arguments -- what Unit A5 item 2 wires -- matches.
+    // one-element arguments -- what the fix wires -- matches.
     let files = fragments_for(&[
         (
             "Domain/IRepository.cs",

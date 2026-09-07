@@ -526,6 +526,6 @@ fn stage7_an_untyped_in_file_local_still_shadows_a_same_named_field_fact() {
     );
 }
 
-// --- Unit A3: non-public hierarchy-internal members, interface-skipped
+// --- Non-public hierarchy-internal members, interface-skipped
 // base lookup, tier (f)'s closure fallback, and the typed-receiver
 // precise tier's own base walk -----------------------------------------
