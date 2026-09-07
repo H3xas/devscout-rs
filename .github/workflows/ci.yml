@@ -28,6 +28,9 @@ jobs:
         if: github.event_name == 'pull_request'
         run: python3 .claude/hooks/comment-hygiene.py --scan-commits origin/${{ github.base_ref }}..HEAD
 
+      - name: Comment hygiene (selfcheck)
+        run: python3 .claude/hooks/comment-hygiene.py --selfcheck
+
       - name: Architecture guide names every module
         run: sh tools/check-architecture.sh
 
