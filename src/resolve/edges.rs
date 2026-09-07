@@ -1,8 +1,8 @@
 use super::arity::generic_args_unify;
 use super::index::{name_probe, DefIndex};
-use super::ladder::{resolve_ref, Resolution};
+use super::ladder::{capped_candidates, resolve_ref, Resolution};
 use super::scope::FileContext;
-use crate::graph::{Def, Edge, FragRef, HeuristicTier};
+use crate::graph::{Candidate, Def, Edge, FragRef, HeuristicTier};
 use std::collections::{HashMap, HashSet};
 
 // ---------------------------------------------------------------------------
@@ -62,6 +62,30 @@ pub(super) enum CtorDiResolution {
     /// framework origin. Still EMITTED by the caller (never silently
     /// dropped, unlike the general ladder's `unresolved_external` count).
     Unresolved,
+}
+
+impl CtorDiResolution {
+    /// The three `ctor-di` edge fields this outcome names: the `resolution`
+    /// word, the bound def id when exactly one implementor won, and the
+    /// capped candidate list an ambiguity carries. Lives with the enum so a
+    /// new outcome cannot be added without deciding what it writes.
+    pub(super) fn edge_parts(
+        self,
+        index: &DefIndex,
+    ) -> (&'static str, Option<String>, Vec<Candidate>) {
+        match self {
+            CtorDiResolution::Plain(i) => ("plain", Some(index.defs[i].id.clone()), Vec::new()),
+            CtorDiResolution::Closed(i) => ("closed", Some(index.defs[i].id.clone()), Vec::new()),
+            CtorDiResolution::OpenGeneric(i) => {
+                ("open-generic", Some(index.defs[i].id.clone()), Vec::new())
+            }
+            CtorDiResolution::Ambiguous(idxs) => {
+                ("ambiguous", None, capped_candidates(index, idxs))
+            }
+            CtorDiResolution::Infra => ("infra", None, Vec::new()),
+            CtorDiResolution::Unresolved => ("unresolved", None, Vec::new()),
+        }
+    }
 }
 
 pub(super) fn resolve_ctor_param(
@@ -153,6 +177,42 @@ pub(super) fn resolve_ctor_param(
             }
             CtorDiResolution::Unresolved
         }
+    }
+}
+
+// A synthetic type reference for a name the DISPATCH resolver derived from a
+// registration's raw type-argument text, split at its last '.' the same way
+// `extract::record_single_type` splits an ordinary type reference: the
+// bare tail as `name`, the full text as `qualified` when the source wrote it
+// dotted. Unlike `index::name_probe` (bare names only), this is what lets a
+// qualified service or implementation type resolve through the ladder's own
+// exact-qualified step.
+pub(super) fn type_probe(raw: &str, ns: &str) -> FragRef {
+    let (name, qualified) = match raw.rfind('.') {
+        Some(dot) => (raw[dot + 1..].to_string(), Some(raw.to_string())),
+        None => (raw.to_string(), None),
+    };
+    FragRef {
+        kind: "uses-type".to_string(),
+        name,
+        qualified,
+        member: None,
+        line: 0,
+        namespace: Some(ns.to_string()),
+        type_arg_count: None,
+        generic: false,
+        receiver_type: None,
+        arg_count: None,
+        receiver_args: None,
+        outer_types: Vec::new(),
+        args: None,
+        receiver_property_owner: None,
+        receiver_call_owner: None,
+        receiver_call_member: None,
+        receiver_base: false,
+        receiver_awaited: false,
+        receiver_local: false,
+        receiver_lambda: None,
     }
 }
 

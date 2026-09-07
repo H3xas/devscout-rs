@@ -63,6 +63,7 @@ fn no_guess_keeps_the_extension_tier_drops_the_scored_one_and_leaves_the_hub_ind
         &root,
         IndexOptions {
             include_guesses: false,
+            include_dispatch: true,
         },
     );
     assert_eq!(

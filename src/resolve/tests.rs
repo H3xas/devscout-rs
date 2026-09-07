@@ -11,6 +11,7 @@ mod base_members;
 mod base_walk;
 mod byte_identity;
 mod ctor_di;
+mod dispatch;
 mod dotted_suffix;
 mod extension_generics;
 mod extension_tier;
@@ -55,6 +56,7 @@ fn def(id: &str, name: &str, ns: &str, kind: &str) -> FragDef {
         non_public_methods: vec![],
         method_arities: crate::graph::OrderedMap::new(),
         method_params: crate::graph::OrderedMap::new(),
+        override_methods: vec![],
         end_line: 0,
     }
 }
@@ -171,6 +173,7 @@ fn frag(defs: Vec<FragDef>, usings: Vec<FragUsing>, refs: Vec<FragRef>) -> Fragm
         usings,
         refs,
         names: Vec::new(),
+        registrations: Vec::new(),
     }
 }
 

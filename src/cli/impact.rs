@@ -16,7 +16,7 @@ use super::answer::{
 use super::args::{index_options, output_flags, parse_int_js, parse_pick};
 use super::root::{repo_relative_arg, require_graph, require_repo_for_path};
 
-const IMPACT_USAGE: &str = "usage: devscout impact <file|symbol> [--hops N] [--no-iface] [--no-guess] [--iface-max-fanin N] [--hub-max-indegree N] [--pick N] [--json|--compact]";
+const IMPACT_USAGE: &str = "usage: devscout impact <file|symbol> [--hops N] [--no-iface] [--no-guess] [--no-dispatch] [--iface-max-fanin N] [--hub-max-indegree N] [--pick N] [--json|--compact]";
 
 /// The numeric/positional argument parse `cmd_impact` needs before it can
 /// touch the repo or the graph: `--hops`/`--iface-max-fanin`/

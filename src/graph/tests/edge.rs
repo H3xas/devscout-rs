@@ -183,12 +183,14 @@ fn edges_by_kind_field_order_is_fixed_not_alphabetical() {
         imports: 3,
         uses_member: 4,
         ctor_di: 5,
+        implements: 6,
+        overrides: 7,
         ..Default::default()
     };
     let json = serde_json::to_string(&s).unwrap();
     assert_eq!(
         json,
-        r#"{"inherits":1,"uses-type":2,"imports":3,"uses-member":4,"ctor-di":5}"#
+        r#"{"inherits":1,"uses-type":2,"imports":3,"uses-member":4,"ctor-di":5,"implements":6,"overrides":7}"#
     );
 }
 
@@ -203,6 +205,8 @@ fn edges_by_kind_appends_the_four_ts_counts_after_ctor_di_when_present() {
         imports: 3,
         uses_member: 4,
         ctor_di: 5,
+        implements: 10,
+        overrides: 11,
         import: Some(6),
         call: Some(7),
         jsx_use: Some(8),
@@ -211,6 +215,6 @@ fn edges_by_kind_appends_the_four_ts_counts_after_ctor_di_when_present() {
     let json = serde_json::to_string(&s).unwrap();
     assert_eq!(
         json,
-        r#"{"inherits":1,"uses-type":2,"imports":3,"uses-member":4,"ctor-di":5,"import":6,"call":7,"jsx-use":8,"dispatch":9}"#
+        r#"{"inherits":1,"uses-type":2,"imports":3,"uses-member":4,"ctor-di":5,"implements":10,"overrides":11,"import":6,"call":7,"jsx-use":8,"dispatch":9}"#
     );
 }

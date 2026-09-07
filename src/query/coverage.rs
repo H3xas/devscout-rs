@@ -88,8 +88,9 @@ pub enum TestsResult {
     NotFound,
 }
 
-// The three inbound kinds of one adjacency, walked in `REF_KINDS` order.
-fn collect_test_rows(index: &GraphIndex, kinds: [&[usize]; 3], heuristic: bool) -> Vec<TestRow> {
+// The inbound kinds of one adjacency, walked in `REF_KINDS` order (plus
+// `implements`/`overrides`, which never carry a heuristic tier).
+fn collect_test_rows(index: &GraphIndex, kinds: [&[usize]; 5], heuristic: bool) -> Vec<TestRow> {
     let mut rows: Vec<TestRow> = Vec::new();
     let mut by_file: HashMap<String, usize> = HashMap::new();
     for idxs in kinds {
@@ -181,15 +182,20 @@ pub fn build_tests_model(index: &GraphIndex, query: &str) -> TestsResult {
             &refs.inbound_inherits,
             &refs.inbound_uses_type,
             &refs.inbound_uses_member,
+            &refs.inbound_implements,
+            &refs.inbound_overrides,
         ],
         false,
     );
+    const EMPTY: &[usize] = &[];
     let heuristic = collect_test_rows(
         index,
         [
             &refs.heuristic_inbound_inherits,
             &refs.heuristic_inbound_uses_type,
             &refs.heuristic_inbound_uses_member,
+            EMPTY,
+            EMPTY,
         ],
         true,
     );

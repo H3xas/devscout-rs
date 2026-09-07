@@ -61,7 +61,8 @@ pub use ts_purpose::{
     compose_hybrid_ts_purpose, extract_ts_purpose, extract_ts_purpose_with_heuristic,
 };
 pub use types::{
-    DefRecord, ExtensionMethod, Extraction, Fact, LambdaSlot, NameRecord, RefRecord, UsingRecord,
+    DefRecord, ExtensionMethod, Extraction, Fact, LambdaSlot, NameRecord, RefRecord,
+    RegistrationRecord, UsingRecord,
 };
 pub use walk::extract;
 

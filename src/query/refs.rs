@@ -3,6 +3,10 @@ use std::path::Path;
 
 use crate::graph;
 
+use super::dispatch::{
+    self, outbound_foreign, push_ranked, RankedOutbound, K_IMPLEMENTS, K_IMPORTS, K_INHERITS,
+    K_OVERRIDES, K_USES_MEMBER, K_USES_TYPE,
+};
 use super::index::{def_sites, symbol_refs, DefSite, GraphIndex, SymbolRefs};
 use super::member::{self, MemberCandidate};
 use super::refs_tables::{
@@ -132,7 +136,7 @@ pub enum RefsResult {
 // carries no other grouping, and the paths it stores are always repo-relative
 // with `/` separators. A file at the repo root has the empty project, which
 // only ever matches another root file.
-fn project_of(file: &str) -> &str {
+pub(super) fn project_of(file: &str) -> &str {
     match file.find('/') {
         Some(i) => &file[..i],
         None => "",
@@ -309,6 +313,7 @@ fn member_group_model(
     owner: String,
     sites: Vec<DefSite>,
     kept: Vec<(usize, bool)>,
+    dispatch: Vec<usize>,
     budget: &mut usize,
     cache: &mut LineCache,
 ) -> RefsModel {
@@ -330,6 +335,16 @@ fn member_group_model(
         });
     }
     let total = kept.len();
+    let (implements_rows, overrides_rows) = dispatch::split_dispatch_rows(edges, &dispatch, |e| {
+        let (file, line) = edge_loc(&edges[e]);
+        InboundRow {
+            file: file.to_string(),
+            line,
+            heuristic: false,
+            tier: None,
+            source: clip_source(&cached_line(&index.root, file, line, cache)),
+        }
+    });
     RefsModel {
         query: seed.to_string(),
         id: format!("{owner}.{name}"),
@@ -343,6 +358,8 @@ fn member_group_model(
                 dropped: total - rows.len(),
                 rows,
             },
+            implements: dispatch::dispatch_table(implements_rows),
+            overrides: dispatch::dispatch_table(overrides_rows),
         },
         outbound: None,
         ambiguous: AmbiguousTables {
@@ -366,15 +383,18 @@ fn build_member_refs_models(
     }
     let edges = &index.graph.edges;
     let mut cache: LineCache = HashMap::new();
-    let mut groups: Vec<(String, Vec<DefSite>, Vec<(usize, bool)>)> = owners
+    let mut groups: Vec<(String, Vec<DefSite>, Vec<(usize, bool)>, Vec<usize>)> = owners
         .into_iter()
         .map(|(owner, sites)| {
             let kept = verified_member_edges(index, edges, &owner, name, &mut cache);
-            (owner, sites, kept)
+            let hits = dispatch::member_dispatch_edges(&symbol_refs(index, &owner), edges, name);
+            (owner, sites, kept, hits)
         })
         .collect();
-    if groups.iter().any(|(_, _, kept)| !kept.is_empty()) {
-        groups.retain(|(_, _, kept)| !kept.is_empty());
+    let answers =
+        |kept: &Vec<(usize, bool)>, hits: &Vec<usize>| !kept.is_empty() || !hits.is_empty();
+    if groups.iter().any(|(_, _, kept, hits)| answers(kept, hits)) {
+        groups.retain(|(_, _, kept, hits)| answers(kept, hits));
     }
     // Reported before the inbound cap is ever spent, so the answer does not
     // depend on `inbound_cap`: an ambiguity is a refusal, not a budgeted,
@@ -383,7 +403,7 @@ fn build_member_refs_models(
         return Some(MemberRefsOutcome::Ambiguous(
             groups
                 .into_iter()
-                .map(|(owner, sites, _)| MemberCandidate {
+                .map(|(owner, sites, ..)| MemberCandidate {
                     owner,
                     name: name.to_string(),
                     file: sites[0].file.clone(),
@@ -396,7 +416,7 @@ fn build_member_refs_models(
     let mut budget = inbound_cap;
     let models = groups
         .into_iter()
-        .map(|(owner, sites, kept)| {
+        .map(|(owner, sites, kept, hits)| {
             member_group_model(
                 index,
                 edges,
@@ -405,6 +425,7 @@ fn build_member_refs_models(
                 owner,
                 sites,
                 kept,
+                hits,
                 &mut budget,
                 &mut cache,
             )
@@ -421,38 +442,7 @@ struct RankedInbound {
     heuristic: bool,
 }
 
-/// One outbound edge awaiting the shared `--out` cap: which of the four kinds
-/// it belongs to (0=inherits, 1=uses-type, 2=uses-member, 3=imports), which
-/// edge it is, and whether it was guessed. `imports` is never a guess -- the
-/// builder never marks one heuristic, by construction (see
-/// `build_outbound_tables` below).
-struct RankedOutbound {
-    kind: usize,
-    edge: usize,
-    heuristic: bool,
-}
-
-// The three ref kinds name a `to_file` -- ranked same-project/foreign against
-// it, exactly as an inbound edge ranks its `from_file`. An imports edge names a
-// namespace string, never a file, so nothing proves it shares the def's own
-// project: it never earns the same-project rank and always sorts as foreign,
-// the never-guess rule applied to ranking rather than to resolution.
-fn outbound_foreign(def_project: &str, edges: &[graph::Edge], r: &RankedOutbound) -> usize {
-    if r.kind == 3 {
-        return 1;
-    }
-    let to_file = match &edges[r.edge] {
-        graph::Edge::Inherits { to_file, .. }
-        | graph::Edge::UsesType { to_file, .. }
-        | graph::Edge::UsesMember { to_file, .. } => to_file.as_str(),
-        _ => unreachable!(
-            "outbound ranked kinds 0-2 only ever hold inherits/uses-type/uses-member edge indices"
-        ),
-    };
-    usize::from(project_of(to_file) != def_project)
-}
-
-// The four outbound kinds share ONE cap and ONE ranking under `--out`,
+// The six outbound kinds share ONE cap and ONE ranking under `--out`,
 // mirroring `build_refs_model`'s own inbound block below: resolved before
 // heuristic, then the def's own project before every other (imports always
 // foreign, per `outbound_foreign` above), then file, then line. Each shown hit
@@ -461,7 +451,7 @@ fn outbound_foreign(def_project: &str, edges: &[graph::Edge], r: &RankedOutbound
 // the def's own file, the site actually making the reference, not the caller's.
 #[allow(
     clippy::too_many_lines,
-    reason = "one ordered ranking pass over all four outbound kinds, sharing the same cap and tie-break rule across them"
+    reason = "one ordered ranking pass over all six outbound kinds, sharing the same cap and tie-break rule across them"
 )]
 fn build_outbound_tables(
     refs: &SymbolRefs,
@@ -470,57 +460,31 @@ fn build_outbound_tables(
     root: &Path,
     outbound_cap: usize,
 ) -> OutboundTables {
+    const EMPTY: &[usize] = &[];
     let mut ranked: Vec<RankedOutbound> = Vec::new();
-    for &e in &refs.outbound_inherits {
-        ranked.push(RankedOutbound {
-            kind: 0,
-            edge: e,
-            heuristic: false,
-        });
-    }
-    for &e in &refs.heuristic_outbound_inherits {
-        ranked.push(RankedOutbound {
-            kind: 0,
-            edge: e,
-            heuristic: true,
-        });
-    }
-    for &e in &refs.outbound_uses_type {
-        ranked.push(RankedOutbound {
-            kind: 1,
-            edge: e,
-            heuristic: false,
-        });
-    }
-    for &e in &refs.heuristic_outbound_uses_type {
-        ranked.push(RankedOutbound {
-            kind: 1,
-            edge: e,
-            heuristic: true,
-        });
-    }
-    for &e in &refs.outbound_uses_member {
-        ranked.push(RankedOutbound {
-            kind: 2,
-            edge: e,
-            heuristic: false,
-        });
-    }
-    for &e in &refs.heuristic_outbound_uses_member {
-        ranked.push(RankedOutbound {
-            kind: 2,
-            edge: e,
-            heuristic: true,
-        });
-    }
-    for &e in &refs.outbound_imports {
-        ranked.push(RankedOutbound {
-            kind: 3,
-            edge: e,
-            heuristic: false,
-        });
-    }
-    let mut totals = [0usize; 4];
+    push_ranked(
+        &mut ranked,
+        K_INHERITS,
+        &refs.outbound_inherits,
+        &refs.heuristic_outbound_inherits,
+    );
+    push_ranked(
+        &mut ranked,
+        K_USES_TYPE,
+        &refs.outbound_uses_type,
+        &refs.heuristic_outbound_uses_type,
+    );
+    push_ranked(
+        &mut ranked,
+        K_USES_MEMBER,
+        &refs.outbound_uses_member,
+        &refs.heuristic_outbound_uses_member,
+    );
+    push_ranked(&mut ranked, K_IMPLEMENTS, &refs.outbound_implements, EMPTY);
+    push_ranked(&mut ranked, K_OVERRIDES, &refs.outbound_overrides, EMPTY);
+    push_ranked(&mut ranked, K_IMPORTS, &refs.outbound_imports, EMPTY);
+
+    let mut totals = [0usize; 6];
     for r in &ranked {
         totals[r.kind] += 1;
     }
@@ -539,16 +503,14 @@ fn build_outbound_tables(
     let (shown, _) = cap_rows(ranked, outbound_cap);
 
     let mut source_cache: LineCache = HashMap::new();
-    let mut inherits = Vec::new();
-    let mut uses_type = Vec::new();
-    let mut uses_member = Vec::new();
+    let mut rows: [Vec<OutboundRow>; 5] = Default::default();
     let mut imports = Vec::new();
     for r in shown {
         let (file, line) = edge_loc(&edges[r.edge]);
         let source = hit_source(root, file, line, &mut source_cache);
-        if r.kind == 3 {
+        if r.kind == K_IMPORTS {
             let graph::Edge::Imports { target, .. } = &edges[r.edge] else {
-                unreachable!("outbound kind 3 only ever holds imports edge indices");
+                unreachable!("outbound kind K_IMPORTS only ever holds imports edge indices");
             };
             imports.push(ImportRow {
                 file: file.to_string(),
@@ -561,8 +523,10 @@ fn build_outbound_tables(
         let (to_file, to) = match &edges[r.edge] {
             graph::Edge::Inherits { to_file, to, .. }
             | graph::Edge::UsesType { to_file, to, .. }
-            | graph::Edge::UsesMember { to_file, to, .. } => (to_file.clone(), to.clone()),
-            _ => unreachable!("outbound ranked kinds 0-2 only ever hold inherits/uses-type/uses-member edge indices"),
+            | graph::Edge::UsesMember { to_file, to, .. }
+            | graph::Edge::Implements { to_file, to, .. }
+            | graph::Edge::Overrides { to_file, to, .. } => (to_file.clone(), to.clone()),
+            _ => unreachable!("outbound ranked kinds other than K_IMPORTS only ever hold inherits/uses-type/uses-member/implements/overrides edge indices"),
         };
         let row = OutboundRow {
             file: file.to_string(),
@@ -576,32 +540,24 @@ fn build_outbound_tables(
             ),
             source,
         };
-        match r.kind {
-            0 => inherits.push(row),
-            1 => uses_type.push(row),
-            _ => uses_member.push(row),
-        }
+        rows[r.kind].push(row);
     }
+    let [inherits, uses_type, uses_member, implements, overrides] = rows;
 
+    let table = |kind: usize, rows: Vec<OutboundRow>| Table {
+        total: totals[kind],
+        dropped: totals[kind] - rows.len(),
+        rows,
+    };
     OutboundTables {
-        inherits: Table {
-            total: totals[0],
-            dropped: totals[0] - inherits.len(),
-            rows: inherits,
-        },
-        uses_type: Table {
-            total: totals[1],
-            dropped: totals[1] - uses_type.len(),
-            rows: uses_type,
-        },
-        uses_member: Table {
-            total: totals[2],
-            dropped: totals[2] - uses_member.len(),
-            rows: uses_member,
-        },
+        inherits: table(K_INHERITS, inherits),
+        uses_type: table(K_USES_TYPE, uses_type),
+        uses_member: table(K_USES_MEMBER, uses_member),
+        implements: table(K_IMPLEMENTS, implements),
+        overrides: table(K_OVERRIDES, overrides),
         imports: Table {
-            total: totals[3],
-            dropped: totals[3] - imports.len(),
+            total: totals[K_IMPORTS],
+            dropped: totals[K_IMPORTS] - imports.len(),
             rows: imports,
         },
     }
@@ -681,7 +637,7 @@ pub(super) fn build_refs_model_inner(
     // kinds at the same file:line keep their push order.
     let def_project = project_of(&def.file);
     let mut ranked: Vec<RankedInbound> = Vec::new();
-    let mut totals = [0usize; 3];
+    let mut totals = [0usize; 5];
     let is_self_inbound = |edge: usize| {
         let (file, line) = edge_loc(&edges[edge]);
         exclude_self_inbound
@@ -689,13 +645,22 @@ pub(super) fn build_refs_model_inner(
             && file == def.file
             && (def.line..=def.end_line).contains(&line)
     };
+    const EMPTY: &[usize] = &[];
     for (kind, (precise, heuristic)) in [
-        (&refs.inbound_inherits, &refs.heuristic_inbound_inherits),
-        (&refs.inbound_uses_type, &refs.heuristic_inbound_uses_type),
         (
-            &refs.inbound_uses_member,
-            &refs.heuristic_inbound_uses_member,
+            &refs.inbound_inherits[..],
+            &refs.heuristic_inbound_inherits[..],
         ),
+        (
+            &refs.inbound_uses_type[..],
+            &refs.heuristic_inbound_uses_type[..],
+        ),
+        (
+            &refs.inbound_uses_member[..],
+            &refs.heuristic_inbound_uses_member[..],
+        ),
+        (&refs.inbound_implements[..], EMPTY),
+        (&refs.inbound_overrides[..], EMPTY),
     ]
     .into_iter()
     .enumerate()
@@ -736,7 +701,7 @@ pub(super) fn build_refs_model_inner(
     let (shown_inbound, _) = cap_rows(ranked, if all_out { usize::MAX } else { inbound_cap });
 
     let mut source_cache: LineCache = HashMap::new();
-    let mut rows: [Vec<InboundRow>; 3] = [Vec::new(), Vec::new(), Vec::new()];
+    let mut rows: [Vec<InboundRow>; 5] = Default::default();
     for r in shown_inbound {
         let (file, line) = edge_loc(&edges[r.edge]);
         let source = hit_source(&index.root, file, line, &mut source_cache);
@@ -751,7 +716,7 @@ pub(super) fn build_refs_model_inner(
             source,
         });
     }
-    let [inherits_rows, uses_type_rows, uses_member_rows] = rows;
+    let [inherits_rows, uses_type_rows, uses_member_rows, implements_rows, overrides_rows] = rows;
     let inbound_table = |total: usize, rows: Vec<InboundRow>| Table {
         total,
         dropped: total - rows.len(),
@@ -761,6 +726,8 @@ pub(super) fn build_refs_model_inner(
         inherits: inbound_table(totals[0], inherits_rows),
         uses_type: inbound_table(totals[1], uses_type_rows),
         uses_member: inbound_table(totals[2], uses_member_rows),
+        implements: inbound_table(totals[3], implements_rows),
+        overrides: inbound_table(totals[4], overrides_rows),
     };
 
     let outbound = out.then(|| {

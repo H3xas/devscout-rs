@@ -4,7 +4,8 @@ use std::path::Path;
 use crate::extract;
 
 use super::fragment_types::{
-    FragDef, FragExtensionMethod, FragFact, FragLambdaSlot, FragName, FragRef, FragUsing, Fragment,
+    FragDef, FragExtensionMethod, FragFact, FragLambdaSlot, FragName, FragRef, FragRegistration,
+    FragUsing, Fragment,
 };
 use super::ordered::OrderedMap;
 
@@ -105,6 +106,7 @@ pub fn fragment_from_extraction(e: &extract::Extraction) -> Fragment {
                     }
                     m
                 },
+                override_methods: d.override_methods.clone(),
                 end_line: d.end_line,
             })
             .collect(),
@@ -170,6 +172,16 @@ pub fn fragment_from_extraction(e: &extract::Extraction) -> Fragment {
                 owner: n.owner.clone(),
             })
             .collect(),
+        registrations: e
+            .registrations
+            .iter()
+            .map(|r| FragRegistration {
+                service: r.service.clone(),
+                implementation: r.implementation.clone(),
+                namespace: r.namespace.clone(),
+                line: r.line,
+            })
+            .collect(),
     }
 }
 
@@ -210,6 +222,7 @@ pub fn markup_fragment(root: &Path, rel: &str) -> Option<Fragment> {
                 non_public_methods: Vec::new(),
                 method_arities: OrderedMap::new(),
                 method_params: OrderedMap::new(),
+                override_methods: Vec::new(),
                 end_line: d.line,
             })
             .collect(),
@@ -253,5 +266,6 @@ pub fn markup_fragment(root: &Path, rel: &str) -> Option<Fragment> {
                 owner: n.owner,
             })
             .collect(),
+        registrations: Vec::new(),
     })
 }

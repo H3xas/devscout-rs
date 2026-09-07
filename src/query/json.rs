@@ -148,6 +148,8 @@ enum RowKind {
     Inherits,
     UsesType,
     UsesMember,
+    Implements,
+    Overrides,
 }
 
 fn why_for_row(kind: RowKind, heuristic: bool, tier: Option<graph::HeuristicTier>) -> Why {
@@ -155,6 +157,8 @@ fn why_for_row(kind: RowKind, heuristic: bool, tier: Option<graph::HeuristicTier
         RowKind::Inherits => Why::Inherits,
         RowKind::UsesType => Why::UsesType,
         RowKind::UsesMember => why_for_uses_member(heuristic, tier),
+        RowKind::Implements => Why::Implements,
+        RowKind::Overrides => Why::Overrides,
     }
 }
 
@@ -286,43 +290,90 @@ fn refs_model_j(model: &query::RefsModel, outcome: query::Outcome) -> J {
     J::Obj(refs_model_fields(model, outcome))
 }
 
-// The three inbound tables, each row tagged with the static kind its own
-// table names (see `RowKind`/`why_for_row`).
-fn j_inbound_tables(t: &query::InboundTables) -> J {
-    J::Obj(vec![
-        (
-            "inherits",
-            j_table(&t.inherits, |r| j_inbound_row(r, RowKind::Inherits)),
-        ),
-        (
-            "uses-type",
-            j_table(&t.uses_type, |r| j_inbound_row(r, RowKind::UsesType)),
-        ),
-        (
-            "uses-member",
-            j_table(&t.uses_member, |r| j_inbound_row(r, RowKind::UsesMember)),
-        ),
-    ])
+// `implements`/`overrides` join an `inbound`/`outbound` JSON object only when
+// their own total is non-zero -- present-only-when-applicable, the same rule
+// `memberRefs` follows -- so a symbol untouched by dispatch edges keeps the
+// exact `--json` bytes it had before this pair existed.
+fn dispatch_table_fields<R>(
+    implements: &query::Table<R>,
+    overrides: &query::Table<R>,
+    row: impl Fn(&R, RowKind) -> J + Copy,
+) -> Vec<(&'static str, J)> {
+    let mut fields = Vec::new();
+    if implements.total != 0 {
+        fields.push((
+            "implements",
+            j_table(implements, |r| row(r, RowKind::Implements)),
+        ));
+    }
+    if overrides.total != 0 {
+        fields.push((
+            "overrides",
+            j_table(overrides, |r| row(r, RowKind::Overrides)),
+        ));
+    }
+    fields
 }
 
-// The four outbound tables, the same per-kind tagging `j_inbound_tables`
-// applies -- `imports` names its own fixed word directly (see `j_import_row`).
+// The three inbound tables plus the two dispatch ones, each row tagged with
+// the static kind its own table names (see `RowKind`/`why_for_row`).
+fn j_inbound_tables(t: &query::InboundTables) -> J {
+    J::Obj(
+        vec![
+            (
+                "inherits",
+                j_table(&t.inherits, |r| j_inbound_row(r, RowKind::Inherits)),
+            ),
+            (
+                "uses-type",
+                j_table(&t.uses_type, |r| j_inbound_row(r, RowKind::UsesType)),
+            ),
+            (
+                "uses-member",
+                j_table(&t.uses_member, |r| j_inbound_row(r, RowKind::UsesMember)),
+            ),
+        ]
+        .into_iter()
+        .chain(dispatch_table_fields(
+            &t.implements,
+            &t.overrides,
+            j_inbound_row,
+        ))
+        .collect::<Vec<_>>(),
+    )
+}
+
+// The outbound tables, the same per-kind tagging `j_inbound_tables`
+// applies -- `imports` names its own fixed word directly (see `j_import_row`)
+// and stays last, after the two dispatch tables.
 fn j_outbound_tables(t: &query::OutboundTables) -> J {
-    J::Obj(vec![
-        (
-            "inherits",
-            j_table(&t.inherits, |r| j_outbound_row(r, RowKind::Inherits)),
-        ),
-        (
-            "uses-type",
-            j_table(&t.uses_type, |r| j_outbound_row(r, RowKind::UsesType)),
-        ),
-        (
-            "uses-member",
-            j_table(&t.uses_member, |r| j_outbound_row(r, RowKind::UsesMember)),
-        ),
-        ("imports", j_table(&t.imports, j_import_row)),
-    ])
+    J::Obj(
+        vec![
+            (
+                "inherits",
+                j_table(&t.inherits, |r| j_outbound_row(r, RowKind::Inherits)),
+            ),
+            (
+                "uses-type",
+                j_table(&t.uses_type, |r| j_outbound_row(r, RowKind::UsesType)),
+            ),
+            (
+                "uses-member",
+                j_table(&t.uses_member, |r| j_outbound_row(r, RowKind::UsesMember)),
+            ),
+        ]
+        .into_iter()
+        .chain(dispatch_table_fields(
+            &t.implements,
+            &t.overrides,
+            j_outbound_row,
+        ))
+        .chain(std::iter::once((
+            "imports",
+            j_table(&t.imports, j_import_row),
+        )))
+        .collect::<Vec<_>>(),
+    )
 }
 
 fn refs_model_fields(model: &query::RefsModel, outcome: query::Outcome) -> Vec<(&'static str, J)> {

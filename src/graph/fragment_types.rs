@@ -183,9 +183,44 @@ pub struct FragDef {
         skip_serializing_if = "OrderedMap::is_empty"
     )]
     pub method_params: OrderedMap<Vec<Vec<String>>>,
+    /// Declared method names carrying the literal `override` modifier,
+    /// source order, deduped. Appended LAST of all, after `method_params`,
+    /// omitted when empty -- purely additive, so an absent key reads back
+    /// as "no overrides", the safe default for every fragment cached before
+    /// this field existed, which is what lets it join the schema with the
+    /// same v19 cache bump `registrations` does rather than a bump of its
+    /// own. Read by the resolver's member-level `overrides` pass to find
+    /// the nearest in-graph base member of the same name and arity.
+    #[serde(
+        default,
+        rename = "overrideMethods",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub override_methods: Vec<String>,
     #[serde(default, rename = "endLine", skip_serializing_if = "is_zero")]
     /// The end line value.
     pub end_line: usize,
+}
+
+/// One two-type-argument DI service registration a file's invocations
+/// record -- see `extract::RegistrationRecord`.
+///
+/// `service` is the first type argument (the interface), `implementation`
+/// the second (the concrete type). Field order (`service`,
+/// `implementation`, `namespace`, `line`) is significant; neither type name
+/// carries its enclosing-namespace qualification here (that is the
+/// resolver's job, against the registration site's OWN using/alias context,
+/// read from `namespace`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FragRegistration {
+    /// The service (first type argument) name.
+    pub service: String,
+    /// The implementation (second type argument) name.
+    pub implementation: String,
+    /// The registration call's enclosing namespace.
+    pub namespace: String,
+    /// The registration call's 1-based line.
+    pub line: usize,
 }
 
 /// One declared type fact: the type NAME, plus its top-level
@@ -458,6 +493,13 @@ pub struct Fragment {
     /// only the fields INSIDE a record follow the omit-when-empty rule.
     #[serde(default)]
     pub names: Vec<FragName>,
+    /// The file's two-type-argument DI service registrations -- see
+    /// `FragRegistration`. Appended LAST, after `names`, and omitted when
+    /// empty (unlike its four siblings above, which pre-date the
+    /// omit-when-empty convention): a file recording none serializes exactly
+    /// as it did before this field existed.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub registrations: Vec<FragRegistration>,
 }
 
 /// The two shapes a cached fragment can have. Each rel is keyed to whichever

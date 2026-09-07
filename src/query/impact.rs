@@ -2,8 +2,9 @@ use std::collections::{HashMap, HashSet};
 
 use crate::graph;
 
+use super::dispatch::{implemented_interfaces, inbound_walk_kinds};
 use super::impact_why::{self, Why, WhyTrack};
-use super::index::{def_files, implemented_interfaces, GraphIndex};
+use super::index::{def_files, GraphIndex};
 use super::infra::is_infra_file;
 use super::member::{self, MemberCandidate, MemberSeedResolution};
 use super::rank::{personalized_page_rank, DEFAULT_DAMPING, DEFAULT_ITERATIONS};
@@ -211,7 +212,7 @@ pub fn impact_walk(
 
         for def_id in frontier.iter() {
             if let Some(inb) = index.inbound.get(def_id) {
-                for kind_edges in [&inb.inherits, &inb.uses_type, &inb.uses_member] {
+                for kind_edges in inbound_walk_kinds(inb) {
                     for &ei in kind_edges {
                         let (loc_file, loc_line) = edge_loc(&index.graph.edges[ei]);
                         let from_file = loc_file.to_string();

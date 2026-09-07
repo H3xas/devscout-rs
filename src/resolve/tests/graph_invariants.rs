@@ -99,7 +99,7 @@ fn stage4_stats_heuristic_edge_count_is_appended_last_and_edges_by_kind_never_co
     // serialized `stats` keys appear in, and the values with them.
     assert_eq!(
         serde_json::to_string(&g.stats).unwrap(),
-        r#"{"def_count":9,"file_count":7,"edges_by_kind":{"inherits":1,"uses-type":1,"imports":4,"uses-member":2,"ctor-di":0},"ambiguous_count":0,"ambiguous_pct":0,"unresolved_external_count":0,"heuristic_edge_count":3,"test_def_count":0,"heuristic_by_tier":{"ext":0,"guess":3}}"#,
+        r#"{"def_count":9,"file_count":7,"edges_by_kind":{"inherits":1,"uses-type":1,"imports":4,"uses-member":2,"ctor-di":0,"implements":0,"overrides":0},"ambiguous_count":0,"ambiguous_pct":0,"unresolved_external_count":0,"heuristic_edge_count":3,"test_def_count":0,"heuristic_by_tier":{"ext":0,"guess":3}}"#,
         "heuristic_by_tier is appended LAST, after test_def_count -- the stats key order graph.json pins"
     );
     assert_eq!(g.stats.heuristic_edge_count, 3);
