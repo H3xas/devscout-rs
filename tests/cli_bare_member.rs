@@ -163,11 +163,19 @@ fn a_bare_member_never_matches_a_longer_identifier_that_starts_with_it() {
 }
 
 #[test]
-fn a_member_no_edge_line_names_keeps_the_unchanged_zero_hit_exit() {
+fn a_member_no_edge_line_names_keeps_its_exit_code_and_resolves_to_an_empty_list() {
     let fx = Fixture::build("unverified");
     let out = fx.run(&["refs", "Reconcile"]);
     assert_eq!(out.status.code(), Some(3), "{out:?}");
-    assert_eq!(stdout_of(&out), "no symbol matches \"Reconcile\"\n");
+    assert_eq!(
+        stdout_of(&out),
+        "App.Books.Ledger.Reconcile  (member)\n\
+         def: src/Ledger.cs:9\n\
+         inbound:\n\
+         \x20 inherits (0):\n\
+         \x20 uses-type (0):\n\
+         \x20 uses-member (0):\n"
+    );
 }
 
 // `Approve` is a static method declared on two independent classes, each with

@@ -61,9 +61,12 @@ const ZERO_HIT_TESTS: &str = "devscout tests: zero hits — the graph was search
 // The one place a zero-hit line is emitted. The "did you mean" candidates extend
 // that same note rather than adding a second one; `query` carries the name the
 // caller asked for on the two verbs that offer them and is `None` on the two that
-// do not. Broken-pipe errors are swallowed for the same reason `print_out`
-// swallows them.
-fn emit_zero_hit_note(code: i32, note: &str, cwd: &Path, query: Option<&str>) {
+// do not. A `None` note is a verb declining the advice: its answer resolved and
+// is merely empty, so pointing at a text search would send the caller after
+// something the graph has already answered. Broken-pipe errors are swallowed for
+// the same reason `print_out` swallows them.
+fn emit_zero_hit_note(code: i32, note: Option<&str>, cwd: &Path, query: Option<&str>) {
+    let Some(note) = note else { return };
     if code != EXIT_NO_RESULT {
         return;
     }
@@ -83,9 +86,9 @@ fn emit_zero_hit_note(code: i32, note: &str, cwd: &Path, query: Option<&str>) {
         .and_then(|()| lock.write_all(b"\n"));
 }
 
-// Query-time index freshness, `find`/`refs`/`impact` only: `map` just rebuilt
-// the index and has nothing to say about it being stale relative to itself. Root
-// resolution mirrors `require_repo`'s plain climb, never
+// Query-time index freshness, `find`/`refs`/`read`/`impact`/`tests` only: `map`
+// just rebuilt the index and has nothing to say about it being stale relative to
+// itself. Root resolution mirrors `require_repo`'s plain climb, never
 // `require_repo_for_path`'s argument-named-file fallback -- a query that only
 // resolved its root through an argument gets no freshness check, silently, the
 // safe default. Called BEFORE `emit_zero_hit_note` so the two lines land on
@@ -238,30 +241,31 @@ pub fn dispatch(args: Vec<String>) {
             }
         },
         Some("refs") => {
-            let (code, out) = cmd_refs(&cwd, &args[2..]);
+            let (code, out, note) = cmd_refs(&cwd, &args[2..]);
             print_out(&out);
             emit_freshness_warning(&cwd);
-            emit_zero_hit_note(code, ZERO_HIT_REFS, &cwd, first_positional(&args[2..]));
+            emit_zero_hit_note(code, note, &cwd, first_positional(&args[2..]));
             process::exit(code);
         }
         Some("read") => {
-            let (code, out) = cmd_read(&cwd, &args[2..]);
+            let (code, out, note) = cmd_read(&cwd, &args[2..]);
             print_out(&out);
             emit_freshness_warning(&cwd);
-            emit_zero_hit_note(code, ZERO_HIT_READ, &cwd, first_positional(&args[2..]));
+            emit_zero_hit_note(code, note, &cwd, first_positional(&args[2..]));
             process::exit(code);
         }
         Some("impact") => {
             let (code, out) = cmd_impact(&cwd, &args[2..]);
             print_out(&out);
             emit_freshness_warning(&cwd);
-            emit_zero_hit_note(code, ZERO_HIT_IMPACT, &cwd, None);
+            emit_zero_hit_note(code, Some(ZERO_HIT_IMPACT), &cwd, None);
             process::exit(code);
         }
         Some("tests") => {
             let (code, out) = cmd_tests(&cwd, &args[2..]);
             print_out(&out);
-            emit_zero_hit_note(code, ZERO_HIT_TESTS, &cwd, None);
+            emit_freshness_warning(&cwd);
+            emit_zero_hit_note(code, Some(ZERO_HIT_TESTS), &cwd, None);
             process::exit(code);
         }
         Some("find") => {
@@ -278,7 +282,7 @@ pub fn dispatch(args: Vec<String>) {
             let (code, out) = cmd_find(&cwd, &query_str, resources);
             print_out(&out);
             emit_freshness_warning(&cwd);
-            emit_zero_hit_note(code, ZERO_HIT_FIND, &cwd, Some(query_str.as_str()));
+            emit_zero_hit_note(code, Some(ZERO_HIT_FIND), &cwd, Some(query_str.as_str()));
             process::exit(code);
         }
         Some("map") => {
@@ -423,12 +427,33 @@ fn apply_global_options(cwd: &Path, args: &[String]) -> Result<(PathBuf, Vec<Str
     Ok((cwd, rest))
 }
 
-// Shared by `cmd_refs`/`cmd_impact` -- the "never guess" house rule: print every
-// candidate's `{id, def site, kind}` and exit 1, regardless of
-// `--compact`/`--json` (see `cmd_refs`/`cmd_impact`: this is reached BEFORE
-// either flag is consulted).
-fn ambiguous_candidates_out(index: &query::GraphIndex, q: &str, ids: &[String]) -> (i32, String) {
-    let mut rows: Vec<String> = ids
+// The one JSON envelope both ambiguous answers share, so an ambiguous type and
+// an ambiguous member never drift into two shapes a consumer must tell apart:
+// only the candidate objects differ, each in its renderer's own vocabulary.
+fn ambiguous_json(q: &str, candidates: Vec<J>) -> String {
+    J::Obj(vec![
+        ("schema_version", J::UInt(query::SCHEMA_VERSION)),
+        (
+            "outcome",
+            J::Str(query::Outcome::Ambiguous.as_str().to_string()),
+        ),
+        ("query", J::Str(q.to_string())),
+        ("candidates", J::Arr(candidates)),
+    ])
+    .to_json_string()
+}
+
+// Shared by the four graph-reading verbs -- the "never guess" house rule: name
+// every candidate's `{id, def site, kind}` and exit 1. `--compact` is inert here
+// (a candidate list has no wide form to narrow); `--json` carries the same facts
+// under `member_ambiguous_out`'s own keys.
+fn ambiguous_candidates_out(
+    index: &query::GraphIndex,
+    q: &str,
+    ids: &[String],
+    json: bool,
+) -> (i32, String) {
+    let mut rows: Vec<(String, &String, &graph::Def)> = ids
         .iter()
         .map(|id| {
             // Every id here was sourced from `index.by_simple_name`/
@@ -438,59 +463,60 @@ fn ambiguous_candidates_out(index: &query::GraphIndex, q: &str, ids: &[String]) 
             let d = index
                 .def(id)
                 .expect("ambiguous candidate id must resolve to a graph def");
-            format!("{id}  {}:{}  {}", d.file, d.line, d.kind)
+            (format!("{id}  {}:{}  {}", d.file, d.line, d.kind), id, d)
         })
         .collect();
-    // `Vec<String>::sort` compares by UTF-8 byte order, which for the ASCII
-    // identifier/path/kind text these rows are built from is a stable, total
-    // order (the same seam resolve.rs's candidate sort documents).
-    rows.sort();
+    // Sorting on the rendered row compares by UTF-8 byte order, which for the
+    // ASCII identifier/path/kind text these rows are built from is a stable,
+    // total order (the same seam resolve.rs's candidate sort documents), and
+    // gives the JSON array below the order the text list prints.
+    rows.sort_by(|a, b| a.0.cmp(&b.0));
+    if json {
+        let candidates = rows
+            .iter()
+            .map(|(_, id, d)| {
+                J::Obj(vec![
+                    ("id", J::Str((*id).clone())),
+                    ("file", J::Str(d.file.clone())),
+                    ("line", J::UInt(d.line as u64)),
+                    ("kind", J::Str(d.kind.clone())),
+                ])
+            })
+            .collect();
+        return (1, ambiguous_json(q, candidates));
+    }
     let mut out = vec![format!(
         "ambiguous symbol \"{q}\" — {} candidates:",
         rows.len()
     )];
-    out.append(&mut rows);
+    out.extend(rows.into_iter().map(|(row, _, _)| row));
     (1, out.join("\n"))
 }
 
 // Renders a member-ambiguous outcome (`RefsResult::MemberAmbiguous` and its
 // mirrors on `read`/`impact`/`tests`): one row per candidate, its declaring
 // type, file and line -- NEVER the bare `{id, def site, kind}` list
-// `ambiguous_candidates_out` renders for an ambiguous TYPE name. Unlike that
-// list, this one DOES respect `--json`: there was no JSON shape for a member
-// answer to keep unchanged, so carrying `outcome` here is purely additive.
+// `ambiguous_candidates_out` renders for an ambiguous TYPE name. Both outcomes
+// answer under the same JSON keys, so a caller branching on `outcome` reads
+// either without knowing which kind of name it asked about.
 fn member_ambiguous_out(
     q: &str,
     candidates: &[query::MemberCandidate],
     json: bool,
 ) -> (i32, String) {
     if json {
-        let out = J::Obj(vec![
-            ("schema_version", J::UInt(query::SCHEMA_VERSION)),
-            (
-                "outcome",
-                J::Str(query::Outcome::Ambiguous.as_str().to_string()),
-            ),
-            ("query", J::Str(q.to_string())),
-            (
-                "candidates",
-                J::Arr(
-                    candidates
-                        .iter()
-                        .map(|c| {
-                            J::Obj(vec![
-                                ("owner", J::Str(c.owner.clone())),
-                                ("name", J::Str(c.name.clone())),
-                                ("file", J::Str(c.file.clone())),
-                                ("line", J::UInt(c.line as u64)),
-                            ])
-                        })
-                        .collect(),
-                ),
-            ),
-        ])
-        .to_json_string();
-        return (1, out);
+        let rows = candidates
+            .iter()
+            .map(|c| {
+                J::Obj(vec![
+                    ("owner", J::Str(c.owner.clone())),
+                    ("name", J::Str(c.name.clone())),
+                    ("file", J::Str(c.file.clone())),
+                    ("line", J::UInt(c.line as u64)),
+                ])
+            })
+            .collect();
+        return (1, ambiguous_json(q, rows));
     }
     let mut out = vec![format!(
         "ambiguous member \"{q}\" — {} candidates:",
@@ -579,6 +605,58 @@ fn index_options(args: &[String]) -> query::IndexOptions {
     }
 }
 
+// `--json` and `--compact` name two different renderers, so a caller who asks
+// for both gets a refusal rather than a precedence rule each verb would have to
+// spell the same way. `verb` only names the command inside that message.
+fn output_flags(verb: &str, args: &[String]) -> Result<(bool, bool), (i32, String)> {
+    let json = args.iter().any(|a| a == "--json");
+    let compact = args.iter().any(|a| a == "--compact");
+    if json && compact {
+        return Err((
+            1,
+            format!("devscout {verb}: --compact and --json are mutually exclusive"),
+        ));
+    }
+    Ok((json, compact))
+}
+
+// The mapped graph the four graph-reading verbs need, or the single refusal all
+// four print when the repo was never mapped -- one `(code, message)` the caller
+// returns unchanged, so those refusals cannot drift apart.
+fn require_graph(root: &Path) -> Result<graph::Graph, (i32, String)> {
+    graph::read_graph(root).ok_or_else(|| {
+        (
+            1,
+            "no graph.json for this repo — run `devscout map` on a C# scope first".to_string(),
+        )
+    })
+}
+
+// The one telemetry call every query verb makes, taking the rendered answer
+// whole: the outcome and count recorded are the ones that answer carries, so a
+// record can never describe a different answer than the caller was handed.
+fn finish_query(
+    root: &Path,
+    verb: &'static str,
+    seed: &str,
+    start: Instant,
+    answer: (i32, String, query::Outcome, usize),
+) -> (i32, String) {
+    let (code, out, outcome, candidate_count) = answer;
+    telemetry::record(
+        root,
+        &telemetry::QueryEvent {
+            verb,
+            seed,
+            outcome,
+            candidate_count,
+        },
+        start.elapsed(),
+        out.len(),
+    );
+    (code, out)
+}
+
 // `refs`. Check order: `--compact`+`--json` conflict, then missing query, THEN
 // `require_repo`, THEN the graph-present check -- a query run with no repo
 // present reports the missing-repo error even if the query itself is also
@@ -603,21 +681,48 @@ fn refs_model_row_count(model: &query::RefsModel) -> usize {
     n
 }
 
-fn cmd_refs(cwd: &Path, args: &[String]) -> (i32, String) {
+// A bare member answers with one ordinary refs model per declaring type, so
+// each block renders through the very renderer a type uses and `--json` wraps
+// those same objects in an array rather than reshaping them. A member the
+// graph declares but no verified edge reaches is that same answer with its
+// tables empty: the seed resolved, so this is `refs`' own zero hit and not the
+// unresolved case `fallback_advised_out` renders.
+fn member_models_out(
+    q: &str,
+    json: bool,
+    compact: bool,
+    models: &[query::RefsModel],
+) -> (i32, String, query::Outcome, usize) {
+    let (code, outcome) = if models.iter().all(|m| m.inbound.uses_member.total == 0) {
+        (EXIT_NO_RESULT, query::Outcome::ZeroHit)
+    } else {
+        (0, query::Outcome::Hit)
+    };
+    let out = if json {
+        query::json::member_refs_to_json(q, models, outcome)
+    } else {
+        let render: fn(&query::RefsModel) -> String = if compact {
+            render::render_refs_compact
+        } else {
+            render::render_refs_text
+        };
+        models.iter().map(render).collect::<Vec<_>>().join("\n")
+    };
+    let count = models.iter().map(refs_model_row_count).sum();
+    (code, out, outcome, count)
+}
+
+fn cmd_refs(cwd: &Path, args: &[String]) -> (i32, String, Option<&'static str>) {
     let start = Instant::now();
-    let json = args.iter().any(|a| a == "--json");
-    let compact = args.iter().any(|a| a == "--compact");
-    if json && compact {
-        return (
-            1,
-            "devscout refs: --compact and --json are mutually exclusive".to_string(),
-        );
-    }
+    let (json, compact) = match output_flags("refs", args) {
+        Ok(v) => v,
+        Err((code, out)) => return (code, out, None),
+    };
     let Ok(pick) = parse_pick(args) else {
-        return (2, REFS_USAGE.to_string());
+        return (2, REFS_USAGE.to_string(), None);
     };
     let Some(q) = first_positional(args) else {
-        return (2, REFS_USAGE.to_string());
+        return (2, REFS_USAGE.to_string(), None);
     };
     let out = args.iter().any(|a| a == "--out");
     // `--all` lifts only `query::OUTBOUND_CAP`; it is otherwise inert without
@@ -625,13 +730,11 @@ fn cmd_refs(cwd: &Path, args: &[String]) -> (i32, String) {
     let all_out = args.iter().any(|a| a == "--all");
     let root = match require_repo(cwd) {
         Ok(r) => r,
-        Err(e) => return (1, format!("error: {e}")),
+        Err(e) => return (1, format!("error: {e}"), None),
     };
-    let Some(g) = graph::read_graph(&root) else {
-        return (
-            1,
-            "no graph.json for this repo — run `devscout map` on a C# scope first".to_string(),
-        );
+    let g = match require_graph(&root) {
+        Ok(g) => g,
+        Err((code, out)) => return (code, out, None),
     };
     let index = query::load_graph_index_with(&g, &root, index_options(args));
 
@@ -654,30 +757,21 @@ fn cmd_refs(cwd: &Path, args: &[String]) -> (i32, String) {
     let result = match build(q) {
         query::RefsResult::MemberAmbiguous(candidates) => match pick {
             Some(n) if n <= candidates.len() => build(&query::qualified_seed(&candidates[n - 1])),
-            Some(_) => return (2, REFS_USAGE.to_string()),
+            Some(_) => return (2, REFS_USAGE.to_string(), None),
             None => query::RefsResult::MemberAmbiguous(candidates),
         },
         other => other,
     };
 
-    let (code, out, outcome, candidate_count) = refs_result_out(&index, q, json, compact, result);
-    telemetry::record(
-        &root,
-        &telemetry::QueryEvent {
-            verb: "refs",
-            seed: q,
-            outcome,
-            candidate_count,
-        },
-        start.elapsed(),
-        out.len(),
-    );
-    (code, out)
+    let answer = refs_result_out(&index, q, json, compact, result);
+    let note = (answer.2 != query::Outcome::ZeroHit).then_some(ZERO_HIT_REFS);
+    let (code, out) = finish_query(&root, "refs", q, start, answer);
+    (code, out, note)
 }
 
 // The rendering AND telemetry facts (`Outcome`, row count) for a `refs`
-// answer, split out of `cmd_refs` itself so that function stays under its
-// line ratchet.
+// answer, derived together at the single point the answer is rendered so the
+// telemetry line can never disagree with the bytes that went to stdout.
 fn refs_result_out(
     index: &query::GraphIndex,
     q: &str,
@@ -692,7 +786,7 @@ fn refs_result_out(
         }
         query::RefsResult::Ambiguous(ids) => {
             let count = ids.len();
-            let (code, out) = ambiguous_candidates_out(index, q, &ids);
+            let (code, out) = ambiguous_candidates_out(index, q, &ids, json);
             (code, out, query::Outcome::Ambiguous, count)
         }
         query::RefsResult::MemberAmbiguous(candidates) => {
@@ -700,29 +794,7 @@ fn refs_result_out(
             let (code, out) = member_ambiguous_out(q, &candidates, json);
             (code, out, query::Outcome::Ambiguous, count)
         }
-        // A bare member answers with one ordinary refs model per declaring type,
-        // so each block renders through the very renderer a type uses and
-        // `--json` wraps those same objects in an array rather than reshaping
-        // them.
-        query::RefsResult::Members(models) => {
-            let count = models.iter().map(refs_model_row_count).sum();
-            let out = if json {
-                query::json::member_refs_to_json(q, &models)
-            } else if compact {
-                models
-                    .iter()
-                    .map(render::render_refs_compact)
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            } else {
-                models
-                    .iter()
-                    .map(render::render_refs_text)
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            };
-            (0, out, query::Outcome::Hit, count)
-        }
+        query::RefsResult::Members(models) => member_models_out(q, json, compact, &models),
         query::RefsResult::Resolved(model) => {
             let count = refs_model_row_count(&model);
             let out = if json {
@@ -745,31 +817,25 @@ fn refs_result_out(
 // declaration span.
 const READ_USAGE: &str = "usage: devscout read <symbol> [--no-guess] [--pick N] [--json|--compact]";
 
-fn cmd_read(cwd: &Path, args: &[String]) -> (i32, String) {
+fn cmd_read(cwd: &Path, args: &[String]) -> (i32, String, Option<&'static str>) {
     let start = Instant::now();
-    let json = args.iter().any(|a| a == "--json");
-    let compact = args.iter().any(|a| a == "--compact");
-    if json && compact {
-        return (
-            1,
-            "devscout read: --compact and --json are mutually exclusive".to_string(),
-        );
-    }
+    let (json, compact) = match output_flags("read", args) {
+        Ok(v) => v,
+        Err((code, out)) => return (code, out, None),
+    };
     let Ok(pick) = parse_pick(args) else {
-        return (2, READ_USAGE.to_string());
+        return (2, READ_USAGE.to_string(), None);
     };
     let Some(q) = first_positional(args) else {
-        return (2, READ_USAGE.to_string());
+        return (2, READ_USAGE.to_string(), None);
     };
     let root = match require_repo(cwd) {
         Ok(r) => r,
-        Err(e) => return (1, format!("error: {e}")),
+        Err(e) => return (1, format!("error: {e}"), None),
     };
-    let Some(g) = graph::read_graph(&root) else {
-        return (
-            1,
-            "no graph.json for this repo — run `devscout map` on a C# scope first".to_string(),
-        );
+    let g = match require_graph(&root) {
+        Ok(g) => g,
+        Err((code, out)) => return (code, out, None),
     };
     let index = query::load_graph_index_with(&g, &root, index_options(args));
 
@@ -781,20 +847,20 @@ fn cmd_read(cwd: &Path, args: &[String]) -> (i32, String) {
             Some(n) if n <= candidates.len() => {
                 query::build_read_model(&index, &query::qualified_seed(&candidates[n - 1]))
             }
-            Some(_) => return (2, READ_USAGE.to_string()),
+            Some(_) => return (2, READ_USAGE.to_string(), None),
             None => query::ReadResult::MemberAmbiguous(candidates),
         },
         other => other,
     };
 
-    let (code, out, outcome, candidate_count) = match result {
+    let answer = match result {
         query::ReadResult::NotFound => {
             let (code, out) = fallback_advised_out(q, json, format!("no symbol matches \"{q}\""));
             (code, out, query::Outcome::FallbackAdvised, 0)
         }
         query::ReadResult::Ambiguous(ids) => {
             let count = ids.len();
-            let (code, out) = ambiguous_candidates_out(&index, q, &ids);
+            let (code, out) = ambiguous_candidates_out(&index, q, &ids, json);
             (code, out, query::Outcome::Ambiguous, count)
         }
         query::ReadResult::MemberAmbiguous(candidates) => {
@@ -802,29 +868,10 @@ fn cmd_read(cwd: &Path, args: &[String]) -> (i32, String) {
             let (code, out) = member_ambiguous_out(q, &candidates, json);
             (code, out, query::Outcome::Ambiguous, count)
         }
-        // A bare member answers through refs' own member rendering in all
-        // three forms: the member answer carries no declaration-span fact to
-        // add, so reshaping it here would only create a second shape to keep
-        // in step.
-        query::ReadResult::Members(models) => {
-            let count = models.iter().map(refs_model_row_count).sum();
-            let out = if json {
-                query::json::member_refs_to_json(q, &models)
-            } else if compact {
-                models
-                    .iter()
-                    .map(render::render_refs_compact)
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            } else {
-                models
-                    .iter()
-                    .map(render::render_refs_text)
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            };
-            (0, out, query::Outcome::Hit, count)
-        }
+        // `read`'s member answer IS refs' -- a member carries no
+        // declaration-span fact to add -- so it takes the same exit code and
+        // the same word, rather than a second shape to keep in step.
+        query::ReadResult::Members(models) => member_models_out(q, json, compact, &models),
         query::ReadResult::Resolved(model) => {
             let count = refs_model_row_count(&model.refs);
             let out = if json {
@@ -837,18 +884,9 @@ fn cmd_read(cwd: &Path, args: &[String]) -> (i32, String) {
             (0, out, query::Outcome::Hit, count)
         }
     };
-    telemetry::record(
-        &root,
-        &telemetry::QueryEvent {
-            verb: "read",
-            seed: q,
-            outcome,
-            candidate_count,
-        },
-        start.elapsed(),
-        out.len(),
-    );
-    (code, out)
+    let note = (answer.2 != query::Outcome::ZeroHit).then_some(ZERO_HIT_READ);
+    let (code, out) = finish_query(&root, "read", q, start, answer);
+    (code, out, note)
 }
 
 const IMPACT_USAGE: &str = "usage: devscout impact <file|symbol> [--hops N] [--no-iface] [--no-guess] [--iface-max-fanin N] [--hub-max-indegree N] [--pick N] [--json|--compact]";
@@ -940,14 +978,10 @@ fn parse_impact_args(args: &[String]) -> Result<ImpactArgs<'_>, (i32, String)> {
 // graph-present check.
 fn cmd_impact(cwd: &Path, args: &[String]) -> (i32, String) {
     let start = Instant::now();
-    let json = args.iter().any(|a| a == "--json");
-    let compact = args.iter().any(|a| a == "--compact");
-    if json && compact {
-        return (
-            1,
-            "devscout impact: --compact and --json are mutually exclusive".to_string(),
-        );
-    }
+    let (json, compact) = match output_flags("impact", args) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
 
     let ImpactArgs {
         hops,
@@ -966,11 +1000,9 @@ fn cmd_impact(cwd: &Path, args: &[String]) -> (i32, String) {
     };
     let q = repo_relative_arg(cwd, &root, q);
     let q = q.as_str();
-    let Some(g) = graph::read_graph(&root) else {
-        return (
-            1,
-            "no graph.json for this repo — run `devscout map` on a C# scope first".to_string(),
-        );
+    let g = match require_graph(&root) {
+        Ok(g) => g,
+        Err(e) => return e,
     };
     let index = query::load_graph_index_with(&g, &root, index_options(args));
 
@@ -996,7 +1028,7 @@ fn cmd_impact(cwd: &Path, args: &[String]) -> (i32, String) {
         other => other,
     };
 
-    let (code, out, outcome, candidate_count) = match result {
+    let answer = match result {
         query::ImpactResult::NotFound { kind } => {
             let (code, out) = fallback_advised_out(
                 q,
@@ -1007,7 +1039,7 @@ fn cmd_impact(cwd: &Path, args: &[String]) -> (i32, String) {
         }
         query::ImpactResult::Ambiguous { ids, .. } => {
             let count = ids.len();
-            let (code, out) = ambiguous_candidates_out(&index, q, &ids);
+            let (code, out) = ambiguous_candidates_out(&index, q, &ids, json);
             (code, out, query::Outcome::Ambiguous, count)
         }
         query::ImpactResult::MemberAmbiguous(candidates) => {
@@ -1034,18 +1066,7 @@ fn cmd_impact(cwd: &Path, args: &[String]) -> (i32, String) {
             }
         }
     };
-    telemetry::record(
-        &root,
-        &telemetry::QueryEvent {
-            verb: "impact",
-            seed: q,
-            outcome,
-            candidate_count,
-        },
-        start.elapsed(),
-        out.len(),
-    );
-    (code, out)
+    finish_query(&root, "impact", q, start, answer)
 }
 
 const TESTS_USAGE: &str =
@@ -1055,14 +1076,10 @@ const TESTS_USAGE: &str =
 // error, same `require_repo`/graph-present order, same notfound/ambiguous exits.
 fn cmd_tests(cwd: &Path, args: &[String]) -> (i32, String) {
     let start = Instant::now();
-    let json = args.iter().any(|a| a == "--json");
-    let compact = args.iter().any(|a| a == "--compact");
-    if json && compact {
-        return (
-            1,
-            "devscout tests: --compact and --json are mutually exclusive".to_string(),
-        );
-    }
+    let (json, compact) = match output_flags("tests", args) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
     let Ok(pick) = parse_pick(args) else {
         return (2, TESTS_USAGE.to_string());
     };
@@ -1073,11 +1090,9 @@ fn cmd_tests(cwd: &Path, args: &[String]) -> (i32, String) {
         Ok(r) => r,
         Err(e) => return (1, format!("error: {e}")),
     };
-    let Some(g) = graph::read_graph(&root) else {
-        return (
-            1,
-            "no graph.json for this repo — run `devscout map` on a C# scope first".to_string(),
-        );
+    let g = match require_graph(&root) {
+        Ok(g) => g,
+        Err(e) => return e,
     };
     let index = query::load_graph_index_with(&g, &root, index_options(args));
 
@@ -1094,14 +1109,14 @@ fn cmd_tests(cwd: &Path, args: &[String]) -> (i32, String) {
         other => other,
     };
 
-    let (code, out, outcome, candidate_count) = match result {
+    let answer = match result {
         query::TestsResult::NotFound => {
             let (code, out) = fallback_advised_out(q, json, format!("no symbol matches \"{q}\""));
             (code, out, query::Outcome::FallbackAdvised, 0)
         }
         query::TestsResult::Ambiguous(ids) => {
             let count = ids.len();
-            let (code, out) = ambiguous_candidates_out(&index, q, &ids);
+            let (code, out) = ambiguous_candidates_out(&index, q, &ids, json);
             (code, out, query::Outcome::Ambiguous, count)
         }
         query::TestsResult::MemberAmbiguous(candidates) => {
@@ -1121,18 +1136,7 @@ fn cmd_tests(cwd: &Path, args: &[String]) -> (i32, String) {
             (0, out, query::Outcome::Hit, count)
         }
     };
-    telemetry::record(
-        &root,
-        &telemetry::QueryEvent {
-            verb: "tests",
-            seed: q,
-            outcome,
-            candidate_count,
-        },
-        start.elapsed(),
-        out.len(),
-    );
-    (code, out)
+    finish_query(&root, "tests", q, start, answer)
 }
 
 // Output caps: an uncapped find can dump the whole near-match pool (measured
@@ -1221,7 +1225,7 @@ fn cmd_find(cwd: &Path, query_str: &str, resources: bool) -> (i32, String) {
     };
     match manifest::find_in_manifest_detailed(&root, query_str, &inbound_counts) {
         Ok(r) => {
-            let (code, out, outcome, candidate_count) = find_result_out(
+            let answer = find_result_out(
                 graph.as_ref(),
                 query_str,
                 resources,
@@ -1229,25 +1233,15 @@ fn cmd_find(cwd: &Path, query_str: &str, resources: bool) -> (i32, String) {
                 decl_lines,
                 r,
             );
-            telemetry::record(
-                &root,
-                &telemetry::QueryEvent {
-                    verb: "find",
-                    seed: query_str,
-                    outcome,
-                    candidate_count,
-                },
-                start.elapsed(),
-                out.len(),
-            );
-            (code, out)
+            finish_query(&root, "find", query_str, start, answer)
         }
         Err(e) => (1, format!("error: {e}")),
     }
 }
 
-// The rendering AND telemetry facts for a `find` answer, split out of
-// `cmd_find` itself so that function stays under its line ratchet.
+// The rendering AND telemetry facts for a `find` answer, derived together at
+// the single point the answer is rendered so the telemetry line can never
+// disagree with the bytes that went to stdout.
 fn find_result_out(
     graph: Option<&graph::Graph>,
     query_str: &str,
@@ -1261,12 +1255,14 @@ fn find_result_out(
             format!("no matches for \"{query_str}\" (run 'devscout map' if manifest is missing)");
         return (EXIT_NO_RESULT, out, query::Outcome::FallbackAdvised, 0);
     }
-    let candidate_count = r.hits.len();
     let cap = if r.fallback {
         FIND_FALLBACK_CAP
     } else {
         FIND_FULL_CAP
     };
+    // The rows the answer carried, not the pool they were drawn from: neither
+    // "+N more" tail is a row, and each pool holds at most its own cap of them.
+    let candidate_count = decl_lines.len().min(FIND_NAMES_CAP) + r.hits.len().min(cap);
     let mut lines: Vec<String> = decl_lines;
     if !resources && resource_count > 0 {
         lines.push(format!(
@@ -1821,7 +1817,7 @@ mod tests {
             }]
         };
         let one = json_refs_model(row(), false);
-        let json = member_refs_to_json("Widget", std::slice::from_ref(&one));
+        let json = member_refs_to_json("Widget", std::slice::from_ref(&one), query::Outcome::Hit);
         assert!(
             json.starts_with(
                 r#"{"schema_version":1,"status":"members","query":"Widget","members":[{"schema_version":1,"status":"resolved""#

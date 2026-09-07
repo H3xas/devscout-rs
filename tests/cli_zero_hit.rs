@@ -190,6 +190,29 @@ fn a_resolved_seed_that_reaches_nothing_is_a_zero_hit_and_a_reached_one_is_not()
     );
 }
 
+// `Total` is declared on `Island` and referenced nowhere, so the seed resolves
+// while its answer is empty -- the one exit-3 answer on `refs`/`read` that
+// carries no advice, because a text search has nothing the graph missed.
+#[test]
+fn a_resolved_member_nothing_references_exits_3_with_stderr_left_empty() {
+    let fx = Fixture::build("member-zero-hit");
+    for verb in ["refs", "read"] {
+        let out = fx.run(&[verb, "Total"]);
+        assert_eq!(out.status.code(), Some(3), "{verb}: {out:?}");
+        assert_eq!(
+            stdout_of(&out),
+            "Shop.Island.Total  (member)\n\
+             def: src/Island.cs:5\n\
+             inbound:\n\
+             \x20 inherits (0):\n\
+             \x20 uses-type (0):\n\
+             \x20 uses-member (0):\n",
+            "{verb}"
+        );
+        assert_eq!(stderr_of(&out), "", "{verb}");
+    }
+}
+
 #[test]
 fn environment_and_usage_failures_keep_their_own_codes_and_print_no_zero_hit_line() {
     let fx = Fixture::build("not-zero-hits");

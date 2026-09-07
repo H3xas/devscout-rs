@@ -256,6 +256,28 @@ fn refs_read_impact_tests_and_find_each_append_one_correctly_shaped_line() {
     assert!(lines[4].contains("\"outcome\":\"hit\""));
 }
 
+// `Reads` is declared on `ThingTests` and referenced nowhere, so `refs`
+// resolves it to an empty answer: the outcome recorded has to be the one the
+// caller was handed, not the unresolved word an exit code alone would suggest.
+#[test]
+fn a_resolved_member_with_nothing_referencing_it_records_zero_hit() {
+    let fx = Fixture::build("member-zero-hit");
+    let out = fx.run(&["refs", "Reads"], true);
+    assert_eq!(out.status.code(), Some(3), "{out:?}");
+
+    let lines = fx.log_lines();
+    assert_eq!(lines.len(), 1, "{lines:#?}");
+    assert_key_order(&lines[0]);
+    assert!(lines[0].contains("\"verb\":\"refs\""), "{}", lines[0]);
+    assert!(lines[0].contains("\"seed\":\"Reads\""), "{}", lines[0]);
+    assert!(
+        lines[0].contains("\"outcome\":\"zero-hit\""),
+        "{}",
+        lines[0]
+    );
+    assert!(lines[0].contains("\"candidate_count\":0"), "{}", lines[0]);
+}
+
 #[test]
 fn a_second_invocation_appends_rather_than_truncates() {
     let fx = Fixture::build("append");

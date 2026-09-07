@@ -23,8 +23,9 @@ use crate::repo::{git_common_dir, scout_dir};
 const SCHEMA_VERSION: u64 = 1;
 
 /// What one query-verb invocation reports about itself: the seed the caller
-/// asked for, the closed-vocabulary outcome the verb already resolved, and how
-/// many rows the answer carried (`0` when it carried none).
+/// asked for, the closed-vocabulary outcome the verb already resolved, and the
+/// count -- rows the answer carried, or candidates it listed on an ambiguous
+/// answer (`0` when it carried neither).
 pub(crate) struct QueryEvent<'a> {
     /// The verb value.
     pub verb: &'static str,

@@ -17,5 +17,5 @@ seed situations a member seed can put `refs`/`read`/`impact`/`tests` in, one per
 | --- | --- | --- |
 | `Ladle` | A unique bare member name -- only `Galley` declares it. | `hit` |
 | `Stow` | A member name carried by two types (`Galley` and `Larder`), both referenced. | `ambiguous` |
-| `Anchor.Weigh` | A `Type.Member` spelling, naming a member nothing else in the fixture calls. | `zero-hit` (on `impact`: the seed resolves, its blast radius is empty) |
+| `Anchor.Weigh` | A `Type.Member` spelling, naming a member nothing else in the fixture calls. | `zero-hit` -- the seed resolves on every verb and the answer is empty: an empty inbound list on `refs`/`read`, an empty blast radius on `impact` |
 | `Boatswain` | A name the graph does not hold at all. | `fallback-advised` |

@@ -226,7 +226,7 @@ fn j_ambiguous_row(r: &query::AmbiguousRow) -> J {
 // that slot or absent entirely. `outcome` is always `"hit"` here and always
 // last: every path that reaches this builder already resolved.
 pub(crate) fn refs_model_to_json(model: &query::RefsModel) -> String {
-    refs_model_j(model).to_json_string()
+    refs_model_j(model, query::Outcome::Hit).to_json_string()
 }
 
 // The resolved `read` JSON shape: exactly the refs shape with ONE key
@@ -237,7 +237,7 @@ pub(crate) fn refs_model_to_json(model: &query::RefsModel) -> String {
 // span. `outcome` rides along inside `refs_model_fields`'s own tail and stays
 // last regardless of where `span` is spliced in.
 pub(crate) fn read_model_to_json(model: &query::ReadModel) -> String {
-    let mut fields = refs_model_fields(&model.refs);
+    let mut fields = refs_model_fields(&model.refs, query::Outcome::Hit);
     // `split_off(5)` lifts everything after the first five keys
     // (schema_version/status/query/id/kind) so `span` can take their place in
     // line.
@@ -259,23 +259,31 @@ pub(crate) fn read_model_to_json(model: &query::ReadModel) -> String {
 }
 
 // The bare-member `refs` JSON: `{status:'members', query, members, outcome}`,
-// where each member is `refs_model_j`'s object unchanged (itself carrying its
-// own `outcome: "hit"`) -- the bare-member answer reshapes nothing, it only
-// says how many declaring types answered. The wrapper's own `outcome` is
-// appended last so a caller reading only the top level still finds it there.
-pub(crate) fn member_refs_to_json(query_str: &str, models: &[query::RefsModel]) -> String {
+// where each member is `refs_model_j`'s object unchanged -- the bare-member
+// answer reshapes nothing, it only says how many declaring types answered. The
+// wrapper's own `outcome` is appended last so a caller reading only the top
+// level still finds it there, and the SAME word is stamped on every member so
+// the two levels cannot disagree about whether the answer is empty.
+pub(crate) fn member_refs_to_json(
+    query_str: &str,
+    models: &[query::RefsModel],
+    outcome: query::Outcome,
+) -> String {
     J::Obj(vec![
         ("schema_version", J::UInt(query::SCHEMA_VERSION)),
         ("status", J::Str("members".to_string())),
         ("query", J::Str(query_str.to_string())),
-        ("members", J::Arr(models.iter().map(refs_model_j).collect())),
-        ("outcome", J::Str(query::Outcome::Hit.as_str().to_string())),
+        (
+            "members",
+            J::Arr(models.iter().map(|m| refs_model_j(m, outcome)).collect()),
+        ),
+        ("outcome", J::Str(outcome.as_str().to_string())),
     ])
     .to_json_string()
 }
 
-fn refs_model_j(model: &query::RefsModel) -> J {
-    J::Obj(refs_model_fields(model))
+fn refs_model_j(model: &query::RefsModel, outcome: query::Outcome) -> J {
+    J::Obj(refs_model_fields(model, outcome))
 }
 
 // The three inbound tables, each row tagged with the static kind its own
@@ -317,7 +325,7 @@ fn j_outbound_tables(t: &query::OutboundTables) -> J {
     ])
 }
 
-fn refs_model_fields(model: &query::RefsModel) -> Vec<(&'static str, J)> {
+fn refs_model_fields(model: &query::RefsModel, outcome: query::Outcome) -> Vec<(&'static str, J)> {
     let mut fields = vec![
         ("schema_version", J::UInt(query::SCHEMA_VERSION)),
         ("status", J::Str("resolved".to_string())),
@@ -386,9 +394,9 @@ fn refs_model_fields(model: &query::RefsModel) -> Vec<(&'static str, J)> {
         ));
     }
     // Appended absolute LAST, after `memberRefs`: every path building this
-    // model already resolved, so the word is always `hit` -- additive, since
-    // no key here changes value or moves.
-    fields.push(("outcome", J::Str(query::Outcome::Hit.as_str().to_string())));
+    // model already resolved, so the word is `hit` unless the caller knows the
+    // answer is empty -- additive, since no key here changes value or moves.
+    fields.push(("outcome", J::Str(outcome.as_str().to_string())));
     fields
 }
 

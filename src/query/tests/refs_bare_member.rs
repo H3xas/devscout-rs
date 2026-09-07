@@ -264,22 +264,15 @@ fn build_refs_model_bare_member_ambiguous_across_types_answers_the_same_regardle
 }
 
 #[test]
-fn build_refs_model_bare_member_with_no_verified_edge_stays_not_found() {
+fn build_refs_model_bare_member_with_no_verified_edge_resolves_to_an_empty_model() {
     let (g, root) = member_fixture();
     let index = load_graph_index(&g, &root);
 
-    assert_eq!(
-        build_refs_model(
-            &index,
-            "Reconcile",
-            false,
-            DEFAULT_CAP,
-            INBOUND_CAP,
-            OUTBOUND_CAP,
-            false
-        ),
-        RefsResult::NotFound
-    );
+    let models = member_models(&index, "Reconcile", INBOUND_CAP);
+    assert_eq!(models.len(), 1);
+    assert_eq!(models[0].id, "App.Books.Ledger.Reconcile");
+    assert_eq!(models[0].inbound.uses_member.total, 0);
+    assert!(models[0].inbound.uses_member.rows.is_empty());
     assert_eq!(
         build_refs_model(
             &index,

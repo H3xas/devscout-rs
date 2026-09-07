@@ -242,9 +242,10 @@ enum MemberRefsOutcome {
 // name index names the declaring type(s) the seed's own qualifier admits
 // (`member::qualified_member_owners`); each candidate type's inbound
 // `uses-member` edges survives only if the line it starts on carries the
-// member as a whole token. A type whose edges all fail verification
-// contributes no model at all, and when none survives the caller takes the
-// zero-hit path.
+// member as a whole token. A type whose edges all fail verification is
+// dropped only while another type still answers, so a bare name still
+// disambiguates on evidence; when none answers, the declared owners stand and
+// a member nothing references resolves to an empty answer, not to nothing.
 //
 // More than one declaring type surviving verification answers
 // `Ambiguous(candidates)`, in name-index order, rather than several models --
@@ -365,15 +366,15 @@ fn build_member_refs_models(
     }
     let edges = &index.graph.edges;
     let mut cache: LineCache = HashMap::new();
-    let mut groups: Vec<(String, Vec<DefSite>, Vec<(usize, bool)>)> = Vec::new();
-    for (owner, sites) in owners {
-        let kept = verified_member_edges(index, edges, &owner, name, &mut cache);
-        if !kept.is_empty() {
-            groups.push((owner, sites, kept));
-        }
-    }
-    if groups.is_empty() {
-        return None;
+    let mut groups: Vec<(String, Vec<DefSite>, Vec<(usize, bool)>)> = owners
+        .into_iter()
+        .map(|(owner, sites)| {
+            let kept = verified_member_edges(index, edges, &owner, name, &mut cache);
+            (owner, sites, kept)
+        })
+        .collect();
+    if groups.iter().any(|(_, _, kept)| !kept.is_empty()) {
+        groups.retain(|(_, _, kept)| !kept.is_empty());
     }
     // Reported before the inbound cap is ever spent, so the answer does not
     // depend on `inbound_cap`: an ambiguity is a refusal, not a budgeted,

@@ -109,6 +109,10 @@ fn stdout_of(out: &Output) -> String {
     String::from_utf8(out.stdout.clone()).expect("stdout is utf-8")
 }
 
+fn stderr_of(out: &Output) -> String {
+    String::from_utf8(out.stderr.clone()).expect("stderr is utf-8")
+}
+
 // --- `hit`: a unique bare member name ---------------------------------------
 
 #[test]
@@ -163,6 +167,13 @@ fn a_member_name_carried_by_two_types_answers_ambiguous_with_candidate_rows() {
 
 // --- `zero-hit`: a `Type.Member` spelling naming an unreferenced member -----
 
+const WEIGH_TEXT: &str = "Nautical.Crew.Anchor.Weigh  (member)\n\
+                          def: Anchor.cs:5\n\
+                          inbound:\n\
+                          \x20 inherits (0):\n\
+                          \x20 uses-type (0):\n\
+                          \x20 uses-member (0):\n";
+
 #[test]
 fn a_type_dot_member_seed_resolves_but_reaches_nothing() {
     let fx = Fixture::build();
@@ -172,6 +183,43 @@ fn a_type_dot_member_seed_resolves_but_reaches_nothing() {
     let out = stdout_of(&impact);
     assert!(out.contains(r#""outcome":"zero-hit""#), "{out}");
     assert!(out.contains(r#""rows":[]"#), "{out}");
+}
+
+#[test]
+fn refs_and_read_answer_the_same_seed_with_a_resolved_member_and_an_empty_inbound_list() {
+    let fx = Fixture::build();
+
+    for verb in ["refs", "read"] {
+        let text = fx.run(&[verb, "Anchor.Weigh"]);
+        assert_eq!(text.status.code(), Some(3), "{verb}: {text:?}");
+        assert_eq!(stdout_of(&text), WEIGH_TEXT, "{verb}");
+        assert_eq!(
+            stderr_of(&text),
+            "",
+            "{verb}: a seed the graph resolved is never advised to a text search"
+        );
+
+        let json = fx.run(&[verb, "Anchor.Weigh", "--json"]);
+        assert_eq!(json.status.code(), Some(3), "{verb}: {json:?}");
+        let out = stdout_of(&json);
+        assert!(
+            out.starts_with(r#"{"schema_version":1,"status":"members","query":"Anchor.Weigh""#),
+            "{verb}: {out}"
+        );
+        assert!(
+            out.contains(r#""id":"Nautical.Crew.Anchor.Weigh""#),
+            "{verb}: {out}"
+        );
+        assert!(
+            out.contains(r#""uses-member":{"total":0,"dropped":0,"rows":[]}"#),
+            "{verb}: {out}"
+        );
+        assert!(
+            out.trim_end().ends_with(r#","outcome":"zero-hit"}"#),
+            "{verb}: {out}"
+        );
+        assert_eq!(stderr_of(&json), "", "{verb}");
+    }
 }
 
 // --- `fallback-advised`: a name the graph does not hold at all --------------
@@ -213,6 +261,25 @@ fn pick_narrows_an_ambiguous_member_seed_to_one_candidate() {
 
     let out_of_range = fx.run(&["refs", "Stow", "--pick", "99"]);
     assert_eq!(out_of_range.status.code(), Some(2), "{out_of_range:?}");
+}
+
+#[test]
+fn pick_rejects_a_zero_non_numeric_or_missing_value_with_usage_error() {
+    let fx = Fixture::build();
+
+    const USAGE: &str =
+        "usage: devscout refs <symbol> [--out] [--all] [--no-guess] [--pick N] [--json|--compact]";
+
+    for args in [
+        vec!["refs", "Stow", "--pick", "0"],
+        vec!["refs", "Stow", "--pick", "two"],
+        vec!["refs", "Stow", "--pick"],
+    ] {
+        let out = fx.run(&args);
+        assert_eq!(out.status.code(), Some(2), "{args:?}: {out:?}");
+        let stdout = stdout_of(&out);
+        assert!(stdout.contains(USAGE), "{args:?}: {stdout}");
+    }
 }
 
 #[test]

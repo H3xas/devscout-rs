@@ -18,8 +18,8 @@ pub enum Outcome {
     /// The seed resolved (a type, a member, or a file) and the answer is the
     /// ordinary shape a caller reads.
     Hit,
-    /// The seed resolved but the answer itself is empty -- today, only
-    /// `impact`'s "resolved seed, zero affected rows" case.
+    /// The seed resolved but the answer itself is empty: `impact` with no affected file,
+    /// or `refs`/`read` on a member declared by exactly one type with nothing referencing it.
     ZeroHit,
     /// The seed named more than one candidate (a type, or a member across
     /// more than one declaring type) and nothing was guessed between them.
