@@ -214,3 +214,41 @@ fn pick_narrows_an_ambiguous_member_seed_to_one_candidate() {
     let out_of_range = fx.run(&["refs", "Stow", "--pick", "99"]);
     assert_eq!(out_of_range.status.code(), Some(2), "{out_of_range:?}");
 }
+
+#[test]
+fn pick_narrows_the_same_ambiguous_seed_on_read_impact_and_tests() {
+    let fx = Fixture::build();
+
+    let read = fx.run(&["read", "Stow", "--pick", "2", "--json"]);
+    assert_eq!(read.status.code(), Some(0), "{read:?}");
+    assert!(
+        stdout_of(&read).contains(r#""id":"Nautical.Crew.Larder.Stow""#),
+        "candidate 2 is name-index order's second owner: {}",
+        stdout_of(&read)
+    );
+
+    let impact = fx.run(&["impact", "Stow", "--pick", "1", "--json"]);
+    assert_eq!(impact.status.code(), Some(0), "{impact:?}");
+    assert!(
+        stdout_of(&impact).contains(r#""outcome":"hit""#),
+        "{}",
+        stdout_of(&impact)
+    );
+
+    let tests = fx.run(&["tests", "Stow", "--pick", "1", "--json"]);
+    assert_eq!(tests.status.code(), Some(0), "{tests:?}");
+    assert!(
+        stdout_of(&tests).contains(r#""symbol":"Nautical.Crew.Galley""#),
+        "{}",
+        stdout_of(&tests)
+    );
+
+    for args in [
+        vec!["read", "Stow", "--pick", "99"],
+        vec!["impact", "Stow", "--pick", "99"],
+        vec!["tests", "Stow", "--pick", "99"],
+    ] {
+        let out = fx.run(&args);
+        assert_eq!(out.status.code(), Some(2), "{args:?}: {out:?}");
+    }
+}
