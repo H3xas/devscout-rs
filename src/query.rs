@@ -61,6 +61,7 @@
 mod coverage;
 mod find;
 mod impact;
+mod impact_why;
 mod index;
 mod infra;
 // `--json` rendering of every query model, moved here from `cli.rs` to keep

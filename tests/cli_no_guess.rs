@@ -192,14 +192,14 @@ fn refs_json_carries_the_tier_next_to_the_flag_it_refines() {
     let ext = stdout_of(&fx.run(&["refs", "WidgetExtensions", "--json"]));
     assert!(
         ext.contains(
-            r#"{"file":"Consumers/UsesExtension.cs","line":9,"heuristic":true,"tier":"ext","source":"public void Run(Widget w) => w.Render();"}"#
+            r#"{"file":"Consumers/UsesExtension.cs","line":9,"heuristic":true,"tier":"ext","source":"public void Run(Widget w) => w.Render();","why":"uses-member-ext"}"#
         ),
         "{ext}"
     );
     let guess = stdout_of(&fx.run(&["refs", "Counter", "--json"]));
     assert!(
         guess.contains(
-            r#"{"file":"Consumers/Guesser.cs","line":9,"heuristic":true,"tier":"guess","source":"x.Tally();"}"#
+            r#"{"file":"Consumers/Guesser.cs","line":9,"heuristic":true,"tier":"guess","source":"x.Tally();","why":"uses-member-guess"}"#
         ),
         "{guess}"
     );
@@ -225,14 +225,14 @@ fn read_and_tests_carry_the_tier_in_compact_and_json_like_refs() {
     let ext_json = stdout_of(&fx.run(&["read", "WidgetExtensions", "--json"]));
     assert!(
         ext_json.contains(
-            r#"{"file":"Consumers/UsesExtension.cs","line":9,"heuristic":true,"tier":"ext","source":"public void Run(Widget w) => w.Render();"}"#
+            r#"{"file":"Consumers/UsesExtension.cs","line":9,"heuristic":true,"tier":"ext","source":"public void Run(Widget w) => w.Render();","why":"uses-member-ext"}"#
         ),
         "{ext_json}"
     );
     let guess_json = stdout_of(&fx.run(&["read", "Counter", "--json"]));
     assert!(
         guess_json.contains(
-            r#"{"file":"Consumers/Guesser.cs","line":9,"heuristic":true,"tier":"guess","source":"x.Tally();"}"#
+            r#"{"file":"Consumers/Guesser.cs","line":9,"heuristic":true,"tier":"guess","source":"x.Tally();","why":"uses-member-guess"}"#
         ),
         "{guess_json}"
     );
