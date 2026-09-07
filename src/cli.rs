@@ -12,6 +12,7 @@
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process;
+use std::time::Instant;
 
 use crate::audit;
 use crate::extract;
@@ -26,6 +27,7 @@ use crate::query::json::J;
 use crate::render;
 use crate::store;
 use crate::suggest;
+use crate::telemetry;
 
 // Command output writer. `println!` PANICS on a broken pipe ("failed printing to
 // stdout"), which would kill `devscout find | head` noisily the moment `head`
@@ -582,7 +584,25 @@ fn index_options(args: &[String]) -> query::IndexOptions {
 const REFS_USAGE: &str =
     "usage: devscout refs <symbol> [--out] [--all] [--no-guess] [--pick N] [--json|--compact]";
 
+// The row count `refs`/`read` telemetry reports for a resolved answer: every
+// inbound row plus, under `--out`, every outbound row -- the same rows the
+// text/JSON renderers already walk, counted here once rather than re-parsed
+// out of the rendered answer.
+fn refs_model_row_count(model: &query::RefsModel) -> usize {
+    let mut n = model.inbound.inherits.rows.len()
+        + model.inbound.uses_type.rows.len()
+        + model.inbound.uses_member.rows.len();
+    if let Some(ob) = &model.outbound {
+        n += ob.inherits.rows.len()
+            + ob.uses_type.rows.len()
+            + ob.uses_member.rows.len()
+            + ob.imports.rows.len();
+    }
+    n
+}
+
 fn cmd_refs(cwd: &Path, args: &[String]) -> (i32, String) {
+    let start = Instant::now();
     let json = args.iter().any(|a| a == "--json");
     let compact = args.iter().any(|a| a == "--compact");
     if json && compact {
@@ -638,49 +658,79 @@ fn cmd_refs(cwd: &Path, args: &[String]) -> (i32, String) {
         other => other,
     };
 
+    let (code, out, outcome, candidate_count) = refs_result_out(&index, q, json, compact, result);
+    telemetry::record(
+        &root,
+        &telemetry::QueryEvent {
+            verb: "refs",
+            seed: q,
+            outcome,
+            candidate_count,
+        },
+        start.elapsed(),
+        out.len(),
+    );
+    (code, out)
+}
+
+// The rendering AND telemetry facts (`Outcome`, row count) for a `refs`
+// answer, split out of `cmd_refs` itself so that function stays under its
+// line ratchet.
+fn refs_result_out(
+    index: &query::GraphIndex,
+    q: &str,
+    json: bool,
+    compact: bool,
+    result: query::RefsResult,
+) -> (i32, String, query::Outcome, usize) {
     match result {
         query::RefsResult::NotFound => {
-            fallback_advised_out(q, json, format!("no symbol matches \"{q}\""))
+            let (code, out) = fallback_advised_out(q, json, format!("no symbol matches \"{q}\""));
+            (code, out, query::Outcome::FallbackAdvised, 0)
         }
-        query::RefsResult::Ambiguous(ids) => ambiguous_candidates_out(&index, q, &ids),
+        query::RefsResult::Ambiguous(ids) => {
+            let count = ids.len();
+            let (code, out) = ambiguous_candidates_out(index, q, &ids);
+            (code, out, query::Outcome::Ambiguous, count)
+        }
         query::RefsResult::MemberAmbiguous(candidates) => {
-            member_ambiguous_out(q, &candidates, json)
+            let count = candidates.len();
+            let (code, out) = member_ambiguous_out(q, &candidates, json);
+            (code, out, query::Outcome::Ambiguous, count)
         }
         // A bare member answers with one ordinary refs model per declaring type,
         // so each block renders through the very renderer a type uses and
         // `--json` wraps those same objects in an array rather than reshaping
         // them.
         query::RefsResult::Members(models) => {
-            if json {
-                (0, query::json::member_refs_to_json(q, &models))
+            let count = models.iter().map(refs_model_row_count).sum();
+            let out = if json {
+                query::json::member_refs_to_json(q, &models)
             } else if compact {
-                (
-                    0,
-                    models
-                        .iter()
-                        .map(render::render_refs_compact)
-                        .collect::<Vec<_>>()
-                        .join("\n"),
-                )
+                models
+                    .iter()
+                    .map(render::render_refs_compact)
+                    .collect::<Vec<_>>()
+                    .join("\n")
             } else {
-                (
-                    0,
-                    models
-                        .iter()
-                        .map(render::render_refs_text)
-                        .collect::<Vec<_>>()
-                        .join("\n"),
-                )
-            }
+                models
+                    .iter()
+                    .map(render::render_refs_text)
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            };
+            (0, out, query::Outcome::Hit, count)
         }
         query::RefsResult::Resolved(model) => {
-            if json {
-                (0, query::json::refs_model_to_json(&model))
+            let count = refs_model_row_count(&model);
+            let out = if json {
+                query::json::refs_model_to_json(&model)
             } else if compact {
-                (0, render::render_refs_compact(&model))
+                render::render_refs_compact(&model)
             } else {
-                (0, render::render_refs_text(&model))
-            }
+                render::render_refs_text(&model)
+            };
+            (0, out, query::Outcome::Hit, count)
         }
     }
 }
@@ -694,6 +744,7 @@ fn cmd_refs(cwd: &Path, args: &[String]) -> (i32, String) {
 const READ_USAGE: &str = "usage: devscout read <symbol> [--no-guess] [--pick N] [--json|--compact]";
 
 fn cmd_read(cwd: &Path, args: &[String]) -> (i32, String) {
+    let start = Instant::now();
     let json = args.iter().any(|a| a == "--json");
     let compact = args.iter().any(|a| a == "--compact");
     if json && compact {
@@ -734,51 +785,68 @@ fn cmd_read(cwd: &Path, args: &[String]) -> (i32, String) {
         other => other,
     };
 
-    match result {
+    let (code, out, outcome, candidate_count) = match result {
         query::ReadResult::NotFound => {
-            fallback_advised_out(q, json, format!("no symbol matches \"{q}\""))
+            let (code, out) = fallback_advised_out(q, json, format!("no symbol matches \"{q}\""));
+            (code, out, query::Outcome::FallbackAdvised, 0)
         }
-        query::ReadResult::Ambiguous(ids) => ambiguous_candidates_out(&index, q, &ids),
+        query::ReadResult::Ambiguous(ids) => {
+            let count = ids.len();
+            let (code, out) = ambiguous_candidates_out(&index, q, &ids);
+            (code, out, query::Outcome::Ambiguous, count)
+        }
         query::ReadResult::MemberAmbiguous(candidates) => {
-            member_ambiguous_out(q, &candidates, json)
+            let count = candidates.len();
+            let (code, out) = member_ambiguous_out(q, &candidates, json);
+            (code, out, query::Outcome::Ambiguous, count)
         }
         // A bare member answers through refs' own member rendering in all
         // three forms: the member answer carries no declaration-span fact to
         // add, so reshaping it here would only create a second shape to keep
         // in step.
         query::ReadResult::Members(models) => {
-            if json {
-                (0, query::json::member_refs_to_json(q, &models))
+            let count = models.iter().map(refs_model_row_count).sum();
+            let out = if json {
+                query::json::member_refs_to_json(q, &models)
             } else if compact {
-                (
-                    0,
-                    models
-                        .iter()
-                        .map(render::render_refs_compact)
-                        .collect::<Vec<_>>()
-                        .join("\n"),
-                )
+                models
+                    .iter()
+                    .map(render::render_refs_compact)
+                    .collect::<Vec<_>>()
+                    .join("\n")
             } else {
-                (
-                    0,
-                    models
-                        .iter()
-                        .map(render::render_refs_text)
-                        .collect::<Vec<_>>()
-                        .join("\n"),
-                )
-            }
+                models
+                    .iter()
+                    .map(render::render_refs_text)
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            };
+            (0, out, query::Outcome::Hit, count)
         }
         query::ReadResult::Resolved(model) => {
-            if json {
-                (0, query::json::read_model_to_json(&model))
+            let count = refs_model_row_count(&model.refs);
+            let out = if json {
+                query::json::read_model_to_json(&model)
             } else if compact {
-                (0, render::render_read_compact(&model))
+                render::render_read_compact(&model)
             } else {
-                (0, render::render_read_text(&model))
-            }
+                render::render_read_text(&model)
+            };
+            (0, out, query::Outcome::Hit, count)
         }
-    }
+    };
+    telemetry::record(
+        &root,
+        &telemetry::QueryEvent {
+            verb: "read",
+            seed: q,
+            outcome,
+            candidate_count,
+        },
+        start.elapsed(),
+        out.len(),
+    );
+    (code, out)
 }
 
 const IMPACT_USAGE: &str = "usage: devscout impact <file|symbol> [--hops N] [--no-iface] [--no-guess] [--iface-max-fanin N] [--hub-max-indegree N] [--pick N] [--json|--compact]";
@@ -869,6 +937,7 @@ fn parse_impact_args(args: &[String]) -> Result<ImpactArgs<'_>, (i32, String)> {
 // error on a bad/missing value), missing query, THEN `require_repo`, THEN the
 // graph-present check.
 fn cmd_impact(cwd: &Path, args: &[String]) -> (i32, String) {
+    let start = Instant::now();
     let json = args.iter().any(|a| a == "--json");
     let compact = args.iter().any(|a| a == "--compact");
     if json && compact {
@@ -925,15 +994,24 @@ fn cmd_impact(cwd: &Path, args: &[String]) -> (i32, String) {
         other => other,
     };
 
-    match result {
-        query::ImpactResult::NotFound { kind } => fallback_advised_out(
-            q,
-            json,
-            format!("no {} match for \"{q}\"", render::seed_kind_str(kind)),
-        ),
-        query::ImpactResult::Ambiguous { ids, .. } => ambiguous_candidates_out(&index, q, &ids),
+    let (code, out, outcome, candidate_count) = match result {
+        query::ImpactResult::NotFound { kind } => {
+            let (code, out) = fallback_advised_out(
+                q,
+                json,
+                format!("no {} match for \"{q}\"", render::seed_kind_str(kind)),
+            );
+            (code, out, query::Outcome::FallbackAdvised, 0)
+        }
+        query::ImpactResult::Ambiguous { ids, .. } => {
+            let count = ids.len();
+            let (code, out) = ambiguous_candidates_out(&index, q, &ids);
+            (code, out, query::Outcome::Ambiguous, count)
+        }
         query::ImpactResult::MemberAmbiguous(candidates) => {
-            member_ambiguous_out(q, &candidates, json)
+            let count = candidates.len();
+            let (code, out) = member_ambiguous_out(q, &candidates, json);
+            (code, out, query::Outcome::Ambiguous, count)
         }
         query::ImpactResult::Resolved(model) => {
             let out = if json {
@@ -947,12 +1025,25 @@ fn cmd_impact(cwd: &Path, args: &[String]) -> (i32, String) {
             // same answer as an unresolved one -- empty -- and gets the same
             // signal.
             if model.rows.is_empty() {
-                (EXIT_NO_RESULT, out)
+                (EXIT_NO_RESULT, out, query::Outcome::ZeroHit, 0)
             } else {
-                (0, out)
+                let count = model.rows.len();
+                (0, out, query::Outcome::Hit, count)
             }
         }
-    }
+    };
+    telemetry::record(
+        &root,
+        &telemetry::QueryEvent {
+            verb: "impact",
+            seed: q,
+            outcome,
+            candidate_count,
+        },
+        start.elapsed(),
+        out.len(),
+    );
+    (code, out)
 }
 
 const TESTS_USAGE: &str =
@@ -961,6 +1052,7 @@ const TESTS_USAGE: &str =
 // `tests`. Mirrors `cmd_refs` -- same flag conflict, same missing-query usage
 // error, same `require_repo`/graph-present order, same notfound/ambiguous exits.
 fn cmd_tests(cwd: &Path, args: &[String]) -> (i32, String) {
+    let start = Instant::now();
     let json = args.iter().any(|a| a == "--json");
     let compact = args.iter().any(|a| a == "--compact");
     if json && compact {
@@ -1000,24 +1092,45 @@ fn cmd_tests(cwd: &Path, args: &[String]) -> (i32, String) {
         other => other,
     };
 
-    match result {
+    let (code, out, outcome, candidate_count) = match result {
         query::TestsResult::NotFound => {
-            fallback_advised_out(q, json, format!("no symbol matches \"{q}\""))
+            let (code, out) = fallback_advised_out(q, json, format!("no symbol matches \"{q}\""));
+            (code, out, query::Outcome::FallbackAdvised, 0)
         }
-        query::TestsResult::Ambiguous(ids) => ambiguous_candidates_out(&index, q, &ids),
+        query::TestsResult::Ambiguous(ids) => {
+            let count = ids.len();
+            let (code, out) = ambiguous_candidates_out(&index, q, &ids);
+            (code, out, query::Outcome::Ambiguous, count)
+        }
         query::TestsResult::MemberAmbiguous(candidates) => {
-            member_ambiguous_out(q, &candidates, json)
+            let count = candidates.len();
+            let (code, out) = member_ambiguous_out(q, &candidates, json);
+            (code, out, query::Outcome::Ambiguous, count)
         }
         query::TestsResult::Resolved(model) => {
-            if json {
-                (0, query::json::tests_model_to_json(&model))
+            let count = model.rows.len();
+            let out = if json {
+                query::json::tests_model_to_json(&model)
             } else if compact {
-                (0, render::render_tests_compact(&model))
+                render::render_tests_compact(&model)
             } else {
-                (0, render::render_tests_text(&model))
-            }
+                render::render_tests_text(&model)
+            };
+            (0, out, query::Outcome::Hit, count)
         }
-    }
+    };
+    telemetry::record(
+        &root,
+        &telemetry::QueryEvent {
+            verb: "tests",
+            seed: q,
+            outcome,
+            candidate_count,
+        },
+        start.elapsed(),
+        out.len(),
+    );
+    (code, out)
 }
 
 // Output caps: an uncapped find can dump the whole near-match pool (measured
@@ -1040,6 +1153,7 @@ const FIND_NAMES_CAP: usize = 25;
 // (deliberate, not a slip). Caps per pool kind; the `… +K more (refine query)`
 // tail line keeps the true pool size honest.
 fn cmd_find(cwd: &Path, query_str: &str, resources: bool) -> (i32, String) {
+    let start = Instant::now();
     let root = match require_repo(cwd) {
         Ok(r) => r,
         Err(e) => return (1, format!("error: {e}")),
@@ -1104,46 +1218,78 @@ fn cmd_find(cwd: &Path, query_str: &str, resources: bool) -> (i32, String) {
         }
     };
     match manifest::find_in_manifest_detailed(&root, query_str, &inbound_counts) {
-        Ok(r) if r.hits.is_empty() && decl_lines.is_empty() => (
-            EXIT_NO_RESULT,
-            format!("no matches for \"{query_str}\" (run 'devscout map' if manifest is missing)"),
-        ),
         Ok(r) => {
-            let cap = if r.fallback {
-                FIND_FALLBACK_CAP
-            } else {
-                FIND_FULL_CAP
-            };
-            let mut lines: Vec<String> = decl_lines;
-            if !resources && resource_count > 0 {
-                lines.push(format!(
-                    "+{resource_count} resource-key hits, use --resources"
-                ));
-            }
-            // Every manifest-pool row carries a line too, same as the declaration
-            // block above it: the file's own first declaration where the name
-            // index has one, line 1 (an always-valid "open the file" anchor) for a
-            // file the index carries no declared symbol for at all.
-            let decl_line_by_file = graph
-                .as_ref()
-                .map(query::first_decl_line_by_file)
-                .unwrap_or_default();
-            lines.extend(r.hits.iter().take(cap).map(|h| {
-                // An absent purpose renders as the literal text "undefined"
-                // -- not an empty string. See manifest.rs's `FindHit::purpose`
-                // doc comment.
-                let purpose = h.purpose.as_deref().unwrap_or("undefined");
-                let agent = if h.source == "agent" { " [agent]" } else { "" };
-                let line = decl_line_by_file.get(&h.path).copied().unwrap_or(1);
-                format!("{}:{line}: {purpose}{agent}", h.path)
-            }));
-            if r.hits.len() > cap {
-                lines.push(format!("… +{} more (refine query)", r.hits.len() - cap));
-            }
-            (0, lines.join("\n"))
+            let (code, out, outcome, candidate_count) = find_result_out(
+                graph.as_ref(),
+                query_str,
+                resources,
+                resource_count,
+                decl_lines,
+                r,
+            );
+            telemetry::record(
+                &root,
+                &telemetry::QueryEvent {
+                    verb: "find",
+                    seed: query_str,
+                    outcome,
+                    candidate_count,
+                },
+                start.elapsed(),
+                out.len(),
+            );
+            (code, out)
         }
         Err(e) => (1, format!("error: {e}")),
     }
+}
+
+// The rendering AND telemetry facts for a `find` answer, split out of
+// `cmd_find` itself so that function stays under its line ratchet.
+fn find_result_out(
+    graph: Option<&graph::Graph>,
+    query_str: &str,
+    resources: bool,
+    resource_count: usize,
+    decl_lines: Vec<String>,
+    r: manifest::FindResult,
+) -> (i32, String, query::Outcome, usize) {
+    if r.hits.is_empty() && decl_lines.is_empty() {
+        let out =
+            format!("no matches for \"{query_str}\" (run 'devscout map' if manifest is missing)");
+        return (EXIT_NO_RESULT, out, query::Outcome::FallbackAdvised, 0);
+    }
+    let candidate_count = r.hits.len();
+    let cap = if r.fallback {
+        FIND_FALLBACK_CAP
+    } else {
+        FIND_FULL_CAP
+    };
+    let mut lines: Vec<String> = decl_lines;
+    if !resources && resource_count > 0 {
+        lines.push(format!(
+            "+{resource_count} resource-key hits, use --resources"
+        ));
+    }
+    // Every manifest-pool row carries a line too, same as the declaration
+    // block above it: the file's own first declaration where the name index
+    // has one, line 1 (an always-valid "open the file" anchor) for a file
+    // the index carries no declared symbol for at all.
+    let decl_line_by_file = graph
+        .map(query::first_decl_line_by_file)
+        .unwrap_or_default();
+    lines.extend(r.hits.iter().take(cap).map(|h| {
+        // An absent purpose renders as the literal text "undefined" -- not
+        // an empty string. See manifest.rs's `FindHit::purpose` doc comment.
+        let purpose = h.purpose.as_deref().unwrap_or("undefined");
+        let agent = if h.source == "agent" { " [agent]" } else { "" };
+        let line = decl_line_by_file.get(&h.path).copied().unwrap_or(1);
+        format!("{}:{line}: {purpose}{agent}", h.path)
+    }));
+    if r.hits.len() > cap {
+        lines.push(format!("… +{} more (refine query)", r.hits.len() - cap));
+    }
+    (0, lines.join("\n"), query::Outcome::Hit, candidate_count)
 }
 
 // `map`. Strips the no-op alias flag `--refresh` before anything else runs; the
