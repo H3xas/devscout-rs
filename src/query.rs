@@ -75,6 +75,7 @@ mod refs;
 mod refs_tables;
 mod seq;
 mod symbol;
+mod why;
 
 pub use coverage::{build_tests_model, TestRow, TestVia, TestsModel, TestsResult};
 pub use find::{file_inbound_counts, find_names, first_decl_line_by_file, name_tier, source_line};
@@ -92,7 +93,7 @@ pub use member::{
     qualified_member_owners, qualified_seed, resolve_member_seed, MemberCandidate,
     MemberSeedResolution,
 };
-pub use outcome::Outcome;
+pub use outcome::{Outcome, SCHEMA_VERSION};
 pub use rank::{personalized_page_rank, DEFAULT_DAMPING, DEFAULT_ITERATIONS};
 pub use read::{build_read_model, ReadModel, ReadResult, ReadSpan};
 pub use refs::{build_refs_model, LineCache, MemberRefEntry, MemberRefs, RefsModel, RefsResult};
@@ -102,6 +103,7 @@ pub use refs_tables::{
 };
 pub use seq::{SeqMap, SeqSet};
 pub use symbol::{resolve_symbol, Resolution};
+pub use why::Why;
 
 #[cfg(test)]
 mod tests;
