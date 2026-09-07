@@ -118,9 +118,9 @@ fn new_expression_fact(
 }
 
 // `var x = (T)e` -- same declarator scan as `new_expression_fact`, for a
-// cast's own `type` field. Not look-through-await: the design that asked
-// for the await unwrap (Unit A1 point 2) named only `invocation_call` and
-// `new_expression_fact`, and a declarator can carry at most one of
+// cast's own `type` field. Not look-through-await: only `invocation_call`
+// and `new_expression_fact` are meant to see through an await, and a
+// declarator can carry at most one of
 // {object_creation_expression, invocation_expression, cast_expression} as
 // its direct initializer, so the three helpers never compete for the same
 // child.

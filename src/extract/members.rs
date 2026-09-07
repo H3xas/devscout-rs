@@ -51,7 +51,7 @@ pub(super) fn raw_non_public_method_names(node: Node, src: &[u8], kind: &str) ->
 // Every `method_declaration`'s own (name, arity RANGE) fact, regardless of
 // accessibility -- unlike `raw_method_returns`/`is_recorded_method`, this is
 // NOT filtered to public methods: the resolver's arity-aware call vouching
-// (Unit A4 item 2) needs an overload's range whether `methods` or
+// needs an overload's range whether `methods` or
 // `non_public_methods` is the list answering "does this def declare the
 // name". One (name, ranges) pair per DISTINCT name, in first-occurrence
 // source order (a `Vec` of pairs, not a map: the serialized key order is
@@ -458,9 +458,9 @@ fn extension_arity_range(parameters: Node, src: &[u8]) -> (usize, i64) {
 }
 
 // The same range, for an ORDINARY (non-extension) method overload: every
-// parameter counts, there is no this-parameter to skip. Unit A4 item 2's own
-// input -- `raw_method_arities` calls this once per `method_declaration`,
-// public and non-public alike.
+// parameter counts, there is no this-parameter to skip. The resolver's
+// arity gate consumes this directly -- `raw_method_arities` calls this
+// once per `method_declaration`, public and non-public alike.
 fn method_arity_range(parameters: Node, src: &[u8]) -> (usize, i64) {
     parameter_arity_range(parameters, src, false)
 }

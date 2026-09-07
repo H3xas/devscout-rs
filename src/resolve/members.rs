@@ -10,8 +10,8 @@ use std::collections::{HashMap, HashSet};
 // (MessageUrn.Prefix) and a const/static FIELD access earn an edge on the
 // same evidence a static method call already did.
 //
-// A CALL (`arg_count == Some(n)`) is narrower on both axes (Unit A4 item 2):
-// properties and fields never satisfy a call (the rule `member_vouched`'s own
+// A CALL (`arg_count == Some(n)`) is narrower on both axes: properties and
+// fields never satisfy a call (the rule `member_vouched`'s own
 // Call/Read split already enforces for the scored tier; this is where the
 // PRECISE tier gains it too), and `methods` alone is not enough either -- the
 // name must ALSO have an overload whose own arity range admits `n`
@@ -47,7 +47,7 @@ pub(super) fn declares_member(
 // `declares_member` widened by `non_public_methods` -- `properties`/`fields`
 // already carry every accessibility with no filter of their own (see
 // `DefRecord::properties`), so `methods` is the only list this widens, and
-// (Unit A4 item 2) the SAME arity gate applies to a non-public method: a
+// the SAME arity gate applies to a non-public method: a
 // call whose `arg_count` no non-public overload admits is exactly as
 // undeclared as one whose PUBLIC overloads all decline. Read ONLY where the
 // SITE is inside the hierarchy the member lookup is walking:
@@ -217,7 +217,7 @@ pub(super) fn inherited_member_declared(
     })
 }
 
-// The recursive worker `first_base_declaring` drives (Unit A4 item 1): `cur`
+// The recursive worker `first_base_declaring` drives: `cur`
 // is a def already known to be in-graph and, when `skip_interfaces`, already
 // known not to be an interface. Checked by `declares` FIRST -- so a base
 // that itself declares the member wins before its own bases are even looked
@@ -297,9 +297,9 @@ fn declares_in_base_closure(
 // order -- each fully explored (`declares_in_base_closure`) before the next
 // sibling base is even resolved, so a member declared on the base of the
 // base still resolves, and the FIRST base string in the source always wins
-// over a later one when both would otherwise answer (Unit A4 item 1 --
-// `inheritance_walk_find`'s LIFO stack, which this no longer uses, visited
-// bases in REVERSE declaration order). Returns the first in-graph def,
+// over a later one when both would otherwise answer (the walk this
+// replaces, `inheritance_walk_find`'s LIFO stack, visited bases in
+// REVERSE declaration order). Returns the first in-graph def,
 // across that ordered search, for which `declares` answers true; `None`
 // when `start` resolves to nothing in-graph, when it declares no in-graph
 // base, or when no in-graph base's closure satisfies `declares` at all.
@@ -370,7 +370,7 @@ fn first_base_declaring(
 // depth) and `declares_member_any_visibility` (a `base.` site is, by
 // construction, lexically inside the hierarchy it is walking, so a protected
 // or internal member is exactly as reachable as a public one), arity-gated
-// by the ref's own `arg_count` (Unit A4 item 2) exactly like the
+// by the ref's own `arg_count` exactly like the
 // typed-receiver walk below. `None` is the ordinary external-receiver
 // answer to the caller, never a candidate for a scored guess.
 pub(super) fn base_member_declared(
@@ -385,12 +385,12 @@ pub(super) fn base_member_declared(
     })
 }
 
-// The typed-receiver precise tier's own base walk (Unit A3 item 4): when a
+// The typed-receiver precise tier's own base walk: when a
 // resolved receiver def does not itself declare the member, the first def
 // in its in-graph base closure that does is the precise target -- exactly
 // the widening `base_member_declared` already does for `base.`, applied to
 // an ORDINARY typed receiver. Interfaces in the closure are skipped, at
-// every depth (Unit A4 item 1), for a CLASS or struct receiver, for the same
+// every depth, for a CLASS or struct receiver, for the same
 // reason `base_member_declared` skips them: a class must supply a body for
 // every interface member it is called through, so the compiler binds that
 // body's declaring class, never the interface (a C# 8+ default interface
@@ -409,7 +409,7 @@ pub(super) fn base_member_declared(
 // `declares_member_any_visibility`, `false` keeps the public-only
 // `declares_member`, so a receiver typed by anything OTHER than the
 // enclosing type can only ever bind to a member C# would let it see from
-// outside. `arg_count` is the ref's own call-shape fact (Unit A4 item 2): a
+// outside. `arg_count` is the ref's own call-shape fact: a
 // base that declares the name at the WRONG arity is skipped exactly like
 // one that does not declare it at all.
 pub(super) fn typed_receiver_base_member(
@@ -436,7 +436,7 @@ pub(super) fn typed_receiver_base_member(
     )
 }
 
-// Unit A3 item 3: the extension bucket key tier (f) tries when the exact
+// The extension bucket key tier (f) tries when the exact
 // `"{member} {receiverType}"` key names no bucket at all. Walks the
 // receiver's own nominal closure -- itself first, then its in-graph bases
 // transitively, the same DFS `inheritance_walk_find` uses everywhere else --
@@ -450,7 +450,7 @@ pub(super) fn typed_receiver_base_member(
 // this function only ever widens which key is looked up, never which
 // candidates a matched key returns.
 //
-// Unit A5 item 2: also returns the MATCHED node's own generic-argument
+// Also returns the MATCHED node's own generic-argument
 // picture, since a key widened onto a base or ancestor names a DIFFERENT
 // type than the receiver -- the receiver's own type arguments (`r.receiver_
 // args`) describe the receiver, not the matched node, and comparing the
