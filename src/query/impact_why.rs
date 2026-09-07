@@ -74,13 +74,10 @@ impl Hit {
 }
 
 // The single `why` a row reports when more than one edge kind reached the
-// same file: the strongest evidence wins. An explicit constructor-injection
-// site outranks a plain resolved reference, which outranks the broader
-// interface hop, which outranks an ambiguous line; a guess is named only
-// when nothing else fired at all -- the same condition that already decides
-// the row's own `heuristic` flag. Each `unwrap_or` fallback is one
-// `note_line_why`'s pairing makes unreachable in practice: a non-zero line
-// always has its edge recorded alongside it.
+// same file follows one priority order: ctor-di, direct, ambiguous, iface,
+// guess -- the most specific evidence about the seed definition wins; an
+// interface hop names the shared interface rather than the seed itself, and
+// a guess is named only when nothing else fired at all.
 fn primary_why(lines: &KindLines, track: &WhyTrack) -> Why {
     if lines.ctor_di != 0 {
         return Why::CtorDi;
@@ -112,5 +109,128 @@ pub(super) fn build_visited_entry(hop: u32, infra: bool, h: &Hit) -> VisitedEntr
         lines: h.lines.clone(),
         infra,
         why: primary_why(&h.lines, &h.why_track),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn lines(ctor_di: usize, direct: usize, direct_amb: usize, iface: usize) -> KindLines {
+        KindLines {
+            ctor_di,
+            direct,
+            direct_amb,
+            iface,
+            heuristic: 0,
+        }
+    }
+
+    #[test]
+    fn ctor_di_alone_wins() {
+        let l = lines(1, 0, 0, 0);
+        let track = WhyTrack::default();
+        assert_eq!(primary_why(&l, &track), Why::CtorDi);
+    }
+
+    #[test]
+    fn direct_alone_reports_its_tracked_why() {
+        let l = lines(0, 1, 0, 0);
+        let track = WhyTrack {
+            direct: Some(Why::UsesType),
+            ..WhyTrack::default()
+        };
+        assert_eq!(primary_why(&l, &track), Why::UsesType);
+    }
+
+    #[test]
+    fn direct_amb_alone_reports_its_tracked_why() {
+        let l = lines(0, 0, 1, 0);
+        let track = WhyTrack {
+            direct_amb: Some(Why::Inherits),
+            ..WhyTrack::default()
+        };
+        assert_eq!(primary_why(&l, &track), Why::Inherits);
+    }
+
+    #[test]
+    fn iface_alone_reports_its_tracked_why() {
+        let l = lines(0, 0, 0, 1);
+        let track = WhyTrack {
+            iface: Some(Why::UsesMemberExt),
+            ..WhyTrack::default()
+        };
+        assert_eq!(primary_why(&l, &track), Why::UsesMemberExt);
+    }
+
+    #[test]
+    fn heuristic_alone_reports_its_tracked_why() {
+        let l = lines(0, 0, 0, 0);
+        let track = WhyTrack {
+            heuristic: Some(Why::UsesMemberGuess),
+            ..WhyTrack::default()
+        };
+        assert_eq!(primary_why(&l, &track), Why::UsesMemberGuess);
+    }
+
+    #[test]
+    fn ctor_di_outranks_direct() {
+        let l = lines(1, 1, 0, 0);
+        let track = WhyTrack {
+            direct: Some(Why::UsesType),
+            ..WhyTrack::default()
+        };
+        assert_eq!(primary_why(&l, &track), Why::CtorDi);
+    }
+
+    #[test]
+    fn direct_outranks_direct_amb() {
+        let l = lines(0, 1, 1, 0);
+        let track = WhyTrack {
+            direct: Some(Why::UsesType),
+            direct_amb: Some(Why::Inherits),
+            ..WhyTrack::default()
+        };
+        assert_eq!(primary_why(&l, &track), Why::UsesType);
+    }
+
+    #[test]
+    fn direct_amb_outranks_iface() {
+        let l = lines(0, 0, 1, 1);
+        let track = WhyTrack {
+            direct_amb: Some(Why::Inherits),
+            iface: Some(Why::UsesMemberExt),
+            ..WhyTrack::default()
+        };
+        assert_eq!(primary_why(&l, &track), Why::Inherits);
+    }
+
+    #[test]
+    fn iface_outranks_heuristic() {
+        let l = lines(0, 0, 0, 1);
+        let track = WhyTrack {
+            iface: Some(Why::UsesMemberExt),
+            heuristic: Some(Why::UsesMemberGuess),
+            ..WhyTrack::default()
+        };
+        assert_eq!(primary_why(&l, &track), Why::UsesMemberExt);
+    }
+
+    #[test]
+    fn all_five_slots_set_still_picks_ctor_di() {
+        let l = KindLines {
+            ctor_di: 1,
+            direct: 1,
+            direct_amb: 1,
+            iface: 1,
+            heuristic: 1,
+        };
+        let track = WhyTrack {
+            direct: Some(Why::UsesType),
+            direct_amb: Some(Why::Inherits),
+            iface: Some(Why::UsesMemberExt),
+            heuristic: Some(Why::UsesMemberGuess),
+        };
+        assert_eq!(primary_why(&l, &track), Why::CtorDi);
     }
 }
