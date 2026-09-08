@@ -64,11 +64,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-HYGIENE_VERSION = "1.1.0"
+HYGIENE_VERSION = "1.2.0"
 # Frozen by hashing this file with this value normalized to 64 zeros first;
 # --selfcheck redoes that normalization, so editing the body without
 # refreshing this constant is exactly the drift --selfcheck exists to catch.
-HYGIENE_SHA256 = "c28b60a81aa2eaa3e4cbb893af6ebb1d8b14764931f818bb5de39c341cf50f92"
+HYGIENE_SHA256 = "4fad4465a36f608499c554cd0d8db1ab42285174d873832d7a3a0df04bee22f5"
 
 # `--scan` with no explicit paths now walks every git-tracked file (see
 # should_ignore_for_scan for what still gets skipped). Kept as a name, not a
@@ -235,44 +235,24 @@ def trim(text, limit=120):
     return text[:limit]
 
 
-def is_tracked(path):
-    """True if git reports `path` as a tracked file of the repo containing the
-    current working directory. Anything git cannot resolve -- a path outside
-    every repo, a git that will not run -- answers False, which keeps the hook
-    silent rather than guessing; hook mode is fail-open everywhere else too."""
-    if not path:
-        return False
-    try:
-        out = subprocess.run(
-            ["git", "ls-files", "--error-unmatch", "--", str(path)],
-            capture_output=True,
-            text=True,
-        )
-    except Exception:
-        return False
-    return out.returncode == 0
-
-
 def in_scan_scope(file_path):
     """True if `--scan` would read `file_path`, so hook mode can refuse exactly
     what the gate refuses and nothing more. A hook stricter than the gate stops
     work that would have passed, and it reads as a policy verdict rather than
     the false positive it is -- which teaches people to switch it off.
 
-    Untracked paths are deliberately out of scope. This vocabulary is dangerous
-    only because it can be published, and only a tracked file can reach a
-    remote; an untracked handoff or scratch note is outside the gate entirely
-    and must stay writable. A brand-new source file that is merely unstaged
-    loses the earliest warning, not the protection: staging it puts it back in
-    scope, and the same classes then refuse it before a commit lands and again
-    in CI, both of which still stand between it and a remote."""
+    No tracked-ness test here. Prose is already out of scope by extension
+    (SCANNABLE_EXTENSIONS never includes .md), so tracked-ness added nothing
+    for the prose case it was meant to cover. Its only real effect was
+    exempting untracked source files -- and a brand-new .rs file is exactly
+    the case that must stay in scope: it is about to become tracked, and an
+    editor-time refusal is the earliest point anyone can catch it, before it
+    ever reaches `git add`."""
     if not file_path:
         return False
     if should_ignore_for_scan(file_path, self_file_path()):
         return False
-    if file_extension(file_path) not in SCANNABLE_EXTENSIONS:
-        return False
-    return is_tracked(file_path)
+    return file_extension(file_path) in SCANNABLE_EXTENSIONS
 
 
 def find_comment_hit(text, file_path, allowlist):
