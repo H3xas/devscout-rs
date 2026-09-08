@@ -143,3 +143,86 @@ fn a_receiver_written_with_two_type_arguments_never_binds_a_one_type_argument_si
     );
     assert_eq!(narrow[0]["member"], "Shelve");
 }
+
+// Two static siblings, `Volumes.Anthology` and `Volumes.Anthology<T>`, each
+// declaring the same member name (`Collate`) -- so the member-list check
+// alone cannot tell the two consumer lines apart and the arity carried on
+// the qualifier itself has to do the work. `AnthologyConsumers.cs` writes
+// the generic qualifier (arity 1, matches `Anthology<T>`), the bare
+// qualifier (arity 0, matches `Anthology`), and a two-argument qualifier
+// that names an arity no sibling declares.
+fn anthology_fixture() -> Fixture {
+    Fixture::with_files(&[
+        "AnthologyBare.cs",
+        "AnthologyGeneric.cs",
+        "AnthologyConsumers.cs",
+    ])
+}
+
+#[test]
+fn a_generic_member_qualifier_keeps_its_precise_edge_at_the_matching_arity() {
+    let fx = anthology_fixture();
+    let graph = fx.graph();
+    let edges = graph["edges"].as_array().unwrap();
+
+    // `to_file` is the one field that still tells the two same-id siblings
+    // apart in a serialized edge, since a `uses-member` edge's `to` is the
+    // qualifier's simple id text and both siblings share it.
+    let precise_lines_at = |to_file: &str| -> Vec<i64> {
+        edges
+            .iter()
+            .filter(|e| {
+                e["kind"] == "uses-member"
+                    && e["to"] == "Volumes.Anthology"
+                    && e["to_file"] == to_file
+                    && e.get("heuristic").is_none()
+            })
+            .map(|e| e["from_line"].as_i64().unwrap())
+            .collect()
+    };
+
+    assert_eq!(
+        precise_lines_at("AnthologyGeneric.cs"),
+        vec![13],
+        "the arity-1 sibling's precise refs must be exactly the generic-qualifier line: {graph}"
+    );
+    assert_eq!(
+        precise_lines_at("AnthologyBare.cs"),
+        vec![14],
+        "the arity-0 sibling's precise refs must be exactly the bare-qualifier line: {graph}"
+    );
+    assert_eq!(
+        graph["stats"]["edges_by_kind"]["uses-member"], 2,
+        "both matching-arity lines stay precise: {graph}"
+    );
+}
+
+#[test]
+fn a_member_qualifier_whose_arity_has_no_sibling_earns_no_precise_edge() {
+    let fx = anthology_fixture();
+    let graph = fx.graph();
+    let edges = graph["edges"].as_array().unwrap();
+
+    let has_precise_uses_member_at = |line: i64| {
+        edges.iter().any(|e| {
+            e["kind"] == "uses-member" && e["from_line"] == line && e.get("heuristic").is_none()
+        })
+    };
+
+    assert!(
+        !has_precise_uses_member_at(15),
+        "the arity-2 qualifier names an arity neither sibling declares and must earn no precise edge: {graph}"
+    );
+    assert!(
+        has_precise_uses_member_at(13),
+        "the matching-arity generic line must keep its edge: {graph}"
+    );
+    assert!(
+        has_precise_uses_member_at(14),
+        "the matching-arity bare line must keep its edge: {graph}"
+    );
+    assert_eq!(
+        graph["stats"]["edges_by_kind"]["uses-member"], 2,
+        "the drop is scoped to the mismatched line, not its matching-arity siblings: {graph}"
+    );
+}
