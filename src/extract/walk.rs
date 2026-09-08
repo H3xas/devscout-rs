@@ -7,8 +7,8 @@ use super::qualifiers::{
 };
 use super::receivers::type_fact;
 use super::refs::{
-    invocation_arg_count, push_ctor_param_ref, push_member_ref, record_base_list,
-    record_single_type, registration_fact, type_parameter_names,
+    invocation_arg_count, invocation_lambda_arg_arity, push_ctor_param_ref, push_member_ref,
+    record_base_list, record_single_type, registration_fact, type_parameter_names,
 };
 use super::text::{
     declared_name, format_segments, named_children, namespace_level_types, new_parser, text,
@@ -387,6 +387,7 @@ fn walk<'a>(
                         q.property_owner.clone(),
                         q.receiver_base,
                         q.receiver_local,
+                        invocation_lambda_arg_arity(node),
                     );
                 }
             } else if let (Some(qn), Some(m)) = (expr_field, &member) {
@@ -424,6 +425,7 @@ fn walk<'a>(
                                 call: Some(inner_member),
                                 awaited: false,
                                 is_array: false,
+                                nullable: false,
                                 lambda: None,
                             }),
                             invocation_arg_count(node),
@@ -435,6 +437,7 @@ fn walk<'a>(
                             // Make with its own.
                             head_is_base,
                             false,
+                            invocation_lambda_arg_arity(node),
                         );
                     }
                 }
@@ -486,6 +489,7 @@ fn walk<'a>(
                             q.property_owner.clone(),
                             q.receiver_base,
                             q.receiver_local,
+                            invocation_lambda_arg_arity(node),
                         );
                     }
                 }

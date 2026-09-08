@@ -307,6 +307,8 @@ fn frag_ref(generic: bool, receiver_type: Option<&str>, arg_count: Option<usize>
         receiver_awaited: false,
         receiver_local: false,
         receiver_lambda: None,
+        receiver_nullable: false,
+        lambda_arg_arity: None,
     }
 }
 

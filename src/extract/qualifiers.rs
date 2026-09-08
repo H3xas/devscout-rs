@@ -205,6 +205,7 @@ pub(super) fn resolve_member_qualifier(
                 call: None,
                 awaited: false,
                 is_array: false,
+                nullable: false,
                 lambda: None,
             }),
             text: qt,

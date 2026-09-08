@@ -122,6 +122,8 @@ fn type_ref(kind: &str, name: &str, qualified: Option<&str>, ns: &str) -> FragRe
         receiver_awaited: false,
         receiver_local: false,
         receiver_lambda: None,
+        receiver_nullable: false,
+        lambda_arg_arity: None,
     }
 }
 
@@ -147,6 +149,8 @@ fn member_ref(name: &str, qualified: Option<&str>, member: &str, ns: &str) -> Fr
         receiver_awaited: false,
         receiver_local: false,
         receiver_lambda: None,
+        receiver_nullable: false,
+        lambda_arg_arity: None,
     }
 }
 

@@ -7,14 +7,15 @@ use super::ladder::{
     type_qualifier_arm_admits, Admission, Narrowed, Resolution, Via,
 };
 use super::members::{
-    base_member_declared, declares_member, declares_member_any_visibility, extension_closure_key,
+    base_member_declared, declares_here_for_ref, declares_member, extension_closure_key,
     inherited_member_declared, member_shape, member_vouched, typed_receiver_base_member,
+    typed_receiver_precise_target,
 };
 use super::provenance::{self, Step};
 use super::receiver::{
     bare_receiver_field_or_property_type, def_outer_types, extractor_vouches_instance,
     is_this_shaped_receiver, lambda_slot_receiver_type, receiver_admits_candidate,
-    AssignabilityCache, ReceiverFieldType,
+    receiver_type_and_nullable, AssignabilityCache, ReceiverFieldType,
 };
 use super::scope::{
     build_file_contexts, collect_global_usings_by_unit, namespace_encloses, score_candidate,
@@ -295,16 +296,8 @@ pub fn resolve_graph_with_model(
                         // named through a derived type) keeps the
                         // public-only walk.
                         let this_shaped = is_this_shaped_receiver(r);
-                        let declares_here = if this_shaped {
-                            declares_member_any_visibility(
-                                &index,
-                                idx,
-                                r.member.as_deref(),
-                                r.arg_count,
-                            )
-                        } else {
-                            declares_member(&index, idx, r.member.as_deref(), r.arg_count)
-                        };
+                        let declares_here =
+                            declares_here_for_ref(&index, &file_contexts, idx, r, this_shaped);
                         // A qualifier that resolved as a TYPE binds the def
                         // that DECLARES the member, in this order: the named
                         // type itself; else the first in-graph base in its
@@ -326,14 +319,9 @@ pub fn resolve_graph_with_model(
                         // through the bare derived name already does.
                         let target = if declares_here {
                             Some(idx)
-                        } else if let Some(target) = typed_receiver_base_member(
-                            &index,
-                            &file_contexts,
-                            idx,
-                            r.member.as_deref(),
-                            r.arg_count,
-                            this_shaped,
-                        ) {
+                        } else if let Some(target) =
+                            typed_receiver_base_member(&index, &file_contexts, idx, r, this_shaped)
+                        {
                             Some(target)
                         } else if (r.generic && r.qualified.is_none())
                             || (r.qualified.is_some() && via == Via::Qualified)
@@ -398,7 +386,7 @@ pub fn resolve_graph_with_model(
                 // that name, both yield no fact -- the local stays
                 // taken-but-unknown, which is the answer the extractor already
                 // gave.
-                let mut receiver_type_name = r.receiver_type.clone();
+                let (mut receiver_type_name, receiver_nullable) = receiver_type_and_nullable(r);
                 // Set only by the bare-identifier field/property fallback
                 // below, and only so the resolution of the name it produced
                 // can happen in the DECLARING file's context rather than
@@ -604,28 +592,21 @@ pub fn resolve_graph_with_model(
                             // like the `this.` shape does, public visibility
                             // only.
                             let this_shaped = is_this_shaped_receiver(r);
-                            let declares_here = if this_shaped {
-                                declares_member_any_visibility(
-                                    &index,
-                                    ridx,
-                                    r.member.as_deref(),
-                                    r.arg_count,
-                                )
-                            } else {
-                                declares_member(&index, ridx, r.member.as_deref(), r.arg_count)
-                            };
-                            let target = if declares_here {
-                                Some(ridx)
-                            } else {
-                                typed_receiver_base_member(
-                                    &index,
-                                    &file_contexts,
-                                    ridx,
-                                    r.member.as_deref(),
-                                    r.arg_count,
-                                    this_shaped,
-                                )
-                            };
+                            // The nullable-unwrap veto, `declares_here` (now
+                            // also arity-gated by any lambda-literal
+                            // argument fact) and the in-graph base widen
+                            // live together in `typed_receiver_precise_
+                            // target`; `nullable_veto` still forces
+                            // `emitted` here on refusal, so no lower tier
+                            // guesses at the wrapper's own member either.
+                            let (target, nullable_veto) = typed_receiver_precise_target(
+                                &index,
+                                &file_contexts,
+                                ridx,
+                                r,
+                                this_shaped,
+                                receiver_nullable,
+                            );
                             if let Some(target) = target {
                                 edges.push(Edge::uses_member(
                                     file.clone(),
@@ -641,6 +622,8 @@ pub fn resolve_graph_with_model(
                                 // tier below reads `emitted`, and that is
                                 // exactly what implements C#'s shadowing
                                 // rule (see that tier's note).
+                                emitted = true;
+                            } else if nullable_veto {
                                 emitted = true;
                             }
                         }
@@ -923,13 +906,9 @@ pub fn resolve_graph_with_model(
                         // runs "exactly as for an undeclared member" for
                         // that name.
                         let vetoed = match receiver_def {
-                            Some(ridx) => inherited_member_declared(
-                                &index,
-                                &file_contexts,
-                                ridx,
-                                r.member.as_deref(),
-                                r.arg_count,
-                            ),
+                            Some(ridx) => {
+                                inherited_member_declared(&index, &file_contexts, ridx, r)
+                            }
                             None => false,
                         };
                         if distinct.len() == 1 && !vetoed {
