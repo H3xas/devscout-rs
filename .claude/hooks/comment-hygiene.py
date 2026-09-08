@@ -13,7 +13,9 @@ Five ways to run it:
 
   1. Hook mode (default, no args). Reads a single Claude Code hook JSON
      payload from stdin. For an Edit or Write tool call, scans the new
-     comment text; for a Bash `git commit`, scans the commit message. On a
+     comment text -- but only when the target path is one `--scan` would
+     itself read (see in_scan_scope), so the hook and the gate refuse the
+     same set; for a Bash `git commit`, scans the commit message. On a
      match it prints a deny decision to stdout, a one-line reason to
      stderr, and exits 2. Otherwise it exits 0 without printing anything.
      Never raises: any parse problem is treated as "nothing to flag".
@@ -62,11 +64,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-HYGIENE_VERSION = "1.0.0"
+HYGIENE_VERSION = "1.1.0"
 # Frozen by hashing this file with this value normalized to 64 zeros first;
 # --selfcheck redoes that normalization, so editing the body without
 # refreshing this constant is exactly the drift --selfcheck exists to catch.
-HYGIENE_SHA256 = "ca9bab45734d0e128d7529f3873c1a272f5ff60691926756b528f68e19edef74"
+HYGIENE_SHA256 = "c28b60a81aa2eaa3e4cbb893af6ebb1d8b14764931f818bb5de39c341cf50f92"
 
 # `--scan` with no explicit paths now walks every git-tracked file (see
 # should_ignore_for_scan for what still gets skipped). Kept as a name, not a
@@ -233,9 +235,52 @@ def trim(text, limit=120):
     return text[:limit]
 
 
+def is_tracked(path):
+    """True if git reports `path` as a tracked file of the repo containing the
+    current working directory. Anything git cannot resolve -- a path outside
+    every repo, a git that will not run -- answers False, which keeps the hook
+    silent rather than guessing; hook mode is fail-open everywhere else too."""
+    if not path:
+        return False
+    try:
+        out = subprocess.run(
+            ["git", "ls-files", "--error-unmatch", "--", str(path)],
+            capture_output=True,
+            text=True,
+        )
+    except Exception:
+        return False
+    return out.returncode == 0
+
+
+def in_scan_scope(file_path):
+    """True if `--scan` would read `file_path`, so hook mode can refuse exactly
+    what the gate refuses and nothing more. A hook stricter than the gate stops
+    work that would have passed, and it reads as a policy verdict rather than
+    the false positive it is -- which teaches people to switch it off.
+
+    Untracked paths are deliberately out of scope. This vocabulary is dangerous
+    only because it can be published, and only a tracked file can reach a
+    remote; an untracked handoff or scratch note is outside the gate entirely
+    and must stay writable. A brand-new source file that is merely unstaged
+    loses the earliest warning, not the protection: staging it puts it back in
+    scope, and the same classes then refuse it before a commit lands and again
+    in CI, both of which still stand between it and a remote."""
+    if not file_path:
+        return False
+    if should_ignore_for_scan(file_path, self_file_path()):
+        return False
+    if file_extension(file_path) not in SCANNABLE_EXTENSIONS:
+        return False
+    return is_tracked(file_path)
+
+
 def find_comment_hit(text, file_path, allowlist):
     """Scan `text` (an Edit new_string or a Write content) for the first
-    comment line that trips one of the comment-content classes."""
+    comment line that trips one of the comment-content classes. A path outside
+    the gate's scope is never read at all."""
+    if not in_scan_scope(file_path):
+        return None
     ext = file_extension(file_path)
     is_fixture_path = is_under_fixtures(file_path) if file_path else False
     for line_no, line in enumerate(text.splitlines(), start=1):
