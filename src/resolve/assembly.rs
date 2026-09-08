@@ -1,10 +1,10 @@
-use super::arity::{arity_accepts, generic_args_unify, resolve_ref_by_arity};
+use super::arity::{arity_accepts, generic_args_unify, resolve_receiver_type};
 use super::dispatch::append_dispatch_edges;
 use super::edges::{build_implementor_index, heuristic_edge_key, resolve_ctor_param, type_edge};
 use super::index::{build_def_index, name_probe, ExtCandidate};
 use super::ladder::{
     capped_candidates, narrow_by_reachability, narrow_tracked, resolve_ref, type_candidate,
-    Admission, Narrowed, Resolution, Via,
+    type_qualifier_arm_admits, Admission, Narrowed, Resolution, Via,
 };
 use super::members::{
     base_member_declared, declares_member, declares_member_any_visibility, extension_closure_key,
@@ -236,27 +236,26 @@ pub fn resolve_graph_with_model(
                     emitted = true;
                 } else if let Resolution::Resolved(idx, via) = &result {
                     let (idx, via) = (*idx, *via);
+                    if type_qualifier_arm_admits(via, &index.defs[idx].id, r) {
                     if index.defs[idx].kind == "enum" {
                         let member_key = format!(
                             "{}.{}",
                             index.defs[idx].id,
                             r.member.as_deref().unwrap_or("")
                         );
-                        let (to, to_file) = match index.qualified_name_to_def.get(&member_key) {
-                            Some(&mi) => (index.defs[mi].id.clone(), index.defs[mi].file.clone()),
-                            None => (index.defs[idx].id.clone(), index.defs[idx].file.clone()),
-                        };
-                        edges.push(Edge::uses_member(
-                            file.clone(),
-                            r.line,
-                            to,
-                            to_file,
-                            r.member.clone(),
-                            None,
-                        ));
-                        provenance::note(&edges, Step::QualifierMember);
-                        edges_by_kind.uses_member += 1;
-                        emitted = true;
+                        if let Some(&mi) = index.qualified_name_to_def.get(&member_key) {
+                            edges.push(Edge::uses_member(
+                                file.clone(),
+                                r.line,
+                                index.defs[mi].id.clone(),
+                                index.defs[mi].file.clone(),
+                                r.member.clone(),
+                                None,
+                            ));
+                            provenance::note(&edges, Step::QualifierMember);
+                            edges_by_kind.uses_member += 1;
+                            emitted = true;
+                        }
                     } else if !extractor_vouches_instance(r)
                         && r.member.as_deref().is_some_and(|m| {
                             type_candidate(&index, &format!("{}+{}", index.defs[idx].id, m), None)
@@ -356,6 +355,7 @@ pub fn resolve_graph_with_model(
                             edges_by_kind.uses_member += 1;
                             emitted = true;
                         }
+                    }
                     }
                 }
                 // Tier (e): the qualifier is an INSTANCE the extractor has
@@ -578,7 +578,7 @@ pub fn resolve_graph_with_model(
                             res: rr,
                             narrowed_away,
                         } = narrow_tracked(
-                            resolve_ref_by_arity(
+                            resolve_receiver_type(
                                 probe,
                                 receiver_arity,
                                 probe_usings,

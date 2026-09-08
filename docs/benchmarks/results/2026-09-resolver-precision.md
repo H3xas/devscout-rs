@@ -1050,6 +1050,215 @@ guesses at the right target, now silent; the all-tier figure moves by the same m
 `this` bucket reaches 0.944. Three recall predictions miss by three thousandths or less and are
 recorded as misses.
 
+## Run 5 — after the precise-tier external and structural fixes
+
+Corpus pin unchanged (`855cf17`), oracle output reused verbatim from
+`bench/out/semantic/MassTransit-main-c2bce9f/` (112190 records / 66924 sites, 56 units, oracle
+commit `564739a`). Wiped-state procedure: the corpus's `.git/scout` state removed, `devscout map .`
+run fresh from a release binary built off this branch, graph rebuilt in 2.06s (9951 defs, 135861
+edges). `before` below is the post-0.4.0-merge baseline the ticket quotes (precise 31450 @ 0.989,
+`fp:external` 28, `structural` 2 — byte-identical to the integration re-baseline, and to this
+branch's own reproduction before any resolver edit landed); it postdates Run 4 above by the 0.4.0
+batch and an oracle regeneration that moved the recall denominator from 56713 to 57607, so Run 4's
+own numbers are not the comparison point here. What changed in the resolver: G1 (`src/resolve/
+ladder.rs` splits `Via::Global` into `Via::Suffix`/`Via::Global`; `src/resolve/assembly.rs`'s
+uses-member type-qualifier arm refuses a `Via::Global` answer unless the def id is nested, and its
+enum arm now requires the qualified member to exist), G2 (`src/resolve/arity.rs` adds
+`resolve_receiver_type`, forcing the exact-arity pass with no arity-blind fallback once a second
+same-named def proves the graph has an opinion on arity), and G5+G6 (the same type-qualifier arm
+enters only when the ref carries no `receiver_type` fact, or is `this`-shaped).
+
+### Audit text output (verbatim; root rewritten bench-relative, nothing else changed)
+
+```
+devscout audit --semantic  root bench/corpora/csharp  oracle 112190 records / 66924 sites  units ok 56 failed 0  method units
+tier        edges     tp     fp   precision   fp:no-site  fp:external  fp:wrong  structural
+precise     31413  31110    303       0.990           44            9       250           0
+ext          2536   2514     22       0.991            5           17         0           0
+guess        8996   5086   3910       0.565           48         2064      1798           0
+recall (57607 in-graph member sites)  precise 0.529  precise+ext 0.573  all 0.660
+  by receiver  ident 0.760  qualified 0.288  this 0.944  base 0.978  call 0.062
+external sites 19153  silent-correct 18218  leaked 935
+structural  impossible 2  checked 42941
+fan-out  1: 26581  2: 4998  3: 1483  4+: 440
+top fp targets   InMemoryDelayProvider 295  RoutingSlipExtensions 161  BusRegistrationContext 148  IBusRegistrationContext 148  IPerformanceCounter 148  NullPerformanceCounter 148  StatsDPerformanceCounter 148  Retry 124  InMemoryContainerTestFixture 83  ContainerTestHarness 78  TextTableOptions 65  IRegistrationConfigurator 58  ISendEndpoint 55  IIndexedSagaProperty 50  IndexedSagaDictionary 50  IndexedSagaProperty 50  SuperComplexRequest 44  ConsumerPipeConfiguratorExtensions 42  RetryConfigurationExtensions 42  SagaPipeConfiguratorExtensions 42
+top missed       MassTransit.ConsumeContext 1021  MassTransit.BehaviorContext 674  MassTransit.Testing.IBaseTestHarness 621  MassTransit.Testing.ITestHarness 600  MassTransit.TransitionExtensions 449  MassTransit.SendContext 373  MassTransit.IStateMachineModifier 340  MassTransit.ThenExtensions 319  MassTransit.DependencyInjectionTestingExtensions 294  MassTransit.Testing.IReceivedMessageList 278  MassTransit.Testing.IPublishedMessageList 272  MassTransit.TestStateMachineExtensions 268  MassTransit.IRegistrationConfigurator 262  MassTransit.SagaConsumeContext 210  MassTransit.IPublishEndpoint 186  MassTransit.ISendEndpoint 178  MassTransit.Testing.AsyncElementListExtensions 170  MassTransit.IBusControl 161  MassTransit.ConsumerExtensions 158  MassTransit.Headers 145
+unknown targets  class 3  record 1  struct 1
+partial file mismatch 155
+ambiguous 137
+edges outside universe (not judged) 734
+```
+
+### `--json` tier objects (verbatim)
+
+```json
+{
+  "precise": {
+    "edges": 31413,
+    "tp": 31110,
+    "fp": 303,
+    "precision": 0.990,
+    "fp_no_site": 44,
+    "fp_external_site": 9,
+    "fp_wrong_target": 250,
+    "structural": 0
+  },
+  "ext": {
+    "edges": 2536,
+    "tp": 2514,
+    "fp": 22,
+    "precision": 0.991,
+    "fp_no_site": 5,
+    "fp_external_site": 17,
+    "fp_wrong_target": 0,
+    "structural": 0
+  },
+  "guess": {
+    "edges": 8996,
+    "tp": 5086,
+    "fp": 3910,
+    "precision": 0.565,
+    "fp_no_site": 48,
+    "fp_external_site": 2064,
+    "fp_wrong_target": 1798,
+    "structural": 0
+  }
+}
+```
+
+### Recall by receiver kind
+
+Denominator differs from Run 4's 56713 (an oracle regeneration between Run 4 and the post-0.4.0
+baseline enlarged it to 57607), so the columns below are not a like-for-like delta the way earlier
+run-over-run tables are — they are reported side by side anyway, per the ticket's own request, with
+that caveat carried forward.
+
+| Receiver kind | Run 4 (denom 56713) | Run 5 (denom 57607) |
+| --- | --- | --- |
+| `ident` | 0.628 | 0.760 |
+| `qualified` | 0.216 | 0.288 |
+| `this` | 0.944 | 0.944 |
+| `base` | 0.978 | 0.978 |
+| `call` | 0.060 | 0.062 |
+| **all** | **0.546** (precise 0.431, precise+ext 0.467) | **0.660** (precise 0.529, precise+ext 0.573) |
+
+`conditional` (`?.`): 717 records. `bare` (unqualified invocation): 7856 records. Both still
+excluded from the headline recall figure — the jump in `ident`/`qualified`/`all` between Run 4 and
+here is the 0.4.0 batch and the oracle regeneration between the two, not this branch's four fixes,
+which are sized in the before/after table below instead.
+
+### External-receiver leak
+
+19153 external sites (oracle-derived, unchanged by this branch): 18218 silent-correct (was 18174 on
+the immediate `before`), 935 leaked (was 979) — every one of G1/G2/G5's demoted refs that no lower
+tier re-picked joins this pool silently rather than as a wrong precise edge, and the pool's own
+leak count fell rather than rose.
+
+### Fan-out (candidate count per site)
+
+| 1 | 2 | 3 | 4+ |
+| --- | --- | --- | --- |
+| 26581 | 4998 | 1483 | 440 |
+
+Unchanged in shape from the immediate `before` (26581 / 4998 / 1483 / 440 there too) — none of the
+four fixes touch the `Ambiguous` candidate pool.
+
+### Top-20 FP targets, by short name
+
+| Target | FP count |
+| --- | --- |
+| InMemoryDelayProvider | 295 |
+| RoutingSlipExtensions | 161 |
+| BusRegistrationContext | 148 |
+| IBusRegistrationContext | 148 |
+| IPerformanceCounter | 148 |
+| NullPerformanceCounter | 148 |
+| StatsDPerformanceCounter | 148 |
+| Retry | 124 |
+| InMemoryContainerTestFixture | 83 |
+| ContainerTestHarness | 78 |
+| TextTableOptions | 65 |
+| IRegistrationConfigurator | 58 |
+| ISendEndpoint | 55 |
+| IIndexedSagaProperty | 50 |
+| IndexedSagaDictionary | 50 |
+| IndexedSagaProperty | 50 |
+| SuperComplexRequest | 44 |
+| ConsumerPipeConfiguratorExtensions | 42 |
+| RetryConfigurationExtensions | 42 |
+| SagaPipeConfiguratorExtensions | 42 |
+
+None of the seventeen G1 sites' old wrong targets (`ExchangeType`, `TimeZoneUtil`) or G2's/G5's
+single sites appear in this list at all — they carry no edge now, not a demoted one.
+
+### Top-20 missed targets, by id
+
+| Target id | Missed count |
+| --- | --- |
+| MassTransit.ConsumeContext | 1021 |
+| MassTransit.BehaviorContext | 674 |
+| MassTransit.Testing.IBaseTestHarness | 621 |
+| MassTransit.Testing.ITestHarness | 600 |
+| MassTransit.TransitionExtensions | 449 |
+| MassTransit.SendContext | 373 |
+| MassTransit.IStateMachineModifier | 340 |
+| MassTransit.ThenExtensions | 319 |
+| MassTransit.DependencyInjectionTestingExtensions | 294 |
+| MassTransit.Testing.IReceivedMessageList | 278 |
+| MassTransit.Testing.IPublishedMessageList | 272 |
+| MassTransit.TestStateMachineExtensions | 268 |
+| MassTransit.IRegistrationConfigurator | 262 |
+| MassTransit.SagaConsumeContext | 210 |
+| MassTransit.IPublishEndpoint | 186 |
+| MassTransit.ISendEndpoint | 178 |
+| MassTransit.Testing.AsyncElementListExtensions | 170 |
+| MassTransit.IBusControl | 161 |
+| MassTransit.ConsumerExtensions | 158 |
+| MassTransit.Headers | 145 |
+
+`MassTransit.Quartz.Util.TimeZoneUtil` and `RabbitMQ.Client.ExchangeType` — the two true targets
+G1's seventeen sites were missing before this branch — are gone from the missed list: those sites
+are demoted to silent-external, which the oracle scores as neither a miss nor a hit for recall, so
+they leave this list without appearing as a new recall gain either.
+
+### Predictions vs. actual
+
+Section 6 of the design registered five guard predictions against the post-0.4.0 baseline before
+this run. Scored against what was actually measured:
+
+| Prediction | Actual | Verdict |
+| --- | --- | --- |
+| `recall all` ≥ 0.655 | 0.660 | **HOLD** |
+| `recall precise` ≥ 0.509 | 0.529 | **HOLD** |
+| `recall precise+ext` ≥ 0.552 | 0.573 | **HOLD** |
+| precise precision ≥ 0.990 (never below 0.989) | 0.990 | **HOLD** |
+| `leaked` ≤ 1029 | 935 | **HOLD** |
+| `fp:external` reaches exactly 9, `structural` reaches 0 | 9, 0 | **HOLD** |
+
+All six predictions hold. `recall precise` moved by +0.000 relative to the immediate `before`
+(0.529 in both), not down — G1's seventeen demoted refs cost their tier nothing measurable at this
+denominator, well inside the ~60x-target budget the design set. `fp:wrong` fell (288 → 250) rather
+than rose, and `tp` in the precise tier rose slightly (31090 → 31110): the two G6 sites land as
+`tp`, not `fp:wrong` — see the before/after table below for the edge-by-edge accounting.
+
+### Defects this run found in its own method
+
+Reading the emitted graph (`fragments-v18.json`, `graph.json`) and the recorded fragment facts
+against the corpus source, rather than inferring a mechanism from the C# shape alone, corrected the
+attribution's own guess for three of the six groups before any fix landed:
+
+1. **G2** is not the ancestor-namespace step failing to check arity; it is the arity-blind
+   FALLBACK inside `resolve_ref_by_arity` discarding an arity the extractor demonstrably recorded
+   (`receiverArgs: ["byte","byte"]`), re-running the ladder blind and landing on the wrong
+   same-named sibling.
+2. **G5** is not sole-implementor substitution — no such rule exists in the tree. It is the
+   uses-member type-qualifier arm resolving the receiver's bare NAME as a type before tier (e) ever
+   reads the recorded `receiverType` fact — C#'s "Color color" shape.
+3. **G6** is not `resolve_ctor_param`/`build_implementor_index` — that path emits a distinct
+   `ctor-di` edge kind the audit never joins, and both sites carry plain `uses-member` edges. It is
+   the same type-qualifier-arm mechanism as G5, reached through an ordinary property instead of a
+   constructor parameter.
+
 ## Decision on the enrichment layer (2026-09-03)
 
 The rule registered before Run 2 stands: recall precise+ext at or above 0.70 would have closed the
@@ -1088,17 +1297,23 @@ precision 0.972 on both runs against the 0.964 floor, and the guess-tier delta b
 
 ### Summary across the branch
 
-| Metric | Run 1 | Run 4 |
-| --- | --- | --- |
-| precise precision | 0.969 | 0.972 |
-| ext precision | 0.809 | 0.906 |
-| guess precision | 0.502 | 0.512 |
-| leaked external sites | 1098 | 1011 |
-| recall precise | 0.379 | 0.431 |
-| recall precise+ext | 0.394 | 0.467 |
-| recall all | 0.479 | 0.546 |
-| recall `this` | 0.000 | 0.944 |
-| recall `base` | 0.000 | 0.978 |
-| recall `ident` | 0.560 | 0.628 |
-| recall `qualified` | 0.217 | 0.216 |
-| recall `call` | 0.004 | 0.060 |
+| Metric | Run 1 | Run 4 | Run 5 |
+| --- | --- | --- | --- |
+| precise precision | 0.969 | 0.972 | 0.990 |
+| ext precision | 0.809 | 0.906 | 0.991 |
+| guess precision | 0.502 | 0.512 | 0.565 |
+| leaked external sites | 1098 | 1011 | 935 |
+| recall precise | 0.379 | 0.431 | 0.529 |
+| recall precise+ext | 0.394 | 0.467 | 0.573 |
+| recall all | 0.479 | 0.546 | 0.660 |
+| recall `this` | 0.000 | 0.944 | 0.944 |
+| recall `base` | 0.000 | 0.978 | 0.978 |
+| recall `ident` | 0.560 | 0.628 | 0.760 |
+| recall `qualified` | 0.217 | 0.216 | 0.288 |
+| recall `call` | 0.004 | 0.060 | 0.062 |
+| precise `fp:external` | -- | 55 | 9 |
+| precise `structural` | -- | 12 | 0 |
+
+Run 5's recall/precision jump over Run 4 is mostly the 0.4.0 batch and an oracle regeneration that
+sits between the two (denominator 56713 → 57607); the four fixes this run adds are isolated in the
+Run 5 section's own before/after table above, against the immediate post-0.4.0 baseline, not Run 4.

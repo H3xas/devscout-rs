@@ -1,6 +1,8 @@
 {
   "tiers.precise.precision": { "min": 1.0 },
-  "tiers.precise.edges": { "min": 29 },
+  "tiers.precise.edges": { "min": 32 },
+  "tiers.precise.fp_external_site": { "max": 0 },
+  "tiers.precise.structural": { "max": 0 },
   "tiers.ext.precision": { "min": 1.0 },
   "tiers.guess.fp": { "max": 0 },
   "recall.all": { "min": 1.0 },

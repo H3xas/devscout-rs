@@ -113,11 +113,15 @@ struct Fixture {
 
 impl Fixture {
     fn build(prefix: &str) -> Fixture {
+        Fixture::build_from(prefix, FILES)
+    }
+
+    fn build_from(prefix: &str, files: &[(&str, &str)]) -> Fixture {
         let base = temp_dir(prefix);
         let root = base.join("repo");
         let home = base.join("home");
         fs::create_dir_all(&home).expect("create home dir");
-        for (rel, body) in FILES {
+        for (rel, body) in files {
             let path = root.join(rel);
             fs::create_dir_all(path.parent().unwrap()).expect("create fixture dir");
             fs::write(&path, body).expect("write fixture file");
@@ -142,6 +146,38 @@ impl Fixture {
             .output()
             .expect("devscout must run")
     }
+
+    fn graph(&self) -> serde_json::Value {
+        let text = fs::read_to_string(self.root.join(".git/scout/graph/graph.json"))
+            .expect("graph.json must exist after map");
+        serde_json::from_str(&text).unwrap()
+    }
+}
+
+/// `uses-member` edges out of `(from_file, from_line)`, precise (no
+/// `heuristic` key) or otherwise, as `(to, member, is precise)`.
+fn member_edges_at<'a>(
+    graph: &'a serde_json::Value,
+    from_file: &str,
+    from_line: u64,
+) -> Vec<(&'a str, &'a str, bool)> {
+    graph["edges"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| {
+            e["kind"] == "uses-member"
+                && e["from_file"] == from_file
+                && e["from_line"].as_u64() == Some(from_line)
+        })
+        .map(|e| {
+            (
+                e["to"].as_str().unwrap(),
+                e["member"].as_str().unwrap_or(""),
+                e["heuristic"].is_null(),
+            )
+        })
+        .collect()
 }
 
 fn stdout_of(out: &Output) -> String {
@@ -353,5 +389,55 @@ fn impact_no_guess_counts_only_the_files_an_extension_call_reached() {
     assert!(
         compact.contains("  Consumers/UsesExtension.cs via=1x"),
         "{compact}"
+    );
+}
+
+/// `Binder`/`BinderConsumer` are G5's shape: a property typed `IBinder`,
+/// whose own base is external, shadowed by an unrelated same-named in-tree
+/// class in the same namespace. `Journal`/`JournalConsumer` are G6's: a
+/// property typed `IJournal` (which declares `Record` itself), shadowed by
+/// an unrelated same-named in-tree class reached only through a `using`.
+/// Both shadowing types are found by the SAME bare identifier as the
+/// property/field NAME, never the property's own DECLARED type -- the
+/// "Color color" collision the arm must no longer resolve through.
+const SHADOW_FILES: &[(&str, &str)] = &[
+    (
+        "Contracts/Contracts.cs",
+        "namespace App.Ext.Contracts\n{\n    public interface IBinder : IDisposable\n    {\n    }\n\n    public interface IJournal\n    {\n        void Record(string entry);\n    }\n}\n",
+    ),
+    (
+        "Downstream/Journal.cs",
+        "using App.Ext.Contracts;\n\nnamespace App.Downstream\n{\n    public class Journal : IJournal\n    {\n        public void Record(string entry) { }\n    }\n}\n",
+    ),
+    (
+        "Domain/Domain.cs",
+        "using App.Downstream;\nusing App.Ext.Contracts;\n\nnamespace App.Domain\n{\n    public class Binder\n    {\n        public void Dispose() { }\n    }\n\n    public class BinderConsumer\n    {\n        public IBinder Binder { get; }\n\n        public void Close() => Binder?.Dispose();\n    }\n\n    public class JournalConsumer\n    {\n        public IJournal Journal { get; }\n\n        public JournalConsumer(IJournal journal)\n        {\n            Journal = journal;\n        }\n\n        public void Write() => Journal.Record(\"x\");\n    }\n}\n",
+    ),
+];
+
+#[test]
+fn a_property_shadowing_a_same_named_type_binds_the_propertys_declared_type_not_the_type() {
+    let fx = Fixture::build_from("shadow", SHADOW_FILES);
+    let graph = fx.graph();
+
+    // `Binder?.Dispose()` (line 15): the property's declared type `IBinder`
+    // does not itself declare `Dispose` -- it only inherits it from the
+    // external `IDisposable` -- so the call must stay fully external, never
+    // falling back to the same-named in-tree `Binder` class the bare
+    // property name happens to also name.
+    assert!(
+        member_edges_at(&graph, "Domain/Domain.cs", 15).is_empty(),
+        "a property whose own interface fails to declare the member must not fall back to a same-named type: {graph:#}"
+    );
+
+    // `Journal.Record("x")` (line 27): the property's declared type
+    // `IJournal` declares `Record` directly, and must bind THAT, never the
+    // same-named downstream `Journal` class the bare property name also
+    // reaches through a `using`.
+    let journal_edges = member_edges_at(&graph, "Domain/Domain.cs", 27);
+    assert_eq!(
+        journal_edges,
+        vec![("App.Ext.Contracts.IJournal", "Record", true)],
+        "a property shadowed by a same-named type must bind the property's OWN declared type: {graph:#}"
     );
 }

@@ -1,6 +1,8 @@
 use super::index::{name_probe, DefIndex};
 use super::members::inheritance_walk_matches;
-use super::receiver::{extractor_vouches_instance, nested_candidate_visible_from_site};
+use super::receiver::{
+    extractor_vouches_instance, is_this_shaped_receiver, nested_candidate_visible_from_site,
+};
 use super::scope::FileContext;
 use crate::graph::{Candidate, FragRef};
 use std::collections::{HashMap, HashSet};
@@ -75,6 +77,13 @@ pub(super) enum Via {
     Qualified,
     Usings,
     Namespace,
+    /// Step 1b's dotted-suffix match -- a qualified name whose text is a
+    /// dot-joined suffix of an in-graph def's own path. Kept apart from
+    /// `Global` (step 4) because the two steps carry different certainty:
+    /// a dotted suffix match is anchored to written text a compiler would
+    /// also have to honor, while step 4 answers a BARE name from nothing
+    /// but graph-wide uniqueness, a rule C# itself does not have.
+    Suffix,
     Global,
 }
 
@@ -82,7 +91,7 @@ pub(super) enum Resolution {
     Resolved(usize, Via),
     /// Several same-named defs the ladder refused to choose between, plus the
     /// step that pooled them -- only steps 1b, 2 and 4 can produce this, so
-    /// the `Via` is always `Usings` or `Global`. It rides along so
+    /// the `Via` is always `Suffix`, `Usings` or `Global`. It rides along so
     /// `narrow_by_reachability` can hand back a `Resolved` carrying the step
     /// that actually answered instead of inventing one: the uses-member
     /// emission tier reads that step (`via == Via::Qualified`) as one of its
@@ -162,6 +171,30 @@ pub(super) fn narrow_tracked(
         narrowed_away: was_ambiguous && matches!(res, Resolution::External),
         res,
     }
+}
+
+// Whether the `uses-member` type-qualifier arm may bind `id` at all, for a
+// resolution that answered via `via`. Two independent refusals, both C#
+// rules the arm otherwise ignores:
+//
+//   - `Via::Global` is step 4's bare-name, graph-wide-uniqueness answer, and
+//     C# has no such rule: a bare name is found through enclosing types,
+//     namespaces, then `using`s, and nothing else. The one shape step 4's own
+//     filter already vouches for is an inherited NESTED type reached bare
+//     through a derived type, which a nested def id (`Outer+Inner`) always
+//     carries a `+` for -- every other step-4 answer is a name the site could
+//     not legally see and must fall through untaken, exactly as a name the
+//     ladder never found does.
+//   - a ref the extractor already recorded a receiver TYPE for
+//     (`r.receiver_type`) is never a type path, however much its bare name
+//     looks like one: C#'s "Color color" rule finds the enclosing member's
+//     own declared type first and shadows the same-named type entirely.
+//     `this.M` is the one exception this arm must keep taking
+//     (`is_this_shaped_receiver`), because a `this`-shaped receiver resolves
+//     to the same def either way.
+pub(super) fn type_qualifier_arm_admits(via: Via, id: &str, r: &FragRef) -> bool {
+    (via != Via::Global || id.contains('+'))
+        && (r.receiver_type.is_none() || is_this_shaped_receiver(r))
 }
 
 // The dotted text of a qualified reference as a def path would spell it: an
@@ -378,8 +411,8 @@ pub(super) fn resolve_ref(
             }
         }
         match matches.as_slice() {
-            [idx] => return Resolution::Resolved(*idx, Via::Global),
-            [_, _, ..] => return Resolution::Ambiguous(matches, Via::Global),
+            [idx] => return Resolution::Resolved(*idx, Via::Suffix),
+            [_, _, ..] => return Resolution::Ambiguous(matches, Via::Suffix),
             // No suffix match: fall through to step 1.5, the one remaining
             // step a dotted reference may take. Steps 2-4 stay closed to it
             // -- the guard just past step 1.5 finishes any dotted reference
