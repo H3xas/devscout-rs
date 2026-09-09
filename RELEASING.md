@@ -7,8 +7,16 @@ is required reading for a contribution — see [CONTRIBUTING.md](CONTRIBUTING.md
 ## Cutting a release
 
 1. Update `CHANGELOG.md` (move `[Unreleased]` into a dated `[x.y.z]` section) and bump the
-   `version` in `Cargo.toml` in the same commit.
+   `version` in `Cargo.toml` in the same commit. Refresh `Cargo.lock` with
+   `cargo update -p devscout-rs --offline`, and update the release named in the README's
+   benchmark note so the scorecard says whether this release changes resolver output.
 2. Merge that to `main`, then push a tag: `git tag vX.Y.Z && git push origin vX.Y.Z`.
+
+   A release branch that touches anything under `.github/workflows/` cannot be pushed over
+   an HTTPS remote: the push authenticates with the `gh` OAuth token, which does not carry
+   the `workflow` scope, and GitHub answers "refusing to allow an OAuth App to create or
+   update workflow ... without `workflow` scope". Use the SSH remote
+   (`git@github.com:H3xas/devscout-rs.git`), or run `gh auth refresh -h github.com -s workflow`.
 3. The `Release` workflow builds Linux/macOS/Windows binaries, signs each with cosign
    (keyless), attests build provenance for each, generates a CycloneDX SBOM, and attaches
    all of it — plus the pre-existing `.sha256` sidecars — to the GitHub Release created for
