@@ -45,6 +45,7 @@
 
 mod arity;
 mod assembly;
+mod dispatch;
 mod edges;
 mod index;
 mod ladder;

@@ -155,6 +155,12 @@ pub struct MemberLists {
     /// exists for that name skipped (first file wins for duplicates). In
     /// memory only; nothing here is serialized.
     pub method_params: HashMap<String, Vec<MethodOverloadParams>>,
+    /// Declared method names carrying the literal `override` modifier -- see
+    /// `FragDef.override_methods`. Merged across a partial class exactly like
+    /// `non_public_methods`: union, first-insertion order. Read ONLY by the
+    /// resolver's member-level `overrides` pass, itself run only for a type
+    /// already known to be a registered DI implementation.
+    pub override_methods: Vec<String>,
 }
 
 /// One method overload's parameter-descriptor list plus its declaring file.
@@ -282,6 +288,7 @@ pub(super) fn build_def_index(fragments_by_file: &[(String, Fragment)]) -> DefIn
                             }
                             m
                         },
+                        override_methods: d.override_methods.clone(),
                     });
                     for e in &d.extension_methods {
                         add_extension_method(&mut member_lists, &mut extension_index, idx, e);
@@ -332,6 +339,11 @@ pub(super) fn build_def_index(fragments_by_file: &[(String, Fragment)]) -> DefIn
                     for m in &d.non_public_methods {
                         if !member_lists[idx].non_public_methods.contains(m) {
                             member_lists[idx].non_public_methods.push(m.clone());
+                        }
+                    }
+                    for m in &d.override_methods {
+                        if !member_lists[idx].override_methods.contains(m) {
+                            member_lists[idx].override_methods.push(m.clone());
                         }
                     }
                     for e in &d.extension_methods {

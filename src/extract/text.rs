@@ -107,6 +107,12 @@ pub(super) fn is_public(node: Node, src: &[u8]) -> bool {
         .any(|c| c.kind() == "modifier" && text(c, src) == "public")
 }
 
+pub(super) fn is_override(node: Node, src: &[u8]) -> bool {
+    named_children(node)
+        .into_iter()
+        .any(|c| c.kind() == "modifier" && text(c, src) == "override")
+}
+
 fn strip_async_suffix(name: &str) -> String {
     name.strip_suffix("Async").unwrap_or(name).to_string()
 }

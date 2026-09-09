@@ -8,6 +8,7 @@ use super::refs_tables::edge_loc;
 use crate::graph;
 
 mod coverage;
+mod dispatch;
 mod find;
 mod heuristic_ordering;
 mod impact_from_lines;
@@ -16,6 +17,7 @@ mod impact_iface;
 mod impact_iface_brake;
 mod impact_misc;
 mod impact_ranking;
+mod imported;
 mod index;
 mod member;
 mod read;

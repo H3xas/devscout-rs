@@ -44,11 +44,25 @@ pub enum Why {
     /// A `tests` row earned because the project model places the file's
     /// unit in a project marked `test`, with no attributed def of its own.
     TestProject,
+    /// An `implements` edge: a service registration's implementation type, or
+    /// a member satisfying an interface member. Appended after the words that
+    /// pre-date the edge kind, so no existing word moves.
+    Implements,
+    /// An `overrides` edge: a member overriding the nearest in-graph base
+    /// member of the same name and arity.
+    Overrides,
+    /// An `impact` row reached only through an imported cross-repo edge --
+    /// never folded against the five kinds above, since a foreign file is
+    /// never also reached by one of this graph's own edges. The weakest
+    /// evidence this vocabulary names, below `uses-member-guess`: a foreign,
+    /// producer-asserted fact never outranks anything this crate resolved
+    /// for itself.
+    ImportedEdge,
 }
 
 impl Why {
     /// Every value, in the order the doc comment above lists them.
-    pub const ALL: [Why; 10] = [
+    pub const ALL: [Why; 13] = [
         Why::Inherits,
         Why::UsesType,
         Why::UsesMemberPrecise,
@@ -59,6 +73,9 @@ impl Why {
         Why::Declaration,
         Why::TestAttribute,
         Why::TestProject,
+        Why::Implements,
+        Why::Overrides,
+        Why::ImportedEdge,
     ];
 
     /// The exact `--json` word for this value.
@@ -74,6 +91,9 @@ impl Why {
             Why::Declaration => "declaration",
             Why::TestAttribute => "test-attribute",
             Why::TestProject => "test-project",
+            Why::Implements => "implements",
+            Why::Overrides => "overrides",
+            Why::ImportedEdge => "imported-edge",
         }
     }
 }
@@ -108,6 +128,8 @@ pub(crate) fn why_for_edge(edge: &graph::Edge) -> Why {
         graph::Edge::UsesType { .. } => Why::UsesType,
         graph::Edge::UsesMember { heuristic, tier, .. } => why_for_uses_member(*heuristic, *tier),
         graph::Edge::Imports { .. } => Why::Imports,
+        graph::Edge::Implements { .. } => Why::Implements,
+        graph::Edge::Overrides { .. } => Why::Overrides,
         // An ambiguous edge's `origin` is the same ref-kind string the ladder
         // steps record for a resolved edge ("inherits"/"uses-type"/
         // "uses-member"); an ambiguous edge is never heuristic (ambiguity and
@@ -119,7 +141,7 @@ pub(crate) fn why_for_edge(edge: &graph::Edge) -> Why {
             _ => Why::UsesMemberPrecise,
         },
         _ => unreachable!(
-            "why_for_edge is only called with inherits/uses-type/uses-member/imports/ambiguous edges, the only kinds that ever populate a refs/read/impact row"
+            "why_for_edge is only called with inherits/uses-type/uses-member/imports/implements/overrides/ambiguous edges, the only kinds that ever populate a refs/read/impact row"
         ),
     }
 }
@@ -141,6 +163,9 @@ mod tests {
             "declaration",
             "test-attribute",
             "test-project",
+            "implements",
+            "overrides",
+            "imported-edge",
         ];
         let words: Vec<&str> = Why::ALL.iter().map(|w| w.as_str()).collect();
         for word in &words {

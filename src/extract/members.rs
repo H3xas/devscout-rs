@@ -6,7 +6,7 @@ use super::receivers::type_fact;
 use super::refs::{
     base_type_identifier, generic_arg_descriptors, type_descriptor, type_parameter_names,
 };
-use super::text::{declared_name, is_public, named_children, text};
+use super::text::{declared_name, is_override, is_public, named_children, text};
 use super::types::{ExtensionMethod, Fact};
 
 // Deliberately NOT public_method_names: that one strips a trailing "Async"
@@ -48,10 +48,31 @@ pub(super) fn raw_non_public_method_names(node: Node, src: &[u8], kind: &str) ->
         .collect()
 }
 
+// Declared method names carrying the literal `override` modifier, source
+// order, deduped -- every visibility, the same population `raw_method_arities`
+// draws its names from, since an overridden member's own arity fact is read
+// off that same table rather than a second one kept here.
+pub(super) fn raw_override_method_names(node: Node, src: &[u8]) -> Vec<String> {
+    let Some(body) = node.child_by_field_name("body") else {
+        return Vec::new();
+    };
+    let mut names: Vec<String> = Vec::new();
+    for c in named_children(body) {
+        if c.kind() != "method_declaration" || !is_override(c, src) {
+            continue;
+        }
+        let name = declared_name(c, src);
+        if !name.is_empty() && !names.contains(&name) {
+            names.push(name);
+        }
+    }
+    names
+}
+
 // Every `method_declaration`'s own (name, arity RANGE) fact, regardless of
 // accessibility -- unlike `raw_method_returns`/`is_recorded_method`, this is
 // NOT filtered to public methods: the resolver's arity-aware call vouching
-// (Unit A4 item 2) needs an overload's range whether `methods` or
+// needs an overload's range whether `methods` or
 // `non_public_methods` is the list answering "does this def declare the
 // name". One (name, ranges) pair per DISTINCT name, in first-occurrence
 // source order (a `Vec` of pairs, not a map: the serialized key order is
@@ -458,9 +479,9 @@ fn extension_arity_range(parameters: Node, src: &[u8]) -> (usize, i64) {
 }
 
 // The same range, for an ORDINARY (non-extension) method overload: every
-// parameter counts, there is no this-parameter to skip. Unit A4 item 2's own
-// input -- `raw_method_arities` calls this once per `method_declaration`,
-// public and non-public alike.
+// parameter counts, there is no this-parameter to skip. The resolver's
+// arity gate consumes this directly -- `raw_method_arities` calls this
+// once per `method_declaration`, public and non-public alike.
 fn method_arity_range(parameters: Node, src: &[u8]) -> (usize, i64) {
     parameter_arity_range(parameters, src, false)
 }

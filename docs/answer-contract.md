@@ -103,6 +103,11 @@ why they are *unresolved*, a different question from which rule produced a settl
 | `declaration` | `read`'s declaration span -- the def's own source, not an edge at all. |
 | `test-attribute` | A `tests` row earned because a def declared in the file carries a test-runner attribute (`[Fact]`, `[Test]`, `[TestMethod]`, and their qualified/targeted/shared-bracket forms). |
 | `test-project` | A `tests` row earned because the project model places the file's unit inside a project marked `test`, with no attributed def of its own. |
+| `imported-edge` | An `impact` row reached only through an imported cross-repo edge -- never one of this graph's own -- carrying the foreign `repo` id and the export's `provenance` id. The weakest evidence this vocabulary names: a foreign, producer-asserted fact never outranks anything this crate resolved for itself. |
+
+**Vocabulary growth.** `why` and `outcome` may each gain a new word over time without a
+`schema_version` bump, the same way an added key never bumps it. A consumer must treat a `why`
+or `outcome` value it does not recognise as opaque -- skip it rather than fail.
 
 Four edge kinds this crate records never reach `why`: a TS/TSX-only edge (`import`/`call`/
 `jsx-use`/`dispatch`) is never admitted into the inbound/outbound adjacency any of these four

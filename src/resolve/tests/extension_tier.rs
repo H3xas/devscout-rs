@@ -635,11 +635,12 @@ fn stage3_veto_the_closure_is_transitive_so_a_member_on_the_base_of_the_base_sti
         ),
     ]);
     let g = resolve_graph(&no_git_root(), &files);
-    // Two hops up the chain is still an instance member -- Unit A3 item 4
-    // is exactly this widening: Leaf itself declares nothing, but Root,
-    // reached through Leaf's transitive in-graph base closure, does, so
-    // the typed-receiver precise tier binds there instead of leaving the
-    // extension tier's veto as the only visible effect.
+    // Two hops up the chain is still an instance member -- the
+    // typed-receiver base walk widens exactly that far: Leaf itself
+    // declares nothing, but Root, reached through Leaf's transitive
+    // in-graph base closure, does, so the typed-receiver precise tier
+    // binds there instead of leaving the extension tier's veto as the
+    // only visible effect.
     assert_eq!(
         member_edges_from(&g, "Consumers/DeepVeto.cs"),
         vec![("App.Other.Root", 9)],

@@ -54,14 +54,20 @@
 // themselves: `find`, `refs`/`refs_tables` (the row/table shaping `read`
 // reuses), `read`, `coverage` (test coverage for a symbol -- named to avoid
 // colliding with this module's own `tests`), and `impact` (plus `infra`, the
-// hub-file name-pattern classification `impact` widens against). Every
+// hub-file name-pattern classification `impact` widens against). `dispatch`
+// holds the `implements`/`overrides` plumbing `index.rs` and `refs.rs` both
+// call into (index-build-time adjacency, the bare-member fallback's
+// exact-match half) -- split out to keep those two files under this crate's
+// per-file line budget, not a verb of its own. Every
 // public item keeps the path it had before the split via the `pub use`s
 // below.
 
 mod coverage;
+mod dispatch;
 mod find;
 mod impact;
 mod impact_why;
+mod imported;
 mod index;
 mod infra;
 // `--json` rendering of every query model, moved here from `cli.rs` to keep
@@ -85,6 +91,7 @@ pub use impact::{
     BrakedIface, ImpactModel, ImpactResult, ImpactRow, ImpactWalkResult, KindLines, SeedKind,
     SeedResolution, VisitedEntry, DEFAULT_HOPS, DEFAULT_IFACE_MAX_FANIN,
 };
+pub use imported::{build_imported_section, ImportedRow, ImportedSection};
 pub use index::{
     def_files, def_sites, load_graph_index, load_graph_index_with, symbol_refs, DefSite,
     GraphIndex, HeuristicEntry, InboundEntry, IndexOptions, OutboundEntry, SymbolRefs,

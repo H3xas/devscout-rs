@@ -148,6 +148,8 @@ enum RowKind {
     Inherits,
     UsesType,
     UsesMember,
+    Implements,
+    Overrides,
 }
 
 fn why_for_row(kind: RowKind, heuristic: bool, tier: Option<graph::HeuristicTier>) -> Why {
@@ -155,6 +157,8 @@ fn why_for_row(kind: RowKind, heuristic: bool, tier: Option<graph::HeuristicTier
         RowKind::Inherits => Why::Inherits,
         RowKind::UsesType => Why::UsesType,
         RowKind::UsesMember => why_for_uses_member(heuristic, tier),
+        RowKind::Implements => Why::Implements,
+        RowKind::Overrides => Why::Overrides,
     }
 }
 
@@ -286,43 +290,90 @@ fn refs_model_j(model: &query::RefsModel, outcome: query::Outcome) -> J {
     J::Obj(refs_model_fields(model, outcome))
 }
 
-// The three inbound tables, each row tagged with the static kind its own
-// table names (see `RowKind`/`why_for_row`).
-fn j_inbound_tables(t: &query::InboundTables) -> J {
-    J::Obj(vec![
-        (
-            "inherits",
-            j_table(&t.inherits, |r| j_inbound_row(r, RowKind::Inherits)),
-        ),
-        (
-            "uses-type",
-            j_table(&t.uses_type, |r| j_inbound_row(r, RowKind::UsesType)),
-        ),
-        (
-            "uses-member",
-            j_table(&t.uses_member, |r| j_inbound_row(r, RowKind::UsesMember)),
-        ),
-    ])
+// `implements`/`overrides` join an `inbound`/`outbound` JSON object only when
+// their own total is non-zero -- present-only-when-applicable, the same rule
+// `memberRefs` follows -- so a symbol untouched by dispatch edges keeps the
+// exact `--json` bytes it had before this pair existed.
+fn dispatch_table_fields<R>(
+    implements: &query::Table<R>,
+    overrides: &query::Table<R>,
+    row: impl Fn(&R, RowKind) -> J + Copy,
+) -> Vec<(&'static str, J)> {
+    let mut fields = Vec::new();
+    if implements.total != 0 {
+        fields.push((
+            "implements",
+            j_table(implements, |r| row(r, RowKind::Implements)),
+        ));
+    }
+    if overrides.total != 0 {
+        fields.push((
+            "overrides",
+            j_table(overrides, |r| row(r, RowKind::Overrides)),
+        ));
+    }
+    fields
 }
 
-// The four outbound tables, the same per-kind tagging `j_inbound_tables`
-// applies -- `imports` names its own fixed word directly (see `j_import_row`).
+// The three inbound tables plus the two dispatch ones, each row tagged with
+// the static kind its own table names (see `RowKind`/`why_for_row`).
+fn j_inbound_tables(t: &query::InboundTables) -> J {
+    J::Obj(
+        vec![
+            (
+                "inherits",
+                j_table(&t.inherits, |r| j_inbound_row(r, RowKind::Inherits)),
+            ),
+            (
+                "uses-type",
+                j_table(&t.uses_type, |r| j_inbound_row(r, RowKind::UsesType)),
+            ),
+            (
+                "uses-member",
+                j_table(&t.uses_member, |r| j_inbound_row(r, RowKind::UsesMember)),
+            ),
+        ]
+        .into_iter()
+        .chain(dispatch_table_fields(
+            &t.implements,
+            &t.overrides,
+            j_inbound_row,
+        ))
+        .collect::<Vec<_>>(),
+    )
+}
+
+// The outbound tables, the same per-kind tagging `j_inbound_tables`
+// applies -- `imports` names its own fixed word directly (see `j_import_row`)
+// and stays last, after the two dispatch tables.
 fn j_outbound_tables(t: &query::OutboundTables) -> J {
-    J::Obj(vec![
-        (
-            "inherits",
-            j_table(&t.inherits, |r| j_outbound_row(r, RowKind::Inherits)),
-        ),
-        (
-            "uses-type",
-            j_table(&t.uses_type, |r| j_outbound_row(r, RowKind::UsesType)),
-        ),
-        (
-            "uses-member",
-            j_table(&t.uses_member, |r| j_outbound_row(r, RowKind::UsesMember)),
-        ),
-        ("imports", j_table(&t.imports, j_import_row)),
-    ])
+    J::Obj(
+        vec![
+            (
+                "inherits",
+                j_table(&t.inherits, |r| j_outbound_row(r, RowKind::Inherits)),
+            ),
+            (
+                "uses-type",
+                j_table(&t.uses_type, |r| j_outbound_row(r, RowKind::UsesType)),
+            ),
+            (
+                "uses-member",
+                j_table(&t.uses_member, |r| j_outbound_row(r, RowKind::UsesMember)),
+            ),
+        ]
+        .into_iter()
+        .chain(dispatch_table_fields(
+            &t.implements,
+            &t.overrides,
+            j_outbound_row,
+        ))
+        .chain(std::iter::once((
+            "imports",
+            j_table(&t.imports, j_import_row),
+        )))
+        .collect::<Vec<_>>(),
+    )
 }
 
 fn refs_model_fields(model: &query::RefsModel, outcome: query::Outcome) -> Vec<(&'static str, J)> {
@@ -455,92 +506,142 @@ fn j_impact_row(r: &query::ImpactRow) -> J {
     J::Obj(fields)
 }
 
-// The resolved `impact` JSON shape (`build_impact_model`'s resolved return),
-// with the query key first: `{query, status, kind, seedFiles, hops,
-// totalAffected, rows, dropped, manifestGap, heuristicAffected, testsAffected,
-// [braked], outcome}`, in that key order. `outcome` is `"zero-hit"` when the
-// resolved seed's blast radius is empty (the same condition that already
-// drives the exit-code-3 zero-hit signal) and `"hit"` otherwise -- the one
-// case this crate's `--json` output ever reports `zero-hit` for.
-pub(crate) fn impact_model_to_json(query_str: &str, model: &query::ImpactModel) -> String {
-    let outcome = if model.rows.is_empty() {
+// Every field of the resolved `impact` JSON shape (`build_impact_model`'s
+// resolved return) EXCEPT `outcome`: `{schema_version, query, status, kind,
+// seedFiles, hops, totalAffected, rows, dropped, manifestGap,
+// heuristicAffected, testsAffected, [braked]}`, in that key order. Shared by
+// the plain and imports-aware builders below so the fields both answers
+// carry can never drift apart between the two.
+fn impact_model_fields(query_str: &str, model: &query::ImpactModel) -> Vec<(&'static str, J)> {
+    vec![
+        ("schema_version", J::UInt(query::SCHEMA_VERSION)),
+        ("query", J::Str(query_str.to_string())),
+        ("status", J::Str("resolved".to_string())),
+        (
+            "kind",
+            J::Str(render::seed_kind_str(model.kind).to_string()),
+        ),
+        (
+            "seedFiles",
+            J::Arr(model.seed_files.iter().map(|f| J::Str(f.clone())).collect()),
+        ),
+        ("hops", J::UInt(model.hops as u64)),
+        ("totalAffected", J::UInt(model.total_affected as u64)),
+        (
+            "rows",
+            J::Arr(model.rows.iter().map(j_impact_row).collect()),
+        ),
+        ("dropped", J::UInt(model.dropped as u64)),
+        ("manifestGap", J::UInt(model.manifest_gap as u64)),
+        // Appended LAST after `manifestGap` -- always present, unlike the
+        // per-row flags.
+        (
+            "heuristicAffected",
+            J::UInt(model.heuristic_affected as u64),
+        ),
+        // Test-coverage stage, appended after it -- also always present.
+        ("testsAffected", J::UInt(model.tests_affected as u64)),
+    ]
+    .into_iter()
+    // Appended LAST and only when the brake actually fired, so every answer it
+    // never touched keeps the exact key order it had before. The file entries
+    // ride in the SAME array, after every interface entry, rather than in a
+    // second top-level key: a consumer already reading `braked` sees both brakes
+    // without a schema change.
+    .chain(
+        if model.braked.is_empty() && model.braked_files.is_empty() {
+            None
+        } else {
+            Some((
+                "braked",
+                J::Arr(
+                    model
+                        .braked
+                        .iter()
+                        .map(|b| {
+                            J::Obj(vec![
+                                ("iface", J::Str(b.iface.clone())),
+                                ("fanin", J::UInt(b.fanin as u64)),
+                            ])
+                        })
+                        .chain(model.braked_files.iter().map(|b| {
+                            J::Obj(vec![
+                                ("file", J::Str(b.file.clone())),
+                                ("indegree", J::UInt(b.indegree as u64)),
+                            ])
+                        }))
+                        .collect(),
+                ),
+            ))
+        },
+    )
+    .collect()
+}
+
+// `outcome` is `"zero-hit"` when the resolved seed's blast radius is empty
+// AND (for the imports-aware caller) the import named nothing either -- the
+// same condition the exit-code-3 zero-hit signal keys off -- and `"hit"`
+// otherwise.
+fn impact_outcome(model: &query::ImpactModel, imported_hit: bool) -> query::Outcome {
+    if model.rows.is_empty() && !imported_hit {
         query::Outcome::ZeroHit
     } else {
         query::Outcome::Hit
-    };
-    J::Obj(
-        vec![
-            ("schema_version", J::UInt(query::SCHEMA_VERSION)),
-            ("query", J::Str(query_str.to_string())),
-            ("status", J::Str("resolved".to_string())),
-            (
-                "kind",
-                J::Str(render::seed_kind_str(model.kind).to_string()),
-            ),
-            (
-                "seedFiles",
-                J::Arr(model.seed_files.iter().map(|f| J::Str(f.clone())).collect()),
-            ),
-            ("hops", J::UInt(model.hops as u64)),
-            ("totalAffected", J::UInt(model.total_affected as u64)),
-            (
-                "rows",
-                J::Arr(model.rows.iter().map(j_impact_row).collect()),
-            ),
-            ("dropped", J::UInt(model.dropped as u64)),
-            ("manifestGap", J::UInt(model.manifest_gap as u64)),
-            // Appended LAST after `manifestGap` -- always present, unlike the
-            // per-row flags.
-            (
-                "heuristicAffected",
-                J::UInt(model.heuristic_affected as u64),
-            ),
-            // Test-coverage stage, appended after it -- also always present.
-            ("testsAffected", J::UInt(model.tests_affected as u64)),
-        ]
-        .into_iter()
-        // Appended LAST and only when the brake actually fired, so every answer it
-        // never touched keeps the exact key order it had before. The file entries
-        // ride in the SAME array, after every interface entry, rather than in a
-        // second top-level key: a consumer already reading `braked` sees both brakes
-        // without a schema change.
-        .chain(
-            if model.braked.is_empty() && model.braked_files.is_empty() {
-                None
-            } else {
-                Some((
-                    "braked",
-                    J::Arr(
-                        model
-                            .braked
-                            .iter()
-                            .map(|b| {
-                                J::Obj(vec![
-                                    ("iface", J::Str(b.iface.clone())),
-                                    ("fanin", J::UInt(b.fanin as u64)),
-                                ])
-                            })
-                            .chain(model.braked_files.iter().map(|b| {
-                                J::Obj(vec![
-                                    ("file", J::Str(b.file.clone())),
-                                    ("indegree", J::UInt(b.indegree as u64)),
-                                ])
-                            }))
-                            .collect(),
-                    ),
-                ))
-            },
-        )
-        // Appended absolute LAST, after `braked` when present -- computed
-        // once, above, from the same `rows.is_empty()` check the exit code
-        // already keys off, so it can never disagree with it.
-        .chain(std::iter::once((
-            "outcome",
-            J::Str(outcome.as_str().to_string()),
-        )))
-        .collect::<Vec<_>>(),
-    )
-    .to_json_string()
+    }
+}
+
+/// The resolved `impact` JSON shape, with the query key first, in
+/// [`impact_model_fields`]'s key order, `outcome` last.
+pub(crate) fn impact_model_to_json(query_str: &str, model: &query::ImpactModel) -> String {
+    let mut fields = impact_model_fields(query_str, model);
+    let outcome = impact_outcome(model, false);
+    fields.push(("outcome", J::Str(outcome.as_str().to_string())));
+    J::Obj(fields).to_json_string()
+}
+
+// An imported row's JSON shape: `{file, hop, repo, importedKind, why}`, `why`
+// last like every other hit row this module builds.
+fn j_imported_row(r: &query::ImportedRow) -> J {
+    J::Obj(vec![
+        ("file", J::Str(r.file.clone())),
+        ("hop", J::UInt(r.hop as u64)),
+        ("repo", J::Str(r.repo.clone())),
+        ("importedKind", J::Str(r.imported_kind.clone())),
+        ("why", J::Str(r.why.as_str().to_string())),
+    ])
+}
+
+/// The resolved `impact` JSON shape with an import configured: every key
+/// [`impact_model_to_json`] writes, then `importedAffected`, `importedDropped`,
+/// `importedRows` and the export's `provenance` block, all appended before
+/// `outcome` -- additive only, so a consumer already reading the plain shape
+/// sees exactly what it saw before, plus these four keys. `outcome` reports
+/// `"hit"` when either the native model or the imported section found
+/// something, so an import can turn an otherwise-empty answer into a hit.
+pub(crate) fn impact_model_to_json_with_imports(
+    query_str: &str,
+    model: &query::ImpactModel,
+    imported: &query::ImportedSection,
+    provenance: &graph::Provenance,
+) -> String {
+    let mut fields = impact_model_fields(query_str, model);
+    fields.push(("importedAffected", J::UInt(imported.affected as u64)));
+    fields.push(("importedDropped", J::UInt(imported.dropped as u64)));
+    fields.push((
+        "importedRows",
+        J::Arr(imported.rows.iter().map(j_imported_row).collect()),
+    ));
+    fields.push((
+        "provenance",
+        J::Obj(vec![
+            ("id", J::Str(provenance.id.clone())),
+            ("producer", J::Str(provenance.producer.clone())),
+            ("formatVersion", J::UInt(provenance.format_version)),
+        ]),
+    ));
+    let outcome = impact_outcome(model, !imported.rows.is_empty());
+    fields.push(("outcome", J::Str(outcome.as_str().to_string())));
+    J::Obj(fields).to_json_string()
 }
 
 // The resolved `tests` JSON shape (`build_tests_model`'s resolved return):

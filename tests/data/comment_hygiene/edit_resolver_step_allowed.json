@@ -1,0 +1,9 @@
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Edit",
+  "tool_input": {
+    "file_path": "src/probe.rs",
+    "old_string": "",
+    "new_string": "// step 1.5's nested walk resolves a dotted chain segment by name.\npub fn a() {}\n"
+  }
+}

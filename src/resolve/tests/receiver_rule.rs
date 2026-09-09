@@ -173,7 +173,7 @@ fn stage5_receiver_rule_a_generic_receiver_binds_the_generic_sibling_not_the_fir
     //
     // Classes rather than interfaces here: the base walk that reaches
     // Publish from the generic sibling (`typed_receiver_base_member`)
-    // deliberately never crosses an INTERFACE base (Unit A4's
+    // deliberately never crosses an INTERFACE base (the
     // `skip_interfaces` rule, unrelated to this defect), so an
     // interface-extends-interface pair would mask the very base-walk
     // path this test means to exercise.

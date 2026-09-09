@@ -18,9 +18,10 @@ much.
 | `devscout init [scope ...]` | Register the repo, create the artifact directory, install the agent hooks, run a first map |
 | `devscout map [scope ...]` | Build or refresh the index; incremental — unchanged files are reused |
 | `devscout find <query>` | Search the manifest by symbol name or by file purpose |
-| `devscout refs <symbol>` | Inbound references to a symbol, grouped by edge kind (`inherits`, `uses-type`, `uses-member`) |
+| `devscout refs <symbol>` | Inbound references to a symbol, grouped by edge kind (`inherits`, `uses-type`, `uses-member`, `implements`, `overrides`) |
 | `devscout read <symbol>` | The symbol's declaration span and verbatim source plus the same inbound answer as `refs` |
 | `devscout impact <file\|symbol>` | Blast radius: the files reachable from a seed within N hops |
+| `devscout import-edges <file> --repo <id>` | Load a versioned cross-repo edge export; `impact` then reports files reached only through it (`--no-imports` to skip it) |
 | `devscout tests <symbol>` | The test files that reach a symbol |
 | `devscout <verb> <symbol> --pick N` | On any of the four verbs above, narrows a member seed with several declaring types to its nth candidate |
 | `devscout stats` | Index and cache summary for the current repo |
@@ -156,7 +157,7 @@ untracked files and are shared correctly by worktrees:
 <git-common-dir>/scout/manifest.json              file -> purpose + symbol index
 <git-common-dir>/scout/index-state.json           HEAD + timestamp the index was built at
 <git-common-dir>/scout/graph/graph.json           definitions, edges, and project units
-<git-common-dir>/scout/graph/fragments-v18.json   per-file extraction cache (incremental map)
+<git-common-dir>/scout/graph/fragments-v19.json   per-file extraction cache (incremental map)
 <git-common-dir>/scout/graph/project-units.json   csproj staleness sidecar (present only with a project model)
 <git-common-dir>/scout/graph/semantic-v1.json      planned: compiler-backed enrichment cache (see docs/design/compiler-enrichment.md)
 <git-common-dir>/scout/log/queries.jsonl          query-verb telemetry, one JSON line per answered invocation (opt-in; SCOUT_TELEMETRY=1)
@@ -254,6 +255,18 @@ Known, rather than hidden:
   parameter, a callee reached through a chain or through another untyped lambda parameter, a
   named argument, and a parameter name that two lambdas in one member bind to different
   callees leave the parameter untyped.
+- **A two-type-argument DI service registration records an `implements` edge.** An invocation
+  whose method name begins `Add` or `TryAdd` and ends `Singleton`, `Scoped` or `Transient` and
+  carries exactly two type arguments (`services.AddScoped<IContract, Widget>()`) — the keyed
+  and named spellings included, since the rule is a prefix/suffix shape rather than a fixed
+  name list — records a type-level `implements` edge from the implementation to the service
+  type, plus a member-level `implements`/`overrides` edge per implementing/`override` member
+  matched by name and arity; an ambiguous arity match (two or more candidates) emits nothing.
+  This is what lets `refs`/`read` on a service interface list its implementations and `impact`
+  on an implementation reach the interface's own callers through the same widened interface
+  hop a base-list `inherits` edge already uses. `--no-dispatch` drops both edge kinds from
+  `refs`/`read`/`impact`/`tests`, the same way `--no-guess` drops the `guess` tier — neither
+  edge kind is ever itself a guess.
 - **The project model reads only `.csproj` and `Directory.Build.props`.** It hand-scans
   `ProjectReference`, `Microsoft.NET.Test.Sdk`, and `IsTestProject` — no MSBuild evaluation, no
   conditions, no NuGet resolution, and no `.sln`. A file belongs to the nearest ancestor
@@ -264,7 +277,9 @@ Known, rather than hidden:
 - **Graph schema 2 adds `member`, `tier`, `units`, and `stats.heuristic_by_tier`.** `member`
   is written on every `uses-member` edge, `tier` on the heuristic ones; `units` (the discovered
   `.csproj` projects) is appended last. A reserved `source` slot is set aside for a future
-  semantic-provenance tag. A v1 graph.json is rebuilt automatically on the next `map`.
+  semantic-provenance tag. A v1 graph.json is rebuilt automatically on the next `map`. Schema 3
+  adds the `implements`/`overrides` edge kinds and their `edges_by_kind` counters; a v2
+  graph.json is rebuilt the same way a v1 one is.
 - **A precise `uses-member` edge binds the type that declares the member, as far as names
   and arity can tell.** The declaring type in the receiver's static chain — inherited,
   overridden and hidden members, interface members through interface, implementing-class
@@ -364,7 +379,10 @@ scorecard as 0.2.0-specific until the next round. Release 0.4.0 changes resolver
 (heuristic tiers and recall), measured in
 [`docs/benchmarks/results/2026-09-resolver-precision.md`](docs/benchmarks/results/2026-09-resolver-precision.md).
 Release 0.5.0 changes no resolver output: it produces a byte-identical `graph.json` on the
-pinned corpus, so those figures carry over unchanged.
+pinned corpus, so those figures carry over unchanged. Release 0.6.0 raises the graph schema to
+3 and adds the `implements` and `overrides` edges, so its `graph.json` is not byte-identical to
+0.5.0's and the scorecard has not been re-measured against it; a repository whose code registers
+nothing through dependency injection gains no edges and answers as it did.
 
 A separate scripted-lane run measured **tool calls issued per task**: the index arm used fewer
 calls in all four query kinds, largest on references (5.0 vs 11.8 per lane, ~2.4x) — single-run

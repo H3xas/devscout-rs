@@ -81,3 +81,20 @@ fn edit_naming_the_host_product_claude_code_is_allowed() {
     let out = run_with_fixture("edit_claude_code_allowed.json");
     assert_eq!(out.status.code(), Some(0), "expected exit 0, got {out:?}");
 }
+
+#[test]
+fn edit_with_plan_label_is_denied() {
+    let out = run_with_fixture("edit_plan_label.json");
+    assert_eq!(out.status.code(), Some(2), "expected exit 2, got {out:?}");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("plan label"),
+        "stderr missing plan-label class: {stderr}"
+    );
+}
+
+#[test]
+fn edit_naming_a_resolver_step_is_allowed() {
+    let out = run_with_fixture("edit_resolver_step_allowed.json");
+    assert_eq!(out.status.code(), Some(0), "expected exit 0, got {out:?}");
+}

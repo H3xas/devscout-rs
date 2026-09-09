@@ -1,7 +1,6 @@
 use super::arity::{arity_accepts, generic_args_unify, resolve_ref_by_arity};
-use super::edges::{
-    build_implementor_index, heuristic_edge_key, resolve_ctor_param, type_edge, CtorDiResolution,
-};
+use super::dispatch::append_dispatch_edges;
+use super::edges::{build_implementor_index, heuristic_edge_key, resolve_ctor_param, type_edge};
 use super::index::{build_def_index, name_probe, ExtCandidate};
 use super::ladder::{
     capped_candidates, narrow_by_reachability, narrow_tracked, resolve_ref, type_candidate,
@@ -21,8 +20,8 @@ use super::scope::{
     FileContext,
 };
 use crate::graph::{
-    Candidate, Edge, EdgesByKind, Fragment, Graph, GraphName, HeuristicByTier, HeuristicTier,
-    Percent1, Stats, GRAPH_SCHEMA_VERSION,
+    Edge, EdgesByKind, Fragment, Graph, GraphName, HeuristicByTier, HeuristicTier, Percent1, Stats,
+    GRAPH_SCHEMA_VERSION,
 };
 use crate::manifest;
 use std::collections::{HashMap, HashSet};
@@ -288,10 +287,10 @@ pub fn resolve_graph_with_model(
                         // ordinary type ladder like any other bare type
                         // name), so a member declared non-publicly on the
                         // enclosing type itself, or on one of its bases,
-                        // must still bind precisely -- Unit A3 items 1 and
-                        // 4. Every other typed-qualified access reaching
-                        // this arm (`SomeType.Member`, an inherited STATIC
-                        // member named through a derived type) keeps the
+                        // must still bind precisely. Every other
+                        // typed-qualified access reaching this arm
+                        // (`SomeType.Member`, an inherited STATIC member
+                        // named through a derived type) keeps the
                         // public-only walk.
                         let this_shaped = is_this_shaped_receiver(r);
                         let declares_here = if this_shaped {
@@ -307,11 +306,11 @@ pub fn resolve_graph_with_model(
                         // A qualifier that resolved as a TYPE binds the def
                         // that DECLARES the member, in this order: the named
                         // type itself; else the first in-graph base in its
-                        // closure (Unit A3 item 4 -- the widening
-                        // `base_member_declared` already does for `base.`,
-                        // applied to a receiver whose OWN type resolved
-                        // directly rather than through a `base.` qualifier);
-                        // else, on type certainty alone, the named type. A
+                        // closure -- the widening `base_member_declared`
+                        // already does for `base.`, applied to a receiver
+                        // whose OWN type resolved directly rather than
+                        // through a `base.` qualifier; else, on type
+                        // certainty alone, the named type. A
                         // type-argument list (`Cache<T>.x`) or an exact
                         // qualified name (`Ns.Utils.Helper()`) is syntax
                         // only a type can carry, so when nothing in the graph
@@ -371,8 +370,8 @@ pub fn resolve_graph_with_model(
                 // ladder a second time for the same name in the same file
                 // context. Tier (e) tries the EXACT receiver def first and,
                 // only when that def itself does not declare the member, its
-                // in-graph base closure (Unit A3 item 4, mirroring the
-                // widening `base_member_declared` already does for `base.`)
+                // in-graph base closure, mirroring the widening
+                // `base_member_declared` already does for `base.`
                 // -- public visibility, unless the receiver IS the enclosing
                 // type itself (`is_this_shaped_receiver`), which may also see
                 // a non-public member per precision rule (a).
@@ -591,9 +590,9 @@ pub fn resolve_graph_with_model(
                         if let Resolution::Resolved(ridx, _) = &rr {
                             let ridx = *ridx;
                             receiver_def = Some(ridx);
-                            // Unit A3 item 4: the receiver's OWN def may not
-                            // declare the member while an in-graph base of
-                            // it does -- `IS_THIS_SHAPED` decides only
+                            // The receiver's OWN def may not declare the
+                            // member while an in-graph base of it does --
+                            // `IS_THIS_SHAPED` decides only
                             // whether that base walk may see a non-public
                             // member (precision rule (a)), never whether it
                             // runs at all, so an ordinary field/local/
@@ -643,7 +642,7 @@ pub fn resolve_graph_with_model(
                         receiver_result = Some(rr);
                     }
                 }
-                // Unit A5 item 1: a chain-tail ref (one carrying
+                // A chain-tail ref (one carrying
                 // `receiver_call_owner`/`receiver_call_member`, `a.B().C`'s
                 // `.C`) resolves ONLY through the method-return hop above.
                 // `receiver_type_name` is `None` here in every way that hop
@@ -845,19 +844,19 @@ pub fn resolve_graph_with_model(
                         (&receiver_type_name, r.member.as_deref(), r.arg_count)
                     {
                         let exact_key = format!("{member} {receiver_type}");
-                        // Unit A3 item 3: the exact key misses for an
-                        // extension whose `this` parameter is a BASE of the
-                        // receiver rather than the receiver's own exact
-                        // type -- widen to the receiver's nominal closure
-                        // only once the exact key itself names no bucket,
-                        // and only when the receiver resolved in-graph
+                        // The exact key misses for an extension whose
+                        // `this` parameter is a BASE of the receiver
+                        // rather than the receiver's own exact type --
+                        // widen to the receiver's nominal closure only
+                        // once the exact key itself names no bucket, and
+                        // only when the receiver resolved in-graph
                         // (`receiver_def`, the same resolution tier (e)
                         // already computed). Applies to every typed
                         // receiver, `this.` included -- `receiver_def` is
                         // set identically for both.
                         //
-                        // Unit A5 item 2: the widened key names a DIFFERENT
-                        // type than the receiver (a base or an ancestor), so
+                        // The widened key names a DIFFERENT type than the
+                        // receiver (a base or an ancestor), so
                         // filter 3 below must not unify against the
                         // receiver's OWN type arguments once the key was
                         // widened -- `unify_args` is whichever picture is
@@ -911,8 +910,8 @@ pub fn resolve_graph_with_model(
                                 distinct.push(c.def_idx);
                             }
                         }
-                        // Unit A4 item 2: arity-gated exactly like the
-                        // precise tier's own `declares_here` check -- a
+                        // Arity-gated exactly like the precise tier's own
+                        // `declares_here` check -- a
                         // same-named instance member at an arity `arg_count`
                         // does not fall inside is not a veto, so this tier
                         // runs "exactly as for an undeclared member" for
@@ -1149,23 +1148,7 @@ pub fn resolve_graph_with_model(
                     &file_contexts,
                     &implementors_by_base_name,
                 );
-                let (resolution, to, candidates): (&str, Option<String>, Vec<Candidate>) =
-                    match classification {
-                        CtorDiResolution::Plain(i) => {
-                            ("plain", Some(index.defs[i].id.clone()), Vec::new())
-                        }
-                        CtorDiResolution::Closed(i) => {
-                            ("closed", Some(index.defs[i].id.clone()), Vec::new())
-                        }
-                        CtorDiResolution::OpenGeneric(i) => {
-                            ("open-generic", Some(index.defs[i].id.clone()), Vec::new())
-                        }
-                        CtorDiResolution::Ambiguous(idxs) => {
-                            ("ambiguous", None, capped_candidates(&index, idxs))
-                        }
-                        CtorDiResolution::Infra => ("infra", None, Vec::new()),
-                        CtorDiResolution::Unresolved => ("unresolved", None, Vec::new()),
-                    };
+                let (resolution, to, candidates) = classification.edge_parts(&index);
                 edges.push(Edge::CtorDi {
                     from_file: file.clone(),
                     from_line: r.line,
@@ -1210,6 +1193,14 @@ pub fn resolve_graph_with_model(
             }
         }
     }
+
+    append_dispatch_edges(
+        fragments_by_file,
+        &index,
+        &file_contexts,
+        &mut edges,
+        &mut edges_by_kind,
+    );
 
     // The full name index. Every name the mapped set declares, with the file
     // and line it is declared on: one entry per fragment def (its own `line`,

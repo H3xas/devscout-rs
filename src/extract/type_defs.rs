@@ -5,8 +5,8 @@ use tree_sitter::Node;
 use super::members::{
     raw_base_generic_args, raw_base_names, raw_extension_methods, raw_field_names, raw_field_types,
     raw_method_arities, raw_method_names, raw_method_params, raw_method_return_args,
-    raw_method_returns, raw_non_public_method_names, raw_property_names, raw_property_types,
-    raw_test_methods,
+    raw_method_returns, raw_non_public_method_names, raw_override_method_names, raw_property_names,
+    raw_property_types, raw_test_methods,
 };
 use super::refs::{push_ref, type_parameter_names_ordered};
 use super::text::{declared_name, named_children, text};
@@ -159,6 +159,7 @@ pub(super) fn record_type_def(
         non_public_methods: raw_non_public_method_names(node, src, kind),
         method_arities: raw_method_arities(node, src),
         method_params: raw_method_params(node, src, type_params),
+        override_methods: raw_override_method_names(node, src),
         end_line: node.end_position().row + 1,
     });
 }
@@ -211,6 +212,7 @@ pub(super) fn record_enum_members(
             non_public_methods: Vec::new(),
             method_arities: Vec::new(),
             method_params: Vec::new(),
+            override_methods: Vec::new(),
             end_line: member.end_position().row + 1,
         });
     }
