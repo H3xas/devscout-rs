@@ -379,7 +379,10 @@ scorecard as 0.2.0-specific until the next round. Release 0.4.0 changes resolver
 (heuristic tiers and recall), measured in
 [`docs/benchmarks/results/2026-09-resolver-precision.md`](docs/benchmarks/results/2026-09-resolver-precision.md).
 Release 0.5.0 changes no resolver output: it produces a byte-identical `graph.json` on the
-pinned corpus, so those figures carry over unchanged.
+pinned corpus, so those figures carry over unchanged. Release 0.6.0 raises the graph schema to
+3 and adds the `implements` and `overrides` edges, so its `graph.json` is not byte-identical to
+0.5.0's and the scorecard has not been re-measured against it; a repository whose code registers
+nothing through dependency injection gains no edges and answers as it did.
 
 A separate scripted-lane run measured **tool calls issued per task**: the index arm used fewer
 calls in all four query kinds, largest on references (5.0 vs 11.8 per lane, ~2.4x) — single-run

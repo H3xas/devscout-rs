@@ -7,14 +7,47 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-09
+
+A reach release: the graph learns which implementation a registered service resolves to, and
+`impact` can name files that live in another repository.
+
 ### Added
 
-- `import-edges <file> --repo <id>` loads a versioned cross-repo edge export into an auxiliary
-  artifact beside `graph.json`. `impact` then names files reached only through an imported edge
-  -- directly, or composed across a fileless message node -- each row carrying `why:
-  "imported-edge"`, the foreign repo id, and the export's provenance id. A re-import always
-  replaces the prior set wholesale; `impact --no-imports` skips it. A repo with no import
-  configured answers exactly as it did before.
+- **`import-edges <file> --repo <id>`** loads a versioned cross-repo edge export into an
+  auxiliary artifact beside `graph.json`, never touching the graph schema. `impact` then names
+  files reached only through an imported edge -- directly, or composed across a fileless message
+  node -- each row carrying `why: "imported-edge"`, the foreign repo id, and the export's
+  provenance id. Imported rows are capped and counted apart from the native ones, so an import
+  can never evict a native row. An invalid export is refused with exit 1 naming the offending
+  value, leaving any pre-existing artifact untouched; a successful import replaces the prior set
+  wholesale. `impact --no-imports` skips it, and a repo with no import configured answers exactly
+  as it did before.
+- **Dispatch edges from dependency-injection registrations.** A registration whose method name
+  begins `Add` or `TryAdd`, ends `Singleton`, `Scoped` or `Transient` and carries exactly two type
+  arguments becomes an `implements` edge from the implementation to the service type, provided
+  both resolve to exactly one in-graph definition. A member-level `implements` edge is then added
+  per matching interface method and an `overrides` edge per method carrying the literal `override`
+  modifier, scoped to the implementation types a registration named. Arity ties emit nothing,
+  matching the resolver's never-guess rule, and every other registration spelling -- keyed and
+  named included -- records nothing extra by construction. A repository with no registrations
+  gains no edges.
+- **`refs`, `read`, `impact` and `tests` traverse the two new edge kinds**, joining inbound and
+  outbound the same way `inherits` already does, with `--no-dispatch` on each verb to answer
+  without them.
+
+### Changed
+
+- **Graph schema 3.** `Edge::Implements` and `Edge::Overrides` with their `edges_by_kind`
+  counters, `FragDef.override_methods` and `Fragment.registrations` in the fragment shape, and
+  the fragment cache generation at v19 -- the first run after upgrading remaps.
+- **`src/cli.rs`, `src/render.rs` and `src/graph.rs` are thin module roots** over `src/cli/`
+  (one module per verb), `src/render/` (one module per verb) and `src/graph/` (one module per
+  artifact layer). Every public item kept the path it had, and `graph.json` is byte-identical
+  across each split on the pinned corpus.
+- The comment-hygiene scanner is the vendored canonical one, its `--selfcheck` runs in CI
+  alongside the scans, plan labels are a rejected comment class, and hook mode scopes itself the
+  way `--scan` does.
 
 ## [0.5.0] - 2026-09-07
 
