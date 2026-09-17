@@ -43,6 +43,10 @@ internal sealed class Options
     public List<string> PublishCalls { get; } = new();
 
     public List<string> ConsumerBases { get; } = new();
+
+    public string? CompilerFacts { get; set; }
+
+    public List<string> Capabilities { get; } = new();
 }
 
 /// <summary>Entry point. Registers MSBuild before any MSBuild-touching type is JIT-ed.</summary>
@@ -50,9 +54,11 @@ internal static class Program
 {
     private const string Usage = """
         usage: scout-semantic <path.sln|path.csproj> --root <repo-root> --out <refs.jsonl>
-                   [--emit mode[,mode]]      oracle | flowtrace-facts, repeatable (default: oracle)
+                   [--emit mode[,mode]]      oracle | flowtrace-facts | compiler-facts, repeatable (default: oracle)
                    [--units <units.jsonl>] [--defs <defs.jsonl>]
                    [--facts <path|->]        fact document, default out/facts/<repo>.json, - is stdout
+                   [--compiler-facts <path|->]  compiler-facts protocol document, - is stdout
+                   [--capabilities a,b]      requested capability names, repeatable, compiler-facts only
                    [--repo <id>]             repo id in the fact header (default: --root's last segment)
                    [--no-git]                do not stamp git identity in the fact header
                    [--publish-calls a,b]     extra publish method names, repeatable
@@ -64,6 +70,9 @@ internal static class Program
                    [--strict]                exit 2 on a failed project or an unresolved fact site
 
         --out is required only when `oracle` is among the emitted modes.
+        --compiler-facts is required only when `compiler-facts` is among the emitted modes; a
+        requested target/configuration/platform reuses --tfm and -p Configuration=/-p Platform=,
+        the same machinery every other mode already has.
 
         exit codes: 0 ok, 1 usage/IO, 2 strict failure, 3 zero projects loaded
         """;
@@ -73,6 +82,9 @@ internal static class Program
 
     /// <summary>The flow tracer's fact document.</summary>
     public const string EmitFacts = "flowtrace-facts";
+
+    /// <summary>The compiler-facts protocol document.</summary>
+    public const string EmitCompilerFacts = "compiler-facts";
 
     public static int Main(string[] args)
     {
@@ -153,7 +165,7 @@ internal static class Program
                 case "--emit":
                     foreach (var mode in Split(Value(arg)))
                     {
-                        if (mode is not (EmitOracle or EmitFacts))
+                        if (mode is not (EmitOracle or EmitFacts or EmitCompilerFacts))
                         {
                             throw new ArgumentException($"unknown --emit mode: {mode}");
                         }
@@ -164,6 +176,12 @@ internal static class Program
                     break;
                 case "--facts":
                     options.Facts = Value(arg);
+                    break;
+                case "--compiler-facts":
+                    options.CompilerFacts = Value(arg);
+                    break;
+                case "--capabilities":
+                    options.Capabilities.AddRange(Split(Value(arg)));
                     break;
                 case "--repo":
                     options.Repo = RepoId(Value(arg));
@@ -233,6 +251,11 @@ internal static class Program
         if (options.Emit.Contains(EmitOracle) && options.Out.Length == 0)
         {
             throw new ArgumentException("missing --out");
+        }
+
+        if (options.Emit.Contains(EmitCompilerFacts) && string.IsNullOrEmpty(options.CompilerFacts))
+        {
+            throw new ArgumentException("missing --compiler-facts");
         }
 
         return options;
@@ -318,6 +341,8 @@ internal static class Runner
         var factsWalker = options.Emit.Contains(Program.EmitFacts)
             ? new FactsWalker(options.PublishCalls, options.ConsumerBases)
             : null;
+        var wantCompilerFacts = options.Emit.Contains(Program.EmitCompilerFacts);
+        var compilerFacts = wantCompilerFacts ? new CompilerFactsAccumulator() : null;
 
         var walker = new Walker(paths, assemblyToUnit);
         var refs = new List<RefRecord>();
@@ -333,13 +358,16 @@ internal static class Runner
             var status = compilation is null ? "failed" : "ok";
             var files = new List<string>();
             var before = refs.Count;
+            var unitId = $"{loaded.Name}|{loaded.Tfm ?? "?"}";
 
             if (compilation is null)
             {
                 failedUnits++;
+                compilerFacts?.Missing.Add(unitId);
             }
             else
             {
+                compilerFacts?.CollectFromCompilation(compilation, unitId, paths);
                 foreach (var document in project.Documents)
                 {
                     var rel = paths.Relative(document.FilePath);
@@ -453,6 +481,15 @@ internal static class Runner
         if (factsWalker is not null)
         {
             var written = WriteFacts(options, paths, unitIds, facts, factsWalker.Unresolved);
+            if (written != 0)
+            {
+                return written;
+            }
+        }
+
+        if (compilerFacts is not null)
+        {
+            var written = CompilerFactsEmitter.Write(options, compilerFacts);
             if (written != 0)
             {
                 return written;
