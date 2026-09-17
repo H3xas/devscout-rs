@@ -1,0 +1,31 @@
+{
+  "format": "compiler-facts",
+  "contractVersion": 1,
+  "artifactSchemaVersion": 1,
+  "producer": { "name": "scout-semantic", "engineRevision": "1" },
+  "profile": { "target": "net9.0", "configuration": "Debug", "platform": "AnyCPU" },
+  "dependencyFingerprint": "f0e2aa25d0071aab4aa9de47f3a7629b783a5f17bf625b565f073b48e69d0c83",
+  "context": {
+    "schemaVersion": 1,
+    "contextFingerprint": "1e2d3c4b5a69788796a5b4c3d2e1f0a1b2c3d4e5f60718293a4b5c6d7e8f901",
+    "envelope": {
+      "fingerprint": "1e2d3c4b5a69788796a5b4c3d2e1f0a1b2c3d4e5f60718293a4b5c6d7e8f901",
+      "state": "complete"
+    }
+  },
+  "sourceSnapshot": { "headSha": "0000000000000000000000000000000000000f" },
+  "capabilities": { "requested": ["symbols", "diagnostics"], "provided": ["symbols", "diagnostics"] },
+  "completion": { "terminal": true },
+  "units": { "processed": ["Api|net9.0", "Shared|net9.0"], "missing": [] },
+  "coverage": { "state": "complete" },
+  "diagnostics": [
+    { "severity": "warning", "code": "CS0219", "message": "variable assigned but never used", "file": "Api/Widgets/Widget.cs", "line": 40 }
+  ],
+  "symbols": [
+    { "assembly": "Api", "type": "Api.Widgets.Widget", "member": "Render", "genericArity": 0, "overloadSignature": "()->void", "file": "Api/Widgets/Widget.cs", "line": 12, "spanEncoding": "utf16-code-unit" },
+    { "assembly": "Api", "type": "Api.Widgets.Widget", "member": "Render", "genericArity": 0, "overloadSignature": "(bool)->void", "file": "Api/Widgets/Widget.cs", "line": 12, "spanEncoding": "utf16-code-unit" },
+    { "assembly": "Api", "type": "Api.Widgets.Gadget", "member": "Render", "genericArity": 0, "overloadSignature": "()->void", "file": "Api/Widgets/Widget.cs", "line": 12, "spanEncoding": "utf16-code-unit" },
+    { "assembly": "Api", "type": "Api.Widgets.Widget", "member": "Bind", "genericArity": 0, "overloadSignature": "unresolved", "file": "Api/Widgets/Widget.cs", "line": 30, "spanEncoding": "utf16-code-unit", "unresolved": true },
+    { "assembly": "Api", "type": "Api.Widgets.Widget", "member": "Load", "genericArity": 0, "overloadSignature": "failed-binding", "file": "Api/Widgets/Widget.cs", "line": 40, "spanEncoding": "utf16-code-unit", "bindingFailed": true, "diagnostic": "CS1061" }
+  ]
+}

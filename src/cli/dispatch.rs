@@ -22,6 +22,7 @@ use super::answer::{
     emit_freshness_warning, emit_zero_hit_note, ZERO_HIT_FIND, ZERO_HIT_IMPACT, ZERO_HIT_TESTS,
 };
 use super::args::first_positional;
+use super::compiler_facts::cmd_compiler_facts;
 use super::coverage::cmd_tests;
 use super::find::cmd_find;
 use super::impact::cmd_impact;
@@ -67,6 +68,7 @@ query
   impact <file|symbol>       blast radius             [--hops N --no-guess --no-dispatch --no-imports --pick N --json|--compact]
   tests <symbol>             tests reaching a symbol  [--no-guess --no-dispatch --pick N --json|--compact]
   import-edges <file> --repo <id>  load a cross-repo edge export for `impact` to read
+  compiler-facts run|import|status  optional engine-derived facts [--target --configuration --platform]
   stats                      index + cache summary for this repo
 
 plumbing
@@ -189,6 +191,11 @@ pub fn dispatch(args: Vec<String>) {
             print_out(&out);
             process::exit(code);
         }
+        Some("compiler-facts") => {
+            let (code, out) = cmd_compiler_facts(&cwd, &args[2..]);
+            print_out(&out);
+            process::exit(code);
+        }
         Some("map") => {
             let (code, out) = cmd_map(&cwd, &args[2..]);
             print_out(&out);
@@ -210,7 +217,7 @@ pub fn dispatch(args: Vec<String>) {
             process::exit(code);
         }
         _ => {
-            eprintln!("usage: devscout <noop|parse|spans|extract-dump|hook|refs|read|impact|tests|find|import-edges|map|stats|clear|init> [args]");
+            eprintln!("usage: devscout <noop|parse|spans|extract-dump|hook|refs|read|impact|tests|find|import-edges|compiler-facts|map|stats|clear|init> [args]");
             process::exit(1);
         }
     }

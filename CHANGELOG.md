@@ -7,6 +7,21 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`compiler-facts run|import|status`** admits a versioned, optional compiler-derived fact
+  artifact -- either from a one-shot local engine run or from a build/CI-produced artifact --
+  through one Rust admission path, publishing it atomically beside `graph.json`. `map` and every
+  query verb never spawn the engine and never require the network; `status` reports
+  `coverage: syntax-only` when no artifact has ever been admitted. A mismatched engine revision,
+  contract version, requested profile, dependency fingerprint, compilation-context version or
+  fingerprint, or source-snapshot identity is refused with a stable reason and writes nothing; a
+  killed, timed-out, over-budget, truncated, malformed, or internally incoherent run leaves any
+  previously admitted artifact byte-identical. A structurally valid artifact declaring incomplete
+  coverage is still admitted, with its per-unit diagnostics, and is never reported as clean or
+  complete. The default CLI distribution carries no managed runtime, targeting pack or engine
+  assembly. See [Compiler facts](README.md#compiler-facts).
+
 ## [0.6.0] - 2026-09-09
 
 A reach release: the graph learns which implementation a registered service resolves to, and

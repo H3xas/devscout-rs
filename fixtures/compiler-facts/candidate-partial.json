@@ -1,0 +1,33 @@
+{
+  "format": "compiler-facts",
+  "contractVersion": 1,
+  "artifactSchemaVersion": 1,
+  "producer": { "name": "scout-semantic", "engineRevision": "1" },
+  "profile": { "target": "net9.0", "configuration": "Debug", "platform": "AnyCPU" },
+  "dependencyFingerprint": "f0e2aa25d0071aab4aa9de47f3a7629b783a5f17bf625b565f073b48e69d0c83",
+  "context": {
+    "schemaVersion": 1,
+    "contextFingerprint": "1e2d3c4b5a69788796a5b4c3d2e1f0a1b2c3d4e5f60718293a4b5c6d7e8f901",
+    "envelope": {
+      "fingerprint": "1e2d3c4b5a69788796a5b4c3d2e1f0a1b2c3d4e5f60718293a4b5c6d7e8f901",
+      "state": "partial"
+    }
+  },
+  "sourceSnapshot": { "headSha": "0000000000000000000000000000000000000f" },
+  "capabilities": { "requested": ["symbols", "diagnostics"], "provided": ["symbols", "diagnostics"] },
+  "completion": { "terminal": true },
+  "units": { "processed": ["Api|net9.0", "Shared|net9.0"], "missing": [] },
+  "coverage": {
+    "state": "incomplete",
+    "incompleteUnits": [
+      { "unit": "Api|net9.0", "reason": "CS1061: 'Widget' does not contain a definition for 'Load'" }
+    ]
+  },
+  "diagnostics": [
+    { "severity": "error", "code": "CS1061", "message": "'Widget' does not contain a definition for 'Load'", "file": "Api/Widgets/Widget.cs", "line": 40 }
+  ],
+  "symbols": [
+    { "assembly": "Api", "type": "Api.Widgets.Widget", "member": "Render", "genericArity": 0, "overloadSignature": "()->void", "file": "Api/Widgets/Widget.cs", "line": 12, "spanEncoding": "utf16-code-unit" },
+    { "assembly": "Shared", "type": "Shared.Bus", "member": "Publish", "genericArity": 1, "overloadSignature": "(T)->void", "file": "Shared/Bus.cs", "line": 8, "spanEncoding": "utf16-code-unit" }
+  ]
+}

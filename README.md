@@ -22,6 +22,7 @@ much.
 | `devscout read <symbol>` | The symbol's declaration span and verbatim source plus the same inbound answer as `refs` |
 | `devscout impact <file\|symbol>` | Blast radius: the files reachable from a seed within N hops |
 | `devscout import-edges <file> --repo <id>` | Load a versioned cross-repo edge export; `impact` then reports files reached only through it (`--no-imports` to skip it) |
+| `devscout compiler-facts run\|import\|status` | Optional: acquire or import a versioned compiler-derived fact artifact (see [Compiler facts](#compiler-facts)); `map` and every query never need it and never start it |
 | `devscout tests <symbol>` | The test files that reach a symbol |
 | `devscout <verb> <symbol> --pick N` | On any of the four verbs above, narrows a member seed with several declaring types to its nth candidate |
 | `devscout stats` | Index and cache summary for the current repo |
@@ -159,6 +160,7 @@ untracked files and are shared correctly by worktrees:
 <git-common-dir>/scout/graph/graph.json           definitions, edges, and project units
 <git-common-dir>/scout/graph/fragments-v19.json   per-file extraction cache (incremental map)
 <git-common-dir>/scout/graph/project-units.json   csproj staleness sidecar (present only with a project model)
+<git-common-dir>/scout/graph/compiler-facts-v1.json  optional versioned compiler-fact artifact (see Compiler facts below); absent unless `compiler-facts run|import` has admitted one
 <git-common-dir>/scout/graph/semantic-v1.json      planned: compiler-backed enrichment cache (see docs/design/compiler-enrichment.md)
 <git-common-dir>/scout/log/queries.jsonl          query-verb telemetry, one JSON line per answered invocation (opt-in; SCOUT_TELEMETRY=1)
 ```
@@ -183,7 +185,33 @@ Two stores live outside the repo:
 | `SCOUT_MTIME_REUSE` | `1` switches `map` from content-hash fragment reuse back to mtime-based reuse. |
 | `SCOUT_DEBUG` | `1` turns on hook debug output. Equivalent to creating a `.scout/debug` file. |
 | `SCOUT_TELEMETRY` | Opt-in query telemetry. Export `1` in the shell that runs `find`/`refs`/`read`/`impact`/`tests` to append one JSON line per answered invocation to `scout/log/queries.jsonl`; a usage error or a seed with no resolved repository or graph logs nothing. Unset (or any other value) writes nothing. The agent hooks never run these verbs, so `devscout init` does not set this variable for them. |
+| `SCOUT_COMPILER_ENGINE` | Path to a built compiler-facts engine executable. Read only by `compiler-facts run`; no default and nothing is downloaded. Unset (or empty) refuses with one line and touches nothing. |
 | `HOME` | Used to locate the registry, content database, and agent settings file. |
+
+## Compiler facts
+
+`devscout compiler-facts run|import|status` is entirely optional: `map` and every query verb
+answer from source-level extraction alone and never spawn a compiler or touch the network. When a
+compiler-derived artifact has been admitted, a future consumer can layer compiler-checked facts on
+top of that same syntax-only coverage; today this verb group only acquires, validates and reports
+that artifact.
+
+- `run` launches a one-shot engine located by `SCOUT_COMPILER_ENGINE` (no default, nothing
+  downloaded), captures its output under a wall-clock timeout and a byte cap, and admits it.
+- `import <file>` admits a build- or CI-produced artifact through the identical admission path
+  `run` uses, so a locally acquired and an externally produced artifact reach the same accept or
+  refuse decision for the same bytes.
+- `status` is read-only and reports `coverage: syntax-only` when no artifact has ever been
+  admitted, or the admitted artifact's own coverage state otherwise.
+
+Every check runs before a single byte is published: a mismatched engine revision, contract
+version, requested profile, dependency fingerprint, compilation-context version or fingerprint, or
+source-snapshot identity is refused with a stable reason and writes nothing; a killed, timed-out,
+over-budget, truncated, malformed, or internally incoherent run leaves the previously admitted
+artifact byte-identical. A structurally valid artifact that declares incomplete coverage is still
+admitted, together with its per-unit diagnostics, and is never reported as clean or complete.
+Publication is atomic — a validate-then-rename through the same same-directory temp file scheme
+every other artifact in this crate already uses.
 
 ## Reading a symbol
 
