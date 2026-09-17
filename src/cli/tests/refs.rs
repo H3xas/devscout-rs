@@ -22,6 +22,7 @@ fn refs_json_appends_heuristic_then_source_last_and_omits_each_when_it_has_no_va
                 heuristic: false,
                 tier: None,
                 source: String::new(),
+                occurrence_index: None,
             },
             query::InboundRow {
                 file: "src/Guess.cs".into(),
@@ -29,6 +30,7 @@ fn refs_json_appends_heuristic_then_source_last_and_omits_each_when_it_has_no_va
                 heuristic: true,
                 tier: None,
                 source: "var w = new Widget();".into(),
+                occurrence_index: None,
             },
         ],
         true,
@@ -50,6 +52,7 @@ fn refs_json_appends_tier_after_heuristic_and_omits_it_on_a_precise_row() {
         heuristic: tier.is_some(),
         tier,
         source: String::new(),
+        occurrence_index: None,
     };
     let model = json_refs_model(
         vec![
@@ -85,6 +88,7 @@ fn refs_json_omits_the_outbound_key_entirely_without_out_and_keeps_its_slot_with
             heuristic: false,
             tier: None,
             source: String::new(),
+            occurrence_index: None,
         }]
     };
     let without = refs_model_to_json(&json_refs_model(row(), false));
@@ -119,6 +123,7 @@ fn member_refs_json_wraps_unchanged_resolved_models_under_status_query_members()
             heuristic: false,
             tier: None,
             source: String::new(),
+            occurrence_index: None,
         }]
     };
     let one = json_refs_model(row(), false);

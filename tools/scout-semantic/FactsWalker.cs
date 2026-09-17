@@ -326,6 +326,7 @@ internal sealed class FactsWalker
         if (ownerType.TypeKind == TypeKind.Class)
         {
             EmitAttributeRoutes(model, method, owner, ownerType.Name, relFile, sink);
+            EmitMethodCalls(model, method, ownerType, relFile, sink);
         }
     }
 
@@ -413,6 +414,102 @@ internal sealed class FactsWalker
 
             sink.Add(CtorField(relFile, LineOf(assignment), owner.Name, member.Name, parameter.Type));
         }
+    }
+
+    /// <summary>
+    /// The already-declared, already-consumer-documented <c>method_call</c>
+    /// slot (<c>class</c>, <c>method</c>, <c>field</c>, <c>calledMethod</c>):
+    /// a body calling a member on a constructor-injected field, the exact
+    /// scope <c>docs/fact-schema.md</c> (flowtrace-cli) publishes for this
+    /// kind. Narrower than every field access this file could in principle
+    /// resolve: the receiver must be exactly one field <see
+    /// cref="InjectedFields"/> proves was ctor-injected, not an arbitrary
+    /// member or a chained call.
+    /// </summary>
+    private void EmitMethodCalls(
+        SemanticModel model, MethodDeclarationSyntax method, INamedTypeSymbol owner, string relFile, List<FactRecord> sink)
+    {
+        if (method.Body is not { } body)
+        {
+            return;
+        }
+
+        var injected = InjectedFields(model, owner);
+        if (injected.Count == 0)
+        {
+            return;
+        }
+
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var invocation in Inside(body).OfType<InvocationExpressionSyntax>())
+        {
+            if (ReceiverOf(invocation.Expression) is not { } receiver
+                || MemberOf(model, receiver, owner) is not { } field
+                || !injected.Contains(field)
+                || InvokedName(model, invocation) is not { } calledMethod
+                || !seen.Add(field.Name + " " + calledMethod + " " + LineOf(invocation)))
+            {
+                continue;
+            }
+
+            sink.Add(new FactRecord("method_call", relFile, LineOf(invocation))
+                .With("class", owner.Name)
+                .With("method", method.Identifier.ValueText)
+                .With("field", field.Name)
+                .With("calledMethod", calledMethod));
+        }
+    }
+
+    /// <summary>
+    /// Every field/property of <paramref name="owner"/> that some constructor
+    /// of it assigns straight from one of that constructor's own parameters
+    /// (the same <c>_x = x</c> / null-guard shape <see
+    /// cref="EmitConstructorFields"/> recognises for <c>ctor_field</c>) --
+    /// the set <see cref="EmitMethodCalls"/> treats as "injected". Only a
+    /// constructor declared in <paramref name="model"/>'s OWN syntax tree is
+    /// read: a Roslyn <see cref="SemanticModel"/> only answers for the tree
+    /// it was built from, so a constructor-injected field assigned in a
+    /// DIFFERENT file of a partial class is a known, accepted miss here
+    /// rather than a second model lookup this sidecar does not otherwise need.
+    /// </summary>
+    private static HashSet<ISymbol> InjectedFields(SemanticModel model, INamedTypeSymbol owner)
+    {
+        var fields = new HashSet<ISymbol>(SymbolEqualityComparer.Default);
+        foreach (var constructor in owner.Constructors)
+        {
+            if (constructor.Parameters.Length == 0)
+            {
+                continue;
+            }
+
+            foreach (var reference in constructor.DeclaringSyntaxReferences)
+            {
+                if (reference.SyntaxTree != model.SyntaxTree
+                    || reference.GetSyntax() is not ConstructorDeclarationSyntax declaration)
+                {
+                    continue;
+                }
+
+                SyntaxNode? body = declaration.Body ?? (SyntaxNode?)declaration.ExpressionBody;
+                if (body is null)
+                {
+                    continue;
+                }
+
+                var parameters = new HashSet<ISymbol>(constructor.Parameters, SymbolEqualityComparer.Default);
+                foreach (var assignment in Inside(body).OfType<AssignmentExpressionSyntax>())
+                {
+                    if (assignment.IsKind(SyntaxKind.SimpleAssignmentExpression)
+                        && ParameterOf(model, assignment.Right, parameters) is not null
+                        && MemberOf(model, assignment.Left, owner) is { } member)
+                    {
+                        fields.Add(member);
+                    }
+                }
+            }
+        }
+
+        return fields;
     }
 
     private void EmitPrimaryCtorField(

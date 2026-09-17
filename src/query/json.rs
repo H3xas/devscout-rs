@@ -162,9 +162,18 @@ fn why_for_row(kind: RowKind, heuristic: bool, tier: Option<graph::HeuristicTier
     }
 }
 
-// `why` is appended absolute LAST on every row shape below, after `source`
-// (present or not) -- the same append-last convention every other additive
-// field in this file follows.
+// `why` was the absolute-last key on every row shape below until
+// `occurrenceIndex` joined it: `why` is still appended after `source`
+// (present or not), the same append-last convention every other additive
+// field in this file follows, and `occurrenceIndex` is now appended after
+// `why` -- present only when this row shares every other field with a
+// sibling in the same table, omitted otherwise, so a row untouched by a
+// collision keeps the exact bytes it had before this field existed.
+fn push_occurrence(fields: &mut Vec<(&'static str, J)>, occurrence_index: Option<usize>) {
+    if let Some(i) = occurrence_index {
+        fields.push(("occurrenceIndex", J::UInt(i as u64)));
+    }
+}
 fn j_inbound_row(r: &query::InboundRow, kind: RowKind) -> J {
     let mut fields = vec![
         ("file", J::Str(r.file.clone())),
@@ -180,6 +189,7 @@ fn j_inbound_row(r: &query::InboundRow, kind: RowKind) -> J {
         "why",
         J::Str(why_for_row(kind, r.heuristic, r.tier).as_str().to_string()),
     ));
+    push_occurrence(&mut fields, r.occurrence_index);
     J::Obj(fields)
 }
 fn j_outbound_row(r: &query::OutboundRow, kind: RowKind) -> J {
@@ -199,6 +209,7 @@ fn j_outbound_row(r: &query::OutboundRow, kind: RowKind) -> J {
         "why",
         J::Str(why_for_row(kind, r.heuristic, r.tier).as_str().to_string()),
     ));
+    push_occurrence(&mut fields, r.occurrence_index);
     J::Obj(fields)
 }
 fn j_import_row(r: &query::ImportRow) -> J {

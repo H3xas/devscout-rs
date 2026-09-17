@@ -115,6 +115,24 @@
       "endLine": 28
     },
     {
+      "type": "method_call",
+      "file": "src/Api/Consumers/DeliveryScheduledConsumer.cs",
+      "line": 26,
+      "class": "DeliveryScheduledConsumer",
+      "method": "NotifyLost",
+      "field": "_repository",
+      "calledMethod": "Find"
+    },
+    {
+      "type": "method_call",
+      "file": "src/Api/Consumers/DeliveryScheduledConsumer.cs",
+      "line": 27,
+      "class": "DeliveryScheduledConsumer",
+      "method": "NotifyLost",
+      "field": "_bus",
+      "calledMethod": "Publish"
+    },
+    {
       "type": "publish",
       "file": "src/Api/Consumers/DeliveryScheduledConsumer.cs",
       "line": 27,
@@ -271,6 +289,15 @@
       "endLine": 29
     },
     {
+      "type": "method_call",
+      "file": "src/Api/Controllers/ParcelsController.cs",
+      "line": 27,
+      "class": "ParcelsController",
+      "method": "Get",
+      "field": "_repository",
+      "calledMethod": "Find"
+    },
+    {
       "type": "route",
       "file": "src/Api/Controllers/ParcelsController.cs",
       "line": 31,
@@ -286,6 +313,15 @@
       "class": "ParcelsController",
       "method": "Create",
       "endLine": 36
+    },
+    {
+      "type": "method_call",
+      "file": "src/Api/Controllers/ParcelsController.cs",
+      "line": 34,
+      "class": "ParcelsController",
+      "method": "Create",
+      "field": "_bus",
+      "calledMethod": "Publish"
     },
     {
       "type": "publish",
@@ -472,6 +508,15 @@
       "class": "GetParcelHandler",
       "method": "Handle",
       "endLine": 25
+    },
+    {
+      "type": "method_call",
+      "file": "src/Api/Handlers/GetParcelHandler.cs",
+      "line": 23,
+      "class": "GetParcelHandler",
+      "method": "Handle",
+      "field": "_repository",
+      "calledMethod": "Find"
     },
     {
       "type": "iface_impl",

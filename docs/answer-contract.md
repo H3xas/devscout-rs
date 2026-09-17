@@ -120,6 +120,52 @@ An `impact` row can fold more than one edge kind into a single per-file summary;
 the strongest evidence wins -- an explicit `ctor-di` site over a plain resolved reference, over
 the broader interface hop, over a guess, in that order.
 
+## `freshness`
+
+`refs`, `read`, `impact` and `tests` (`find` has no `--json` shape) append a top-level `freshness`
+object as their true last key -- after `occurrenceIndex` when that key is also present, after
+`outcome` otherwise. It is always present under `--json`, on every outcome, not only a resolved
+hit: it is a property of the index at query time, not of the specific query.
+
+`freshness.state` is one of three words:
+
+| `state` | Meaning | Other keys |
+| --- | --- | --- |
+| `"fresh"` | The index was built at the working tree's current HEAD and no indexed file has gone dirty since. | none |
+| `"stale"` | The index is behind the working tree. | `indexedHead`, `currentHead` (both full-length, unlike the truncated stderr warning), `changedFiles` (indexed files dirty now but not at index time) |
+| `"unknown"` | Freshness could not be established either way. | `reason`: `"no-index-state"` (no `index-state.json` sidecar, or it did not parse -- an index built before this key existed, or a corrupt one) or `"git-unavailable"` (`git rev-parse HEAD` did not resolve) |
+
+This exposes, to a programmatic consumer, exactly the condition
+`src/manifest.rs::freshness_warning` already prints as a one-line stderr note for a human -- the
+two are computed from the same primitives and can never disagree about the underlying facts. The
+stderr note collapses "no index-state.json", "git unavailable" and "genuinely fresh" into the same
+silence; `freshness.state` keeps them apart, because a script cannot read stderr silence as three
+different things. No native precise tier is upgraded or downgraded by this key -- it says whether
+the index is current, not whether any individual row is trustworthy.
+
+## `occurrenceIndex`
+
+Two rows of one inbound or outbound table on `refs`/`read` can otherwise serialize to
+byte-identical JSON objects -- for example, two calls to the same target on the same line. When
+that happens, each of the colliding rows carries `occurrenceIndex`: a 0-based integer, assigned in
+the table's existing stable emission order, appended as the row's last key (after `why`) and
+omitted (`Option::is_none`) on every row that has no such collision. It is present **only** when
+two or more rows of the *same table* of the *same answer* would otherwise be indistinguishable on
+every other field they carry.
+
+`occurrenceIndex` is scoped to one table of one answer against one graph snapshot. It is **not** a
+cross-query, cross-table or cross-snapshot identity: the same call site can carry a different
+`occurrenceIndex` on a later run against a changed snapshot, or none at all once a sibling that
+used to collide with it is edited away. A consumer that needs a stable identity across runs must
+not read this field as one.
+
+A row truncated away by an existing cap (`INBOUND_CAP`/`OUTBOUND_CAP`/`--all` lifts both) is
+counted in the table's own `dropped`, exactly as before this field existed, and is never assigned
+or implied an `occurrenceIndex` -- truncation stays truncation, never a silent merge.
+
+This key is additive under the forward-compatibility rule above: it is new, appended last, and
+`schema_version` does not move.
+
 ## One worked example per verb
 
 Each example below is a real `--json` run against a fixture in this repository

@@ -88,6 +88,10 @@ fn required_fields() -> BTreeMap<&'static str, &'static [&'static str]> {
         ("di_binding", &["iface", "impl"][..]),
         ("iface_impl", &["class", "iface"][..]),
         ("message_class", &["name", "fqn"][..]),
+        (
+            "method_call",
+            &["class", "method", "field", "calledMethod"][..],
+        ),
         ("method_span", &["class", "method", "endLine"][..]),
         ("publish", &["message"][..]),
         ("route", &["controller", "action", "verb", "template"][..]),
@@ -324,6 +328,23 @@ fn semantic_resolution_shows_where_regexes_stop() {
     let invoice = find("ctor_field", &|f| f["field"] == "invoice")
         .expect("lambda parameter from a namespace starting with `System`");
     assert_eq!(invoice["paramTypeFqn"], "Systematic.Billing.Invoice");
+    // A call to a member on a constructor-injected field is a method_call,
+    // naming the calling method and the called member -- the declared,
+    // previously unpopulated slot this ticket fills.
+    let method_call = find("method_call", &|f| {
+        f["class"] == "DeliveryScheduledConsumer" && f["field"] == "_repository"
+    })
+    .expect("a call on a ctor-injected field");
+    assert_eq!(method_call["method"], "NotifyLost");
+    assert_eq!(method_call["calledMethod"], "Find");
+    // A field injected without a null-guard (plain `_bus = bus;`) still
+    // counts as constructor-injected, so a call on it is method_call too.
+    assert!(
+        find("method_call", &|f| f["field"] == "_bus"
+            && f["calledMethod"] == "Publish")
+        .is_some(),
+        "a directly assigned (no null-guard) ctor-injected field still yields method_call"
+    );
     // A partial consumer yields one consume fact, on the part carrying the
     // base list.
     let partial: Vec<_> = all

@@ -215,5 +215,5 @@ pub(crate) fn cmd_impact(cwd: &Path, args: &[String]) -> (i32, String) {
             }
         }
     };
-    finish_query(&root, "impact", q, start, answer)
+    finish_query(&root, "impact", q, start, json, answer)
 }
