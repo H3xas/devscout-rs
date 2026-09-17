@@ -1,0 +1,115 @@
+name: Semantic-truth profile probes
+
+# Separate from ci.yml (push/pull_request only): this job's cost is
+# scheduled, not paid on every pull request. It regenerates and diffs the
+# committed capability matrix offline, then smoke-probes each demonstrated
+# profile's target framework against the pinned SDK. A probe failure never
+# promotes or demotes the committed registry by itself -- a registry state
+# only ever changes through a reviewed manifest edit; this workflow reports
+# reproducibility as a signal for that review, nothing more.
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  matrix-regenerate:
+    name: Capability matrix regenerates offline
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install stable Rust toolchain
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
+        with:
+          toolchain: stable
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: cargo test --test semantic_truth_matrix (regenerate-and-diff)
+        run: cargo test --locked --test semantic_truth_matrix
+
+  profile-probe:
+    name: Smoke-probe ${{ matrix.profile }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - profile: csharp-net8.0-sdk
+            tfm: net8.0
+          - profile: csharp-netcoreapp3.1-sdk
+            tfm: netcoreapp3.1
+          - profile: csharp-netstandard2.1-library
+            tfm: netstandard2.1
+          - profile: csharp-net472-framework
+            tfm: net472
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: |
+            8.0.x
+            3.1.x
+
+      # net472 has no SDK band of its own on a Linux runner; the probe
+      # targets it through the reference-assembly package instead of a
+      # separate dotnet-version install.
+      - name: Scaffold a minimal probe project for ${{ matrix.tfm }}
+        run: |
+          mkdir -p out/profile-probe
+          cat > out/profile-probe/Probe.csproj <<EOF
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup>
+              <TargetFramework>${{ matrix.tfm }}</TargetFramework>
+              <Nullable>disable</Nullable>
+              <ImplicitUsings>disable</ImplicitUsings>
+            </PropertyGroup>
+          EOF
+          if [ "${{ matrix.tfm }}" = "net472" ]; then
+            cat >> out/profile-probe/Probe.csproj <<EOF
+            <ItemGroup>
+              <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+            </ItemGroup>
+          EOF
+          fi
+          cat >> out/profile-probe/Probe.csproj <<EOF
+          </Project>
+          EOF
+          cat > out/profile-probe/Probe.cs <<'EOF'
+          namespace Truth.ProfileProbe;
+
+          public sealed class Marker { }
+          EOF
+
+      # A probe failure is recorded, not treated as a workflow failure: an
+      # unreproducible target registers `unavailable` in a reviewed
+      # manifest edit rather than being forced green here.
+      - name: Build the probe project
+        id: probe
+        continue-on-error: true
+        run: dotnet build out/profile-probe/Probe.csproj -c Release
+
+      - name: Report probe outcome
+        run: |
+          if [ "${{ steps.probe.outcome }}" = "success" ]; then
+            echo "${{ matrix.profile }}: reproducible offline (smoke-tested)"
+          else
+            echo "${{ matrix.profile }}: NOT reproducible offline in this run -- registers unavailable pending review, never forced smoke-tested"
+          fi

@@ -1,0 +1,192 @@
+{
+  "schemaVersion": 1,
+  "contract": "semantic-truth-v1",
+  "cases": [
+    {
+      "id": "overload-arity-a",
+      "scenarioFamily": "shared-language-semantics",
+      "language": "csharp",
+      "profiles": ["csharp-net8.0-sdk"],
+      "prerequisites": [],
+      "factContract": "semantic-truth-v1",
+      "source": ["src/Overloads.cs"],
+      "expect": {
+        "context": "complete",
+        "present": [
+          {
+            "identity": {
+              "assembly": "Truth.Overloads",
+              "declaringType": "Truth.Overloads.Pinger",
+              "member": "Ping",
+              "genericArity": 0,
+              "overloadSignature": "Ping(int)",
+              "compilation": { "project": "csharp-truth", "tfm": "net8.0", "configuration": "Release" }
+            },
+            "occurrence": { "file": "src/Overloads.cs", "startLine": 14, "startCol": 16, "endLine": 14, "endCol": 23 },
+            "state": "confirmed"
+          },
+          {
+            "identity": {
+              "assembly": "Truth.Overloads",
+              "declaringType": "Truth.Overloads.Pinger",
+              "member": "Ping",
+              "genericArity": 0,
+              "overloadSignature": "Ping(string)",
+              "compilation": { "project": "csharp-truth", "tfm": "net8.0", "configuration": "Release" }
+            },
+            "occurrence": { "file": "src/Overloads.cs", "startLine": 14, "startCol": 32, "endLine": 14, "endCol": 41 },
+            "state": "confirmed"
+          }
+        ],
+        "absent": [],
+        "unresolved": [],
+        "diagnostics": []
+      },
+      "provenance": { "kind": "reviewed" }
+    },
+    {
+      "id": "generic-arity-a",
+      "scenarioFamily": "shared-language-semantics",
+      "language": "csharp",
+      "profiles": ["csharp-net8.0-sdk"],
+      "prerequisites": [],
+      "factContract": "semantic-truth-v1",
+      "source": ["src/GenericArity.cs"],
+      "expect": {
+        "context": "complete",
+        "present": [
+          {
+            "identity": {
+              "assembly": "Truth.GenericArity",
+              "declaringType": "Truth.GenericArity.Handler",
+              "member": "Handle",
+              "genericArity": 1,
+              "overloadSignature": "Handle<T>(T)",
+              "compilation": { "project": "csharp-truth", "tfm": "net8.0", "configuration": "Release" }
+            },
+            "occurrence": { "file": "src/GenericArity.cs", "startLine": 14, "startCol": 17, "endLine": 14, "endCol": 26 },
+            "state": "confirmed"
+          },
+          {
+            "identity": {
+              "assembly": "Truth.GenericArity",
+              "declaringType": "Truth.GenericArity.Handler",
+              "member": "Handle",
+              "genericArity": 2,
+              "overloadSignature": "Handle<T1, T2>(T1, T2)",
+              "compilation": { "project": "csharp-truth", "tfm": "net8.0", "configuration": "Release" }
+            },
+            "occurrence": { "file": "src/GenericArity.cs", "startLine": 15, "startCol": 17, "endLine": 15, "endCol": 33 },
+            "state": "confirmed"
+          }
+        ],
+        "absent": [],
+        "unresolved": [],
+        "diagnostics": []
+      },
+      "provenance": { "kind": "reviewed" }
+    },
+    {
+      "id": "implementation-identity-a",
+      "scenarioFamily": "shared-language-semantics",
+      "language": "csharp",
+      "profiles": ["csharp-net8.0-sdk"],
+      "prerequisites": [],
+      "factContract": "semantic-truth-v1",
+      "source": ["src/ImplementationIdentity.cs"],
+      "expect": {
+        "context": "complete",
+        "present": [
+          {
+            "identity": {
+              "assembly": "Truth.ImplementationIdentity",
+              "declaringType": "Truth.ImplementationIdentity.Greeter",
+              "member": "Greet",
+              "genericArity": 0,
+              "overloadSignature": "Greet()",
+              "compilation": { "project": "csharp-truth", "tfm": "net8.0", "configuration": "Release" }
+            },
+            "occurrence": { "file": "src/ImplementationIdentity.cs", "startLine": 17, "startCol": 17, "endLine": 17, "endCol": 24 },
+            "state": "confirmed"
+          }
+        ],
+        "absent": [
+          {
+            "identity": {
+              "assembly": "Truth.ImplementationIdentity",
+              "declaringType": "Truth.ImplementationIdentity.IGreeter",
+              "member": "Greet",
+              "genericArity": 0,
+              "overloadSignature": "Greet()",
+              "compilation": { "project": "csharp-truth", "tfm": "net8.0", "configuration": "Release" }
+            }
+          }
+        ],
+        "unresolved": [],
+        "diagnostics": []
+      },
+      "provenance": { "kind": "reviewed" }
+    },
+    {
+      "id": "failed-binding-healthy-unit-a",
+      "scenarioFamily": "compatibility-boundaries",
+      "language": "csharp",
+      "profiles": ["csharp-net8.0-sdk"],
+      "prerequisites": [],
+      "factContract": "semantic-truth-v1",
+      "source": ["src/FailedBinding.cs"],
+      "expect": {
+        "context": "complete",
+        "present": [],
+        "absent": [],
+        "unresolved": [
+          {
+            "identity": {
+              "assembly": "Truth.FailedBinding",
+              "declaringType": "<unresolved>",
+              "member": "Publish",
+              "genericArity": 0,
+              "overloadSignature": "Publish(Payload)",
+              "compilation": { "project": "csharp-truth", "tfm": "net8.0", "configuration": "Release" }
+            },
+            "occurrence": { "file": "src/FailedBinding.cs", "startLine": 9, "startCol": 20, "endLine": 9, "endCol": 42 },
+            "state": "unresolved",
+            "reason": "MissingApi is not a declared type; the call cannot bind to anything, even though the owning unit otherwise reports healthy"
+          }
+        ],
+        "diagnostics": []
+      },
+      "provenance": { "kind": "reviewed" }
+    },
+    {
+      "id": "dropped-project-a",
+      "scenarioFamily": "transformations",
+      "language": "csharp",
+      "profiles": ["csharp-net8.0-sdk"],
+      "prerequisites": ["both-projects-requested"],
+      "factContract": "semantic-truth-v1",
+      "source": ["src/DroppedProject/ProjectA/A.cs", "src/DroppedProject/ProjectB/B.cs"],
+      "expect": {
+        "context": "complete",
+        "present": [
+          {
+            "identity": {
+              "assembly": "Truth.DroppedProject.B",
+              "declaringType": "Truth.DroppedProject.B.Loader",
+              "member": "Load",
+              "genericArity": 0,
+              "overloadSignature": "Load()",
+              "compilation": { "project": "ProjectA", "tfm": "net8.0", "configuration": "Release" }
+            },
+            "occurrence": { "file": "src/DroppedProject/ProjectA/A.cs", "startLine": 7, "startCol": 16, "endLine": 7, "endCol": 22 },
+            "state": "confirmed"
+          }
+        ],
+        "absent": [],
+        "unresolved": [],
+        "diagnostics": []
+      },
+      "provenance": { "kind": "reviewed" }
+    }
+  ]
+}
