@@ -44,3 +44,6 @@ fixtures/**/bin/
 fixtures/**/obj/
 tools/**/bin/
 tools/**/obj/
+
+# Python bytecode cache from running tools/qualify-dotnet-targets.py.
+tools/__pycache__/

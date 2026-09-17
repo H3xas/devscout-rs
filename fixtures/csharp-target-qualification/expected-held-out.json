@@ -1,0 +1,36 @@
+{
+  "_comment": "AC-5 pre-registered thresholds for the held-out family (Serilog), by stratum, committed before the held-out run. A run whose figures fall below a minimum or above a maximum is a registered miss, published as a miss -- not a reason to relax this file.",
+  "corpus": "csharp-target-held-out",
+  "strata": {
+    "modern": {
+      "tfms": ["net5.0", "net6.0", "net7.0", "net8.0", "net9.0"],
+      "precision": { "min": 0.90 },
+      "recall": { "min": 0.60 },
+      "unsupported_coverage": { "min": 1.0 }
+    },
+    "netstandard": {
+      "tfms": ["netstandard2.0", "netstandard2.1"],
+      "precision": { "min": 0.90 },
+      "recall": { "min": 0.50 },
+      "unsupported_coverage": { "min": 1.0 }
+    },
+    "netcoreapp3.1": {
+      "tfms": ["netcoreapp3.1"],
+      "precision": { "min": 0.90 },
+      "recall": { "min": 0.50 },
+      "unsupported_coverage": { "min": 1.0 }
+    },
+    "framework-f1": {
+      "tfms": ["net40", "net472", "net48"],
+      "precision": { "min": 0.85 },
+      "recall": { "min": 0.30 },
+      "unsupported_coverage": { "min": 1.0 },
+      "note": "a lower recall floor is expected: the held-out family is not guaranteed to multi-target every Framework profile, and a narrower-than-hoped breadth is a published gap, not a blocker"
+    }
+  },
+  "exclusions": {
+    "netcoreapp1x_2x": "excluded by operator instruction",
+    "netcoreapp3.0": "unqualified",
+    "framework_pre_4_0": "excluded by operator instruction"
+  }
+}

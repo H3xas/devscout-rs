@@ -1,0 +1,72 @@
+{
+  "context_acquisition": {
+    "build_exit_code": 0,
+    "expected_documents": [
+      "PositiveCase.cs",
+      "Collision.cs",
+      "Wrapper.cs",
+      "UnknownFramework.cs",
+      "Generated.cs"
+    ],
+    "loaded_documents": [
+      "deep/net472-deep/Collision.cs",
+      "deep/net472-deep/Generated.cs",
+      "deep/net472-deep/UnknownFramework.cs",
+      "deep/net472-deep/Wrapper.cs",
+      "shared/PositiveCase.cs"
+    ],
+    "project_format": "sdk-style",
+    "reference_source": "microsoft.netframework.referenceassemblies@1.0.3",
+    "restore_exit_code": 0,
+    "sdk": "9.0.305",
+    "state": "passing"
+  },
+  "execution_assumptions": {
+    "state": "static-only"
+  },
+  "framework_modeling": {
+    "reason": "no framework adapter is exercised by this deep-case bundle; the unknown-framework case stays candidate on name evidence alone (see case_families.unknown_framework)",
+    "state": "not-claimed"
+  },
+  "kind": "deep",
+  "profile_id": "csharp73-net472-deep",
+  "semantic_conformance": {
+    "case_families": {
+      "collision": {
+        "observed": true,
+        "provenance": "independent"
+      },
+      "generated_input": {
+        "observed": true,
+        "provenance": "independent"
+      },
+      "incompatible_reference": {
+        "case": "incompatible_reference",
+        "diagnostic_excerpt": "<repo>/fixtures/csharp-target-qualification/deep/net472-deep/IncompatibleRefProbe/Probe.csproj : error NU1201: Project IncompatibleRefModern is not compatible with net472 (.NETFramework,Version=v4.7.2). Project IncompatibleRefModern supports: net8.0 (.NETCoreApp,Version=v8.0)",
+        "direction": "framework-referencing-modern",
+        "expected_restore_failure": true,
+        "observed_restore_failure": true,
+        "provenance": "independent",
+        "restore_exit_code": 1
+      },
+      "unknown_framework": {
+        "framework_modeling": "candidate",
+        "observed": true,
+        "provenance": "independent",
+        "reason": "name and method-name shape only; no base type, interface or attribute ties it to a framework"
+      },
+      "wrapper": {
+        "observed": true,
+        "provenance": "independent"
+      }
+    },
+    "positive_case_bound": true,
+    "state": "passing"
+  },
+  "tfm": "net472",
+  "track": "framework-f1",
+  "unsupported_state": {
+    "reason": "every deep-case family produced its expected evidence",
+    "state": "passing"
+  }
+}

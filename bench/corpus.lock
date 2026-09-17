@@ -26,3 +26,13 @@ license = "MIT"
 kind = "web"
 status = "registered"
 note = "Pinned at tag 22.5.4 (2026-08-25). Sized for the web kind; no lane has run against it yet."
+
+[csharp-target-held-out]
+id = "csharp-target-held-out"
+repo = "serilog/serilog"
+url = "https://github.com/serilog/serilog.git"
+sha = "4c9a312bc72e335897553472d0a2e91819bc51b1"
+license = "Apache-2.0"
+kind = "code"
+status = "registered"
+note = "Pinned at tag v2234 (2026-09-17). Held-out family for the .NET target/project/framework qualification matrix; independent lineage from the [csharp] MassTransit development corpus. Multi-targets net8.0, net6.0 and netstandard2.0 unconditionally, plus net471/net462 on a Windows build only. Any future Serilog-ecosystem sink repository joins this same lineage group rather than becoming a second independent held-out family."

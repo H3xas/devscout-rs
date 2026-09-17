@@ -7,6 +7,17 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`docs/dotnet-target-coverage.md`** publishes a per-target, per-project-system capability
+  matrix for the compiler-fact path (`tools/scout-semantic`), separate from the language-level
+  construct catalogue: modern .NET, .NET Standard and `netcoreapp3.1` profiles measured from
+  their own exact compilation context, .NET Framework staged on its own track, and every
+  planned, unavailable, excluded or unqualified target kept visible rather than omitted. Pinned
+  by a new fixture tree (`fixtures/csharp-target-qualification/`), a new composition script
+  (`tools/qualify-dotnet-targets.py`) and a dotnet-free test
+  (`tests/dotnet_target_qualification.rs`); no `src/*.rs` change.
+
 ## [0.6.0] - 2026-09-09
 
 A reach release: the graph learns which implementation a registered service resolves to, and

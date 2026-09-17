@@ -1,0 +1,35 @@
+{
+  "context_acquisition": {
+    "build_exit_code": 1,
+    "p_declared_tfm": [
+      "net8.0"
+    ],
+    "q_declared_tfm": [
+      "net9.0"
+    ],
+    "restore_exit_code": 0,
+    "sdk": "9.0.305",
+    "state": "failing"
+  },
+  "execution_assumptions": {
+    "state": "static-only"
+  },
+  "framework_modeling": {
+    "reason": "not applicable to a substitution control",
+    "state": "not-claimed"
+  },
+  "kind": "control",
+  "profile_id": "control-reference-tfm-mismatch",
+  "semantic_conformance": {
+    "diagnostic_excerpt": "",
+    "note": "computed from the two projects' own declared TargetFramework metadata, independent of the restore/build outcome above -- a mismatched reference is the defect regardless of whether NuGet's own compatibility gate also happens to catch it",
+    "reference_tfm_mismatch": true,
+    "state": "failing"
+  },
+  "tfm": "net8.0",
+  "track": "control",
+  "unsupported_state": {
+    "reason": "P declares a different TargetFramework than the project it references; a unit in this shape must never report a healthy result from that reference alone",
+    "state": "failing"
+  }
+}

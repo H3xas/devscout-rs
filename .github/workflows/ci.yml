@@ -140,10 +140,17 @@ jobs:
           # behaviour under the committed oracle diff.
           dotnet-version: 9.0.3xx
 
+      - uses: actions/setup-dotnet@v4
+        with:
+          # The qualification tree's own global.json pins one exact patch with
+          # rollForward disabled, independent of the floating band above, so
+          # its restore/build is reproducible even if the band's latest patch moves.
+          dotnet-version: 9.0.305
+
       - uses: actions/cache@v4
         with:
           path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ hashFiles('tools/scout-semantic/packages.lock.json', 'fixtures/csharp-semantic/Directory.Packages.props') }}
+          key: ${{ runner.os }}-nuget-${{ hashFiles('tools/scout-semantic/packages.lock.json', 'fixtures/csharp-semantic/Directory.Packages.props', 'fixtures/csharp-target-qualification/Directory.Packages.props') }}
 
       - name: Restore (oracle locked, fixture CPM-pinned)
         run: |
@@ -215,6 +222,13 @@ jobs:
           ./target/release/devscout -C "$RUNNER_TEMP/direction-repo" map src
           ./target/release/devscout -C "$RUNNER_TEMP/direction-repo" audit --semantic "$PWD/out/direction/refs.jsonl" --units "$PWD/out/direction/units.jsonl"
           ./target/release/devscout -C "$RUNNER_TEMP/direction-repo" audit --semantic "$PWD/out/direction/refs.jsonl" --units "$PWD/out/direction/units.jsonl" --assert "$PWD/fixtures/csharp-direction/expected.json"
+
+      # The .NET target/project/framework qualification tree: its own global.json SDK pin,
+      # restored and rebuilt row by row, then diffed byte-for-byte against the committed
+      # capability snapshots. This is the only step in CI that shells out through the tree's
+      # own composition script rather than the oracle directly.
+      - name: Regenerate and diff the .NET target qualification matrix
+        run: python3 tools/qualify-dotnet-targets.py --check
 
   supply-chain:
     name: cargo deny (licenses, advisories, bans, sources)

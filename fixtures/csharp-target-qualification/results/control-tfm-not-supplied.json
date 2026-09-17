@@ -1,0 +1,35 @@
+{
+  "context_acquisition": {
+    "build_exit_code": 0,
+    "declared_tfms": [
+      "net8.0",
+      "net472"
+    ],
+    "requested_tfm": "net6.0",
+    "restore_exit_code": 0,
+    "sdk": "9.0.305",
+    "state": "passing"
+  },
+  "execution_assumptions": {
+    "state": "static-only"
+  },
+  "framework_modeling": {
+    "reason": "not applicable to a substitution control",
+    "state": "not-claimed"
+  },
+  "kind": "control",
+  "profile_id": "control-tfm-not-supplied",
+  "semantic_conformance": {
+    "note": "the oracle's own unit status is not trusted for this row; substitution is independently confirmed from its stderr variant-selection line and the tfm it kept",
+    "oracle_reported_status": "ok",
+    "oracle_reported_tfm": "net8.0",
+    "state": "failing",
+    "substitution_occurred": true
+  },
+  "tfm": "net6.0 (requested; not declared by either variant)",
+  "track": "control",
+  "unsupported_state": {
+    "reason": "the loader kept the first declared variant for an unmatched --tfm instead of failing or reporting no result, reproducing the documented substitution defect",
+    "state": "failing"
+  }
+}

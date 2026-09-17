@@ -1,0 +1,41 @@
+{
+  "context_acquisition": {
+    "build_exit_code": 0,
+    "expected_documents": [
+      "PositiveCase.cs",
+      "BoundaryCase.cs"
+    ],
+    "loaded_documents": [
+      "shared/BoundaryCase.cs",
+      "shared/PositiveCase.cs"
+    ],
+    "project_format": "sdk-style",
+    "reference_source": "sdk-implicit",
+    "restore_exit_code": 0,
+    "sdk": "9.0.305",
+    "state": "passing"
+  },
+  "execution_assumptions": {
+    "state": "static-only"
+  },
+  "framework_modeling": {
+    "reason": "no framework adapter is exercised by the wave-1 case source",
+    "state": "not-claimed"
+  },
+  "kind": "profile",
+  "profile_id": "csharp73-net8.0-sdkstyle",
+  "semantic_conformance": {
+    "boundary_case_bind_expected": true,
+    "boundary_case_bind_observed": true,
+    "boundary_case_matches_expectation": true,
+    "build_diagnostic_excerpt": "",
+    "positive_case_bound": true,
+    "state": "passing"
+  },
+  "tfm": "net8.0",
+  "track": "modern",
+  "unsupported_state": {
+    "reason": "target-API surface qualified from its own compilation context",
+    "state": "passing"
+  }
+}
