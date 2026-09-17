@@ -10,6 +10,7 @@ use super::members::{
     base_member_declared, declares_member, declares_member_any_visibility, extension_closure_key,
     inherited_member_declared, member_shape, member_vouched, typed_receiver_base_member,
 };
+use super::provenance::{self, Step};
 use super::receiver::{
     bare_receiver_field_or_property_type, def_outer_types, extractor_vouches_instance,
     is_this_shaped_receiver, lambda_slot_receiver_type, receiver_admits_candidate,
@@ -228,6 +229,7 @@ pub fn resolve_graph_with_model(
                                 r.member.clone(),
                                 None,
                             ));
+                            provenance::note(&edges, Step::BaseMember);
                             edges_by_kind.uses_member += 1;
                         }
                     }
@@ -252,6 +254,7 @@ pub fn resolve_graph_with_model(
                             r.member.clone(),
                             None,
                         ));
+                        provenance::note(&edges, Step::QualifierMember);
                         edges_by_kind.uses_member += 1;
                         emitted = true;
                     } else if !extractor_vouches_instance(r)
@@ -349,6 +352,7 @@ pub fn resolve_graph_with_model(
                                 r.member.clone(),
                                 None,
                             ));
+                            provenance::note(&edges, Step::QualifierType);
                             edges_by_kind.uses_member += 1;
                             emitted = true;
                         }
@@ -631,6 +635,7 @@ pub fn resolve_graph_with_model(
                                     r.member.clone(),
                                     None,
                                 ));
+                                provenance::note(&edges, Step::TypedReceiver);
                                 edges_by_kind.uses_member += 1;
                                 // Tier (e) RECORDS its claim: the extension
                                 // tier below reads `emitted`, and that is
@@ -732,6 +737,7 @@ pub fn resolve_graph_with_model(
                                             r.member.clone(),
                                             None,
                                         ));
+                                        provenance::note(&edges, Step::PropertyHop);
                                         edges_by_kind.uses_member += 1;
                                         emitted = true;
                                     }
@@ -936,6 +942,7 @@ pub fn resolve_graph_with_model(
                                 r.member.clone(),
                                 Some(HeuristicTier::Ext),
                             ));
+                            provenance::note(&edges, Step::Extension);
                             heuristic_edge_count += 1;
                             heuristic_by_tier.ext += 1;
                             emitted = true;
@@ -1124,6 +1131,7 @@ pub fn resolve_graph_with_model(
                                 r.member.clone(),
                                 Some(HeuristicTier::Guess),
                             ));
+                            provenance::note(&edges, Step::Scored);
                             heuristic_edge_count += 1;
                             heuristic_by_tier.guess += 1;
                         }
@@ -1269,6 +1277,7 @@ pub fn resolve_graph_with_model(
         }
     });
 
+    provenance::flush(&edges);
     let type_ref_attempts = edges_by_kind.inherits + edges_by_kind.uses_type + ambiguous_count;
 
     let mut graph = Graph {
