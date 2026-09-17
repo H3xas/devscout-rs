@@ -1363,10 +1363,10 @@ fn render_json(r: &AuditReport) -> String {
 // ---------------------------------------------------------------------------
 
 /// `devscout audit --semantic <refs.jsonl> [--units F] [--defs F] [--json]
-/// [--assert F]`. Exit 0 with the report (text, or one JSON object with
-/// `--json`); exit 1 on any error (bad arguments, an unreadable/malformed
-/// input file, no `.scout`/`.git` root, no graph.json) or on any `--assert`
-/// violation.
+/// [--assert F] [--fp-sites F]`. Exit 0 with the report (text, or one JSON
+/// object with `--json`); exit 1 on any error (bad arguments, an
+/// unreadable/malformed input file, no `.scout`/`.git` root, no graph.json)
+/// or on any `--assert` violation.
 ///
 /// Where the violation lines go depends on the report format, and the rule is
 /// "stdout stays machine-readable": in TEXT mode they are appended after the
