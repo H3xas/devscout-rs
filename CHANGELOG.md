@@ -7,6 +7,24 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **The Roslyn oracle emits a build-context envelope.** `tools/scout-semantic --emit context`
+  writes one record per compilation identity (project path and name, requested target,
+  configuration, platform), each carrying one of `complete`, `partial`, `unsupported`, `failed` or
+  `excluded` with a machine-readable reason; the expected-versus-loaded document inventory with
+  every difference classified (`missing`, `linked-outside-root`, `skipped-directory`,
+  `out-of-scope`); raw restore/workspace/compiler diagnostics; generated and linked documents;
+  SDK/MSBuild/compiler/engine versions; and a context fingerprint that moves with a reference,
+  import, build option, or dependency compilation's own fingerprint. A non-null compilation is
+  never `complete` by itself. `--tfm` is now repeatable, with each requested target its own
+  compilation identity and no silent substitution when a project does not declare it; with no
+  `--tfm`, selection is deterministic (ordinal-least declared target) rather than dependent on
+  workspace enumeration order. `--strict` gains an artifact-level check: exit 2 unless every
+  non-`excluded` record is `complete`, alongside its existing checks. Additive: `refs.jsonl`,
+  `units.jsonl`, `defs.jsonl` and the flow-tracer fact document stay byte-identical for unchanged
+  inputs. Fixture: `fixtures/csharp-context/`. See `tools/scout-semantic/README.md#build-context-envelope`.
+
 ## [0.6.0] - 2026-09-09
 
 A reach release: the graph learns which implementation a registered service resolves to, and

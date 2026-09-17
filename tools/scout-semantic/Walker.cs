@@ -43,9 +43,76 @@ internal sealed class RepoPaths
 
     /// <summary>
     /// Root-relative path of <paramref name="absolute"/>, or null when the file
-    /// is outside the root, under a skipped directory, or outside --scope.
+    /// is outside the root, under a skipped directory, or outside --scope. A
+    /// thin wrapper over <see cref="Classify"/>, kept only so every existing
+    /// call site stays untouched: the two methods never disagree on which
+    /// paths are null.
     /// </summary>
-    public string? Relative(string? absolute)
+    public string? Relative(string? absolute) => Classify(absolute).Rel;
+
+    /// <summary>
+    /// Same root-relative arithmetic as <see cref="Relative"/>, but names the
+    /// reason a dropped path was dropped instead of collapsing it to null:
+    /// <c>missing</c> (no absolute path resolved at all), <c>linked-outside-root</c>,
+    /// <c>skipped-directory</c>, or <c>out-of-scope</c>. A caller that already
+    /// knows a path never resolved to anything on disk reports <c>missing</c>
+    /// itself rather than calling this with a null or empty string.
+    /// </summary>
+    public (string? Rel, string? DropReason) Classify(string? absolute)
+    {
+        if (string.IsNullOrEmpty(absolute))
+        {
+            return (null, "missing");
+        }
+
+        string full;
+        try
+        {
+            full = Normalize(Path.GetFullPath(absolute));
+        }
+        catch (Exception e) when (e is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return (null, "missing");
+        }
+
+        if (full.Length <= _root.Length + 1 || !full.StartsWith(_root, PathCmp) || full[_root.Length] != '/')
+        {
+            return (null, "linked-outside-root");
+        }
+
+        var rel = full[(_root.Length + 1)..];
+        var parts = rel.Split('/');
+        // The file name itself is never a directory component.
+        for (var i = 0; i < parts.Length - 1; i++)
+        {
+            if (SkipDirs.Contains(parts[i]))
+            {
+                return (null, "skipped-directory");
+            }
+        }
+
+        if (_scope.Count > 0 && !_scope.Any(s => rel.Length > s.Length && rel.StartsWith(s, PathCmp) && rel[s.Length] == '/'))
+        {
+            return (null, "out-of-scope");
+        }
+
+        return (rel, null);
+    }
+
+    /// <summary>
+    /// Root-relative path of a project's own file, ignoring <c>--scope</c>:
+    /// <c>--scope</c> narrows which documents are walked, never which
+    /// compilation identities exist, so a project outside the requested
+    /// scope still reports its own path rather than falling back to an
+    /// absolute one. Only root containment and the skip-dir list apply.
+    /// </summary>
+    public string? RelativeProjectPath(string? absolute)
+    {
+        var (rel, reason) = Classify(absolute);
+        return rel ?? (reason == "out-of-scope" ? ClassifyWithoutScope(absolute) : null);
+    }
+
+    private string? ClassifyWithoutScope(string? absolute)
     {
         if (string.IsNullOrEmpty(absolute))
         {
@@ -69,18 +136,12 @@ internal sealed class RepoPaths
 
         var rel = full[(_root.Length + 1)..];
         var parts = rel.Split('/');
-        // The file name itself is never a directory component.
         for (var i = 0; i < parts.Length - 1; i++)
         {
             if (SkipDirs.Contains(parts[i]))
             {
                 return null;
             }
-        }
-
-        if (_scope.Count > 0 && !_scope.Any(s => rel.Length > s.Length && rel.StartsWith(s, PathCmp) && rel[s.Length] == '/'))
-        {
-            return null;
         }
 
         return rel;

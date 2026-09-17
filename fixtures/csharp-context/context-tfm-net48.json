@@ -1,0 +1,146 @@
+{
+  "schemaVersion": 1,
+  "producer": "scout-semantic",
+  "version": "0.1.0",
+  "repo": "csharp-context",
+  "solution": "Fixture.sln",
+  "compilations": [
+    {
+      "identity": {
+        "projectPath": "src/Broken/Broken.csproj",
+        "projectName": "Broken",
+        "requestedTfm": "net48",
+        "effectiveTfm": null,
+        "configuration": null,
+        "platform": null,
+        "declaredTfms": [
+          "net9.0"
+        ]
+      },
+      "state": "unsupported",
+      "reason": "undeclared-target",
+      "fingerprint": null,
+      "references": [],
+      "imports": [],
+      "languageOptions": {},
+      "preprocessorSymbols": [],
+      "documents": {
+        "expected": [],
+        "loaded": [],
+        "dropped": []
+      },
+      "generated": {
+        "documents": [],
+        "diagnostics": []
+      },
+      "diagnostics": {
+        "workspace": [],
+        "compiler": []
+      }
+    },
+    {
+      "identity": {
+        "projectPath": "src/Clean/Clean.csproj",
+        "projectName": "Clean",
+        "requestedTfm": "net48",
+        "effectiveTfm": null,
+        "configuration": null,
+        "platform": null,
+        "declaredTfms": [
+          "net9.0"
+        ]
+      },
+      "state": "unsupported",
+      "reason": "undeclared-target",
+      "fingerprint": null,
+      "references": [],
+      "imports": [],
+      "languageOptions": {},
+      "preprocessorSymbols": [],
+      "documents": {
+        "expected": [],
+        "loaded": [],
+        "dropped": []
+      },
+      "generated": {
+        "documents": [],
+        "diagnostics": []
+      },
+      "diagnostics": {
+        "workspace": [],
+        "compiler": []
+      }
+    },
+    {
+      "identity": {
+        "projectPath": "src/Legacy/Legacy.csproj",
+        "projectName": "Legacy",
+        "requestedTfm": "net48",
+        "effectiveTfm": null,
+        "configuration": null,
+        "platform": null,
+        "declaredTfms": [
+          "net472",
+          "net9.0"
+        ]
+      },
+      "state": "unsupported",
+      "reason": "undeclared-target",
+      "fingerprint": null,
+      "references": [],
+      "imports": [],
+      "languageOptions": {},
+      "preprocessorSymbols": [],
+      "documents": {
+        "expected": [],
+        "loaded": [],
+        "dropped": []
+      },
+      "generated": {
+        "documents": [],
+        "diagnostics": []
+      },
+      "diagnostics": {
+        "workspace": [],
+        "compiler": []
+      }
+    },
+    {
+      "identity": {
+        "projectPath": "src/Vanished/Vanished.csproj",
+        "projectName": "Vanished",
+        "requestedTfm": null,
+        "effectiveTfm": null,
+        "configuration": null,
+        "platform": null,
+        "declaredTfms": null
+      },
+      "state": "failed",
+      "reason": "project-not-loaded",
+      "fingerprint": null,
+      "versions": {
+        "sdk": "9.0.305",
+        "msbuild": "9.0.305",
+        "compiler": "4.14.0-3.25262.10+8edf7bcd4f1594c3d68a6a567469f41dbd33dd1b",
+        "engine": "0.1.0"
+      },
+      "references": [],
+      "imports": [],
+      "languageOptions": {},
+      "preprocessorSymbols": [],
+      "documents": {
+        "expected": [],
+        "loaded": [],
+        "dropped": []
+      },
+      "generated": {
+        "documents": [],
+        "diagnostics": []
+      },
+      "diagnostics": {
+        "workspace": [],
+        "compiler": []
+      }
+    }
+  ]
+}

@@ -1,0 +1,273 @@
+using System.Text.RegularExpressions;
+using System.Xml.Linq;
+
+using Microsoft.Build.Evaluation;
+
+namespace ScoutSemantic;
+
+/// <summary>One project the solution file names, independent of what the workspace actually loaded.</summary>
+internal sealed record ExpectedProject(string Name, string AbsolutePath);
+
+/// <summary>What a fresh, workspace-independent MSBuild evaluation of one project reads.</summary>
+internal sealed class ProjectInventory
+{
+    /// <summary>
+    /// Every <c>Compile</c> item the evaluation named, root-relative when it
+    /// resolves under <c>--root</c>, else a <c>../</c>-relative display path
+    /// -- never an absolute local path. A superset of <see cref="Dropped"/>'s
+    /// paths union the loaded set: nothing here is silently left out.
+    /// </summary>
+    public required List<string> ExpectedDisplayPaths { get; init; }
+
+    public required List<DroppedDocument> Dropped { get; init; }
+
+    public required List<ContextImport> Imports { get; init; }
+
+    public required string? Configuration { get; init; }
+
+    public required string? Platform { get; init; }
+
+    public required string? EffectiveTfm { get; init; }
+
+    public required string? AssemblyName { get; init; }
+
+    public required string? RootNamespace { get; init; }
+
+    public required string? LanguageVersion { get; init; }
+
+    public required string? Nullable { get; init; }
+
+    public required bool AllowUnsafeBlocks { get; init; }
+
+    public required List<string> PreprocessorSymbols { get; init; }
+}
+
+/// <summary>
+/// Reads the expected project/document/import list independently of the
+/// Roslyn workspace, by parsing the solution file directly and re-evaluating
+/// each project through its own, fresh <see cref="ProjectCollection"/> --
+/// never the ambient one <c>MSBuildWorkspace</c> uses -- so a project or
+/// document Roslyn's own load silently drops is still reportable. A leaf
+/// module: nothing in <see cref="Walker"/> or <c>FactsWalker</c> calls into
+/// it, so the oracle and fact walk this ticket must leave byte-identical
+/// stay untouched by construction.
+/// </summary>
+internal static class ContextInventory
+{
+    private static readonly Regex SlnProjectLine = new(
+        """^Project\("\{[0-9A-Fa-f-]+\}"\)\s*=\s*"(?<name>[^"]+)"\s*,\s*"(?<path>[^"]+)"\s*,\s*"\{[0-9A-Fa-f-]+\}"$""",
+        RegexOptions.Compiled | RegexOptions.Multiline);
+
+    /// <summary>Every project a <c>.sln</c> or <c>.slnx</c> names, parsed from the solution text itself.</summary>
+    public static List<ExpectedProject> ExpectedProjectsOfSolution(string solutionPath)
+    {
+        var extension = Path.GetExtension(solutionPath).ToLowerInvariant();
+        var directory = Path.GetDirectoryName(Path.GetFullPath(solutionPath)) ?? ".";
+        return extension == ".slnx"
+            ? ExpectedProjectsOfSlnx(solutionPath, directory)
+            : ExpectedProjectsOfSln(solutionPath, directory);
+    }
+
+    private static List<ExpectedProject> ExpectedProjectsOfSln(string path, string directory)
+    {
+        var text = File.ReadAllText(path);
+        var projects = new List<ExpectedProject>();
+        foreach (Match m in SlnProjectLine.Matches(text))
+        {
+            var relative = m.Groups["path"].Value.Replace('\\', '/');
+            if (!IsRecognizedProjectExtension(relative))
+            {
+                continue;
+            }
+
+            projects.Add(new ExpectedProject(m.Groups["name"].Value, Path.GetFullPath(Path.Combine(directory, relative))));
+        }
+
+        return projects;
+    }
+
+    private static List<ExpectedProject> ExpectedProjectsOfSlnx(string path, string directory)
+    {
+        var document = XDocument.Load(path);
+        var projects = new List<ExpectedProject>();
+        foreach (var element in document.Descendants().Where(e => e.Name.LocalName == "Project"))
+        {
+            var relative = element.Attribute("Path")?.Value;
+            if (string.IsNullOrEmpty(relative) || !IsRecognizedProjectExtension(relative))
+            {
+                continue;
+            }
+
+            var normalized = relative.Replace('\\', '/');
+            var name = Path.GetFileNameWithoutExtension(normalized);
+            projects.Add(new ExpectedProject(name, Path.GetFullPath(Path.Combine(directory, normalized))));
+        }
+
+        return projects;
+    }
+
+    private static bool IsRecognizedProjectExtension(string relativePath) =>
+        relativePath.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Evaluates one project through <paramref name="collection"/> -- a fresh
+    /// collection the caller owns and disposes, distinct from
+    /// <c>MSBuildWorkspace</c>'s ambient one -- and reads the properties and
+    /// items this ticket's context report needs.
+    /// </summary>
+    public static ProjectInventory Evaluate(
+        ProjectCollection collection,
+        string projectFullPath,
+        IReadOnlyDictionary<string, string> baseGlobalProperties,
+        string? requestedTfm,
+        RepoPaths paths)
+    {
+        var globals = new Dictionary<string, string>(baseGlobalProperties, StringComparer.OrdinalIgnoreCase);
+        if (!string.IsNullOrEmpty(requestedTfm) && !globals.ContainsKey("TargetFramework"))
+        {
+            globals["TargetFramework"] = requestedTfm;
+        }
+
+        var project = new Project(projectFullPath, globals, toolsVersion: null, collection);
+        try
+        {
+            var expected = new List<string>();
+            var dropped = new List<DroppedDocument>();
+            foreach (var item in project.GetItems("Compile"))
+            {
+                var full = item.GetMetadataValue("FullPath");
+                var (rel, dropReason) = paths.Classify(full);
+                var display = rel ?? DisplayRelativePath(paths.Root, full);
+                expected.Add(display);
+
+                if (dropReason is not null)
+                {
+                    dropped.Add(new DroppedDocument { Path = display, Reason = dropReason });
+                }
+                else if (!File.Exists(full))
+                {
+                    dropped.Add(new DroppedDocument { Path = display, Reason = "missing" });
+                }
+            }
+
+            expected = expected.Distinct(StringComparer.Ordinal).OrderBy(p => p, StringComparer.Ordinal).ToList();
+            dropped = dropped
+                .GroupBy(d => (d.Path, d.Reason))
+                .Select(g => g.First())
+                .OrderBy(d => d.Path, StringComparer.Ordinal)
+                .ToList();
+
+            var imports = new List<ContextImport>();
+            foreach (var import in project.Imports)
+            {
+                var importPath = import.ImportedProject.FullPath;
+                if (string.IsNullOrEmpty(importPath) || !File.Exists(importPath))
+                {
+                    continue;
+                }
+
+                string content;
+                try
+                {
+                    content = File.ReadAllText(importPath);
+                }
+                catch (IOException)
+                {
+                    continue;
+                }
+
+                imports.Add(new ContextImport { Identity = NormalizeImportIdentity(importPath), Hash = FactsWriter.Sha1(content) });
+            }
+
+            imports = imports
+                // The installed SDK's own hundreds of .props/.targets files
+                // import every SDK-style project alike and move in lockstep
+                // with the SDK version already carried in this record's own
+                // `versions.sdk`/`versions.msbuild` -- listing every one of
+                // them here would swamp a repo-local build customization
+                // (Directory.Build.props, a NuGet package's own .targets)
+                // in noise without adding an independent signal.
+                .Where(i => !i.Identity.StartsWith("sdk-file:", StringComparison.Ordinal))
+                .GroupBy(i => i.Identity, StringComparer.Ordinal)
+                .Select(g => g.First())
+                .OrderBy(i => i.Identity, StringComparer.Ordinal)
+                .ToList();
+
+            var defineConstants = project.GetPropertyValue("DefineConstants");
+            var symbols = defineConstants
+                .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(s => s, StringComparer.Ordinal)
+                .ToList();
+
+            return new ProjectInventory
+            {
+                ExpectedDisplayPaths = expected,
+                Dropped = dropped,
+                Imports = imports,
+                Configuration = NullIfEmpty(project.GetPropertyValue("Configuration")),
+                Platform = NullIfEmpty(project.GetPropertyValue("Platform")),
+                EffectiveTfm = NullIfEmpty(project.GetPropertyValue("TargetFramework")),
+                AssemblyName = NullIfEmpty(project.GetPropertyValue("AssemblyName")),
+                RootNamespace = NullIfEmpty(project.GetPropertyValue("RootNamespace")),
+                LanguageVersion = NullIfEmpty(project.GetPropertyValue("LangVersion")),
+                Nullable = NullIfEmpty(project.GetPropertyValue("Nullable")),
+                AllowUnsafeBlocks = string.Equals(
+                    project.GetPropertyValue("AllowUnsafeBlocks"), "true", StringComparison.OrdinalIgnoreCase),
+                PreprocessorSymbols = symbols,
+            };
+        }
+        finally
+        {
+            collection.UnloadProject(project);
+        }
+    }
+
+    private static string? NullIfEmpty(string value) => value.Length == 0 ? null : value;
+
+    /// <summary>A relative display path for a document that <see cref="RepoPaths.Classify"/> dropped, so its reason is still reportable without an absolute local path.</summary>
+    private static string DisplayRelativePath(string root, string absolute)
+    {
+        try
+        {
+            return Path.GetRelativePath(root, absolute).Replace('\\', '/');
+        }
+        catch (ArgumentException)
+        {
+            return Path.GetFileName(absolute);
+        }
+    }
+
+    /// <summary>
+    /// An SDK <c>.props</c>/<c>.targets</c> file or a NuGet package's build
+    /// file lives outside the analysed repository; it is recorded by a
+    /// normalized identity (package id + version when the well-known NuGet
+    /// global-packages path shape is recognizable, else the file's bare
+    /// name) rather than its absolute local path, which
+    /// <see cref="ContextSchema"/> also rejects as defense in depth.
+    /// </summary>
+    private static string NormalizeImportIdentity(string fullPath)
+    {
+        var normalized = fullPath.Replace('\\', '/');
+        var nugetMarker = "/.nuget/packages/";
+        var nugetIndex = normalized.IndexOf(nugetMarker, StringComparison.OrdinalIgnoreCase);
+        if (nugetIndex >= 0)
+        {
+            var rest = normalized[(nugetIndex + nugetMarker.Length)..].Split('/');
+            if (rest.Length >= 3)
+            {
+                return "nuget:" + rest[0] + "/" + rest[1] + "/" + string.Join('/', rest.Skip(2));
+            }
+        }
+
+        var sdkMarker = "/sdk/";
+        var sdkIndex = normalized.ToLowerInvariant().IndexOf(sdkMarker, StringComparison.Ordinal);
+        if (sdkIndex >= 0)
+        {
+            var tail = normalized[(sdkIndex + sdkMarker.Length)..].Split('/');
+            return "sdk-file:" + string.Join('/', tail.TakeLast(Math.Min(3, tail.Length)));
+        }
+
+        return "external-file:" + Path.GetFileName(normalized);
+    }
+}

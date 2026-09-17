@@ -35,30 +35,37 @@ It is **not** part of the Rust crate build: `Cargo.toml` excludes `tools/`, and 
 
 ```
 scout-semantic <path.sln|path.csproj> --root <repo-root> --out <refs.jsonl>
-    [--emit mode[,mode]]      oracle | flowtrace-facts, repeatable (default: oracle)
+    [--emit mode[,mode]]      oracle | flowtrace-facts | context, repeatable (default: oracle)
     [--units <units.jsonl>] [--defs <defs.jsonl>]
     [--facts <path|->]        fact document, default out/facts/<repo>.json, `-` is stdout
-    [--repo <id>]             repo id in the fact header (default: --root's last segment)
+    [--context <path|->]      build-context envelope, required with `--emit context`, `-` is stdout
+    [--repo <id>]             repo id in the fact/context header (default: --root's last segment)
     [--no-git]                do not stamp git identity in the fact header
     [--publish-calls a,b]     extra publish method names, repeatable
     [--consumer-bases a,b]    extra consumer base type names, repeatable
     [--scope dir[,dir]]       walk only documents under these root-relative dirs
     [--projects glob[,glob]]  load/walk only projects whose name matches (`*` and `?`)
-    [--tfm net9.0]            variant to keep when Roslyn splits a multi-targeting project
+    [--tfm net9.0]            requested target, repeatable; each is its own compilation identity
     [-p Name=Value | -p:Name=Value]   MSBuild global property, repeatable
-    [--strict]                exit 2 on a failed project or an unresolved fact site
+    [--strict]                exit 2 on a failed project, an unresolved fact site, or (with
+                               `--emit context`) a context artifact that is not complete
 ```
 
 `--root` is the repository root every emitted path is made relative to; it does not have to be
 the solution directory. Progress and workspace diagnostics go to **stderr**; **stdout stays
-empty** unless `--facts -` asks for the fact document there, so the tool composes in pipelines.
-Output files' parent directories are created.
+empty** unless `--facts -` or `--context -` asks for a document there, so the tool composes in
+pipelines. Output files' parent directories are created.
 
 `--emit` selects the output modes. `oracle` is the refs/units/defs output described below and is
-what runs when the flag is absent; `flowtrace-facts` is the [fact document](#flow-tracer-facts).
-An unknown mode is a usage error. `--out` is required only when `oracle` is among the modes, and
-`--units` / `--defs` are only meaningful with it. The modes are additive, so
-`--emit oracle,flowtrace-facts` writes both from one load.
+what runs when the flag is absent; `flowtrace-facts` is the [fact document](#flow-tracer-facts);
+`context` is the [build-context envelope](#build-context-envelope). An unknown mode is a usage
+error. `--out` is required only when `oracle` is among the modes, `--context` only when `context`
+is; `--units` / `--defs` are only meaningful with `oracle`. The modes are additive, so
+`--emit oracle,flowtrace-facts,context` writes all three from one load.
+
+`--tfm` is repeatable: each requested target is its own compilation identity, and a target a
+project does not declare is never silently substituted for another one (see
+[Multi-targeting](#multi-targeting)).
 
 Example:
 
@@ -74,15 +81,20 @@ dotnet run --project tools/scout-semantic --no-build -c Release -- \
 |---|---|
 | 0 | success |
 | 1 | usage error, missing input, or an I/O failure writing the output |
-| 2 | `--strict` and at least one project failed to load, produced no compilation, or left a fact site unresolved |
-| 3 | zero projects loaded from the given solution or project |
+| 2 | `--strict` and at least one project failed to load, produced no compilation, left a fact site unresolved, or (with `--emit context`) the context artifact's rollup state is not `complete` |
+| 3 | zero projects loaded from the given solution or project, and (with `--emit context`) nothing to report even as an `unsupported` or `excluded` record |
 
 Without `--strict` the tool **fails open**: a project that cannot be loaded is reported on
 stderr and recorded with `"status":"failed"` in `units.jsonl`, and the run still succeeds.
-Use `--strict` in CI.
+Use `--strict` in CI. `--strict`'s meaning tightened for `--emit context`: previously every
+existing fixture already produced a clean run, so this repository's own CI stays green under the
+tightened rule, but any other input shaped like the `net472` binding-error control below would now
+see `--strict` exit 2 where it previously exited 0 -- a fix to what "strict" means for a context
+artifact, not a silent behavior change.
 
-A fact that does not satisfy the schema is exit 1 with `error: fact schema violation: <reason>`
-on stderr; the document is validated in full before anything is written, so a violation never
+A fact or context record that does not satisfy its schema is exit 1 with
+`error: fact schema violation: <reason>` or `error: context schema violation: <reason>` on
+stderr; each document is validated in full before anything is written, so a violation never
 leaves a partial file behind.
 
 ## What is walked
@@ -310,9 +322,76 @@ dotnet run --project tools/scout-semantic --no-build -c Release -- \
 ## Multi-targeting
 
 Roslyn splits a multi-targeting project into one `Project` per framework, named `Name(tfm)`.
-Projects are grouped by project-file path; `--tfm` selects the variant to keep, and the first
-variant is used when nothing matches. The reported `name` has the `(tfm)` suffix stripped and
-the framework moves to the `tfm` field.
+Projects are grouped by project-file path; the reported `name` has the `(tfm)` suffix stripped
+and the framework moves to the `tfm` field.
+
+`--tfm` is repeatable, and every requested target must be a target the project actually declares
+-- a single-variant project's own declared framework is checked exactly the same way a
+multi-targeting one's variants are, so requesting an undeclared target against either kind of
+project is refused rather than silently kept. `--emit context` reports the refusal as its own
+`unsupported` record naming both the requested and the declared targets, with zero facts written
+under that identity; `--emit oracle`/`flowtrace-facts` simply exclude that project from the run
+(as if it had not matched `--projects`). With no `--tfm` at all, the kept variant is the
+ordinal-least declared target name (`StringComparer.Ordinal`), deterministic across runs and
+machines regardless of the order Roslyn happened to enumerate the variants in.
+
+## Build-context envelope
+
+`--emit context` writes **one** JSON document -- one record per requested, selected, or excluded
+compilation identity -- to `--context` (`-` for stdout). Alongside the oracle/fact-document output
+(`--emit oracle,context`) or on its own, from the same load.
+
+Each record names the exact project, requested/effective target, configuration and platform;
+references, imported build files and their content hashes; language options and preprocessor
+symbols; generated and linked documents; SDK/MSBuild/compiler/engine versions; raw workspace and
+compiler diagnostics; the expected-versus-loaded document inventory with every difference
+classified (`missing`, `linked-outside-root`, `skipped-directory`, `out-of-scope`); a context
+fingerprint; and one of five states, always paired with a machine-readable reason:
+
+| State | Reason (examples) | Meaning |
+|---|---|---|
+| `complete` | `complete` | Every expected document loaded, no compiler error, no unresolved reference. |
+| `partial` | `binding-error`, `missing-expected-document`, `workspace-failure` | A non-null compilation whose inventory or diagnostics are incomplete. |
+| `unsupported` | `undeclared-target` | A requested `--tfm` the project does not declare; zero facts under this identity. |
+| `failed` | `project-not-loaded` | A project the solution names but that never reached the workspace at all. |
+| `excluded` | `not-requested` | A declared variant that was not the deterministic selection when no target was requested. |
+
+A non-null compilation is never `complete` by itself: any compiler error, any expected document
+that did not load (for any of the four reasons above, including a deliberate exclusion like
+`out-of-scope`), or any unresolved reference demotes the record to `partial`. `--strict` fails
+(exit 2) unless every non-`excluded` record's state is `complete`.
+
+The expected document inventory comes from a second, independent MSBuild evaluation -- parsing
+the solution file directly and re-evaluating each project through its own fresh
+`ProjectCollection`, never the ambient one the Roslyn workspace uses -- so a document (or a whole
+project) the workspace silently drops is still reportable, and a document Roslyn's own walk
+tolerantly "loads" with empty content (a `Compile` item whose file was never created) is still
+named missing. See `tools/scout-semantic/ContextInventory.cs`.
+
+The fingerprint is one SHA-1 over reference identity, import content hashes, preprocessor symbols,
+binding-relevant language/compiler options, SDK/MSBuild/compiler versions, the project's own
+narrow build identity (configuration, platform, target, assembly name, root namespace -- never the
+whole project file), and every project reference's own already-computed fingerprint. Two distinct
+targets or configurations of one project are always distinct identities with distinct
+fingerprints. See `tools/scout-semantic/ContextFingerprint.cs`.
+
+Source-generated documents are inventoried via the Workspace API's own
+`Project.GetSourceGeneratedDocumentsAsync()`, which names each document's `HintName` but exposes
+no generator-identity property at all (verified against the restored 4.14.0 assemblies), so
+`generated.documents[].generator` is always `"unknown"`.
+
+`schemaVersion` starts at `1` and is a separate counter from the flow-tracer fact document's own
+`schemaVersion` -- two different documents, two different emit modes, two different output paths.
+
+External imports (an SDK `.props`/`.targets` file, a NuGet package's build file) are never
+recorded by absolute local path: `imports[].identity` is a normalized identity (package id and
+version when the well-known NuGet global-packages path shape is recognizable, else the file's bare
+name) plus a content hash, and `ContextSchema.Validate` rejects an absolute path in any
+path-shaped field as defense in depth.
+
+Fixture: `fixtures/csharp-context/`, with its own `README.md` and five committed envelope
+snapshots CI regenerates and diffs byte-for-byte, covering all five states and all four document
+drop reasons; `tests/context_envelope.rs` pins the shape offline, without a .NET toolchain.
 
 ## Implementation notes and known limits
 
@@ -328,7 +407,8 @@ the framework moves to the `tfm` field.
 - `diagnostics` is only computed when `--units` is requested, because it forces a full binding
   pass over the project.
 - There is no `--help` flag: an unknown option prints the usage block on stderr and exits 1.
-- Source-generated documents are not walked; only files on disk are.
+- Source-generated documents are not walked by `oracle`/`flowtrace-facts`; only files on disk are.
+  `--emit context` inventories them separately (see [Build-context envelope](#build-context-envelope)).
 
 ## Packages
 
@@ -339,7 +419,17 @@ Pinned in `packages.lock.json` and restored with `--locked-mode`:
 | `Microsoft.Build.Locator` | 1.9.1 |
 | `Microsoft.CodeAnalysis.CSharp.Workspaces` | 4.14.0 |
 | `Microsoft.CodeAnalysis.Workspaces.MSBuild` | 4.14.0 |
+| `Microsoft.Build` | 17.7.2 (`ExcludeAssets="runtime"`) |
+| `Microsoft.Build.Framework` | 17.7.2 (`ExcludeAssets="runtime"`) |
 
 4.14.0 is the newest 4.14.x release and the Roslyn line that ships with the 9.0.3xx SDK.
 Bumping to a 5.x line requires a matching newer SDK and a lock-file refresh
 (`dotnet restore tools/scout-semantic --force-evaluate`).
+
+`Microsoft.Build`/`Microsoft.Build.Framework` are already transitive dependencies of
+`Microsoft.CodeAnalysis.Workspaces.MSBuild`; pinning them explicitly with `ExcludeAssets="runtime"`
+adds no new package and no version bump, but keeps their DLLs out of the build output so
+`ContextInventory`'s own in-process `ProjectCollection` resolves its assemblies through
+`MSBuildLocator`'s redirect to the installed SDK at run time, not a locally-copied NuGet build --
+without this, evaluating some projects throws on an MSBuild intrinsic function the older
+transitively-resolved assembly does not implement.

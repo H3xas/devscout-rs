@@ -6,7 +6,13 @@ using Microsoft.CodeAnalysis.MSBuild;
 namespace ScoutSemantic;
 
 /// <summary>One project kept after multi-target de-duplication.</summary>
-internal sealed record LoadedProject(Project Project, string Name, string? Tfm);
+internal sealed record LoadedProject(Project Project, string Name, string? Tfm, string? RequestedTfm);
+
+/// <summary>A requested <c>--tfm</c> that no variant of a project declares.</summary>
+internal sealed record UnsupportedTarget(string ProjectFilePath, string ProjectName, string RequestedTfm, List<string> DeclaredTfms);
+
+/// <summary>A declared variant that was not selected because it was not requested.</summary>
+internal sealed record ExcludedVariant(string ProjectFilePath, string ProjectName, string Tfm);
 
 /// <summary>Everything <see cref="Loader"/> hands back to the runner.</summary>
 internal sealed class LoadResult
@@ -18,6 +24,12 @@ internal sealed class LoadResult
     public List<LoadedProject> Projects { get; } = new();
 
     public List<WorkspaceDiagnostic> Failures { get; } = new();
+
+    /// <summary>A requested target no variant declares; contributes no facts under that identity.</summary>
+    public List<UnsupportedTarget> Unsupported { get; } = new();
+
+    /// <summary>A declared variant left out because it was not among the requested targets (or, with no request, not the deterministic selection).</summary>
+    public List<ExcludedVariant> Excluded { get; } = new();
 }
 
 /// <summary>
@@ -67,28 +79,77 @@ internal static class Loader
         foreach (var group in solution.Projects.GroupBy(p => p.FilePath ?? p.Name, StringComparer.Ordinal))
         {
             var variants = group.ToList();
-            Project chosen = variants[0];
-            if (variants.Count > 1 && options.Tfm is { Length: > 0 } wanted)
-            {
-                chosen = variants.FirstOrDefault(
-                    p => p.Name.EndsWith("(" + wanted + ")", StringComparison.Ordinal)) ?? variants[0];
-            }
+            var (baseName, _) = SplitName(variants[0].Name);
 
-            var (name, tfm) = SplitName(chosen.Name);
-            tfm ??= TfmFromOutputPath(chosen.OutputFilePath ?? chosen.CompilationOutputInfo.AssemblyPath);
-
-            if (options.ProjectGlobs.Count > 0 && !options.ProjectGlobs.Any(g => g.IsMatch(name) || g.IsMatch(chosen.Name)))
+            if (options.ProjectGlobs.Count > 0
+                && !options.ProjectGlobs.Any(g => g.IsMatch(baseName) || variants.Any(v => g.IsMatch(v.Name))))
             {
                 continue;
             }
 
-            if (variants.Count > 1)
+            // Every variant's own declared target, independent of whether
+            // Roslyn split the project into more than one -- the single-
+            // variant case is checked against a request exactly the same way
+            // a multi-targeting one is, closing the gap a project whose sole
+            // declared TFM silently kept regardless of what was requested.
+            var declared = new List<(Project Project, string Tfm)>();
+            foreach (var variant in variants)
             {
-                Console.Error.WriteLine(
-                    $"  {name}: {variants.Count} target variants, keeping {tfm ?? "(unknown tfm)"}");
+                var (_, tfm) = SplitName(variant.Name);
+                tfm ??= TfmFromOutputPath(variant.OutputFilePath ?? variant.CompilationOutputInfo.AssemblyPath);
+                if (tfm is not null)
+                {
+                    declared.Add((variant, tfm));
+                }
             }
 
-            result.Projects.Add(new LoadedProject(chosen, name, tfm));
+            var declaredTfms = declared.Select(d => d.Tfm).Distinct(StringComparer.Ordinal)
+                .OrderBy(t => t, StringComparer.Ordinal).ToList();
+
+            if (options.Tfms.Count > 0)
+            {
+                foreach (var requested in options.Tfms)
+                {
+                    var match = declared.FirstOrDefault(d => string.Equals(d.Tfm, requested, StringComparison.Ordinal));
+                    if (match.Project is null)
+                    {
+                        result.Unsupported.Add(new UnsupportedTarget(
+                            variants[0].FilePath ?? variants[0].Name, baseName, requested, declaredTfms));
+                        Console.Error.WriteLine(
+                            $"  {baseName}: requested tfm '{requested}' is not declared (declared: {string.Join(", ", declaredTfms)})");
+                        continue;
+                    }
+
+                    result.Projects.Add(new LoadedProject(match.Project, baseName, match.Tfm, requested));
+                }
+
+                continue;
+            }
+
+            // No --tfm at all: deterministic ordinal-least selection, replacing
+            // today's Roslyn-enumeration-order-dependent variants[0]. Every
+            // other declared variant is recorded excluded/not-requested.
+            if (declared.Count == 0)
+            {
+                // No variant carries a discoverable literal TFM (single
+                // untagged project): keep the sole variant with a null tfm,
+                // exactly as before.
+                result.Projects.Add(new LoadedProject(variants[0], baseName, null, null));
+                continue;
+            }
+
+            var selected = declared.OrderBy(d => d.Tfm, StringComparer.Ordinal).First();
+            result.Projects.Add(new LoadedProject(selected.Project, baseName, selected.Tfm, null));
+            foreach (var other in declared.Where(d => !string.Equals(d.Tfm, selected.Tfm, StringComparison.Ordinal)))
+            {
+                result.Excluded.Add(new ExcludedVariant(variants[0].FilePath ?? variants[0].Name, baseName, other.Tfm));
+            }
+
+            if (declared.Count > 1)
+            {
+                Console.Error.WriteLine(
+                    $"  {baseName}: {declared.Count} target variants, keeping {selected.Tfm}");
+            }
         }
 
         // List.Sort is unstable, so a name tie must be broken explicitly or the

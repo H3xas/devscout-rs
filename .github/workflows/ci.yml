@@ -143,16 +143,28 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ hashFiles('tools/scout-semantic/packages.lock.json', 'fixtures/csharp-semantic/Directory.Packages.props') }}
+          key: ${{ runner.os }}-nuget-${{ hashFiles('tools/scout-semantic/packages.lock.json', 'tools/scout-semantic.Tests/packages.lock.json', 'fixtures/csharp-semantic/Directory.Packages.props') }}
 
-      - name: Restore (oracle locked, fixture CPM-pinned)
+      - name: Restore (oracle locked, context tests locked, fixtures CPM-pinned or plain)
         run: |
           dotnet restore tools/scout-semantic --locked-mode
+          dotnet restore tools/scout-semantic.Tests --locked-mode
           dotnet restore fixtures/csharp-semantic/Fixture.sln
           dotnet restore fixtures/csharp-flowtrace/Fixture.sln
+          # Per project, not the .sln: the fixture's own Fixture.sln names a
+          # Vanished project that deliberately does not exist on disk (the
+          # fixture case for a project the workspace never sees at all), and
+          # restoring the whole .sln fails outright on that entry, unlike
+          # `dotnet run`'s own MSBuildWorkspace load, which tolerates it.
+          dotnet restore fixtures/csharp-context/src/Clean/Clean.csproj
+          dotnet restore fixtures/csharp-context/src/Legacy/Legacy.csproj
+          dotnet restore fixtures/csharp-context/src/Broken/Broken.csproj
 
       - name: Build oracle
         run: dotnet build tools/scout-semantic --no-restore -c Release
+
+      - name: Context schema unit tests
+        run: dotnet test tools/scout-semantic.Tests --no-restore -c Release
 
       - name: Run oracle on the fixture solution
         run: |
@@ -174,6 +186,35 @@ jobs:
 
       - name: Facts output matches the committed snapshot
         run: diff -u fixtures/csharp-flowtrace/facts.json out/facts/csharp-flowtrace.json
+
+      - name: Run the oracle in context mode on its own fixture (default selection)
+        run: |
+          dotnet run --project tools/scout-semantic --no-build -c Release -- \
+            fixtures/csharp-context/Fixture.sln --root fixtures/csharp-context \
+            --emit context --context out/context/csharp-context.json
+
+      - name: Context output matches the committed snapshot
+        run: diff -u fixtures/csharp-context/context.json out/context/csharp-context.json
+
+      - name: Two context runs over the same pinned inputs are byte-identical
+        run: |
+          dotnet run --project tools/scout-semantic --no-build -c Release -- \
+            fixtures/csharp-context/Fixture.sln --root fixtures/csharp-context \
+            --emit context --context out/context/csharp-context-2.json
+          diff -u out/context/csharp-context.json out/context/csharp-context-2.json
+
+      # Not every record in the default selection is complete (Legacy's own
+      # net472 control is a deliberate binding error) -- --strict is required
+      # to exit 2 rather than the default run's own exit 0, so the negative
+      # case is checked as explicitly as the positive ones above.
+      - name: --strict exits non-zero for an artifact that is not complete
+        run: |
+          if dotnet run --project tools/scout-semantic --no-build -c Release -- \
+            fixtures/csharp-context/Fixture.sln --root fixtures/csharp-context \
+            --emit context --context out/context/csharp-context-strict.json --strict; then
+            echo "::error::--strict exited 0 for a non-complete context artifact"
+            exit 1
+          fi
 
       - name: Build devscout
         run: cargo build --locked --release
