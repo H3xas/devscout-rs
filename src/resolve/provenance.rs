@@ -132,11 +132,11 @@ pub(super) fn flush(edges: &[Edge]) {
             None => "\"precise\"",
         };
         let member = match &k.4 {
-            Some(m) => format!("\"{}\"", escape(m)),
+            Some(m) => escape(m),
             None => "null".to_string(),
         };
         body.push_str(&format!(
-            "{{\"file\":\"{}\",\"line\":{},\"to\":\"{}\",\"to_file\":\"{}\",\"member\":{},\"tier\":{},\"step\":{}}}\n",
+            "{{\"file\":{},\"line\":{},\"to\":{},\"to_file\":{},\"member\":{},\"tier\":{},\"step\":{}}}\n",
             escape(&k.0),
             k.1,
             escape(&k.2),
@@ -151,6 +151,39 @@ pub(super) fn flush(edges: &[Edge]) {
     }
 }
 
+/// A quoted, fully-escaped JSON string, control characters included --
+/// `serde_json`'s own `str` encoding, which is the same encoder
+/// `src/audit/fp_sites.rs` renders its rows through. A raw control
+/// character (a bare newline or tab inside a path or member name) previously
+/// passed through unescaped here and would have produced invalid JSONL; a
+/// `&str` always serializes to a JSON string with no error path, so this
+/// never fails.
 fn escape(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('"', "\\\"")
+    serde_json::to_string(s).expect("a &str always serializes to a JSON string")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A raw control character in a path or member name used to reach the
+    /// JSONL body unescaped and produce an invalid line; `escape` now runs
+    /// every string through `serde_json`, which turns it into a valid
+    /// two-character JSON escape and keeps the round trip lossless.
+    #[test]
+    fn escape_turns_a_raw_control_character_into_a_valid_json_escape() {
+        let out = escape("line\none\ttwo");
+        assert_eq!(out, "\"line\\none\\ttwo\"");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&out).expect("escape must produce valid JSON");
+        assert_eq!(parsed, "line\none\ttwo");
+    }
+
+    /// The two characters the old hand-rolled escape already covered stay
+    /// covered by the `serde_json` encoder.
+    #[test]
+    fn escape_still_covers_quote_and_backslash() {
+        let out = escape("a\"b\\c");
+        assert_eq!(out, "\"a\\\"b\\\\c\"");
+    }
 }

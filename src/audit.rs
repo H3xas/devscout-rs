@@ -186,6 +186,12 @@ struct Inputs {
     /// file graph.json mentions), minus the files of any unit whose `status`
     /// is not `"ok"`.
     universe: HashSet<String>,
+    /// Whether `score` should build `AuditReport.fp_sites`. `load` always
+    /// sets this `false`; `cmd_audit` flips it on after `load` returns, only
+    /// when `--fp-sites` was given, since the flag is the one thing `load`
+    /// itself never sees. A caller-built `Inputs` that never sets it wants
+    /// no rows, matching the flag's own default.
+    collect_fp_sites: bool,
 }
 
 /// `load`'s filesystem arguments -- the resolved, already-`-C`-aware paths
@@ -235,6 +241,7 @@ fn load(root: &Path, opts: &AuditOptions) -> Result<Inputs, String> {
         records,
         units,
         universe,
+        collect_fp_sites: false,
     })
 }
 
@@ -617,9 +624,27 @@ struct AuditReport {
     /// judged universe to begin with, so it is neither a true nor a false
     /// positive.
     edges_outside_universe: usize,
-    /// One row per false positive, in scoring order. Built always and
-    /// written only by `--fp-sites`; nothing the report prints reads it.
+    /// One row per false positive, in scoring order. Built only when
+    /// `Inputs.collect_fp_sites` is set, written only by `--fp-sites`;
+    /// nothing the report prints reads it.
     fp_sites: Vec<FpSite>,
+}
+
+/// Appends one row when `collect` is set; a no-op otherwise. Kept as its own
+/// function, not an inline `if`, so the opt-in branch does not add to
+/// `score`'s own cognitive-complexity budget -- the loop it is called from
+/// already carries the tier/class decision.
+fn push_fp_site(
+    fp_rows: &mut Vec<FpSite>,
+    collect: bool,
+    e: &EdgeRow,
+    class: &'static str,
+    evidence: &[&OracleRef],
+    structural: bool,
+) {
+    if collect {
+        fp_rows.push(FpSite::new(e, class, evidence, structural));
+    }
 }
 
 /// Scores `inputs` into a full `AuditReport`. Pure: every branch below reads
@@ -630,6 +655,7 @@ struct AuditReport {
 )]
 fn score(inputs: Inputs) -> AuditReport {
     let root = inputs.root.display().to_string();
+    let collect_fp_sites = inputs.collect_fp_sites;
 
     // "units" method (below) applies exactly when `--units` produced at
     // least one unit -- computed once, up front, since both the edge-universe
@@ -802,7 +828,14 @@ fn score(inputs: Inputs) -> AuditReport {
                 stats.fp += 1;
                 stats.fp_no_site += 1;
                 *fp_targets.entry(short_name(&e.to).to_string()).or_insert(0) += 1;
-                fp_rows.push(FpSite::new(e, "no-site", &[], edge_structural[i]));
+                push_fp_site(
+                    &mut fp_rows,
+                    collect_fp_sites,
+                    e,
+                    "no-site",
+                    &[],
+                    edge_structural[i],
+                );
                 false
             }
             Some(recs) => {
@@ -868,7 +901,14 @@ fn score(inputs: Inputs) -> AuditReport {
                         "wrong-target"
                     };
                     *fp_targets.entry(short_name(&e.to).to_string()).or_insert(0) += 1;
-                    fp_rows.push(FpSite::new(e, class, &evidence, edge_structural[i]));
+                    push_fp_site(
+                        &mut fp_rows,
+                        collect_fp_sites,
+                        e,
+                        class,
+                        &evidence,
+                        edge_structural[i],
+                    );
                     false
                 }
             }
@@ -1392,10 +1432,11 @@ pub(crate) fn cmd_audit(cwd: &Path, args: &[String]) -> (i32, String) {
         defs: defs_path.as_deref(),
     };
 
-    let inputs = match load(&root, &opts) {
+    let mut inputs = match load(&root, &opts) {
         Ok(i) => i,
         Err(e) => return (1, format!("error: {e}")),
     };
+    inputs.collect_fp_sites = fp_sites_path.is_some();
     let report = score(inputs);
     if let Some(fp_path) = fp_sites_path {
         let abs = crate::repo::resolve_from(cwd, Path::new(&fp_path));
@@ -1537,6 +1578,7 @@ mod tests {
             records: vec![record],
             units: Vec::new(),
             universe,
+            collect_fp_sites: false,
         });
 
         assert_eq!(report.tiers.len(), 1);
@@ -1589,6 +1631,7 @@ mod tests {
             records: vec![record],
             units: Vec::new(),
             universe,
+            collect_fp_sites: false,
         });
 
         assert_eq!(report.tiers.len(), 1);
@@ -1651,6 +1694,7 @@ mod tests {
             records: vec![wrong, right],
             units: Vec::new(),
             universe: ["F.cs".to_string()].into_iter().collect(),
+            collect_fp_sites: false,
         });
         let (_, ts) = &report.tiers[0];
         assert_eq!(ts.tp, 1);
@@ -1713,6 +1757,7 @@ mod tests {
             records: vec![load_record, validate_record],
             units: Vec::new(),
             universe: ["F.cs".to_string()].into_iter().collect(),
+            collect_fp_sites: false,
         });
 
         // The edge itself: a TP against `load_record` only.
@@ -1799,6 +1844,7 @@ mod tests {
             records: vec![has_max_length, e_name, entity_property],
             units: Vec::new(),
             universe: ["F.cs".to_string()].into_iter().collect(),
+            collect_fp_sites: false,
         });
 
         let (_, ts) = &report.tiers[0];
@@ -1855,6 +1901,7 @@ mod tests {
             records: vec![in_tree],
             units: Vec::new(),
             universe: ["F.cs".to_string()].into_iter().collect(),
+            collect_fp_sites: false,
         });
 
         let (_, ts) = &report.tiers[0];
@@ -1905,6 +1952,7 @@ mod tests {
             records: vec![external_only],
             units: Vec::new(),
             universe: ["F.cs".to_string()].into_iter().collect(),
+            collect_fp_sites: false,
         });
 
         let (_, ts) = &report.tiers[0];
@@ -1966,6 +2014,7 @@ mod tests {
             records: vec![rec_at_full, rec_at_bare],
             units: Vec::new(),
             universe: ["F.cs".to_string()].into_iter().collect(),
+            collect_fp_sites: false,
         });
         let (_, ts) = &report.tiers[0];
         assert_eq!(ts.tp, 2);
@@ -2040,6 +2089,7 @@ mod tests {
             // intersected with the union of ok units' files ("App/A.cs"
             // only), since "Other/B.cs" belongs to no unit at all.
             universe: ["App/A.cs".to_string()].into_iter().collect(),
+            collect_fp_sites: false,
         });
 
         assert_eq!(report.edges_outside_universe, 1);
@@ -2114,6 +2164,7 @@ mod tests {
             records: vec![record],
             units,
             universe: ["App/A.cs".to_string()].into_iter().collect(),
+            collect_fp_sites: false,
         });
         assert_eq!(report.structural_method, "units");
         assert_eq!(report.structural_checked, 1);
@@ -2169,6 +2220,7 @@ mod tests {
             records: Vec::new(),
             units: Vec::new(), // empty -> "test-defs" fallback
             universe: HashSet::new(),
+            collect_fp_sites: false,
         });
         assert_eq!(report.structural_method, "test-defs");
         assert_eq!(report.structural_checked, 2);
@@ -2211,6 +2263,7 @@ mod tests {
             records: Vec::new(),
             units: Vec::new(), // empty -> "test-defs" fallback
             universe: HashSet::new(),
+            collect_fp_sites: false,
         };
 
         let without_oracle = score(inputs(Vec::new()));

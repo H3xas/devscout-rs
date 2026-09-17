@@ -7,6 +7,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`audit --fp-sites <file>`** writes one JSON Lines row per false-positive `uses-member` edge --
+  file, line, tier, class, the target the resolver bound, and the target(s) the oracle expected --
+  for every tier, not only the precise one. Without the flag, `audit`'s text and `--json` output
+  are unchanged.
+
 ## [0.6.0] - 2026-09-09
 
 A reach release: the graph learns which implementation a registered service resolves to, and

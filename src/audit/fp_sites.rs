@@ -126,6 +126,7 @@ mod tests {
             records,
             units: Vec::new(),
             universe: ["F.cs".to_string()].into_iter().collect(),
+            collect_fp_sites: true,
         }
     }
 
