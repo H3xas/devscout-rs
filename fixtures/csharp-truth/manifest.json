@@ -218,7 +218,7 @@
           {
             "severity": "error",
             "code": "CS0165",
-            "occurrence": { "file": "src/FrameworkSemantics.cs", "startLine": 31, "startCol": 24, "endLine": 31, "endCol": 36 }
+            "occurrence": { "file": "src/FrameworkSemantics.cs", "startLine": 31, "startCol": 34, "endLine": 31, "endCol": 35 }
           }
         ]
       },

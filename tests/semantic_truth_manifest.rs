@@ -13,6 +13,28 @@ fn manifest_path() -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/csharp-truth/manifest.json")
 }
 
+fn readme_path() -> std::path::PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/csharp-truth/README.md")
+}
+
+/// The fixture pack's own evidence clause for a case is its README row, so a
+/// case the table has fallen behind on documents nothing. Every committed
+/// case id must appear as a backtick-quoted README cell, or this test names
+/// which one does not.
+#[test]
+fn every_committed_case_id_appears_in_the_fixture_readme() {
+    let manifest_text = std::fs::read_to_string(manifest_path()).unwrap();
+    let manifest = parse_manifest(&manifest_text).unwrap();
+    let readme = std::fs::read_to_string(readme_path()).unwrap();
+    for case in &manifest.cases {
+        assert!(
+            readme.contains(&format!("`{}`", case.id)),
+            "case '{}' is not documented in fixtures/csharp-truth/README.md",
+            case.id
+        );
+    }
+}
+
 #[test]
 fn the_committed_manifest_parses_whole() {
     let text = std::fs::read_to_string(manifest_path()).expect("manifest.json must be readable");
