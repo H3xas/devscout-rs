@@ -424,12 +424,16 @@ internal sealed class FactsWalker
     /// kind. Narrower than every field access this file could in principle
     /// resolve: the receiver must be exactly one field <see
     /// cref="InjectedFields"/> proves was ctor-injected, not an arbitrary
-    /// member or a chained call.
+    /// member or a chained call. Reads either a block or an expression body
+    /// (the same <c>Body ?? (SyntaxNode?)ExpressionBody</c> shape <see
+    /// cref="InjectedFields"/> and <see cref="EmitConstructorFields"/> already
+    /// use), so an expression-bodied method is not silently skipped.
     /// </summary>
     private void EmitMethodCalls(
         SemanticModel model, MethodDeclarationSyntax method, INamedTypeSymbol owner, string relFile, List<FactRecord> sink)
     {
-        if (method.Body is not { } body)
+        SyntaxNode? body = method.Body ?? (SyntaxNode?)method.ExpressionBody;
+        if (body is null)
         {
             return;
         }

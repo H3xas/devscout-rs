@@ -345,6 +345,15 @@ fn semantic_resolution_shows_where_regexes_stop() {
         .is_some(),
         "a directly assigned (no null-guard) ctor-injected field still yields method_call"
     );
+    // An expression-bodied method (`=>`, no `{ }` block) calling a
+    // ctor-injected field still yields method_call -- the same slot a
+    // block-bodied method fills, read from the arrow body instead.
+    let expression_bodied = find("method_call", &|f| {
+        f["class"] == "ParcelsController" && f["method"] == "HasRecord"
+    })
+    .expect("an expression-bodied method calling a ctor-injected field");
+    assert_eq!(expression_bodied["field"], "_repository");
+    assert_eq!(expression_bodied["calledMethod"], "Find");
     // A partial consumer yields one consume fact, on the part carrying the
     // base list.
     let partial: Vec<_> = all

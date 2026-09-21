@@ -261,7 +261,7 @@ fn no_answer_this_fixture_produces_ever_claims_an_unmodeled_control_or_dispatch_
     ];
     let fx = Fixture::new();
     for query in ["Record", "RecordAsync", "Recurse", "Ledger", "Caller"] {
-        for verb in ["refs", "read", "tests"] {
+        for verb in ["refs", "read", "tests", "impact"] {
             let out = fx.run(&[verb, query, "--json"]);
             let text = String::from_utf8(out.stdout).unwrap();
             if text.trim().is_empty() {

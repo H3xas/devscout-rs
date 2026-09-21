@@ -123,9 +123,11 @@ the broader interface hop, over a guess, in that order.
 ## `freshness`
 
 `refs`, `read`, `impact` and `tests` (`find` has no `--json` shape) append a top-level `freshness`
-object as their true last key -- after `occurrenceIndex` when that key is also present, after
-`outcome` otherwise. It is always present under `--json`, on every outcome, not only a resolved
-hit: it is a property of the index at query time, not of the specific query.
+object as their true last key, always after `outcome`. `occurrenceIndex` is a *row* key nested
+inside `inbound`/`outbound` several levels down, never a top-level sibling of `freshness` -- the
+two never share an adjacency to describe. `freshness` is always present under `--json`, on every
+outcome, not only a resolved hit: it is a property of the index at query time, not of the specific
+query.
 
 `freshness.state` is one of three words:
 
@@ -172,7 +174,10 @@ Each example below is a real `--json` run against a fixture in this repository
 (`fixtures/conformance/csharp/`, copied into its own throwaway git repo and mapped), reformatted
 for readability. `_store`/`store` are the only two callers of `InMemoryCatalogStore.CountItems`;
 `CatalogStoreTests` is the only test file; `ICatalogStore` is the interface `InMemoryCatalogStore`
-implements.
+implements. These four examples predate the `freshness` key and are kept focused on the
+pre-existing shape, so its top-level object is elided from each -- see the `## freshness` section
+above for its own shape and the three states it can carry; every example below still gains it as
+its true last key on every real run.
 
 ### `refs`
 
