@@ -16,8 +16,10 @@ the fixture case for the `linked-outside-root` drop reason, and must stay outsid
 
 ## Committed envelopes
 
-Five snapshots, each a full `--emit context` run, regenerated and diffed byte-for-byte in CI the
-same way `fixtures/csharp-flowtrace/facts.json` is:
+Five snapshots, each a full `--emit context` run. CI regenerates and byte-diffs one of them
+(`context.json`, the default-selection run) against the committed file, the same way
+`fixtures/csharp-flowtrace/facts.json` is; the other four are checked offline from committed bytes,
+by `tests/context_envelope.rs`, the same as `fixtures/csharp-context-fingerprint/`'s own files:
 
 | File | Command (besides the shared `--root fixtures/csharp-context Fixture.sln --emit context`) | What it shows |
 |---|---|---|
@@ -43,12 +45,13 @@ CI pins that same SDK patch exactly, so the committed bytes and a CI regeneratio
   non-Windows equivalent. The record still reports the compiler-diagnostic-driven `partial`/
   `binding-error` state correctly (that comes from Roslyn's own diagnostics, not the independent
   inventory), but the independent document-inventory diff is unavailable for that one variant, and
-  the record says so explicitly: its `reason` would be `inventory-unavailable` were a compiler
-  diagnostic not already demoting it first, and `configuration`/`platform` stay `null`. See
+  the record says so explicitly: `documents.inventoryAvailable` reads `false` even though a
+  compiler diagnostic already demotes this record to `partial`/`binding-error` on its own, and
+  `configuration`/`platform` stay `null`. See
   `tools/scout-semantic/README.md#build-context-envelope` for the general rule this is one instance
   of: a compilation whose independent inventory failed is never reported `complete` by falling back
   to "nothing was missing".
 - The fingerprint's mutation-class matrix and the four-way multi-target/multi-configuration
   identity round trip both moved to a dedicated fixture, `fixtures/csharp-context-fingerprint/`
   (its own `README.md`), so that evidence no longer has to fit this fixture's own three engineered
-  projects or its five CI-diffed snapshots.
+  projects or its five committed snapshots.

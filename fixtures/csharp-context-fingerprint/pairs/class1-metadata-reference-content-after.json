@@ -17,10 +17,10 @@
       },
       "state": "complete",
       "reason": "complete",
-      "fingerprint": "ad6c62349d812f5379d4522b7f2c943edf22dde5",
+      "fingerprint": "a42ca896111c6bf6451bdb4a5c5e88365f1750cd",
       "versions": {
         "sdk": "9.0.305",
-        "msbuild": "9.0.305",
+        "msbuild": "17.14.21.41108",
         "compiler": "4.14.0-3.25262.10+8edf7bcd4f1594c3d68a6a567469f41dbd33dd1b",
         "engine": "0.1.0"
       },
@@ -1041,7 +1041,8 @@
         "loaded": [
           "RefProbe.cs"
         ],
-        "dropped": []
+        "dropped": [],
+        "inventoryAvailable": true
       },
       "generated": {
         "documents": [],

@@ -65,6 +65,19 @@ internal sealed class ContextDocuments
     public List<string> Loaded { get; init; } = new();
 
     public List<DroppedDocument> Dropped { get; init; } = new();
+
+    /// <summary>
+    /// False when the independent expected-inventory evaluation itself
+    /// failed for this record, so <c>expected</c> silently falls back to
+    /// <c>loaded</c> (nothing to compare against, nothing to report as
+    /// missed) rather than reflecting a genuinely independent source.
+    /// Explicit even when a stronger reason -- a compiler error, an
+    /// unresolved reference, a dropped document -- already demotes the
+    /// record's own <c>state</c>/<c>reason</c>, because a consumer reading
+    /// only <c>expected</c>/<c>dropped</c> would otherwise see "nothing was
+    /// missing" where the truth is "we could not tell".
+    /// </summary>
+    public bool InventoryAvailable { get; init; } = true;
 }
 
 /// <summary>One source-generated document, inventoried separately from authored documents.</summary>

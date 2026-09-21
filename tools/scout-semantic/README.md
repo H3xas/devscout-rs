@@ -345,8 +345,9 @@ Each record names the exact project, requested/effective target, configuration a
 references, imported build files and their content hashes; language options and preprocessor
 symbols; generated and linked documents; SDK/MSBuild/compiler/engine versions; raw workspace and
 compiler diagnostics; the expected-versus-loaded document inventory with every difference
-classified (`missing`, `linked-outside-root`, `skipped-directory`, `out-of-scope`); a context
-fingerprint; and one of five states, always paired with a machine-readable reason:
+classified (`missing`, `linked-outside-root`, `skipped-directory`, `out-of-scope`) plus a
+`documents.inventoryAvailable` marker (below); a context fingerprint; and one of five states,
+always paired with a machine-readable reason:
 
 | State | Reason (examples) | Meaning |
 |---|---|---|
@@ -369,14 +370,26 @@ project) the workspace silently drops is still reportable, and a document Roslyn
 tolerantly "loads" with empty content (a `Compile` item whose file was never created) is still
 named missing. See `tools/scout-semantic/ContextInventory.cs`. When that independent evaluation
 itself throws (observed for a `net472` target's evaluation on a non-Windows machine, where classic
-.NET Framework GAC/registry resolution has no equivalent), the record is demoted to `partial`/
-`inventory-unavailable` rather than silently reporting the loaded set as if nothing were missing --
-completion is earned, never inferred from "we could not check".
+.NET Framework GAC/registry resolution has no equivalent), `documents.inventoryAvailable` reads
+`false` and, unless a stronger reason (a compiler error, an unresolved reference, a dropped
+document) already demotes the record, its state is `partial`/`inventory-unavailable`.
+`inventoryAvailable` is written explicitly on every record, `true` or `false`, and stays `false`
+even when a stronger reason wins the record's own `state`/`reason` -- so a consumer reading only
+`documents.expected`/`documents.dropped` can still tell "nothing was missing" from "we could not
+check", which the single `reason` field alone cannot say once something else has already claimed it.
+Completion is earned, never inferred from "we could not check".
 
 A `--projects <glob>` filter that leaves a project out never reports it `failed`: it is `excluded`/
 `not-requested`, the same state and reason an unselected multi-target variant gets, because both
-are the caller's own deliberate exclusion rather than a load failure. `excluded` records never
-affect `--strict`'s rollup, so a `--projects`-scoped run that is otherwise healthy still exits 0.
+are the caller's own deliberate exclusion rather than a load failure. This applies uniformly to a
+project the filter skipped before target selection and to a solution-declared project that never
+reached the workspace at all (`Vanished`-shaped): either way, a name the filter would also have
+excluded is `excluded`/`not-requested`, not `failed`/`project-not-loaded` -- only a name the filter
+admits, and that still never loaded, is genuinely `failed`. `excluded` records never affect
+`--strict`'s rollup, so a `--projects`-scoped run that is otherwise healthy still exits 0. A
+`--projects` value that matches no project at all is different: nothing loads and nothing is even
+`excluded` under an identity, which is the same "zero projects loaded" usage error (exit 3) every
+other `--emit` mode already reports for that input, and no envelope is written.
 
 `diagnostics.compiler` carries only `Severity == Error` diagnostics: it exists to drive the
 `binding-error` state (any compiler error demotes the record), not as a general warnings feed. A

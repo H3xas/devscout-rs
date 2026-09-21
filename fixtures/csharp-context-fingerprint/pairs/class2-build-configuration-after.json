@@ -17,10 +17,10 @@
       },
       "state": "complete",
       "reason": "complete",
-      "fingerprint": "b1f57455fde8a73e9f58f6bcca2ebb076e9691eb",
+      "fingerprint": "638c646cdf0070fba976d230cea8b7dffc85fe94",
       "versions": {
         "sdk": "9.0.305",
-        "msbuild": "9.0.305",
+        "msbuild": "17.14.21.41108",
         "compiler": "4.14.0-3.25262.10+8edf7bcd4f1594c3d68a6a567469f41dbd33dd1b",
         "engine": "0.1.0"
       },
@@ -1013,7 +1013,7 @@
           "kind": "project",
           "name": "Shared",
           "identity": null,
-          "fingerprint": "8ef1d680a649ecce7fd8b13f9da1a3e0337a43c5"
+          "fingerprint": "5a73b0ddf9b1cd6344131ed114a7f4b240019edd"
         }
       ],
       "imports": [
@@ -1041,7 +1041,8 @@
         "loaded": [
           "Probe.cs"
         ],
-        "dropped": []
+        "dropped": [],
+        "inventoryAvailable": true
       },
       "generated": {
         "documents": [],
@@ -1064,10 +1065,10 @@
       },
       "state": "complete",
       "reason": "complete",
-      "fingerprint": "8ef1d680a649ecce7fd8b13f9da1a3e0337a43c5",
+      "fingerprint": "5a73b0ddf9b1cd6344131ed114a7f4b240019edd",
       "versions": {
         "sdk": "9.0.305",
-        "msbuild": "9.0.305",
+        "msbuild": "17.14.21.41108",
         "compiler": "4.14.0-3.25262.10+8edf7bcd4f1594c3d68a6a567469f41dbd33dd1b",
         "engine": "0.1.0"
       },
@@ -2082,7 +2083,8 @@
         "loaded": [
           "Shared/Shared.cs"
         ],
-        "dropped": []
+        "dropped": [],
+        "inventoryAvailable": true
       },
       "generated": {
         "documents": [],

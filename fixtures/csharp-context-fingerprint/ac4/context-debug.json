@@ -17,10 +17,10 @@
       },
       "state": "complete",
       "reason": "complete",
-      "fingerprint": "dd8b735104ad4ac430ce60efb8d904bb5fdc6842",
+      "fingerprint": "c788b98d4c65b52f75803fb19a92bae083d93ab0",
       "versions": {
         "sdk": "9.0.305",
-        "msbuild": "9.0.305",
+        "msbuild": "17.14.21.41108",
         "compiler": "4.14.0-3.25262.10+8edf7bcd4f1594c3d68a6a567469f41dbd33dd1b",
         "engine": "0.1.0"
       },
@@ -1029,7 +1029,8 @@
         "loaded": [
           "MultiIdentity.cs"
         ],
-        "dropped": []
+        "dropped": [],
+        "inventoryAvailable": true
       },
       "generated": {
         "documents": [],
@@ -1052,10 +1053,10 @@
       },
       "state": "complete",
       "reason": "complete",
-      "fingerprint": "784cc07d59cb78fb843447f66c28951ef23bf75c",
+      "fingerprint": "534b2baec819ed3dbd45074269f7e1ef2164a0fe",
       "versions": {
         "sdk": "9.0.305",
-        "msbuild": "9.0.305",
+        "msbuild": "17.14.21.41108",
         "compiler": "4.14.0-3.25262.10+8edf7bcd4f1594c3d68a6a567469f41dbd33dd1b",
         "engine": "0.1.0"
       },
@@ -2070,7 +2071,8 @@
         "loaded": [
           "MultiIdentity.cs"
         ],
-        "dropped": []
+        "dropped": [],
+        "inventoryAvailable": true
       },
       "generated": {
         "documents": [],

@@ -18,7 +18,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   SDK/MSBuild/compiler/engine versions; and a context fingerprint that moves with a reference,
   import, analyzer reference, generator input, build option, or dependency compilation's own
   fingerprint. A non-null compilation is never `complete` by itself, including when its own
-  independent inventory could not be obtained at all. Additive: `refs.jsonl`, `units.jsonl`,
+  independent inventory could not be obtained at all -- `documents.inventoryAvailable` marks that
+  case explicitly, even when a stronger reason already demotes the record's own `state`/`reason`.
+  Additive: `refs.jsonl`, `units.jsonl`,
   `defs.jsonl` and the flow-tracer fact document stay byte-identical for unchanged inputs.
   Fixture: `fixtures/csharp-context/` and `fixtures/csharp-context-fingerprint/`. See
   `tools/scout-semantic/README.md#build-context-envelope`.

@@ -191,6 +191,7 @@ internal static class ContextWriter
         }
 
         writer.WriteEndArray();
+        writer.WriteBoolean("inventoryAvailable", record.Documents.InventoryAvailable);
         writer.WriteEndObject();
 
         writer.WriteStartObject("generated");

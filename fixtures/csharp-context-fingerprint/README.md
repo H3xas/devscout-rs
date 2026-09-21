@@ -81,5 +81,4 @@ compilations` to stderr (`ContextBuilder.FingerprintElapsed`, wall time spent in
 `GetOrComputeFingerprint`, cache hits excluded). Measured on this machine across the runs that
 produced the pairs above: consistently 40-180ms for one to two compilations, the bulk of it the
 fingerprint path's own second, independent project evaluation. Recorded here, not asserted by a
-test, because the number is machine-dependent; see the ticket's implementation journal for the
-dated measurement this evidence was produced under.
+test, because the number is machine-dependent.

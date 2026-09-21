@@ -319,7 +319,7 @@ internal static class Runner
 {
     private static readonly JsonSerializerOptions Json = new()
     {
-        // The default encoder escapes '+' as +, which would corrupt the
+        // The default encoder escapes '+' as the \u002B escape, which would corrupt the
         // Ns.Outer+Inner nested-type spelling.
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
         WriteIndented = false,
@@ -333,12 +333,15 @@ internal static class Runner
         // A context run every one of whose requested targets is undeclared
         // everywhere still has something to report: one unsupported record
         // per request, naming both sides, with zero facts under any of them.
-        // Only a context run with genuinely nothing at all -- no loaded
-        // project, no unsupported request, no excluded variant -- is the
-        // historical "zero projects loaded" usage error.
+        // load.Filtered is deliberately excluded from this bypass: a
+        // --projects value that matches nothing leaves nothing to report but
+        // the fact that nothing matched, and every other emit mode already
+        // treats that as the historical "zero projects loaded" usage error --
+        // this run stays exit 3 rather than writing an envelope of nothing
+        // but excluded records with no artifact-level state to say so.
         if (load.Projects.Count == 0
             && !(options.Emit.Contains(Program.EmitContext)
-                && (load.Unsupported.Count > 0 || load.Excluded.Count > 0 || load.Filtered.Count > 0)))
+                && (load.Unsupported.Count > 0 || load.Excluded.Count > 0)))
         {
             Console.Error.WriteLine("error: zero projects loaded");
             return 3;
@@ -552,6 +555,30 @@ internal static class Runner
                         continue;
                     }
 
+                    // The caller's own --projects filter is applied to every
+                    // solution-declared project, loaded or not: a project the
+                    // filter would also have left out is exactly as
+                    // deliberately excluded as one Loader itself filtered
+                    // before target selection, not a project that failed to
+                    // load. Only a name the filter admits, and that still
+                    // never reached the workspace, is genuinely `failed`.
+                    if (options.ProjectGlobs.Count > 0 && !options.ProjectGlobs.Any(g => g.IsMatch(expected.Name)))
+                    {
+                        contextRecords.Add(new ContextRecord
+                        {
+                            Identity = new ContextIdentity
+                            {
+                                ProjectPath = paths.RelativeProjectPath(expected.AbsolutePath) ?? expected.AbsolutePath,
+                                ProjectName = expected.Name,
+                                RequestedTfm = null,
+                                EffectiveTfm = null,
+                            },
+                            State = "excluded",
+                            Reason = "not-requested",
+                        });
+                        continue;
+                    }
+
                     contextRecords.Add(new ContextRecord
                     {
                         Identity = new ContextIdentity
@@ -684,16 +711,28 @@ internal static class Runner
     private static ContextVersions DetectVersions() => new()
     {
         Sdk = DetectSdkVersion(),
-        Msbuild = Program.MsBuildVersion,
+        Msbuild = DetectMsBuildVersion(),
         Compiler = DetectCompilerVersion(),
         Engine = FactsWriter.ProducerVersion(),
     };
 
-    private static string DetectSdkVersion()
+    private static string DetectSdkVersion() => RunDotnet("--version");
+
+    /// <summary>
+    /// <see cref="Program.MsBuildVersion"/> (from <c>MSBuildLocator.RegisterDefaults().Version</c>)
+    /// is, for a .NET SDK instance, the SDK version, not MSBuild's own engine version -- verified
+    /// empirically (both print <c>9.0.305</c> on this machine while <c>dotnet msbuild -version</c>
+    /// prints <c>17.14.21...</c>), which folded the SDK into the fingerprint's `versions` group
+    /// twice under two different field names and left no independent MSBuild axis. `-nologo`
+    /// suppresses the copyright banner so the version is the only line on stdout.
+    /// </summary>
+    private static string DetectMsBuildVersion() => RunDotnet("msbuild -version -nologo");
+
+    private static string RunDotnet(string arguments)
     {
         try
         {
-            using var process = Process.Start(new ProcessStartInfo("dotnet", "--version")
+            using var process = Process.Start(new ProcessStartInfo("dotnet", arguments)
             {
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -707,9 +746,12 @@ internal static class Runner
 
             process.ErrorDataReceived += static (_, _) => { };
             process.BeginErrorReadLine();
-            var output = process.StandardOutput.ReadToEnd().Trim();
+            var output = process.StandardOutput.ReadToEnd();
             process.WaitForExit();
-            return process.ExitCode == 0 && output.Length > 0 ? output : "unknown";
+            var lastLine = output
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .LastOrDefault();
+            return process.ExitCode == 0 && !string.IsNullOrEmpty(lastLine) ? lastLine : "unknown";
         }
         catch (Exception e) when (e is Win32Exception or InvalidOperationException or IOException or PlatformNotSupportedException)
         {
@@ -932,7 +974,7 @@ internal static class ContextBuilder
         var loadedSet = new HashSet<string>(loadedFiles, StringComparer.Ordinal);
         var documents = inventory is not null
             ? new ContextDocuments { Loaded = loadedFiles, Expected = inventory.ExpectedDisplayPaths, Dropped = inventory.Dropped }
-            : new ContextDocuments { Loaded = loadedFiles, Expected = new List<string>(loadedFiles) };
+            : new ContextDocuments { Loaded = loadedFiles, Expected = new List<string>(loadedFiles), InventoryAvailable = false };
 
         var generated = GeneratedDocumentsOf(project, compilation, paths, loadedSet, out var generatedTrees);
         generated.Diagnostics.AddRange(GeneratedDiagnosticsOf(compilation, generatedTrees));
@@ -1134,9 +1176,14 @@ internal static class ContextBuilder
     /// trees <see cref="GeneratedDocumentsOf"/> just enumerated. Any
     /// severity is inventoried here -- a generator can report an
     /// informational or a warning diagnostic without ever becoming an
-    /// error, and this account exists to make that visible too.
+    /// error, and this account exists to make that visible too. Internal
+    /// rather than private so <c>scout-semantic.Tests</c> can exercise the
+    /// attribution rule directly against a hand-built compilation, via
+    /// <c>InternalsVisibleTo</c> -- no fixture generator this ticket carries
+    /// ever reports a diagnostic of its own to exercise this positively any
+    /// other way.
     /// </summary>
-    private static List<string> GeneratedDiagnosticsOf(Compilation compilation, HashSet<SyntaxTree> generatedTrees)
+    internal static List<string> GeneratedDiagnosticsOf(Compilation compilation, HashSet<SyntaxTree> generatedTrees)
     {
         var result = new List<string>();
         if (generatedTrees.Count == 0)

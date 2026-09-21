@@ -17,10 +17,10 @@
       },
       "state": "partial",
       "reason": "workspace-failure",
-      "fingerprint": "c9f24dee8f926477fb87ab5b7ff75baf949d120b",
+      "fingerprint": "f6779067c953af556c19ec2ebadcb8e6d3622773",
       "versions": {
         "sdk": "9.0.305",
-        "msbuild": "9.0.305",
+        "msbuild": "17.14.21.41108",
         "compiler": "4.14.0-3.25262.10+8edf7bcd4f1594c3d68a6a567469f41dbd33dd1b",
         "engine": "0.1.0"
       },
@@ -1039,7 +1039,8 @@
         "loaded": [
           "src/Broken/Program.cs"
         ],
-        "dropped": []
+        "dropped": [],
+        "inventoryAvailable": true
       },
       "generated": {
         "documents": [],
@@ -1067,10 +1068,10 @@
       },
       "state": "partial",
       "reason": "missing",
-      "fingerprint": "7efcd4d8e363e53310666c673c4e4bdb97aaba1b",
+      "fingerprint": "da3889e3f0007b036316993b31c6e381308b8cfb",
       "versions": {
         "sdk": "9.0.305",
-        "msbuild": "9.0.305",
+        "msbuild": "17.14.21.41108",
         "compiler": "4.14.0-3.25262.10+8edf7bcd4f1594c3d68a6a567469f41dbd33dd1b",
         "engine": "0.1.0"
       },
@@ -2106,7 +2107,8 @@
             "path": "src/Clean/bin/Stub.cs",
             "reason": "skipped-directory"
           }
-        ]
+        ],
+        "inventoryAvailable": true
       },
       "generated": {
         "documents": [
@@ -2150,10 +2152,10 @@
       },
       "state": "complete",
       "reason": "complete",
-      "fingerprint": "5595dccf905a03ab6b1b492c97ed1f1eff4f36a1",
+      "fingerprint": "c2d0b2b0e9a9504ad6b4f30f92d7175e1b56eda6",
       "versions": {
         "sdk": "9.0.305",
-        "msbuild": "9.0.305",
+        "msbuild": "17.14.21.41108",
         "compiler": "4.14.0-3.25262.10+8edf7bcd4f1594c3d68a6a567469f41dbd33dd1b",
         "engine": "0.1.0"
       },
@@ -3172,7 +3174,8 @@
         "loaded": [
           "src/Legacy/Program.cs"
         ],
-        "dropped": []
+        "dropped": [],
+        "inventoryAvailable": true
       },
       "generated": {
         "documents": [],
@@ -3198,7 +3201,7 @@
       "fingerprint": null,
       "versions": {
         "sdk": "9.0.305",
-        "msbuild": "9.0.305",
+        "msbuild": "17.14.21.41108",
         "compiler": "4.14.0-3.25262.10+8edf7bcd4f1594c3d68a6a567469f41dbd33dd1b",
         "engine": "0.1.0"
       },
@@ -3209,7 +3212,8 @@
       "documents": {
         "expected": [],
         "loaded": [],
-        "dropped": []
+        "dropped": [],
+        "inventoryAvailable": true
       },
       "generated": {
         "documents": [],
