@@ -7,9 +7,14 @@
 //! [`run_battery`] proves every registered row is actually caught, not
 //! merely declared.
 
+use super::freshness::{
+    evaluate_pair, FreshnessOutcome, FreshnessTrigger, FreshnessVerdict, TransformationPair,
+};
 use super::identity::{CompilationIdentity, OccurrenceSpan, SymbolIdentity};
 use super::manifest::{Case, ExpectedPresentFact, Provenance};
-use super::report::{evaluate_case, ratio_or_undefined, ObservedCase, ObservedFact};
+use super::report::{
+    denominator_shrunk, evaluate_case, ratio_or_undefined, ObservedCase, ObservedFact,
+};
 use super::uncertainty::{ContextHealth, Uncertainty};
 
 /// One registered wrong-system mutation. `ALL` is the exhaustive,
@@ -136,108 +141,124 @@ fn clean_observation() -> ObservedCase {
     }
 }
 
+fn caught_empty_output(case: &Case) -> bool {
+    let mutated = ObservedCase {
+        facts: vec![],
+        ..clean_observation()
+    };
+    !evaluate_case(case, &mutated).is_pass()
+}
+
+fn caught_promoted_unresolved(expected_state: &str, reason: &str) -> bool {
+    let case = Case {
+        present: vec![],
+        unresolved: vec![super::manifest::ExpectedUnresolvedFact {
+            identity: identity("Load"),
+            occurrence: occurrence(10),
+            state: expected_state.to_string(),
+            reason: reason.to_string(),
+        }],
+        ..base_case()
+    };
+    let promoted = clean_observation();
+    !evaluate_case(&case, &promoted).is_pass()
+}
+
+fn caught_dropped_project(case: &Case) -> bool {
+    let mutated = ObservedCase {
+        context: ContextHealth::Partial {
+            reason: "one requested project was dropped".to_string(),
+        },
+        ..clean_observation()
+    };
+    !evaluate_case(case, &mutated).is_pass()
+}
+
+fn caught_dropped_generated_document(case: &Case) -> bool {
+    let mutated = ObservedCase {
+        context: ContextHealth::Partial {
+            reason: "a generated document was omitted".to_string(),
+        },
+        facts: vec![],
+        ..clean_observation()
+    };
+    !evaluate_case(case, &mutated).is_pass()
+}
+
+fn caught_wrong_requested_target(case: &Case) -> bool {
+    let mutated = ObservedCase {
+        facts: vec![ObservedFact {
+            identity: identity("SomeOtherMember"),
+            occurrence: occurrence(99),
+            state: Uncertainty::Confirmed,
+        }],
+        ..clean_observation()
+    };
+    !evaluate_case(case, &mutated).is_pass()
+}
+
+/// The battery's own verdict is DERIVED from `freshness.rs`'s detection,
+/// not a reflexive equality declared here: a producer that reuses cached
+/// facts unchanged after a declared freshness trigger must be caught as
+/// `MissedStaleness` by `evaluate_pair`. If that detection were ever
+/// deleted, this function would stop catching the control too.
+fn caught_stale_cache_reuse() -> bool {
+    let pair = TransformationPair {
+        id: "fault-control-stale-cache-reuse",
+        trigger: FreshnessTrigger::DependencyCompilation,
+        mapping: "identity",
+        expected: FreshnessVerdict::Stale,
+    };
+    let reused_after_trigger = clean_observation();
+    let still_cached = clean_observation();
+    let outcome = evaluate_pair(&reused_after_trigger, &still_cached, &pair);
+    matches!(outcome, FreshnessOutcome::MissedStaleness)
+}
+
+/// A report that silently drops one of two requested cases must be caught
+/// even though its own ratio does not fall.
+fn caught_denominator_shrinkage() -> bool {
+    let declared_case_count = 2;
+    let full_denominator = 2;
+    let dropped_denominator = 1;
+    let full_ratio = ratio_or_undefined(1, full_denominator);
+    let dropped_ratio = ratio_or_undefined(1, dropped_denominator);
+    dropped_ratio > full_ratio && denominator_shrunk(dropped_denominator, declared_case_count)
+}
+
+fn caught_self_agreeing_wrong_producer(case: &Case) -> bool {
+    // The producer's own output agrees with itself but contradicts the
+    // independently reviewed expectation.
+    let self_agreeing_but_wrong = ObservedCase {
+        context: ContextHealth::Complete,
+        facts: vec![ObservedFact {
+            identity: identity("LoadFromCache"),
+            occurrence: occurrence(10),
+            state: Uncertainty::Confirmed,
+        }],
+        diagnostics: vec![],
+    };
+    !evaluate_case(case, &self_agreeing_but_wrong).is_pass()
+}
+
 /// Applies one registered mutation and reports whether the harness catches
 /// it -- the check every control is graded on.
 pub fn run_control(control: FaultControl) -> ControlResult {
     let case = base_case();
     let caught = match control {
-        FaultControl::EmptyOutput => {
-            let mutated = ObservedCase {
-                facts: vec![],
-                ..clean_observation()
-            };
-            !evaluate_case(&case, &mutated).is_pass()
-        }
+        FaultControl::EmptyOutput => caught_empty_output(&case),
         FaultControl::PromotedFailedBinding => {
-            // A case declaring an unresolved obligation; the mutation
-            // relabels that fact confirmed instead of leaving it unresolved.
-            let case = Case {
-                present: vec![],
-                unresolved: vec![super::manifest::ExpectedUnresolvedFact {
-                    identity: identity("Load"),
-                    occurrence: occurrence(10),
-                    state: "unresolved".to_string(),
-                    reason: "binding could not be verified".to_string(),
-                }],
-                ..base_case()
-            };
-            let promoted = clean_observation();
-            !evaluate_case(&case, &promoted).is_pass()
+            caught_promoted_unresolved("unresolved", "binding could not be verified")
         }
         FaultControl::PromotedAmbiguity => {
-            let case = Case {
-                present: vec![],
-                unresolved: vec![super::manifest::ExpectedUnresolvedFact {
-                    identity: identity("Load"),
-                    occurrence: occurrence(10),
-                    state: "ambiguous".to_string(),
-                    reason: "an off-target overload also matches".to_string(),
-                }],
-                ..base_case()
-            };
-            let promoted = clean_observation();
-            !evaluate_case(&case, &promoted).is_pass()
+            caught_promoted_unresolved("ambiguous", "an off-target overload also matches")
         }
-        FaultControl::DroppedProject => {
-            let mutated = ObservedCase {
-                context: ContextHealth::Partial {
-                    reason: "one requested project was dropped".to_string(),
-                },
-                ..clean_observation()
-            };
-            !evaluate_case(&case, &mutated).is_pass()
-        }
-        FaultControl::DroppedGeneratedDocument => {
-            let mutated = ObservedCase {
-                context: ContextHealth::Partial {
-                    reason: "a generated document was omitted".to_string(),
-                },
-                facts: vec![],
-                ..clean_observation()
-            };
-            !evaluate_case(&case, &mutated).is_pass()
-        }
-        FaultControl::WrongRequestedTarget => {
-            let mutated = ObservedCase {
-                facts: vec![ObservedFact {
-                    identity: identity("SomeOtherMember"),
-                    occurrence: occurrence(99),
-                    state: Uncertainty::Confirmed,
-                }],
-                ..clean_observation()
-            };
-            !evaluate_case(&case, &mutated).is_pass()
-        }
-        FaultControl::StaleCacheReuse => {
-            // Ownership of this mutation's own detection belongs to
-            // `freshness.rs`'s transformation pairs; this row proves the
-            // battery still names it and that an unchanged observation
-            // after a declared trigger is not silently accepted here
-            // either, by reusing the same equality the freshness module
-            // checks.
-            let before = clean_observation();
-            let after = clean_observation();
-            before.facts == after.facts
-        }
-        FaultControl::DenominatorShrinkage => {
-            let honest = ratio_or_undefined(1, 1);
-            let shrunk = ratio_or_undefined(1, 0);
-            honest != shrunk && shrunk.is_none()
-        }
-        FaultControl::SelfAgreeingWrongProducer => {
-            // The producer's own output agrees with itself but contradicts
-            // the independently reviewed expectation.
-            let self_agreeing_but_wrong = ObservedCase {
-                context: ContextHealth::Complete,
-                facts: vec![ObservedFact {
-                    identity: identity("LoadFromCache"),
-                    occurrence: occurrence(10),
-                    state: Uncertainty::Confirmed,
-                }],
-                diagnostics: vec![],
-            };
-            !evaluate_case(&case, &self_agreeing_but_wrong).is_pass()
-        }
+        FaultControl::DroppedProject => caught_dropped_project(&case),
+        FaultControl::DroppedGeneratedDocument => caught_dropped_generated_document(&case),
+        FaultControl::WrongRequestedTarget => caught_wrong_requested_target(&case),
+        FaultControl::StaleCacheReuse => caught_stale_cache_reuse(),
+        FaultControl::DenominatorShrinkage => caught_denominator_shrinkage(),
+        FaultControl::SelfAgreeingWrongProducer => caught_self_agreeing_wrong_producer(&case),
     };
     ControlResult { control, caught }
 }

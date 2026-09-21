@@ -67,6 +67,21 @@ pub const RED_BASELINE: &[NamedMismatch] = &[
     },
 ];
 
+/// The rows this harness grades through real producer output.
+///
+/// See `tests/semantic_truth_baseline.rs` and
+/// `truth::producer_reader::native_dispatch_implements_edges`, which runs
+/// devscout's own native extract-and-resolve pipeline (the producer this
+/// row's `attributed_producer` names) against the row's own evidence file
+/// and reads its real edges, offline, rather than through evidence-file
+/// existence and source greps alone. The other four rows remain narrative:
+/// their evidence is reviewed and committed, but nothing in this crate
+/// executes the external Roslyn oracle exporter or `FactsWalker` sidecar
+/// those rows name, so reproducing them is future work this list does not
+/// claim done today.
+pub const GRADED_THROUGH_REAL_PRODUCER_OUTPUT: &[&str] =
+    &["type-argument-pair-produces-implements-edges-on-a-clean-build"];
+
 /// Do this crate's own harness tests pass, independent of what the graded
 /// analyzer reports.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -217,5 +232,15 @@ mod tests {
     #[test]
     fn baseline_json_is_byte_identical_across_two_builds() {
         assert_eq!(red_baseline_to_json(), red_baseline_to_json());
+    }
+
+    #[test]
+    fn every_id_graded_through_real_producer_output_is_a_registered_row() {
+        for id in GRADED_THROUGH_REAL_PRODUCER_OUTPUT {
+            assert!(
+                RED_BASELINE.iter().any(|m| &m.id == id),
+                "'{id}' is graded but not a registered row"
+            );
+        }
     }
 }

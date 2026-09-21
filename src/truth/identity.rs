@@ -9,11 +9,11 @@
 //! comparator that wants "did this fact match" compares every field it
 //! actually cares about, explicitly.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// The compiled project/target-framework/configuration a fact was produced
 /// under. Distinguishes the same member built for two different targets.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CompilationIdentity {
     /// The project (csproj/build unit) name.
@@ -29,7 +29,7 @@ pub struct CompilationIdentity {
 ///
 /// Two identities compare equal only when every field matches -- there is
 /// no partial-identity shortcut.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SymbolIdentity {
     /// The declaring assembly's name.
@@ -52,7 +52,7 @@ pub struct SymbolIdentity {
 ///
 /// Two calls on one line, or two overloads at different columns of the
 /// same line, stay distinct occurrences under this type.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OccurrenceSpan {
     /// The repository-relative source file.
@@ -142,6 +142,22 @@ mod tests {
         let string_call = identity("Ping", 0, "Ping(string)");
         assert_ne!(int_call, string_call);
         assert_ne!(occurrence(5, 12), occurrence(14, 22));
+    }
+
+    #[test]
+    fn a_symbol_identity_round_trips_through_json_unchanged() {
+        let original = identity("Ping", 0, "Ping(int)");
+        let json = serde_json::to_string(&original).unwrap();
+        let restored: SymbolIdentity = serde_json::from_str(&json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[test]
+    fn an_occurrence_span_round_trips_through_json_unchanged() {
+        let original = occurrence(5, 12);
+        let json = serde_json::to_string(&original).unwrap();
+        let restored: OccurrenceSpan = serde_json::from_str(&json).unwrap();
+        assert_eq!(original, restored);
     }
 
     #[test]

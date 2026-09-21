@@ -23,6 +23,11 @@ pub mod identity;
 pub mod manifest;
 /// The pinned foundation-candidate digest and its offline verification.
 pub mod pin;
+/// Readers that turn committed producer bytes into observations.
+///
+/// Used instead of hand-building an observation from a manifest's own
+/// expectations.
+pub mod producer_reader;
 /// The compatibility-profile registry.
 pub mod profile;
 /// The committed truthful red baseline.

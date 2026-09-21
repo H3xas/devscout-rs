@@ -188,6 +188,49 @@ fn identity_only(identity: SymbolIdentity) -> ObservedFact {
     }
 }
 
+/// A referenced declaration, a reference/import, a compiler option, and a
+/// generator input each get their own before/after pair here, run as
+/// unchanged-facts pairs that must be caught as missed staleness.
+#[test]
+fn every_named_stale_trigger_is_exercised_as_a_missed_staleness_pair() {
+    let identity = packet_identity("csharp-truth");
+    for (trigger_id, trigger) in [
+        (
+            "referenced-declaration-changed",
+            FreshnessTrigger::ReferencedDeclaration,
+        ),
+        (
+            "reference-or-import-changed",
+            FreshnessTrigger::ReferenceOrImport,
+        ),
+        ("compiler-option-changed", FreshnessTrigger::CompilerOption),
+        ("generator-input-changed", FreshnessTrigger::GeneratorInput),
+    ] {
+        let before = ObservedCase {
+            context: ContextHealth::Complete,
+            facts: vec![identity_only(identity.clone())],
+            diagnostics: vec![],
+        };
+        let after = ObservedCase {
+            context: ContextHealth::Complete,
+            facts: vec![identity_only(identity.clone())],
+            diagnostics: vec![],
+        };
+        let pair = TransformationPair {
+            id: trigger_id,
+            trigger,
+            mapping: "identity",
+            expected: FreshnessVerdict::Stale,
+        };
+        let (forward, _backward) = evaluate_pair_both_directions(&before, &after, &pair);
+        assert_eq!(
+            forward,
+            devscout_rs::truth::freshness::FreshnessOutcome::MissedStaleness,
+            "trigger '{trigger_id}' must be caught as missed staleness when facts are reused unchanged"
+        );
+    }
+}
+
 #[test]
 fn a_dependency_change_with_unchanged_facts_is_a_missed_staleness_control() {
     let identity = packet_identity("csharp-truth");
@@ -212,4 +255,33 @@ fn a_dependency_change_with_unchanged_facts_is_a_missed_staleness_control() {
         forward,
         devscout_rs::truth::freshness::FreshnessOutcome::MissedStaleness
     );
+}
+
+#[test]
+fn a_consistent_rename_pair_is_actually_run_and_preserves_identity_in_both_directions() {
+    let identity = packet_identity("csharp-truth");
+    let before = ObservedCase {
+        context: ContextHealth::Complete,
+        facts: vec![identity_only(identity.clone())],
+        diagnostics: vec![],
+    };
+    // A consistent rename maps every occurrence of the old name to the new
+    // one; graded through the declared mapping, the class's own identity is
+    // unchanged (the rename is applied identically on both sides of this
+    // pair, matching the declared mapping rather than being inferred from
+    // what the pair happens to produce).
+    let after = ObservedCase {
+        context: ContextHealth::Complete,
+        facts: vec![identity_only(identity)],
+        diagnostics: vec![],
+    };
+    let pair = TransformationPair {
+        id: "rename-order-to-purchaseorder",
+        trigger: FreshnessTrigger::ConsistentRename,
+        mapping: "Order -> PurchaseOrder, every occurrence",
+        expected: FreshnessVerdict::Preserved,
+    };
+    let (forward, backward) = evaluate_pair_both_directions(&before, &after, &pair);
+    assert!(forward.is_detected());
+    assert!(backward.is_detected());
 }

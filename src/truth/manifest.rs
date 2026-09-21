@@ -153,6 +153,12 @@ pub enum ManifestError {
         /// The offending case.
         case_id: String,
     },
+    /// A case declares no `present` and no `unresolved` obligation, so an
+    /// empty analyzer result would satisfy it on `absent` alone.
+    NoPositiveOrUnresolvedObligation {
+        /// The offending case.
+        case_id: String,
+    },
     /// A field present but not shaped as this schema requires.
     Malformed {
         /// Which case is malformed.
@@ -173,6 +179,10 @@ impl std::fmt::Display for ManifestError {
             ManifestError::ProducerGradesOwnExpectation { case_id } => write!(
                 f,
                 "case '{case_id}': expectation provenance names '{GRADED_PRODUCER}', the producer this case grades"
+            ),
+            ManifestError::NoPositiveOrUnresolvedObligation { case_id } => write!(
+                f,
+                "case '{case_id}': declares neither a present nor an unresolved obligation, so an empty result would pass it"
             ),
             ManifestError::Malformed { case_id, detail } => {
                 write!(f, "case '{case_id}': {detail}")
@@ -265,6 +275,17 @@ pub fn validate_case(case: &Value) -> Result<(), ManifestError> {
             case_id,
             detail: format!("unknown provenance.kind '{kind}'"),
         });
+    }
+    let present_empty = expect
+        .get("present")
+        .and_then(Value::as_array)
+        .is_none_or(std::vec::Vec::is_empty);
+    let unresolved_empty = expect
+        .get("unresolved")
+        .and_then(Value::as_array)
+        .is_none_or(std::vec::Vec::is_empty);
+    if present_empty && unresolved_empty {
+        return Err(ManifestError::NoPositiveOrUnresolvedObligation { case_id });
     }
     Ok(())
 }
@@ -413,7 +434,18 @@ mod tests {
             "source": ["src/Overloads.cs"],
             "expect": {
                 "context": "complete",
-                "present": [],
+                "present": [{
+                    "identity": {
+                        "assembly": "Fixture",
+                        "declaringType": "Fixture.Cases",
+                        "member": "Ping",
+                        "genericArity": 0,
+                        "overloadSignature": "Ping(int)",
+                        "compilation": { "project": "Cases", "tfm": "net8.0", "configuration": "Release" }
+                    },
+                    "occurrence": { "file": "src/Overloads.cs", "startLine": 14, "startCol": 16, "endLine": 14, "endCol": 23 },
+                    "state": "confirmed"
+                }],
                 "absent": [],
                 "unresolved": [],
                 "diagnostics": []
@@ -467,6 +499,29 @@ mod tests {
         assert_eq!(
             err,
             ManifestError::ProducerGradesOwnExpectation {
+                case_id: "overload-arity-a".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn a_case_declaring_only_absent_obligations_is_refused() {
+        let mut case = valid_case();
+        case["expect"]["present"] = json!([]);
+        case["expect"]["absent"] = json!([{
+            "identity": {
+                "assembly": "Fixture",
+                "declaringType": "Fixture.Cases",
+                "member": "NeverCalled",
+                "genericArity": 0,
+                "overloadSignature": "NeverCalled()",
+                "compilation": { "project": "Cases", "tfm": "net8.0", "configuration": "Release" }
+            }
+        }]);
+        let err = validate_case(&case).unwrap_err();
+        assert_eq!(
+            err,
+            ManifestError::NoPositiveOrUnresolvedObligation {
                 case_id: "overload-arity-a".to_string(),
             }
         );

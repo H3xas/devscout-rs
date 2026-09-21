@@ -6,9 +6,10 @@
 use std::path::Path;
 
 use devscout_rs::truth::pin::{compute_pin, verify_pin};
+use devscout_rs::truth::producer_reader::native_dispatch_implements_edges;
 use devscout_rs::truth::red_baseline::{
     classify_mismatches, evaluate_run, red_baseline_to_json, AnalyzerVerdict, HarnessHealth,
-    RED_BASELINE,
+    GRADED_THROUGH_REAL_PRODUCER_OUTPUT, RED_BASELINE,
 };
 
 fn fixture_root() -> std::path::PathBuf {
@@ -94,6 +95,50 @@ fn the_pin_is_stable_across_two_computations_and_order_independent() {
     );
     assert_eq!(pin_1, pin_2);
     assert_eq!(verify_pin(&pin_1, &pin_1.digest_hex), Ok(()));
+}
+
+/// The fifth row is not asserted from a path `exists()` check, it is
+/// measured by running devscout's own native extract-and-resolve pipeline --
+/// the producer this row's `attributedProducer` names -- against the row's
+/// own evidence file and reading its real `implements` edges, offline, with
+/// no compiler.
+#[test]
+fn the_native_dispatch_row_is_measured_through_real_resolver_output_not_asserted() {
+    let row = RED_BASELINE
+        .iter()
+        .find(|m| m.id == "type-argument-pair-produces-implements-edges-on-a-clean-build")
+        .expect("the fifth row must still be registered");
+    assert!(GRADED_THROUGH_REAL_PRODUCER_OUTPUT.contains(&row.id));
+
+    let source = std::fs::read_to_string(
+        fixture_root().join(row.evidence.strip_prefix("fixtures/csharp-truth/").unwrap()),
+    )
+    .unwrap();
+    let edges = native_dispatch_implements_edges(
+        &fixture_root(),
+        "src/NativeDispatchCounterexample.cs",
+        &source,
+    );
+    assert!(
+        !edges.is_empty(),
+        "today's resolver must still produce implements edges for this fixture, or the row \
+         is stale and must be re-reviewed rather than kept as a silent claim"
+    );
+
+    // Feed the real, measured observation through the same classification
+    // path a run's observed ids take -- this is not a hand-built id, it is
+    // derived from `edges` actually being non-empty.
+    let observed_ids: Vec<&'static str> = if edges.is_empty() {
+        vec![]
+    } else {
+        vec!["type-argument-pair-produces-implements-edges-on-a-clean-build"]
+    };
+    let (named, new) = classify_mismatches(&observed_ids);
+    assert_eq!(
+        named,
+        vec!["type-argument-pair-produces-implements-edges-on-a-clean-build"]
+    );
+    assert!(new.is_empty());
 }
 
 #[test]

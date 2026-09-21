@@ -187,6 +187,42 @@
         "diagnostics": []
       },
       "provenance": { "kind": "reviewed" }
+    },
+    {
+      "id": "framework-semantics-a",
+      "scenarioFamily": "framework-semantics",
+      "language": "csharp",
+      "profiles": ["csharp-net8.0-sdk"],
+      "prerequisites": [],
+      "factContract": "semantic-truth-v1",
+      "source": ["src/FrameworkSemantics.cs"],
+      "expect": {
+        "context": "complete",
+        "present": [
+          {
+            "identity": {
+              "assembly": "Truth.FrameworkSemantics",
+              "declaringType": "Truth.FrameworkSemantics.Catalogue",
+              "member": "AddScoped",
+              "genericArity": 2,
+              "overloadSignature": "AddScoped<TService, TImplementation>()",
+              "compilation": { "project": "csharp-truth", "tfm": "net8.0", "configuration": "Release" }
+            },
+            "occurrence": { "file": "src/FrameworkSemantics.cs", "startLine": 22, "startCol": 18, "endLine": 22, "endCol": 46 },
+            "state": "confirmed"
+          }
+        ],
+        "absent": [],
+        "unresolved": [],
+        "diagnostics": [
+          {
+            "severity": "error",
+            "code": "CS0165",
+            "occurrence": { "file": "src/FrameworkSemantics.cs", "startLine": 31, "startCol": 24, "endLine": 31, "endCol": 36 }
+          }
+        ]
+      },
+      "provenance": { "kind": "reviewed" }
     }
   ]
 }

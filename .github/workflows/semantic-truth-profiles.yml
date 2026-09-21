@@ -92,10 +92,16 @@ jobs:
           cat >> out/profile-probe/Probe.csproj <<EOF
           </Project>
           EOF
+          # Block-bodied namespace, not file-scoped: file-scoped namespaces
+          # are C# 10 and the default LangVersion for netcoreapp3.1/
+          # netstandard2.1/net472 is 8.0/8.0/7.3, so a file-scoped form
+          # would fail on the language version rather than signal SDK
+          # reachability for three of the four probes.
           cat > out/profile-probe/Probe.cs <<'EOF'
-          namespace Truth.ProfileProbe;
-
-          public sealed class Marker { }
+          namespace Truth.ProfileProbe
+          {
+              public sealed class Marker { }
+          }
           EOF
 
       # A probe failure is recorded, not treated as a workflow failure: an

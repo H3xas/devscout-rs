@@ -90,6 +90,38 @@ fn a_case_naming_the_graded_producer_as_its_own_expectation_source_is_refused() 
 }
 
 #[test]
+fn the_committed_manifest_covers_all_four_scenario_families() {
+    let text = std::fs::read_to_string(manifest_path()).unwrap();
+    let manifest = parse_manifest(&text).unwrap();
+    let families: std::collections::HashSet<&str> = manifest
+        .cases
+        .iter()
+        .map(|c| c.scenario_family.as_str())
+        .collect();
+    for expected in [
+        "shared-language-semantics",
+        "compatibility-boundaries",
+        "framework-semantics",
+        "transformations",
+    ] {
+        assert!(
+            families.contains(expected),
+            "no committed case declares scenario family '{expected}'"
+        );
+    }
+}
+
+#[test]
+fn the_committed_manifest_has_at_least_one_expected_diagnostic_case() {
+    let text = std::fs::read_to_string(manifest_path()).unwrap();
+    let manifest = parse_manifest(&text).unwrap();
+    assert!(
+        manifest.cases.iter().any(|c| !c.diagnostics.is_empty()),
+        "no committed case declares an expected diagnostic"
+    );
+}
+
+#[test]
 fn an_empty_analyzer_result_cannot_satisfy_the_committed_overload_case() {
     let text = std::fs::read_to_string(manifest_path()).unwrap();
     let manifest = parse_manifest(&text).unwrap();

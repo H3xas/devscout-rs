@@ -5,7 +5,7 @@
 use std::path::Path;
 
 use devscout_rs::truth::capability::{
-    build_matrix, matrix_to_json, CapabilityState, ExecutedObligation,
+    build_matrix, matrix_to_json, CapabilityAxis, CapabilityState, ExecutedObligation,
 };
 
 fn committed_matrix_path() -> std::path::PathBuf {
@@ -63,7 +63,18 @@ fn the_four_demonstrated_targets_claim_at_most_smoke_tested_in_the_committed_mat
             "profile '{id}' must be tracked on all five axes"
         );
         for entry in entries {
-            assert_eq!(entry.state, CapabilityState::SmokeTested);
+            match entry.axis {
+                CapabilityAxis::RuntimeEvidence | CapabilityAxis::FrameworkModeling => {
+                    assert_ne!(
+                        entry.state,
+                        CapabilityState::SmokeTested,
+                        "a static fixture pass under one pinned host is not a runtime or \
+                         full project-system support claim for '{id}' / {:?}",
+                        entry.axis
+                    );
+                }
+                _ => assert_eq!(entry.state, CapabilityState::SmokeTested),
+            }
         }
     }
 }

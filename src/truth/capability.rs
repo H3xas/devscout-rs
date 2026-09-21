@@ -127,8 +127,31 @@ pub struct CapabilityMatrix {
     pub entries: Vec<MatrixEntry>,
 }
 
+/// The state one profile's registered ceiling caps a given axis at.
+///
+/// The registry's demonstrated evidence is a narrow, static smoke fixture
+/// under one pinned host: that backs context acquisition, semantic
+/// conformance, and repository evidence, but a successful static fixture
+/// is not a runtime or full project-system support claim -- so
+/// `runtime-evidence` and `framework-modeling` never rise above `planned`
+/// (or stay `unavailable`) purely because the profile's own ceiling is
+/// stronger. Each axis's state is therefore actually tracked per axis, not
+/// smeared uniformly from one ceiling value.
+fn axis_ceiling(ceiling: CapabilityState, axis: CapabilityAxis) -> CapabilityState {
+    match axis {
+        CapabilityAxis::RuntimeEvidence | CapabilityAxis::FrameworkModeling => match ceiling {
+            CapabilityState::Unavailable => CapabilityState::Unavailable,
+            _ => CapabilityState::Planned,
+        },
+        CapabilityAxis::ContextAcquisition
+        | CapabilityAxis::SemanticConformance
+        | CapabilityAxis::RepositoryEvidence => ceiling,
+    }
+}
+
 /// Builds the registry-only matrix: every registered profile, every axis,
-/// capped at that profile's registered ceiling.
+/// each capped at that profile's registered ceiling AND that axis's own
+/// narrower cap (see [`axis_ceiling`]).
 ///
 /// No obligation is executed by this function -- it reads static registry
 /// data only -- so no entry it produces ever holds `Passing`.
@@ -139,7 +162,7 @@ pub fn build_matrix() -> CapabilityMatrix {
             entries.push(MatrixEntry {
                 profile_id: profile.id,
                 axis,
-                state: profile.ceiling,
+                state: axis_ceiling(profile.ceiling, axis),
                 denominator: 0,
                 excluded: 0,
             });
@@ -214,6 +237,44 @@ mod tests {
         let a = matrix_to_json(&build_matrix());
         let b = matrix_to_json(&build_matrix());
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn runtime_and_framework_axes_never_claim_more_than_planned_from_a_static_ceiling() {
+        let matrix = build_matrix();
+        for entry in matrix
+            .entries
+            .iter()
+            .filter(|e| e.profile_id == "csharp-net8.0-sdk")
+        {
+            match entry.axis {
+                CapabilityAxis::RuntimeEvidence | CapabilityAxis::FrameworkModeling => {
+                    assert_eq!(
+                        entry.state,
+                        CapabilityState::Planned,
+                        "{:?} must not inherit the profile's smoke-tested ceiling",
+                        entry.axis
+                    );
+                }
+                CapabilityAxis::ContextAcquisition
+                | CapabilityAxis::SemanticConformance
+                | CapabilityAxis::RepositoryEvidence => {
+                    assert_eq!(entry.state, CapabilityState::SmokeTested);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn an_unavailable_profile_stays_unavailable_on_every_axis() {
+        let matrix = build_matrix();
+        for entry in matrix
+            .entries
+            .iter()
+            .filter(|e| e.profile_id == "csharp-netcoreapp2.x-sdk")
+        {
+            assert_eq!(entry.state, CapabilityState::Unavailable);
+        }
     }
 
     #[test]

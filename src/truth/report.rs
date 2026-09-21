@@ -8,10 +8,14 @@
 //! top-level artifacts and are never summed or averaged into one figure
 //! by anything in this file.
 
+use std::io;
+use std::path::Path;
+
 use crate::query::json::J;
 
 use super::identity::{OccurrenceSpan, SymbolIdentity};
 use super::manifest::Case;
+use super::pin::Pin;
 use super::uncertainty::{ContextHealth, Uncertainty};
 
 /// One fact an analyzer run actually produced for a case, in the same
@@ -178,6 +182,16 @@ pub fn evaluate_case(case: &Case, observed: &ObservedCase) -> CaseVerdict {
     }
 }
 
+/// Whether a report's own denominator has shrunk below the manifest's
+/// declared count.
+///
+/// This is the "quality figure improves by omission" failure mode a
+/// dropped case produces even though its own ratio can look fine, or
+/// better, without it.
+pub fn denominator_shrunk(observed_denominator: u32, declared_case_count: u32) -> bool {
+    observed_denominator < declared_case_count
+}
+
 /// A ratio that reports undefined (`None`) rather than a perfect score
 /// when its denominator is zero.
 pub fn ratio_or_undefined(passed: u32, denominator: u32) -> Option<f64> {
@@ -221,6 +235,10 @@ pub struct PinnedInputHeader {
     pub resolved_context: String,
     /// The exact commands the run issued, in order.
     pub commands: Vec<String>,
+    /// The pinned foundation-candidate digest this run was graded against --
+    /// a consumer reads this straight off the report header rather than
+    /// recomputing it from a side channel.
+    pub pin: Pin,
 }
 
 /// One case's verdict, ready to be sorted into a report.
@@ -304,6 +322,13 @@ pub fn report_to_json(report: &TruthReport) -> String {
                             .collect(),
                     ),
                 ),
+                (
+                    "pin",
+                    J::Obj(vec![
+                        ("contract", J::Str(report.header.pin.contract.clone())),
+                        ("digestHex", J::Str(report.header.pin.digest_hex.clone())),
+                    ]),
+                ),
             ]),
         ),
         (
@@ -312,9 +337,14 @@ pub fn report_to_json(report: &TruthReport) -> String {
                 outcomes
                     .iter()
                     .map(|o| {
+                        let reasons = match &o.verdict {
+                            CaseVerdict::Pass => Vec::new(),
+                            CaseVerdict::Fail { reasons } => reasons.clone(),
+                        };
                         J::Obj(vec![
                             ("caseId", J::Str(o.case_id.clone())),
                             ("pass", J::Bool(o.verdict.is_pass())),
+                            ("reasons", J::Arr(reasons.into_iter().map(J::Str).collect())),
                         ])
                     })
                     .collect(),
@@ -331,6 +361,23 @@ pub fn report_to_json(report: &TruthReport) -> String {
         ),
     ])
     .to_json_string()
+}
+
+/// The committed file name for one lane's persisted artifact, inside
+/// `fixtures/csharp-truth/reports/`.
+pub fn lane_artifact_filename(lane: Lane) -> &'static str {
+    match lane {
+        Lane::SyntaxOnly => "syntax-only.json",
+        Lane::Enriched => "enriched.json",
+    }
+}
+
+/// Writes a report's JSON to its lane's persisted-artifact path under
+/// `dir`, so the run is a committed file a consumer can read rather than a
+/// string that only ever lived inside a test process.
+pub fn write_lane_artifact(report: &TruthReport, dir: &Path) -> io::Result<()> {
+    let path = dir.join(lane_artifact_filename(report.lane));
+    std::fs::write(path, report_to_json(report))
 }
 
 #[cfg(test)]
@@ -462,7 +509,35 @@ mod tests {
             producer_versions: vec![("scout-semantic".to_string(), "0.6.0".to_string())],
             resolved_context: "complete".to_string(),
             commands: vec!["devscout map".to_string()],
+            pin: crate::truth::pin::compute_pin("semantic-truth-v1", b"test", &[]),
         }
+    }
+
+    #[test]
+    fn the_report_header_carries_the_pin() {
+        let json = report_to_json(&TruthReport {
+            lane: Lane::SyntaxOnly,
+            header: header(),
+            outcomes: vec![],
+        });
+        assert!(json.contains("\"pin\":{"));
+        assert!(json.contains(&format!("\"digestHex\":\"{}\"", header().pin.digest_hex)));
+    }
+
+    #[test]
+    fn a_failing_outcomes_reasons_are_in_the_record() {
+        let report = TruthReport {
+            lane: Lane::SyntaxOnly,
+            header: header(),
+            outcomes: vec![CaseOutcome {
+                case_id: "a-case".to_string(),
+                verdict: CaseVerdict::Fail {
+                    reasons: vec!["expected present fact 'Load' not observed".to_string()],
+                },
+            }],
+        };
+        let json = report_to_json(&report);
+        assert!(json.contains("expected present fact 'Load' not observed"));
     }
 
     #[test]
