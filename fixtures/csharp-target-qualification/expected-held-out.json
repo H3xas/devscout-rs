@@ -1,5 +1,5 @@
 {
-  "_comment": "AC-5 pre-registered thresholds for the held-out family (Serilog), by stratum, committed before the held-out run. A run whose figures fall below a minimum or above a maximum is a registered miss, published as a miss -- not a reason to relax this file.",
+  "_comment": "Pre-registered thresholds for the held-out family (Serilog), by stratum, committed before the held-out run. A run whose figures fall below a minimum or above a maximum is a registered miss, published as a miss -- not a reason to relax this file.",
   "corpus": "csharp-target-held-out",
   "strata": {
     "modern": {

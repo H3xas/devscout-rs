@@ -85,10 +85,28 @@ DOTNET_ENV = {"MSBUILDDISABLENODEREUSE": "1", "DOTNET_CLI_UI_LANGUAGE": "en"}
 def run(args, cwd=None):
     env = dict(os.environ)
     env.update(DOTNET_ENV)
+    # Every dotnet invocation this script makes runs with the qualification tree as its
+    # working directory by default, not the repository root: the .NET CLI resolves
+    # global.json from the process's current directory, so a call made from anywhere else
+    # never sees this tree's own SDK pin and silently falls back to whatever SDK band the
+    # caller's environment happens to install.
     proc = subprocess.run(
-        args, cwd=cwd or REPO_ROOT, capture_output=True, text=True, check=False, env=env
+        args, cwd=cwd or TREE, capture_output=True, text=True, check=False, env=env
     )
     return proc.returncode, strip_local_paths(proc.stdout), strip_local_paths(proc.stderr)
+
+
+_OBSERVED_SDK_VERSION = None
+
+
+def observed_sdk_version():
+    """The SDK version the pinned tree actually resolved, queried once and reused for
+    every row -- not the module's own pin constant, which only says what was intended."""
+    global _OBSERVED_SDK_VERSION
+    if _OBSERVED_SDK_VERSION is None:
+        code, out, err = run(["dotnet", "--version"])
+        _OBSERVED_SDK_VERSION = out.strip() if code == 0 and out.strip() else f"unresolved (exit {code}): {(out + err).strip()}"
+    return _OBSERVED_SDK_VERSION
 
 
 def strip_local_paths(text):
@@ -147,30 +165,33 @@ def run_oracle(csproj_rel, tfm, out_dir):
     out_dir.mkdir(parents=True, exist_ok=True)
     refs = out_dir / "refs.jsonl"
     units = out_dir / "units.jsonl"
+    defs = out_dir / "defs.jsonl"
     args = [
         "dotnet", "run", "--project", str(ORACLE_PROJECT), "--no-build", "-c", "Release", "--",
         str(TREE / csproj_rel), "--root", str(TREE),
-        "--out", str(refs), "--units", str(units),
+        "--out", str(refs), "--units", str(units), "--defs", str(defs),
     ]
     if tfm:
         args += ["--tfm", tfm]
     code, out, err = run(args)
-    unit_records = []
-    if units.exists():
-        for line in units.read_text(encoding="utf-8").splitlines():
+    unit_records = _read_jsonl(units)
+    ref_records = _read_jsonl(refs)
+    def_records = _read_jsonl(defs)
+    return code, out + err, unit_records, ref_records, def_records
+
+
+def _read_jsonl(path):
+    records = []
+    if path.exists():
+        for line in path.read_text(encoding="utf-8").splitlines():
             if line.strip():
-                unit_records.append(json.loads(line))
-    ref_records = []
-    if refs.exists():
-        for line in refs.read_text(encoding="utf-8").splitlines():
-            if line.strip():
-                ref_records.append(json.loads(line))
-    return code, out + err, unit_records, ref_records
+                records.append(json.loads(line))
+    return records
 
 
 def compose_profile_row(profile_id, csproj_rel, tfm, track, bind_expected, out_dir, no_restore):
     restore_code, restore_out, build_code, build_out = restore_and_build(csproj_rel, no_restore)
-    oracle_code, oracle_log, units, refs = run_oracle(csproj_rel, tfm, out_dir)
+    oracle_code, oracle_log, units, refs, defs = run_oracle(csproj_rel, tfm, out_dir)
 
     bind_observed = BOUNDARY_DIAGNOSTIC not in build_out
     unit = units[0] if units else None
@@ -178,7 +199,8 @@ def compose_profile_row(profile_id, csproj_rel, tfm, track, bind_expected, out_d
 
     context_acquisition = {
         "state": "passing" if restore_code == 0 else "failing",
-        "sdk": SDK_VERSION,
+        "sdk": observed_sdk_version(),
+        "sdk_pin": SDK_VERSION,
         "project_format": "sdk-style",
         "reference_source": "microsoft.netframework.referenceassemblies@1.0.3"
         if track == FRAMEWORK_TRACK
@@ -246,7 +268,7 @@ DEEP_CASE_FAMILIES = {
 
 def compose_deep_row(profile_id, csproj_rel, tfm, track, out_dir, no_restore):
     restore_code, restore_out, build_code, build_out = restore_and_build(csproj_rel, no_restore)
-    oracle_code, oracle_log, units, refs = run_oracle(csproj_rel, tfm, out_dir)
+    oracle_code, oracle_log, units, refs, defs = run_oracle(csproj_rel, tfm, out_dir)
     unit = units[0] if units else None
 
     positive_bound = any(r.get("member") == "Describe" for r in refs)
@@ -256,38 +278,50 @@ def compose_deep_row(profile_id, csproj_rel, tfm, track, out_dir, no_restore):
         r.get("member") == "Send" and r.get("receiver", "").endswith("MailQueue") for r in refs
     )
     generated_ok = any(r.get("member") == "Origin" for r in refs)
+    # Calls through the wrapper's own declared type, not the shared IContract the positive
+    # case already exercises -- an empty analyzer result (no caller, or a build that never
+    # produced this ref) must read as not observed, not as an unconditional True.
+    wrapper_ok = any(
+        r.get("member") == "Describe" and r.get("receiver", "").endswith("LoggingContractWrapper")
+        for r in refs
+    )
+    # The type must actually have been analyzed for the candidate verdict below to mean
+    # anything; def_records only exists for types the oracle really processed.
+    unknown_framework_analyzed = any(d.get("id", "").endswith("WidgetController") for d in defs)
 
     probe_rel = DEEP_INCOMPATIBLE_PROBE.get(profile_id)
     if probe_rel:
         # Always attempted, regardless of --no-restore: the probe's entire purpose is to
         # prove restore fails, so skipping it would silently report a false pass.
         probe_restore_code, probe_out, _, _ = restore_and_build(probe_rel, no_restore=False)
+        incompatible_observed = probe_restore_code != 0
         incompatible_evidence = {
             "case": "incompatible_reference",
             "direction": "framework-referencing-modern",
             "restore_exit_code": probe_restore_code,
             "expected_restore_failure": True,
-            "observed_restore_failure": probe_restore_code != 0,
+            "observed_restore_failure": incompatible_observed,
             "diagnostic_excerpt": extract_diagnostic(probe_out, "NU1201"),
         }
     else:
+        incompatible_observed = "NU1702" in build_out
         incompatible_evidence = {
             "case": "incompatible_reference",
             "direction": "modern-referencing-framework",
             "build_exit_code": build_code,
             "expected_incompatibility_warning": True,
-            "observed_incompatibility_warning": "NU1702" in build_out,
+            "observed_incompatibility_warning": incompatible_observed,
             "diagnostic_excerpt": extract_diagnostic(build_out, "NU1702"),
         }
 
     case_families = {
         "collision": {"provenance": "independent", "observed": collision_ok},
-        "wrapper": {"provenance": "independent", "observed": True},
-        "incompatible_reference": dict(provenance="independent", **incompatible_evidence),
+        "wrapper": {"provenance": "independent", "observed": wrapper_ok},
+        "incompatible_reference": dict(provenance="independent", observed=incompatible_observed, **incompatible_evidence),
         "generated_input": {"provenance": "independent", "observed": generated_ok},
         "unknown_framework": {
             "provenance": "independent",
-            "observed": True,
+            "observed": unknown_framework_analyzed,
             "framework_modeling": "candidate",
             "reason": "name and method-name shape only; no base type, interface or attribute ties it to a framework",
         },
@@ -295,7 +329,8 @@ def compose_deep_row(profile_id, csproj_rel, tfm, track, out_dir, no_restore):
 
     context_acquisition = {
         "state": "passing" if restore_code == 0 else "failing",
-        "sdk": SDK_VERSION,
+        "sdk": observed_sdk_version(),
+        "sdk_pin": SDK_VERSION,
         "project_format": "sdk-style",
         "reference_source": "microsoft.netframework.referenceassemblies@1.0.3"
         if track == FRAMEWORK_TRACK
@@ -306,7 +341,7 @@ def compose_deep_row(profile_id, csproj_rel, tfm, track, out_dir, no_restore):
         "loaded_documents": sorted(unit["files"]) if unit else [],
     }
     semantic_conformance = {
-        "state": "passing" if positive_bound and collision_ok and generated_ok else "failing",
+        "state": "passing" if positive_bound and collision_ok and generated_ok and wrapper_ok and unknown_framework_analyzed else "failing",
         "positive_case_bound": positive_bound,
         "case_families": case_families,
     }
@@ -320,6 +355,8 @@ def compose_deep_row(profile_id, csproj_rel, tfm, track, out_dir, no_restore):
         and positive_bound
         and collision_ok
         and generated_ok
+        and wrapper_ok
+        and unknown_framework_analyzed
         and (incompatible_evidence.get("observed_restore_failure", True) if probe_rel
              else incompatible_evidence.get("observed_incompatibility_warning", True))
     )
@@ -346,13 +383,33 @@ def compose_deep_row(profile_id, csproj_rel, tfm, track, out_dir, no_restore):
 
 def compose_tfm_not_supplied_control(out_dir, no_restore):
     csproj_rel = "controls/tfm-not-supplied/Control.csproj"
+    declared_tfms = declared_tfm(TREE / csproj_rel)
     restore_code, restore_out, build_code, build_out = restore_and_build(csproj_rel, no_restore)
     # Requests a TFM neither variant declares -- the exact value that makes the
     # existing loader fall back to keeping the first variant instead of failing.
-    oracle_code, oracle_log, units, refs = run_oracle(csproj_rel, "net6.0", out_dir)
+    oracle_code, oracle_log, units, refs, _defs = run_oracle(csproj_rel, "net6.0", out_dir)
     unit = units[0] if units else None
     kept_first_variant = "keeping net8.0" in oracle_log
     substitution_occurred = kept_first_variant and unit is not None and unit.get("tfm") != "net6.0"
+
+    # Proves the two variants stay distinct compilations, not by reading the fixture's own
+    # source text, but by requesting each declared variant explicitly and checking that the
+    # oracle returns that exact variant back -- unlike the unmatched request above, which it
+    # does not.
+    variant_evidence = {}
+    for declared in declared_tfms:
+        _c, _l, v_units, _r, _d = run_oracle(csproj_rel, declared, out_dir / f"variant-{declared}")
+        v_unit = v_units[0] if v_units else None
+        variant_evidence[declared] = {
+            "requested": declared,
+            "returned_tfm": v_unit.get("tfm") if v_unit else None,
+            "matches_request": v_unit is not None and v_unit.get("tfm") == declared,
+        }
+    variants_stay_distinct = (
+        len(declared_tfms) >= 2
+        and all(e["matches_request"] for e in variant_evidence.values())
+        and len({e["returned_tfm"] for e in variant_evidence.values()}) == len(declared_tfms)
+    )
 
     return {
         "profile_id": "control-tfm-not-supplied",
@@ -361,8 +418,9 @@ def compose_tfm_not_supplied_control(out_dir, no_restore):
         "tfm": "net6.0 (requested; not declared by either variant)",
         "context_acquisition": {
             "state": "passing" if restore_code == 0 else "failing",
-            "sdk": SDK_VERSION,
-            "declared_tfms": declared_tfm(TREE / csproj_rel),
+            "sdk": observed_sdk_version(),
+            "sdk_pin": SDK_VERSION,
+            "declared_tfms": declared_tfms,
             "requested_tfm": "net6.0",
             "restore_exit_code": restore_code,
             "build_exit_code": build_code,
@@ -372,8 +430,12 @@ def compose_tfm_not_supplied_control(out_dir, no_restore):
             "oracle_reported_status": unit.get("status") if unit else None,
             "oracle_reported_tfm": unit.get("tfm") if unit else None,
             "substitution_occurred": substitution_occurred,
+            "variant_evidence": variant_evidence,
+            "variants_stay_distinct_compilations": variants_stay_distinct,
             "note": "the oracle's own unit status is not trusted for this row; substitution is"
-            " independently confirmed from its stderr variant-selection line and the tfm it kept",
+            " independently confirmed from its stderr variant-selection line and the tfm it kept,"
+            " and the two declared variants are proven distinct by explicitly requesting each one"
+            " and observing it return, not by reading the fixture's declared TFMs as text",
         },
         "framework_modeling": {"state": "not-claimed", "reason": "not applicable to a substitution control"},
         "unsupported_state": {
@@ -388,13 +450,22 @@ def compose_tfm_not_supplied_control(out_dir, no_restore):
 
 
 def compose_reference_tfm_mismatch_control(out_dir, no_restore):
-    p_rel = "controls/reference-tfm-mismatch/P.csproj"
-    q_rel = "controls/reference-tfm-mismatch/Q.csproj"
+    p_rel = "controls/reference-tfm-mismatch/P/P.csproj"
+    q_rel = "controls/reference-tfm-mismatch/Q/Q.csproj"
     p_tfm = declared_tfm(TREE / p_rel)
     q_tfm = declared_tfm(TREE / q_rel)
     mismatch = p_tfm != q_tfm
 
     restore_code, restore_out, build_code, build_out = restore_and_build(p_rel, no_restore)
+    # Unlike the earlier version of this control, the unit is actually observed: dotnet
+    # restore/build reject this reference outright (NU1201), but the oracle's own project
+    # loading is a separate path (MSBuildWorkspace evaluation, not the SDK's restore/build
+    # targets) and can still report a status for P independent of whether the SDK build
+    # succeeded -- which is exactly what must be checked, not assumed.
+    oracle_code, oracle_log, units, refs, _defs = run_oracle(p_rel, p_tfm[0] if p_tfm else None, out_dir)
+    p_unit = next((u for u in units if u.get("name") == "P"), None)
+    reports_healthy_unit = p_unit is not None and p_unit.get("status") == "ok"
+    diagnostic = extract_diagnostic(restore_out, "NU1201") or extract_diagnostic(build_out, "NU1201")
 
     return {
         "profile_id": "control-reference-tfm-mismatch",
@@ -403,7 +474,8 @@ def compose_reference_tfm_mismatch_control(out_dir, no_restore):
         "tfm": p_tfm[0] if p_tfm else "",
         "context_acquisition": {
             "state": "failing",
-            "sdk": SDK_VERSION,
+            "sdk": observed_sdk_version(),
+            "sdk_pin": SDK_VERSION,
             "p_declared_tfm": p_tfm,
             "q_declared_tfm": q_tfm,
             "restore_exit_code": restore_code,
@@ -412,18 +484,23 @@ def compose_reference_tfm_mismatch_control(out_dir, no_restore):
         "semantic_conformance": {
             "state": "failing",
             "reference_tfm_mismatch": mismatch,
-            "note": "computed from the two projects' own declared TargetFramework metadata,"
-            " independent of the restore/build outcome above -- a mismatched reference is the"
-            " defect regardless of whether NuGet's own compatibility gate also happens to catch it",
-            "diagnostic_excerpt": extract_diagnostic(build_out, "NU1201"),
+            "oracle_produced_unit_for_p": p_unit is not None,
+            "oracle_reported_unit_status": p_unit.get("status") if p_unit else None,
+            "oracle_reported_unit_diagnostics": p_unit.get("diagnostics") if p_unit else None,
+            "note": "observed from an actual restore/build/oracle run over P's own project, not"
+            " assumed from declared-TFM XML alone: dotnet restore/build reject the mismatched"
+            " reference outright (NU1201), while the oracle's independent project-loading path"
+            " still reports P's unit as a healthy 'ok' regardless of that rejection",
+            "diagnostic_excerpt": diagnostic,
         },
         "framework_modeling": {"state": "not-claimed", "reason": "not applicable to a substitution control"},
         "unsupported_state": {
-            "state": "failing" if mismatch else "passing",
-            "reason": "P declares a different TargetFramework than the project it references; a"
-            " unit in this shape must never report a healthy result from that reference alone"
-            if mismatch
-            else "no mismatch observed on this run",
+            "state": "failing" if (mismatch and reports_healthy_unit) else "passing",
+            "reason": "P declares a different TargetFramework than the project it references, and"
+            " the oracle nonetheless reports a healthy unit for it -- a unit in this shape must"
+            " never report a healthy result from that reference alone"
+            if (mismatch and reports_healthy_unit)
+            else "no mismatch observed on this run, or the oracle correctly reported the unit unhealthy",
         },
         "execution_assumptions": {"state": "static-only"},
     }

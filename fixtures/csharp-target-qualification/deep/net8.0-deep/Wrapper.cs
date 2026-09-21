@@ -21,4 +21,17 @@ namespace TargetQualification.Deep.Wrapper
             return _inner.Describe();
         }
     }
+
+    /// <summary>
+    /// Calls through the wrapper's own declared type, not through the shared <see
+    /// cref="IContract"/> the positive case already exercises, so the wrapper family has its
+    /// own reference edge instead of borrowing the positive case's.
+    /// </summary>
+    public class WrapperCaller
+    {
+        public string CallWrapper(LoggingContractWrapper wrapper)
+        {
+            return wrapper.Describe();
+        }
+    }
 }

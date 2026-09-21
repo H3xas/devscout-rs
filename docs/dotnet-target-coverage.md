@@ -58,9 +58,17 @@ Every row's `framework_modeling` is `not-claimed`: the shared cross-target case 
 from `context_acquisition` alone -- `semantic_conformance` and `framework_modeling` content is
 required too.
 
+**The three `framework-f1` rows above (`net40`, `net472`, `net48`) publish as a
+target-API-surface result only.** They qualify reference-assembly target-API semantics from an
+SDK-style project on this repository's existing non-Windows runner; they are not a claim of
+full .NET Framework support. Their Track F2 obligations -- legacy non-SDK `.csproj`,
+`packages.config`, Windows build tasks, classic ASP.NET, WPF/WinForms, and the 4.0 Client
+Profile -- are unmet and remain `unavailable` in the Wave 2 table below, pending a qualified
+Windows worker. Only the F1/F2 pair together is full Framework support.
+
 ## Wave 1 -- deep-case bundles
 
-Two representative profiles carry the case families `AC-3` names beyond the per-profile
+Two representative profiles carry the case families named beyond the per-profile
 positive/boundary pair: unrelated same-name collision, configured wrapper, incompatible
 reference, generated and linked input, and unknown framework. The other nine wave-1 profiles are
 **not independently executed** for these five families -- recorded here, never hidden -- because
@@ -78,10 +86,10 @@ binding without declaring assembly, type, member identity and signature.
 
 ## Substitution-defect controls (prior art)
 
-Registered controls for the sidecar's documented silent-substitution behavior. `DS-0105`'s scope
-owns the repair; this tree owns catching and honestly recording the current, defective behavior,
-so both rows below are `failing` by design -- a control that cannot be made to fail honestly
-under today's engine would be a defect in the control, not a row to soften.
+Registered controls for the sidecar's documented silent-substitution behavior. Repairing the
+loader is out of this tree's scope; this tree owns catching and honestly recording the current,
+defective behavior, so both rows below are `failing` by design -- a control that cannot be made
+to fail honestly under today's engine would be a defect in the control, not a row to soften.
 
 | Control | State | What it reproduces |
 | --- | --- | --- |
@@ -114,7 +122,7 @@ Retained ownership of this ticket; not executed by this wave. Each row waits on 
 
 ## Held-out family
 
-The `AC-5` held-out report is a dated, manually run benchmark, not part of `cargo test` or CI:
+The held-out report is a dated, manually run benchmark, not part of `cargo test` or CI:
 see [`bench/dotnet-target-qualification.sh`](../bench/dotnet-target-qualification.sh) and the
 pre-registered thresholds in
 [`fixtures/csharp-target-qualification/expected-held-out.json`](../fixtures/csharp-target-qualification/expected-held-out.json).
@@ -122,6 +130,15 @@ Results land under `docs/benchmarks/results/` once the run has executed at least
 
 ## Follow-ups
 
-None open. Every row above reads `passing` on its own recorded evidence, or is a deliberately
+- **Eight of the eleven Wave 1 `passing` profiles have no held-out row.** The held-out run below
+  currently exercises `net8.0`, `net6.0` and `netstandard2.0` only, from the one pinned held-out
+  family available today. `net5.0`, `net7.0`, `net9.0`, `netstandard2.1`, `netcoreapp3.1`,
+  `net40`, `net472` and `net48` are published `passing` on their own recorded fixture evidence,
+  without an independent held-out row. Closes when a held-out run (this family or a second one)
+  covers the remaining strata, or when this asymmetry is otherwise resolved.
+- **The `framework-f1` and `netcoreapp3.1` held-out strata are registered but not exercised.**
+  See the held-out report below for the exact reason per stratum.
+
+Every row above otherwise reads `passing` on its own recorded evidence, or is a deliberately
 `failing` substitution-defect control, or is a visible wave-2/excluded/unqualified row with its
 own named unlock or reason.

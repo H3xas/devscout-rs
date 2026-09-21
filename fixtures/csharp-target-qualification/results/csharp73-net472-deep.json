@@ -19,6 +19,7 @@
     "reference_source": "microsoft.netframework.referenceassemblies@1.0.3",
     "restore_exit_code": 0,
     "sdk": "9.0.305",
+    "sdk_pin": "9.0.305",
     "state": "passing"
   },
   "execution_assumptions": {
@@ -45,6 +46,7 @@
         "diagnostic_excerpt": "<repo>/fixtures/csharp-target-qualification/deep/net472-deep/IncompatibleRefProbe/Probe.csproj : error NU1201: Project IncompatibleRefModern is not compatible with net472 (.NETFramework,Version=v4.7.2). Project IncompatibleRefModern supports: net8.0 (.NETCoreApp,Version=v8.0)",
         "direction": "framework-referencing-modern",
         "expected_restore_failure": true,
+        "observed": true,
         "observed_restore_failure": true,
         "provenance": "independent",
         "restore_exit_code": 1

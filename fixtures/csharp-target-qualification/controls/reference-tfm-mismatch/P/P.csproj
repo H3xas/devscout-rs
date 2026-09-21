@@ -5,7 +5,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../reference-tfm-mismatch/Q.csproj" />
+    <ProjectReference Include="../Q/Q.csproj" />
   </ItemGroup>
 
 </Project>

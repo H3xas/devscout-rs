@@ -8,6 +8,7 @@
     "requested_tfm": "net6.0",
     "restore_exit_code": 0,
     "sdk": "9.0.305",
+    "sdk_pin": "9.0.305",
     "state": "passing"
   },
   "execution_assumptions": {
@@ -20,11 +21,24 @@
   "kind": "control",
   "profile_id": "control-tfm-not-supplied",
   "semantic_conformance": {
-    "note": "the oracle's own unit status is not trusted for this row; substitution is independently confirmed from its stderr variant-selection line and the tfm it kept",
+    "note": "the oracle's own unit status is not trusted for this row; substitution is independently confirmed from its stderr variant-selection line and the tfm it kept, and the two declared variants are proven distinct by explicitly requesting each one and observing it return, not by reading the fixture's declared TFMs as text",
     "oracle_reported_status": "ok",
     "oracle_reported_tfm": "net8.0",
     "state": "failing",
-    "substitution_occurred": true
+    "substitution_occurred": true,
+    "variant_evidence": {
+      "net472": {
+        "matches_request": true,
+        "requested": "net472",
+        "returned_tfm": "net472"
+      },
+      "net8.0": {
+        "matches_request": true,
+        "requested": "net8.0",
+        "returned_tfm": "net8.0"
+      }
+    },
+    "variants_stay_distinct_compilations": true
   },
   "tfm": "net6.0 (requested; not declared by either variant)",
   "track": "control",

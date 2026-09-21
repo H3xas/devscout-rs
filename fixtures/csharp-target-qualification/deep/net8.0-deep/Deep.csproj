@@ -10,7 +10,7 @@
 
   <ItemGroup>
     <!-- Incompatible reference: IncompatibleRef targets net472 only. NuGet restores it for a
-         net8.0 consumer under NU1701 ("restored using ... instead of the project's target
+         net8.0 consumer under NU1702 ("restored using ... instead of the project's target
          framework"), which is compatibility evidence a healthy-looking restore can hide. -->
     <ProjectReference Include="../IncompatibleRef/IncompatibleRef.csproj" />
     <!-- Generated/linked input: a minimal incremental generator, referenced as an analyzer

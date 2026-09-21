@@ -19,6 +19,7 @@
     "reference_source": "sdk-implicit",
     "restore_exit_code": 0,
     "sdk": "9.0.305",
+    "sdk_pin": "9.0.305",
     "state": "passing"
   },
   "execution_assumptions": {
@@ -46,6 +47,7 @@
         "diagnostic_excerpt": "/usr/local/share/dotnet/sdk/9.0.305/Microsoft.Common.CurrentVersion.targets(1889,5): warning NU1702: ProjectReference '<repo>/fixtures/csharp-target-qualification/deep/IncompatibleRef/IncompatibleRef.csproj' was resolved using '.NETFramework,Version=v4.7.2' instead of the project target framework '.NETCoreApp,Version=v8.0'. This project may not be fully compatible with your project. [<repo>/fixtures/csharp-target-qualification/deep/net8.0-deep/Deep.csproj]",
         "direction": "modern-referencing-framework",
         "expected_incompatibility_warning": true,
+        "observed": true,
         "observed_incompatibility_warning": true,
         "provenance": "independent"
       },
