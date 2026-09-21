@@ -19,7 +19,7 @@ struct Fixture {
 }
 
 impl Fixture {
-    fn new() -> Self {
+    fn uninitialized() -> Self {
         let root = std::env::temp_dir().join(format!(
             "devscout-compiler-facts-cli-{}-{}",
             std::process::id(),
@@ -31,10 +31,28 @@ impl Fixture {
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
-        let fixture = Self { root, registry };
+        Self { root, registry }
+    }
+
+    fn new() -> Self {
+        let fixture = Self::uninitialized();
         let init = fixture.run(&["init", "--no-hooks", "--no-map"]);
         assert!(init.status.success(), "init failed: {init:?}");
         fixture
+    }
+
+    // The graph directory's own location depends on whether a `.git`
+    // ancestor exists at `init` time (see `graph::compiler_facts_json_path`
+    // -> `graph_dir`), so a git checkout must exist BEFORE `init` runs, not
+    // after -- initializing git first keeps every later command agreeing on
+    // one location instead of `init` picking `.scout/graph` and a later
+    // command picking `.git/scout/graph`.
+    fn new_in_git_checkout() -> (Self, String) {
+        let fixture = Self::uninitialized();
+        let head = init_git_checkout(&fixture.root);
+        let init = fixture.run(&["init", "--no-hooks", "--no-map"]);
+        assert!(init.status.success(), "init failed: {init:?}");
+        (fixture, head)
     }
 
     fn run(&self, args: &[&str]) -> Output {
@@ -71,6 +89,13 @@ impl Fixture {
         self.root.join(".scout/graph/compiler-facts-v1.json")
     }
 
+    // A `.git` ancestor present at `init` time moves the graph directory
+    // under the shared git dir instead of `.scout` -- see
+    // `graph::compiler_facts_json_path` -> `graph_dir` -> `git_common_dir`.
+    fn artifact_path_in_git_checkout(&self) -> PathBuf {
+        self.root.join(".git/scout/graph/compiler-facts-v1.json")
+    }
+
     fn import(&self, path: &Path) {
         let out = self.run(&["compiler-facts", "import", path.to_str().unwrap()]);
         assert!(out.status.success(), "import failed: {out:?}");
@@ -93,6 +118,41 @@ fn fixture_path(name: &str) -> PathBuf {
 fn base_candidate() -> Value {
     let bytes = fs::read(fixture_path("candidate.json")).unwrap();
     serde_json::from_slice(&bytes).unwrap()
+}
+
+fn git(dir: &Path, args: &[&str]) {
+    let out = Command::new("git")
+        .current_dir(dir)
+        .args(args)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "git {args:?} failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+// Every other fixture in this file roots under a plain temp directory, never
+// a git checkout, so the source-snapshot identity check -- the one class
+// that actually gates a real producer's artifact against this checkout's
+// own HEAD -- is never exercised end to end by an automated test. This
+// turns a fixture root into a real, single-commit git checkout so that gap
+// closes: `git_head` resolves to something real instead of `None`.
+fn init_git_checkout(dir: &Path) -> String {
+    git(dir, &["init", "-q"]);
+    git(dir, &["config", "user.email", "fixture@example.com"]);
+    git(dir, &["config", "user.name", "Fixture"]);
+    fs::write(dir.join("README.md"), "fixture checkout\n").unwrap();
+    git(dir, &["add", "README.md"]);
+    git(dir, &["commit", "-q", "-m", "fixture commit"]);
+    let out = Command::new("git")
+        .current_dir(dir)
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "git rev-parse HEAD failed: {out:?}");
+    String::from_utf8(out.stdout).unwrap().trim().to_string()
 }
 
 fn write_stub(dir: &Path, name: &str, body: &str) -> PathBuf {
@@ -288,6 +348,75 @@ fn run_refuses_no_located_engine_and_leaves_the_prior_artifact_untouched() {
     assert_eq!(out.status.code(), Some(1), "{out:?}");
     assert!(String::from_utf8_lossy(&out.stdout).contains("SCOUT_COMPILER_ENGINE"));
     assert_eq!(fs::read(fx.artifact_path()).unwrap(), before);
+}
+
+#[test]
+fn import_refuses_a_candidate_truncated_at_an_arbitrary_byte_offset_and_leaves_the_prior_artifact_untouched(
+) {
+    let fx = Fixture::new();
+    fx.import(&fixture_path("candidate.json"));
+    let before = fs::read(fx.artifact_path()).unwrap();
+
+    let full = fs::read(fixture_path("candidate.json")).unwrap();
+    // An arbitrary byte offset, two-thirds through the well-formed
+    // candidate, landing mid-field so the cut bytes are neither valid JSON
+    // nor terminated -- the exact class the crate's own terminal-completion
+    // decision protects against, distinguished by an explicit record rather
+    // than by size or by a successful parse.
+    let offset = full.len() * 2 / 3;
+    let bad = fx.root.join("truncated-candidate.json");
+    fs::write(&bad, &full[..offset]).unwrap();
+
+    let out = fx.run(&["compiler-facts", "import", bad.to_str().unwrap()]);
+    assert_eq!(out.status.code(), Some(1), "{out:?}");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.starts_with("refused: "),
+        "a truncated candidate must be refused with a stable reason: {stdout}"
+    );
+    assert_eq!(
+        fs::read(fx.artifact_path()).unwrap(),
+        before,
+        "a truncated candidate must replace nothing"
+    );
+}
+
+#[test]
+fn import_inside_a_git_checkout_admits_a_matching_source_snapshot_and_refuses_a_mismatched_one() {
+    let (fx, head) = Fixture::new_in_git_checkout();
+
+    let mut matching = base_candidate();
+    matching["sourceSnapshot"]["headSha"] = Value::from(head);
+    let matching_path = fx.root.join("matching-source-snapshot.json");
+    fs::write(&matching_path, serde_json::to_vec(&matching).unwrap()).unwrap();
+    let out = fx.run(&["compiler-facts", "import", matching_path.to_str().unwrap()]);
+    assert!(
+        out.status.success(),
+        "a candidate declaring this checkout's own HEAD must be admitted: {out:?}"
+    );
+    let before = fs::read(fx.artifact_path_in_git_checkout()).unwrap();
+
+    // `candidate.json`'s own sourceSnapshot ("0000...000f") is never this
+    // checkout's real HEAD, so this exercises the mismatch path in the same
+    // git checkout, proving the check gates in both directions here.
+    let mismatched_path = fx.root.join("mismatched-source-snapshot.json");
+    fs::write(
+        &mismatched_path,
+        serde_json::to_vec(&base_candidate()).unwrap(),
+    )
+    .unwrap();
+    let out = fx.run(&[
+        "compiler-facts",
+        "import",
+        mismatched_path.to_str().unwrap(),
+    ]);
+    assert_eq!(out.status.code(), Some(1), "{out:?}");
+    assert!(String::from_utf8_lossy(&out.stdout).contains("refused: source-snapshot-mismatch"));
+    assert_eq!(
+        fs::read(fx.artifact_path_in_git_checkout()).unwrap(),
+        before,
+        "a source-snapshot refusal inside a git checkout must replace nothing"
+    );
 }
 
 #[test]

@@ -33,6 +33,16 @@ if [ -z "$rid" ]; then
 	esac
 fi
 
+echo "== toolchain =="
+{
+	echo "rustc: $(rustc --version)"
+	echo "cargo: $(cargo --version)"
+	echo "dotnet: $(dotnet --version)"
+	# Kernel name/release/machine only -- never the network hostname field
+	# `uname -a` would otherwise include.
+	echo "uname: $(uname -srm)"
+} | tee "$out/environment.txt"
+
 echo "== default CLI size and startup =="
 cli_bin="target/release/devscout"
 if [ ! -f "$cli_bin" ]; then
@@ -122,12 +132,28 @@ else
 fi
 
 echo "== artifact import/admission cost =="
-"$root/$cli_bin" init --no-hooks --no-map -C "$out" >/dev/null 2>&1 || true
+# Rooted OUTSIDE this git checkout on purpose: the pinned fixture artifact was
+# produced with --no-git (source-agnostic, so it is a stable committed
+# snapshot), so it carries no sourceSnapshot.headSha. Importing it into a
+# root that IS a git checkout would fail admission's source-snapshot check
+# (this checkout's HEAD never matches "none declared") and time a refusal
+# instead of an admission -- exactly the bug this script's own leftover
+# import.log once proved. A root with no git ancestor at all skips that
+# check the same way a non-git deployment already does, so this measures a
+# real, successful admission.
+import_root=$(mktemp -d "${TMPDIR:-/tmp}/devscout-compiler-facts-bench.XXXXXX")
+trap 'rm -rf "$import_root"' EXIT
+# `-C <dir>` is a global flag consumed only immediately after the binary
+# name (git's own convention -- see `apply_global_options`), so it must
+# precede the subcommand here, not follow it, or it is read as an
+# unrecognised argument to `init` and the command falls back to acting on
+# the caller's own cwd instead of the isolated import root.
+"$root/$cli_bin" -C "$import_root" init --no-hooks --no-map >/dev/null
 import_t0=$(date +%s.%N)
-"$root/$cli_bin" -C "$out" compiler-facts import "$root/fixtures/csharp-compiler-facts/compiler-facts.json" >"$out/import.log" 2>&1 || true
+"$root/$cli_bin" -C "$import_root" compiler-facts import "$root/fixtures/csharp-compiler-facts/compiler-facts.json" >"$out/import.log" 2>&1
 import_t1=$(date +%s.%N)
 import_time=$(awk "BEGIN { printf \"%.3f\", $import_t1 - $import_t0 }")
-echo "compiler-facts import (pre-built fixture artifact): ${import_time}s"
+echo "compiler-facts import (pre-built fixture artifact, admitted outside a git checkout): ${import_time}s"
 
 echo
 echo "Raw figures above; docs/benchmarks/results/2026-09-engine-packaging-cost.md records the"

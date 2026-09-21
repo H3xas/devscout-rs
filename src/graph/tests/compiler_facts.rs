@@ -5,6 +5,7 @@ use std::fs;
 fn valid_expectations() -> AdmissionExpectations {
     AdmissionExpectations {
         contract_version: COMPILER_FACTS_CONTRACT_VERSION,
+        producer_name: EXPECTED_PRODUCER_NAME,
         engine_revision: EXPECTED_ENGINE_REVISION,
         dependency_fingerprint: EXPECTED_DEPENDENCY_FINGERPRINT,
         context_schema_version: EXPECTED_CONTEXT_SCHEMA_VERSION,
@@ -84,6 +85,11 @@ fn every_identity_mismatch_class_is_refused_with_its_own_token() {
             RefusalReason::ContractVersionMismatch,
         ),
         (
+            "producer",
+            |c| c["producer"]["name"] = json!("some-other-engine"),
+            RefusalReason::ProducerMismatch,
+        ),
+        (
             "engine revision",
             |c| c["producer"]["engineRevision"] = json!("bogus"),
             RefusalReason::EngineRevisionMismatch,
@@ -157,6 +163,93 @@ fn no_source_snapshot_expectation_skips_the_source_snapshot_check() {
     let mut candidate = valid_candidate();
     candidate["sourceSnapshot"]["headSha"] = json!("mismatched");
     admit(&bytes(&candidate), &expected).expect("no expected head_sha admits regardless");
+}
+
+#[test]
+fn a_context_fingerprint_missing_on_either_side_is_refused_not_silently_skipped() {
+    // The class must stay live even once a producer stops emitting one side
+    // of the pairing (or both): silently admitting a candidate with nothing
+    // to compare would let this identity check go inert without any test
+    // failing to say so.
+    let cases: &[(&str, fn(&mut Value))] = &[
+        ("header side only", |c| {
+            c["context"]
+                .as_object_mut()
+                .unwrap()
+                .remove("contextFingerprint");
+        }),
+        ("envelope side only", |c| {
+            c["context"]["envelope"]
+                .as_object_mut()
+                .unwrap()
+                .remove("fingerprint");
+        }),
+        ("neither side", |c| {
+            c["context"]
+                .as_object_mut()
+                .unwrap()
+                .remove("contextFingerprint");
+            c["context"]["envelope"]
+                .as_object_mut()
+                .unwrap()
+                .remove("fingerprint");
+        }),
+    ];
+    for (label, mutate) in cases {
+        let mut candidate = valid_candidate();
+        mutate(&mut candidate);
+        let err = admit(&bytes(&candidate), &valid_expectations()).unwrap_err();
+        assert_eq!(
+            err,
+            RefusalReason::ContextFingerprintMismatch,
+            "case: {label}"
+        );
+    }
+}
+
+#[test]
+fn truncation_at_any_byte_offset_is_refused_and_never_admitted() {
+    // Truncation at an arbitrary byte offset is its own broken-run case,
+    // distinct from a clean kill, a timeout, or a size cap: this sweeps
+    // several offsets through a well-formed candidate's own bytes to prove
+    // none of them is ever admitted, whichever refusal token a given cut
+    // happens to trip.
+    let full = bytes(&valid_candidate());
+    let expected = valid_expectations();
+    for offset in [
+        1,
+        full.len() / 5,
+        full.len() / 2,
+        full.len() * 3 / 4,
+        full.len() - 1,
+    ] {
+        let truncated = &full[..offset];
+        let result = admit(truncated, &expected);
+        assert!(
+            result.is_err(),
+            "truncated candidate at offset {offset}/{} must never be admitted",
+            full.len()
+        );
+    }
+}
+
+#[test]
+fn a_truncated_republish_leaves_the_previously_admitted_artifact_byte_identical() {
+    let dir = temp_dir("compiler-facts-truncate-leaves-artifact");
+    let expected = valid_expectations();
+    let good = bytes(&valid_candidate());
+    admit_and_publish(&dir, &good, &expected).unwrap();
+    let before = fs::read(compiler_facts_json_path(&dir)).unwrap();
+
+    let truncated = &good[..good.len() * 2 / 3];
+    let err = admit_and_publish(&dir, truncated, &expected).unwrap_err();
+    assert!(matches!(err, PublishError::Refused(_)));
+
+    let after = fs::read(compiler_facts_json_path(&dir)).unwrap();
+    assert_eq!(
+        before, after,
+        "a truncated candidate must never replace the previously admitted artifact"
+    );
 }
 
 #[test]

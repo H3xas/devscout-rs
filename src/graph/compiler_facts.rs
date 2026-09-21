@@ -26,7 +26,7 @@ pub use artifact::{
 };
 pub use expectations::{
     expectations_for, AdmissionExpectations, EXPECTED_CONTEXT_SCHEMA_VERSION,
-    EXPECTED_DEPENDENCY_FINGERPRINT, EXPECTED_ENGINE_REVISION,
+    EXPECTED_DEPENDENCY_FINGERPRINT, EXPECTED_ENGINE_REVISION, EXPECTED_PRODUCER_NAME,
 };
 pub use paths::compiler_facts_json_path;
 pub use reasons::RefusalReason;

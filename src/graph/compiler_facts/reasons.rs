@@ -41,6 +41,12 @@ pub enum RefusalReason {
     IncoherentInventory,
 
     // --- identity family: a well-formed candidate that does not match ---
+    /// `producer-mismatch`: the candidate's declared producer name does not
+    /// match the producer this admission path accepts. Keeps the contract
+    /// additive and producer-tagged: a future producer format change (or
+    /// substitution) is refused here on its own token rather than falling
+    /// through to a less specific identity check.
+    ProducerMismatch,
     /// `engine-revision-mismatch`: the candidate's producer engine revision
     /// does not match the revision this checkout's admission path expects.
     EngineRevisionMismatch,
@@ -63,7 +69,12 @@ pub enum RefusalReason {
     /// fingerprint summary does not match the fingerprint carried inside
     /// its own embedded context envelope -- a self-consistency check,
     /// distinct from `DependencyFingerprintMismatch`, which is about the
-    /// engine's own build rather than the compilation it analysed.
+    /// engine's own build rather than the compilation it analysed. Fails
+    /// closed: a candidate missing either fingerprint (the header summary,
+    /// the envelope's own, or both) is refused on this same token rather
+    /// than silently skipping the check, so a future context-envelope
+    /// producer that omits one side cannot disable this identity class by
+    /// omission.
     ContextFingerprintMismatch,
     /// `source-snapshot-mismatch`: the candidate's declared source-snapshot
     /// identity (`headSha`) does not match this checkout's own HEAD.
@@ -82,6 +93,7 @@ impl RefusalReason {
             RefusalReason::MalformedEncoding => "malformed-encoding",
             RefusalReason::MissingCompletionRecord => "missing-completion-record",
             RefusalReason::IncoherentInventory => "incoherent-inventory",
+            RefusalReason::ProducerMismatch => "producer-mismatch",
             RefusalReason::EngineRevisionMismatch => "engine-revision-mismatch",
             RefusalReason::ContractVersionMismatch => "contract-version-mismatch",
             RefusalReason::ProfileMismatch => "profile-mismatch",
