@@ -138,7 +138,18 @@ Results land under `docs/benchmarks/results/` once the run has executed at least
   covers the remaining strata, or when this asymmetry is otherwise resolved.
 - **The `framework-f1` and `netcoreapp3.1` held-out strata are registered but not exercised.**
   See the held-out report below for the exact reason per stratum.
+- **Three measured rows miss the registered `unsupported_coverage` floor.** The 2026-09-21
+  held-out run computes `unsupported_coverage` (the 2026-09-17 run never computed this metric)
+  and reports `MISS` against the registered `min: 1.0` for `csharp73-net6.0-sdkstyle` (net6.0,
+  modern, measured 0.881), `csharp73-net8.0-sdkstyle` (net8.0, modern, measured 0.881) and
+  `csharp73-netstandard2.0-sdkstyle` (netstandard2.0, netstandard, measured 0.860). Precision and
+  recall meet their registered minimums for all three; only `unsupported_coverage` misses. No
+  Design stop condition addresses this metric, so the three rows stay published `passing` on
+  their own recorded fixture evidence -- the miss is disclosed here, not a reason to withhold
+  them. Closes when a fix raises the measured coverage to the registered floor, or the floor is
+  revised.
 
-Every row above otherwise reads `passing` on its own recorded evidence, or is a deliberately
-`failing` substitution-defect control, or is a visible wave-2/excluded/unqualified row with its
-own named unlock or reason.
+Every row above otherwise reads `passing` on its own recorded fixture evidence, except where this
+section names a registered held-out obligation the measured value disagrees with; a deliberately
+`failing` substitution-defect control and a visible wave-2/excluded/unqualified row with its own
+named unlock or reason are unaffected by this section.

@@ -1,5 +1,14 @@
 # .NET target qualification -- held-out run (2026-09-17)
 
+**Superseded by
+[2026-09-21-dotnet-target-held-out.md](2026-09-21-dotnet-target-held-out.md).** This run's own
+`expected-held-out.json` already registered an `unsupported_coverage` minimum per stratum, but
+this run's script never computed that metric, so the `Threshold check` table below checked only
+precision and recall and its `meets threshold` verdicts did not cover every registered minimum.
+The 2026-09-21 run, at the same corpus and SHA, computes `unsupported_coverage` and reports
+`MISS` on all three measured strata against that same registered floor. Kept here as the dated
+historical record; do not read its `meets threshold` verdicts as current.
+
 Single-run banner: one repetition per stratum, per
 [docs/benchmarks/README.md](../../../docs/benchmarks/README.md)'s honesty statement.
 Predictions registered before this run in

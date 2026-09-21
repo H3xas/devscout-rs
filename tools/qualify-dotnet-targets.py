@@ -109,15 +109,87 @@ def observed_sdk_version():
     return _OBSERVED_SDK_VERSION
 
 
+_OBSERVED_SDK_ROOT = None
+
+
+def observed_sdk_root():
+    """The dotnet SDK installation root this host resolves, parsed once from
+    `dotnet --list-sdks` (each line reads `<version> [<root>]`) and reused for
+    every diagnostic strip. Queried with a direct subprocess call rather than
+    through run(), because run() pipes its output through strip_local_paths,
+    which would call back into this function before the first call finishes."""
+    global _OBSERVED_SDK_ROOT
+    if _OBSERVED_SDK_ROOT is None:
+        env = dict(os.environ)
+        env.update(DOTNET_ENV)
+        proc = subprocess.run(
+            ["dotnet", "--list-sdks"], cwd=TREE, capture_output=True, text=True, check=False, env=env
+        )
+        roots = re.findall(r"\[([^\]]+)\]", proc.stdout)
+        _OBSERVED_SDK_ROOT = roots[0] if proc.returncode == 0 and roots else ""
+    return _OBSERVED_SDK_ROOT
+
+
 def strip_local_paths(text):
     """Removes the authoring machine's absolute filesystem paths from diagnostic
     text before it can reach a committed snapshot; a raw NuGet/MSBuild diagnostic
-    routinely embeds the invoking machine's home directory and working path."""
+    routinely embeds the invoking machine's home directory, working path and
+    dotnet SDK installation root. The SDK root is the one of these that a CI
+    runner installing the exact same pinned SDK band still cannot be expected to
+    share -- actions/setup-dotnet on ubuntu-latest resolves a different root than
+    this host's -- so it is normalized to a placeholder like the other two."""
     text = text.replace(str(REPO_ROOT), "<repo>")
+    sdk_root = observed_sdk_root()
+    if sdk_root:
+        text = text.replace(sdk_root, "<sdk-root>")
     text = re.sub(r"/[A-Za-z0-9_./-]*/(\.nuget|\.dotnet)/", r"<home>/\1/", text)
     text = re.sub(r"/Users/[A-Za-z0-9_.-]+", "<home>", text)
     text = re.sub(r"/home/[A-Za-z0-9_.-]+", "<home>", text)
     return text
+
+
+def _selftest():
+    """Pure, dotnet-free checks for strip_local_paths' path-sanitizing rules,
+    including the SDK-root rule this round adds. Run with --selftest; not part
+    of the cargo test path, which stays dotnet-free by never importing this
+    script at all -- this is the composition script's own unit-level check,
+    exercised directly by the implementation gate re-run."""
+    global _OBSERVED_SDK_ROOT
+    failures = []
+
+    def check(name, condition):
+        if not condition:
+            failures.append(name)
+
+    saved_root = _OBSERVED_SDK_ROOT
+    try:
+        _OBSERVED_SDK_ROOT = "/usr/local/share/dotnet/sdk"
+        stripped = strip_local_paths(
+            "/usr/local/share/dotnet/sdk/9.0.305/Microsoft.Common.CurrentVersion.targets"
+            "(1889,5): warning NU1702: example"
+        )
+        check("strips the observed sdk root to the placeholder", "<sdk-root>/9.0.305/" in stripped)
+        check("leaves no raw sdk root prefix behind", "/usr/local/share/dotnet/sdk" not in stripped)
+
+        _OBSERVED_SDK_ROOT = "/usr/share/dotnet/sdk"
+        stripped_ci = strip_local_paths(
+            "/usr/share/dotnet/sdk/9.0.305/Microsoft.Common.CurrentVersion.targets(1889,5): warning NU1702"
+        )
+        check("normalizes a differently rooted sdk path the same way", "<sdk-root>/9.0.305" in stripped_ci)
+    finally:
+        _OBSERVED_SDK_ROOT = saved_root
+
+    check("still strips the repo root", strip_local_paths(str(REPO_ROOT) + "/foo") == "<repo>/foo")
+    check("still strips a /Users home path", strip_local_paths("/Users/example/x") == "<home>/x")
+    check("still strips a /home home path", strip_local_paths("/home/example/x") == "<home>/x")
+
+    if failures:
+        print("qualify-dotnet-targets --selftest: FAILED", file=sys.stderr)
+        for name in failures:
+            print(f"  {name}", file=sys.stderr)
+        return 1
+    print("qualify-dotnet-targets --selftest: 6 check(s) passed")
+    return 0
 
 
 def declared_tfm(csproj_path):
@@ -547,8 +619,14 @@ def main():
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--check", action="store_true", help="regenerate and diff against committed rows")
     mode.add_argument("--write", action="store_true", help="regenerate and overwrite committed rows")
+    mode.add_argument(
+        "--selftest", action="store_true", help="run this script's own dotnet-free unit-level checks"
+    )
     parser.add_argument("--no-restore", action="store_true", help="skip dotnet restore (already restored)")
     args = parser.parse_args()
+
+    if args.selftest:
+        return _selftest()
 
     rows = compose_all(args.no_restore)
 
