@@ -319,7 +319,7 @@ internal static class Runner
 {
     private static readonly JsonSerializerOptions Json = new()
     {
-        // The default encoder escapes '+' as the + escape, which would corrupt the
+        // The default encoder escapes '+' as +, which would corrupt the
         // Ns.Outer+Inner nested-type spelling.
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
         WriteIndented = false,
@@ -337,7 +337,8 @@ internal static class Runner
         // project, no unsupported request, no excluded variant -- is the
         // historical "zero projects loaded" usage error.
         if (load.Projects.Count == 0
-            && !(options.Emit.Contains(Program.EmitContext) && (load.Unsupported.Count > 0 || load.Excluded.Count > 0)))
+            && !(options.Emit.Contains(Program.EmitContext)
+                && (load.Unsupported.Count > 0 || load.Excluded.Count > 0 || load.Filtered.Count > 0)))
         {
             Console.Error.WriteLine("error: zero projects loaded");
             return 3;
@@ -494,6 +495,27 @@ internal static class Runner
                 });
             }
 
+            // A project the caller's own --projects filter left out never
+            // reached target selection, so it carries no tfm identity at
+            // all -- but it is exactly as deliberately excluded as an
+            // unselected multi-target variant, and the solution cross-check
+            // just below must not mistake it for a project that vanished.
+            foreach (var filtered in load.Filtered)
+            {
+                contextRecords.Add(new ContextRecord
+                {
+                    Identity = new ContextIdentity
+                    {
+                        ProjectPath = paths.RelativeProjectPath(filtered.ProjectFilePath) ?? filtered.ProjectFilePath,
+                        ProjectName = filtered.ProjectName,
+                        RequestedTfm = null,
+                        EffectiveTfm = null,
+                    },
+                    State = "excluded",
+                    Reason = "not-requested",
+                });
+            }
+
             // A project a .sln/.slnx names but that never reaches
             // solution.Projects at all (an unresolvable path, or evaluation
             // failing before MSBuildWorkspace can construct even a
@@ -514,7 +536,8 @@ internal static class Runner
                 var accounted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (var p in load.Projects.Select(l => l.Project.FilePath)
                     .Concat(load.Unsupported.Select(u => u.ProjectFilePath))
-                    .Concat(load.Excluded.Select(x => x.ProjectFilePath)))
+                    .Concat(load.Excluded.Select(x => x.ProjectFilePath))
+                    .Concat(load.Filtered.Select(f => f.ProjectFilePath)))
                 {
                     if (p is { Length: > 0 })
                     {
@@ -544,6 +567,10 @@ internal static class Runner
                     });
                 }
             }
+
+            Console.Error.WriteLine(
+                $"context: fingerprint computation totaled {ContextBuilder.FingerprintElapsed.TotalMilliseconds:F1}ms "
+                + $"across {contextRecords.Count(r => r.Fingerprint is not null)} compilations");
         }
 
         var unitIds = load.Projects
@@ -840,6 +867,15 @@ internal static class Runner
 /// </summary>
 internal static class ContextBuilder
 {
+    /// <summary>
+    /// Total wall time <see cref="GetOrComputeFingerprint"/> has spent across
+    /// every call this process has made (cache hits are free; a cycle guard
+    /// short-circuits before this accrues), so a run can report the
+    /// fingerprint's own cost rather than leave it unmeasured -- it performs
+    /// a second, independent project evaluation per compilation.
+    /// </summary>
+    public static TimeSpan FingerprintElapsed;
+
     public static ContextRecord BuildRecord(
         LoadedProject loaded,
         Compilation? compilation,
@@ -876,7 +912,7 @@ internal static class ContextBuilder
                 Diagnostics = new ContextDiagnostics
                 {
                     Workspace = workspaceFailures
-                        .Select(d => new WorkspaceDiagnosticRecord { Kind = d.Kind.ToString(), Message = d.Message })
+                        .Select(d => new WorkspaceDiagnosticRecord { Kind = d.Kind.ToString(), Message = RedactDiagnosticMessage(d.Message, paths) })
                         .ToList(),
                 },
             };
@@ -898,7 +934,8 @@ internal static class ContextBuilder
             ? new ContextDocuments { Loaded = loadedFiles, Expected = inventory.ExpectedDisplayPaths, Dropped = inventory.Dropped }
             : new ContextDocuments { Loaded = loadedFiles, Expected = new List<string>(loadedFiles) };
 
-        var generated = GeneratedDocumentsOf(project, compilation, paths, loadedSet);
+        var generated = GeneratedDocumentsOf(project, compilation, paths, loadedSet, out var generatedTrees);
+        generated.Diagnostics.AddRange(GeneratedDiagnosticsOf(compilation, generatedTrees));
 
         var compilerDiagnostics = compilation.GetDiagnostics()
             .Where(d => d.Severity == DiagnosticSeverity.Error)
@@ -926,7 +963,7 @@ internal static class ContextBuilder
             ? workspaceFailures.Where(d => d.Message.Contains(ownPath, StringComparison.Ordinal)).ToList()
             : new List<WorkspaceDiagnostic>();
         var workspaceDiagnosticRecords = ownWorkspaceDiagnostics
-            .Select(d => new WorkspaceDiagnosticRecord { Kind = d.Kind.ToString(), Message = d.Message })
+            .Select(d => new WorkspaceDiagnosticRecord { Kind = d.Kind.ToString(), Message = RedactDiagnosticMessage(d.Message, paths) })
             .ToList();
 
         // Every reason RepoPaths.Classify can name is an expected document
@@ -939,6 +976,7 @@ internal static class ContextBuilder
         var droppedReasonPriority = new[] { "missing", "linked-outside-root", "skipped-directory", "out-of-scope" };
         var firstDroppedReason = droppedReasonPriority.FirstOrDefault(r => documents.Dropped.Any(d => d.Reason == r));
         var hasUnresolvedReference = ownWorkspaceDiagnostics.Any(d => d.Kind == WorkspaceDiagnosticKind.Failure);
+        var inventoryUnavailable = inventory is null;
 
         string state;
         string reason;
@@ -957,14 +995,28 @@ internal static class ContextBuilder
             state = "partial";
             reason = firstDroppedReason;
         }
+        else if (inventoryUnavailable)
+        {
+            // The independent inventory is this record's only source of
+            // "what should have loaded" -- without it, an empty dropped list
+            // means nothing was missing and cannot be distinguished from "we
+            // could not tell". Completion is earned, never inferred from a
+            // fallback, so this demotes the record even though nothing else
+            // found a defect.
+            state = "partial";
+            reason = "inventory-unavailable";
+        }
         else
         {
             state = "complete";
             reason = "complete";
         }
 
+        var fingerprintTimer = Stopwatch.StartNew();
         var fingerprint = GetOrComputeFingerprint(
             project, paths, buildCollection, options, fingerprintCache, new HashSet<ProjectId>(), versions);
+        fingerprintTimer.Stop();
+        FingerprintElapsed += fingerprintTimer.Elapsed;
 
         var references = new List<ContextReference>();
         foreach (var reference in compilation.References.OfType<PortableExecutableReference>())
@@ -1028,16 +1080,28 @@ internal static class ContextBuilder
     /// the documented <c>unknown</c> generator identity rather than a guess.
     /// Falls back to diffing <see cref="Compilation.SyntaxTrees"/> against the
     /// authored documents only if the primary call itself is unavailable.
+    /// Collects each generated document's own <see cref="SyntaxTree"/> along
+    /// the way, so <see cref="GeneratedDiagnosticsOf"/> can attribute a
+    /// diagnostic to a generator by tree identity rather than by a "not
+    /// among the authored files" guess -- an SDK-emitted, ordinary compile
+    /// item this tool's own skip-dir convention happens to exclude (the
+    /// generated <c>obj/*.GlobalUsings.g.cs</c>, for one) is not a
+    /// generator's output and must not be mistaken for one.
     /// </summary>
     private static ContextGenerated GeneratedDocumentsOf(
-        Project project, Compilation compilation, RepoPaths paths, HashSet<string> loadedSet)
+        Project project, Compilation compilation, RepoPaths paths, HashSet<string> loadedSet, out HashSet<SyntaxTree> generatedTrees)
     {
         var generated = new ContextGenerated();
+        generatedTrees = new HashSet<SyntaxTree>();
         try
         {
             foreach (var document in project.GetSourceGeneratedDocumentsAsync().GetAwaiter().GetResult())
             {
                 generated.Documents.Add(new GeneratedDocument { HintName = document.HintName, Generator = "unknown" });
+                if (document.GetSyntaxTreeAsync().GetAwaiter().GetResult() is { } tree)
+                {
+                    generatedTrees.Add(tree);
+                }
             }
         }
         catch (Exception e) when (e is NotImplementedException or InvalidOperationException or NotSupportedException)
@@ -1050,6 +1114,7 @@ internal static class ContextBuilder
                 if (rel is not null && !loadedSet.Contains(rel))
                 {
                     generated.Documents.Add(new GeneratedDocument { HintName = Path.GetFileName(tree.FilePath), Generator = "unknown" });
+                    generatedTrees.Add(tree);
                 }
             }
         }
@@ -1059,6 +1124,36 @@ internal static class ContextBuilder
         // already ordinal-sorted, so this one is too.
         generated.Documents.Sort((a, b) => string.CompareOrdinal(a.HintName, b.HintName));
         return generated;
+    }
+
+    /// <summary>
+    /// A generator's own diagnostic is reported by Roslyn as an ordinary
+    /// compilation diagnostic located on the tree it authored, so it is
+    /// distinguished from an authored-document diagnostic (already covered
+    /// by <c>diagnostics.compiler</c>) by tree identity against exactly the
+    /// trees <see cref="GeneratedDocumentsOf"/> just enumerated. Any
+    /// severity is inventoried here -- a generator can report an
+    /// informational or a warning diagnostic without ever becoming an
+    /// error, and this account exists to make that visible too.
+    /// </summary>
+    private static List<string> GeneratedDiagnosticsOf(Compilation compilation, HashSet<SyntaxTree> generatedTrees)
+    {
+        var result = new List<string>();
+        if (generatedTrees.Count == 0)
+        {
+            return result;
+        }
+
+        foreach (var diagnostic in compilation.GetDiagnostics())
+        {
+            if (diagnostic.Location.SourceTree is { } tree && generatedTrees.Contains(tree))
+            {
+                result.Add($"{diagnostic.Severity} {diagnostic.Id}: {diagnostic.GetMessage(System.Globalization.CultureInfo.InvariantCulture)}");
+            }
+        }
+
+        result.Sort(StringComparer.Ordinal);
+        return result;
     }
 
     private static Dictionary<string, string?> LanguageOptionsOf(Compilation compilation, ProjectInventory? inventory)
@@ -1134,6 +1229,8 @@ internal static class ContextBuilder
                 metadataIdentities,
                 projectRefFingerprints,
                 inventory?.Imports.Select(i => i.Hash) ?? Enumerable.Empty<string>(),
+                AnalyzerReferenceIdentitiesOf(project),
+                GeneratorInputIdentitiesOf(project, paths),
                 inventory?.PreprocessorSymbols ?? new List<string>(),
                 LanguageOptionsOf(compilation ?? CSharpCompilation.Create("empty"), inventory),
                 versions,
@@ -1151,6 +1248,72 @@ internal static class ContextBuilder
         cache[project.Id] = result;
         return result;
     }
+
+    /// <summary>
+    /// One identity per analyzer reference (an analyzer package, a source
+    /// generator among them): file name plus a content hash, never the
+    /// absolute local path, matching every other reference identity in this
+    /// record.
+    /// </summary>
+    private static List<string> AnalyzerReferenceIdentitiesOf(Project project)
+    {
+        var result = new List<string>();
+        foreach (var reference in project.AnalyzerReferences)
+        {
+            var name = Path.GetFileName(reference.FullPath ?? reference.Display ?? "unknown");
+            result.Add(reference.FullPath is { } path && File.Exists(path)
+                ? $"{name}|sha1:{ContentSha1(path)}"
+                : $"{name}|unknown");
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// One identity per <c>AdditionalFiles</c> item: a generator's own input
+    /// beyond the compiled source itself (an embedded schema, a config file
+    /// a source generator reads), root-relative path plus a content hash.
+    /// </summary>
+    private static List<string> GeneratorInputIdentitiesOf(Project project, RepoPaths paths)
+    {
+        var result = new List<string>();
+        foreach (var document in project.AdditionalDocuments)
+        {
+            var text = document.GetTextAsync().GetAwaiter().GetResult().ToString();
+            var rel = paths.Relative(document.FilePath) ?? document.Name;
+            result.Add($"{rel}|{FactsWriter.Sha1(text)}");
+        }
+
+        return result;
+    }
+
+    private static string ContentSha1(string path)
+    {
+        using var stream = File.OpenRead(path);
+        return Convert.ToHexString(SHA1.HashData(stream)).ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// Root-relativizes any occurrence of this run's own analysed path, then
+    /// replaces any other absolute-path-shaped substring with just its file
+    /// name, so a build tool's own free-text diagnostic (which can quote a
+    /// project's absolute file path in its message) never carries a local
+    /// machine path the way a path-shaped field already cannot --
+    /// <see cref="ContextSchema"/> checks this at write time as defense in
+    /// depth, so this is the first, not the only, guard.
+    /// </summary>
+    private static string RedactDiagnosticMessage(string message, RepoPaths paths)
+    {
+        var rooted = message.Replace(paths.Root + "/", string.Empty, StringComparison.Ordinal);
+        return AbsolutePathToken.Replace(rooted, m => Path.GetFileName(m.Value));
+    }
+
+    // The negative lookbehind requires the leading slash (or drive letter) to
+    // start a fresh token rather than sit mid-path: without it, the first
+    // '/' inside an already-relative path like "src/Broken/Broken.csproj"
+    // would itself look like the start of an absolute path and get eaten.
+    private static readonly Regex AbsolutePathToken =
+        new(@"(?<![\w./-])(?:[A-Za-z]:[\\/]|/)[^\s'""]+", RegexOptions.Compiled);
 
     /// <summary>Assembly name plus module-version-id, falling back to a content hash when the MVID cannot be read.</summary>
     private static string MetadataReferenceIdentity(PortableExecutableReference reference, Compilation compilation)

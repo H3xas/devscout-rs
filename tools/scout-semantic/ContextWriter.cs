@@ -117,6 +117,14 @@ internal static class ContextWriter
             writer.WriteString("engine", versions.Engine);
             writer.WriteEndObject();
         }
+        else
+        {
+            // Every other optional field on a record is explicitly nulled
+            // rather than left out, so a consumer can always distinguish
+            // "known absent" from "this build of the tool never wrote the
+            // key at all" -- `versions` was the one exception.
+            writer.WriteNull("versions");
+        }
 
         writer.WriteStartArray("references");
         foreach (var reference in record.References)

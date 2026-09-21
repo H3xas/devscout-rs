@@ -135,10 +135,13 @@ jobs:
 
       - uses: actions/setup-dotnet@v4
         with:
-          # Pinned to the feature band the oracle is built and snapshotted
-          # against; `9.0.x` would float across bands and can change Roslyn
-          # behaviour under the committed oracle diff.
-          dotnet-version: 9.0.3xx
+          # Pinned to the exact patch the build-context fixture is snapshotted
+          # against, not just its feature band: the envelope's own `versions`
+          # block records the resolved SDK/MSBuild version and folds it into
+          # every fingerprint, so a floating `9.0.3xx` band could resolve to a
+          # newer patch on the runner and diff the committed snapshot on SDK
+          # servicing alone, unrelated to any change this repository made.
+          dotnet-version: 9.0.305
 
       - uses: actions/cache@v4
         with:
@@ -215,6 +218,48 @@ jobs:
             echo "::error::--strict exited 0 for a non-complete context artifact"
             exit 1
           fi
+
+      # The check above also passes with the artifact-level rollup deleted,
+      # because the whole-solution run already fails --strict's older,
+      # pre-existing check (Vanished never reaches the workspace at all).
+      # Clean.csproj on its own trips no such pre-existing check -- it loads
+      # cleanly -- so this is the one case only the new rollup can fail.
+      - name: --strict exits non-zero for a single partial project via the rollup alone
+        run: |
+          if dotnet run --project tools/scout-semantic --no-build -c Release -- \
+            fixtures/csharp-context/src/Clean/Clean.csproj --root fixtures/csharp-context \
+            --emit context --context out/context/csharp-context-strict-clean.json --strict; then
+            echo "::error::--strict exited 0 for a project only the rollup demotes"
+            exit 1
+          fi
+
+      # Broken and Vanished's own failures come from MSBuildWorkspace's
+      # whole-solution load, which happens before --projects' own per-group
+      # filtering -- so a --projects-scoped *.sln run still carries their
+      # unrelated diagnostics. A project passed directly, bypassing the
+      # solution entirely, isolates the scoped-and-healthy case --strict
+      # exiting 0 depends on.
+      - name: --projects excludes rather than fails a filtered-out project
+        run: |
+          dotnet run --project tools/scout-semantic --no-build -c Release -- \
+            fixtures/csharp-context/Fixture.sln --root fixtures/csharp-context \
+            --projects Legacy --tfm net9.0 \
+            --emit context --context out/context/csharp-context-projects-filtered.json
+          for name in Clean Broken; do
+            state=$(jq -r --arg n "$name" '.compilations[] | select(.identity.projectName == $n) | .state' out/context/csharp-context-projects-filtered.json)
+            reason=$(jq -r --arg n "$name" '.compilations[] | select(.identity.projectName == $n) | .reason' out/context/csharp-context-projects-filtered.json)
+            if [ "$state" != "excluded" ] || [ "$reason" != "not-requested" ]; then
+              echo "::error::$name: expected excluded/not-requested, got $state/$reason"
+              exit 1
+            fi
+          done
+
+      - name: --strict exits zero for a healthy scoped run
+        run: |
+          dotnet run --project tools/scout-semantic --no-build -c Release -- \
+            fixtures/csharp-context/src/Legacy/Legacy.csproj --root fixtures/csharp-context \
+            --tfm net9.0 \
+            --emit context --context out/context/csharp-context-scoped-strict.json --strict
 
       - name: Build devscout
         run: cargo build --locked --release

@@ -16,14 +16,24 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   every difference classified (`missing`, `linked-outside-root`, `skipped-directory`,
   `out-of-scope`); raw restore/workspace/compiler diagnostics; generated and linked documents;
   SDK/MSBuild/compiler/engine versions; and a context fingerprint that moves with a reference,
-  import, build option, or dependency compilation's own fingerprint. A non-null compilation is
-  never `complete` by itself. `--tfm` is now repeatable, with each requested target its own
-  compilation identity and no silent substitution when a project does not declare it; with no
-  `--tfm`, selection is deterministic (ordinal-least declared target) rather than dependent on
-  workspace enumeration order. `--strict` gains an artifact-level check: exit 2 unless every
-  non-`excluded` record is `complete`, alongside its existing checks. Additive: `refs.jsonl`,
-  `units.jsonl`, `defs.jsonl` and the flow-tracer fact document stay byte-identical for unchanged
-  inputs. Fixture: `fixtures/csharp-context/`. See `tools/scout-semantic/README.md#build-context-envelope`.
+  import, analyzer reference, generator input, build option, or dependency compilation's own
+  fingerprint. A non-null compilation is never `complete` by itself, including when its own
+  independent inventory could not be obtained at all. Additive: `refs.jsonl`, `units.jsonl`,
+  `defs.jsonl` and the flow-tracer fact document stay byte-identical for unchanged inputs.
+  Fixture: `fixtures/csharp-context/` and `fixtures/csharp-context-fingerprint/`. See
+  `tools/scout-semantic/README.md#build-context-envelope`.
+
+### Changed
+
+- **`--tfm` is now repeatable**, with each requested target its own compilation identity and no
+  silent substitution when a project does not declare it; with no `--tfm`, selection is
+  deterministic (ordinal-least declared target) rather than dependent on workspace enumeration
+  order. This reaches `--emit oracle`/`flowtrace-facts` too: a project whose sole declared target
+  does not match `--tfm` is now dropped from the run rather than kept regardless of the request,
+  and a run where every project is dropped exits 3 where it previously produced facts.
+- **`--strict` gains an artifact-level check for `--emit context`**: exit 2 unless every
+  non-`excluded` record is `complete`, alongside its existing checks. A project a `--projects`
+  filter leaves out is `excluded`, not `failed`, so it never trips this check.
 
 ## [0.6.0] - 2026-09-09
 

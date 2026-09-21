@@ -85,6 +85,18 @@ internal static class ContextSchema
                 throw new ContextSchemaException(
                     $"{record.Identity.ProjectName}: a compiler diagnostic reports line {line}, expected 1-based");
             }
+
+            RequireNoAbsolutePathInFreeText(diagnostic.Message, "diagnostics.compiler[].message", record);
+        }
+
+        foreach (var diagnostic in record.Diagnostics.Workspace)
+        {
+            RequireNoAbsolutePathInFreeText(diagnostic.Message, "diagnostics.workspace[].message", record);
+        }
+
+        foreach (var generatorDiagnostic in record.Generated.Diagnostics)
+        {
+            RequireNoAbsolutePathInFreeText(generatorDiagnostic, "generated.diagnostics[]", record);
         }
     }
 
@@ -114,4 +126,27 @@ internal static class ContextSchema
 
     private static bool IsAbsolute(string path) =>
         path.StartsWith('/') || (path.Length >= 2 && path[1] == ':');
+
+    /// <summary>
+    /// The leak guard's free-text counterpart: a path-shaped field can only
+    /// ever carry a single path, but a diagnostic message is prose that can
+    /// embed one anywhere in it (a build tool's own error text quoting the
+    /// project file it was processing, for example). Every whitespace- or
+    /// quote-delimited token is checked the same way a bare path field is,
+    /// so a leak in free text is caught by the same rule rather than a
+    /// second, weaker one.
+    /// </summary>
+    private static void RequireNoAbsolutePathInFreeText(string text, string field, ContextRecord record)
+    {
+        foreach (var token in text.Split(FreeTextDelimiters, StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (IsAbsolute(token))
+            {
+                throw new ContextSchemaException(
+                    $"{record.Identity.ProjectName}: {field} contains an absolute local path");
+            }
+        }
+    }
+
+    private static readonly char[] FreeTextDelimiters = { ' ', '\t', '\n', '\'', '"', '(', ')' };
 }

@@ -18,7 +18,9 @@ use std::path::{Path, PathBuf};
 use serde_json::{Map, Value};
 
 fn fixture(name: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/csharp-context").join(name)
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("fixtures/csharp-context")
+        .join(name)
 }
 
 fn text(name: &str) -> String {
@@ -31,13 +33,15 @@ fn text(name: &str) -> String {
 }
 
 fn load(name: &str) -> Map<String, Value> {
-    match serde_json::from_str(&text(name)).unwrap_or_else(|e| panic!("{name}: parses as JSON: {e}")) {
+    match serde_json::from_str(&text(name))
+        .unwrap_or_else(|e| panic!("{name}: parses as JSON: {e}"))
+    {
         Value::Object(map) => map,
         other => panic!("{name}: root is not an object: {other}"),
     }
 }
 
-fn records<'a>(doc: &'a Map<String, Value>) -> Vec<&'a Map<String, Value>> {
+fn records(doc: &Map<String, Value>) -> Vec<&Map<String, Value>> {
     doc["compilations"]
         .as_array()
         .expect("compilations is an array")
@@ -61,22 +65,41 @@ fn every_committed_envelope_parses_offline_and_has_header_keys_in_order() {
     for name in ALL_FILES {
         let t = text(name);
         let doc = load(name);
-        let keys: Vec<&str> = t.lines().take(6).filter_map(|l| {
-            let l = l.trim_start();
-            let l = l.strip_prefix('"')?;
-            let end = l.find('"')?;
-            Some(&l[..end])
-        }).collect();
+        let keys: Vec<&str> = t
+            .lines()
+            .take(6)
+            .filter_map(|l| {
+                let l = l.trim_start();
+                let l = l.strip_prefix('"')?;
+                let end = l.find('"')?;
+                Some(&l[..end])
+            })
+            .collect();
         assert_eq!(
             keys,
             ["schemaVersion", "producer", "version", "repo", "solution"],
             "{name}: header key order"
         );
-        assert_eq!(doc["schemaVersion"], Value::from(1), "{name}: schemaVersion");
-        assert_eq!(doc["producer"], Value::from("scout-semantic"), "{name}: producer");
+        assert_eq!(
+            doc["schemaVersion"],
+            Value::from(1),
+            "{name}: schemaVersion"
+        );
+        assert_eq!(
+            doc["producer"],
+            Value::from("scout-semantic"),
+            "{name}: producer"
+        );
         assert_eq!(doc["repo"], Value::from("csharp-context"), "{name}: repo");
-        assert_eq!(doc["solution"], Value::from("Fixture.sln"), "{name}: solution");
-        assert!(!records(&doc).is_empty(), "{name}: at least one compilation record");
+        assert_eq!(
+            doc["solution"],
+            Value::from("Fixture.sln"),
+            "{name}: solution"
+        );
+        assert!(
+            !records(&doc).is_empty(),
+            "{name}: at least one compilation record"
+        );
     }
 }
 
@@ -93,11 +116,17 @@ fn all_five_states_are_present_across_the_committed_envelopes_each_with_a_reason
             );
             seen.insert(state.to_string());
             let reason = record["reason"].as_str().expect("reason is a string");
-            assert!(!reason.is_empty(), "{name}: {state} record has an empty reason");
+            assert!(
+                !reason.is_empty(),
+                "{name}: {state} record has an empty reason"
+            );
         }
     }
     let expected: BTreeSet<String> = VALID_STATES.iter().map(|s| s.to_string()).collect();
-    assert_eq!(seen, expected, "every state appears somewhere in the committed set");
+    assert_eq!(
+        seen, expected,
+        "every state appears somewhere in the committed set"
+    );
 }
 
 #[test]
@@ -135,7 +164,10 @@ fn a_partial_record_carries_the_compilers_own_raw_diagnostic() {
     assert_eq!(legacy_net472["state"], "partial");
     assert_eq!(legacy_net472["reason"], "binding-error");
     let compiler = legacy_net472["diagnostics"]["compiler"].as_array().unwrap();
-    assert!(!compiler.is_empty(), "raw compiler diagnostics, not a count");
+    assert!(
+        !compiler.is_empty(),
+        "raw compiler diagnostics, not a count"
+    );
     let first = compiler[0].as_object().unwrap();
     assert_eq!(first["severity"], "Error");
     assert!(first["id"].as_str().unwrap().starts_with("CS"));
@@ -152,7 +184,11 @@ fn unsupported_target_names_both_sides_and_carries_zero_facts_under_that_identit
         .into_iter()
         .filter(|r| r["identity"]["projectName"] != "Vanished")
         .collect();
-    assert_eq!(all.len(), 3, "one unsupported record per real project, none silently dropped");
+    assert_eq!(
+        all.len(),
+        3,
+        "one unsupported record per real project, none silently dropped"
+    );
     for record in &all {
         assert_eq!(record["state"], "unsupported");
         assert_eq!(record["reason"], "undeclared-target");
@@ -166,11 +202,17 @@ fn unsupported_target_names_both_sides_and_carries_zero_facts_under_that_identit
             declared.iter().all(|t| t != "net48"),
             "net48 is exactly the target that was not declared"
         );
-        assert!(record["fingerprint"].is_null(), "no compilation, no fingerprint");
+        assert!(
+            record["fingerprint"].is_null(),
+            "no compilation, no fingerprint"
+        );
         assert!(record["references"].as_array().unwrap().is_empty());
         assert!(record["documents"]["loaded"].as_array().unwrap().is_empty());
         assert!(
-            record["generated"]["documents"].as_array().unwrap().is_empty(),
+            record["generated"]["documents"]
+                .as_array()
+                .unwrap()
+                .is_empty(),
             "zero facts under an unsupported identity"
         );
     }
@@ -184,7 +226,11 @@ fn unsupported_target_names_both_sides_and_carries_zero_facts_under_that_identit
         .iter()
         .map(|v| v.as_str().unwrap())
         .collect();
-    assert_eq!(declared, ["net472", "net9.0"], "both of Legacy's real variants are named");
+    assert_eq!(
+        declared,
+        ["net472", "net9.0"],
+        "both of Legacy's real variants are named"
+    );
 }
 
 #[test]
@@ -211,7 +257,10 @@ fn every_document_drop_reason_is_exercised_and_expected_is_a_superset_of_loaded_
                 let entry = entry.as_object().unwrap();
                 let path = entry["path"].as_str().unwrap();
                 let reason = entry["reason"].as_str().unwrap();
-                assert!(!reason.is_empty(), "{name}: a dropped document names its reason");
+                assert!(
+                    !reason.is_empty(),
+                    "{name}: a dropped document names its reason"
+                );
                 reasons.insert(reason.to_string());
                 assert!(
                     expected.contains(path),
@@ -243,12 +292,19 @@ fn every_document_drop_reason_is_exercised_and_expected_is_a_superset_of_loaded_
             }
         }
     }
-    let expected_reasons: BTreeSet<String> =
-        ["missing", "linked-outside-root", "skipped-directory", "out-of-scope"]
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
-    assert_eq!(reasons, expected_reasons, "all four drop reasons appear somewhere");
+    let expected_reasons: BTreeSet<String> = [
+        "missing",
+        "linked-outside-root",
+        "skipped-directory",
+        "out-of-scope",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect();
+    assert_eq!(
+        reasons, expected_reasons,
+        "all four drop reasons appear somewhere"
+    );
 }
 
 #[test]
@@ -277,7 +333,8 @@ fn a_document_roslyn_silently_treats_as_loaded_is_still_reported_missing() {
         .map(|d| d["path"].as_str().unwrap())
         .collect();
     assert_eq!(
-        missing, ["src/Clean/Ghost.cs"],
+        missing,
+        ["src/Clean/Ghost.cs"],
         "the independent, workspace-free inventory still names it missing"
     );
     // The whole point: a document Roslyn silently "loaded" as empty content
@@ -297,7 +354,10 @@ fn a_project_a_solution_names_but_that_never_reaches_the_workspace_is_still_repo
         assert_eq!(vanished["reason"], "project-not-loaded", "{name}");
         assert!(vanished["identity"]["requestedTfm"].is_null());
         assert!(vanished["identity"]["effectiveTfm"].is_null());
-        assert!(vanished["fingerprint"].is_null(), "{name}: no compilation, no fingerprint");
+        assert!(
+            vanished["fingerprint"].is_null(),
+            "{name}: no compilation, no fingerprint"
+        );
         assert_eq!(
             vanished["identity"]["projectPath"], "src/Vanished/Vanished.csproj",
             "{name}: named from the solution file itself, not from a workspace that never saw it"
@@ -306,7 +366,8 @@ fn a_project_a_solution_names_but_that_never_reaches_the_workspace_is_still_repo
 }
 
 #[test]
-fn generated_documents_are_accounted_separately_and_a_partial_sibling_does_not_poison_a_complete_one() {
+fn generated_documents_are_accounted_separately_and_a_partial_sibling_does_not_poison_a_complete_one(
+) {
     let doc = load("context-tfm-net9.0.json");
     let all = records(&doc);
     let clean = all
@@ -314,7 +375,10 @@ fn generated_documents_are_accounted_separately_and_a_partial_sibling_does_not_p
         .find(|r| r["identity"]["projectName"] == "Clean")
         .expect("Clean record");
     let generated = clean["generated"]["documents"].as_array().unwrap();
-    assert!(!generated.is_empty(), "Clean's source-generated document is inventoried");
+    assert!(
+        !generated.is_empty(),
+        "Clean's source-generated document is inventoried"
+    );
     for entry in generated {
         let entry = entry.as_object().unwrap();
         assert!(!entry["hintName"].as_str().unwrap().is_empty());
@@ -328,13 +392,19 @@ fn generated_documents_are_accounted_separately_and_a_partial_sibling_does_not_p
         .iter()
         .find(|r| r["identity"]["projectName"] == "Legacy")
         .expect("Legacy record");
-    assert_eq!(legacy["state"], "complete", "Legacy binds cleanly under net9.0");
+    assert_eq!(
+        legacy["state"], "complete",
+        "Legacy binds cleanly under net9.0"
+    );
 
     let broken = all
         .iter()
         .find(|r| r["identity"]["projectName"] == "Broken")
         .expect("Broken record");
-    assert_ne!(broken["state"], "complete", "Broken's own reference is still unresolved");
+    assert_ne!(
+        broken["state"], "complete",
+        "Broken's own reference is still unresolved"
+    );
 
     // Legacy stays fully inspectable (a real fingerprint, a real versions
     // block) even though Broken, in the very same envelope, is not complete.
@@ -349,14 +419,21 @@ fn two_targets_of_one_project_are_distinct_identities_with_distinct_fingerprints
 
     let legacy_net472 = records(&default_doc)
         .into_iter()
-        .find(|r| r["identity"]["projectName"] == "Legacy" && r["identity"]["effectiveTfm"] == "net472")
+        .find(|r| {
+            r["identity"]["projectName"] == "Legacy" && r["identity"]["effectiveTfm"] == "net472"
+        })
         .expect("Legacy@net472");
     let legacy_net9 = records(&net9_doc)
         .into_iter()
-        .find(|r| r["identity"]["projectName"] == "Legacy" && r["identity"]["effectiveTfm"] == "net9.0")
+        .find(|r| {
+            r["identity"]["projectName"] == "Legacy" && r["identity"]["effectiveTfm"] == "net9.0"
+        })
         .expect("Legacy@net9.0");
 
-    assert_ne!(legacy_net472["identity"], legacy_net9["identity"], "distinct identities");
+    assert_ne!(
+        legacy_net472["identity"], legacy_net9["identity"],
+        "distinct identities"
+    );
     let fp_net472 = legacy_net472["fingerprint"].as_str().unwrap();
     let fp_net9 = legacy_net9["fingerprint"].as_str().unwrap();
     assert_ne!(fp_net472, fp_net9, "distinct fingerprints");
@@ -378,10 +455,12 @@ fn two_configurations_of_one_target_are_distinct_identities_with_distinct_finger
         .find(|r| r["identity"]["projectName"] == "Legacy")
         .expect("Legacy (Release)");
 
-    assert_eq!(legacy_debug["identity"]["effectiveTfm"], legacy_release["identity"]["effectiveTfm"]);
+    assert_eq!(
+        legacy_debug["identity"]["effectiveTfm"],
+        legacy_release["identity"]["effectiveTfm"]
+    );
     assert_ne!(
-        legacy_debug["identity"]["configuration"],
-        legacy_release["identity"]["configuration"],
+        legacy_debug["identity"]["configuration"], legacy_release["identity"]["configuration"],
         "the one field this pair is engineered to differ on"
     );
     assert_ne!(
@@ -423,13 +502,31 @@ fn reject_or_defer_decision_is_a_pure_function_of_the_envelope() {
     let doc = load("context-tfm-net9.0.json");
     let all = records(&doc);
 
-    let legacy = all.iter().find(|r| r["identity"]["projectName"] == "Legacy").unwrap();
-    assert_eq!(decide(legacy, None), "admit", "a fresh complete record admits");
+    let legacy = all
+        .iter()
+        .find(|r| r["identity"]["projectName"] == "Legacy")
+        .unwrap();
+    assert_eq!(
+        decide(legacy, None),
+        "admit",
+        "a fresh complete record admits"
+    );
     let fp = legacy["fingerprint"].as_str().unwrap().to_string();
-    assert_eq!(decide(legacy, Some(&fp)), "admit", "an unchanged fingerprint admits");
-    assert_eq!(decide(legacy, Some("stale-fingerprint")), "defer", "a moved fingerprint is stale");
+    assert_eq!(
+        decide(legacy, Some(&fp)),
+        "admit",
+        "an unchanged fingerprint admits"
+    );
+    assert_eq!(
+        decide(legacy, Some("stale-fingerprint")),
+        "defer",
+        "a moved fingerprint is stale"
+    );
 
-    let broken = all.iter().find(|r| r["identity"]["projectName"] == "Broken").unwrap();
+    let broken = all
+        .iter()
+        .find(|r| r["identity"]["projectName"] == "Broken")
+        .unwrap();
     assert_eq!(decide(broken, None), "defer", "partial defers");
 
     let unsupported_doc = load("context-tfm-net48.json");
@@ -470,7 +567,9 @@ fn versions_and_engine_are_present_on_every_non_unsupported_record() {
                 .as_object()
                 .unwrap_or_else(|| panic!("{name}: {:?} carries versions", record["identity"]));
             for key in ["sdk", "msbuild", "compiler", "engine"] {
-                let value = versions[key].as_str().unwrap_or_else(|| panic!("{name}: versions.{key}"));
+                let value = versions[key]
+                    .as_str()
+                    .unwrap_or_else(|| panic!("{name}: versions.{key}"));
                 assert!(!value.is_empty(), "{name}: versions.{key} is non-empty");
             }
         }

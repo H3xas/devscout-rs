@@ -10,15 +10,18 @@ namespace ScoutSemantic;
 internal static class ContextFingerprint
 {
     /// <summary>
-    /// Folds reference identity, import content hashes, build symbols,
-    /// binding-relevant language options, SDK/MSBuild/compiler versions, the
-    /// project's own narrow build identity, and every project reference's
-    /// already-computed fingerprint into one digest.
+    /// Folds reference identity, import content hashes, analyzer references,
+    /// generator inputs, build symbols, binding-relevant language options,
+    /// SDK/MSBuild/compiler versions, the project's own narrow build
+    /// identity, and every project reference's already-computed fingerprint
+    /// into one digest.
     /// </summary>
     public static string Compute(
         IEnumerable<string> metadataReferenceIdentities,
         IEnumerable<string> projectReferenceFingerprints,
         IEnumerable<string> importContentHashes,
+        IEnumerable<string> analyzerReferenceIdentities,
+        IEnumerable<string> generatorInputIdentities,
         IEnumerable<string> preprocessorSymbols,
         IReadOnlyDictionary<string, string?> languageOptions,
         ContextVersions versions,
@@ -33,6 +36,8 @@ internal static class ContextFingerprint
             Group("metadata-references", metadataReferenceIdentities),
             Group("project-references", projectReferenceFingerprints),
             Group("imports", importContentHashes),
+            Group("analyzer-references", analyzerReferenceIdentities),
+            Group("generator-inputs", generatorInputIdentities),
             Group("preprocessor-symbols", preprocessorSymbols),
             Group(
                 "language-options",

@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <!-- This directory holds several independent, sibling fixture projects
+         (Shared/, sdk-pair/, reference-content/); default SDK globbing would
+         otherwise sweep every one of their .cs files into this compilation
+         too. Probe's own single source file is listed explicitly instead. -->
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Probe.cs" />
+    <ProjectReference Include="Shared/Shared.csproj" />
+    <AdditionalFiles Include="Gen.txt" />
+  </ItemGroup>
+
+</Project>

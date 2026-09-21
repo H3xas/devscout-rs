@@ -166,6 +166,21 @@ internal static class ContextInventory
                     continue;
                 }
 
+                if (IsGeneratedRestoreArtifact(importPath))
+                {
+                    // obj/ is already a skip directory for every authored
+                    // document this tool walks; a restore-generated import
+                    // under it (*.nuget.g.props/.targets) is the same kind
+                    // of build artifact, not a project- or repo-authored
+                    // build customization -- and its content embeds the
+                    // local machine's absolute NuGet global-packages root,
+                    // so folding it would make the fingerprint depend on
+                    // where the repository happens to be checked out.
+                    // Package-version changes are already visible through
+                    // the resolved metadata references themselves.
+                    continue;
+                }
+
                 string content;
                 try
                 {
@@ -224,6 +239,20 @@ internal static class ContextInventory
     }
 
     private static string? NullIfEmpty(string value) => value.Length == 0 ? null : value;
+
+    /// <summary>
+    /// A restore-generated import living under any project's own <c>obj/</c>
+    /// directory: <c>*.nuget.g.props</c>, <c>*.nuget.g.targets</c>, and any
+    /// other file MSBuild writes there. Checked by directory component, the
+    /// same way <see cref="RepoPaths"/>'s skip-dir list is, not by file name
+    /// alone, since a restore can regenerate more than the two well-known
+    /// names.
+    /// </summary>
+    private static bool IsGeneratedRestoreArtifact(string fullPath)
+    {
+        var normalized = fullPath.Replace('\\', '/');
+        return normalized.Split('/').Any(segment => string.Equals(segment, "obj", StringComparison.Ordinal));
+    }
 
     /// <summary>A relative display path for a document that <see cref="RepoPaths.Classify"/> dropped, so its reason is still reportable without an absolute local path.</summary>
     private static string DisplayRelativePath(string root, string absolute)

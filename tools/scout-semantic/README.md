@@ -350,35 +350,63 @@ fingerprint; and one of five states, always paired with a machine-readable reaso
 
 | State | Reason (examples) | Meaning |
 |---|---|---|
-| `complete` | `complete` | Every expected document loaded, no compiler error, no unresolved reference. |
-| `partial` | `binding-error`, `missing-expected-document`, `workspace-failure` | A non-null compilation whose inventory or diagnostics are incomplete. |
+| `complete` | `complete` | Every expected document loaded, no compiler error, no unresolved reference, and the independent inventory was available. |
+| `partial` | `binding-error`, `missing`, `linked-outside-root`, `skipped-directory`, `out-of-scope`, `workspace-failure`, `inventory-unavailable` | A non-null compilation whose inventory or diagnostics are incomplete. |
 | `unsupported` | `undeclared-target` | A requested `--tfm` the project does not declare; zero facts under this identity. |
-| `failed` | `project-not-loaded` | A project the solution names but that never reached the workspace at all. |
-| `excluded` | `not-requested` | A declared variant that was not the deterministic selection when no target was requested. |
+| `failed` | `project-not-loaded`, `workspace-failure` | A project the solution names but that never reached the workspace at all, or one Roslyn accepted but produced no compilation for. |
+| `excluded` | `not-requested` | A declared variant that was not the deterministic selection when no target was requested, or a project a `--projects` filter left out. |
 
 A non-null compilation is never `complete` by itself: any compiler error, any expected document
-that did not load (for any of the four reasons above, including a deliberate exclusion like
-`out-of-scope`), or any unresolved reference demotes the record to `partial`. `--strict` fails
-(exit 2) unless every non-`excluded` record's state is `complete`.
+that did not load (for any of the four dropped-document reasons above, including a deliberate
+exclusion like `out-of-scope`), any unresolved reference, or an independent inventory that could
+not be obtained at all (`inventory-unavailable`, below) demotes the record to `partial`. `--strict`
+fails (exit 2) unless every non-`excluded` record's state is `complete`.
 
 The expected document inventory comes from a second, independent MSBuild evaluation -- parsing
 the solution file directly and re-evaluating each project through its own fresh
 `ProjectCollection`, never the ambient one the Roslyn workspace uses -- so a document (or a whole
 project) the workspace silently drops is still reportable, and a document Roslyn's own walk
 tolerantly "loads" with empty content (a `Compile` item whose file was never created) is still
-named missing. See `tools/scout-semantic/ContextInventory.cs`.
+named missing. See `tools/scout-semantic/ContextInventory.cs`. When that independent evaluation
+itself throws (observed for a `net472` target's evaluation on a non-Windows machine, where classic
+.NET Framework GAC/registry resolution has no equivalent), the record is demoted to `partial`/
+`inventory-unavailable` rather than silently reporting the loaded set as if nothing were missing --
+completion is earned, never inferred from "we could not check".
 
-The fingerprint is one SHA-1 over reference identity, import content hashes, preprocessor symbols,
+A `--projects <glob>` filter that leaves a project out never reports it `failed`: it is `excluded`/
+`not-requested`, the same state and reason an unselected multi-target variant gets, because both
+are the caller's own deliberate exclusion rather than a load failure. `excluded` records never
+affect `--strict`'s rollup, so a `--projects`-scoped run that is otherwise healthy still exits 0.
+
+`diagnostics.compiler` carries only `Severity == Error` diagnostics: it exists to drive the
+`binding-error` state (any compiler error demotes the record), not as a general warnings feed. A
+generator's own diagnostics, of any severity, are inventoried separately, under
+`generated.diagnostics` (below).
+
+The fingerprint is one SHA-1 over reference identity, import content hashes, analyzer reference
+identities, generator input (`AdditionalFiles`) content hashes, preprocessor symbols,
 binding-relevant language/compiler options, SDK/MSBuild/compiler versions, the project's own
 narrow build identity (configuration, platform, target, assembly name, root namespace -- never the
 whole project file), and every project reference's own already-computed fingerprint. Two distinct
 targets or configurations of one project are always distinct identities with distinct
-fingerprints. See `tools/scout-semantic/ContextFingerprint.cs`.
+fingerprints. A restore-generated import under any project's own `obj/` directory (such as
+`*.nuget.g.props`/`.targets`) is excluded from both `imports` and the fingerprint: those files
+embed the local machine's absolute NuGet global-packages root, so folding them raw would make the
+fingerprint depend on where the repository happens to be checked out; a package version change is
+already visible through the resolved metadata references themselves. Computing the fingerprint
+performs a second, independent evaluation of the project (and, transitively, its own project
+references); a run logs `context: fingerprint computation totaled <N>ms across <M> compilations`
+to stderr so that cost is observable rather than assumed. See
+`tools/scout-semantic/ContextFingerprint.cs` and `fixtures/csharp-context-fingerprint/README.md`
+for a committed before/after envelope pair per mutation class.
 
 Source-generated documents are inventoried via the Workspace API's own
 `Project.GetSourceGeneratedDocumentsAsync()`, which names each document's `HintName` but exposes
 no generator-identity property at all (verified against the restored 4.14.0 assemblies), so
-`generated.documents[].generator` is always `"unknown"`.
+`generated.documents[].generator` is always `"unknown"`. `generated.diagnostics` carries any
+diagnostic (any severity) located on one of those same generated documents' own syntax trees,
+distinguished from `diagnostics.compiler` by tree identity rather than by guessing from a file
+path; it is `[]` whenever no generator in the run reported one, which is the common case.
 
 `schemaVersion` starts at `1` and is a separate counter from the flow-tracer fact document's own
 `schemaVersion` -- two different documents, two different emit modes, two different output paths.
@@ -387,11 +415,21 @@ External imports (an SDK `.props`/`.targets` file, a NuGet package's build file)
 recorded by absolute local path: `imports[].identity` is a normalized identity (package id and
 version when the well-known NuGet global-packages path shape is recognizable, else the file's bare
 name) plus a content hash, and `ContextSchema.Validate` rejects an absolute path in any
-path-shaped field as defense in depth.
+path-shaped field as defense in depth. The same guard also scans every free-text diagnostic
+message (`diagnostics.workspace[].message`, `diagnostics.compiler[].message`,
+`generated.diagnostics[]`) token by token, because a build tool's own diagnostic text can quote an
+absolute path where a path-shaped field never could -- the writer already root-relativizes (or, for
+a path outside the analysed repository, reduces to a bare file name) any absolute path it finds
+in a workspace diagnostic's message before this guard ever runs, so the guard is defense in depth,
+not the only line of protection.
 
 Fixture: `fixtures/csharp-context/`, with its own `README.md` and five committed envelope
 snapshots CI regenerates and diffs byte-for-byte, covering all five states and all four document
-drop reasons; `tests/context_envelope.rs` pins the shape offline, without a .NET toolchain.
+drop reasons; `tests/context_envelope.rs` pins the shape offline, without a .NET toolchain. The
+fingerprint's own mutation-class evidence and the four-way multi-target/multi-configuration
+identity round trip live in the sibling `fixtures/csharp-context-fingerprint/` (its own `README.md`;
+`tests/context_fingerprint_pairs.rs` pins it offline the same way), generated locally and not
+CI-regenerated.
 
 ## Implementation notes and known limits
 

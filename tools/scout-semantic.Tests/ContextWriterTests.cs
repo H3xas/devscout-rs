@@ -84,4 +84,39 @@ public sealed class ContextWriterTests
             File.Delete(path);
         }
     }
+
+    [Fact]
+    public void a_record_with_no_versions_writes_an_explicit_null_rather_than_omitting_the_key()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"scout-semantic-context-writer-test-{Guid.NewGuid():N}.json");
+        try
+        {
+            var envelope = new ContextEnvelope
+            {
+                Producer = "scout-semantic",
+                Version = "0.0.0-test",
+                Repo = "test",
+                Solution = "Test.sln",
+                Compilations = new List<ContextRecord>
+                {
+                    new()
+                    {
+                        Identity = new ContextIdentity { ProjectPath = "src/A/A.csproj", ProjectName = "A", RequestedTfm = "net48" },
+                        State = "unsupported",
+                        Reason = "undeclared-target",
+                        // Versions intentionally left unset.
+                    },
+                },
+            };
+
+            ContextWriter.Write(path, envelope);
+
+            var written = File.ReadAllText(path);
+            Assert.Contains("\"versions\": null", written);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
 }

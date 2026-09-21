@@ -14,6 +14,9 @@ internal sealed record UnsupportedTarget(string ProjectFilePath, string ProjectN
 /// <summary>A declared variant that was not selected because it was not requested.</summary>
 internal sealed record ExcludedVariant(string ProjectFilePath, string ProjectName, string Tfm);
 
+/// <summary>A project the caller's own <c>--projects</c> filter left out, before any target selection ran.</summary>
+internal sealed record FilteredProject(string ProjectFilePath, string ProjectName);
+
 /// <summary>Everything <see cref="Loader"/> hands back to the runner.</summary>
 internal sealed class LoadResult
 {
@@ -30,6 +33,9 @@ internal sealed class LoadResult
 
     /// <summary>A declared variant left out because it was not among the requested targets (or, with no request, not the deterministic selection).</summary>
     public List<ExcludedVariant> Excluded { get; } = new();
+
+    /// <summary>A project the caller's own <c>--projects</c> filter matched no glob for; never reached target selection at all.</summary>
+    public List<FilteredProject> Filtered { get; } = new();
 }
 
 /// <summary>
@@ -84,6 +90,11 @@ internal static class Loader
             if (options.ProjectGlobs.Count > 0
                 && !options.ProjectGlobs.Any(g => g.IsMatch(baseName) || variants.Any(v => g.IsMatch(v.Name))))
             {
+                // The caller's own --projects filter left this one out --
+                // recorded, not silently skipped, so a context run can
+                // account for it as a deliberate exclusion rather than a
+                // project that never reached the workspace at all.
+                result.Filtered.Add(new FilteredProject(variants[0].FilePath ?? variants[0].Name, baseName));
                 continue;
             }
 

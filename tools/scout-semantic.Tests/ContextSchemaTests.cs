@@ -96,4 +96,42 @@ public sealed class ContextSchemaTests
         record.Documents.Dropped.Add(new DroppedDocument { Path = "src/App/Ghost.cs", Reason = "" });
         Assert.Throws<ContextSchemaException>(() => ContextSchema.Validate(record));
     }
+
+    [Fact]
+    public void an_absolute_local_path_quoted_inside_a_workspace_diagnostic_message_throws()
+    {
+        var record = Minimal();
+        record.Diagnostics.Workspace.Add(new WorkspaceDiagnosticRecord
+        {
+            Kind = "Failure",
+            Message = "Msbuild failed when processing the file '/Users/someone/repo/src/App/App.csproj' with message: bogus",
+        });
+        Assert.Throws<ContextSchemaException>(() => ContextSchema.Validate(record));
+    }
+
+    [Fact]
+    public void an_absolute_local_path_inside_a_compiler_diagnostic_message_throws()
+    {
+        var record = Minimal();
+        record.Diagnostics.Compiler.Add(new CompilerDiagnosticRecord
+        {
+            Severity = "Error",
+            Id = "CS0000",
+            Message = "see /Users/someone/repo/src/App/App.cs for details",
+        });
+        Assert.Throws<ContextSchemaException>(() => ContextSchema.Validate(record));
+    }
+
+    [Fact]
+    public void a_workspace_diagnostic_message_naming_only_a_relative_path_validates_cleanly()
+    {
+        var record = Minimal();
+        record.Diagnostics.Workspace.Add(new WorkspaceDiagnosticRecord
+        {
+            Kind = "Failure",
+            Message = "Msbuild failed when processing the file 'src/Broken/Broken.csproj' with message: bogus",
+        });
+        var exception = Record.Exception(() => ContextSchema.Validate(record));
+        Assert.Null(exception);
+    }
 }

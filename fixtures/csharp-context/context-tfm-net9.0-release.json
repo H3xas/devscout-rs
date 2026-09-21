@@ -17,7 +17,7 @@
       },
       "state": "partial",
       "reason": "workspace-failure",
-      "fingerprint": "a8b2c664502df2a0d75ef01831fbf9506bd5f0a4",
+      "fingerprint": "c9f24dee8f926477fb87ab5b7ff75baf949d120b",
       "versions": {
         "sdk": "9.0.305",
         "msbuild": "9.0.305",
@@ -1011,14 +1011,6 @@
         }
       ],
       "imports": [
-        {
-          "identity": "external-file:Broken.csproj.nuget.g.props",
-          "hash": "101688c4a08c441a3d0472515c84aa8246b36a64"
-        },
-        {
-          "identity": "external-file:Broken.csproj.nuget.g.targets",
-          "hash": "fe4f7b3a3fb0da2ba8ac85852e542098eb5d61fc"
-        },
         {
           "identity": "external-file:Directory.Build.props",
           "hash": "e430464dfd655dfdcc4d6a0cfc7b45696006d182"
@@ -1057,7 +1049,7 @@
         "workspace": [
           {
             "kind": "Failure",
-            "message": "Msbuild failed when processing the file '/Users/rczab/repositories_prv/_worktrees/devscout-rs/feat-compiler-context-manifest/fixtures/csharp-context/src/Broken/Broken.csproj' with message: The referenced project ../Missing/Missing.csproj does not exist."
+            "message": "Msbuild failed when processing the file 'src/Broken/Broken.csproj' with message: The referenced project ../Missing/Missing.csproj does not exist."
           }
         ],
         "compiler": []
@@ -1075,7 +1067,7 @@
       },
       "state": "partial",
       "reason": "missing",
-      "fingerprint": "5014b4b9d9509eeb6302d956002d047d55f6fb7e",
+      "fingerprint": "7efcd4d8e363e53310666c673c4e4bdb97aaba1b",
       "versions": {
         "sdk": "9.0.305",
         "msbuild": "9.0.305",
@@ -2069,14 +2061,6 @@
         }
       ],
       "imports": [
-        {
-          "identity": "external-file:Clean.csproj.nuget.g.props",
-          "hash": "101688c4a08c441a3d0472515c84aa8246b36a64"
-        },
-        {
-          "identity": "external-file:Clean.csproj.nuget.g.targets",
-          "hash": "fe4f7b3a3fb0da2ba8ac85852e542098eb5d61fc"
-        },
         {
           "identity": "external-file:Directory.Build.props",
           "hash": "e430464dfd655dfdcc4d6a0cfc7b45696006d182"
@@ -2166,7 +2150,7 @@
       },
       "state": "complete",
       "reason": "complete",
-      "fingerprint": "6c9bcf93db44b0a764986f2876ffad431e123cf2",
+      "fingerprint": "5595dccf905a03ab6b1b492c97ed1f1eff4f36a1",
       "versions": {
         "sdk": "9.0.305",
         "msbuild": "9.0.305",
@@ -3163,14 +3147,6 @@
         {
           "identity": "external-file:Directory.Build.props",
           "hash": "e430464dfd655dfdcc4d6a0cfc7b45696006d182"
-        },
-        {
-          "identity": "external-file:Legacy.csproj.nuget.g.props",
-          "hash": "101688c4a08c441a3d0472515c84aa8246b36a64"
-        },
-        {
-          "identity": "external-file:Legacy.csproj.nuget.g.targets",
-          "hash": "dc80a3dc98f8b54fca3b9a07e4dfc470308f80c4"
         },
         {
           "identity": "external-file:WorkloadManifest.targets",
