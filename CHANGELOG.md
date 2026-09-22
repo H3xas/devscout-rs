@@ -47,6 +47,17 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `defs.jsonl` and the flow-tracer fact document stay byte-identical for unchanged inputs.
   Fixture: `fixtures/csharp-context/` and `fixtures/csharp-context-fingerprint/`. See
   `tools/scout-semantic/README.md#build-context-envelope`.
+- **`refs`/`read`/`impact`/`tests --json` gain two additive top-level/row keys.** `freshness` is a
+  new top-level object, always the true last key after `outcome`, reporting whether the index was
+  built at the working tree's current HEAD (`"fresh"`, `"stale"` with both heads and the changed
+  files, or `"unknown"` with a reason) -- the same signal the existing stderr freshness note
+  already carries, now reachable by a programmatic consumer. `occurrenceIndex` is a new row key on
+  `inbound`/`outbound` entries of `refs`/`read`, appended after `why` and omitted whenever a row has
+  no same-table collision; it disambiguates two calls to one target that would otherwise serialize
+  to byte-identical rows (for example two calls on one line), scoped to one table of one answer
+  against one graph snapshot -- not a stable cross-run identity. No existing key is renamed, removed
+  or reordered and `schema_version` is unchanged. See [`docs/answer-contract.md`](docs/answer-contract.md#freshness)
+  and its [`occurrenceIndex`](docs/answer-contract.md#occurrenceindex) section.
 
 ### Changed
 
