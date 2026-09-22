@@ -286,7 +286,7 @@ internal static class CompilerFactsEmitter
             writer.WriteEndObject();
 
             writer.WriteStartObject("profile");
-            writer.WriteString("target", options.Tfm ?? "");
+            writer.WriteString("target", options.Tfms.Count > 0 ? options.Tfms[0] : "");
             writer.WriteString("configuration", options.Properties.GetValueOrDefault("Configuration", ""));
             writer.WriteString("platform", options.Properties.GetValueOrDefault("Platform", ""));
             writer.WriteEndObject();

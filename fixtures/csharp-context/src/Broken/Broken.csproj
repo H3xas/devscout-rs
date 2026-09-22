@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Never exists on disk: the fixture's control for a project whose
+         compilation is null (workspace-failure), not a binding error. -->
+    <ProjectReference Include="../Missing/Missing.csproj" />
+  </ItemGroup>
+
+</Project>

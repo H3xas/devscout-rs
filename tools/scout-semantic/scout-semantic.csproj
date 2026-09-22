@@ -27,6 +27,21 @@
     <PackageReference Include="Microsoft.Build.Locator" Version="1.9.1" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.14.0" />
     <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" Version="4.14.0" />
+    <!-- Pinned to the version Workspaces.MSBuild already resolves transitively,
+         with ExcludeAssets="runtime" so neither DLL is copied to the output
+         directory: an in-process Microsoft.Build.Evaluation.ProjectCollection
+         (ContextInventory.cs, never the ambient one the workspace uses) must
+         resolve its assemblies through MSBuildLocator's redirect to the
+         installed SDK at run time, not a locally-copied NuGet build. Without
+         this, evaluation binds an older in-process assembly against the
+         installed SDK's newer targets files and throws on an intrinsic
+         function the older assembly does not implement. -->
+    <PackageReference Include="Microsoft.Build" Version="17.7.2" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.Build.Framework" Version="17.7.2" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="scout-semantic.Tests" />
   </ItemGroup>
 
 </Project>
