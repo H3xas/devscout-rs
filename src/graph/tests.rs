@@ -11,6 +11,7 @@ use super::rebuild::graph_schema_is_current;
 
 mod artifact;
 mod cache;
+mod compiler_facts;
 mod def;
 mod edge;
 mod fragment_types;

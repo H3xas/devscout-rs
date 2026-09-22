@@ -190,6 +190,40 @@ jobs:
       - name: Facts output matches the committed snapshot
         run: diff -u fixtures/csharp-flowtrace/facts.json out/facts/csharp-flowtrace.json
 
+      - name: Restore the compiler-facts fixture (package-free)
+        run: dotnet restore fixtures/csharp-compiler-facts/Fixture.csproj
+
+      - name: Run the oracle in compiler-facts protocol mode on its own fixture
+        run: |
+          dotnet run --project tools/scout-semantic --no-build -c Release -- \
+            fixtures/csharp-compiler-facts/Fixture.csproj --root fixtures/csharp-compiler-facts \
+            --emit compiler-facts --compiler-facts out/compiler-facts/csharp-compiler-facts.json \
+            --tfm net9.0 -p Configuration=Debug -p Platform=AnyCPU --no-git
+
+      - name: Compiler-facts output matches the committed snapshot
+        run: diff -u fixtures/csharp-compiler-facts/compiler-facts.json out/compiler-facts/csharp-compiler-facts.json
+
+      # The committed snapshot is the engine's own unflagged default (which
+      # now includes occurrences); this proves the byte identity of every
+      # existing output field still holds under an explicit, narrower
+      # request -- field-by-field, rather than doubling the committed
+      # fixture's size with a second full snapshot.
+      - name: Capability-restricted run carries no occurrences key and reports its own provided set
+        run: |
+          dotnet run --project tools/scout-semantic --no-build -c Release -- \
+            fixtures/csharp-compiler-facts/Fixture.csproj --root fixtures/csharp-compiler-facts \
+            --emit compiler-facts --compiler-facts out/compiler-facts/csharp-compiler-facts-restricted.json \
+            --tfm net9.0 -p Configuration=Debug -p Platform=AnyCPU --capabilities symbols,diagnostics --no-git
+          if jq -e 'has("occurrences")' out/compiler-facts/csharp-compiler-facts-restricted.json > /dev/null; then
+            echo "::error::a capabilities-restricted run must carry no occurrences key at all"
+            exit 1
+          fi
+          provided=$(jq -c '.capabilities.provided' out/compiler-facts/csharp-compiler-facts-restricted.json)
+          if [ "$provided" != '["symbols","diagnostics"]' ]; then
+            echo "::error::expected capabilities.provided [\"symbols\",\"diagnostics\"], got $provided"
+            exit 1
+          fi
+
       - name: Run the oracle in context mode on its own fixture (default selection)
         run: |
           dotnet run --project tools/scout-semantic --no-build -c Release -- \

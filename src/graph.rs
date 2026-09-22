@@ -78,6 +78,7 @@
 
 mod artifact;
 mod cache;
+mod compiler_facts;
 mod def;
 mod edge;
 mod fragment;
@@ -89,6 +90,16 @@ mod rebuild;
 
 pub use artifact::{read_graph, Graph, GraphName, GraphUnit, Stats, GRAPH_SCHEMA_VERSION};
 pub use cache::{index_is_stale, read_fragments_index, FragmentCacheEntry};
+pub use compiler_facts::{
+    admit, admit_and_publish, compiler_facts_json_path, expectations_for, locate_engine,
+    read_compiler_facts, run_engine, AdmissionExpectations, AdmittedFacts, Coverage,
+    IncompleteUnit, Profile, PublishError, RefusalReason, COMPILER_FACTS_ARTIFACT_SCHEMA_VERSION,
+    COMPILER_FACTS_CONTRACT_VERSION, COMPILER_FACTS_FORMAT, DEFAULT_OUTPUT_CAP, DEFAULT_TIMEOUT,
+    EXPECTED_CONTEXT_SCHEMA_VERSION, EXPECTED_DEPENDENCY_FINGERPRINT, EXPECTED_ENGINE_REVISION,
+    EXPECTED_PRODUCER_NAME, SCOUT_COMPILER_ENGINE,
+};
+#[cfg(test)]
+pub(crate) use compiler_facts::{recompute_context_summary, CompilationRef};
 pub use def::{AlsoIn, Def};
 pub use edge::{Candidate, Edge, EdgesByKind, HeuristicByTier, HeuristicTier};
 pub use fragment::{fragment_from_extraction, markup_fragment};

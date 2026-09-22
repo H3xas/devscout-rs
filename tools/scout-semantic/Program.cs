@@ -56,6 +56,10 @@ internal sealed class Options
     public List<string> PublishCalls { get; } = new();
 
     public List<string> ConsumerBases { get; } = new();
+
+    public string? CompilerFacts { get; set; }
+
+    public List<string> Capabilities { get; } = new();
 }
 
 /// <summary>Entry point. Registers MSBuild before any MSBuild-touching type is JIT-ed.</summary>
@@ -63,9 +67,11 @@ internal static class Program
 {
     private const string Usage = """
         usage: scout-semantic <path.sln|path.csproj> --root <repo-root> --out <refs.jsonl>
-                   [--emit mode[,mode]]      oracle | flowtrace-facts | context, repeatable (default: oracle)
+                   [--emit mode[,mode]]      oracle | flowtrace-facts | compiler-facts | context, repeatable (default: oracle)
                    [--units <units.jsonl>] [--defs <defs.jsonl>]
                    [--facts <path|->]        fact document, default out/facts/<repo>.json, - is stdout
+                   [--compiler-facts <path|->]  compiler-facts protocol document, - is stdout
+                   [--capabilities a,b]      requested capability names, repeatable, compiler-facts only
                    [--context <path|->]      build-context envelope, required with `--emit context`, - is stdout
                    [--repo <id>]             repo id in the fact/context header (default: --root's last segment)
                    [--no-git]                do not stamp git identity in the fact header
@@ -79,6 +85,9 @@ internal static class Program
                                               `--emit context`) an artifact whose rollup state is not complete
 
         --out is required only when `oracle` is among the emitted modes.
+        --compiler-facts is required only when `compiler-facts` is among the emitted modes; a
+        requested target/configuration/platform reuses --tfm and -p Configuration=/-p Platform=,
+        the same machinery every other mode already has.
 
         exit codes: 0 ok, 1 usage/IO, 2 strict failure, 3 zero projects loaded
         """;
@@ -88,6 +97,9 @@ internal static class Program
 
     /// <summary>The flow tracer's fact document.</summary>
     public const string EmitFacts = "flowtrace-facts";
+
+    /// <summary>The compiler-facts protocol document.</summary>
+    public const string EmitCompilerFacts = "compiler-facts";
 
     /// <summary>The build-context envelope: one record per compilation identity, its own output path.</summary>
     public const string EmitContext = "context";
@@ -175,7 +187,7 @@ internal static class Program
                 case "--emit":
                     foreach (var mode in Split(Value(arg)))
                     {
-                        if (mode is not (EmitOracle or EmitFacts or EmitContext))
+                        if (mode is not (EmitOracle or EmitFacts or EmitCompilerFacts or EmitContext))
                         {
                             throw new ArgumentException($"unknown --emit mode: {mode}");
                         }
@@ -186,6 +198,12 @@ internal static class Program
                     break;
                 case "--facts":
                     options.Facts = Value(arg);
+                    break;
+                case "--compiler-facts":
+                    options.CompilerFacts = Value(arg);
+                    break;
+                case "--capabilities":
+                    options.Capabilities.AddRange(Split(Value(arg)));
                     break;
                 case "--context":
                     options.Context = Value(arg);
@@ -261,6 +279,11 @@ internal static class Program
         if (options.Emit.Contains(EmitOracle) && options.Out.Length == 0)
         {
             throw new ArgumentException("missing --out");
+        }
+
+        if (options.Emit.Contains(EmitCompilerFacts) && string.IsNullOrEmpty(options.CompilerFacts))
+        {
+            throw new ArgumentException("missing --compiler-facts");
         }
 
         if (options.Emit.Contains(EmitContext) && string.IsNullOrEmpty(options.Context))
@@ -359,10 +382,28 @@ internal static class Runner
         }
 
         var wantOracle = options.Emit.Contains(Program.EmitOracle);
-        var wantContext = options.Emit.Contains(Program.EmitContext);
+        var wantCompilerFacts = options.Emit.Contains(Program.EmitCompilerFacts);
+        // `wantExplicitContext` gates --emit context's own artifact (file
+        // write, --strict rollup check): only true when that mode was
+        // actually requested. `wantContext` additionally gates the
+        // underlying per-compilation record computation, now also needed
+        // by compiler-facts, whether or not `--emit context`
+        // itself was requested: its own header needs the real envelope to
+        // embed and the real per-compilation fingerprints to fold.
+        var wantExplicitContext = options.Emit.Contains(Program.EmitContext);
+        var wantContext = wantExplicitContext || wantCompilerFacts;
         var factsWalker = options.Emit.Contains(Program.EmitFacts)
             ? new FactsWalker(options.PublishCalls, options.ConsumerBases)
             : null;
+        var compilerFacts = wantCompilerFacts ? new CompilerFactsAccumulator() : null;
+
+        // Resolved once, before the per-project loop, so the occurrence
+        // walker below knows at walk time whether it should run at all.
+        var (_, providedCapabilities) = wantCompilerFacts
+            ? CompilerFactsEmitter.ResolveCapabilities(options)
+            : (new List<string>(), new List<string>());
+        var wantOccurrences = wantCompilerFacts && providedCapabilities.Contains("occurrences");
+        var compilerOccurrences = wantOccurrences ? new CompilerOccurrenceAccumulator() : null;
 
         using var buildCollection = wantContext ? new Microsoft.Build.Evaluation.ProjectCollection() : null;
         var fingerprintCache = new Dictionary<ProjectId, string>();
@@ -383,13 +424,17 @@ internal static class Runner
             var status = compilation is null ? "failed" : "ok";
             var files = new List<string>();
             var before = refs.Count;
+            var occurrenceStart = compilerOccurrences?.Sites.Count ?? 0;
+            var unitId = $"{loaded.Name}|{loaded.Tfm ?? "?"}";
 
             if (compilation is null)
             {
                 failedUnits++;
+                compilerFacts?.Missing.Add(unitId);
             }
             else
             {
+                compilerFacts?.CollectFromCompilation(compilation, unitId, paths);
                 foreach (var document in project.Documents)
                 {
                     var rel = paths.Relative(document.FilePath);
@@ -431,6 +476,8 @@ internal static class Runner
                     {
                         walker.CollectDefs(model, tree, rel, loaded.Name, defs);
                     }
+
+                    compilerOccurrences?.WalkDocument(model, tree, rel, paths);
                 }
             }
 
@@ -440,9 +487,26 @@ internal static class Runner
 
             if (wantContext)
             {
-                contextRecords.Add(ContextBuilder.BuildRecord(
+                var record = ContextBuilder.BuildRecord(
                     loaded, compilation, paths, buildCollection!, options, files, load.Failures,
-                    fingerprintCache, contextVersions!));
+                    fingerprintCache, contextVersions!);
+                contextRecords.Add(record);
+
+                // Every occurrence collected for this project's documents,
+                // just above, belongs to this one compilation: backfilled
+                // here rather than re-walked, since the record (and its
+                // fingerprint) only exists once BuildRecord returns.
+                if (compilerOccurrences is not null)
+                {
+                    for (var i = occurrenceStart; i < compilerOccurrences.Sites.Count; i++)
+                    {
+                        compilerOccurrences.Sites[i] = compilerOccurrences.Sites[i] with
+                        {
+                            CompilationIdentity = record.Identity,
+                            CompilationFingerprint = record.Fingerprint,
+                        };
+                    }
+                }
             }
 
             if (options.Units is not null)
@@ -653,7 +717,17 @@ internal static class Runner
             }
         }
 
-        if (wantContext)
+        if (compilerFacts is not null)
+        {
+            var written = CompilerFactsEmitter.Write(
+                options, compilerFacts, OrderContextRecords(contextRecords), compilerOccurrences?.Sites);
+            if (written != 0)
+            {
+                return written;
+            }
+        }
+
+        if (wantExplicitContext)
         {
             var written = WriteContext(options, paths, contextRecords);
             if (written != 0)
@@ -676,7 +750,7 @@ internal static class Runner
             return 2;
         }
 
-        if (options.Strict && wantContext)
+        if (options.Strict && wantExplicitContext)
         {
             var rollup = ArtifactRollup(contextRecords);
             if (rollup != "complete")
@@ -803,16 +877,24 @@ internal static class Runner
         return 0;
     }
 
+    /// <summary>The one fixed compilation-record order every emitter that
+    /// carries context records uses: <c>--emit context</c>'s own top-level
+    /// array, and the real envelope <c>--emit compiler-facts</c> embeds --
+    /// so the derived context summary folds the same order on
+    /// every run, not a re-sort a second producer could silently diverge
+    /// from.</summary>
+    private static List<ContextRecord> OrderContextRecords(List<ContextRecord> records) => records
+        .OrderBy(r => r.Identity.ProjectName, StringComparer.Ordinal)
+        .ThenBy(r => r.Identity.RequestedTfm ?? "", StringComparer.Ordinal)
+        .ThenBy(r => r.Identity.EffectiveTfm ?? "", StringComparer.Ordinal)
+        .ToList();
+
     /// <summary>Orders the compilations, builds the envelope header and writes the document; 0 on success.</summary>
     private static int WriteContext(Options options, RepoPaths paths, List<ContextRecord> records)
     {
         var root = paths.Root;
         var repo = options.Repo is { Length: > 0 } given ? given : root[(root.LastIndexOf('/') + 1)..];
-        var ordered = records
-            .OrderBy(r => r.Identity.ProjectName, StringComparer.Ordinal)
-            .ThenBy(r => r.Identity.RequestedTfm ?? "", StringComparer.Ordinal)
-            .ThenBy(r => r.Identity.EffectiveTfm ?? "", StringComparer.Ordinal)
-            .ToList();
+        var ordered = OrderContextRecords(records);
 
         var envelope = new ContextEnvelope
         {
