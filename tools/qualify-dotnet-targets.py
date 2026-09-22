@@ -457,12 +457,25 @@ def compose_tfm_not_supplied_control(out_dir, no_restore):
     csproj_rel = "controls/tfm-not-supplied/Control.csproj"
     declared_tfms = declared_tfm(TREE / csproj_rel)
     restore_code, restore_out, build_code, build_out = restore_and_build(csproj_rel, no_restore)
-    # Requests a TFM neither variant declares -- the exact value that makes the
-    # existing loader fall back to keeping the first variant instead of failing.
+    # Requests a TFM neither variant declares. Two outcomes are both live evidence, never
+    # assumed: the documented defect this control was built to catch (the loader silently
+    # keeps the first declared variant) and its integrated fix (the loader explicitly refuses
+    # the request instead). Substitution detection reads the oracle's own stderr and the unit
+    # it kept, unchanged, so a regression back to silent substitution still trips this control.
+    # The refusal is read independently from the oracle's exit code and its own diagnostic line,
+    # not inferred from the absence of substitution -- an unrelated crash or silent no-op must
+    # not be mistaken for the correct no-substitution behaviour.
     oracle_code, oracle_log, units, refs, _defs = run_oracle(csproj_rel, "net6.0", out_dir)
     unit = units[0] if units else None
     kept_first_variant = "keeping net8.0" in oracle_log
     substitution_occurred = kept_first_variant and unit is not None and unit.get("tfm") != "net6.0"
+    refusal_diagnostic = extract_diagnostic(oracle_log, "is not declared")
+    explicit_refusal_observed = (
+        not substitution_occurred
+        and unit is None
+        and oracle_code != 0
+        and bool(refusal_diagnostic)
+    )
 
     # Proves the two variants stay distinct compilations, not by reading the fixture's own
     # source text, but by requesting each declared variant explicitly and checking that the
@@ -499,23 +512,39 @@ def compose_tfm_not_supplied_control(out_dir, no_restore):
         },
         "semantic_conformance": {
             "state": "failing",
+            "oracle_exit_code": oracle_code,
             "oracle_reported_status": unit.get("status") if unit else None,
             "oracle_reported_tfm": unit.get("tfm") if unit else None,
             "substitution_occurred": substitution_occurred,
+            "explicit_refusal_observed": explicit_refusal_observed,
+            "refusal_diagnostic": refusal_diagnostic,
             "variant_evidence": variant_evidence,
             "variants_stay_distinct_compilations": variants_stay_distinct,
             "note": "the oracle's own unit status is not trusted for this row; substitution is"
             " independently confirmed from its stderr variant-selection line and the tfm it kept,"
             " and the two declared variants are proven distinct by explicitly requesting each one"
-            " and observing it return, not by reading the fixture's declared TFMs as text",
+            " and observing it return, not by reading the fixture's declared TFMs as text. The"
+            " no-substitution outcome is likewise not assumed from the absence of substitution:"
+            " it is accepted only when the oracle's own exit code and diagnostic positively show"
+            " an explicit refusal of the undeclared --tfm request.",
         },
         "framework_modeling": {"state": "not-claimed", "reason": "not applicable to a substitution control"},
         "unsupported_state": {
-            "state": "failing" if substitution_occurred else "passing",
+            "state": "failing" if substitution_occurred else ("passing" if explicit_refusal_observed else "failing"),
             "reason": "the loader kept the first declared variant for an unmatched --tfm instead of"
             " failing or reporting no result, reproducing the documented substitution defect"
             if substitution_occurred
-            else "no substitution observed on this run",
+            else (
+                f"the loader explicitly refused the unmatched --tfm request instead of substituting"
+                f" a declared variant -- '{refusal_diagnostic}', exit {oracle_code}, zero units"
+                f" reported -- the explicit failed/unsupported outcome this control requires in"
+                f" place of the documented substitution defect"
+                if explicit_refusal_observed
+                else "the loader neither kept a declared variant nor produced an identifiable"
+                " explicit-refusal diagnostic for the unmatched --tfm request; this outcome is"
+                " recorded as failing because it matches neither the documented defect nor its"
+                " known fix and must not be read as a passing no-substitution result"
+            ),
         },
         "execution_assumptions": {"state": "static-only"},
     }

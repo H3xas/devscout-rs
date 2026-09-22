@@ -11,8 +11,9 @@
 //!    positive case actually bound, and `execution_assumptions` is uniformly `static-only`.
 //! 2. Sync: every committed row is named in the coverage document and vice versa; a truncated
 //!    copy of the document fails the same check.
-//! 3. Substitution controls: the two prior-art controls are recorded `failing` from their own
-//!    independently inspected evidence, not from the oracle's own status line.
+//! 3. Substitution controls: both prior-art controls are recorded from their own independently
+//!    inspected evidence, never from the oracle's own status line -- one control's fixed defect
+//!    now reads `passing` from a positively observed refusal, the other still reads `failing`.
 //! 4. Publication: no support sentence in the document or `README.md` names a target outside
 //!    wave 1's measured rows, and the document states its own scope in its own words.
 
@@ -400,27 +401,56 @@ fn every_inventory_row_including_wave_2_is_present() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn tfm_not_supplied_control_is_recorded_failing_not_the_first_variant() {
+fn tfm_not_supplied_control_now_records_the_loaders_explicit_refusal_not_substitution() {
+    // The documented substitution defect this control was built to catch was fixed upstream
+    // (owned by a different, already-integrated repair; not this tree's own change): an
+    // undeclared `--tfm` is now explicitly refused instead of silently substituted, which is
+    // the explicit failed/unsupported outcome the sidecar's own no-substitution requirement
+    // calls for. This row now honestly reads `passing`, not because the control was softened,
+    // but because that requirement is what actually ran. Substitution detection itself is
+    // unchanged and still independent of the oracle's own status line: if silent substitution
+    // ever returns, `substitution_occurred` and `unsupported_state` both flip back to their
+    // old, defect-reproducing values.
     let rows = committed_rows();
     let (_, row) = rows
         .iter()
         .find(|(id, _)| id == "control-tfm-not-supplied")
         .expect("control-tfm-not-supplied is committed");
-    assert_eq!(state(row, "unsupported_state"), "failing");
+    assert_eq!(state(row, "unsupported_state"), "passing");
     assert_eq!(
         row["semantic_conformance"]["substitution_occurred"],
-        Value::Bool(true)
+        Value::Bool(false),
+        "no substitution occurred on this run"
     );
-    // The oracle's own status line is not trusted: it reports "ok" for exactly the unit whose
-    // TFM does not match what was requested, which is the defect being pinned.
+    // No substitution alone is not accepted as proof of the fix: the row must also carry
+    // positive evidence that the oracle explicitly refused the request, not merely that it
+    // failed to substitute for some unrelated reason (a crash, a silent no-op, and so on).
     assert_eq!(
-        row["semantic_conformance"]["oracle_reported_status"],
-        Value::String("ok".into())
+        row["semantic_conformance"]["explicit_refusal_observed"],
+        Value::Bool(true),
+        "the row must positively confirm an explicit refusal, not merely the absence of substitution"
     );
     assert_ne!(
+        row["semantic_conformance"]["oracle_exit_code"],
+        Value::from(0),
+        "an explicit refusal must not report a clean oracle exit code"
+    );
+    assert!(
+        !row["semantic_conformance"]["refusal_diagnostic"]
+            .as_str()
+            .unwrap_or_default()
+            .is_empty(),
+        "the row must carry the oracle's own refusal diagnostic, not a generic label"
+    );
+    // The oracle produced zero units for the undeclared request -- it did not keep any variant,
+    // declared or otherwise.
+    assert_eq!(
+        row["semantic_conformance"]["oracle_reported_status"],
+        Value::Null
+    );
+    assert_eq!(
         row["semantic_conformance"]["oracle_reported_tfm"],
-        Value::String("net6.0".into()),
-        "the requested tfm must not be what the loader actually kept"
+        Value::Null
     );
 }
 

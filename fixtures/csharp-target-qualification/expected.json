@@ -21,7 +21,7 @@
     "csharp73-net48-sdkstyle": { "required_state": "passing" },
     "csharp73-net8.0-deep": { "required_state": "passing" },
     "csharp73-net472-deep": { "required_state": "passing" },
-    "control-tfm-not-supplied": { "required_state": "failing" },
+    "control-tfm-not-supplied": { "required_state": "passing" },
     "control-reference-tfm-mismatch": { "required_state": "failing" }
   }
 }
