@@ -1,0 +1,39 @@
+{
+  "context_acquisition": {
+    "build_exit_code": 1,
+    "p_declared_tfm": [
+      "net8.0"
+    ],
+    "q_declared_tfm": [
+      "net9.0"
+    ],
+    "restore_exit_code": 1,
+    "sdk": "9.0.305",
+    "sdk_pin": "9.0.305",
+    "state": "failing"
+  },
+  "execution_assumptions": {
+    "state": "static-only"
+  },
+  "framework_modeling": {
+    "reason": "not applicable to a substitution control",
+    "state": "not-claimed"
+  },
+  "kind": "control",
+  "profile_id": "control-reference-tfm-mismatch",
+  "semantic_conformance": {
+    "diagnostic_excerpt": "<repo>/fixtures/csharp-target-qualification/controls/reference-tfm-mismatch/P/P.csproj : error NU1201: Project Q is not compatible with net8.0 (.NETCoreApp,Version=v8.0). Project Q supports: net9.0 (.NETCoreApp,Version=v9.0)",
+    "note": "observed from an actual restore/build/oracle run over P's own project, not assumed from declared-TFM XML alone: dotnet restore/build reject the mismatched reference outright (NU1201), while the oracle's independent project-loading path still reports P's unit as a healthy 'ok' regardless of that rejection",
+    "oracle_produced_unit_for_p": true,
+    "oracle_reported_unit_diagnostics": 6,
+    "oracle_reported_unit_status": "ok",
+    "reference_tfm_mismatch": true,
+    "state": "failing"
+  },
+  "tfm": "net8.0",
+  "track": "control",
+  "unsupported_state": {
+    "reason": "P declares a different TargetFramework than the project it references, and the oracle nonetheless reports a healthy unit for it -- a unit in this shape must never report a healthy result from that reference alone",
+    "state": "failing"
+  }
+}

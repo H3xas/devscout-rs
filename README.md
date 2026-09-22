@@ -372,6 +372,11 @@ Known, rather than hidden:
   the measured status,
   pinned by `fixtures/csharp-syntax/` and `tests/csharp_syntax_matrix.rs`; the rows that are
   silent today are listed there as follow-ups rather than discovered by the next corpus.
+- **Which .NET targets, project systems and framework profiles are qualified is catalogued
+  separately.** [`docs/dotnet-target-coverage.md`](docs/dotnet-target-coverage.md) lists every
+  staged target's capability row alongside the ones still planned or excluded, pinned by
+  `fixtures/csharp-target-qualification/` and `tests/dotnet_target_qualification.rs`. It
+  qualifies the compiler-fact path measured there, not this README's own construct catalogue.
 
 `devscout` began as the Rust half of a two-implementation tool, and a number of source comments
 still describe behaviour by reference to that original implementation. Those notes are history:

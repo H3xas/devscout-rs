@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="../../shared/PositiveCase.cs" Link="PositiveCase.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Incompatible reference: IncompatibleRef targets net472 only. NuGet restores it for a
+         net8.0 consumer under NU1702 ("restored using ... instead of the project's target
+         framework"), which is compatibility evidence a healthy-looking restore can hide. -->
+    <ProjectReference Include="../IncompatibleRef/IncompatibleRef.csproj" />
+    <!-- Generated/linked input: a minimal incremental generator, referenced as an analyzer
+         so it contributes a compile-time-generated partial class rather than a runtime
+         dependency. -->
+    <ProjectReference Include="../Generated/Generator.csproj"
+                       OutputItemType="Analyzer"
+                       ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+</Project>
