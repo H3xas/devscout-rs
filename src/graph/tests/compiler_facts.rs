@@ -137,8 +137,17 @@ fn every_identity_mismatch_class_is_refused_with_its_own_token() {
             RefusalReason::ContextEnvelopeVersionUnrecognised,
         ),
         (
-            "context fingerprint",
+            "context fingerprint, per-compilation",
             |c| c["context"]["envelope"]["compilations"][0]["fingerprint"] = json!("different"),
+            RefusalReason::ContextFingerprintMismatch,
+        ),
+        (
+            // Only the header's own derived-summary literal moves here; the
+            // envelope it must be recomputed from is untouched. Refused
+            // because admission recomputes the summary from the envelope
+            // rather than trusting either side's own copy of the value.
+            "context fingerprint, header only",
+            |c| c["context"]["contextFingerprint"] = json!("a".repeat(64)),
             RefusalReason::ContextFingerprintMismatch,
         ),
         (

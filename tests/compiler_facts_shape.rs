@@ -150,11 +150,15 @@ fn symbols_are_sorted_by_file_then_line_then_type_then_member() {
 }
 
 #[test]
-fn occurrence_sites_are_present_with_the_stated_span_encoding() {
+fn occurrence_sites_are_present_with_the_stated_span_and_identity_encoding() {
     let doc = load();
     assert_eq!(
         doc["occurrences"]["spanEncoding"],
         "utf16-code-unit-line1-char0-end-exclusive"
+    );
+    assert_eq!(
+        doc["occurrences"]["identityEncoding"],
+        "fully-qualified-display-format"
     );
     let sites = doc["occurrences"]["sites"].as_array().unwrap();
     assert!(!sites.is_empty());
@@ -205,6 +209,101 @@ fn two_same_line_call_sites_are_distinct_records_with_distinct_spans() {
         .collect();
     assert!(overloads.contains(&"()->void"));
     assert!(overloads.contains(&"(bool)->void"));
+}
+
+#[test]
+fn two_same_line_occurrences_of_one_target_are_not_deduplicated() {
+    let doc = load();
+    let sites = doc["occurrences"]["sites"].as_array().unwrap();
+    let same_line_assist: Vec<_> = sites
+        .iter()
+        .filter(|s| s["file"] == "Callers.cs" && s["span"]["startLine"] == 11)
+        .collect();
+    assert_eq!(
+        same_line_assist.len(),
+        2,
+        "two same-line occurrences of the exact same target must both be kept, \
+         proving there is no (file, line, target) dedup key"
+    );
+    assert_ne!(same_line_assist[0]["span"], same_line_assist[1]["span"]);
+    for site in &same_line_assist {
+        assert_eq!(site["target"]["type"], "CompilerFacts.Widgets.Helper");
+        assert_eq!(site["target"]["member"], "Assist");
+    }
+}
+
+#[test]
+fn the_generic_nested_caller_s_identity_matches_the_declared_symbol_facts_own_encoding() {
+    let doc = load();
+    let symbols = doc["symbols"].as_array().unwrap();
+    let nested_go_symbol = symbols
+        .iter()
+        .find(|s| s["type"] == "CompilerFacts.Widgets.Callers.Nested<T>" && s["member"] == "Go")
+        .expect("the declared-symbol fact for the generic, nested Nested<T>.Go");
+
+    let sites = doc["occurrences"]["sites"].as_array().unwrap();
+    let nested_caller_site = sites
+        .iter()
+        .find(|s| {
+            s["caller"]["member"] == "Go"
+                && s["caller"]["type"] == "CompilerFacts.Widgets.Callers.Nested<T>"
+        })
+        .expect("an occurrence called from the generic, nested Nested<T>.Go");
+
+    assert_eq!(
+        nested_caller_site["caller"]["type"], nested_go_symbol["type"],
+        "an occurrence's caller.type for a nested, generic type must read identically to \
+         symbols[].type for the same type -- not devscout's own Outer+Inner graph def-id form"
+    );
+    assert_eq!(
+        nested_caller_site["caller"]["assembly"],
+        nested_go_symbol["assembly"]
+    );
+    assert_eq!(
+        nested_caller_site["caller"]["genericArity"], 0,
+        "Go itself declares no type parameters, even though its enclosing type does"
+    );
+    assert_eq!(
+        nested_caller_site["caller"]["overloadSignature"],
+        "()->void"
+    );
+}
+
+#[test]
+fn a_cross_document_target_s_content_identity_names_a_document_other_than_the_caller_s_own() {
+    let doc = load();
+    let sites = doc["occurrences"]["sites"].as_array().unwrap();
+    let cross_document_site = sites
+        .iter()
+        .find(|s| {
+            s["file"] == "Callers.cs"
+                && s["target"]["type"] == "CompilerFacts.Widgets.Helper"
+                && s["target"]["member"] == "Assist"
+        })
+        .expect("a call whose target (Helper.Assist) is declared in Other.cs, not Callers.cs");
+
+    let own_identity = cross_document_site["documentContentIdentity"]
+        .as_str()
+        .expect("documentContentIdentity is a string");
+    let target_identities = cross_document_site["targetDocumentContentIdentities"]
+        .as_array()
+        .expect("targetDocumentContentIdentities is an array");
+    assert_eq!(
+        target_identities.len(),
+        1,
+        "Helper.Assist has exactly one declaring document"
+    );
+    let target_identity = target_identities[0]
+        .as_str()
+        .expect("target document identity is a string");
+
+    assert!(target_identity.starts_with("sha1:"));
+    assert_ne!(
+        target_identity, own_identity,
+        "the target's own declaring document (Other.cs) must carry a content identity distinct \
+         from the calling document's (Callers.cs), proving the identity names the target's \
+         document rather than repeating the caller's"
+    );
 }
 
 #[test]
