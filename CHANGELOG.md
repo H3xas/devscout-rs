@@ -91,6 +91,17 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   non-`excluded` record is `complete`, alongside its existing checks. A project a `--projects`
   filter leaves out is `excluded`, not `failed`, so it never trips this check.
 
+### Fixed
+
+- **The precise tier no longer emits `uses-member` edges C# name lookup cannot produce.** Five
+  resolver shapes are refused instead of guessed: a bare qualifier resolved only by graph-wide
+  simple-name uniqueness; a receiver whose written type-argument count has no in-tree match; a
+  property whose name shadows a same-named type; a lambda or local-function argument whose
+  parameter count cannot fit the candidate's delegate; and a nullable value-type receiver's own
+  `Value`, `HasValue` or `GetValueOrDefault`. On the pinned MassTransit benchmark, precise false
+  positives against external targets and structural impossibilities drop to 0 (precision 0.989 to
+  0.993). The fragment cache moves to `fragments-v20.json`, so an existing cache re-extracts once.
+
 ## [0.6.0] - 2026-09-09
 
 A reach release: the graph learns which implementation a registered service resolves to, and
