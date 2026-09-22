@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Never created: exercises the "missing" drop reason. -->
+    <Compile Include="Ghost.cs" />
+    <!-- Lives outside this fixture's root: exercises "linked-outside-root". -->
+    <Compile Include="../../../csharp-context-outside/Linked.cs" Link="Linked.cs" />
+    <!-- Under devscout's own skip-dir list even though it is explicitly
+         included: exercises "skipped-directory". Force-added past
+         fixtures/**/bin/ in .gitignore, since this file is the fixture case
+         rather than build output. -->
+    <Compile Include="bin/Stub.cs" />
+  </ItemGroup>
+
+</Project>
