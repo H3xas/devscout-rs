@@ -1,9 +1,5 @@
 namespace Fixture.Domain
 {
-    // `Value`'s own declared type is `Entry`, not a predefined type: the
-    // property-owner hop that keeps `.Page` resolving after `.Value` reads
-    // `Value`'s OWN declared type to continue the chain, and a predefined-
-    // typed property carries no such fact at all.
     public readonly struct Entry
     {
         public Entry Value => this;

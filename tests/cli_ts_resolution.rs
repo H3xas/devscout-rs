@@ -278,6 +278,10 @@ fn a_root_alias_resolves_for_a_file_with_no_nested_tsconfig() {
 // loudly `Entry` declares one. C#, not TS/TSX, and self-contained rather
 // than built on this file's `Fixture`/`copy_tree` helpers above: a
 // nullable-unwrap fixture needs no tsconfig chain, no barrel, and no JSX.
+// The fixture types `Entry.Value` as `Entry` rather than a predefined type
+// because the property-owner hop that keeps `.Page` resolving after `.Value`
+// reads `Value`'s own declared type, and a predefined-typed property carries
+// no such fact.
 #[test]
 fn a_nullable_value_type_receiver_never_binds_the_underlying_types_own_value_member() {
     let base = temp_dir("nullable-unwrap");
@@ -317,13 +321,13 @@ fn a_nullable_value_type_receiver_never_binds_the_underlying_types_own_value_mem
         .filter(|e| e["kind"] == "uses-member" && e["from_file"] == "Entry.cs")
         .collect();
 
-    // `found.Value.Page` (line 20): the first `.Value` window is the CLR's
+    // `found.Value.Page` (line 16): the first `.Value` window is the CLR's
     // own `Nullable<Entry>.Value` unwrap and must stay fully external --
     // never bound to the struct's own same-named `Value` property.
     assert!(
         !member_edges
             .iter()
-            .any(|e| e["from_line"] == 20 && e["member"] == "Value"),
+            .any(|e| e["from_line"] == 16 && e["member"] == "Value"),
         "the nullable unwrap's own .Value must not bind Entry's own Value property: {member_edges:#?}"
     );
     // The window after the unwrap keeps resolving precisely -- only the
@@ -331,17 +335,17 @@ fn a_nullable_value_type_receiver_never_binds_the_underlying_types_own_value_mem
     assert!(
         member_edges
             .iter()
-            .any(|e| e["from_line"] == 20 && e["member"] == "Page" && e["heuristic"].is_null()),
+            .any(|e| e["from_line"] == 16 && e["member"] == "Page" && e["heuristic"].is_null()),
         "the member after the unwrap must still resolve precisely to Entry.Page: {member_edges:#?}"
     );
-    // `present.Value` (line 27): a NON-nullable receiver's own `Value`
+    // `present.Value` (line 23): a NON-nullable receiver's own `Value`
     // property must keep its ordinary precise edge -- the guard that the
     // veto is scoped to a nullable-annotated receiver, not every struct
     // that happens to declare a member named `Value`.
     assert!(
         member_edges
             .iter()
-            .any(|e| e["from_line"] == 27 && e["member"] == "Value" && e["heuristic"].is_null()),
+            .any(|e| e["from_line"] == 23 && e["member"] == "Value" && e["heuristic"].is_null()),
         "a non-nullable receiver's own Value member must still resolve precisely: {member_edges:#?}"
     );
 }
