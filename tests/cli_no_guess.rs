@@ -392,11 +392,12 @@ fn impact_no_guess_counts_only_the_files_an_extension_call_reached() {
     );
 }
 
-/// `Binder`/`BinderConsumer` are G5's shape: a property typed `IBinder`,
-/// whose own base is external, shadowed by an unrelated same-named in-tree
-/// class in the same namespace. `Journal`/`JournalConsumer` are G6's: a
-/// property typed `IJournal` (which declares `Record` itself), shadowed by
-/// an unrelated same-named in-tree class reached only through a `using`.
+/// `Binder`/`BinderConsumer` are the external-base shape: a property typed
+/// `IBinder`, whose own base is external, shadowed by an unrelated
+/// same-named in-tree class in the same namespace. `Journal`/
+/// `JournalConsumer` are the cross-project shape: a property typed
+/// `IJournal` (which declares `Record` itself), shadowed by an unrelated
+/// same-named in-tree class reached only through a `using`.
 /// Both shadowing types are found by the SAME bare identifier as the
 /// property/field NAME, never the property's own DECLARED type -- the
 /// "Color color" collision the arm must no longer resolve through.
