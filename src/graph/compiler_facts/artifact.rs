@@ -25,7 +25,7 @@
 //       "contextFingerprint": "<hex>",
 //       "envelope": { "compilations": [ {"identity": {...}, "fingerprint": "<hex>"|null, ...opaque...}, ... ] }
 //     },
-//     "sourceSnapshot": {"headSha": "<hex>"},
+//     "sourceSnapshot": {"headSha": "<hex>", "dirty": bool, "dirtyDigest": "<hex>"},
 //     "capabilities": {"requested": [...], "provided": [...]},
 //     "completion": {"terminal": true},
 //     "units": {"processed": [...], "missing": [...]},
@@ -33,7 +33,7 @@
 //                 {"state": "incomplete", "incompleteUnits": [{"unit":"...","reason":"..."}]},
 //     "diagnostics": [ ...opaque... ],
 //     "symbols": [ ...opaque... ],
-//     "occurrences": {"spanEncoding": "...", "sites": [ {"compilation": {"identity": {...}, "fingerprint": "<hex>"|null}, ...opaque...}, ... ]}
+//     "occurrences": {"spanEncoding": "...", "identityEncoding": "...", "sites": [ {"compilation": {"identity": {...}, "fingerprint": "<hex>"|null}, ...opaque...}, ... ]}
 //   }
 //
 // `context.contextFingerprint` is a header-level summary this admission path
@@ -46,6 +46,11 @@
 // rest of each compilation entry, and the rest of `occurrences.sites[]`
 // beyond its own `compilation` sub-object, are read never, touched never,
 // preserved only because publication writes the candidate bytes verbatim.
+// `sourceSnapshot.dirty`/`.dirtyDigest` are the second freshness leg (an
+// uncommitted edit `headSha` alone cannot see); this admission path reads
+// only `headSha` for `RefusalReason::SourceSnapshotMismatch` and leaves the
+// other two fields opaque, same as everything else in this header it does
+// not name.
 
 use serde_json::{Map, Value};
 
@@ -63,10 +68,12 @@ pub const COMPILER_FACTS_CONTRACT_VERSION: u64 = 1;
 /// `graph::imports::IMPORTED_EDGES_SCHEMA_VERSION` /
 /// `IMPORTED_EDGES_ARTIFACT_SCHEMA_VERSION` already draws). The shipped
 /// engine now writes `2` (per-reference occurrence facts, an additive top-
-/// level `occurrences` key); nothing in this admission path branches on the
-/// literal for equality, so the constant itself stays unread for that and is
-/// not bumped here.
-pub const COMPILER_FACTS_ARTIFACT_SCHEMA_VERSION: u64 = 1;
+/// level `occurrences` key). Nothing in this admission path branches on the
+/// literal for equality -- `parse_header` reads `artifactSchemaVersion` for
+/// presence/shape only -- but the constant's name promises the artifact's
+/// schema version, so it is kept equal to what the shipped engine actually
+/// writes rather than left to name a version nothing emits.
+pub const COMPILER_FACTS_ARTIFACT_SCHEMA_VERSION: u64 = 2;
 
 /// The requested compilation profile: target, configuration and platform.
 #[derive(Debug, Clone, PartialEq, Eq)]
