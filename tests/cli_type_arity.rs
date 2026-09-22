@@ -121,11 +121,12 @@ fn a_receiver_written_with_two_type_arguments_never_binds_a_one_type_argument_si
     let fx = Fixture::with_files(&["Catalogue.cs", "CatalogueConsumers.cs"]);
     let graph = fx.graph();
 
-    // `ICatalogue` (arity 0) and `ICatalogue<T>` (arity 1) share one id, and
-    // `WideConsumer.shelf` writes a THIRD arity that neither sibling has --
-    // the shape where the arity-blind fallback used to answer with
-    // whichever sibling the index happened to meet first. No in-tree
-    // arity-2 def exists, so the call must stay external.
+    // `ICatalogue<T>` (arity 1, declares `Shelve`) and `ICatalogue` (arity 0)
+    // share one id, and the generic sibling is declared first, so it holds
+    // the shared qualified-name slot an arity-blind lookup lands on.
+    // `WideConsumer.shelf` writes a THIRD arity that neither sibling has; no
+    // in-tree arity-2 def exists, so the call must stay external rather than
+    // settle for the member-declaring sibling.
     assert!(
         precise_member_edges_to(&graph, "CatalogueConsumers.cs", 11, "Catalog.ICatalogue").is_empty(),
         "a receiver written with two type arguments must never bind the one-type-argument sibling: {graph:#}"

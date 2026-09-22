@@ -1,12 +1,12 @@
 namespace Fixture.Domain;
 
-public interface IDictionary
-{
-}
-
 public interface IDictionary<T>
 {
     bool ContainsKey(T key);
+}
+
+public interface IDictionary
+{
 }
 
 public class WideRegistryConsumer
