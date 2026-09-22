@@ -1,20 +1,21 @@
-use super::arity::{arity_accepts, generic_args_unify, resolve_ref_by_arity};
+use super::arity::{arity_accepts, generic_args_unify, resolve_receiver_type};
 use super::dispatch::append_dispatch_edges;
 use super::edges::{build_implementor_index, heuristic_edge_key, resolve_ctor_param, type_edge};
 use super::index::{build_def_index, name_probe, ExtCandidate};
 use super::ladder::{
     capped_candidates, narrow_by_reachability, narrow_tracked, resolve_ref, type_candidate,
-    Admission, Narrowed, Resolution, Via,
+    type_qualifier_arm_admits, Admission, Narrowed, Resolution, Via,
 };
 use super::members::{
-    base_member_declared, declares_member, declares_member_any_visibility, extension_closure_key,
+    base_member_declared, declares_here_for_ref, declares_member, extension_closure_key,
     inherited_member_declared, member_shape, member_vouched, typed_receiver_base_member,
+    typed_receiver_precise_target,
 };
 use super::provenance::{self, Step};
 use super::receiver::{
     bare_receiver_field_or_property_type, def_outer_types, extractor_vouches_instance,
     is_this_shaped_receiver, lambda_slot_receiver_type, receiver_admits_candidate,
-    AssignabilityCache, ReceiverFieldType,
+    receiver_type_and_nullable, AssignabilityCache, ReceiverFieldType,
 };
 use super::scope::{
     build_file_contexts, collect_global_usings_by_unit, namespace_encloses, score_candidate,
@@ -236,125 +237,120 @@ pub fn resolve_graph_with_model(
                     emitted = true;
                 } else if let Resolution::Resolved(idx, via) = &result {
                     let (idx, via) = (*idx, *via);
-                    if index.defs[idx].kind == "enum" {
-                        let member_key = format!(
-                            "{}.{}",
-                            index.defs[idx].id,
-                            r.member.as_deref().unwrap_or("")
-                        );
-                        let (to, to_file) = match index.qualified_name_to_def.get(&member_key) {
-                            Some(&mi) => (index.defs[mi].id.clone(), index.defs[mi].file.clone()),
-                            None => (index.defs[idx].id.clone(), index.defs[idx].file.clone()),
-                        };
-                        edges.push(Edge::uses_member(
-                            file.clone(),
-                            r.line,
-                            to,
-                            to_file,
-                            r.member.clone(),
-                            None,
-                        ));
-                        provenance::note(&edges, Step::QualifierMember);
-                        edges_by_kind.uses_member += 1;
-                        emitted = true;
-                    } else if !extractor_vouches_instance(r)
-                        && r.member.as_deref().is_some_and(|m| {
-                            type_candidate(&index, &format!("{}+{}", index.defs[idx].id, m), None)
+                    if type_qualifier_arm_admits(via, &index.defs[idx].id, r) {
+                        if index.defs[idx].kind == "enum" {
+                            let member_key = format!(
+                                "{}.{}",
+                                index.defs[idx].id,
+                                r.member.as_deref().unwrap_or("")
+                            );
+                            if let Some(&mi) = index.qualified_name_to_def.get(&member_key) {
+                                edges.push(Edge::uses_member(
+                                    file.clone(),
+                                    r.line,
+                                    index.defs[mi].id.clone(),
+                                    index.defs[mi].file.clone(),
+                                    r.member.clone(),
+                                    None,
+                                ));
+                                provenance::note(&edges, Step::QualifierMember);
+                                edges_by_kind.uses_member += 1;
+                                emitted = true;
+                            }
+                        } else if !extractor_vouches_instance(r)
+                            && r.member.as_deref().is_some_and(|m| {
+                                type_candidate(
+                                    &index,
+                                    &format!("{}+{}", index.defs[idx].id, m),
+                                    None,
+                                )
                                 .is_some()
-                        })
-                    {
-                        // C# forbids a member and a nested type sharing one
-                        // name on the same type, so a member name that
-                        // matches a nested type id under `idx` names a chain
-                        // SEGMENT, not a member -- the deeper window of the
-                        // same chain (step 1.5 above) carries the real edge.
-                        // Marking this window emitted keeps tiers (e)/(f)/
-                        // scored from guessing at it as a member access. A
-                        // qualifier the extractor typed as an instance is
-                        // exempt: its name merely coincides with a type's,
-                        // and the receiver tiers below own it.
-                        emitted = true;
-                    } else {
-                        // generic counts only for BARE qualifiers: a
-                        // flattened chain inherits the flag from its inner
-                        // segment while ladder steps 2-4 resolve by the
-                        // chain's TAIL name, which can name-match an
-                        // unrelated type. Dotted
-                        // chains earn their edge via the member lists, the
-                        // exact-qualified step, or step 1.5's nested walk
-                        // instead.
-                        //
-                        // `this_shaped` is precision rule (a)'s guard: this
-                        // resolution arm is where a `this.M` ref lands (its
-                        // `name` IS the enclosing type, resolved through the
-                        // ordinary type ladder like any other bare type
-                        // name), so a member declared non-publicly on the
-                        // enclosing type itself, or on one of its bases,
-                        // must still bind precisely. Every other
-                        // typed-qualified access reaching this arm
-                        // (`SomeType.Member`, an inherited STATIC member
-                        // named through a derived type) keeps the
-                        // public-only walk.
-                        let this_shaped = is_this_shaped_receiver(r);
-                        let declares_here = if this_shaped {
-                            declares_member_any_visibility(
-                                &index,
-                                idx,
-                                r.member.as_deref(),
-                                r.arg_count,
-                            )
-                        } else {
-                            declares_member(&index, idx, r.member.as_deref(), r.arg_count)
-                        };
-                        // A qualifier that resolved as a TYPE binds the def
-                        // that DECLARES the member, in this order: the named
-                        // type itself; else the first in-graph base in its
-                        // closure -- the widening `base_member_declared`
-                        // already does for `base.`, applied to a receiver
-                        // whose OWN type resolved directly rather than
-                        // through a `base.` qualifier; else, on type
-                        // certainty alone, the named type. A
-                        // type-argument list (`Cache<T>.x`) or an exact
-                        // qualified name (`Ns.Utils.Helper()`) is syntax
-                        // only a type can carry, so when nothing in the graph
-                        // declares the member it is still that type's as far
-                        // as this graph can see -- an extension, an external
-                        // base, an extractor gap. The certainty hatches come
-                        // LAST so that an inherited static member named
-                        // through a derived type (`Ns.Derived.Create()`,
-                        // `Derived<int>.Create()`) binds the base that
-                        // declares it, exactly as the same member named
-                        // through the bare derived name already does.
-                        let target = if declares_here {
-                            Some(idx)
-                        } else if let Some(target) = typed_receiver_base_member(
-                            &index,
-                            &file_contexts,
-                            idx,
-                            r.member.as_deref(),
-                            r.arg_count,
-                            this_shaped,
-                        ) {
-                            Some(target)
-                        } else if (r.generic && r.qualified.is_none())
-                            || (r.qualified.is_some() && via == Via::Qualified)
+                            })
                         {
-                            Some(idx)
-                        } else {
-                            None
-                        };
-                        if let Some(target) = target {
-                            edges.push(Edge::uses_member(
-                                file.clone(),
-                                r.line,
-                                index.defs[target].id.clone(),
-                                index.defs[target].file.clone(),
-                                r.member.clone(),
-                                None,
-                            ));
-                            provenance::note(&edges, Step::QualifierType);
-                            edges_by_kind.uses_member += 1;
+                            // C# forbids a member and a nested type sharing one
+                            // name on the same type, so a member name that
+                            // matches a nested type id under `idx` names a chain
+                            // SEGMENT, not a member -- the deeper window of the
+                            // same chain (step 1.5 above) carries the real edge.
+                            // Marking this window emitted keeps tiers (e)/(f)/
+                            // scored from guessing at it as a member access. A
+                            // qualifier the extractor typed as an instance is
+                            // exempt: its name merely coincides with a type's,
+                            // and the receiver tiers below own it.
                             emitted = true;
+                        } else {
+                            // generic counts only for BARE qualifiers: a
+                            // flattened chain inherits the flag from its inner
+                            // segment while ladder steps 2-4 resolve by the
+                            // chain's TAIL name, which can name-match an
+                            // unrelated type. Dotted
+                            // chains earn their edge via the member lists, the
+                            // exact-qualified step, or step 1.5's nested walk
+                            // instead.
+                            //
+                            // `this_shaped` is precision rule (a)'s guard: this
+                            // resolution arm is where a `this.M` ref lands (its
+                            // `name` IS the enclosing type, resolved through the
+                            // ordinary type ladder like any other bare type
+                            // name), so a member declared non-publicly on the
+                            // enclosing type itself, or on one of its bases,
+                            // must still bind precisely. Every other
+                            // typed-qualified access reaching this arm
+                            // (`SomeType.Member`, an inherited STATIC member
+                            // named through a derived type) keeps the
+                            // public-only walk.
+                            let this_shaped = is_this_shaped_receiver(r);
+                            let declares_here =
+                                declares_here_for_ref(&index, &file_contexts, idx, r, this_shaped);
+                            // A qualifier that resolved as a TYPE binds the def
+                            // that DECLARES the member, in this order: the named
+                            // type itself; else the first in-graph base in its
+                            // closure -- the widening `base_member_declared`
+                            // already does for `base.`, applied to a receiver
+                            // whose OWN type resolved directly rather than
+                            // through a `base.` qualifier; else, on type
+                            // certainty alone, the named type. A
+                            // type-argument list (`Cache<T>.x`) or an exact
+                            // qualified name (`Ns.Utils.Helper()`) is syntax
+                            // only a type can carry, so when nothing in the graph
+                            // declares the member it is still that type's as far
+                            // as this graph can see -- an extension, an external
+                            // base, an extractor gap. The certainty hatches come
+                            // LAST so that an inherited static member named
+                            // through a derived type (`Ns.Derived.Create()`,
+                            // `Derived<int>.Create()`) binds the base that
+                            // declares it, exactly as the same member named
+                            // through the bare derived name already does.
+                            let target = if declares_here {
+                                Some(idx)
+                            } else if let Some(target) = typed_receiver_base_member(
+                                &index,
+                                &file_contexts,
+                                idx,
+                                r,
+                                this_shaped,
+                            ) {
+                                Some(target)
+                            } else if (r.generic && r.qualified.is_none())
+                                || (r.qualified.is_some() && via == Via::Qualified)
+                            {
+                                Some(idx)
+                            } else {
+                                None
+                            };
+                            if let Some(target) = target {
+                                edges.push(Edge::uses_member(
+                                    file.clone(),
+                                    r.line,
+                                    index.defs[target].id.clone(),
+                                    index.defs[target].file.clone(),
+                                    r.member.clone(),
+                                    None,
+                                ));
+                                provenance::note(&edges, Step::QualifierType);
+                                edges_by_kind.uses_member += 1;
+                                emitted = true;
+                            }
                         }
                     }
                 }
@@ -398,7 +394,7 @@ pub fn resolve_graph_with_model(
                 // that name, both yield no fact -- the local stays
                 // taken-but-unknown, which is the answer the extractor already
                 // gave.
-                let mut receiver_type_name = r.receiver_type.clone();
+                let (mut receiver_type_name, receiver_nullable) = receiver_type_and_nullable(r);
                 // Set only by the bare-identifier field/property fallback
                 // below, and only so the resolution of the name it produced
                 // can happen in the DECLARING file's context rather than
@@ -578,7 +574,7 @@ pub fn resolve_graph_with_model(
                             res: rr,
                             narrowed_away,
                         } = narrow_tracked(
-                            resolve_ref_by_arity(
+                            resolve_receiver_type(
                                 probe,
                                 receiver_arity,
                                 probe_usings,
@@ -604,28 +600,21 @@ pub fn resolve_graph_with_model(
                             // like the `this.` shape does, public visibility
                             // only.
                             let this_shaped = is_this_shaped_receiver(r);
-                            let declares_here = if this_shaped {
-                                declares_member_any_visibility(
-                                    &index,
-                                    ridx,
-                                    r.member.as_deref(),
-                                    r.arg_count,
-                                )
-                            } else {
-                                declares_member(&index, ridx, r.member.as_deref(), r.arg_count)
-                            };
-                            let target = if declares_here {
-                                Some(ridx)
-                            } else {
-                                typed_receiver_base_member(
-                                    &index,
-                                    &file_contexts,
-                                    ridx,
-                                    r.member.as_deref(),
-                                    r.arg_count,
-                                    this_shaped,
-                                )
-                            };
+                            // The nullable-unwrap veto, `declares_here` (now
+                            // also arity-gated by any delegate-shaped
+                            // argument fact) and the in-graph base widen
+                            // live together in `typed_receiver_precise_
+                            // target`; `nullable_veto` still forces
+                            // `emitted` here on refusal, so no lower tier
+                            // guesses at the wrapper's own member either.
+                            let (target, nullable_veto) = typed_receiver_precise_target(
+                                &index,
+                                &file_contexts,
+                                ridx,
+                                r,
+                                this_shaped,
+                                receiver_nullable,
+                            );
                             if let Some(target) = target {
                                 edges.push(Edge::uses_member(
                                     file.clone(),
@@ -641,6 +630,8 @@ pub fn resolve_graph_with_model(
                                 // tier below reads `emitted`, and that is
                                 // exactly what implements C#'s shadowing
                                 // rule (see that tier's note).
+                                emitted = true;
+                            } else if nullable_veto {
                                 emitted = true;
                             }
                         }
@@ -923,13 +914,9 @@ pub fn resolve_graph_with_model(
                         // runs "exactly as for an undeclared member" for
                         // that name.
                         let vetoed = match receiver_def {
-                            Some(ridx) => inherited_member_declared(
-                                &index,
-                                &file_contexts,
-                                ridx,
-                                r.member.as_deref(),
-                                r.arg_count,
-                            ),
+                            Some(ridx) => {
+                                inherited_member_declared(&index, &file_contexts, ridx, r)
+                            }
                             None => false,
                         };
                         if distinct.len() == 1 && !vetoed {

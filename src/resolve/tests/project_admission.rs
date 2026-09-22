@@ -387,10 +387,17 @@ fn stage6_narrowing_turns_a_two_project_ambiguity_into_a_precise_edge_when_only_
         vec!["Fixture.Alpha.Config"],
         "App cannot reference Beta, so `Config` in this file has exactly one meaning and the type ref is a FACT"
     );
+    // A bare `Config.Load()` with no `using` and no ancestor namespace in
+    // scope has no legal C# binding at all -- the ladder's global-uniqueness
+    // step is not a name-lookup rule the language has, so project narrowing,
+    // which only settles WHICH of several candidates is reachable, has
+    // nothing to settle here. The member access stays external, exactly as
+    // it would if the ladder had never answered at all; only the plain type
+    // reference at the field declaration (checked above) is a fact.
     assert_eq!(
         member_edges_from(&g, "src/App/Runner.cs"),
-        vec![("Fixture.Alpha.Config", 8)],
-        "the same narrowing at the uses-member qualifier promotes the call out of the scored tier entirely"
+        Vec::new(),
+        "a step-4-only qualifier earns no precise edge even once narrowed to one candidate"
     );
     assert!(
         ambiguous_edges_from(&g, "src/App/Runner.cs").is_empty() && g.stats.ambiguous_count == 0,
@@ -398,7 +405,7 @@ fn stage6_narrowing_turns_a_two_project_ambiguity_into_a_precise_edge_when_only_
     );
     assert_eq!(
         g.stats.heuristic_edge_count, 0,
-        "nothing is guessed when the language's own reference rule already answers"
+        "the call stays silently external, not a scored guess"
     );
     assert_eq!(
         g.stats.unresolved_external_count, 0,

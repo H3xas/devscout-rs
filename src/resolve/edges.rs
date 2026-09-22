@@ -213,6 +213,8 @@ pub(super) fn type_probe(raw: &str, ns: &str) -> FragRef {
         receiver_awaited: false,
         receiver_local: false,
         receiver_lambda: None,
+        receiver_nullable: false,
+        lambda_arg_arity: None,
     }
 }
 

@@ -50,6 +50,7 @@ mod dispatch;
 mod edges;
 mod index;
 mod ladder;
+mod lambda_arity;
 mod members;
 mod provenance;
 mod receiver;

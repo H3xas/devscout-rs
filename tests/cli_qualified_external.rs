@@ -33,6 +33,10 @@ impl Fixture {
             "Member.cs",
             "Configure.cs",
             "Other.cs",
+            "Binding.cs",
+            "Adapter.cs",
+            "DomainConsumer.cs",
+            "LegitUser.cs",
         ] {
             fs::copy(source.join(name), root.join(name)).unwrap();
         }
@@ -243,6 +247,58 @@ fn qualified_names_with_unmapped_qualifiers_do_not_fall_back_to_bare_resolution(
     );
 
     assert_eq!(graph["stats"]["ambiguous_count"], 0);
+}
+
+#[test]
+fn a_bare_qualifier_found_only_by_global_name_uniqueness_earns_no_precise_member_edge() {
+    let fixture = Fixture::new();
+    let graph = fixture.graph();
+
+    // Adapter.cs imports only `App.Vendor`, a namespace no fixture file
+    // declares, and never brings `App.Domain` into scope by any other
+    // means. `Binding` is nonetheless the only in-tree def of that bare
+    // name, so the old ladder answered it at the global-uniqueness step --
+    // a rule C# does not have. Line 9 (`Binding.Stitched`, a member the
+    // enum does not declare) and line 10 (`Binding.Loose`, a member it
+    // does) must both stay external; the fix does not distinguish them,
+    // because neither ever legally reaches `App.Domain` at all.
+    assert!(
+        edges_at(&graph, "Adapter.cs", 9).is_empty(),
+        "a global-uniqueness-only qualifier must not earn a member edge for an undeclared member: {graph:#}"
+    );
+    assert!(
+        edges_at(&graph, "Adapter.cs", 10).is_empty(),
+        "a global-uniqueness-only qualifier must not earn a member edge even for a member the enum declares: {graph:#}"
+    );
+
+    // DomainConsumer.cs reaches the same enum through the ancestor-namespace
+    // step (it shares App.Domain with the declaration), which this fix does
+    // not touch, so its own `Binding.Loose` at line 7 must keep its precise
+    // edge -- the guard that steps 2 and 3 are unaffected.
+    let guard: Vec<_> = edges_at(&graph, "DomainConsumer.cs", 7)
+        .into_iter()
+        .filter(|e| e["to"] == "App.Domain.Binding.Loose" && e["heuristic"].is_null())
+        .collect();
+    assert_eq!(
+        guard.len(),
+        1,
+        "same-namespace access to the enum must still resolve precisely: {graph:#}"
+    );
+}
+
+#[test]
+fn an_enum_qualifier_earns_no_precise_edge_for_a_member_the_enum_does_not_declare() {
+    let fixture = Fixture::new();
+    let graph = fixture.graph();
+
+    // LegitUser.cs reaches `Binding` legitimately through `using
+    // App.Domain;` (step 2), never through global uniqueness -- but the
+    // enum does not declare `Bogus`, so line 9 must earn no edge at all
+    // rather than fall back to an edge on the enum type itself.
+    assert!(
+        edges_at(&graph, "LegitUser.cs", 9).is_empty(),
+        "an enum member the enum does not declare must not fall back to an edge on the enum type: {graph:#}"
+    );
 }
 
 #[test]

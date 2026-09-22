@@ -136,9 +136,9 @@ fn audit_scores_the_fixture_against_the_committed_oracle_snapshot() {
     let stdout = stdout_of(&out);
     let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("valid JSON");
 
-    assert_eq!(v["tiers"]["precise"]["tp"], 29, "{stdout}");
+    assert_eq!(v["tiers"]["precise"]["tp"], 36, "{stdout}");
     assert_eq!(v["tiers"]["precise"]["fp"], 0, "{stdout}");
-    assert_eq!(v["tiers"]["ext"]["tp"], 3, "{stdout}");
+    assert_eq!(v["tiers"]["ext"]["tp"], 6, "{stdout}");
     assert_eq!(v["tiers"]["ext"]["fp"], 0, "{stdout}");
     assert_eq!(v["tiers"]["guess"]["tp"], 4, "{stdout}");
     assert_eq!(v["tiers"]["guess"]["fp"], 0, "{stdout}");

@@ -14,6 +14,10 @@ struct Fixture {
 
 impl Fixture {
     fn new() -> Self {
+        Self::with_files(&["Definitions.cs", "Consumers.cs"])
+    }
+
+    fn with_files(names: &[&str]) -> Self {
         let root = std::env::temp_dir().join(format!(
             "devscout-type-arity-{}-{}",
             std::process::id(),
@@ -21,7 +25,7 @@ impl Fixture {
         ));
         fs::create_dir_all(&root).unwrap();
         let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/csharp-arity");
-        for name in ["Definitions.cs", "Consumers.cs"] {
+        for name in names {
             fs::copy(source.join(name), root.join(name)).unwrap();
         }
         let registry = root.join("registry.json");
@@ -48,6 +52,32 @@ impl Fixture {
         );
         String::from_utf8(out.stdout).unwrap()
     }
+
+    fn graph(&self) -> serde_json::Value {
+        let text = fs::read_to_string(self.root.join(".scout/graph/graph.json")).unwrap();
+        serde_json::from_str(&text).unwrap()
+    }
+}
+
+/// Precise `uses-member` edges out of `(from_file, from_line)` naming `to`.
+fn precise_member_edges_to<'a>(
+    graph: &'a serde_json::Value,
+    from_file: &str,
+    from_line: u64,
+    to: &str,
+) -> Vec<&'a serde_json::Value> {
+    graph["edges"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| {
+            e["kind"] == "uses-member"
+                && e["from_file"] == from_file
+                && e["from_line"].as_u64() == Some(from_line)
+                && e["to"] == to
+                && e["heuristic"].is_null()
+        })
+        .collect()
 }
 
 impl Drop for Fixture {
@@ -84,4 +114,32 @@ fn refs_and_impact_only_follow_exact_type_arity() {
         graph["stats"]["unresolved_external_count"], 1,
         "Widget<T,U> must remain unresolved"
     );
+}
+
+#[test]
+fn a_receiver_written_with_two_type_arguments_never_binds_a_one_type_argument_sibling() {
+    let fx = Fixture::with_files(&["Catalogue.cs", "CatalogueConsumers.cs"]);
+    let graph = fx.graph();
+
+    // `ICatalogue<T>` (arity 1, declares `Shelve`) and `ICatalogue` (arity 0)
+    // share one id, and the generic sibling is declared first, so it holds
+    // the shared qualified-name slot an arity-blind lookup lands on.
+    // `WideConsumer.shelf` writes a THIRD arity that neither sibling has; no
+    // in-tree arity-2 def exists, so the call must stay external rather than
+    // settle for the member-declaring sibling.
+    assert!(
+        precise_member_edges_to(&graph, "CatalogueConsumers.cs", 11, "Catalog.ICatalogue").is_empty(),
+        "a receiver written with two type arguments must never bind the one-type-argument sibling: {graph:#}"
+    );
+
+    // NarrowConsumer.shelf writes the arity the generic sibling actually
+    // has, and must keep its precise edge -- the guard that an exact-arity
+    // match still binds.
+    let narrow = precise_member_edges_to(&graph, "CatalogueConsumers.cs", 21, "Catalog.ICatalogue");
+    assert_eq!(
+        narrow.len(),
+        1,
+        "an exact one-type-argument receiver must still resolve precisely: {graph:#}"
+    );
+    assert_eq!(narrow[0]["member"], "Shelve");
 }

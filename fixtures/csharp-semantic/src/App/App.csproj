@@ -2,6 +2,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Domain\Domain.csproj" />
     <ProjectReference Include="..\Ext.Adapters\Ext.Adapters.csproj" />
+    <ProjectReference Include="..\Ext.Contracts\Ext.Contracts.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore" />

@@ -519,5 +519,7 @@ pub(super) fn name_probe(name: String, namespace: &str, outer_types: Vec<String>
         receiver_awaited: false,
         receiver_local: false,
         receiver_lambda: None,
+        receiver_nullable: false,
+        lambda_arg_arity: None,
     }
 }

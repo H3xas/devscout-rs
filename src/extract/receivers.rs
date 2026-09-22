@@ -61,17 +61,20 @@ pub(super) fn type_fact(
 ) -> Option<Fact> {
     let type_name = base_type_identifier(type_node, src, false)?;
     let args = generic_arg_descriptors(type_node, src, type_params);
-    // The array bit is read off the type node's OWN top-level kind, before
-    // any unwrapping -- `base_type_identifier`/`generic_arg_descriptors`
-    // both already look THROUGH an `array_type` to its element, so this is
-    // the only place left that still knows the wrapper was there at all.
+    // The array/nullable bits are read off the type node's OWN top-level
+    // kind, before any unwrapping -- `base_type_identifier`/
+    // `generic_arg_descriptors` both already look THROUGH an `array_type`/
+    // `nullable_type` to its element, so this is the only place left that
+    // still knows either wrapper was there at all.
     let is_array = type_node.is_some_and(|n| n.kind() == "array_type");
+    let nullable = type_node.is_some_and(|n| n.kind() == "nullable_type");
     Some(Fact {
         type_name,
         args,
         call: None,
         awaited: false,
         is_array,
+        nullable,
         lambda: None,
     })
 }
@@ -276,6 +279,7 @@ pub(super) fn collect_member_facts(
                 call: Some(d.member.clone()),
                 awaited: d.awaited,
                 is_array: false,
+                nullable: false,
                 lambda: None,
             });
             add_fact(&mut table, Some(d.name.clone()), fact);
@@ -645,6 +649,7 @@ fn collection_element_fact(locals: &FactTable, type_facts: &FactTable, name: &st
                 call: None,
                 awaited: false,
                 is_array: false,
+                nullable: false,
                 lambda: None,
             }),
             _ => None,

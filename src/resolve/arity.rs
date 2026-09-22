@@ -50,6 +50,47 @@ pub(super) fn resolve_ref_by_arity(
     resolve_ref(&probe, usings, ns, index, aliases, file_contexts)
 }
 
+// The receiver-type counterpart of `resolve_ref_by_arity`, for a probe built
+// from an arity the extractor RECORDED off the receiver's own written type
+// (`receiver_args`), never one this resolver merely inferred. `Foo` and
+// `Foo<T>` sharing one `qualified_name_to_def` slot is exactly why the blind
+// fallback exists at all -- to answer when the extractor could not READ an
+// argument shape, an arity of 0 inferred from an ABSENT list. It was never
+// meant to let a written, multi-argument receiver settle for whichever
+// same-named sibling the index happened to index first: once a SECOND def of
+// the same simple name proves the graph actually has an opinion on this
+// name's arity, a recorded arity of one or more gets the exact-arity pass
+// and nothing else, so `External` from it is final rather than a cue to try
+// again arity-blind. A lone def carries no such opinion -- the graph simply
+// never recorded this name at the written arity, and refusing the reference
+// over an arity fact the graph cannot confirm OR refute would punish every
+// ordinary reference to a type the extractor only ever saw written bare
+// elsewhere, so a lone def keeps `resolve_ref_by_arity`'s arity-blind answer,
+// exactly as `Some(0)` and `None` -- the absent-argument-list case the blind
+// fallback is FOR -- already do.
+pub(super) fn resolve_receiver_type(
+    mut probe: FragRef,
+    arity: Option<usize>,
+    usings: &HashSet<String>,
+    ns: &str,
+    index: &DefIndex,
+    aliases: &HashMap<String, String>,
+    file_contexts: &HashMap<String, FileContext>,
+) -> Resolution {
+    if let Some(n) = arity {
+        if n >= 1 {
+            let full = aliases.get(&probe.name).unwrap_or(&probe.name);
+            let simple = full.rsplit('.').next().unwrap_or(full);
+            let shared = index.simple_name_to_defs.get(simple).map_or(0, Vec::len) >= 2;
+            if shared {
+                probe.type_arg_count = Some(n);
+                return resolve_ref(&probe, usings, ns, index, aliases, file_contexts);
+            }
+        }
+    }
+    resolve_ref_by_arity(probe, arity, usings, ns, index, aliases, file_contexts)
+}
+
 // The type-argument count a `bases` entry of def `idx` was written with:
 // `base_generic_args` keeps the descriptors of a generic base and no entry
 // for a base written bare.

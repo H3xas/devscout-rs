@@ -11,6 +11,7 @@ fn find_def<'a>(e: &'a Extraction, id: &str) -> Option<&'a DefRecord> {
 mod arg_count_fact;
 mod chain_tail_and_lambda_element;
 mod def_member_facts;
+mod delegate_arg_arity_fact;
 mod extension_method_facts;
 mod foreach_element_fact;
 mod fqn;

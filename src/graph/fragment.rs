@@ -160,6 +160,8 @@ pub fn fragment_from_extraction(e: &extract::Extraction) -> Fragment {
                     arity: s.arity,
                     index: s.index,
                 }),
+                receiver_nullable: r.receiver_nullable,
+                lambda_arg_arity: r.lambda_arg_arity.clone(),
             })
             .collect(),
         names: e
@@ -254,6 +256,8 @@ pub fn markup_fragment(root: &Path, rel: &str) -> Option<Fragment> {
                 receiver_awaited: false,
                 receiver_local: false,
                 receiver_lambda: None,
+                receiver_nullable: false,
+                lambda_arg_arity: None,
             })
             .collect(),
         names: facts

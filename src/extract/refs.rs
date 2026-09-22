@@ -2,6 +2,7 @@ use std::collections::HashSet;
 
 use tree_sitter::Node;
 
+use super::delegate_args::delegate_argument_param_count;
 use super::text::{named_children, text};
 use super::types::{Fact, RefRecord, RegistrationRecord};
 
@@ -357,7 +358,12 @@ pub(super) fn member_qualifier_info(
 // position in the tree and can never inherit a neighbour's count. Node identity is compared here by byte-range: two
 // distinct nodes of one tree cannot share both a start and an end byte AND a
 // kind at the same tree position.
-pub(super) fn invocation_arg_count(node: Node) -> Option<usize> {
+// `node`'s own `argument_list`, when `node` is the `function` field of the
+// `invocation_expression` it is a direct child of -- the one structural
+// check `invocation_arg_count` and `invocation_lambda_arg_arity` both need,
+// kept in one place so a chain window answers only for its OWN call, never
+// the one wrapping it, in exactly one way.
+fn invocation_arguments(node: Node) -> Option<Vec<Node>> {
     let parent = node.parent()?;
     if parent.kind() != "invocation_expression" {
         return None;
@@ -370,7 +376,28 @@ pub(super) fn invocation_arg_count(node: Node) -> Option<usize> {
     if args.kind() != "argument_list" {
         return None;
     }
-    Some(named_children(args).len())
+    Some(named_children(args))
+}
+
+pub(super) fn invocation_arg_count(node: Node) -> Option<usize> {
+    Some(invocation_arguments(node)?.len())
+}
+
+// The parameter count of each delegate-shaped argument of the SAME
+// invocation `invocation_arg_count` measures -- a lambda literal or a local
+// function passed as a method group (`delegate_argument_param_count`) --
+// one entry per argument position, `None` at every other position. `None`
+// entirely when `node` is not an invocation's callee, or when every
+// position answers `None` -- an absent WHOLE fact, like every other "no
+// fact" `Option` in this file, rather than an all-`None` list. Never reads
+// the delegate parameter list its OWN eventual overload has: that
+// comparison is the resolver's job, this is only the argument's own arity.
+pub(super) fn invocation_lambda_arg_arity(node: Node, src: &[u8]) -> Option<Vec<Option<usize>>> {
+    let arities: Vec<Option<usize>> = invocation_arguments(node)?
+        .into_iter()
+        .map(|argument| delegate_argument_param_count(argument, src))
+        .collect();
+    arities.iter().any(Option::is_some).then_some(arities)
 }
 
 pub(super) fn push_ref(
@@ -403,6 +430,8 @@ pub(super) fn push_ref(
         receiver_awaited: false,
         receiver_local: false,
         receiver_lambda: None,
+        receiver_nullable: false,
+        lambda_arg_arity: None,
     });
 }
 
@@ -439,6 +468,8 @@ pub(super) fn push_ctor_param_ref(
         receiver_awaited: false,
         receiver_local: false,
         receiver_lambda: None,
+        receiver_nullable: false,
+        lambda_arg_arity: None,
     });
 }
 
@@ -483,6 +514,16 @@ pub(super) fn push_ctor_param_ref(
 // computed by the caller (`resolve_member_qualifier`, which has the
 // `Scope` this function does not). Appended LAST of all, after
 // `receiver_awaited`.
+//
+// `receiver_nullable` rides out of the SAME `Fact` `receiver_type`/
+// `receiver_args` already came off -- `Fact::nullable`, verbatim -- so it is
+// folded into the same three-way match rather than threaded in separately.
+//
+// `lambda_arg_arity`, unlike every other field here, is not a property of
+// the QUALIFIER at all: it belongs to the invocation this ref is the callee
+// of, exactly like `arg_count`, and is threaded in as its own parameter for
+// the same reason -- computed by the caller from its OWN node, appended
+// LAST of all, after `receiver_local`.
 pub(super) fn push_member_ref(
     refs: &mut Vec<RefRecord>,
     qualifier_text: &str,
@@ -496,6 +537,7 @@ pub(super) fn push_member_ref(
     property_owner: Option<String>,
     receiver_base: bool,
     receiver_local: bool,
+    lambda_arg_arity: Option<Vec<Option<usize>>>,
 ) {
     // A call fact records the CALLEE it depends on and never a receiver type;
     // a lambda-slot fact records the SLOT this untyped parameter fills on a
@@ -509,23 +551,33 @@ pub(super) fn push_member_ref(
         receiver_call_member,
         receiver_awaited,
         receiver_lambda,
+        receiver_nullable,
     ) = match receiver {
         Some(Fact {
             lambda: Some(slot), ..
-        }) => (None, None, None, None, false, Some(slot)),
+        }) => (None, None, None, None, false, Some(slot), false),
         Some(Fact {
             type_name,
             call: Some(member),
             awaited,
             ..
-        }) => (None, None, Some(type_name), Some(member), awaited, None),
+        }) => (
+            None,
+            None,
+            Some(type_name),
+            Some(member),
+            awaited,
+            None,
+            false,
+        ),
         Some(Fact {
             type_name,
             args,
             call: None,
+            nullable,
             ..
-        }) => (Some(type_name), args, None, None, false, None),
-        None => (None, None, None, None, false, None),
+        }) => (Some(type_name), args, None, None, false, None, nullable),
+        None => (None, None, None, None, false, None, false),
     };
     match qualifier_text.rfind('.') {
         Some(dot) => refs.push(RefRecord {
@@ -549,6 +601,8 @@ pub(super) fn push_member_ref(
             receiver_awaited,
             receiver_local,
             receiver_lambda: receiver_lambda.clone(),
+            receiver_nullable,
+            lambda_arg_arity: lambda_arg_arity.clone(),
         }),
         None => refs.push(RefRecord {
             kind: "uses-member".to_string(),
@@ -571,6 +625,8 @@ pub(super) fn push_member_ref(
             receiver_awaited,
             receiver_local,
             receiver_lambda,
+            receiver_nullable,
+            lambda_arg_arity,
         }),
     }
 }

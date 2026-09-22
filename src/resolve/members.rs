@@ -1,6 +1,8 @@
 use super::arity::{base_arity, method_arity_admits, resolve_ref_by_arity};
 use super::index::{name_probe, DefIndex};
 use super::ladder::Resolution;
+use super::lambda_arity::lambda_arity_admits;
+use super::receiver::nullable_unwrap_owns_member;
 use super::scope::FileContext;
 use crate::graph::FragRef;
 use std::collections::{HashMap, HashSet};
@@ -80,6 +82,60 @@ pub(super) fn declares_member_any_visibility(
         Some(n) => method_arity_admits(index, idx, member, n),
         None => true,
     }
+}
+
+// A typed-qualifier or typed-receiver ref's own `declares_here` test:
+// `declares_member`/`declares_member_any_visibility`, whichever
+// `this_shaped` selects, additionally gated by `lambda_arity_admits` --
+// pulled out of both call sites (the type-qualifier arm's `this.M(...)`
+// window and tier (e)'s ordinary typed receiver) so the same three-part
+// rule cannot drift between them.
+pub(super) fn declares_here_for_ref(
+    index: &DefIndex,
+    file_contexts: &HashMap<String, FileContext>,
+    idx: usize,
+    r: &FragRef,
+    this_shaped: bool,
+) -> bool {
+    let visible = if this_shaped {
+        declares_member_any_visibility(index, idx, r.member.as_deref(), r.arg_count)
+    } else {
+        declares_member(index, idx, r.member.as_deref(), r.arg_count)
+    };
+    visible
+        && lambda_arity_admits(
+            index,
+            file_contexts,
+            idx,
+            r.member.as_deref(),
+            r.lambda_arg_arity.as_deref(),
+        )
+}
+
+// Tier (e)'s own resolved-receiver-to-target step: the `Nullable<T>` veto,
+// `declares_here_for_ref`, and the in-graph base widen `typed_receiver_
+// base_member` already does, composed in the one order tier (e) needs.
+// Returns the precise target (if any) and whether the veto is what refused
+// it -- the caller reads the latter to force `emitted` even on refusal, so
+// no lower tier guesses at the wrapper's own member either.
+pub(super) fn typed_receiver_precise_target(
+    index: &DefIndex,
+    file_contexts: &HashMap<String, FileContext>,
+    ridx: usize,
+    r: &FragRef,
+    this_shaped: bool,
+    receiver_nullable: bool,
+) -> (Option<usize>, bool) {
+    let nullable_veto = receiver_nullable
+        && nullable_unwrap_owns_member(&index.defs[ridx].kind, r.member.as_deref());
+    let target = if nullable_veto {
+        None
+    } else if declares_here_for_ref(index, file_contexts, ridx, r, this_shaped) {
+        Some(ridx)
+    } else {
+        typed_receiver_base_member(index, file_contexts, ridx, r, this_shaped)
+    };
+    (target, nullable_veto)
 }
 
 // The two shapes a member reference can take, read straight off the ref's own
@@ -205,15 +261,28 @@ pub(super) fn inheritance_walk_matches(
     inheritance_walk_find(index, file_contexts, start, matches).is_some()
 }
 
+// Also arity-gated by any delegate-shaped argument fact on `r`: the
+// extension tier's veto means "some in-graph instance member already
+// claims this call", and a same-named, same-arg-count instance member
+// whose delegate parameter shape the call's own argument cannot fill does
+// not actually claim it -- the exact fact `lambda_arity_admits` exists to
+// judge, checked at whichever def in the closure `declares_member` itself
+// matches.
 pub(super) fn inherited_member_declared(
     index: &DefIndex,
     file_contexts: &HashMap<String, FileContext>,
     start: usize,
-    member: Option<&str>,
-    arg_count: Option<usize>,
+    r: &FragRef,
 ) -> bool {
     inheritance_walk_matches(index, file_contexts, start, |idx| {
-        declares_member(index, idx, member, arg_count)
+        declares_member(index, idx, r.member.as_deref(), r.arg_count)
+            && lambda_arity_admits(
+                index,
+                file_contexts,
+                idx,
+                r.member.as_deref(),
+                r.lambda_arg_arity.as_deref(),
+            )
     })
 }
 
@@ -409,15 +478,17 @@ pub(super) fn base_member_declared(
 // `declares_member_any_visibility`, `false` keeps the public-only
 // `declares_member`, so a receiver typed by anything OTHER than the
 // enclosing type can only ever bind to a member C# would let it see from
-// outside. `arg_count` is the ref's own call-shape fact: a
-// base that declares the name at the WRONG arity is skipped exactly like
-// one that does not declare it at all.
+// outside. `r`'s own call-shape facts (`arg_count` and `lambda_arg_arity`)
+// gate every base the walk visits, exactly like they gate `start` itself in
+// `declares_here_for_ref`: a base that declares the name at the wrong
+// arity, or whose overload's delegate parameter a call's own delegate
+// argument cannot fill, is skipped exactly like one that does not declare
+// it at all.
 pub(super) fn typed_receiver_base_member(
     index: &DefIndex,
     file_contexts: &HashMap<String, FileContext>,
     start: usize,
-    member: Option<&str>,
-    arg_count: Option<usize>,
+    r: &FragRef,
     any_visibility: bool,
 ) -> Option<usize> {
     let skip_interfaces = index.defs[start].kind != "interface";
@@ -427,11 +498,19 @@ pub(super) fn typed_receiver_base_member(
         start,
         skip_interfaces,
         |index, idx| {
-            if any_visibility {
-                declares_member_any_visibility(index, idx, member, arg_count)
+            let visible = if any_visibility {
+                declares_member_any_visibility(index, idx, r.member.as_deref(), r.arg_count)
             } else {
-                declares_member(index, idx, member, arg_count)
-            }
+                declares_member(index, idx, r.member.as_deref(), r.arg_count)
+            };
+            visible
+                && lambda_arity_admits(
+                    index,
+                    file_contexts,
+                    idx,
+                    r.member.as_deref(),
+                    r.lambda_arg_arity.as_deref(),
+                )
         },
     )
 }
