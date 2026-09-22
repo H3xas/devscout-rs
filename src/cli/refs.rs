@@ -124,7 +124,7 @@ pub(crate) fn cmd_refs(cwd: &Path, args: &[String]) -> (i32, String, Option<&'st
 
     let answer = refs_result_out(&index, q, json, compact, result);
     let note = (answer.2 != query::Outcome::ZeroHit).then_some(ZERO_HIT_REFS);
-    let (code, out) = finish_query(&root, "refs", q, start, answer);
+    let (code, out) = finish_query(&root, "refs", q, start, json, answer);
     (code, out, note)
 }
 

@@ -7,6 +7,7 @@ use std::io::Write;
 use std::path::Path;
 use std::time::Instant;
 
+use crate::freshness::{self, FreshnessState};
 use crate::graph;
 use crate::manifest;
 use crate::query;
@@ -218,17 +219,70 @@ pub(crate) fn fallback_advised_out(q: &str, json: bool, plain: String) -> (i32, 
     }
 }
 
+// `freshness`'s own JSON shape: `state` first (`"fresh"`/`"stale"`/
+// `"unknown"`), then the fields that state alone carries. `Stale`'s
+// `indexedHead`/`currentHead` mirror `freshness_warning`'s own truncated
+// stderr wording in spirit but are written full-length here -- a
+// programmatic consumer should not have to guess where a short hash was cut.
+fn freshness_json(state: &FreshnessState) -> J {
+    match state {
+        FreshnessState::Fresh => J::Obj(vec![("state", J::Str("fresh".to_string()))]),
+        FreshnessState::Stale {
+            indexed_head,
+            current_head,
+            changed_files,
+        } => J::Obj(vec![
+            ("state", J::Str("stale".to_string())),
+            ("indexedHead", J::Str(indexed_head.clone())),
+            ("currentHead", J::Str(current_head.clone())),
+            ("changedFiles", J::UInt(*changed_files as u64)),
+        ]),
+        FreshnessState::Unknown { reason } => J::Obj(vec![
+            ("state", J::Str("unknown".to_string())),
+            ("reason", J::Str(reason.as_str().to_string())),
+        ]),
+    }
+}
+
+// Splices a top-level `freshness` key onto an already-rendered `--json`
+// answer, as its new last key (after `outcome`) -- string surgery on the
+// finished object rather than a second pass through the `J` tree, because
+// every caller here already rendered a complete, correct object of its own
+// and re-building it from scratch risks a byte drift the existing builders
+// do not have today. Safe because every `--json` answer this crate renders
+// is exactly one top-level object (`J::Obj(...).to_json_string()`), which
+// always ends in exactly one `}` and never in trailing whitespace.
+fn append_freshness(out: &str, state: &FreshnessState) -> String {
+    debug_assert!(
+        out.ends_with('}'),
+        "a --json answer must be exactly one top-level object: {out}"
+    );
+    let mut spliced = out.strip_suffix('}').unwrap_or(out).to_string();
+    spliced.push_str(",\"freshness\":");
+    spliced.push_str(&freshness_json(state).to_json_string());
+    spliced.push('}');
+    spliced
+}
+
 // The one telemetry call every query verb makes, taking the rendered answer
 // whole: the outcome and count recorded are the ones that answer carries, so a
 // record can never describe a different answer than the caller was handed.
+// `json` gates the `freshness` splice: only a `--json` answer is a single
+// top-level object this can safely append to, and `find` (which never
+// produces one) always passes `false`. Freshness is spliced BEFORE the
+// telemetry call so `result_bytes` counts what is actually printed.
 pub(crate) fn finish_query(
     root: &Path,
     verb: &'static str,
     seed: &str,
     start: Instant,
+    json: bool,
     answer: (i32, String, query::Outcome, usize),
 ) -> (i32, String) {
-    let (code, out, outcome, candidate_count) = answer;
+    let (code, mut out, outcome, candidate_count) = answer;
+    if json {
+        out = append_freshness(&out, &freshness::index_freshness_state(root));
+    }
     telemetry::record(
         root,
         &telemetry::QueryEvent {

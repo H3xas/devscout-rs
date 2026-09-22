@@ -14,6 +14,8 @@ pub mod audit;
 pub mod cli;
 /// C# and TypeScript declaration and reference extraction.
 pub mod extract;
+/// Query-time index-freshness state for a programmatic (`--json`) consumer.
+pub mod freshness;
 /// Persisted graph and fragment data structures.
 pub mod graph;
 /// Agent-hook input processing.

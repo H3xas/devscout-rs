@@ -9,6 +9,7 @@ use super::dispatch::{
 };
 use super::index::{def_sites, symbol_refs, DefSite, GraphIndex, SymbolRefs};
 use super::member::{self, MemberCandidate};
+use super::occurrence::{tag_inbound_rows, tag_outbound_rows};
 use super::refs_tables::{
     ambiguous_row, build_table, cap_rows, edge_loc, loc_cmp, row_tier, AmbiguousTables, ImportRow,
     InboundRow, InboundTables, OutboundRow, OutboundTables, Table, SOURCE_MAX,
@@ -332,19 +333,25 @@ fn member_group_model(
                 edges[e].tier() == Some(graph::HeuristicTier::Ext),
             ),
             source,
+            occurrence_index: None,
         });
     }
+    tag_inbound_rows(&mut rows);
     let total = kept.len();
-    let (implements_rows, overrides_rows) = dispatch::split_dispatch_rows(edges, &dispatch, |e| {
-        let (file, line) = edge_loc(&edges[e]);
-        InboundRow {
-            file: file.to_string(),
-            line,
-            heuristic: false,
-            tier: None,
-            source: clip_source(&cached_line(&index.root, file, line, cache)),
-        }
-    });
+    let (mut implements_rows, mut overrides_rows) =
+        dispatch::split_dispatch_rows(edges, &dispatch, |e| {
+            let (file, line) = edge_loc(&edges[e]);
+            InboundRow {
+                file: file.to_string(),
+                line,
+                heuristic: false,
+                tier: None,
+                source: clip_source(&cached_line(&index.root, file, line, cache)),
+                occurrence_index: None,
+            }
+        });
+    tag_inbound_rows(&mut implements_rows);
+    tag_inbound_rows(&mut overrides_rows);
     RefsModel {
         query: seed.to_string(),
         id: format!("{owner}.{name}"),
@@ -539,10 +546,20 @@ fn build_outbound_tables(
                 edges[r.edge].tier() == Some(graph::HeuristicTier::Ext),
             ),
             source,
+            occurrence_index: None,
         };
         rows[r.kind].push(row);
     }
-    let [inherits, uses_type, uses_member, implements, overrides] = rows;
+    let [mut inherits, mut uses_type, mut uses_member, mut implements, mut overrides] = rows;
+    // Same per-kind, post-cap tagging rule `build_refs_model_inner`'s inbound
+    // side applies; `imports` is excluded -- an imports edge is never a
+    // guess and never shares a line with another imports edge the way a
+    // `uses-member` call site can, so `ImportRow` carries no such field.
+    tag_outbound_rows(&mut inherits);
+    tag_outbound_rows(&mut uses_type);
+    tag_outbound_rows(&mut uses_member);
+    tag_outbound_rows(&mut implements);
+    tag_outbound_rows(&mut overrides);
 
     let table = |kind: usize, rows: Vec<OutboundRow>| Table {
         total: totals[kind],
@@ -714,9 +731,22 @@ pub(super) fn build_refs_model_inner(
                 edges[r.edge].tier() == Some(graph::HeuristicTier::Ext),
             ),
             source,
+            occurrence_index: None,
         });
     }
-    let [inherits_rows, uses_type_rows, uses_member_rows, implements_rows, overrides_rows] = rows;
+    let [mut inherits_rows, mut uses_type_rows, mut uses_member_rows, mut implements_rows, mut overrides_rows] =
+        rows;
+    // Tagged per kind, AFTER capping and BEFORE the `Table` wrapper is built:
+    // an occurrence collision is scoped to one table of one answer, never
+    // across kinds (a `uses-type` row and a `uses-member` row at the same
+    // file:line are already distinct by kind and need no ordinal), and a row
+    // dropped by the cap above is never assigned one, per the same
+    // truncation-is-not-a-collapse rule `dropped` already states.
+    tag_inbound_rows(&mut inherits_rows);
+    tag_inbound_rows(&mut uses_type_rows);
+    tag_inbound_rows(&mut uses_member_rows);
+    tag_inbound_rows(&mut implements_rows);
+    tag_inbound_rows(&mut overrides_rows);
     let inbound_table = |total: usize, rows: Vec<InboundRow>| Table {
         total,
         dropped: total - rows.len(),

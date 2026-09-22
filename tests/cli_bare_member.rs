@@ -225,9 +225,11 @@ const AMBIGUOUS_APPROVE_OUT: &str = "ambiguous member \"Approve\" — 2 candidat
                                       App.Books.Journal.Approve  src/Journal.cs:5\n\
                                       App.Books.Ledger.Approve  src/Ledger.cs:5\n";
 
-const AMBIGUOUS_APPROVE_JSON: &str = "{\"schema_version\":1,\"outcome\":\"ambiguous\",\"query\":\"Approve\",\"candidates\":[\
+const AMBIGUOUS_APPROVE_JSON: &str =
+    "{\"schema_version\":1,\"outcome\":\"ambiguous\",\"query\":\"Approve\",\"candidates\":[\
     {\"owner\":\"App.Books.Journal\",\"name\":\"Approve\",\"file\":\"src/Journal.cs\",\"line\":5},\
-    {\"owner\":\"App.Books.Ledger\",\"name\":\"Approve\",\"file\":\"src/Ledger.cs\",\"line\":5}]}\n";
+    {\"owner\":\"App.Books.Ledger\",\"name\":\"Approve\",\"file\":\"src/Ledger.cs\",\"line\":5}],\
+    \"freshness\":{\"state\":\"fresh\"}}\n";
 
 #[test]
 fn a_bare_member_declared_on_two_types_renders_the_ambiguous_candidate_list_never_a_members_block()

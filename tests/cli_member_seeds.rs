@@ -214,9 +214,11 @@ fn refs_and_read_answer_the_same_seed_with_a_resolved_member_and_an_empty_inboun
             out.contains(r#""uses-member":{"total":0,"dropped":0,"rows":[]}"#),
             "{verb}: {out}"
         );
+        assert!(out.contains(r#","outcome":"zero-hit","#), "{verb}: {out}");
         assert!(
-            out.trim_end().ends_with(r#","outcome":"zero-hit"}"#),
-            "{verb}: {out}"
+            out.trim_end()
+                .ends_with(r#","freshness":{"state":"fresh"}}"#),
+            "{verb}: freshness is the true last key now: {out}"
         );
         assert_eq!(stderr_of(&json), "", "{verb}");
     }

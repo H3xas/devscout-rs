@@ -172,7 +172,8 @@ fn build_refs_model_bare_member_keeps_only_the_edges_whose_line_names_it() {
             line: 2,
             heuristic: false,
             tier: None,
-            source: "Ledger.PostEx(2);".into()
+            source: "Ledger.PostEx(2);".into(),
+            occurrence_index: None,
         }]
     );
     assert_eq!(m.inbound.inherits.total, 0);

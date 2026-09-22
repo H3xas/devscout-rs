@@ -60,6 +60,7 @@ fn refs_compact_one_header_per_kind_empty_kinds_print_nothing() {
             heuristic: false,
             tier: None,
             source: String::new(),
+            occurrence_index: None,
         }],
         0,
     );
@@ -73,6 +74,7 @@ fn refs_compact_one_header_per_kind_empty_kinds_print_nothing() {
             heuristic: false,
             tier: None,
             source: String::new(),
+            occurrence_index: None,
         }],
         0,
     );
@@ -105,6 +107,7 @@ fn refs_compact_same_file_line_collapses_to_nxn() {
                 heuristic: false,
                 tier: None,
                 source: String::new(),
+                occurrence_index: None,
             },
             OutboundRow {
                 file: "src/Widget.cs".into(),
@@ -114,6 +117,7 @@ fn refs_compact_same_file_line_collapses_to_nxn() {
                 heuristic: false,
                 tier: None,
                 source: String::new(),
+                occurrence_index: None,
             },
         ],
         0,
@@ -134,6 +138,7 @@ fn refs_compact_groups_multiple_lines_under_one_file_mention() {
                 heuristic: false,
                 tier: None,
                 source: String::new(),
+                occurrence_index: None,
             },
             InboundRow {
                 file: "src/Consumers/Big.cs".into(),
@@ -141,6 +146,7 @@ fn refs_compact_groups_multiple_lines_under_one_file_mention() {
                 heuristic: false,
                 tier: None,
                 source: String::new(),
+                occurrence_index: None,
             },
             InboundRow {
                 file: "src/Consumers/Big.cs".into(),
@@ -148,6 +154,7 @@ fn refs_compact_groups_multiple_lines_under_one_file_mention() {
                 heuristic: false,
                 tier: None,
                 source: String::new(),
+                occurrence_index: None,
             },
             InboundRow {
                 file: "src/Consumers/Small.cs".into(),
@@ -155,6 +162,7 @@ fn refs_compact_groups_multiple_lines_under_one_file_mention() {
                 heuristic: false,
                 tier: None,
                 source: String::new(),
+                occurrence_index: None,
             },
         ],
         0,
@@ -181,6 +189,7 @@ fn refs_compact_summary_line_folds_all_counts() {
                 heuristic: false,
                 tier: None,
                 source: String::new(),
+                occurrence_index: None,
             },
             InboundRow {
                 file: "src/B.cs".into(),
@@ -188,6 +197,7 @@ fn refs_compact_summary_line_folds_all_counts() {
                 heuristic: false,
                 tier: None,
                 source: String::new(),
+                occurrence_index: None,
             },
         ],
         3,
@@ -300,6 +310,7 @@ fn refs_text_suffixes_only_tagged_rows_and_never_an_imports_row() {
                 heuristic: false,
                 tier: None,
                 source: String::new(),
+                occurrence_index: None,
             },
             InboundRow {
                 file: "src/Guess.cs".into(),
@@ -307,6 +318,7 @@ fn refs_text_suffixes_only_tagged_rows_and_never_an_imports_row() {
                 heuristic: true,
                 tier: None,
                 source: String::new(),
+                occurrence_index: None,
             },
         ],
         0,
@@ -321,6 +333,7 @@ fn refs_text_suffixes_only_tagged_rows_and_never_an_imports_row() {
             heuristic: true,
             tier: None,
             source: String::new(),
+            occurrence_index: None,
         }],
         0,
     );
@@ -362,6 +375,7 @@ fn refs_text_marks_an_extension_row_and_a_guess_row_with_their_own_words() {
         heuristic: tier.is_some(),
         tier,
         source: String::new(),
+        occurrence_index: None,
     };
     let mut inbound = empty_inbound();
     inbound.uses_member = table(
@@ -402,6 +416,7 @@ fn refs_compact_marks_a_heuristic_row_with_a_trailing_h_and_rle_keeps_them_disti
                 heuristic: false,
                 tier: None,
                 source: String::new(),
+                occurrence_index: None,
             },
             InboundRow {
                 file: "src/A.cs".into(),
@@ -409,6 +424,7 @@ fn refs_compact_marks_a_heuristic_row_with_a_trailing_h_and_rle_keeps_them_disti
                 heuristic: true,
                 tier: None,
                 source: String::new(),
+                occurrence_index: None,
             },
             InboundRow {
                 file: "src/A.cs".into(),
@@ -416,6 +432,7 @@ fn refs_compact_marks_a_heuristic_row_with_a_trailing_h_and_rle_keeps_them_disti
                 heuristic: true,
                 tier: None,
                 source: String::new(),
+                occurrence_index: None,
             },
         ],
         0,
@@ -435,6 +452,7 @@ fn refs_compact_marks_ext_with_x_and_guess_with_h_and_rle_keeps_them_distinct() 
         heuristic: tier.is_some(),
         tier,
         source: String::new(),
+        occurrence_index: None,
     };
     let mut inbound = empty_inbound();
     inbound.uses_member = table(

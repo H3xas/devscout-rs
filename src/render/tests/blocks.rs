@@ -59,6 +59,7 @@ fn ref_kind_block_dropped_note_only_appears_when_nonzero() {
             heuristic: false,
             tier: None,
             source: String::new(),
+            occurrence_index: None,
         }],
         2,
     );

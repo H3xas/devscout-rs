@@ -58,9 +58,12 @@
 // holds the `implements`/`overrides` plumbing `index.rs` and `refs.rs` both
 // call into (index-build-time adjacency, the bare-member fallback's
 // exact-match half) -- split out to keep those two files under this crate's
-// per-file line budget, not a verb of its own. Every
-// public item keeps the path it had before the split via the `pub use`s
-// below.
+// per-file line budget, not a verb of its own. `occurrence` is the same
+// kind of split: a query-time-only helper that tags two otherwise-identical
+// rows of one inbound/outbound table with a stable position, called from
+// `refs.rs` after ranking/capping and never touching the graph it reads.
+// Every public item keeps the path it had before the split via the
+// `pub use`s below.
 
 mod coverage;
 mod dispatch;
@@ -75,6 +78,7 @@ mod infra;
 // it as `query::json::...`.
 pub(crate) mod json;
 mod member;
+mod occurrence;
 mod outcome;
 mod rank;
 mod read;

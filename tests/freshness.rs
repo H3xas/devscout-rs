@@ -235,3 +235,70 @@ fn legacy_index_with_no_index_state_json_prints_no_warning_and_does_not_crash() 
     let refs = fx.run(&["refs", "IWidget"]);
     assert_eq!(stderr_of(&refs), "");
 }
+
+// -- JSON-side companions: the same four conditions above, reaching a
+// programmatic consumer through `freshness` on `--json` rather than only a
+// human reader on stderr. Each test below drives the exact same fixture
+// setup as its stderr counterpart so the two can never silently drift apart.
+
+fn stdout_of(out: &Output) -> String {
+    String::from_utf8(out.stdout.clone()).expect("stdout is utf-8")
+}
+
+#[test]
+fn fresh_index_carries_freshness_fresh_on_json() {
+    let (fx, _sha) = Fixture::build("fresh-json");
+    let out = fx.run(&["refs", "IWidget", "--json"]);
+    let text = stdout_of(&out);
+    assert!(
+        text.trim_end()
+            .ends_with(r#","freshness":{"state":"fresh"}}"#),
+        "{text}"
+    );
+}
+
+#[test]
+fn head_moved_since_map_carries_freshness_stale_with_both_heads_on_json() {
+    let (fx, initial_sha) = Fixture::build("head-moved-json");
+    let new_sha = fx.advance_head(&initial_sha);
+
+    let out = fx.run(&["refs", "IWidget", "--json"]);
+    let text = stdout_of(&out);
+    let want_tail = format!(
+        r#","freshness":{{"state":"stale","indexedHead":"{initial_sha}","currentHead":"{new_sha}","changedFiles":0}}}}"#
+    );
+    assert!(
+        text.trim_end().ends_with(&want_tail),
+        "want tail {want_tail:?} in {text}"
+    );
+}
+
+#[test]
+fn a_modified_indexed_file_head_unchanged_carries_one_changed_file_on_json() {
+    let (fx, _sha) = Fixture::build("modified-file-json");
+    fs::write(
+        fx.root.join("src").join("IWidget.cs"),
+        "namespace App.Widgets\n{\n    public interface IWidget\n    {\n        void Render();\n        void Resize();\n    }\n}\n",
+    )
+    .unwrap();
+
+    let out = fx.run(&["refs", "IWidget", "--json"]);
+    let text = stdout_of(&out);
+    assert!(text.contains(r#""freshness":{"state":"stale","#), "{text}");
+    assert!(text.contains(r#""changedFiles":1}"#), "{text}");
+}
+
+#[test]
+fn legacy_index_with_no_index_state_json_carries_freshness_unknown_on_json() {
+    let (fx, _sha) = Fixture::build("legacy-json");
+    let state_path = fx.root.join(".git").join("scout").join("index-state.json");
+    fs::remove_file(&state_path).unwrap();
+
+    let out = fx.run(&["refs", "IWidget", "--json"]);
+    let text = stdout_of(&out);
+    assert!(
+        text.trim_end()
+            .ends_with(r#","freshness":{"state":"unknown","reason":"no-index-state"}}"#),
+        "{text}"
+    );
+}
