@@ -86,74 +86,94 @@ dotnet publish tools/scout-semantic -c Release -o "$sc_dir" \
 sc_bytes=$(find "$sc_dir" -type f -exec wc -c {} + | tail -1 | awk '{print $1}')
 echo "self-contained publish ($sc_dir, $rid): $sc_bytes bytes total"
 
-echo "== compiler-facts wall time: cold and warm =="
 fixture="fixtures/csharp-compiler-facts/Fixture.csproj"
-cold_out="$out/cold.json"
-warm_out="$out/warm.json"
 
 run_once() {
 	target="$1"
+	shift
 	t0=$(date +%s.%N)
 	dotnet run --project tools/scout-semantic --no-build -c Release -- \
 		"$fixture" --root fixtures/csharp-compiler-facts \
 		--emit compiler-facts --compiler-facts "$target" \
 		--tfm net9.0 -p Configuration=Debug -p Platform=AnyCPU \
-		--capabilities symbols,diagnostics --no-git >"$out/run.log" 2>&1
+		"$@" --no-git >"$out/run.log" 2>&1
 	t1=$(date +%s.%N)
 	awk "BEGIN { printf \"%.3f\", $t1 - $t0 }"
 }
 
-cold_time=$(run_once "$cold_out")
-warm_time=$(run_once "$warm_out")
-warm_time_2=$(run_once "$warm_out")
-warm_time_3=$(run_once "$warm_out")
-echo "cold: ${cold_time}s; warm (3 repeats): ${warm_time}s ${warm_time_2}s ${warm_time_3}s"
+# One arm per capability set: "default" is the engine's own unflagged
+# default (occurrences included, no --capabilities flag, matching the
+# fixture's own committed snapshot's regenerate command); "restricted"
+# pins the pre-occurrence capability set explicitly. Each arm reports wall
+# time, peak memory, admitted artifact size and import cost as its own
+# figure, not only as a delta -- the occurrence walk's added cost is what
+# this split exists to isolate.
+run_arm() {
+	label="$1"
+	shift
+	echo "== compiler-facts wall time: cold and warm ($label) =="
+	cold_out="$out/$label-cold.json"
+	warm_out="$out/$label-warm.json"
+	cold_time=$(run_once "$cold_out" "$@")
+	warm_time=$(run_once "$warm_out" "$@")
+	warm_time_2=$(run_once "$warm_out" "$@")
+	warm_time_3=$(run_once "$warm_out" "$@")
+	echo "$label: cold: ${cold_time}s; warm (3 repeats): ${warm_time}s ${warm_time_2}s ${warm_time_3}s"
 
-echo "== peak engine memory (cold run) =="
-mem_out="$out/mem.json"
-if command -v /usr/bin/time >/dev/null 2>&1 && /usr/bin/time -l true >/dev/null 2>&1; then
-	/usr/bin/time -l dotnet run --project tools/scout-semantic --no-build -c Release -- \
-		"$fixture" --root fixtures/csharp-compiler-facts \
-		--emit compiler-facts --compiler-facts "$mem_out" \
-		--tfm net9.0 -p Configuration=Debug -p Platform=AnyCPU \
-		--capabilities symbols,diagnostics --no-git >"$out/mem.log" 2>"$out/mem.time" || true
-	peak_kb=$(awk '/maximum resident set size/ {print $1}' "$out/mem.time")
-	echo "peak RSS (macOS /usr/bin/time -l, bytes): ${peak_kb:-unavailable}"
-elif command -v /usr/bin/time >/dev/null 2>&1 && /usr/bin/time -v true >/dev/null 2>&1; then
-	/usr/bin/time -v dotnet run --project tools/scout-semantic --no-build -c Release -- \
-		"$fixture" --root fixtures/csharp-compiler-facts \
-		--emit compiler-facts --compiler-facts "$mem_out" \
-		--tfm net9.0 -p Configuration=Debug -p Platform=AnyCPU \
-		--capabilities symbols,diagnostics --no-git >"$out/mem.log" 2>"$out/mem.time" || true
-	peak_kb=$(awk -F: '/Maximum resident set size/ {gsub(/ /,"",$2); print $2}' "$out/mem.time")
-	echo "peak RSS (GNU time -v, KB): ${peak_kb:-unavailable}"
-else
-	echo "no /usr/bin/time with -l/-v available; peak memory not measured on this host"
-fi
+	artifact_bytes=$(wc -c <"$cold_out" | tr -d ' ')
+	echo "$label: admitted artifact size: ${artifact_bytes} bytes"
 
-echo "== artifact import/admission cost =="
-# Rooted OUTSIDE this git checkout on purpose: the pinned fixture artifact was
-# produced with --no-git (source-agnostic, so it is a stable committed
-# snapshot), so it carries no sourceSnapshot.headSha. Importing it into a
-# root that IS a git checkout would fail admission's source-snapshot check
-# (this checkout's HEAD never matches "none declared") and time a refusal
-# instead of an admission -- exactly the bug this script's own leftover
-# import.log once proved. A root with no git ancestor at all skips that
-# check the same way a non-git deployment already does, so this measures a
-# real, successful admission.
-import_root=$(mktemp -d "${TMPDIR:-/tmp}/devscout-compiler-facts-bench.XXXXXX")
-trap 'rm -rf "$import_root"' EXIT
-# `-C <dir>` is a global flag consumed only immediately after the binary
-# name (git's own convention -- see `apply_global_options`), so it must
-# precede the subcommand here, not follow it, or it is read as an
-# unrecognised argument to `init` and the command falls back to acting on
-# the caller's own cwd instead of the isolated import root.
-"$root/$cli_bin" -C "$import_root" init --no-hooks --no-map >/dev/null
-import_t0=$(date +%s.%N)
-"$root/$cli_bin" -C "$import_root" compiler-facts import "$root/fixtures/csharp-compiler-facts/compiler-facts.json" >"$out/import.log" 2>&1
-import_t1=$(date +%s.%N)
-import_time=$(awk "BEGIN { printf \"%.3f\", $import_t1 - $import_t0 }")
-echo "compiler-facts import (pre-built fixture artifact, admitted outside a git checkout): ${import_time}s"
+	echo "== peak engine memory, cold run ($label) =="
+	mem_out="$out/$label-mem.json"
+	if command -v /usr/bin/time >/dev/null 2>&1 && /usr/bin/time -l true >/dev/null 2>&1; then
+		/usr/bin/time -l dotnet run --project tools/scout-semantic --no-build -c Release -- \
+			"$fixture" --root fixtures/csharp-compiler-facts \
+			--emit compiler-facts --compiler-facts "$mem_out" \
+			--tfm net9.0 -p Configuration=Debug -p Platform=AnyCPU \
+			"$@" --no-git >"$out/$label-mem.log" 2>"$out/$label-mem.time" || true
+		peak_kb=$(awk '/maximum resident set size/ {print $1}' "$out/$label-mem.time")
+		echo "$label: peak RSS (macOS /usr/bin/time -l, bytes): ${peak_kb:-unavailable}"
+	elif command -v /usr/bin/time >/dev/null 2>&1 && /usr/bin/time -v true >/dev/null 2>&1; then
+		/usr/bin/time -v dotnet run --project tools/scout-semantic --no-build -c Release -- \
+			"$fixture" --root fixtures/csharp-compiler-facts \
+			--emit compiler-facts --compiler-facts "$mem_out" \
+			--tfm net9.0 -p Configuration=Debug -p Platform=AnyCPU \
+			"$@" --no-git >"$out/$label-mem.log" 2>"$out/$label-mem.time" || true
+		peak_kb=$(awk -F: '/Maximum resident set size/ {gsub(/ /,"",$2); print $2}' "$out/$label-mem.time")
+		echo "$label: peak RSS (GNU time -v, KB): ${peak_kb:-unavailable}"
+	else
+		echo "$label: no /usr/bin/time with -l/-v available; peak memory not measured on this host"
+	fi
+
+	echo "== artifact import/admission cost ($label) =="
+	# Rooted OUTSIDE this git checkout on purpose, against this arm's own
+	# produced artifact (not necessarily the committed fixture): a
+	# --no-git-produced artifact carries no sourceSnapshot.headSha, and
+	# importing it into a root that IS a git checkout would fail
+	# admission's source-snapshot check (this checkout's HEAD never
+	# matches "none declared") and time a refusal instead of an admission
+	# -- exactly the bug this script's own leftover import.log once
+	# proved. A root with no git ancestor at all skips that check the
+	# same way a non-git deployment already does, so this measures a
+	# real, successful admission.
+	import_root=$(mktemp -d "${TMPDIR:-/tmp}/devscout-compiler-facts-bench.XXXXXX")
+	# `-C <dir>` is a global flag consumed only immediately after the
+	# binary name (git's own convention -- see `apply_global_options`),
+	# so it must precede the subcommand here, not follow it, or it is
+	# read as an unrecognised argument to `init` and the command falls
+	# back to acting on the caller's own cwd instead of the isolated
+	# import root.
+	"$root/$cli_bin" -C "$import_root" init --no-hooks --no-map >/dev/null
+	import_t0=$(date +%s.%N)
+	"$root/$cli_bin" -C "$import_root" compiler-facts import "$root/$cold_out" >"$out/$label-import.log" 2>&1
+	import_t1=$(date +%s.%N)
+	import_time=$(awk "BEGIN { printf \"%.3f\", $import_t1 - $import_t0 }")
+	rm -rf "$import_root"
+	echo "$label: compiler-facts import (this arm's own cold artifact, admitted outside a git checkout): ${import_time}s"
+}
+
+run_arm "default"
+run_arm "restricted" --capabilities symbols,diagnostics
 
 echo
 echo "Raw figures above; docs/benchmarks/results/2026-09-engine-packaging-cost.md records the"

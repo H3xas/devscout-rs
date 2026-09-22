@@ -128,6 +128,75 @@ figure above is freshly measured against this ticket's own pinned fixture. The M
 benchmark family in `2026-09-resolver-precision.md` is unrelated: it scores resolver precision, not
 packaging or engine-invocation cost, and this record does not touch it.
 
+## 2026-09-22 — occurrence capability
+
+`bench/compiler-facts-cost.sh` now measures two arms over the same pinned fixture: **default**
+(no `--capabilities` flag — the engine's own unflagged default, which now includes per-reference
+occurrence facts) and **restricted** (`--capabilities symbols,diagnostics` — the pre-occurrence
+capability set). The figures above (September 21) measured an engine that had no occurrence
+capability and no real embedded context envelope at all; this section supersedes them rather than
+leaving them silently stale, and isolates what the occurrence walk itself costs on top of the
+context-envelope-widening cost every mode now pays (`Runner.Run`'s `wantContext` gate change,
+recorded as a non-blocking risk in the implementation plan).
+
+### Environment
+
+Captured by the script's own toolchain block, not transcribed by hand: `rustc: rustc 1.97.1
+(8bab26f4f 2026-07-14)`, `cargo: cargo 1.97.1 (c980f4866 2026-06-30)`, `dotnet: 9.0.305`, `uname:
+Darwin 25.2.0 arm64`. Tool version: devscout 0.6.0, built at `a0b59ac32d86792cae8ccbd57b2a09d20d4bc295`.
+Same host, bench root, isolation and network posture as the September 21 run above. 2 full script
+runs; wall-time cells additionally take 3 warm repeats within each run, per arm.
+
+### Registered predictions
+
+Written before this rerun, from the walker's own design (a single additional semantic-model pass
+over already-loaded documents, no new project load, over this fixture's three small files) and the
+existing September 21 baseline:
+
+| Figure | Predicted |
+| --- | --- |
+| Cold/warm wall time, both arms | 2–4s, dominated by `MSBuildLocator`/workspace load as before; restricted at or a little below default (no occurrence walk), the gap small on a fixture this size |
+| Peak engine memory, both arms | 150–300 MiB, within roughly 10 MiB of each other — occurrence records held in memory are negligible next to Roslyn/MSBuild's own fixed workspace cost |
+| Admitted artifact size | Default noticeably larger than restricted (the occurrence payload plus the real embedded envelope, present in both); restricted still larger than the September 21 baseline (69 KiB before), since both arms now carry the real envelope instead of a two-field placeholder |
+| Import/admission cost, both arms | Under 50ms end-to-end, dominated by process startup, roughly flat with artifact size at this scale |
+
+### Measured
+
+| Figure | Run 1, default | Run 1, restricted | Run 2, default | Run 2, restricted |
+| --- | --- | --- | --- | --- |
+| Wall time, cold | 2.310s | 2.374s | 2.364s | 2.328s |
+| Wall time, warm ×3 | 2.358s, 2.350s, 2.343s | 2.338s, 2.387s, 2.325s | 2.402s, 2.393s, 2.387s | 2.352s, 2.331s, 2.310s |
+| Peak engine memory (`/usr/bin/time -l` max RSS) | 214,630,400 bytes (204.7 MiB) | 213,532,672 bytes (203.6 MiB) | 214,581,248 bytes (204.6 MiB) | 214,581,248 bytes (204.6 MiB) |
+| Admitted artifact size | 68,994 bytes (67.4 KiB) | 49,439 bytes (48.3 KiB) | 68,994 bytes (identical) | 49,439 bytes (identical) |
+| Import/admission cost | 0.019s | 0.018s | 0.019s | 0.018s |
+
+### Reading the numbers
+
+- **Wall time lands inside the predicted band, and the two arms are indistinguishable from noise**
+  (2.31–2.40s across both arms and both runs, no consistent ordering between default and
+  restricted). The occurrence walk's own added cost is not visible at this fixture's size against
+  the dominant `MSBuildLocator`/workspace-load floor — consistent with the September 21 record's
+  own finding that warm never meaningfully undercuts cold for the same reason. A larger corpus
+  would be needed to isolate the walk's own marginal cost from this floor; this record does not
+  claim one.
+- **Peak memory (203.6–204.7 MiB) lands inside the predicted band and the two arms agree within
+  about 1 MiB** — Roslyn/MSBuild's own fixed workspace-loading cost dominates, exactly as
+  predicted. This is somewhat above the September 21 baseline's 164–166 MiB, consistent with the
+  `wantContext` gate widening: every compiler-facts run now also performs the context-envelope's
+  own independent project-evaluation pass, on both arms equally.
+- **Admitted artifact size**: default (67.4 KiB) versus restricted (48.3 KiB) confirms the
+  occurrence payload's own footprint (roughly 20 KiB on this fixture); both are well above the
+  September 21 baseline's 69 → now-comparable-but-structurally-different byte count — the prior
+  figure measured a placeholder envelope with no occurrence capability at all, so it is a
+  different artifact shape, not a smaller version of the same one. Both runs are byte-identical
+  across the two repeats, matching the fixture's own two-runs-are-byte-identical property.
+- **Import/admission cost (18–19ms, both arms, both runs)** lands inside the predicted band and is
+  flat with respect to the roughly 20 KiB artifact-size difference between arms — consistent with
+  process-startup, not JSON parse/write work, dominating this cell, the same reading the September
+  21 record gave.
+- No numeric budget, threshold or packaging-variant selection is set by this section, matching the
+  standing Design decision.
+
 ## Rerunning
 
 ```sh
