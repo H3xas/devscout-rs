@@ -342,8 +342,14 @@ fn parse_compilation_refs(context_obj: &Map<String, Value>) -> Option<Vec<Compil
     for entry in entries {
         let entry_obj = entry.as_object()?;
         let identity = entry_obj.get("identity")?.clone();
-        let fingerprint = entry_obj.get("fingerprint").and_then(Value::as_str).map(str::to_string);
-        result.push(CompilationRef { identity, fingerprint });
+        let fingerprint = entry_obj
+            .get("fingerprint")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        result.push(CompilationRef {
+            identity,
+            fingerprint,
+        });
     }
     Some(result)
 }
@@ -359,8 +365,14 @@ fn parse_occurrence_sites(obj: &Map<String, Value>) -> Option<Vec<CompilationRef
     for site in sites {
         let compilation_obj = obj_obj(site.as_object()?, "compilation")?;
         let identity = compilation_obj.get("identity")?.clone();
-        let fingerprint = compilation_obj.get("fingerprint").and_then(Value::as_str).map(str::to_string);
-        result.push(CompilationRef { identity, fingerprint });
+        let fingerprint = compilation_obj
+            .get("fingerprint")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        result.push(CompilationRef {
+            identity,
+            fingerprint,
+        });
     }
     Some(result)
 }

@@ -61,7 +61,10 @@ fn header_identity_matches_the_rust_admission_path_s_own_constants() {
             "context.envelope.compilations is an array -- the real embedded envelope, \
              not the frozen placeholder this delta replaces",
         );
-    assert!(!compilations.is_empty(), "the fixture project is one real compilation");
+    assert!(
+        !compilations.is_empty(),
+        "the fixture project is one real compilation"
+    );
     for compilation in compilations {
         assert!(compilation.get("identity").is_some());
         assert!(compilation.get("fingerprint").is_some());
@@ -146,7 +149,6 @@ fn symbols_are_sorted_by_file_then_line_then_type_then_member() {
     }
 }
 
-
 #[test]
 fn occurrence_sites_are_present_with_the_stated_span_encoding() {
     let doc = load();
@@ -158,11 +160,23 @@ fn occurrence_sites_are_present_with_the_stated_span_encoding() {
     assert!(!sites.is_empty());
     for site in sites {
         for key in [
-            "file", "shape", "span", "name", "caller", "resolution", "candidateReason",
-            "target", "candidates", "compilation", "documentContentIdentity",
+            "file",
+            "shape",
+            "span",
+            "name",
+            "caller",
+            "resolution",
+            "candidateReason",
+            "target",
+            "candidates",
+            "compilation",
+            "documentContentIdentity",
             "targetDocumentContentIdentities",
         ] {
-            assert!(site.get(key).is_some(), "occurrence missing `{key}`: {site}");
+            assert!(
+                site.get(key).is_some(),
+                "occurrence missing `{key}`: {site}"
+            );
         }
         let compilation = &site["compilation"];
         assert!(compilation.get("identity").is_some());
@@ -178,7 +192,11 @@ fn two_same_line_call_sites_are_distinct_records_with_distinct_spans() {
         .iter()
         .filter(|s| s["file"] == "Callers.cs" && s["span"]["startLine"] == 8)
         .collect();
-    assert_eq!(same_line.len(), 2, "two same-line occurrences, not deduplicated");
+    assert_eq!(
+        same_line.len(),
+        2,
+        "two same-line occurrences, not deduplicated"
+    );
     assert_ne!(same_line[0]["span"], same_line[1]["span"]);
     assert_ne!(same_line[0]["name"], same_line[1]["name"]);
     let overloads: Vec<_> = same_line
@@ -220,15 +238,27 @@ fn span_and_name_coordinates_match_the_fixture_source_by_hand_count() {
         })
         .expect("the zero-arg Render() call site on line 8");
     assert_eq!(first["span"]["startChar"], 8);
-    assert_eq!(first["span"]["endChar"], 21, "member-access span ends before the invocation's own parens");
-    assert_eq!(first["name"]["char"], 15, "the bound name token's own start, not the whole span's");
+    assert_eq!(
+        first["span"]["endChar"], 21,
+        "member-access span ends before the invocation's own parens"
+    );
+    assert_eq!(
+        first["name"]["char"], 15,
+        "the bound name token's own start, not the whole span's"
+    );
 }
 
 #[test]
 fn every_resolution_state_is_represented_and_the_failing_site_is_present() {
     let doc = load();
     let sites = doc["occurrences"]["sites"].as_array().unwrap();
-    for state in ["confirmed", "ambiguous", "unresolved", "inaccessible", "dynamic"] {
+    for state in [
+        "confirmed",
+        "ambiguous",
+        "unresolved",
+        "inaccessible",
+        "dynamic",
+    ] {
         assert!(
             sites.iter().any(|s| s["resolution"] == state),
             "no occurrence in resolution state `{state}`"
@@ -238,7 +268,10 @@ fn every_resolution_state_is_represented_and_the_failing_site_is_present() {
     // The control this AC exists for: the oracle's own refs.jsonl
     // deliberately drops a site whose symbol and candidates are both empty;
     // this producer's own unresolved site must still be present.
-    let unresolved: Vec<_> = sites.iter().filter(|s| s["resolution"] == "unresolved").collect();
+    let unresolved: Vec<_> = sites
+        .iter()
+        .filter(|s| s["resolution"] == "unresolved")
+        .collect();
     assert!(
         unresolved
             .iter()
@@ -253,7 +286,10 @@ fn every_resolution_state_is_represented_and_the_failing_site_is_present() {
     assert!(ambiguous["candidates"].as_array().unwrap().len() >= 2);
     assert_eq!(ambiguous["candidateReason"], "OverloadResolutionFailure");
 
-    let inaccessible = sites.iter().find(|s| s["resolution"] == "inaccessible").unwrap();
+    let inaccessible = sites
+        .iter()
+        .find(|s| s["resolution"] == "inaccessible")
+        .unwrap();
     assert_eq!(inaccessible["candidateReason"], "Inaccessible");
     assert_eq!(inaccessible["candidates"].as_array().unwrap().len(), 1);
 

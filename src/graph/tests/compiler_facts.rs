@@ -359,7 +359,11 @@ fn occurrence_site(identity: &Value, fingerprint: Option<&str>) -> Value {
     occurrence_site_with_signature(identity, fingerprint, "()->void")
 }
 
-fn occurrence_site_with_signature(identity: &Value, fingerprint: Option<&str>, signature: &str) -> Value {
+fn occurrence_site_with_signature(
+    identity: &Value,
+    fingerprint: Option<&str>,
+    signature: &str,
+) -> Value {
     json!({
         "file": "Callers.cs",
         "shape": "invocation",
@@ -405,14 +409,25 @@ fn occurrence_capability_and_payload_disagreement_is_refused_in_both_directions(
     claims_without_payload["capabilities"]["provided"] =
         json!(["symbols", "diagnostics", "occurrences"]);
     let err = admit(&bytes(&claims_without_payload), &valid_expectations()).unwrap_err();
-    assert_eq!(err, RefusalReason::OccurrenceCapabilityMismatch, "claimed but absent");
+    assert_eq!(
+        err,
+        RefusalReason::OccurrenceCapabilityMismatch,
+        "claimed but absent"
+    );
 
     // The payload carries occurrences; the capability set does not claim it.
-    let site = occurrence_site(&compilations[0].identity, compilations[0].fingerprint.as_deref());
+    let site = occurrence_site(
+        &compilations[0].identity,
+        compilations[0].fingerprint.as_deref(),
+    );
     let mut payload_without_claim = candidate_with_occurrences(&compilations, vec![site]);
     payload_without_claim["capabilities"]["provided"] = json!(["symbols", "diagnostics"]);
     let err = admit(&bytes(&payload_without_claim), &valid_expectations()).unwrap_err();
-    assert_eq!(err, RefusalReason::OccurrenceCapabilityMismatch, "present but unclaimed");
+    assert_eq!(
+        err,
+        RefusalReason::OccurrenceCapabilityMismatch,
+        "present but unclaimed"
+    );
 }
 
 #[test]
@@ -461,7 +476,10 @@ fn every_new_occurrence_refusal_class_leaves_the_previously_admitted_artifact_by
     ));
 
     let after = fs::read(compiler_facts_json_path(&dir)).unwrap();
-    assert_eq!(before, after, "a refused occurrence payload must never replace the artifact");
+    assert_eq!(
+        before, after,
+        "a refused occurrence payload must never replace the artifact"
+    );
 }
 
 #[test]
@@ -482,9 +500,16 @@ fn occurrence_payload_round_trips_losslessly_including_distinct_same_line_overlo
 
     let read_back: Value = serde_json::from_slice(&facts.bytes).unwrap();
     let sites = read_back["occurrences"]["sites"].as_array().unwrap();
-    assert_eq!(sites.len(), 2, "both same-line occurrences survive, not deduplicated");
+    assert_eq!(
+        sites.len(),
+        2,
+        "both same-line occurrences survive, not deduplicated"
+    );
     assert_ne!(sites[0], sites[1], "distinct records, not merged");
-    assert_eq!(sites[0], site_a, "every field survives production, admission and read-back");
+    assert_eq!(
+        sites[0], site_a,
+        "every field survives production, admission and read-back"
+    );
     assert_eq!(sites[1], site_b);
 }
 
@@ -512,10 +537,15 @@ fn admission_succeeds_against_a_multi_compilation_envelope_including_an_unsuppor
 #[test]
 fn only_the_target_document_identity_differs_between_two_otherwise_identical_admitted_artifacts() {
     let compilations = valid_compilations();
-    let mut site_a = occurrence_site(&compilations[0].identity, compilations[0].fingerprint.as_deref());
-    site_a["targetDocumentContentIdentities"] = json!(["sha1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]);
+    let mut site_a = occurrence_site(
+        &compilations[0].identity,
+        compilations[0].fingerprint.as_deref(),
+    );
+    site_a["targetDocumentContentIdentities"] =
+        json!(["sha1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]);
     let mut site_b = site_a.clone();
-    site_b["targetDocumentContentIdentities"] = json!(["sha1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"]);
+    site_b["targetDocumentContentIdentities"] =
+        json!(["sha1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"]);
 
     let candidate_a = candidate_with_occurrences(&compilations, vec![site_a]);
     let candidate_b = candidate_with_occurrences(&compilations, vec![site_b]);
@@ -541,4 +571,3 @@ fn only_the_target_document_identity_differs_between_two_otherwise_identical_adm
         "the repository head does not move either"
     );
 }
-

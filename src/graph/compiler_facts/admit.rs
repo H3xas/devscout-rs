@@ -42,7 +42,9 @@ fn context_summary_matches(header: &CandidateHeader) -> bool {
         &header.context_fingerprint_header,
         &header.context_compilations,
     ) {
-        (Some(header_fp), Some(compilations)) => *header_fp == context_summary::recompute(compilations),
+        (Some(header_fp), Some(compilations)) => {
+            *header_fp == context_summary::recompute(compilations)
+        }
         _ => false,
     }
 }

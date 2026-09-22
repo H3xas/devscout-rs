@@ -119,4 +119,3 @@ mod tests {
         assert_ne!(recompute(std::slice::from_ref(&one)), recompute(&two));
     }
 }
-

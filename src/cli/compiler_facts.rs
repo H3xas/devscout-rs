@@ -124,7 +124,10 @@ fn occurrence_coverage_line(facts: &graph::AdmittedFacts) -> Option<String> {
         };
     }
 
-    let sites = doc["occurrences"]["sites"].as_array().cloned().unwrap_or_default();
+    let sites = doc["occurrences"]["sites"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
     let mut non_confirmed: std::collections::BTreeMap<String, usize> = Default::default();
     for site in &sites {
         if let Some(resolution) = site["resolution"].as_str() {
