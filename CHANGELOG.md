@@ -58,6 +58,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   against one graph snapshot -- not a stable cross-run identity. No existing key is renamed, removed
   or reordered and `schema_version` is unchanged. See [`docs/answer-contract.md`](docs/answer-contract.md#freshness)
   and its [`occurrenceIndex`](docs/answer-contract.md#occurrenceindex) section.
+- **A new offline semantic-truth harness and fixture pack** (`devscout_rs::truth`, dev/test
+  infrastructure only, no new CLI verb): a versioned case manifest schema with independently
+  reviewed expectations, span-based occurrence identity, a nine-row fault-control battery, a
+  compatibility-profile registry with a machine-readable capability matrix, freshness/
+  transformation controls, and a committed truthful red baseline recording today's known
+  analyzer misses rather than repairing them. Offline and deterministic: no `dotnet` and no
+  network in the fast lane. A separate scheduled workflow probes the demonstrated profiles
+  against a real compiler.
 
 ### Changed
 
