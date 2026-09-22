@@ -36,6 +36,11 @@ use std::path::{Path, PathBuf};
 
 use crate::query::json::J;
 
+mod assertions;
+mod fp_sites;
+use assertions::evaluate_assert;
+use fp_sites::FpSite;
+
 // ---------------------------------------------------------------------------
 // Data model
 // ---------------------------------------------------------------------------
@@ -181,6 +186,12 @@ struct Inputs {
     /// file graph.json mentions), minus the files of any unit whose `status`
     /// is not `"ok"`.
     universe: HashSet<String>,
+    /// Whether `score` should build `AuditReport.fp_sites`. `load` always
+    /// sets this `false`; `cmd_audit` flips it on after `load` returns, only
+    /// when `--fp-sites` was given, since the flag is the one thing `load`
+    /// itself never sees. A caller-built `Inputs` that never sets it wants
+    /// no rows, matching the flag's own default.
+    collect_fp_sites: bool,
 }
 
 /// `load`'s filesystem arguments -- the resolved, already-`-C`-aware paths
@@ -230,6 +241,7 @@ fn load(root: &Path, opts: &AuditOptions) -> Result<Inputs, String> {
         records,
         units,
         universe,
+        collect_fp_sites: false,
     })
 }
 
@@ -612,6 +624,27 @@ struct AuditReport {
     /// judged universe to begin with, so it is neither a true nor a false
     /// positive.
     edges_outside_universe: usize,
+    /// One row per false positive, in scoring order. Built only when
+    /// `Inputs.collect_fp_sites` is set, written only by `--fp-sites`;
+    /// nothing the report prints reads it.
+    fp_sites: Vec<FpSite>,
+}
+
+/// Appends one row when `collect` is set; a no-op otherwise. Kept as its own
+/// function, not an inline `if`, so the opt-in branch does not add to
+/// `score`'s own cognitive-complexity budget -- the loop it is called from
+/// already carries the tier/class decision.
+fn push_fp_site(
+    fp_rows: &mut Vec<FpSite>,
+    collect: bool,
+    e: &EdgeRow,
+    class: &'static str,
+    evidence: &[&OracleRef],
+    structural: bool,
+) {
+    if collect {
+        fp_rows.push(FpSite::new(e, class, evidence, structural));
+    }
 }
 
 /// Scores `inputs` into a full `AuditReport`. Pure: every branch below reads
@@ -622,6 +655,7 @@ struct AuditReport {
 )]
 fn score(inputs: Inputs) -> AuditReport {
     let root = inputs.root.display().to_string();
+    let collect_fp_sites = inputs.collect_fp_sites;
 
     // "units" method (below) applies exactly when `--units` produced at
     // least one unit -- computed once, up front, since both the edge-universe
@@ -779,6 +813,7 @@ fn score(inputs: Inputs) -> AuditReport {
             .or_insert(0) += 1;
     }
     let mut partial_file_mismatch = 0usize;
+    let mut fp_rows: Vec<FpSite> = Vec::new();
 
     for (i, e) in edges.iter().copied().enumerate() {
         let stats = tiers.entry(e.tier).or_default();
@@ -793,6 +828,14 @@ fn score(inputs: Inputs) -> AuditReport {
                 stats.fp += 1;
                 stats.fp_no_site += 1;
                 *fp_targets.entry(short_name(&e.to).to_string()).or_insert(0) += 1;
+                push_fp_site(
+                    &mut fp_rows,
+                    collect_fp_sites,
+                    e,
+                    "no-site",
+                    &[],
+                    edge_structural[i],
+                );
                 false
             }
             Some(recs) => {
@@ -844,17 +887,28 @@ fn score(inputs: Inputs) -> AuditReport {
                         .filter(|r| member_matches(&e.member, &r.member))
                         .collect();
                     stats.fp += 1;
-                    let external_site = if scoped.is_empty() {
-                        recs.iter().all(|r| r.external)
+                    let evidence: Vec<&OracleRef> = if scoped.is_empty() {
+                        recs.clone()
                     } else {
-                        scoped.iter().all(|r| r.external)
+                        scoped.iter().map(|r| **r).collect()
                     };
-                    if external_site {
+                    let external_site = evidence.iter().all(|r| r.external);
+                    let class = if external_site {
                         stats.fp_external_site += 1;
+                        "external"
                     } else {
                         stats.fp_wrong_target += 1;
-                    }
+                        "wrong-target"
+                    };
                     *fp_targets.entry(short_name(&e.to).to_string()).or_insert(0) += 1;
+                    push_fp_site(
+                        &mut fp_rows,
+                        collect_fp_sites,
+                        e,
+                        class,
+                        &evidence,
+                        edge_structural[i],
+                    );
                     false
                 }
             }
@@ -997,6 +1051,7 @@ fn score(inputs: Inputs) -> AuditReport {
         top_missed,
         partial_file_mismatch,
         edges_outside_universe,
+        fp_sites: fp_rows,
     }
 }
 
@@ -1304,98 +1359,14 @@ fn render_json(r: &AuditReport) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// `--assert <file>` -- a flat `{"dotted.metric.path": {"min": x} | {"max":
-// y}}` object, evaluated against the SAME JSON this run would print with
-// `--json` (parsed back through `serde_json::Value` so a dotted path walks
-// it generically, one `.get(segment)` per `.`-separated piece) -- one
-// violation line per failing or missing metric, `"assert: {path} = {actual}
-// > max {y}"` / `"< min {x}"` / `"{path} missing"`.
-// ---------------------------------------------------------------------------
-
-fn lookup_metric<'a>(v: &'a serde_json::Value, path: &str) -> Option<&'a serde_json::Value> {
-    let mut cur = v;
-    for seg in path.split('.') {
-        cur = cur.get(seg)?;
-    }
-    Some(cur)
-}
-
-/// `13`, not `13.0`; `0.381`, not `0.38100000000000001` -- the same
-/// whole-number-drops-its-decimal rule `cli.rs`'s `js_float_string` applies,
-/// reimplemented locally rather than reused (that function is private to
-/// cli.rs and out of this ticket's scope to touch beyond `J`/
-/// `to_json_string`/`require_repo`).
-fn fmt_num(x: f64) -> String {
-    if x == x.trunc() && x.abs() < 1e15 {
-        format!("{}", x as i64)
-    } else {
-        format!("{x}")
-    }
-}
-
-/// Evaluates `assert_text` (the `--assert` file's contents) against
-/// `report_json` (this run's `--json` shape). `Ok(violations)`, empty when
-/// every threshold holds; `Err` only for a malformed assert file or a
-/// threshold entry that is not `{"min": _}`/`{"max": _}`.
-fn evaluate_assert(report_json: &str, assert_text: &str) -> Result<Vec<String>, String> {
-    let report_value: serde_json::Value = serde_json::from_str(report_json)
-        .map_err(|e| format!("internal: audit report is not valid JSON: {e}"))?;
-    let assert_value: serde_json::Value = serde_json::from_str(assert_text)
-        .map_err(|e| format!("assert file is not valid JSON: {e}"))?;
-    let obj = assert_value.as_object().ok_or_else(|| {
-        "assert file must be a JSON object of {\"path\": {\"min\"|\"max\": n}}".to_string()
-    })?;
-
-    let mut violations = Vec::new();
-    for (path, spec) in obj {
-        let spec_obj = spec.as_object().ok_or_else(|| {
-            format!("assert entry '{path}' must be an object with a \"min\" or \"max\" key")
-        })?;
-        let min = spec_obj.get("min").and_then(serde_json::Value::as_f64);
-        let max = spec_obj.get("max").and_then(serde_json::Value::as_f64);
-        if min.is_none() && max.is_none() {
-            return Err(format!(
-                "assert entry '{path}' must carry a numeric \"min\" or \"max\""
-            ));
-        }
-
-        let actual = lookup_metric(&report_value, path).and_then(serde_json::Value::as_f64);
-        let Some(actual) = actual else {
-            violations.push(format!("assert: {path} missing"));
-            continue;
-        };
-        if let Some(min) = min {
-            if actual < min {
-                violations.push(format!(
-                    "assert: {path} = {} < min {}",
-                    fmt_num(actual),
-                    fmt_num(min)
-                ));
-                continue;
-            }
-        }
-        if let Some(max) = max {
-            if actual > max {
-                violations.push(format!(
-                    "assert: {path} = {} > max {}",
-                    fmt_num(actual),
-                    fmt_num(max)
-                ));
-            }
-        }
-    }
-    Ok(violations)
-}
-
-// ---------------------------------------------------------------------------
 // `cmd_audit` -- the CLI entry point `cli.rs` dispatches `audit` to.
 // ---------------------------------------------------------------------------
 
 /// `devscout audit --semantic <refs.jsonl> [--units F] [--defs F] [--json]
-/// [--assert F]`. Exit 0 with the report (text, or one JSON object with
-/// `--json`); exit 1 on any error (bad arguments, an unreadable/malformed
-/// input file, no `.scout`/`.git` root, no graph.json) or on any `--assert`
-/// violation.
+/// [--assert F] [--fp-sites F]`. Exit 0 with the report (text, or one JSON
+/// object with `--json`); exit 1 on any error (bad arguments, an
+/// unreadable/malformed input file, no `.scout`/`.git` root, no graph.json)
+/// or on any `--assert` violation.
 ///
 /// Where the violation lines go depends on the report format, and the rule is
 /// "stdout stays machine-readable": in TEXT mode they are appended after the
@@ -1405,18 +1376,22 @@ fn evaluate_assert(report_json: &str, assert_text: &str) -> Result<Vec<String>, 
 /// report is the whole point of the two flags together. Either way the exit
 /// code is 1 and the lines themselves are identical.
 pub(crate) fn cmd_audit(cwd: &Path, args: &[String]) -> (i32, String) {
-    const USAGE: &str = "usage: devscout audit --semantic <refs.jsonl> [--units F] [--defs F] [--json] [--assert F]";
+    const USAGE: &str = "usage: devscout audit --semantic <refs.jsonl> [--units F] [--defs F] [--json] [--assert F] [--fp-sites F]";
 
     let mut semantic: Option<String> = None;
     let mut units: Option<String> = None;
     let mut defs: Option<String> = None;
     let mut assert_path: Option<String> = None;
+    let mut fp_sites_path: Option<String> = None;
     let mut json = false;
 
     let mut i = 0;
     while i < args.len() {
         let flag = args[i].as_str();
-        if matches!(flag, "--semantic" | "--units" | "--defs" | "--assert") {
+        if matches!(
+            flag,
+            "--semantic" | "--units" | "--defs" | "--assert" | "--fp-sites"
+        ) {
             let Some(val) = args.get(i + 1) else {
                 return (1, format!("error: missing value for '{flag}'\n{USAGE}"));
             };
@@ -1425,6 +1400,7 @@ pub(crate) fn cmd_audit(cwd: &Path, args: &[String]) -> (i32, String) {
                 "--units" => units = Some(val.clone()),
                 "--defs" => defs = Some(val.clone()),
                 "--assert" => assert_path = Some(val.clone()),
+                "--fp-sites" => fp_sites_path = Some(val.clone()),
                 _ => unreachable!(),
             }
             i += 2;
@@ -1456,11 +1432,18 @@ pub(crate) fn cmd_audit(cwd: &Path, args: &[String]) -> (i32, String) {
         defs: defs_path.as_deref(),
     };
 
-    let inputs = match load(&root, &opts) {
+    let mut inputs = match load(&root, &opts) {
         Ok(i) => i,
         Err(e) => return (1, format!("error: {e}")),
     };
+    inputs.collect_fp_sites = fp_sites_path.is_some();
     let report = score(inputs);
+    if let Some(fp_path) = fp_sites_path {
+        let abs = crate::repo::resolve_from(cwd, Path::new(&fp_path));
+        if let Err(e) = std::fs::write(&abs, fp_sites::render(&report.fp_sites)) {
+            return (1, format!("error: failed to write {}: {e}", abs.display()));
+        }
+    }
     let json_string = render_json(&report);
     let mut out = if json {
         json_string.clone()
@@ -1595,6 +1578,7 @@ mod tests {
             records: vec![record],
             units: Vec::new(),
             universe,
+            collect_fp_sites: false,
         });
 
         assert_eq!(report.tiers.len(), 1);
@@ -1647,6 +1631,7 @@ mod tests {
             records: vec![record],
             units: Vec::new(),
             universe,
+            collect_fp_sites: false,
         });
 
         assert_eq!(report.tiers.len(), 1);
@@ -1709,6 +1694,7 @@ mod tests {
             records: vec![wrong, right],
             units: Vec::new(),
             universe: ["F.cs".to_string()].into_iter().collect(),
+            collect_fp_sites: false,
         });
         let (_, ts) = &report.tiers[0];
         assert_eq!(ts.tp, 1);
@@ -1771,6 +1757,7 @@ mod tests {
             records: vec![load_record, validate_record],
             units: Vec::new(),
             universe: ["F.cs".to_string()].into_iter().collect(),
+            collect_fp_sites: false,
         });
 
         // The edge itself: a TP against `load_record` only.
@@ -1857,6 +1844,7 @@ mod tests {
             records: vec![has_max_length, e_name, entity_property],
             units: Vec::new(),
             universe: ["F.cs".to_string()].into_iter().collect(),
+            collect_fp_sites: false,
         });
 
         let (_, ts) = &report.tiers[0];
@@ -1913,6 +1901,7 @@ mod tests {
             records: vec![in_tree],
             units: Vec::new(),
             universe: ["F.cs".to_string()].into_iter().collect(),
+            collect_fp_sites: false,
         });
 
         let (_, ts) = &report.tiers[0];
@@ -1963,6 +1952,7 @@ mod tests {
             records: vec![external_only],
             units: Vec::new(),
             universe: ["F.cs".to_string()].into_iter().collect(),
+            collect_fp_sites: false,
         });
 
         let (_, ts) = &report.tiers[0];
@@ -2024,6 +2014,7 @@ mod tests {
             records: vec![rec_at_full, rec_at_bare],
             units: Vec::new(),
             universe: ["F.cs".to_string()].into_iter().collect(),
+            collect_fp_sites: false,
         });
         let (_, ts) = &report.tiers[0];
         assert_eq!(ts.tp, 2);
@@ -2098,6 +2089,7 @@ mod tests {
             // intersected with the union of ok units' files ("App/A.cs"
             // only), since "Other/B.cs" belongs to no unit at all.
             universe: ["App/A.cs".to_string()].into_iter().collect(),
+            collect_fp_sites: false,
         });
 
         assert_eq!(report.edges_outside_universe, 1);
@@ -2172,6 +2164,7 @@ mod tests {
             records: vec![record],
             units,
             universe: ["App/A.cs".to_string()].into_iter().collect(),
+            collect_fp_sites: false,
         });
         assert_eq!(report.structural_method, "units");
         assert_eq!(report.structural_checked, 1);
@@ -2227,6 +2220,7 @@ mod tests {
             records: Vec::new(),
             units: Vec::new(), // empty -> "test-defs" fallback
             universe: HashSet::new(),
+            collect_fp_sites: false,
         });
         assert_eq!(report.structural_method, "test-defs");
         assert_eq!(report.structural_checked, 2);
@@ -2269,6 +2263,7 @@ mod tests {
             records: Vec::new(),
             units: Vec::new(), // empty -> "test-defs" fallback
             universe: HashSet::new(),
+            collect_fp_sites: false,
         };
 
         let without_oracle = score(inputs(Vec::new()));
@@ -2371,6 +2366,7 @@ mod tests {
             top_missed: vec![("Fixture.Domain.Order".to_string(), 2)],
             partial_file_mismatch: 0,
             edges_outside_universe: 5,
+            fp_sites: Vec::new(),
         };
         let json = render_json(&report);
         assert_eq!(
@@ -2459,6 +2455,7 @@ mod tests {
             top_missed: vec![("Fixture.Domain.Order".to_string(), 2)],
             partial_file_mismatch: 0,
             edges_outside_universe: 5,
+            fp_sites: Vec::new(),
         };
         let text = render_text(&report);
         assert_eq!(

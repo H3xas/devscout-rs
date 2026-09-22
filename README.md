@@ -435,10 +435,12 @@ and fails the run under `--strict`. The fixture under `fixtures/csharp-flowtrace
 output byte-for-byte in CI. Roslyn stays in the sidecar -- the `devscout` binary never links it.
 
 The plumbing verb `devscout audit --semantic <refs.jsonl> [--units F] [--defs F] [--json]
-[--assert F]` scores an indexed repository's `uses-member` edges against those oracle records:
-precision per tier, recall over in-graph member sites, external-receiver leaks, structurally
-impossible edges, and fan-out. `--assert` reads a thresholds file and exits 1 on any
-violated or missing key, reporting every one.
+[--assert F] [--fp-sites F]` scores an indexed repository's `uses-member` edges against those
+oracle records: precision per tier, recall over in-graph member sites, external-receiver leaks,
+structurally impossible edges, and fan-out. `--assert` reads a thresholds file and exits 1 on any
+violated or missing key, reporting every one. `--fp-sites` writes one JSON Lines row per false
+positive -- file, line, tier, class, the target the resolver bound, and the target(s) the oracle
+expected -- for every tier, not only the precise one.
 
 Two fixture solutions carry an oracle snapshot and a thresholds file of their own:
 `fixtures/csharp-semantic/` holds the per-tier precision and recall numbers, and

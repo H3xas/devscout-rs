@@ -75,7 +75,7 @@ plumbing
   parse <file.cs>            dump the parse tree
   spans <file.cs>            dump declaration spans
   extract-dump <file.cs>     dump extraction records
-  audit --semantic <refs.jsonl>  score uses-member edges against a semantic oracle [--units F] [--defs F] [--json] [--assert F]
+  audit --semantic <refs.jsonl>  score uses-member edges against a semantic oracle [--units F] [--defs F] [--json] [--assert F] [--fp-sites F]
   hook <read|bash>           agent hook filters, stdin -> stdout
   noop                       exit 0 (harness probe)
 
