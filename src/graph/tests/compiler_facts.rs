@@ -348,3 +348,197 @@ fn read_compiler_facts_is_none_when_no_artifact_was_ever_admitted() {
     let dir = temp_dir("compiler-facts-none");
     assert!(read_compiler_facts(&dir).is_none());
 }
+
+// --- per-reference occurrence facts ----------------------------------
+
+/// One occurrence site naming `identity`/`fingerprint` as its own bound
+/// compilation, with a fixed, otherwise-arbitrary shape for every other
+/// field -- admission never models those, so their exact values are
+/// unconstrained by anything this module checks.
+fn occurrence_site(identity: &Value, fingerprint: Option<&str>) -> Value {
+    occurrence_site_with_signature(identity, fingerprint, "()->void")
+}
+
+fn occurrence_site_with_signature(identity: &Value, fingerprint: Option<&str>, signature: &str) -> Value {
+    json!({
+        "file": "Callers.cs",
+        "shape": "invocation",
+        "span": {"startLine": 5, "startChar": 8, "endLine": 5, "endChar": 20},
+        "name": {"line": 5, "char": 8},
+        "caller": {
+            "assembly": "Api", "type": "Api.Callers", "member": "Go",
+            "genericArity": 0, "overloadSignature": "()->void"
+        },
+        "resolution": "confirmed",
+        "candidateReason": "None",
+        "target": {
+            "assembly": "Api", "type": "Api.Widgets.Widget", "member": "Render",
+            "genericArity": 0, "overloadSignature": signature
+        },
+        "candidates": [],
+        "compilation": {"identity": identity, "fingerprint": fingerprint},
+        "documentContentIdentity": "sha1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "targetDocumentContentIdentities": ["sha1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"]
+    })
+}
+
+/// A well-formed candidate, `occurrences`-capable, carrying `sites` as its
+/// own `occurrences.sites` array.
+fn candidate_with_occurrences(compilations: &[CompilationRef], sites: Vec<Value>) -> Value {
+    let mut candidate = candidate_with_compilations(compilations);
+    candidate["capabilities"]["requested"] = json!(["symbols", "diagnostics", "occurrences"]);
+    candidate["capabilities"]["provided"] = json!(["symbols", "diagnostics", "occurrences"]);
+    candidate["occurrences"] = json!({
+        "spanEncoding": "utf16-code-unit-line1-char0-end-exclusive",
+        "sites": sites,
+    });
+    candidate
+}
+
+#[test]
+fn occurrence_capability_and_payload_disagreement_is_refused_in_both_directions() {
+    let compilations = valid_compilations();
+
+    // Capability claims occurrences are provided; the payload carries no
+    // `occurrences` key at all.
+    let mut claims_without_payload = candidate_with_compilations(&compilations);
+    claims_without_payload["capabilities"]["provided"] =
+        json!(["symbols", "diagnostics", "occurrences"]);
+    let err = admit(&bytes(&claims_without_payload), &valid_expectations()).unwrap_err();
+    assert_eq!(err, RefusalReason::OccurrenceCapabilityMismatch, "claimed but absent");
+
+    // The payload carries occurrences; the capability set does not claim it.
+    let site = occurrence_site(&compilations[0].identity, compilations[0].fingerprint.as_deref());
+    let mut payload_without_claim = candidate_with_occurrences(&compilations, vec![site]);
+    payload_without_claim["capabilities"]["provided"] = json!(["symbols", "diagnostics"]);
+    let err = admit(&bytes(&payload_without_claim), &valid_expectations()).unwrap_err();
+    assert_eq!(err, RefusalReason::OccurrenceCapabilityMismatch, "present but unclaimed");
+}
+
+#[test]
+fn an_occurrence_naming_a_compilation_absent_from_the_envelope_is_refused() {
+    let compilations = valid_compilations();
+    let unknown_identity =
+        json!({"projectPath": "Other.csproj", "projectName": "Other", "requestedTfm": "net9.0"});
+    let site = occurrence_site(&unknown_identity, Some(&"d".repeat(40)));
+    let candidate = candidate_with_occurrences(&compilations, vec![site]);
+    let err = admit(&bytes(&candidate), &valid_expectations()).unwrap_err();
+    assert_eq!(err, RefusalReason::OccurrenceCompilationUnknown);
+}
+
+#[test]
+fn an_occurrence_naming_an_unsupported_compilation_is_refused() {
+    let mut compilations = valid_compilations();
+    let unsupported_identity =
+        json!({"projectPath": "Legacy.csproj", "projectName": "Legacy", "requestedTfm": "net472"});
+    compilations.push(CompilationRef {
+        identity: unsupported_identity.clone(),
+        fingerprint: None,
+    });
+    let site = occurrence_site(&unsupported_identity, None);
+    let candidate = candidate_with_occurrences(&compilations, vec![site]);
+    let err = admit(&bytes(&candidate), &valid_expectations()).unwrap_err();
+    assert_eq!(err, RefusalReason::OccurrenceCompilationUnsupported);
+}
+
+#[test]
+fn every_new_occurrence_refusal_class_leaves_the_previously_admitted_artifact_byte_identical() {
+    let dir = temp_dir("compiler-facts-occurrence-refusal-leaves-artifact");
+    let expected = valid_expectations();
+    let good = bytes(&valid_candidate());
+    admit_and_publish(&dir, &good, &expected).unwrap();
+    let before = fs::read(compiler_facts_json_path(&dir)).unwrap();
+
+    let compilations = valid_compilations();
+    let unknown_identity =
+        json!({"projectPath": "Other.csproj", "projectName": "Other", "requestedTfm": "net9.0"});
+    let bad_site = occurrence_site(&unknown_identity, Some(&"d".repeat(40)));
+    let bad = bytes(&candidate_with_occurrences(&compilations, vec![bad_site]));
+    let err = admit_and_publish(&dir, &bad, &expected).unwrap_err();
+    assert!(matches!(
+        err,
+        PublishError::Refused(RefusalReason::OccurrenceCompilationUnknown)
+    ));
+
+    let after = fs::read(compiler_facts_json_path(&dir)).unwrap();
+    assert_eq!(before, after, "a refused occurrence payload must never replace the artifact");
+}
+
+#[test]
+fn occurrence_payload_round_trips_losslessly_including_distinct_same_line_overloads() {
+    let compilations = valid_compilations();
+    let site_a = occurrence_site_with_signature(
+        &compilations[0].identity,
+        compilations[0].fingerprint.as_deref(),
+        "()->void",
+    );
+    let site_b = occurrence_site_with_signature(
+        &compilations[0].identity,
+        compilations[0].fingerprint.as_deref(),
+        "(bool)->void",
+    );
+    let candidate = candidate_with_occurrences(&compilations, vec![site_a.clone(), site_b.clone()]);
+    let facts = admit(&bytes(&candidate), &valid_expectations()).unwrap();
+
+    let read_back: Value = serde_json::from_slice(&facts.bytes).unwrap();
+    let sites = read_back["occurrences"]["sites"].as_array().unwrap();
+    assert_eq!(sites.len(), 2, "both same-line occurrences survive, not deduplicated");
+    assert_ne!(sites[0], sites[1], "distinct records, not merged");
+    assert_eq!(sites[0], site_a, "every field survives production, admission and read-back");
+    assert_eq!(sites[1], site_b);
+}
+
+#[test]
+fn admission_succeeds_against_a_multi_compilation_envelope_including_an_unsupported_entry() {
+    // The real shape a build-context envelope carries: a top-level
+    // `compilations` list with no top-level `fingerprint`, one entry
+    // `unsupported` (a `null` fingerprint) -- the exact shape the pre-delta
+    // self-referential check could never have admitted at all.
+    let compilations = vec![
+        CompilationRef {
+            identity: json!({"projectPath": "Api.csproj", "projectName": "Api", "requestedTfm": "net9.0"}),
+            fingerprint: Some("a".repeat(40)),
+        },
+        CompilationRef {
+            identity: json!({"projectPath": "Legacy.csproj", "projectName": "Legacy", "requestedTfm": "net472"}),
+            fingerprint: None,
+        },
+    ];
+    let candidate = candidate_with_compilations(&compilations);
+    let facts = admit(&bytes(&candidate), &valid_expectations()).unwrap();
+    assert!(facts.coverage().is_complete());
+}
+
+#[test]
+fn only_the_target_document_identity_differs_between_two_otherwise_identical_admitted_artifacts() {
+    let compilations = valid_compilations();
+    let mut site_a = occurrence_site(&compilations[0].identity, compilations[0].fingerprint.as_deref());
+    site_a["targetDocumentContentIdentities"] = json!(["sha1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]);
+    let mut site_b = site_a.clone();
+    site_b["targetDocumentContentIdentities"] = json!(["sha1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"]);
+
+    let candidate_a = candidate_with_occurrences(&compilations, vec![site_a]);
+    let candidate_b = candidate_with_occurrences(&compilations, vec![site_b]);
+
+    let facts_a = admit(&bytes(&candidate_a), &valid_expectations()).unwrap();
+    let facts_b = admit(&bytes(&candidate_b), &valid_expectations()).unwrap();
+    assert_ne!(facts_a.bytes, facts_b.bytes);
+
+    let doc_a: Value = serde_json::from_slice(&facts_a.bytes).unwrap();
+    let doc_b: Value = serde_json::from_slice(&facts_b.bytes).unwrap();
+    assert_ne!(
+        doc_a["occurrences"]["sites"][0]["targetDocumentContentIdentities"],
+        doc_b["occurrences"]["sites"][0]["targetDocumentContentIdentities"],
+        "the changed referenced declaration's identity moves"
+    );
+    assert_eq!(
+        doc_a["occurrences"]["sites"][0]["documentContentIdentity"],
+        doc_b["occurrences"]["sites"][0]["documentContentIdentity"],
+        "the consuming document's own identity does not"
+    );
+    assert_eq!(
+        doc_a["sourceSnapshot"], doc_b["sourceSnapshot"],
+        "the repository head does not move either"
+    );
+}
+

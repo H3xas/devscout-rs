@@ -485,6 +485,40 @@ fn status_reports_syntax_only_before_any_admission_and_coverage_after() {
 }
 
 #[test]
+fn status_reports_occurrence_coverage_admitted_with_occurrences() {
+    let fx = Fixture::new();
+    fx.import(&fixture_path("candidate-with-occurrences.json"));
+    let status = fx.ok(&["compiler-facts", "status"]);
+    assert!(status.contains("coverage: complete"), "{status}");
+    assert!(status.contains("occurrences: 2 admitted"), "{status}");
+    assert!(status.contains("1 unresolved"), "{status}");
+}
+
+#[test]
+fn status_reports_occurrence_coverage_admitted_without_occurrences() {
+    let fx = Fixture::new();
+    fx.import(&fixture_path("candidate.json"));
+    let status = fx.ok(&["compiler-facts", "status"]);
+    assert!(status.contains("coverage: complete"), "{status}");
+    assert!(
+        !status.contains("occurrences:"),
+        "an ordinary restricted import makes no occurrence claim at all: {status}"
+    );
+}
+
+#[test]
+fn status_reports_occurrence_coverage_requested_but_unavailable() {
+    let fx = Fixture::new();
+    fx.import(&fixture_path("candidate-occurrences-unavailable.json"));
+    let status = fx.ok(&["compiler-facts", "status"]);
+    assert!(status.contains("coverage: complete"), "{status}");
+    assert!(
+        status.contains("occurrences: unavailable (requested but not provided)"),
+        "{status}"
+    );
+}
+
+#[test]
 fn map_and_refs_never_spawn_the_compiler_engine_even_when_one_is_configured() {
     let fx = Fixture::new();
     fs::write(fx.root.join("Program.cs"), "public class Program {}\n").unwrap();

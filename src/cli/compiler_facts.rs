@@ -70,7 +70,7 @@ fn publish_outcome(result: Result<graph::AdmittedFacts, graph::PublishError>) ->
 }
 
 fn coverage_line(facts: &graph::AdmittedFacts) -> String {
-    match facts.coverage() {
+    let base = match facts.coverage() {
         graph::Coverage::Complete => {
             format!(
                 "admitted compiler facts (engine {}), coverage: complete",
@@ -83,7 +83,62 @@ fn coverage_line(facts: &graph::AdmittedFacts) -> String {
             units.len(),
             if units.len() == 1 { "" } else { "s" }
         ),
+    };
+    match occurrence_coverage_line(facts) {
+        Some(occurrences) => format!("{base}, {occurrences}"),
+        None => base,
     }
+}
+
+/// Occurrence coverage for the status line -- the number admitted, the
+/// number in each non-confirmed resolution state, and an explicit
+/// unavailable state where the capability was requested but not provided,
+/// rather than silence. Computed by a read-only, independent parse of the
+/// already-admitted, already-trusted candidate bytes; distinct from
+/// `graph::CandidateHeader`'s own minimal occurrence model, which never
+/// reads a field beyond an occurrence's own `compilation.identity`/
+/// `fingerprint`. `None` when the capability was neither requested nor
+/// provided -- the ordinary non-occurrence case, where the base coverage
+/// line already says everything this status line has to say.
+fn occurrence_coverage_line(facts: &graph::AdmittedFacts) -> Option<String> {
+    let doc: serde_json::Value = serde_json::from_slice(&facts.bytes).ok()?;
+    let names = |key: &str| -> Vec<String> {
+        doc["capabilities"][key]
+            .as_array()
+            .map(|values| {
+                values
+                    .iter()
+                    .filter_map(|v| v.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let requested_occurrences = names("requested").iter().any(|c| c == "occurrences");
+    let provided_occurrences = names("provided").iter().any(|c| c == "occurrences");
+
+    if !provided_occurrences {
+        return if requested_occurrences {
+            Some("occurrences: unavailable (requested but not provided)".to_string())
+        } else {
+            None
+        };
+    }
+
+    let sites = doc["occurrences"]["sites"].as_array().cloned().unwrap_or_default();
+    let mut non_confirmed: std::collections::BTreeMap<String, usize> = Default::default();
+    for site in &sites {
+        if let Some(resolution) = site["resolution"].as_str() {
+            if resolution != "confirmed" {
+                *non_confirmed.entry(resolution.to_string()).or_insert(0) += 1;
+            }
+        }
+    }
+
+    let mut line = format!("occurrences: {} admitted", sites.len());
+    for (state, count) in &non_confirmed {
+        line.push_str(&format!(", {count} {state}"));
+    }
+    Some(line)
 }
 
 // Reuses the engine's existing `--tfm`/`-p Name=Value` machinery for the
