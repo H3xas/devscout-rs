@@ -387,7 +387,7 @@ fn walk<'a>(
                         q.property_owner.clone(),
                         q.receiver_base,
                         q.receiver_local,
-                        invocation_lambda_arg_arity(node),
+                        invocation_lambda_arg_arity(node, src),
                     );
                 }
             } else if let (Some(qn), Some(m)) = (expr_field, &member) {
@@ -437,7 +437,7 @@ fn walk<'a>(
                             // Make with its own.
                             head_is_base,
                             false,
-                            invocation_lambda_arg_arity(node),
+                            invocation_lambda_arg_arity(node, src),
                         );
                     }
                 }
@@ -489,7 +489,7 @@ fn walk<'a>(
                             q.property_owner.clone(),
                             q.receiver_base,
                             q.receiver_local,
-                            invocation_lambda_arg_arity(node),
+                            invocation_lambda_arg_arity(node, src),
                         );
                     }
                 }

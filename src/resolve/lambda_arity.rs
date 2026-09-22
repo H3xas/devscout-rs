@@ -1,4 +1,5 @@
-// A lambda-literal argument's own parameter count, checked against the
+// A delegate-shaped argument's own parameter count (a lambda literal, or a
+// local function passed as a method group), checked against the
 // candidate's delegate parameter shape at that position -- the gate
 // `declares_here`'s plain argument-count check (`method_arity_admits`)
 // cannot express, because it never looks past the COUNT of arguments into
@@ -16,17 +17,18 @@ use super::scope::FileContext;
 use std::collections::HashMap;
 
 /// Whether `idx`'s own overloads of `member` admit the ref's recorded
-/// lambda-literal argument facts: for every argument position at which
-/// `lambda_arg_arity` names a lambda literal's own parameter count, at
+/// delegate-shaped argument facts: for every argument position at which
+/// `lambda_arg_arity` names such an argument's own parameter count, at
 /// least one overload's parameter at that position must be a delegate
 /// whose OWN parameter list (`delegate_parameters`) is exactly that long.
 ///
-/// Fails OPEN, matching `method_arity_admits`'s own rule for a missing
-/// arity entry: no `lambda_arg_arity` at all, no overload named `member`,
-/// no `MethodOverloadParams` entry at a checked position, and a
-/// non-delegate parameter (`delegate_parameters` returns `None`) all admit
-/// rather than refuse -- this gate only ever REMOVES a candidate it can
-/// affirmatively prove the lambda cannot fill.
+/// Fails OPEN only where there is nothing to judge, matching
+/// `method_arity_admits`'s own rule for a missing arity entry: no
+/// `lambda_arg_arity` at all, or no overload named `member`. At a checked
+/// position an overload admits only through a parameter that
+/// `delegate_parameters` reads as a delegate of exactly that length, so a
+/// parameter it reads no list from -- the zero-parameter `Action` and
+/// `Func<TResult>` shapes included -- admits nothing there.
 pub(super) fn lambda_arity_admits(
     index: &DefIndex,
     file_contexts: &HashMap<String, FileContext>,

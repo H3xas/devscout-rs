@@ -2,6 +2,7 @@ use std::collections::HashSet;
 
 use tree_sitter::Node;
 
+use super::delegate_args::delegate_argument_param_count;
 use super::text::{named_children, text};
 use super::types::{Fact, RefRecord, RegistrationRecord};
 
@@ -382,44 +383,21 @@ pub(super) fn invocation_arg_count(node: Node) -> Option<usize> {
     Some(invocation_arguments(node)?.len())
 }
 
-// The parameter count of each lambda-LITERAL argument of the SAME
-// invocation `invocation_arg_count` measures, one entry per argument
-// position, `None` at a position whose argument is not a lambda literal.
-// `None` entirely when `node` is not an invocation's callee, or when every
+// The parameter count of each delegate-shaped argument of the SAME
+// invocation `invocation_arg_count` measures -- a lambda literal or a local
+// function passed as a method group (`delegate_argument_param_count`) --
+// one entry per argument position, `None` at every other position. `None`
+// entirely when `node` is not an invocation's callee, or when every
 // position answers `None` -- an absent WHOLE fact, like every other "no
 // fact" `Option` in this file, rather than an all-`None` list. Never reads
 // the delegate parameter list its OWN eventual overload has: that
-// comparison is the resolver's job, this is only the lambda's own arity.
-pub(super) fn invocation_lambda_arg_arity(node: Node) -> Option<Vec<Option<usize>>> {
+// comparison is the resolver's job, this is only the argument's own arity.
+pub(super) fn invocation_lambda_arg_arity(node: Node, src: &[u8]) -> Option<Vec<Option<usize>>> {
     let arities: Vec<Option<usize>> = invocation_arguments(node)?
         .into_iter()
-        .map(lambda_literal_param_count)
+        .map(|argument| delegate_argument_param_count(argument, src))
         .collect();
     arities.iter().any(Option::is_some).then_some(arities)
-}
-
-// `argument`'s own expression, when it is a lambda literal (`x => ...`,
-// `(a, b) => ...`): the parameter count its own `parameters` field
-// declares, 1 for the bare `implicit_parameter` shape, else the
-// parenthesized list's length (0 for `() => ...`). `None` for a named
-// argument (`configure: x => ...`, the same exclusion
-// `lambda_argument_slot` applies, for the same reason -- a positional
-// delegate-parameter comparison is not safe once positions can be
-// reordered) and for every argument whose expression is not a lambda at
-// all.
-fn lambda_literal_param_count(argument: Node) -> Option<usize> {
-    if argument.child_by_field_name("name").is_some() {
-        return None;
-    }
-    let lambda = named_children(argument)
-        .into_iter()
-        .find(|c| c.kind() == "lambda_expression")?;
-    let params = lambda.child_by_field_name("parameters")?;
-    Some(if params.kind() == "implicit_parameter" {
-        1
-    } else {
-        named_children(params).len()
-    })
 }
 
 pub(super) fn push_ref(

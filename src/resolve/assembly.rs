@@ -601,7 +601,7 @@ pub fn resolve_graph_with_model(
                             // only.
                             let this_shaped = is_this_shaped_receiver(r);
                             // The nullable-unwrap veto, `declares_here` (now
-                            // also arity-gated by any lambda-literal
+                            // also arity-gated by any delegate-shaped
                             // argument fact) and the in-graph base widen
                             // live together in `typed_receiver_precise_
                             // target`; `nullable_veto` still forces

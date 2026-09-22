@@ -322,16 +322,17 @@ pub struct RefRecord {
     /// annotated, since none of them read a type node directly). Appended
     /// LAST of all, after `receiver_lambda`.
     pub receiver_nullable: bool,
-    /// The parameter count of each lambda-LITERAL argument of the
-    /// invocation this ref is the callee of, one entry per argument
-    /// position (`None` at a position whose argument is not a lambda
-    /// literal), or `None` entirely when the ref is not invocation-shaped
-    /// or names no lambda-literal argument at all. `x => ...` counts 1
-    /// parameter, `(a, b) => ...` counts 2, `() => ...` counts 0 -- the
-    /// lambda's OWN declared arity, never the delegate type it will end up
-    /// bound to (that binding is exactly what this fact lets the resolver
-    /// judge, rather than assume). Appended LAST of all, after
-    /// `receiver_nullable`.
+    /// The parameter count of each delegate-shaped argument of the
+    /// invocation this ref is the callee of -- a lambda literal, or a bare
+    /// identifier naming one unshadowed local function in scope -- one
+    /// entry per argument position (`None` at every other position), or
+    /// `None` entirely when the ref is not invocation-shaped or names no
+    /// such argument at all. `x => ...` counts 1 parameter, `(a, b) => ...`
+    /// counts 2, `() => ...` counts 0, a local function counts its own
+    /// declared parameters -- the argument's OWN arity, never the delegate
+    /// type it will end up bound to (that binding is exactly what this fact
+    /// lets the resolver judge, rather than assume). Appended LAST of all,
+    /// after `receiver_nullable`.
     pub lambda_arg_arity: Option<Vec<Option<usize>>>,
 }
 

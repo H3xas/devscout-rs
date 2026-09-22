@@ -29,13 +29,16 @@
 // methods), `type_defs` (assembling DefRecord/NameRecord/UsingRecord
 // instances from those raw facts), `receivers` (the local/field fact
 // tables a member-access qualifier resolves against), `lambdas` (untyped
-// lambda-parameter slot typing), `qualifiers` (`Scope` and member-access
-// qualifier resolution), `walk` (the top-level recursive-descent AST walk
-// and its `extract` entry point), `dump` (the `extract-dump` subcommand).
+// lambda-parameter slot typing), `delegate_args` (the parameter count a
+// lambda-literal or local-function call argument brings to its call),
+// `qualifiers` (`Scope` and member-access qualifier resolution), `walk` (the
+// top-level recursive-descent AST walk and its `extract` entry point),
+// `dump` (the `extract-dump` subcommand).
 // `json` holds the hand-rolled JSON serialisation for both the C# and the
 // TS-family fragment shapes. `ts_purpose`, `ts_fragment_types` and
 // `ts_fragment` hold the TypeScript-family purpose and reference-fact
 // extraction.
+mod delegate_args;
 mod dump;
 mod json;
 mod lambdas;

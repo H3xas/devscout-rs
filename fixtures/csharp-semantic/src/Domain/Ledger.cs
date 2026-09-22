@@ -38,5 +38,17 @@ namespace Fixture.Domain
         {
             this.Splice((Note a, Chapter b) => new object());
         }
+
+        public void UseOneParamLocalFunction()
+        {
+            object Make(Note x) => new object();
+            this.Splice<Note>(Make);
+        }
+
+        public void UseTwoParamLocalFunction()
+        {
+            object Make(Note a, Chapter b) => new object();
+            this.Splice<Note, Chapter>(Make);
+        }
     }
 }

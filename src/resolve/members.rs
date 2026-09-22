@@ -261,10 +261,10 @@ pub(super) fn inheritance_walk_matches(
     inheritance_walk_find(index, file_contexts, start, matches).is_some()
 }
 
-// Also arity-gated by any lambda-literal argument fact on `r`: the
+// Also arity-gated by any delegate-shaped argument fact on `r`: the
 // extension tier's veto means "some in-graph instance member already
 // claims this call", and a same-named, same-arg-count instance member
-// whose delegate parameter shape the call's own lambda cannot fill does
+// whose delegate parameter shape the call's own argument cannot fill does
 // not actually claim it -- the exact fact `lambda_arity_admits` exists to
 // judge, checked at whichever def in the closure `declares_member` itself
 // matches.
@@ -481,7 +481,7 @@ pub(super) fn base_member_declared(
 // outside. `r`'s own call-shape facts (`arg_count` and `lambda_arg_arity`)
 // gate every base the walk visits, exactly like they gate `start` itself in
 // `declares_here_for_ref`: a base that declares the name at the wrong
-// arity, or whose overload's delegate parameter a call's own lambda
+// arity, or whose overload's delegate parameter a call's own delegate
 // argument cannot fill, is skipped exactly like one that does not declare
 // it at all.
 pub(super) fn typed_receiver_base_member(

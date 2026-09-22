@@ -71,6 +71,21 @@ fn precise_row(line: usize) -> String {
     format!("Host.cs:{line}  uses-member  ")
 }
 
+// Two defs named `Splice` coexist on purpose (the instance method and the
+// extension), so `refs Splice` itself is ambiguous -- the graph's own edges
+// are what pins which one each call site actually bound.
+fn splice_edges(graph: &serde_json::Value) -> Vec<serde_json::Value> {
+    graph["edges"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| {
+            e["kind"] == "uses-member" && e["from_file"] == "Ledger.cs" && e["member"] == "Splice"
+        })
+        .cloned()
+        .collect()
+}
+
 #[test]
 fn a_lambda_parameter_is_typed_from_the_callee_delegate_parameter() {
     let fx = Fixture::new();
@@ -129,19 +144,7 @@ fn a_lambda_parameter_is_typed_from_the_callee_delegate_parameter() {
 #[test]
 fn a_one_parameter_lambda_never_binds_an_overload_taking_a_two_parameter_delegate() {
     let fx = Fixture::new();
-
-    // Two defs named `Splice` coexist on purpose (the instance method and
-    // the extension), so `refs Splice` itself is ambiguous -- the graph's
-    // own edges are what pins which one each call site actually bound.
-    let graph = fx.graph();
-    let splice_edges: Vec<&serde_json::Value> = graph["edges"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter(|e| {
-            e["kind"] == "uses-member" && e["from_file"] == "Ledger.cs" && e["member"] == "Splice"
-        })
-        .collect();
+    let splice_edges = splice_edges(&fx.graph());
     let edge_at = |line: u64| splice_edges.iter().find(|e| e["from_line"] == line);
 
     // A one-parameter lambda, with or without an explicit single type
@@ -171,5 +174,38 @@ fn a_one_parameter_lambda_never_binds_an_overload_taking_a_two_parameter_delegat
     assert!(
         two_param["heuristic"].is_null(),
         "line 39 must resolve precisely: {splice_edges:#?}"
+    );
+}
+
+#[test]
+fn a_local_function_passed_as_a_method_group_never_binds_an_overload_taking_a_two_parameter_delegate(
+) {
+    let fx = Fixture::new();
+    let splice_edges = splice_edges(&fx.graph());
+    let edge_at = |line: u64| splice_edges.iter().find(|e| e["from_line"] == line);
+
+    // A method group converts only to a delegate whose parameter list
+    // matches the method's own, so a one-parameter local function can fill
+    // `Func<T, object>` on the extension but never `Func<TA, TB, object>` on
+    // the instance method -- the same rule a one-parameter lambda obeys.
+    let one_param =
+        edge_at(45).unwrap_or_else(|| panic!("no Splice edge at line 45: {splice_edges:#?}"));
+    assert_eq!(
+        one_param["to"], "Fixture.Ext.LedgerExtensions",
+        "line 45 must bind the one-parameter extension, not the two-parameter instance method: {splice_edges:#?}"
+    );
+    assert_eq!(
+        one_param["heuristic"], true,
+        "line 45 must not be a PRECISE edge to the two-parameter instance method: {splice_edges:#?}"
+    );
+
+    // A two-parameter local function fills the two-parameter delegate, so
+    // the arity gate must leave that binding precise.
+    let two_param =
+        edge_at(51).unwrap_or_else(|| panic!("no Splice edge at line 51: {splice_edges:#?}"));
+    assert_eq!(two_param["to"], "Fixture.Domain.Ledger");
+    assert!(
+        two_param["heuristic"].is_null(),
+        "line 51 must resolve precisely: {splice_edges:#?}"
     );
 }

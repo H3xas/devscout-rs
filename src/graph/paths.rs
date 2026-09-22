@@ -72,7 +72,7 @@ pub fn project_units_path(root: &Path) -> PathBuf {
 // added ref `receiverNullable` and `lambdaArgArity` -- a cached v19
 // fragment carries neither, so a `T?` receiver's own `Nullable<T>.Value`/
 // `HasValue`/`GetValueOrDefault` unwrap would silently keep resolving
-// against `T`'s own same-named member, and a lambda-literal argument whose
+// against `T`'s own same-named member, and a delegate-shaped argument whose
 // own parameter count disagrees with a candidate's delegate parameter
 // shape would silently keep binding it. The rename IS the invalidation
 // mechanism:
