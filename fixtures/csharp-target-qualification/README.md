@@ -47,11 +47,17 @@ executed for these families -- recorded in the published document, never hidden.
 
 ## Substitution-defect controls (`controls/`)
 
-Registered prior art for the sidecar's documented silent-substitution behavior. Both rows are
-deliberately `failing`: a control that cannot be made to fail honestly under today's engine
-would be a defect in the control, not a row to soften.
+Registered prior art for the sidecar's documented silent-substitution behavior. Neither row
+trusts the loader's own status line: each independently detects substitution from the loader's
+own stderr and the unit it kept, so a regression back to silent substitution still trips its
+control. `tfm-not-supplied/` now reads `passing`, not because the defect it monitors was
+softened, but because the loader's own fix landed upstream, outside this tree's own scope:
+an undeclared `--tfm` is refused explicitly instead of silently substituted, which is the
+explicit failed/unsupported row this control's row exists to require. `reference-tfm-mismatch/`
+remains `failing`: a control that cannot be made to fail honestly under today's engine would be
+a defect in the control, not a row to soften.
 
 | Directory | What it reproduces |
 | --- | --- |
-| `tfm-not-supplied/` | `Control.csproj` multi-targets `net8.0;net472`; invoked with `--tfm net6.0`, a value neither variant declares, the loader keeps the first variant (`net8.0`) instead of failing or reporting no result. |
+| `tfm-not-supplied/` | `Control.csproj` multi-targets `net8.0;net472`; invoked with `--tfm net6.0`, a value neither variant declares. The loader now explicitly refuses the request ("requested tfm 'net6.0' is not declared", exit 3, zero units) instead of silently keeping the first variant; this control independently confirms the refusal from the loader's own exit code and diagnostic, and still fails the run if silent substitution ever returns. |
 | `reference-tfm-mismatch/` | `P` (net8.0) references `Q` (net9.0) -- a declared-TFM mismatch between a project and its reference, the same defect class the pinned MassTransit corpus surfaced at a much larger scale. |

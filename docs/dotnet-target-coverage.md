@@ -87,13 +87,16 @@ binding without declaring assembly, type, member identity and signature.
 ## Substitution-defect controls (prior art)
 
 Registered controls for the sidecar's documented silent-substitution behavior. Repairing the
-loader is out of this tree's scope; this tree owns catching and honestly recording the current,
-defective behavior, so both rows below are `failing` by design -- a control that cannot be made
-to fail honestly under today's engine would be a defect in the control, not a row to soften.
+loader is out of this tree's scope; this tree owns independently detecting substitution -- from
+the loader's own stderr and the unit it kept, never from its status line -- and honestly
+recording whichever behavior that detection actually observes, defective or fixed. A row here
+reads `passing` only when the observed evidence positively shows the no-substitution outcome,
+never merely from the absence of a substitution match; a control that cannot be made to fail
+honestly under today's engine would be a defect in the control, not a row to soften.
 
 | Control | State | What it reproduces |
 | --- | --- | --- |
-| `control-tfm-not-supplied` | failing | A `--tfm` value neither declared variant offers; the loader keeps the first variant instead of failing or reporting no result. |
+| `control-tfm-not-supplied` | passing | A `--tfm` value neither declared variant offers. The loader now explicitly refuses the request (declared-TFM mismatch diagnosed, zero units reported) instead of silently keeping the first variant -- the defect this control monitors was fixed upstream, outside this tree's own scope; the control still independently fails the run if silent substitution ever returns. |
 | `control-reference-tfm-mismatch` | failing | A project referencing another project declared at a different TFM; a unit in this shape must never report a healthy result from that reference alone. |
 
 ## Wave 2 -- planned / unavailable
