@@ -150,7 +150,8 @@ fn a_one_parameter_lambda_never_binds_an_overload_taking_a_two_parameter_delegat
     // against the semantic oracle), which the resolver here reaches only
     // through the heuristic "ext" tier -- never a precise edge to `Ledger`.
     for line in [29, 34] {
-        let edge = edge_at(line).unwrap_or_else(|| panic!("no Splice edge at line {line}: {splice_edges:#?}"));
+        let edge = edge_at(line)
+            .unwrap_or_else(|| panic!("no Splice edge at line {line}: {splice_edges:#?}"));
         assert_eq!(
             edge["to"], "Fixture.Ext.LedgerExtensions",
             "line {line} must bind the one-parameter extension, not the two-parameter instance method: {splice_edges:#?}"
@@ -164,7 +165,8 @@ fn a_one_parameter_lambda_never_binds_an_overload_taking_a_two_parameter_delegat
     // A genuine two-parameter lambda must still bind the two-parameter
     // overload precisely -- the positive control that the gate above is
     // arity-scoped, not a blanket refusal of `Splice`.
-    let two_param = edge_at(39).unwrap_or_else(|| panic!("no Splice edge at line 39: {splice_edges:#?}"));
+    let two_param =
+        edge_at(39).unwrap_or_else(|| panic!("no Splice edge at line 39: {splice_edges:#?}"));
     assert_eq!(two_param["to"], "Fixture.Domain.Ledger");
     assert!(
         two_param["heuristic"].is_null(),

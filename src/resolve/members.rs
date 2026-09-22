@@ -126,8 +126,8 @@ pub(super) fn typed_receiver_precise_target(
     this_shaped: bool,
     receiver_nullable: bool,
 ) -> (Option<usize>, bool) {
-    let nullable_veto =
-        receiver_nullable && nullable_unwrap_owns_member(&index.defs[ridx].kind, r.member.as_deref());
+    let nullable_veto = receiver_nullable
+        && nullable_unwrap_owns_member(&index.defs[ridx].kind, r.member.as_deref());
     let target = if nullable_veto {
         None
     } else if declares_here_for_ref(index, file_contexts, ridx, r, this_shaped) {

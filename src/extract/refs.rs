@@ -583,7 +583,15 @@ pub(super) fn push_member_ref(
             call: Some(member),
             awaited,
             ..
-        }) => (None, None, Some(type_name), Some(member), awaited, None, false),
+        }) => (
+            None,
+            None,
+            Some(type_name),
+            Some(member),
+            awaited,
+            None,
+            false,
+        ),
         Some(Fact {
             type_name,
             args,
