@@ -369,7 +369,12 @@ invocation, member-access, conditional-member and bare-identifier reference site
 documents -- driven by `SemanticModel.GetSymbolInfo`, independent of `symbols`' own declared-symbol
 walk (its own record type, its own accept filter, every method kind including constructors and
 local functions). Each site carries the caller's and, when one binds, the bound target's complete
-identity in the same shape `symbols` uses; the occurrence's own span (the full reference node) and
+identity in the same shape `symbols` uses, including the same `type` encoding (Roslyn's
+`SymbolDisplayFormat.FullyQualifiedFormat`, `global::` stripped, so a nested or generic type reads
+identically in `symbols[].type` and in `occurrences.sites[].caller.type`/`.target.type`/
+`.candidates[].type`) -- stated as its own `occurrences.identityEncoding` literal
+(`"fully-qualified-display-format"`), the same way `spanEncoding` states the span convention; the
+occurrence's own span (the full reference node) and
 the bound name token's own start position, both under the stated `spanEncoding` -- 1-based lines,
 0-based characters, UTF-16 code units, end exclusive; a resolution state (`confirmed`, `ambiguous`,
 `unresolved`, `inaccessible` or `dynamic`) with the compiler's own raw `candidateReason` and, where

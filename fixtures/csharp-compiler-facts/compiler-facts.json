@@ -1318,6 +1318,7 @@
   ],
   "occurrences": {
     "spanEncoding": "utf16-code-unit-line1-char0-end-exclusive",
+    "identityEncoding": "fully-qualified-display-format",
     "sites": [
       {
         "file": "Callers.cs",
@@ -1361,7 +1362,7 @@
           },
           "fingerprint": "d276ccbafc0246df84e100f1d2cf75ba384747d8"
         },
-        "documentContentIdentity": "sha1:e504d90eb7074793ee4358f3383463a52e61c006",
+        "documentContentIdentity": "sha1:50f9ea9ae56e56fbcb71c0092fc9b00cec4b5bc6",
         "targetDocumentContentIdentities": [
           "sha1:cc1c22c556ba3e6fee590323c7b0a052af862164"
         ]
@@ -1408,7 +1409,7 @@
           },
           "fingerprint": "d276ccbafc0246df84e100f1d2cf75ba384747d8"
         },
-        "documentContentIdentity": "sha1:e504d90eb7074793ee4358f3383463a52e61c006",
+        "documentContentIdentity": "sha1:50f9ea9ae56e56fbcb71c0092fc9b00cec4b5bc6",
         "targetDocumentContentIdentities": [
           "sha1:cc1c22c556ba3e6fee590323c7b0a052af862164"
         ]
@@ -1455,7 +1456,54 @@
           },
           "fingerprint": "d276ccbafc0246df84e100f1d2cf75ba384747d8"
         },
-        "documentContentIdentity": "sha1:e504d90eb7074793ee4358f3383463a52e61c006",
+        "documentContentIdentity": "sha1:50f9ea9ae56e56fbcb71c0092fc9b00cec4b5bc6",
+        "targetDocumentContentIdentities": [
+          "sha1:bf331e60a5797d8f8d3b2e1af8a39073741b7d3a"
+        ]
+      },
+      {
+        "file": "Callers.cs",
+        "shape": "access",
+        "span": {
+          "startLine": 11,
+          "startChar": 25,
+          "endLine": 11,
+          "endChar": 38
+        },
+        "name": {
+          "line": 11,
+          "char": 32
+        },
+        "caller": {
+          "assembly": "Fixture",
+          "type": "CompilerFacts.Widgets.Callers",
+          "member": "Invoke",
+          "genericArity": 0,
+          "overloadSignature": "()->void"
+        },
+        "resolution": "confirmed",
+        "candidateReason": "None",
+        "target": {
+          "assembly": "Fixture",
+          "type": "CompilerFacts.Widgets.Helper",
+          "member": "Assist",
+          "genericArity": 0,
+          "overloadSignature": "()->void"
+        },
+        "candidates": [],
+        "compilation": {
+          "identity": {
+            "projectPath": "Fixture.csproj",
+            "projectName": "Fixture",
+            "requestedTfm": "net9.0",
+            "effectiveTfm": "net9.0",
+            "configuration": "Debug",
+            "platform": "AnyCPU",
+            "declaredTfms": null
+          },
+          "fingerprint": "d276ccbafc0246df84e100f1d2cf75ba384747d8"
+        },
+        "documentContentIdentity": "sha1:50f9ea9ae56e56fbcb71c0092fc9b00cec4b5bc6",
         "targetDocumentContentIdentities": [
           "sha1:bf331e60a5797d8f8d3b2e1af8a39073741b7d3a"
         ]
@@ -1504,7 +1552,7 @@
           },
           "fingerprint": "d276ccbafc0246df84e100f1d2cf75ba384747d8"
         },
-        "documentContentIdentity": "sha1:e504d90eb7074793ee4358f3383463a52e61c006",
+        "documentContentIdentity": "sha1:50f9ea9ae56e56fbcb71c0092fc9b00cec4b5bc6",
         "targetDocumentContentIdentities": []
       },
       {
@@ -1558,7 +1606,7 @@
           },
           "fingerprint": "d276ccbafc0246df84e100f1d2cf75ba384747d8"
         },
-        "documentContentIdentity": "sha1:e504d90eb7074793ee4358f3383463a52e61c006",
+        "documentContentIdentity": "sha1:50f9ea9ae56e56fbcb71c0092fc9b00cec4b5bc6",
         "targetDocumentContentIdentities": []
       },
       {
@@ -1603,7 +1651,7 @@
           },
           "fingerprint": "d276ccbafc0246df84e100f1d2cf75ba384747d8"
         },
-        "documentContentIdentity": "sha1:e504d90eb7074793ee4358f3383463a52e61c006",
+        "documentContentIdentity": "sha1:50f9ea9ae56e56fbcb71c0092fc9b00cec4b5bc6",
         "targetDocumentContentIdentities": [
           "sha1:cc1c22c556ba3e6fee590323c7b0a052af862164"
         ]
@@ -1659,7 +1707,7 @@
           },
           "fingerprint": "d276ccbafc0246df84e100f1d2cf75ba384747d8"
         },
-        "documentContentIdentity": "sha1:e504d90eb7074793ee4358f3383463a52e61c006",
+        "documentContentIdentity": "sha1:50f9ea9ae56e56fbcb71c0092fc9b00cec4b5bc6",
         "targetDocumentContentIdentities": []
       },
       {
@@ -1677,7 +1725,7 @@
         },
         "caller": {
           "assembly": "Fixture",
-          "type": "CompilerFacts.Widgets.Callers+Nested",
+          "type": "CompilerFacts.Widgets.Callers.Nested<T>",
           "member": "Go",
           "genericArity": 0,
           "overloadSignature": "()->void"
@@ -1704,7 +1752,7 @@
           },
           "fingerprint": "d276ccbafc0246df84e100f1d2cf75ba384747d8"
         },
-        "documentContentIdentity": "sha1:e504d90eb7074793ee4358f3383463a52e61c006",
+        "documentContentIdentity": "sha1:50f9ea9ae56e56fbcb71c0092fc9b00cec4b5bc6",
         "targetDocumentContentIdentities": [
           "sha1:bf331e60a5797d8f8d3b2e1af8a39073741b7d3a"
         ]

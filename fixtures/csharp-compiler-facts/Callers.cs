@@ -8,7 +8,7 @@ public class Callers
         widget.Render(); widget.Render(true);
 
         var helper = new Helper();
-        helper.Assist();
+        helper.Assist(); helper.Assist();
         helper.Secret();
 
         widget.Render("mismatched");

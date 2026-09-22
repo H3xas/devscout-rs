@@ -387,7 +387,7 @@ internal static class Runner
         // write, --strict rollup check): only true when that mode was
         // actually requested. `wantContext` additionally gates the
         // underlying per-compilation record computation, now also needed
-        // by compiler-facts (Slice B), whether or not `--emit context`
+        // by compiler-facts, whether or not `--emit context`
         // itself was requested: its own header needs the real envelope to
         // embed and the real per-compilation fingerprints to fold.
         var wantExplicitContext = options.Emit.Contains(Program.EmitContext);
@@ -877,11 +877,10 @@ internal static class Runner
         return 0;
     }
 
-    /// <summary>Orders the compilations, builds the envelope header and writes the document; 0 on success.</summary>
     /// <summary>The one fixed compilation-record order every emitter that
     /// carries context records uses: <c>--emit context</c>'s own top-level
     /// array, and the real envelope <c>--emit compiler-facts</c> embeds --
-    /// so the derived context summary (Slice B) folds the same order on
+    /// so the derived context summary folds the same order on
     /// every run, not a re-sort a second producer could silently diverge
     /// from.</summary>
     private static List<ContextRecord> OrderContextRecords(List<ContextRecord> records) => records
@@ -890,6 +889,7 @@ internal static class Runner
         .ThenBy(r => r.Identity.EffectiveTfm ?? "", StringComparer.Ordinal)
         .ToList();
 
+    /// <summary>Orders the compilations, builds the envelope header and writes the document; 0 on success.</summary>
     private static int WriteContext(Options options, RepoPaths paths, List<ContextRecord> records)
     {
         var root = paths.Root;

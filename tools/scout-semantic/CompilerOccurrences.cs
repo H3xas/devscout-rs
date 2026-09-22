@@ -50,9 +50,11 @@ internal sealed record CompilerOccurrenceFact(
 /// Deliberately independent of <see cref="Walker"/> (the oracle): its own
 /// record type, its own accumulator, and its own <c>Accept</c> filter --
 /// every <see cref="MethodKind"/> is in scope here, including constructors
-/// and local functions, which the oracle deliberately excludes. Shares
-/// <see cref="Ids"/> for identity formatting only, which carries no walk
-/// logic of its own.
+/// and local functions, which the oracle deliberately excludes. Type
+/// identity uses <see cref="CompilerFactsAccumulator.SymbolTypeId"/> --
+/// the declared-symbol facts' own encoding, not <see cref="Ids"/>'s graph
+/// def-id convention -- so <c>caller</c>/<c>target</c>/<c>candidates[].type</c>
+/// read identically to <c>symbols[].type</c> for the same type.
 /// </summary>
 internal sealed class CompilerOccurrenceAccumulator
 {
@@ -261,7 +263,8 @@ internal sealed class CompilerOccurrenceAccumulator
                 && model.GetDeclaredSymbol(typeDecl) is { } typeSymbol)
             {
                 return new OccurrenceIdentity(
-                    typeSymbol.ContainingAssembly?.Name ?? "", Ids.NamedTypeId(typeSymbol), null, 0, "");
+                    typeSymbol.ContainingAssembly?.Name ?? "",
+                    CompilerFactsAccumulator.SymbolTypeId(typeSymbol), null, 0, "");
             }
         }
 
@@ -275,11 +278,12 @@ internal sealed class CompilerOccurrenceAccumulator
 
         if (symbol is INamedTypeSymbol namedType)
         {
-            return new OccurrenceIdentity(assembly, Ids.NamedTypeId(namedType), null, namedType.Arity, "");
+            return new OccurrenceIdentity(
+                assembly, CompilerFactsAccumulator.SymbolTypeId(namedType), null, namedType.Arity, "");
         }
 
         var containingType = symbol.ContainingType;
-        var typeId = containingType is not null ? Ids.NamedTypeId(containingType) : "";
+        var typeId = containingType is not null ? CompilerFactsAccumulator.SymbolTypeId(containingType) : "";
         var arity = symbol is IMethodSymbol method ? method.Arity : 0;
         var signature = symbol is IMethodSymbol m
             ? "(" + string.Join(",", m.Parameters.Select(

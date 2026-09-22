@@ -92,6 +92,21 @@ internal sealed class CompilerFactsAccumulator
         }
     }
 
+    /// <summary>The declared-symbol facts' own type-identity encoding:
+    /// <see cref="SymbolDisplayFormat.FullyQualifiedFormat"/> with the
+    /// <c>global::</c> prefix stripped, so a nested type reads
+    /// <c>Outer.Inner</c> and a generic type keeps its type parameters
+    /// (<c>Outer.Inner&lt;T&gt;</c>). Occurrence facts share this exact
+    /// encoding for <c>caller</c>/<c>target</c>/<c>candidates[].type</c> so a
+    /// nested or generic type reads identically everywhere in one artifact --
+    /// see the artifact's own <c>occurrences.identityEncoding</c> literal.
+    /// Distinct from <see cref="Ids.NamedTypeId"/>, devscout's own graph
+    /// def-id convention (<c>Outer+Inner</c>, arity dropped), which this
+    /// document does not use for any type identity.</summary>
+    internal static string SymbolTypeId(ITypeSymbol type) => type
+        .ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
+        .Replace("global::", "", StringComparison.Ordinal);
+
     private void WalkType(INamedTypeSymbol type, string assemblyName, RepoPaths paths)
     {
         if (type.IsImplicitlyDeclared)
@@ -99,8 +114,7 @@ internal sealed class CompilerFactsAccumulator
             return;
         }
 
-        var typeName = type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
-            .Replace("global::", "", StringComparison.Ordinal);
+        var typeName = SymbolTypeId(type);
         var (typeFile, typeLine) = LocationOf(type.Locations.FirstOrDefault(l => l.IsInSource), paths);
         if (typeFile.Length > 0)
         {
@@ -186,10 +200,10 @@ internal static class CompilerFactsEmitter
 
     /// <summary>
     /// The compilation-context envelope version this mode embeds. Names
-    /// Names <see cref="ContextEnvelope.SchemaVersion"/>, embedded
-    /// here as the real per-compilation envelope (Slice B) -- unaffected by
-    /// this document's own <see cref="ArtifactSchemaVersion"/>, which is a
-    /// different, higher-level schema.
+    /// <see cref="ContextEnvelope.SchemaVersion"/>, embedded here as the real
+    /// per-compilation envelope -- unaffected by this document's own
+    /// <see cref="ArtifactSchemaVersion"/>, which is a different, higher-level
+    /// schema.
     /// </summary>
     public const int ContextSchemaVersion = 1;
 
@@ -218,7 +232,7 @@ internal static class CompilerFactsEmitter
     /// non-zero exit code on an I/O failure; never writes a partial
     /// document -- the whole byte buffer is built in memory first.
     /// <paramref name="orderedContextRecords"/> is this run's real context
-    /// envelope (Slice B), already in the same order <c>--emit context</c>
+    /// envelope, already in the same order <c>--emit context</c>
     /// itself would write; <paramref name="occurrences"/> is null exactly
     /// when the <c>occurrences</c> capability was not provided.</summary>
     public static int Write(
@@ -234,8 +248,8 @@ internal static class CompilerFactsEmitter
             return 1;
         }
 
-        var headSha = options.NoGit ? null : FactsWriter.Probe(options.Root)?.HeadSha;
-        var bytes = Render(options, acc, headSha, orderedContextRecords, occurrences);
+        var git = options.NoGit ? null : FactsWriter.Probe(options.Root);
+        var bytes = Render(options, acc, git, orderedContextRecords, occurrences);
 
         try
         {
@@ -268,10 +282,13 @@ internal static class CompilerFactsEmitter
         return 0;
     }
 
-    private static byte[] Render(
+    /// <summary>Internal rather than private so <c>scout-semantic.Tests</c> can exercise the
+    /// <c>sourceSnapshot</c> shape directly, via <c>InternalsVisibleTo</c>, against a
+    /// hand-built <see cref="GitIdentity"/> rather than a real git checkout.</summary>
+    internal static byte[] Render(
         Options options,
         CompilerFactsAccumulator acc,
-        string? headSha,
+        GitIdentity? git,
         List<ContextRecord> orderedContextRecords,
         List<CompilerOccurrenceFact>? occurrences)
     {
@@ -328,10 +345,16 @@ internal static class CompilerFactsEmitter
             writer.WriteEndObject();
             writer.WriteEndObject();
 
-            if (headSha is not null)
+            if (git is not null)
             {
+                // Two freshness legs, per the Design's own "dirty state" decision: `headSha`
+                // alone is blind to an uncommitted edit, so `dirty`/`dirtyDigest` adopt the
+                // exact convention `FactsWriter.Render` already writes for the flow-tracer
+                // document -- the same `GitIdentity`, the same fields, no second scheme.
                 writer.WriteStartObject("sourceSnapshot");
-                writer.WriteString("headSha", headSha);
+                writer.WriteString("headSha", git.HeadSha);
+                writer.WriteBoolean("dirty", git.Dirty);
+                writer.WriteString("dirtyDigest", git.DirtyDigest);
                 writer.WriteEndObject();
             }
 
@@ -434,6 +457,7 @@ internal static class CompilerFactsEmitter
             {
                 writer.WriteStartObject("occurrences");
                 writer.WriteString("spanEncoding", "utf16-code-unit-line1-char0-end-exclusive");
+                writer.WriteString("identityEncoding", "fully-qualified-display-format");
                 writer.WriteStartArray("sites");
                 foreach (var o in occurrences)
                 {
