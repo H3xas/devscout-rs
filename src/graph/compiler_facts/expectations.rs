@@ -21,15 +21,16 @@ pub const EXPECTED_PRODUCER_NAME: &str = "scout-semantic";
 /// The engine-protocol revision this admission path expects. Distinct from
 /// [`super::artifact::COMPILER_FACTS_CONTRACT_VERSION`]: this names the
 /// engine's own analysis behaviour, the contract names the wire shape.
-/// Bump together with a corresponding change on the engine side.
-pub const EXPECTED_ENGINE_REVISION: &str = "1";
+/// Bump together with a corresponding change on the engine side. "2" means
+/// the engine this admission path expects can emit occurrence facts.
+pub const EXPECTED_ENGINE_REVISION: &str = "2";
 
 /// The sha256 digest of `tools/scout-semantic/packages.lock.json` as of the
 /// engine build this admission path expects. Recompute
 /// (`shasum -a 256 tools/scout-semantic/packages.lock.json`) and update this
 /// constant whenever that lock file changes.
 pub const EXPECTED_DEPENDENCY_FINGERPRINT: &str =
-    "f0e2aa25d0071aab4aa9de47f3a7629b783a5f17bf625b565f073b48e69d0c83";
+    "1b08b298ead60b49666b3bfa8d389386770d87dc150a9b1eced58896652f3d43";
 
 /// The compilation-context envelope version this admission path recognises.
 /// A candidate embedding any other version is refused without this module

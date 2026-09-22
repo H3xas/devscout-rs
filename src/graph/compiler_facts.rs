@@ -14,6 +14,7 @@
 
 mod admit;
 mod artifact;
+mod context_summary;
 mod expectations;
 mod paths;
 mod reasons;
@@ -24,6 +25,15 @@ pub use artifact::{
     Coverage, IncompleteUnit, Profile, COMPILER_FACTS_ARTIFACT_SCHEMA_VERSION,
     COMPILER_FACTS_CONTRACT_VERSION, COMPILER_FACTS_FORMAT,
 };
+// Test-only: lets the hand-authored candidates in `graph::tests::compiler_facts`
+// compute a correct `context.contextFingerprint` against their own hand-built
+// `compilations` list, the same way the real producer does, without adding
+// this fold to the crate's own public API (no public API is required outside
+// the crate for this delta).
+#[cfg(test)]
+pub(crate) use artifact::CompilationRef;
+#[cfg(test)]
+pub(crate) use context_summary::recompute as recompute_context_summary;
 pub use expectations::{
     expectations_for, AdmissionExpectations, EXPECTED_CONTEXT_SCHEMA_VERSION,
     EXPECTED_DEPENDENCY_FINGERPRINT, EXPECTED_ENGINE_REVISION, EXPECTED_PRODUCER_NAME,

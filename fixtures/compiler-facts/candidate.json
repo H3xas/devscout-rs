@@ -1,16 +1,24 @@
 {
   "format": "compiler-facts",
   "contractVersion": 1,
-  "artifactSchemaVersion": 1,
-  "producer": { "name": "scout-semantic", "engineRevision": "1" },
+  "artifactSchemaVersion": 2,
+  "producer": { "name": "scout-semantic", "engineRevision": "2" },
   "profile": { "target": "net9.0", "configuration": "Debug", "platform": "AnyCPU" },
-  "dependencyFingerprint": "f0e2aa25d0071aab4aa9de47f3a7629b783a5f17bf625b565f073b48e69d0c83",
+  "dependencyFingerprint": "1b08b298ead60b49666b3bfa8d389386770d87dc150a9b1eced58896652f3d43",
   "context": {
     "schemaVersion": 1,
-    "contextFingerprint": "1e2d3c4b5a69788796a5b4c3d2e1f0a1b2c3d4e5f60718293a4b5c6d7e8f901",
+    "contextFingerprint": "237c76497dbf4bbb0be85f0d250256d9f12012321645f682abcb92f1512e6fa9",
     "envelope": {
-      "fingerprint": "1e2d3c4b5a69788796a5b4c3d2e1f0a1b2c3d4e5f60718293a4b5c6d7e8f901",
-      "state": "complete"
+      "compilations": [
+        {
+          "identity": { "projectName": "Api", "projectPath": "Api/Api.csproj", "requestedTfm": "net9.0" },
+          "fingerprint": "1e2d3c4b5a69788796a5b4c3d2e1f0a1b2c3d4e5f60718293a4b5c6d7e8f901"
+        },
+        {
+          "identity": { "projectName": "Shared", "projectPath": "Shared/Shared.csproj", "requestedTfm": "net9.0" },
+          "fingerprint": "2e2d3c4b5a69788796a5b4c3d2e1f0a1b2c3d4e5f60718293a4b5c6d7e8f902"
+        }
+      ]
     }
   },
   "sourceSnapshot": { "headSha": "0000000000000000000000000000000000000f" },

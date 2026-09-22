@@ -41,11 +41,14 @@ fn requested_profile(args: &[String]) -> graph::Profile {
     }
 }
 
-fn requested_capabilities(args: &[String]) -> Vec<String> {
-    match flag_value(args, "--capabilities") {
-        Some(raw) => raw.split(',').map(str::to_string).collect(),
-        None => vec!["symbols".to_string(), "diagnostics".to_string()],
-    }
+/// `None` when the caller passed no `--capabilities` flag -- `run`'s own
+/// wrapper carries no second, independent definition of "the default
+/// capability set" this way: the spawned engine's own `SupportedCapabilities`
+/// default (see `tools/scout-semantic/CompilerFacts.cs`) is the single
+/// source of truth for what an unflagged run produces, `compiler-facts
+/// run`'s outcome included.
+fn requested_capabilities(args: &[String]) -> Option<Vec<String>> {
+    flag_value(args, "--capabilities").map(|raw| raw.split(',').map(str::to_string).collect())
 }
 
 fn parse_positive_usize(args: &[String], flag: &str, default: usize) -> Option<usize> {
@@ -90,7 +93,6 @@ fn coverage_line(facts: &graph::AdmittedFacts) -> String {
 // already follows) are the only genuinely new engine flags.
 fn engine_command(engine: &Path, root: &Path, solution: &Path, args: &[String]) -> Command {
     let profile = requested_profile(args);
-    let capabilities = requested_capabilities(args);
     let mut command = Command::new(engine);
     command
         .arg(solution)
@@ -105,9 +107,10 @@ fn engine_command(engine: &Path, root: &Path, solution: &Path, args: &[String]) 
         .arg("-p")
         .arg(format!("Configuration={}", profile.configuration))
         .arg("-p")
-        .arg(format!("Platform={}", profile.platform))
-        .arg("--capabilities")
-        .arg(capabilities.join(","));
+        .arg(format!("Platform={}", profile.platform));
+    if let Some(capabilities) = requested_capabilities(args) {
+        command.arg("--capabilities").arg(capabilities.join(","));
+    }
     command
 }
 

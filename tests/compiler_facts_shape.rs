@@ -35,22 +35,34 @@ fn header_identity_matches_the_rust_admission_path_s_own_constants() {
     let doc = load();
     assert_eq!(doc["format"], "compiler-facts");
     assert_eq!(doc["contractVersion"], 1);
-    assert_eq!(doc["artifactSchemaVersion"], 1);
+    assert_eq!(doc["artifactSchemaVersion"], 2);
     assert_eq!(doc["producer"]["name"], "scout-semantic");
-    assert_eq!(doc["producer"]["engineRevision"], "1");
+    assert_eq!(doc["producer"]["engineRevision"], "2");
     assert_eq!(doc["profile"]["target"], "net9.0");
     assert_eq!(doc["profile"]["configuration"], "Debug");
     assert_eq!(doc["profile"]["platform"], "AnyCPU");
     assert_eq!(
         doc["dependencyFingerprint"],
-        "f0e2aa25d0071aab4aa9de47f3a7629b783a5f17bf625b565f073b48e69d0c83",
+        "1b08b298ead60b49666b3bfa8d389386770d87dc150a9b1eced58896652f3d43",
         "must match the sha256 of tools/scout-semantic/packages.lock.json"
     );
     assert_eq!(doc["context"]["schemaVersion"], 1);
+    let context_fingerprint = doc["context"]["contextFingerprint"]
+        .as_str()
+        .expect("contextFingerprint is a string");
     assert_eq!(
-        doc["context"]["contextFingerprint"], doc["context"]["envelope"]["fingerprint"],
-        "the header-level summary and the embedded envelope must agree"
+        context_fingerprint.len(),
+        64,
+        "the derived context summary is a lower-case hex SHA-256 digest"
     );
+    let compilations = doc["context"]["envelope"]["compilations"]
+        .as_array()
+        .expect("context.envelope.compilations is an array -- the real embedded envelope,                  not the frozen placeholder this delta replaces");
+    assert!(!compilations.is_empty(), "the fixture project is one real compilation");
+    for compilation in compilations {
+        assert!(compilation.get("identity").is_some());
+        assert!(compilation.get("fingerprint").is_some());
+    }
     assert!(
         doc.get("sourceSnapshot").is_none(),
         "generated with --no-git: no source-snapshot identity is stamped"

@@ -18,7 +18,30 @@ fn valid_expectations() -> AdmissionExpectations {
     }
 }
 
-fn valid_candidate() -> Value {
+/// One compilation, the shape the real build-context envelope carries:
+/// `identity` an opaque object, `fingerprint` a hex string (or, for
+/// `unsupported`, `None`/JSON `null`).
+fn valid_compilations() -> Vec<CompilationRef> {
+    vec![CompilationRef {
+        identity: json!({"projectPath": "Api.csproj", "projectName": "Api", "requestedTfm": "net9.0"}),
+        fingerprint: Some("cafe".to_string()),
+    }]
+}
+
+/// The `context.envelope` value the real producer writes: a top-level
+/// `compilations` list, deliberately with **no** top-level `fingerprint`
+/// field -- the exact shape the pre-delta self-referential check could
+/// never have admitted, and this admission path's own real target.
+fn envelope_value(compilations: &[CompilationRef]) -> Value {
+    json!({
+        "compilations": compilations
+            .iter()
+            .map(|c| json!({"identity": c.identity, "fingerprint": c.fingerprint}))
+            .collect::<Vec<_>>(),
+    })
+}
+
+fn candidate_with_compilations(compilations: &[CompilationRef]) -> Value {
     json!({
         "format": COMPILER_FACTS_FORMAT,
         "contractVersion": COMPILER_FACTS_CONTRACT_VERSION,
@@ -28,8 +51,8 @@ fn valid_candidate() -> Value {
         "dependencyFingerprint": EXPECTED_DEPENDENCY_FINGERPRINT,
         "context": {
             "schemaVersion": EXPECTED_CONTEXT_SCHEMA_VERSION,
-            "contextFingerprint": "cafe",
-            "envelope": {"fingerprint": "cafe", "state": "complete"}
+            "contextFingerprint": recompute_context_summary(compilations),
+            "envelope": envelope_value(compilations)
         },
         "sourceSnapshot": {"headSha": "a".repeat(40)},
         "capabilities": {"requested": ["symbols"], "provided": ["symbols"]},
@@ -39,6 +62,10 @@ fn valid_candidate() -> Value {
         "diagnostics": [],
         "symbols": []
     })
+}
+
+fn valid_candidate() -> Value {
+    candidate_with_compilations(&valid_compilations())
 }
 
 fn bytes(value: &Value) -> Vec<u8> {
@@ -111,7 +138,7 @@ fn every_identity_mismatch_class_is_refused_with_its_own_token() {
         ),
         (
             "context fingerprint",
-            |c| c["context"]["envelope"]["fingerprint"] = json!("different"),
+            |c| c["context"]["envelope"]["compilations"][0]["fingerprint"] = json!("different"),
             RefusalReason::ContextFingerprintMismatch,
         ),
         (
@@ -182,7 +209,7 @@ fn a_context_fingerprint_missing_on_either_side_is_refused_not_silently_skipped(
             c["context"]["envelope"]
                 .as_object_mut()
                 .unwrap()
-                .remove("fingerprint");
+                .remove("compilations");
         }),
         ("neither side", |c| {
             c["context"]
@@ -192,7 +219,7 @@ fn a_context_fingerprint_missing_on_either_side_is_refused_not_silently_skipped(
             c["context"]["envelope"]
                 .as_object_mut()
                 .unwrap()
-                .remove("fingerprint");
+                .remove("compilations");
         }),
     ];
     for (label, mutate) in cases {

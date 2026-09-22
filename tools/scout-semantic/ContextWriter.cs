@@ -76,18 +76,24 @@ internal static class ContextWriter
         return buffer.ToArray();
     }
 
-    private static void WriteRecord(Utf8JsonWriter writer, ContextRecord record)
+    /// <summary>Writes one compilation identity object: project path/name,
+    /// requested/effective target, configuration, platform, declared
+    /// targets. Exposed so <see cref="CompilerFactsEmitter"/> (the embedded
+    /// per-occurrence <c>compilation.identity</c> value) and
+    /// <see cref="DerivedContextSummary"/> (the canonicalization input) write
+    /// or fold the exact same shape a compiled envelope's own
+    /// <c>compilations[i].identity</c> carries, never a second, drifting
+    /// definition of the same fields.</summary>
+    internal static void WriteIdentity(Utf8JsonWriter writer, ContextIdentity identity)
     {
         writer.WriteStartObject();
-
-        writer.WriteStartObject("identity");
-        writer.WriteString("projectPath", record.Identity.ProjectPath);
-        writer.WriteString("projectName", record.Identity.ProjectName);
-        WriteNullableString(writer, "requestedTfm", record.Identity.RequestedTfm);
-        WriteNullableString(writer, "effectiveTfm", record.Identity.EffectiveTfm);
-        WriteNullableString(writer, "configuration", record.Identity.Configuration);
-        WriteNullableString(writer, "platform", record.Identity.Platform);
-        if (record.Identity.DeclaredTfms is { } declared)
+        writer.WriteString("projectPath", identity.ProjectPath);
+        writer.WriteString("projectName", identity.ProjectName);
+        WriteNullableString(writer, "requestedTfm", identity.RequestedTfm);
+        WriteNullableString(writer, "effectiveTfm", identity.EffectiveTfm);
+        WriteNullableString(writer, "configuration", identity.Configuration);
+        WriteNullableString(writer, "platform", identity.Platform);
+        if (identity.DeclaredTfms is { } declared)
         {
             writer.WriteStartArray("declaredTfms");
             foreach (var tfm in declared)
@@ -103,6 +109,18 @@ internal static class ContextWriter
         }
 
         writer.WriteEndObject();
+    }
+
+    /// <summary>Exposed (not private) so <see cref="CompilerFactsEmitter"/> can
+    /// embed a compilation record byte-for-byte identically under a
+    /// different top-level key, without a second serialization to keep in
+    /// sync by hand.</summary>
+    internal static void WriteRecord(Utf8JsonWriter writer, ContextRecord record)
+    {
+        writer.WriteStartObject();
+
+        writer.WritePropertyName("identity");
+        WriteIdentity(writer, record.Identity);
 
         writer.WriteString("state", record.State);
         writer.WriteString("reason", record.Reason);

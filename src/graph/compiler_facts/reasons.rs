@@ -39,6 +39,18 @@ pub enum RefusalReason {
     /// inventory contradicts itself (a unit id claimed both processed and
     /// missing).
     IncoherentInventory,
+    /// `occurrence-capability-mismatch`: the candidate's declared
+    /// `capabilities.provided` and its own occurrence payload disagree about
+    /// whether occurrence facts are present (key presence only -- an empty
+    /// `sites` array with the capability provided is fine).
+    OccurrenceCapabilityMismatch,
+    /// `occurrence-compilation-unknown`: an occurrence names a compilation
+    /// identity absent from the candidate's own embedded context envelope.
+    OccurrenceCompilationUnknown,
+    /// `occurrence-compilation-unsupported`: an occurrence names a
+    /// compilation whose matched envelope entry carries a `null`
+    /// fingerprint (the envelope's own "unsupported compilation" case).
+    OccurrenceCompilationUnsupported,
 
     // --- identity family: a well-formed candidate that does not match ---
     /// `producer-mismatch`: the candidate's declared producer name does not
@@ -103,6 +115,9 @@ impl RefusalReason {
             }
             RefusalReason::ContextFingerprintMismatch => "context-fingerprint-mismatch",
             RefusalReason::SourceSnapshotMismatch => "source-snapshot-mismatch",
+            RefusalReason::OccurrenceCapabilityMismatch => "occurrence-capability-mismatch",
+            RefusalReason::OccurrenceCompilationUnknown => "occurrence-compilation-unknown",
+            RefusalReason::OccurrenceCompilationUnsupported => "occurrence-compilation-unsupported",
         }
     }
 }

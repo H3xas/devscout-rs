@@ -16,14 +16,14 @@
 //   {
 //     "format": "compiler-facts",
 //     "contractVersion": 1,
-//     "artifactSchemaVersion": 1,
+//     "artifactSchemaVersion": 2,
 //     "producer": {"name": "...", "engineRevision": "..."},
 //     "profile": {"target": "...", "configuration": "...", "platform": "..."},
 //     "dependencyFingerprint": "<hex>",
 //     "context": {
 //       "schemaVersion": 1,
 //       "contextFingerprint": "<hex>",
-//       "envelope": { ...the compilation-context envelope body, opaque... }
+//       "envelope": { "compilations": [ {"identity": {...}, "fingerprint": "<hex>"|null, ...opaque...}, ... ] }
 //     },
 //     "sourceSnapshot": {"headSha": "<hex>"},
 //     "capabilities": {"requested": [...], "provided": [...]},
@@ -32,14 +32,20 @@
 //     "coverage": {"state": "complete"} |
 //                 {"state": "incomplete", "incompleteUnits": [{"unit":"...","reason":"..."}]},
 //     "diagnostics": [ ...opaque... ],
-//     "symbols": [ ...opaque... ]
+//     "symbols": [ ...opaque... ],
+//     "occurrences": {"spanEncoding": "...", "sites": [ {"compilation": {"identity": {...}, "fingerprint": "<hex>"|null}, ...opaque...}, ... ]}
 //   }
 //
-// `context.contextFingerprint` is a header-level summary the engine copies
-// out of its own embedded envelope body (`context.envelope.fingerprint`)
-// so admission can check the two agree without parsing the envelope's
-// internal shape -- see `RefusalReason::ContextFingerprintMismatch`'s doc
-// comment for why this differs from `DependencyFingerprintMismatch`.
+// `context.contextFingerprint` is a header-level summary this admission path
+// **recomputes** (`super::context_summary::recompute`) from the embedded
+// envelope's own ordered `context.envelope.compilations[i].identity`/
+// `fingerprint` pairs, rather than comparing two producer-written copies of
+// one value -- see `RefusalReason::ContextFingerprintMismatch`'s doc comment
+// for why this differs from `DependencyFingerprintMismatch`. `identity` is
+// read as an opaque `Value` and never decomposed into named sub-fields; the
+// rest of each compilation entry, and the rest of `occurrences.sites[]`
+// beyond its own `compilation` sub-object, are read never, touched never,
+// preserved only because publication writes the candidate bytes verbatim.
 
 use serde_json::{Map, Value};
 
@@ -55,7 +61,11 @@ pub const COMPILER_FACTS_CONTRACT_VERSION: u64 = 1;
 /// This artifact's own schema version (distinct from `contractVersion`, the
 /// producer's own wire-shape version, the same split
 /// `graph::imports::IMPORTED_EDGES_SCHEMA_VERSION` /
-/// `IMPORTED_EDGES_ARTIFACT_SCHEMA_VERSION` already draws).
+/// `IMPORTED_EDGES_ARTIFACT_SCHEMA_VERSION` already draws). The shipped
+/// engine now writes `2` (per-reference occurrence facts, an additive top-
+/// level `occurrences` key); nothing in this admission path branches on the
+/// literal for equality, so the constant itself stays unread for that and is
+/// not bumped here.
 pub const COMPILER_FACTS_ARTIFACT_SCHEMA_VERSION: u64 = 1;
 
 /// The requested compilation profile: target, configuration and platform.
@@ -103,6 +113,24 @@ impl Coverage {
     }
 }
 
+/// One embedded envelope compilation's `identity`+`fingerprint` pair, read
+/// as this admission path's only window into the envelope body: `identity`
+/// stays an opaque JSON value (never decomposed into named sub-fields, so
+/// this narrows envelope opacity in exactly one stated place), `fingerprint`
+/// is `None` for a JSON `null` (the envelope's own "unsupported compilation"
+/// case) and for anything else non-string. The exact same shape is used for
+/// `context.envelope.compilations[i]` and for an occurrence's own
+/// `compilation` sub-object -- deliberately one type, since both name a
+/// compilation the same way.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CompilationRef {
+    /// The compilation's own identity, exactly as the producer wrote it.
+    pub identity: Value,
+    /// The compilation's own fingerprint, or `None` for an unsupported
+    /// compilation (a JSON `null`) or a non-string value.
+    pub fingerprint: Option<String>,
+}
+
 /// The admitted-artifact header: every fixed identity/negotiation field
 /// `admit` checks, parsed from the candidate's own JSON. See this module's
 /// header comment for the full wire shape and for why the bulk payload
@@ -125,9 +153,22 @@ pub struct CandidateHeader {
     /// The header-level context-fingerprint summary, when the producer
     /// wrote one.
     pub context_fingerprint_header: Option<String>,
-    /// The same fingerprint as carried inside the embedded envelope body,
-    /// when both the envelope and its `fingerprint` field are present.
-    pub context_fingerprint_envelope: Option<String>,
+    /// `context.envelope.compilations[i].identity`/`fingerprint`, in
+    /// declared order -- the only two envelope fields this admission path
+    /// ever reads. Best-effort, not structural: a missing `compilations`
+    /// key, a non-array value, or an entry missing `identity` yields `None`
+    /// here rather than a parse failure; the identity/fingerprint checks
+    /// this feeds refuse a candidate that needs it but does not have it.
+    pub context_compilations: Option<Vec<CompilationRef>>,
+    /// Every occurrence site's own `compilation` reference, in declared
+    /// order. `None` when the top-level `occurrences` key is absent;
+    /// `Some(vec![])` when present with an empty `sites` array. Every other
+    /// occurrence field is not modeled here at all -- read never, touched
+    /// never, preserved only because publication writes the candidate bytes
+    /// verbatim.
+    pub occurrence_sites: Option<Vec<CompilationRef>>,
+    /// Whether `capabilities.provided` names `"occurrences"`.
+    pub occurrences_capability_provided: bool,
     /// The declared source-snapshot identity (`sourceSnapshot.headSha`),
     /// when the producer wrote one.
     pub source_head_sha: Option<String>,
@@ -247,9 +288,13 @@ pub fn parse_header(bytes: &[u8]) -> Result<CandidateHeader, RefusalReason> {
     let context_schema_version =
         obj_u64(context_obj, "schemaVersion").ok_or(RefusalReason::MalformedEncoding)?;
     let context_fingerprint_header = obj_str(context_obj, "contextFingerprint").map(str::to_string);
-    let context_fingerprint_envelope = obj_obj(context_obj, "envelope")
-        .and_then(|env| obj_str(env, "fingerprint"))
-        .map(str::to_string);
+    let context_compilations = parse_compilation_refs(context_obj);
+
+    let occurrences_capability_provided = obj_obj(obj, "capabilities")
+        .and_then(|c| c.get("provided"))
+        .and_then(Value::as_array)
+        .is_some_and(|provided| provided.iter().any(|v| v.as_str() == Some("occurrences")));
+    let occurrence_sites = parse_occurrence_sites(obj);
 
     let source_head_sha = obj_obj(obj, "sourceSnapshot")
         .and_then(|s| obj_str(s, "headSha"))
@@ -274,11 +319,48 @@ pub fn parse_header(bytes: &[u8]) -> Result<CandidateHeader, RefusalReason> {
         dependency_fingerprint,
         context_schema_version,
         context_fingerprint_header,
-        context_fingerprint_envelope,
+        context_compilations,
+        occurrence_sites,
+        occurrences_capability_provided,
         source_head_sha,
         completion_terminal,
         units_processed,
         units_missing,
         coverage,
     })
+}
+
+/// Best-effort: `None` for a missing `compilations` key, a non-array value,
+/// or an entry missing `identity`; a `fingerprint` that is not a string
+/// (including JSON `null`) maps to `None` for that entry only, never
+/// invalidating the whole list.
+fn parse_compilation_refs(context_obj: &Map<String, Value>) -> Option<Vec<CompilationRef>> {
+    let entries = obj_obj(context_obj, "envelope")?
+        .get("compilations")?
+        .as_array()?;
+    let mut result = Vec::with_capacity(entries.len());
+    for entry in entries {
+        let entry_obj = entry.as_object()?;
+        let identity = entry_obj.get("identity")?.clone();
+        let fingerprint = entry_obj.get("fingerprint").and_then(Value::as_str).map(str::to_string);
+        result.push(CompilationRef { identity, fingerprint });
+    }
+    Some(result)
+}
+
+/// Best-effort, the same way [`parse_compilation_refs`] is: `None` when the
+/// top-level `occurrences` key is absent or malformed; `Some(vec![])` when
+/// present with an empty `sites` array. Only each site's own `compilation`
+/// sub-object is read -- every other occurrence field is not this module's
+/// concern.
+fn parse_occurrence_sites(obj: &Map<String, Value>) -> Option<Vec<CompilationRef>> {
+    let sites = obj_obj(obj, "occurrences")?.get("sites")?.as_array()?;
+    let mut result = Vec::with_capacity(sites.len());
+    for site in sites {
+        let compilation_obj = obj_obj(site.as_object()?, "compilation")?;
+        let identity = compilation_obj.get("identity")?.clone();
+        let fingerprint = compilation_obj.get("fingerprint").and_then(Value::as_str).map(str::to_string);
+        result.push(CompilationRef { identity, fingerprint });
+    }
+    Some(result)
 }

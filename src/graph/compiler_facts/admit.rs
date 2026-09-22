@@ -5,6 +5,7 @@
 // wins" story every refusal test asserts against.
 
 use super::artifact::{parse_header, CandidateHeader, Coverage};
+use super::context_summary;
 use super::expectations::AdmissionExpectations;
 use super::reasons::RefusalReason;
 
@@ -31,18 +32,50 @@ fn inventory_is_coherent(header: &CandidateHeader) -> bool {
 }
 
 // Fails closed rather than silently passing when either side is absent: a
-// recognised context envelope is expected to always carry a fingerprint
-// pairing a caller can verify, so a producer that stops emitting one (on
-// either side) is refused on this class rather than having it quietly stop
-// checking anything at all.
-fn context_fingerprint_is_consistent(header: &CandidateHeader) -> bool {
+// recognised context envelope is expected to always carry a header summary
+// this admission path can recompute and verify, so a producer that stops
+// emitting one, or whose embedded envelope this path cannot read compilation
+// identities/fingerprints from at all, is refused on this class rather than
+// having it quietly stop checking anything at all.
+fn context_summary_matches(header: &CandidateHeader) -> bool {
     match (
         &header.context_fingerprint_header,
-        &header.context_fingerprint_envelope,
+        &header.context_compilations,
     ) {
-        (Some(header_fp), Some(envelope_fp)) => header_fp == envelope_fp,
+        (Some(header_fp), Some(compilations)) => *header_fp == context_summary::recompute(compilations),
         _ => false,
     }
+}
+
+// Checked after `inventory_is_coherent`, before `identity_check`: a
+// candidate's own occurrence payload contradicting itself or its own
+// embedded envelope is a broken-run concern (the candidate cannot be
+// trusted at all), not a checkout-vs-candidate identity mismatch. First
+// failing entry, first failing class wins -- fixed order, doc-commented the
+// same way `identity_check`'s is.
+fn occurrence_self_consistency(header: &CandidateHeader) -> Option<RefusalReason> {
+    if header.occurrence_sites.is_some() != header.occurrences_capability_provided {
+        return Some(RefusalReason::OccurrenceCapabilityMismatch);
+    }
+
+    let sites = header.occurrence_sites.as_ref()?;
+    // `context_compilations: None` here is already caught by
+    // `ContextFingerprintMismatch` a moment later in `identity_check`, so
+    // this loop is deliberately skipped rather than duplicating that
+    // refusal under a different token.
+    let compilations = header.context_compilations.as_ref()?;
+
+    for site in sites {
+        match compilations.iter().find(|c| c.identity == site.identity) {
+            None => return Some(RefusalReason::OccurrenceCompilationUnknown),
+            Some(matched) if matched.fingerprint.is_none() => {
+                return Some(RefusalReason::OccurrenceCompilationUnsupported)
+            }
+            Some(_) => {}
+        }
+    }
+
+    None
 }
 
 fn identity_check(
@@ -67,7 +100,7 @@ fn identity_check(
     if header.context_schema_version != expected.context_schema_version {
         return Some(RefusalReason::ContextEnvelopeVersionUnrecognised);
     }
-    if !context_fingerprint_is_consistent(header) {
+    if !context_summary_matches(header) {
         return Some(RefusalReason::ContextFingerprintMismatch);
     }
     if let Some(expected_head) = &expected.head_sha {
@@ -81,12 +114,13 @@ fn identity_check(
 /// Admits or refuses a candidate compiler-facts artifact.
 ///
 /// Check order, fixed: malformed encoding, then the terminal completion
-/// record, then per-unit inventory coherence, then contract version,
-/// producer identity, engine revision, profile, dependency fingerprint, the
-/// embedded context-envelope version, the context fingerprint, and the
-/// source snapshot -- and only once every one of those has passed does a
-/// structurally valid, declared-incomplete artifact still succeed,
-/// carrying its own incomplete [`Coverage`] rather than being refused.
+/// record, then per-unit inventory coherence, then occurrence self-
+/// consistency, then contract version, producer identity, engine revision,
+/// profile, dependency fingerprint, the embedded context-envelope version,
+/// the context fingerprint, and the source snapshot -- and only once every
+/// one of those has passed does a structurally valid, declared-incomplete
+/// artifact still succeed, carrying its own incomplete [`Coverage`] rather
+/// than being refused.
 pub fn admit(
     candidate_bytes: &[u8],
     expected: &AdmissionExpectations,
@@ -98,6 +132,9 @@ pub fn admit(
     }
     if !inventory_is_coherent(&header) {
         return Err(RefusalReason::IncoherentInventory);
+    }
+    if let Some(reason) = occurrence_self_consistency(&header) {
+        return Err(reason);
     }
     if let Some(reason) = identity_check(&header, expected) {
         return Err(reason);

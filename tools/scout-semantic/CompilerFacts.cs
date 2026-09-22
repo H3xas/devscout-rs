@@ -166,14 +166,15 @@ internal static class CompilerFactsEmitter
     public const int ContractVersion = 1;
 
     /// <summary>This document's own schema version.</summary>
-    public const int ArtifactSchemaVersion = 1;
+    public const int ArtifactSchemaVersion = 2;
 
     /// <summary>
     /// This engine build's protocol revision. Bump together with a
     /// corresponding change to the Rust admission path's own compiled-in
-    /// expectation.
+    /// expectation. "2" means this engine can emit occurrence facts (Slice
+    /// A); an artifact from a "1" engine unambiguously never carries them.
     /// </summary>
-    public const string EngineRevision = "1";
+    public const string EngineRevision = "2";
 
     /// <summary>
     /// The sha256 digest of this project's own <c>packages.lock.json</c>.
@@ -181,21 +182,18 @@ internal static class CompilerFactsEmitter
     /// constant; recompute and update both when the lock file changes.
     /// </summary>
     public const string DependencyFingerprint =
-        "f0e2aa25d0071aab4aa9de47f3a7629b783a5f17bf625b565f073b48e69d0c83";
+        "1b08b298ead60b49666b3bfa8d389386770d87dc150a9b1eced58896652f3d43";
 
     /// <summary>
-    /// The compilation-context envelope version this mode embeds. A frozen
-    /// placeholder envelope body stands in until a real per-compilation
-    /// context producer exists; the Rust admission path checks only this
-    /// version literal and never parses the envelope's internal shape, so
-    /// the placeholder body can be replaced without a protocol change.
+    /// The compilation-context envelope version this mode embeds. Names
+    /// Names <see cref="ContextEnvelope.SchemaVersion"/>, embedded
+    /// here as the real per-compilation envelope (Slice B) -- unaffected by
+    /// this document's own <see cref="ArtifactSchemaVersion"/>, which is a
+    /// different, higher-level schema.
     /// </summary>
     public const int ContextSchemaVersion = 1;
 
-    private const string ContextFingerprint =
-        "1e2d3c4b5a69788796a5b4c3d2e1f0a1b2c3d4e5f60718293a4b5c6d7e8f901";
-
-    private static readonly string[] SupportedCapabilities = { "symbols", "diagnostics" };
+    private static readonly string[] SupportedCapabilities = { "symbols", "diagnostics", "occurrences" };
 
     private static readonly JsonWriterOptions Pretty = new()
     {
@@ -204,11 +202,30 @@ internal static class CompilerFactsEmitter
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 
+    /// <summary>The requested/provided capability lists for this run, resolved
+    /// once from <paramref name="options"/> against <see cref="SupportedCapabilities"/>.
+    /// Computed before the per-project walk loop (not only inside <see cref="Render"/>)
+    /// so a caller can decide whether to run the occurrence walker at all.</summary>
+    public static (List<string> Requested, List<string> Provided) ResolveCapabilities(Options options)
+    {
+        var requested = options.Capabilities.Count > 0 ? options.Capabilities : SupportedCapabilities.ToList();
+        var provided = requested.Where(c => SupportedCapabilities.Contains(c, StringComparer.Ordinal)).ToList();
+        return (requested, provided);
+    }
+
     /// <summary>Renders <paramref name="acc"/> and writes it to
     /// <c>options.CompilerFacts</c> (or stdout for <c>-</c>). Returns a
     /// non-zero exit code on an I/O failure; never writes a partial
-    /// document -- the whole byte buffer is built in memory first.</summary>
-    public static int Write(Options options, CompilerFactsAccumulator acc)
+    /// document -- the whole byte buffer is built in memory first.
+    /// <paramref name="orderedContextRecords"/> is this run's real context
+    /// envelope (Slice B), already in the same order <c>--emit context</c>
+    /// itself would write; <paramref name="occurrences"/> is null exactly
+    /// when the <c>occurrences</c> capability was not provided.</summary>
+    public static int Write(
+        Options options,
+        CompilerFactsAccumulator acc,
+        List<ContextRecord> orderedContextRecords,
+        List<CompilerOccurrenceFact>? occurrences)
     {
         var path = options.CompilerFacts;
         if (string.IsNullOrEmpty(path))
@@ -218,7 +235,7 @@ internal static class CompilerFactsEmitter
         }
 
         var headSha = options.NoGit ? null : FactsWriter.Probe(options.Root)?.HeadSha;
-        var bytes = Render(options, acc, headSha);
+        var bytes = Render(options, acc, headSha, orderedContextRecords, occurrences);
 
         try
         {
@@ -251,7 +268,12 @@ internal static class CompilerFactsEmitter
         return 0;
     }
 
-    private static byte[] Render(Options options, CompilerFactsAccumulator acc, string? headSha)
+    private static byte[] Render(
+        Options options,
+        CompilerFactsAccumulator acc,
+        string? headSha,
+        List<ContextRecord> orderedContextRecords,
+        List<CompilerOccurrenceFact>? occurrences)
     {
         var symbols = acc.Symbols
             .OrderBy(s => s.File, StringComparer.Ordinal)
@@ -269,8 +291,7 @@ internal static class CompilerFactsEmitter
         var missing = acc.Missing.OrderBy(u => u, StringComparer.Ordinal).ToList();
         var incomplete = acc.Incomplete.OrderBy(u => u.Unit, StringComparer.Ordinal).ToList();
 
-        var requested = options.Capabilities.Count > 0 ? options.Capabilities : SupportedCapabilities.ToList();
-        var provided = requested.Where(c => SupportedCapabilities.Contains(c, StringComparer.Ordinal)).ToList();
+        var (requested, provided) = ResolveCapabilities(options);
 
         using var buffer = new MemoryStream();
         using (var writer = new Utf8JsonWriter(buffer, Pretty))
@@ -295,10 +316,15 @@ internal static class CompilerFactsEmitter
 
             writer.WriteStartObject("context");
             writer.WriteNumber("schemaVersion", ContextSchemaVersion);
-            writer.WriteString("contextFingerprint", ContextFingerprint);
+            writer.WriteString("contextFingerprint", DerivedContextSummary.Compute(orderedContextRecords));
             writer.WriteStartObject("envelope");
-            writer.WriteString("fingerprint", ContextFingerprint);
-            writer.WriteString("state", incomplete.Count == 0 ? "complete" : "partial");
+            writer.WriteStartArray("compilations");
+            foreach (var record in orderedContextRecords)
+            {
+                ContextWriter.WriteRecord(writer, record);
+            }
+
+            writer.WriteEndArray();
             writer.WriteEndObject();
             writer.WriteEndObject();
 
@@ -403,10 +429,119 @@ internal static class CompilerFactsEmitter
             }
 
             writer.WriteEndArray();
+
+            if (occurrences is not null)
+            {
+                writer.WriteStartObject("occurrences");
+                writer.WriteString("spanEncoding", "utf16-code-unit-line1-char0-end-exclusive");
+                writer.WriteStartArray("sites");
+                foreach (var o in occurrences)
+                {
+                    WriteOccurrence(writer, o);
+                }
+
+                writer.WriteEndArray();
+                writer.WriteEndObject();
+            }
+
             writer.WriteEndObject();
         }
 
         buffer.WriteByte((byte)'\n');
         return buffer.ToArray();
+    }
+
+    private static void WriteOccurrence(Utf8JsonWriter writer, CompilerOccurrenceFact o)
+    {
+        writer.WriteStartObject();
+        writer.WriteString("file", o.File);
+        writer.WriteString("shape", o.Shape);
+
+        writer.WriteStartObject("span");
+        writer.WriteNumber("startLine", o.Span.StartLine);
+        writer.WriteNumber("startChar", o.Span.StartChar);
+        writer.WriteNumber("endLine", o.Span.EndLine);
+        writer.WriteNumber("endChar", o.Span.EndChar);
+        writer.WriteEndObject();
+
+        writer.WriteStartObject("name");
+        writer.WriteNumber("line", o.Name.Line);
+        writer.WriteNumber("char", o.Name.Char);
+        writer.WriteEndObject();
+
+        writer.WritePropertyName("caller");
+        WriteOccurrenceIdentity(writer, o.Caller);
+
+        writer.WriteString("resolution", o.Resolution);
+        writer.WriteString("candidateReason", o.CandidateReason);
+
+        if (o.Target is { } target)
+        {
+            writer.WritePropertyName("target");
+            WriteOccurrenceIdentity(writer, target);
+        }
+        else
+        {
+            writer.WriteNull("target");
+        }
+
+        writer.WriteStartArray("candidates");
+        foreach (var candidate in o.Candidates)
+        {
+            WriteOccurrenceIdentity(writer, candidate);
+        }
+
+        writer.WriteEndArray();
+
+        writer.WriteStartObject("compilation");
+        if (o.CompilationIdentity is { } identity)
+        {
+            writer.WritePropertyName("identity");
+            ContextWriter.WriteIdentity(writer, identity);
+        }
+        else
+        {
+            writer.WriteNull("identity");
+        }
+
+        if (o.CompilationFingerprint is { } fingerprint)
+        {
+            writer.WriteString("fingerprint", fingerprint);
+        }
+        else
+        {
+            writer.WriteNull("fingerprint");
+        }
+
+        writer.WriteEndObject();
+
+        writer.WriteString("documentContentIdentity", o.DocumentContentIdentity);
+        writer.WriteStartArray("targetDocumentContentIdentities");
+        foreach (var docId in o.TargetDocumentContentIdentities)
+        {
+            writer.WriteStringValue(docId);
+        }
+
+        writer.WriteEndArray();
+        writer.WriteEndObject();
+    }
+
+    private static void WriteOccurrenceIdentity(Utf8JsonWriter writer, OccurrenceIdentity identity)
+    {
+        writer.WriteStartObject();
+        writer.WriteString("assembly", identity.Assembly);
+        writer.WriteString("type", identity.Type);
+        if (identity.Member is not null)
+        {
+            writer.WriteString("member", identity.Member);
+        }
+        else
+        {
+            writer.WriteNull("member");
+        }
+
+        writer.WriteNumber("genericArity", identity.GenericArity);
+        writer.WriteString("overloadSignature", identity.OverloadSignature);
+        writer.WriteEndObject();
     }
 }

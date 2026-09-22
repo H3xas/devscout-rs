@@ -215,6 +215,59 @@ fn run_and_import_reach_the_same_outcome_for_the_same_candidate_bytes() {
 }
 
 #[test]
+fn run_without_capabilities_omits_the_flag_letting_the_engine_pick_its_own_default() {
+    // `compiler-facts run`'s own wrapper used to hardcode its own stale
+    // default capability list and always pass `--capabilities` to the
+    // spawned engine. The stub here fails loudly if it ever sees that flag
+    // when the caller passed none, proving the engine's own
+    // `SupportedCapabilities` default is now the single source of truth.
+    let fx = Fixture::new();
+    let script = format!(
+        "#!/bin/sh\nfor a in \"$@\"; do\n  if [ \"$a\" = '--capabilities' ]; then\n    echo 'unexpected --capabilities flag on an unflagged run' >&2\n    exit 1\n  fi\ndone\nexec cat \"{}\"\n",
+        fixture_path("candidate.json").display()
+    );
+    let stub = write_stub(&fx.root, "no-capabilities-flag-stub.sh", &script);
+    let out = fx.run_with_engine(
+        &["compiler-facts", "run", "--solution", "Fixture.sln"],
+        &stub,
+    );
+    assert!(
+        out.status.success(),
+        "{out:?}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
+fn run_with_explicit_capabilities_still_forwards_the_flag() {
+    // The omission above is conditional on the caller passing nothing: an
+    // explicit `--capabilities` must still reach the engine's own argv
+    // unchanged.
+    let fx = Fixture::new();
+    let script = format!(
+        "#!/bin/sh\nfound=0\nprev=none\nfor a in \"$@\"; do\n  if [ \"$prev\" = '--capabilities' ] && [ \"$a\" = 'symbols' ]; then\n    found=1\n  fi\n  prev=\"$a\"\ndone\nif [ \"$found\" != 1 ]; then\n  echo 'expected --capabilities symbols on argv' >&2\n  exit 1\nfi\nexec cat \"{}\"\n",
+        fixture_path("candidate.json").display()
+    );
+    let stub = write_stub(&fx.root, "explicit-capabilities-stub.sh", &script);
+    let out = fx.run_with_engine(
+        &[
+            "compiler-facts",
+            "run",
+            "--solution",
+            "Fixture.sln",
+            "--capabilities",
+            "symbols",
+        ],
+        &stub,
+    );
+    assert!(
+        out.status.success(),
+        "{out:?}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
 fn every_identity_and_malformed_class_is_refused_with_its_stable_token_and_writes_nothing() {
     let fx = Fixture::new();
     assert!(!fx.artifact_path().exists());
@@ -236,7 +289,7 @@ fn every_identity_and_malformed_class_is_refused_with_its_stable_token_and_write
             c["context"]["schemaVersion"] = Value::from(2);
         }),
         ("context-fingerprint-mismatch", |c| {
-            c["context"]["envelope"]["fingerprint"] = Value::from("different");
+            c["context"]["envelope"]["compilations"][0]["fingerprint"] = Value::from("different");
         }),
         ("missing-completion-record", |c| {
             c["completion"]["terminal"] = Value::from(false);

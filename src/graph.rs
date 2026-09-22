@@ -98,6 +98,8 @@ pub use compiler_facts::{
     EXPECTED_CONTEXT_SCHEMA_VERSION, EXPECTED_DEPENDENCY_FINGERPRINT, EXPECTED_ENGINE_REVISION,
     EXPECTED_PRODUCER_NAME, SCOUT_COMPILER_ENGINE,
 };
+#[cfg(test)]
+pub(crate) use compiler_facts::{recompute_context_summary, CompilationRef};
 pub use def::{AlsoIn, Def};
 pub use edge::{Candidate, Edge, EdgesByKind, HeuristicByTier, HeuristicTier};
 pub use fragment::{fragment_from_extraction, markup_fragment};
