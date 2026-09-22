@@ -20,7 +20,18 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   previously admitted artifact byte-identical. A structurally valid artifact declaring incomplete
   coverage is still admitted, with its per-unit diagnostics, and is never reported as clean or
   complete. The default CLI distribution carries no managed runtime, targeting pack or engine
-  assembly. See [Compiler facts](README.md#compiler-facts).
+  assembly. The artifact additionally carries, by default, a per-reference **occurrence** fact for
+  every invocation, member-access, conditional-member and identifier reference site the compiler
+  can see: the caller's and bound target's complete identity, resolution state (confirmed,
+  ambiguous, unresolved, inaccessible or dynamic) with the compiler's own candidate set, the
+  binding compilation's identity and fingerprint, and per-document content identity -- produced by
+  a walker independent of the existing declared-symbol facts, admitted through the same path under
+  three new stable refusal reasons for a self-contradictory occurrence payload, and reported by
+  `status` as its own coverage line. The artifact's header context summary is now recomputed from
+  the real embedded build-context envelope's own per-compilation identity/fingerprint pairs rather
+  than compared against a placeholder copy of itself. `engineRevision` moves to `"2"` and
+  `artifactSchemaVersion` to `2`; `contractVersion` and the artifact filename are unchanged. See
+  [Compiler facts](README.md#compiler-facts).
 - **The Roslyn oracle emits a build-context envelope.** `tools/scout-semantic --emit context`
   writes one record per compilation identity (project path and name, requested target,
   configuration, platform), each carrying one of `complete`, `partial`, `unsupported`, `failed` or

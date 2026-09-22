@@ -336,17 +336,20 @@ walk `refs.jsonl`/the flow-tracer facts document use, since this mode reports wh
 itself resolved rather than a resolver-facing fact.
 
 The header carries: `format`/`contractVersion`/`artifactSchemaVersion` (the wire shape this build
-writes); `producer.engineRevision` (this build's own protocol revision); `profile`
-(target/configuration/platform, from `--tfm`/`-p Configuration=`/`-p Platform=`);
-`dependencyFingerprint` (the sha256 of this project's own `packages.lock.json`, a literal constant
-recomputed by hand when that lock file changes); `context` (a compilation-context envelope under
-its own version literal -- today a frozen placeholder body, since no per-compilation context
-producer exists yet; only the version literal is meaningful to devscout's admission path, which
-never parses the envelope's internal shape); `sourceSnapshot.headSha` (omitted under `--no-git`,
-the same convention `--emit flowtrace-facts` follows); `capabilities.requested`/`.provided`
-(informational); and `completion.terminal: true`, written only once this run has actually finished
--- the explicit marker devscout's admission path uses to tell a truncated or killed run apart from
-a genuinely complete one.
+writes -- `artifactSchemaVersion` is `2` since this document gained the `occurrences` key below);
+`producer.engineRevision` (this build's own protocol revision, `"2"` since a `"2"` engine can emit
+occurrence facts); `profile` (target/configuration/platform, from `--tfm`/`-p
+Configuration=`/`-p Platform=`); `dependencyFingerprint` (the sha256 of this project's own
+`packages.lock.json`, a literal constant recomputed by hand when that lock file changes); `context`
+(the real per-compilation build-context envelope under `context.envelope.compilations`, the same
+shape `--emit context`'s own top-level array carries, with `context.contextFingerprint` a summary
+devscout's admission path recomputes from that envelope's own `identity`/`fingerprint` pairs rather
+than comparing two producer-written copies of one value -- it reads nothing else from the envelope
+body); `sourceSnapshot.headSha` (omitted under `--no-git`, the same convention `--emit
+flowtrace-facts` follows); `capabilities.requested`/`.provided` (`occurrences` is on by default, in
+the supported set unless narrowed by `--capabilities`); and `completion.terminal: true`, written
+only once this run has actually finished -- the explicit marker devscout's admission path uses to
+tell a truncated or killed run apart from a genuinely complete one.
 
 `units.processed`/`units.missing` name every loaded project by `Name|tfm`; a project that failed to
 load is `missing`, never `processed`. `coverage.state` is `incomplete`, with one
@@ -361,20 +364,38 @@ convention Roslyn's own line/character positions already use. `symbols` and `dia
 sorted (file, then line, then a shape-specific tiebreaker) for reproducibility; two runs over the
 same pinned inputs are byte-identical.
 
+When the `occurrences` capability is provided, `occurrences.sites` carries one record per
+invocation, member-access, conditional-member and bare-identifier reference site in the loaded
+documents -- driven by `SemanticModel.GetSymbolInfo`, independent of `symbols`' own declared-symbol
+walk (its own record type, its own accept filter, every method kind including constructors and
+local functions). Each site carries the caller's and, when one binds, the bound target's complete
+identity in the same shape `symbols` uses; the occurrence's own span (the full reference node) and
+the bound name token's own start position, both under the stated `spanEncoding` -- 1-based lines,
+0-based characters, UTF-16 code units, end exclusive; a resolution state (`confirmed`, `ambiguous`,
+`unresolved`, `inaccessible` or `dynamic`) with the compiler's own raw `candidateReason` and, where
+the compiler offers them, the full candidate set; the identity and fingerprint of the compilation it
+was bound in (the exact same value as that compilation's own `context.envelope.compilations[i]`
+entry); and the per-document content identity (`sha1:`, not a git blob hash) of the occurrence's own
+document and of every document its bound target is declared in. Every site failing to bind is
+recorded, never dropped, with an empty candidate set and a null target standing for an explicit
+negative fact rather than an absent one.
+
 ### Fixture
 
-`fixtures/csharp-compiler-facts` is a package-free single-project fixture, deliberately shaped to
-exercise two same-line occurrences, two overloads of one name, a failed binding and an unresolved
-site (see its own README). Its output is committed as
+`fixtures/csharp-compiler-facts` is a package-free fixture, deliberately shaped to exercise two
+same-line occurrences, two overloads of one name, a failed binding, an unresolved site, and (in
+`Callers.cs`/`Other.cs`) a cross-document call, a nested/generic caller, an inaccessible member and
+a dynamic receiver (see its own README). Its output is committed as
 `fixtures/csharp-compiler-facts/compiler-facts.json`, which CI regenerates with `--no-git` and
 diffs byte-for-byte, and which `tests/compiler_facts_shape.rs` checks for shape without a .NET
-toolchain. Regenerate the snapshot after any change to `CompilerFacts.cs` or the fixture:
+toolchain. Regenerate the snapshot after any change to `CompilerFacts.cs`, `CompilerOccurrences.cs`
+or the fixture:
 
 ```sh
 dotnet run --project tools/scout-semantic --no-build -c Release -- \
     fixtures/csharp-compiler-facts/Fixture.csproj --root fixtures/csharp-compiler-facts \
     --emit compiler-facts --compiler-facts fixtures/csharp-compiler-facts/compiler-facts.json \
-    --tfm net9.0 -p Configuration=Debug -p Platform=AnyCPU --capabilities symbols,diagnostics --no-git
+    --tfm net9.0 -p Configuration=Debug -p Platform=AnyCPU --no-git
 ```
 
 ## Multi-targeting

@@ -118,11 +118,18 @@ fn round_trip_preserves_every_promised_fact_byte_for_byte() {
     assert_eq!(diagnostics.len(), 1);
     assert_eq!(diagnostics[0]["code"], "CS0219");
 
-    // The compilation-context health envelope survives, embedded verbatim
-    // under its own version literal -- admission never parses its
-    // internal shape.
+    // The real compilation-context envelope survives, embedded verbatim
+    // under its own version literal -- admission never parses more of its
+    // internal shape than each compilation's own `identity`/`fingerprint`.
     assert_eq!(read_back["context"]["schemaVersion"], 1);
-    assert_eq!(read_back["context"]["envelope"]["state"], "complete");
+    let compilations = read_back["context"]["envelope"]["compilations"]
+        .as_array()
+        .expect("context.envelope.compilations survives read-back");
+    assert_eq!(compilations.len(), 2);
+    for compilation in compilations {
+        assert!(compilation.get("identity").is_some());
+        assert!(compilation.get("fingerprint").is_some());
+    }
 
     // Occurrence spans carry their declared encoding convention.
     for symbol in symbols {
