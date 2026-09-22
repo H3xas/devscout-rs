@@ -197,6 +197,89 @@ existing September 21 baseline:
 - No numeric budget, threshold or packaging-variant selection is set by this section, matching the
   standing Design decision.
 
+## 2026-09-22 — packaging and CI-proxy figures restated
+
+The section above restated wall time, peak memory, admitted artifact size and import cost, but not
+the three packaging figures (default CLI size, framework-dependent and self-contained engine
+publish) or the CI-time proxy. All three packaging figures, and the CI-time proxy, have genuinely
+moved since the September 21 baseline for a real reason, not measurement noise, and were left
+silently stale in that section rather than restated. This section restates all six figures against
+the current head and supersedes both the September 21 section and the occurrence-capability section
+above for every figure they share.
+
+### Environment
+
+Captured by the script's own toolchain block: `rustc: rustc 1.97.1 (8bab26f4f 2026-07-14)`,
+`cargo: cargo 1.97.1 (c980f4866 2026-06-30)`, `dotnet: 9.0.305`, `uname: Darwin 25.2.0 arm64`. Tool
+version: devscout 0.6.0, built at `95f8a0906dbf353f685b2e2989a92f176d9150ae`. Same host, bench root,
+isolation and network posture as the runs above. 2 full script runs for every figure `bench/compiler-facts-cost.sh`
+produces; the CI-time proxy is a separate, hand-timed sequence (see Reading), also run twice.
+
+### Why the packaging figures moved
+
+`packages.lock.json`'s own digest moved earlier in this branch's history: an upstream merge added
+direct MSBuild build-evaluation package references with `ExcludeAssets="runtime"`, which
+reclassified two packages from transitive to direct dependencies (same versions, same content
+hashes) — `EXPECTED_DEPENDENCY_FINGERPRINT` and its engine-side counterpart moved together, and both
+sides agree on the new digest (see the Environment block's own lock-digest check in the gate list).
+Excluding those two assemblies' runtime output from a framework-dependent or self-contained publish
+is exactly the effect a direct `ExcludeAssets="runtime"` reference has, so the roughly 2 MiB drop in
+each publish figure below is attributable to that change, not to anything in this record's own
+delta. The default CLI figure is unaffected by that change (the CLI never links the engine); its
+small movement is normal build-output variance between separate `cargo build --release` runs.
+
+### Why the admitted artifact size moved again
+
+The occurrence-capability section above measured 68,994 bytes for the default arm; this round adds
+one further same-line pair of occurrences to the fixture (proving the walker keeps two occurrences
+of one target rather than deduplicating by file/line/target) and one new `occurrences.identityEncoding`
+literal, both of which add bytes on top of that figure. The restricted arm carries no `occurrences`
+key at all and is unaffected by either change — its figure (49,439 bytes) is unchanged from the prior
+section, as expected.
+
+### Registered predictions
+
+Not separately re-registered after the fact for this restatement: the packaging figures use the same
+predicted ranges the September 21 section already registered (5–15 MiB / 40–80 MiB / framework-dependent
+plus roughly 70–100 MiB), since the measurement method is unchanged and only an upstream dependency
+shift moved the input; the CI-time proxy reuses that section's "a few seconds" prediction, now
+covering the added capability-restricted step too. Re-guessing a number already in hand would not be
+a genuine prediction, so this section states plainly that these are carried-forward ranges, not fresh
+ones, rather than presenting them as written blind.
+
+### Measured
+
+| Figure | Run 1 | Run 2 |
+| --- | --- | --- |
+| Default CLI binary size | 12,956,736 bytes (12.36 MiB) | 12,956,736 bytes (identical) |
+| Framework-dependent engine publish | 33,752,077 bytes (32.19 MiB) | 33,752,077 bytes (identical) |
+| Self-contained engine publish (osx-arm64) | 116,833,887 bytes (111.42 MiB) | 116,833,887 bytes (identical) |
+| Admitted artifact size, default | 70,462 bytes (68.8 KiB) | 70,462 bytes (identical) |
+| Admitted artifact size, restricted | 49,439 bytes (48.3 KiB) | 49,439 bytes (identical) |
+| New CI steps, local proxy (fixture restore + default run + diff + restricted run, warm NuGet cache) | restore 0.511s, default-run 2.687s, diff 0.008s, restricted-run 2.911s, total 6.116s | restore 0.594s, default-run 3.658s, diff 0.009s, restricted-run 2.598s, total 6.859s |
+
+### Reading the numbers
+
+- **Default CLI size (12.36 MiB)** lands inside the predicted range and inside noise of the
+  September 21 figure (12.34 MiB) — the CLI never links the engine, so this movement is ordinary
+  build-output variance between separate release builds, not a real change.
+- **Framework-dependent (32.19 MiB) and self-contained (111.42 MiB) engine publishes** both land
+  inside their predicted ranges and both are genuinely smaller than the September 21 baseline
+  (34.18 MiB / 113.42 MiB, roughly 2 MiB less each) — see "Why the packaging figures moved" above.
+  Both figures are byte-identical across the two runs. Neither variant is committed to by this
+  record.
+- **Admitted artifact size**: default (68.8 KiB) is larger than the occurrence-capability section's
+  67.4 KiB for the reason given above; restricted (48.3 KiB) is unchanged. Both are byte-identical
+  across the two runs, matching the fixture's own two-runs-are-byte-identical property.
+- **The new CI steps' local proxy (6.116s / 6.859s total)** now includes the capability-restricted
+  step the earlier proxy never timed, and lands inside the "a few seconds" band once that step is
+  counted; the individual `dotnet run` invocations here are slower than the bench script's own
+  warm-repeat cells because each is this sequence's own first invocation for that arm (no repeats),
+  closer to a cold cost. As before, this measures a warm-NuGet-cache local sequence, not an actual
+  GitHub Actions run, and is recorded as a proxy per the Deviations line above.
+- No numeric budget, threshold or packaging-variant selection is set by this section, matching the
+  standing Design decision.
+
 ## Rerunning
 
 ```sh
