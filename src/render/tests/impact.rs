@@ -273,6 +273,109 @@ fn impact_summaries_append_tests_only_when_the_blast_radius_reaches_one() {
     );
 }
 
+/// A hub-file row: infra-classed, still an affected row with a real hop/via.
+fn hub_impact_row(file: &str, hop: u32, via_count: u32) -> ImpactRow {
+    ImpactRow {
+        infra: true,
+        ..impact_row(file, hop, via_count, 0, &["Widget"], 0, 0.2)
+    }
+}
+
+#[test]
+fn impact_text_marks_hub_rows_infra_and_appends_the_hub_trailer_after_the_iface_trailer() {
+    let model = ImpactModel {
+        braked: vec![query::BrakedIface {
+            iface: "IWidget".to_string(),
+            fanin: 12,
+        }],
+        braked_files: vec![
+            query::BrakedFile {
+                file: "Api/Startup.cs".to_string(),
+                indegree: 40,
+            },
+            query::BrakedFile {
+                file: "Core/Shared.cs".to_string(),
+                indegree: 34,
+            },
+        ],
+        ..impact_model(
+            vec![
+                impact_row("src/Direct.cs", 1, 1, 0, &["Widget"], 0, 0.5),
+                hub_impact_row("Api/Startup.cs", 1, 3),
+                hub_impact_row("Core/Shared.cs", 1, 5),
+            ],
+            3,
+            0,
+            0,
+        )
+    };
+    let out = render_impact_text("Widget", &model);
+    assert!(
+        out.contains("Api/Startup.cs  1  3  Widget (infra)"),
+        "a hub row carries the same ` (infra)` row suffix as any other infra-classed row\n{out}"
+    );
+    assert!(
+        out.contains("Core/Shared.cs  1  5  Widget (infra)"),
+        "{out}"
+    );
+    assert!(
+        out.contains("src/Direct.cs  1  1  Widget\n"),
+        "a non-hub row carries no `(infra)` suffix\n{out}"
+    );
+    let iface_line = "braked: IWidget (fan-in 12) — raise --iface-max-fanin to widen";
+    let hub_line = "braked: Api/Startup.cs (in-degree 40), Core/Shared.cs (in-degree 34) — raise --hub-max-indegree to widen";
+    assert!(out.contains(iface_line), "{out}");
+    assert!(out.contains(hub_line), "{out}");
+    let iface_pos = out.find(iface_line).unwrap();
+    let hub_pos = out.find(hub_line).unwrap();
+    assert!(
+        iface_pos < hub_pos,
+        "the hub trailer is its own line AFTER the interface trailer, widest-hub-first within its own list\n{out}"
+    );
+}
+
+#[test]
+fn impact_compact_marks_hub_rows_class_infra_and_appends_hub_terms_after_iface_terms() {
+    let model = ImpactModel {
+        braked: vec![query::BrakedIface {
+            iface: "IWidget".to_string(),
+            fanin: 12,
+        }],
+        braked_files: vec![
+            query::BrakedFile {
+                file: "Api/Startup.cs".to_string(),
+                indegree: 40,
+            },
+            query::BrakedFile {
+                file: "Core/Shared.cs".to_string(),
+                indegree: 34,
+            },
+        ],
+        ..impact_model(
+            vec![
+                impact_row("src/Direct.cs", 1, 1, 0, &["Widget"], 0, 0.5),
+                hub_impact_row("Api/Startup.cs", 1, 3),
+                hub_impact_row("Core/Shared.cs", 1, 5),
+            ],
+            3,
+            0,
+            0,
+        )
+    };
+    let out = render_impact_compact("Widget", &model);
+    assert!(out.contains("Api/Startup.cs via=3 class=infra"), "{out}");
+    assert!(out.contains("Core/Shared.cs via=5 class=infra"), "{out}");
+    assert!(
+        out.contains("src/Direct.cs via=1\n") || out.ends_with("src/Direct.cs via=1"),
+        "a non-hub row carries no ` class=infra` suffix\n{out}"
+    );
+    let last_line = out.lines().last().unwrap();
+    assert_eq!(
+        last_line,
+        "summary: affected=3 shown=3 dropped=0 ambiguous=0 braked=IWidget:12,Api/Startup.cs:40,Core/Shared.cs:34"
+    );
+}
+
 #[test]
 fn impact_compact_orders_tests_after_heuristic_and_before_gap() {
     let model = ImpactModel {

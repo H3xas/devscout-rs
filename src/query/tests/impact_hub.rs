@@ -131,6 +131,87 @@ fn build_impact_model_hub_max_indegree_brakes_a_file_no_name_pattern_matches_and
 }
 
 #[test]
+fn build_impact_model_widens_through_a_file_one_under_the_hub_in_degree_threshold_and_brakes_it_at_exactly_the_threshold(
+) {
+    let graph = hub_fixture_graph();
+    let root = hub_fixture_root();
+    let index = load_graph_index(&graph, &root);
+
+    let one_under = match build_impact_model(
+        &index,
+        "Widget",
+        2,
+        DEFAULT_CAP,
+        true,
+        DEFAULT_IFACE_MAX_FANIN,
+        6,
+    ) {
+        ImpactResult::Resolved(m) => m,
+        other => panic!("expected Resolved, got {other:?}"),
+    };
+    assert_eq!(
+        hub_files_of(&one_under),
+        vec![
+            "Api/Startup.cs",
+            "Core/Plain.cs",
+            "Core/PlainUser.cs",
+            "Core/S1.cs",
+            "Core/S2.cs",
+            "Core/S3.cs",
+            "Core/S4.cs",
+            "Core/S5.cs",
+            "Core/Shared.cs"
+        ],
+        "Core/Shared.cs's in-degree of 5 sits one under a threshold of 6, so it still widens"
+    );
+    assert_eq!(
+        one_under.braked_files,
+        vec![BrakedFile {
+            file: "Api/Startup.cs".to_string(),
+            indegree: 4
+        }],
+        "only the name-matched file brakes; the in-degree-5 file is untouched by a threshold of 6"
+    );
+
+    let at_threshold = match build_impact_model(
+        &index,
+        "Widget",
+        2,
+        DEFAULT_CAP,
+        true,
+        DEFAULT_IFACE_MAX_FANIN,
+        5,
+    ) {
+        ImpactResult::Resolved(m) => m,
+        other => panic!("expected Resolved, got {other:?}"),
+    };
+    assert_eq!(
+        hub_files_of(&at_threshold),
+        vec![
+            "Api/Startup.cs",
+            "Core/Plain.cs",
+            "Core/PlainUser.cs",
+            "Core/Shared.cs"
+        ],
+        "lowering the threshold to exactly the file's own in-degree brakes it"
+    );
+    assert_eq!(
+        at_threshold.braked_files,
+        vec![
+            BrakedFile {
+                file: "Core/Shared.cs".to_string(),
+                indegree: 5
+            },
+            BrakedFile {
+                file: "Api/Startup.cs".to_string(),
+                indegree: 4
+            },
+        ],
+        "widest-first, then by path"
+    );
+}
+
+#[test]
 fn build_impact_model_a_hub_reached_on_the_last_hop_is_never_reported_as_braked() {
     let graph = hub_fixture_graph();
     let root = hub_fixture_root();
