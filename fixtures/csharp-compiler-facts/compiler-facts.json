@@ -14,7 +14,7 @@
   "dependencyFingerprint": "1b08b298ead60b49666b3bfa8d389386770d87dc150a9b1eced58896652f3d43",
   "context": {
     "schemaVersion": 1,
-    "contextFingerprint": "14f559c8e329f1c7b0f7732f44e8f5b77fe5b430585d10cfec42e879c2fc64b6",
+    "contextFingerprint": "8feef20ec5e98d765c00e1b30166067108c5013bc40c2cf64310bc637edbbb40",
     "envelope": {
       "compilations": [
         {
@@ -29,7 +29,7 @@
           },
           "state": "partial",
           "reason": "binding-error",
-          "fingerprint": "d276ccbafc0246df84e100f1d2cf75ba384747d8",
+          "fingerprint": "10ef0238b4409eecdfe98765bea02459e929405d",
           "versions": {
             "sdk": "9.0.305",
             "msbuild": "17.14.21.41108",
@@ -1026,10 +1026,6 @@
             {
               "identity": "external-file:Directory.Build.props",
               "hash": "626f5ccf33933f2acc39031bbfd7cd198ea77a50"
-            },
-            {
-              "identity": "external-file:WorkloadManifest.targets",
-              "hash": "82dc5e0b1dd793d309f239bb022d3229b01c19b8"
             }
           ],
           "languageOptions": {
@@ -1360,7 +1356,7 @@
             "platform": "AnyCPU",
             "declaredTfms": null
           },
-          "fingerprint": "d276ccbafc0246df84e100f1d2cf75ba384747d8"
+          "fingerprint": "10ef0238b4409eecdfe98765bea02459e929405d"
         },
         "documentContentIdentity": "sha1:50f9ea9ae56e56fbcb71c0092fc9b00cec4b5bc6",
         "targetDocumentContentIdentities": [
@@ -1407,7 +1403,7 @@
             "platform": "AnyCPU",
             "declaredTfms": null
           },
-          "fingerprint": "d276ccbafc0246df84e100f1d2cf75ba384747d8"
+          "fingerprint": "10ef0238b4409eecdfe98765bea02459e929405d"
         },
         "documentContentIdentity": "sha1:50f9ea9ae56e56fbcb71c0092fc9b00cec4b5bc6",
         "targetDocumentContentIdentities": [
@@ -1454,7 +1450,7 @@
             "platform": "AnyCPU",
             "declaredTfms": null
           },
-          "fingerprint": "d276ccbafc0246df84e100f1d2cf75ba384747d8"
+          "fingerprint": "10ef0238b4409eecdfe98765bea02459e929405d"
         },
         "documentContentIdentity": "sha1:50f9ea9ae56e56fbcb71c0092fc9b00cec4b5bc6",
         "targetDocumentContentIdentities": [
@@ -1501,7 +1497,7 @@
             "platform": "AnyCPU",
             "declaredTfms": null
           },
-          "fingerprint": "d276ccbafc0246df84e100f1d2cf75ba384747d8"
+          "fingerprint": "10ef0238b4409eecdfe98765bea02459e929405d"
         },
         "documentContentIdentity": "sha1:50f9ea9ae56e56fbcb71c0092fc9b00cec4b5bc6",
         "targetDocumentContentIdentities": [
@@ -1550,7 +1546,7 @@
             "platform": "AnyCPU",
             "declaredTfms": null
           },
-          "fingerprint": "d276ccbafc0246df84e100f1d2cf75ba384747d8"
+          "fingerprint": "10ef0238b4409eecdfe98765bea02459e929405d"
         },
         "documentContentIdentity": "sha1:50f9ea9ae56e56fbcb71c0092fc9b00cec4b5bc6",
         "targetDocumentContentIdentities": []
@@ -1604,7 +1600,7 @@
             "platform": "AnyCPU",
             "declaredTfms": null
           },
-          "fingerprint": "d276ccbafc0246df84e100f1d2cf75ba384747d8"
+          "fingerprint": "10ef0238b4409eecdfe98765bea02459e929405d"
         },
         "documentContentIdentity": "sha1:50f9ea9ae56e56fbcb71c0092fc9b00cec4b5bc6",
         "targetDocumentContentIdentities": []
@@ -1649,7 +1645,7 @@
             "platform": "AnyCPU",
             "declaredTfms": null
           },
-          "fingerprint": "d276ccbafc0246df84e100f1d2cf75ba384747d8"
+          "fingerprint": "10ef0238b4409eecdfe98765bea02459e929405d"
         },
         "documentContentIdentity": "sha1:50f9ea9ae56e56fbcb71c0092fc9b00cec4b5bc6",
         "targetDocumentContentIdentities": [
@@ -1705,7 +1701,7 @@
             "platform": "AnyCPU",
             "declaredTfms": null
           },
-          "fingerprint": "d276ccbafc0246df84e100f1d2cf75ba384747d8"
+          "fingerprint": "10ef0238b4409eecdfe98765bea02459e929405d"
         },
         "documentContentIdentity": "sha1:50f9ea9ae56e56fbcb71c0092fc9b00cec4b5bc6",
         "targetDocumentContentIdentities": []
@@ -1750,7 +1746,7 @@
             "platform": "AnyCPU",
             "declaredTfms": null
           },
-          "fingerprint": "d276ccbafc0246df84e100f1d2cf75ba384747d8"
+          "fingerprint": "10ef0238b4409eecdfe98765bea02459e929405d"
         },
         "documentContentIdentity": "sha1:50f9ea9ae56e56fbcb71c0092fc9b00cec4b5bc6",
         "targetDocumentContentIdentities": [
@@ -1791,7 +1787,7 @@
             "platform": "AnyCPU",
             "declaredTfms": null
           },
-          "fingerprint": "d276ccbafc0246df84e100f1d2cf75ba384747d8"
+          "fingerprint": "10ef0238b4409eecdfe98765bea02459e929405d"
         },
         "documentContentIdentity": "sha1:cc1c22c556ba3e6fee590323c7b0a052af862164",
         "targetDocumentContentIdentities": []
@@ -1964,7 +1960,7 @@
             "platform": "AnyCPU",
             "declaredTfms": null
           },
-          "fingerprint": "d276ccbafc0246df84e100f1d2cf75ba384747d8"
+          "fingerprint": "10ef0238b4409eecdfe98765bea02459e929405d"
         },
         "documentContentIdentity": "sha1:cc1c22c556ba3e6fee590323c7b0a052af862164",
         "targetDocumentContentIdentities": []
@@ -2003,7 +1999,7 @@
             "platform": "AnyCPU",
             "declaredTfms": null
           },
-          "fingerprint": "d276ccbafc0246df84e100f1d2cf75ba384747d8"
+          "fingerprint": "10ef0238b4409eecdfe98765bea02459e929405d"
         },
         "documentContentIdentity": "sha1:cc1c22c556ba3e6fee590323c7b0a052af862164",
         "targetDocumentContentIdentities": []
