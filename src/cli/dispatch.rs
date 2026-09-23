@@ -57,7 +57,7 @@ usage: devscout <command> [args]
 index
   init [scope ...]           register this repo, install hooks, first map
                              [--label L] [--no-hooks] [--no-map]
-  map [scope ...] [--refresh]  build the index for the given scopes
+  map [scope ...] [--refresh] [--no-semantic]  build the index for the given scopes
   clear --older-than <days>  drop freshness rows older than N days
   clear --session <id>       drop one session's freshness rows
 

@@ -67,7 +67,7 @@ fn rebuild_graph_writes_the_v13_caches_and_deletes_every_superseded_generation()
         rel: "src/A.cs".to_string(),
         mtime: 222,
     }];
-    rebuild_graph(&dir, &graph_files, &fresh, true, None).unwrap();
+    rebuild_graph(&dir, &graph_files, &fresh, true, None, None).unwrap();
 
     assert!(
         graph_dir(&dir).join("fragments-v21.json").exists(),
@@ -125,7 +125,7 @@ fn fragments_cache_v21_supersedes_v20() {
         rel: "src/A.cs".to_string(),
         mtime: 1,
     }];
-    rebuild_graph(&dir, &graph_files, &fresh, true, None).unwrap();
+    rebuild_graph(&dir, &graph_files, &fresh, true, None, None).unwrap();
 
     assert!(graph_dir(&dir).join("fragments-v21.json").exists());
     assert!(graph_dir(&dir).join("fragments-index-v21.json").exists());

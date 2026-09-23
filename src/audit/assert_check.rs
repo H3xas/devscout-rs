@@ -1,20 +1,11 @@
-// Threshold evaluation for `--assert <file>`, kept beside the report it
-// reads: the file is scored against the exact JSON `--json` would print,
-// so a caller that asserts and a caller that parses see one shape.
-
-// ---------------------------------------------------------------------------
 // `--assert <file>` -- a flat `{"dotted.metric.path": {"min": x} | {"max":
 // y}}` object, evaluated against the SAME JSON this run would print with
 // `--json` (parsed back through `serde_json::Value` so a dotted path walks
 // it generically, one `.get(segment)` per `.`-separated piece) -- one
 // violation line per failing or missing metric, `"assert: {path} = {actual}
 // > max {y}"` / `"< min {x}"` / `"{path} missing"`.
-// ---------------------------------------------------------------------------
 
-pub(super) fn lookup_metric<'a>(
-    v: &'a serde_json::Value,
-    path: &str,
-) -> Option<&'a serde_json::Value> {
+fn lookup_metric<'a>(v: &'a serde_json::Value, path: &str) -> Option<&'a serde_json::Value> {
     let mut cur = v;
     for seg in path.split('.') {
         cur = cur.get(seg)?;
@@ -22,8 +13,11 @@ pub(super) fn lookup_metric<'a>(
     Some(cur)
 }
 
-/// `13`, not `13.0`; `0.381`, not `0.38100000000000001` -- a violation line
-/// quotes the metric and its threshold the way the assert file spelled them.
+/// `13`, not `13.0`; `0.381`, not `0.38100000000000001` -- the same
+/// whole-number-drops-its-decimal rule `cli.rs`'s `js_float_string` applies,
+/// reimplemented locally rather than reused (that function is private to
+/// cli.rs and out of this ticket's scope to touch beyond `J`/
+/// `to_json_string`/`require_repo`).
 fn fmt_num(x: f64) -> String {
     if x == x.trunc() && x.abs() < 1e15 {
         format!("{}", x as i64)
@@ -36,7 +30,7 @@ fn fmt_num(x: f64) -> String {
 /// `report_json` (this run's `--json` shape). `Ok(violations)`, empty when
 /// every threshold holds; `Err` only for a malformed assert file or a
 /// threshold entry that is not `{"min": _}`/`{"max": _}`.
-pub(super) fn evaluate_assert(report_json: &str, assert_text: &str) -> Result<Vec<String>, String> {
+pub fn evaluate_assert(report_json: &str, assert_text: &str) -> Result<Vec<String>, String> {
     let report_value: serde_json::Value = serde_json::from_str(report_json)
         .map_err(|e| format!("internal: audit report is not valid JSON: {e}"))?;
     let assert_value: serde_json::Value = serde_json::from_str(assert_text)

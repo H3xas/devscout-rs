@@ -74,6 +74,7 @@ fn dummy_stats() -> graph::Stats {
         // Incidental: `ts` has no bearing on this C#-only query-layer
         // fixture.
         ts: None,
+        semantic: None,
     }
 }
 
@@ -177,6 +178,8 @@ fn uses_member(from_file: &str, from_line: usize, to: &str, to_file: &str) -> gr
         heuristic: false,
         tier: None,
         member: None,
+        source: None,
+        overload_signature: None,
     }
 }
 
@@ -196,6 +199,8 @@ fn heuristic_uses_member(
         heuristic: true,
         tier: Some(graph::HeuristicTier::Guess),
         member: None,
+        source: None,
+        overload_signature: None,
     }
 }
 
@@ -210,6 +215,8 @@ fn ext_uses_member(from_file: &str, from_line: usize, to: &str, to_file: &str) -
         heuristic: true,
         tier: Some(graph::HeuristicTier::Ext),
         member: None,
+        source: None,
+        overload_signature: None,
     }
 }
 

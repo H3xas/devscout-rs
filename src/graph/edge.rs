@@ -46,9 +46,29 @@ pub enum HeuristicTier {
 /// about the reference rather than about the guess. Both are
 /// omit-when-`None`, so a reader of the old shape sees only added keys.
 ///
-/// The next slot on this variant is reserved for `source: Option<Provenance>`
-/// (`"semantic"` for an edge a real compiler vouched for), appended after
-/// `member` and omitted when empty, on the same rule.
+/// Fills the slot this module's `Edge::UsesMember::source` reserved: which of
+/// two disjoint populations a compiler-vouched edge belongs to. `Semantic`
+/// stands in place of whatever the ladder would have produced for the SAME
+/// reference the extractor already emitted (a per-reference override, one for
+/// one). `SemanticDiscovered` has no extractor reference at all -- the site
+/// exists only because the admitted artifact named it -- so it is never
+/// counted against the extractor-emitted population in `edges_by_kind` or the
+/// syntax-lane audit denominator; only the audit's own `tiers.semantic` block
+/// reports it, and separately from `Semantic`.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SemanticProvenance {
+    /// A same-context compiler fact confirmed or overrode the extractor's own
+    /// reference at that occurrence.
+    Semantic,
+    /// A compiler-verified occurrence the syntax extractor emitted no
+    /// reference for.
+    SemanticDiscovered,
+}
+
+/// Fills the slot this variant previously reserved: `source:
+/// Option<SemanticProvenance>`, appended after `member` and omitted when
+/// empty, on the same rule.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind")]
 pub enum Edge {
@@ -106,6 +126,26 @@ pub enum Edge {
         /// heuristic edges alike. `None` only for a reference the extractor
         /// recorded no member name for.
         member: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        /// `Some` exactly on an edge a same-context compiler fact produced
+        /// (`Edge::uses_member_semantic`); `None`, and hence entirely absent
+        /// from the serialized bytes, on every edge the ladder or a
+        /// heuristic tier produced -- a graph built without the semantic
+        /// layer is byte-identical to one built before this field existed.
+        source: Option<SemanticProvenance>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        /// The admitted occurrence's own overload signature (the producer's
+        /// `target.overloadSignature`, e.g. `"(bool)->void"`), appended LAST
+        /// -- present only alongside `source`, and only when the admitted
+        /// occurrence named one. Two same-line overloads of one member on
+        /// the SAME type resolve to the SAME `to`/`to_file` (the type-level
+        /// identity a `uses-member` edge already carries), so without this
+        /// field their projected edges would be byte-identical and a reader
+        /// could never tell them apart as the two distinct facts they are.
+        /// `None` on every syntax or heuristic edge, which keeps a graph
+        /// built without the semantic layer byte-identical to one built
+        /// before this field existed.
+        overload_signature: Option<String>,
     },
     #[serde(rename = "imports")]
     /// The value value.
@@ -311,6 +351,47 @@ impl Edge {
             heuristic: tier.is_some(),
             tier,
             member,
+            source: None,
+            overload_signature: None,
+        }
+    }
+
+    /// The one way to build a compiler-vouched `uses-member` edge: never
+    /// heuristic, never tiered (a confirmed compiler fact is not a guess),
+    /// always carrying `source` so a reader can tell it apart from every
+    /// edge the ladder or a heuristic tier produced. `overload_signature`
+    /// carries the admitted occurrence's own signature, when it named one --
+    /// the exact identity that keeps two same-line overloads of one member
+    /// distinguishable once projected.
+    pub fn uses_member_semantic(
+        from_file: String,
+        from_line: usize,
+        to: String,
+        to_file: String,
+        member: Option<String>,
+        provenance: SemanticProvenance,
+        overload_signature: Option<String>,
+    ) -> Edge {
+        Edge::UsesMember {
+            from_file,
+            from_line,
+            to,
+            to_file,
+            heuristic: false,
+            tier: None,
+            member,
+            source: Some(provenance),
+            overload_signature,
+        }
+    }
+
+    /// Which population produced this edge, when it names one at all --
+    /// `None` for every kind that is not a compiler-vouched `uses-member`
+    /// edge, including an ordinary precise or heuristic one.
+    pub fn provenance(&self) -> Option<SemanticProvenance> {
+        match self {
+            Edge::UsesMember { source, .. } => *source,
+            _ => None,
         }
     }
 }
@@ -368,4 +449,23 @@ pub struct HeuristicByTier {
     pub ext: usize,
     /// Edges the scored tier emitted.
     pub guess: usize,
+}
+
+/// The resolve-time consumption path's own run-level counters: appended to
+/// `Stats` only when the semantic layer actually loaded for this run, so a
+/// syntax-only build (no admitted artifact, or a stale one) carries no
+/// `semantic` key at all -- the same omit-when-absent rule every fact this
+/// ticket adds follows, and what keeps a graph built without the layer
+/// byte-identical to one built before it existed.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+pub struct SemanticStats {
+    /// Per-reference overrides the same-context authority rule confirmed.
+    pub confirmed: usize,
+    /// How many of those confirmations displaced a different target the
+    /// ladder itself had already bound -- the disagreement diagnostic count.
+    pub disagreements: usize,
+    /// Compiler-discovered edges: admitted, confirmed occurrences the
+    /// extractor emitted no reference for at all. Never pooled with
+    /// `confirmed` in any count this struct reports.
+    pub discovered: usize,
 }

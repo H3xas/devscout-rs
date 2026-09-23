@@ -47,8 +47,12 @@ internal sealed class CompilerFactsAccumulator
     public List<CompilerDiagnosticFact> Diagnostics { get; } = new();
 
     /// <summary>Records one loaded, compiled unit: its diagnostics and every
-    /// named type and ordinary member it declares.</summary>
-    public void CollectFromCompilation(Compilation compilation, string unitId, RepoPaths paths)
+    /// named type and ordinary member it declares. <paramref name="unrestoredReason"/>,
+    /// when set, names an offline-restore failure that is this
+    /// unit's own root cause; it replaces the compiler's first-error reason in
+    /// <see cref="Incomplete"/> rather than competing with it, and is reported even
+    /// when the compilation carries no error diagnostic of its own.</summary>
+    public void CollectFromCompilation(Compilation compilation, string unitId, RepoPaths paths, string? unrestoredReason = null)
     {
         Processed.Add(unitId);
 
@@ -70,7 +74,11 @@ internal sealed class CompilerFactsAccumulator
             firstError ??= diagnostic.Severity == DiagnosticSeverity.Error ? diagnostic : null;
         }
 
-        if (firstError is { } error)
+        if (unrestoredReason is not null)
+        {
+            Incomplete.Add(new CompilerIncompleteUnit(unitId, unrestoredReason));
+        }
+        else if (firstError is { } error)
         {
             Incomplete.Add(new CompilerIncompleteUnit(unitId, $"{error.Id}: {error.GetMessage()}"));
         }

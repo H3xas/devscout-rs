@@ -53,6 +53,10 @@ internal sealed class Options
 
     public bool NoGit { get; set; }
 
+    /// <summary>Skips the offline restore that runs before the workspace is used; reproduces the
+    /// tool's pre-restore behaviour on an unrestored input.</summary>
+    public bool NoRestore { get; set; }
+
     public List<string> PublishCalls { get; } = new();
 
     public List<string> ConsumerBases { get; } = new();
@@ -75,6 +79,8 @@ internal static class Program
                    [--context <path|->]      build-context envelope, required with `--emit context`, - is stdout
                    [--repo <id>]             repo id in the fact/context header (default: --root's last segment)
                    [--no-git]                do not stamp git identity in the fact header
+                   [--no-restore]            skip the automatic offline restore of any project
+                                              missing its assets file
                    [--publish-calls a,b]     extra publish method names, repeatable
                    [--consumer-bases a,b]    extra consumer base type names, repeatable
                    [--scope dir[,dir]]       walk only documents under these root-relative dirs
@@ -106,6 +112,11 @@ internal static class Program
 
     /// <summary>Version of the MSBuild instance <see cref="MSBuildLocator"/> registered, or "unknown".</summary>
     internal static string MsBuildVersion { get; private set; } = "unknown";
+
+    /// <summary>The registered MSBuild instance's own install path, the deterministic root
+    /// <see cref="OfflineRestore"/> resolves the <c>dotnet</c> host from -- never PATH guessing.
+    /// Null when no instance ever registered.</summary>
+    internal static string? MsBuildPath { get; private set; }
 
     public static int Main(string[] args)
     {
@@ -139,6 +150,7 @@ internal static class Program
             {
                 var instance = MSBuildLocator.RegisterDefaults();
                 MsBuildVersion = instance.Version.ToString();
+                MsBuildPath = instance.MSBuildPath;
                 Console.Error.WriteLine($"msbuild {instance.Version} at {instance.MSBuildPath}");
             }
         }
@@ -213,6 +225,9 @@ internal static class Program
                     break;
                 case "--no-git":
                     options.NoGit = true;
+                    break;
+                case "--no-restore":
+                    options.NoRestore = true;
                     break;
                 case "--publish-calls":
                     options.PublishCalls.AddRange(Split(Value(arg)));
@@ -370,6 +385,22 @@ internal static class Runner
             return 3;
         }
 
+        // Every emit mode below reads compilations from this one load, so the
+        // restore runs here: only projects still missing their
+        // MSBuild-evaluated assets file, from the local NuGet global packages
+        // folder only. An already-restored project is never touched.
+        var restoreOutcomes = new Dictionary<string, RestoreOutcome>(StringComparer.Ordinal);
+        if (!options.NoRestore)
+        {
+            var restore = OfflineRestore.RestoreMissing(load, options);
+            restoreOutcomes = restore.Outcomes;
+            if (restore.AnyRestored)
+            {
+                load.Workspace.Dispose();
+                load = Loader.LoadAsync(options).GetAwaiter().GetResult();
+            }
+        }
+
         var paths = new RepoPaths(options.Root, options.Scope);
         var assemblyToUnit = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var loaded in load.Projects)
@@ -426,6 +457,10 @@ internal static class Runner
             var before = refs.Count;
             var occurrenceStart = compilerOccurrences?.Sites.Count ?? 0;
             var unitId = $"{loaded.Name}|{loaded.Tfm ?? "?"}";
+            restoreOutcomes.TryGetValue(project.FilePath ?? "", out var restoreOutcome);
+            var unrestoredReason = restoreOutcome is { Unrestored: true }
+                ? ContextBuilder.RedactDiagnosticMessage(restoreOutcome.Detail, paths)
+                : null;
 
             if (compilation is null)
             {
@@ -434,7 +469,7 @@ internal static class Runner
             }
             else
             {
-                compilerFacts?.CollectFromCompilation(compilation, unitId, paths);
+                compilerFacts?.CollectFromCompilation(compilation, unitId, paths, unrestoredReason);
                 foreach (var document in project.Documents)
                 {
                     var rel = paths.Relative(document.FilePath);
@@ -489,7 +524,7 @@ internal static class Runner
             {
                 var record = ContextBuilder.BuildRecord(
                     loaded, compilation, paths, buildCollection!, options, files, load.Failures,
-                    fingerprintCache, contextVersions!);
+                    fingerprintCache, contextVersions!, restoreOutcome);
                 contextRecords.Add(record);
 
                 // Every occurrence collected for this project's documents,
@@ -1009,7 +1044,8 @@ internal static class ContextBuilder
         List<string> loadedFiles,
         List<WorkspaceDiagnostic> workspaceFailures,
         Dictionary<ProjectId, string> fingerprintCache,
-        ContextVersions versions)
+        ContextVersions versions,
+        RestoreOutcome? restoreOutcome)
     {
         var project = loaded.Project;
         var projectPathRel = paths.RelativeProjectPath(project.FilePath) ?? project.FilePath ?? loaded.Name;
@@ -1104,7 +1140,21 @@ internal static class ContextBuilder
 
         string state;
         string reason;
-        if (compilerDiagnostics.Count > 0)
+        if (restoreOutcome is { Unrestored: true })
+        {
+            // A failed restore is the root cause of whatever compiler errors
+            // the missing PackageReference assemblies produced, so it is named
+            // ahead of them: a cache miss must not read as a binding-error
+            // indistinguishable from an unrelated source defect.
+            state = "partial";
+            reason = "unrestored";
+            workspaceDiagnosticRecords.Add(new WorkspaceDiagnosticRecord
+            {
+                Kind = "Failure",
+                Message = RedactDiagnosticMessage(restoreOutcome.Detail, paths),
+            });
+        }
+        else if (compilerDiagnostics.Count > 0)
         {
             state = "partial";
             reason = "binding-error";
@@ -1431,7 +1481,7 @@ internal static class ContextBuilder
     /// <see cref="ContextSchema"/> checks this at write time as defense in
     /// depth, so this is the first, not the only, guard.
     /// </summary>
-    private static string RedactDiagnosticMessage(string message, RepoPaths paths)
+    internal static string RedactDiagnosticMessage(string message, RepoPaths paths)
     {
         var rooted = message.Replace(paths.Root + "/", string.Empty, StringComparison.Ordinal);
         return AbsolutePathToken.Replace(rooted, m => Path.GetFileName(m.Value));

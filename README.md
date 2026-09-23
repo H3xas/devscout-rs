@@ -16,7 +16,7 @@ much.
 | Command | What you get |
 | --- | --- |
 | `devscout init [scope ...]` | Register the repo, create the artifact directory, install the agent hooks, run a first map |
-| `devscout map [scope ...]` | Build or refresh the index; incremental — unchanged files are reused |
+| `devscout map [scope ...] [--no-semantic]` | Build or refresh the index; incremental — unchanged files are reused. `--no-semantic` skips an admitted compiler-facts artifact even when one is present (see [Compiler facts](#compiler-facts)) |
 | `devscout find <query>` | Search the manifest by symbol name or by file purpose |
 | `devscout refs <symbol>` | Inbound references to a symbol, grouped by edge kind (`inherits`, `uses-type`, `uses-member`, `implements`, `overrides`) |
 | `devscout read <symbol>` | The symbol's declaration span and verbatim source plus the same inbound answer as `refs` |
@@ -161,7 +161,6 @@ untracked files and are shared correctly by worktrees:
 <git-common-dir>/scout/graph/fragments-v21.json   per-file extraction cache (incremental map)
 <git-common-dir>/scout/graph/project-units.json   csproj staleness sidecar (present only with a project model)
 <git-common-dir>/scout/graph/compiler-facts-v1.json  optional versioned compiler-fact artifact (see Compiler facts below); absent unless `compiler-facts run|import` has admitted one
-<git-common-dir>/scout/graph/semantic-v1.json      planned: compiler-backed enrichment cache (see docs/design/compiler-enrichment.md)
 <git-common-dir>/scout/log/queries.jsonl          query-verb telemetry, one JSON line per answered invocation (opt-in; SCOUT_TELEMETRY=1)
 ```
 
@@ -192,9 +191,9 @@ Two stores live outside the repo:
 
 `devscout compiler-facts run|import|status` is entirely optional: `map` and every query verb
 answer from source-level extraction alone and never spawn a compiler or touch the network. When a
-compiler-derived artifact has been admitted, a future consumer can layer compiler-checked facts on
-top of that same syntax-only coverage; today this verb group only acquires, validates and reports
-that artifact.
+compiler-derived artifact has been admitted, the resolver consumes it at the next `map`; `map
+--no-semantic` skips an admitted artifact even when one is present, always producing the exact
+syntax-only graph a build with no artifact admitted would.
 
 - `run` launches a one-shot engine located by `SCOUT_COMPILER_ENGINE` (no default, nothing
   downloaded), captures its output under a wall-clock timeout and a byte cap, and admits it.
@@ -212,6 +211,25 @@ artifact byte-identical. A structurally valid artifact that declares incomplete 
 admitted, together with its per-unit diagnostics, and is never reported as clean or complete.
 Publication is atomic — a validate-then-rename through the same same-directory temp file scheme
 every other artifact in this crate already uses.
+
+**Consuming an admitted artifact.** At `map` time, a same-context compiler fact determines the
+answer at its own occurrence, including where it contradicts a syntax-derived edge; the displaced
+syntax answer is preserved as a disagreement diagnostic (`stats.semantic.disagreements` in
+`graph.json`), never as a graph edge. A compiler-verified occurrence the syntax extractor never
+referenced at all is projected as its own, separately provenanced population
+(`source: "semantic-discovered"`, never pooled with the per-reference overrides). Freshness is
+whole-artifact: any change to the checkout's git head or working-tree cleanliness since the
+artifact was captured invalidates every fact it carries, even for a consuming file that is itself
+byte-identical. So does a changed MSBuild import (`Directory.Build.props`, `Directory.Packages.props`,
+a `.targets` file) the artifact's own compilation context named at capture time, re-checked offline
+against its recorded hash -- the case a git-only check misses when the import lives outside the
+mapped repository. `devscout audit --semantic` reports both an enriched graph's `semantic` and
+`semantic-discovered` tiers alongside the syntax tiers, and a `lane` key (`"syntax"` or
+`"enriched"`) naming which kind of graph was audited. This mechanism is registered against a ship/
+no-ship gate on a public corpus; see
+[`docs/benchmarks/results/2026-09-resolver-precision.md`](docs/benchmarks/results/2026-09-resolver-precision.md)'s
+"Run 7" section for the measured result — the layer is additive and always available on request,
+but is not currently recommended enabled by default on the strength of that measurement.
 
 ## Reading a symbol
 
@@ -304,10 +322,20 @@ Known, rather than hidden:
   to the project that declared it. Without any `.csproj` files, nothing changes.
 - **Graph schema 2 adds `member`, `tier`, `units`, and `stats.heuristic_by_tier`.** `member`
   is written on every `uses-member` edge, `tier` on the heuristic ones; `units` (the discovered
-  `.csproj` projects) is appended last. A reserved `source` slot is set aside for a future
-  semantic-provenance tag. A v1 graph.json is rebuilt automatically on the next `map`. Schema 3
-  adds the `implements`/`overrides` edge kinds and their `edges_by_kind` counters; a v2
-  graph.json is rebuilt the same way a v1 one is.
+  `.csproj` projects) is appended last. A `uses-member` edge also carries an optional `source`
+  key (`"semantic"` or `"semantic-discovered"`), set only when an admitted compiler-facts
+  artifact produced the edge and omitted entirely otherwise, so a syntax-only graph stays
+  byte-identical to one built before compiler-fact consumption existed. A v1 graph.json is
+  rebuilt automatically on the next `map`. Schema 3 adds the `implements`/`overrides` edge
+  kinds and their `edges_by_kind` counters; a v2 graph.json is rebuilt the same way a v1 one is.
+- **Compiler-fact enrichment measurably moves the `precise` tier's own precision figure.** Once
+  an admitted artifact is consumed, most references a confirmed compiler fact covers move from
+  the `precise`/`ext`/`guess` tiers into the `semantic` tier — including references where the
+  compiler fact merely agrees with what the syntax ladder already found, not only the ones it
+  corrects. What remains in `tiers.precise` is therefore a different, smaller population (the
+  references no confirmed fact reached), and its own precision can read measurably lower than
+  the same corpus's syntax-only `tiers.precise` figure even though the `semantic` tier and the
+  `precise`+`semantic` union both hold a high floor — see the shipping-gate note above.
 - **A precise `uses-member` edge binds the type that declares the member, as far as names
   and arity can tell.** The declaring type in the receiver's static chain — inherited,
   overridden and hidden members, interface members through interface, implementing-class

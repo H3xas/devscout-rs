@@ -45,6 +45,8 @@ fn heuristic_flag_is_appended_last_and_omitted_when_false() {
         heuristic: false,
         tier: None,
         member: None,
+        source: None,
+        overload_signature: None,
     };
     assert_eq!(
         serde_json::to_string(&precise).unwrap(),
@@ -58,6 +60,8 @@ fn heuristic_flag_is_appended_last_and_omitted_when_false() {
         heuristic: true,
         tier: Some(HeuristicTier::Guess),
         member: Some("M".into()),
+        source: None,
+        overload_signature: None,
     };
     assert_eq!(
         serde_json::to_string(&guess).unwrap(),
@@ -71,6 +75,8 @@ fn heuristic_flag_is_appended_last_and_omitted_when_false() {
         heuristic: true,
         tier: Some(HeuristicTier::Ext),
         member: Some("M".into()),
+        source: None,
+        overload_signature: None,
     };
     assert_eq!(
         serde_json::to_string(&ext).unwrap(),
@@ -150,6 +156,105 @@ fn uses_member_edge_appends_tier_then_member_after_heuristic_and_omits_both_when
         }
         .tier(),
         None
+    );
+}
+
+// `source` appends after `member`, omitted for every edge the ladder or a
+// heuristic tier builds (`Edge::uses_member`), and present, never heuristic,
+// never tiered, for a compiler-vouched edge (`Edge::uses_member_semantic`).
+#[test]
+fn uses_member_semantic_appends_source_last_and_carries_neither_heuristic_nor_tier() {
+    let ladder = Edge::uses_member(
+        "F.cs".into(),
+        1,
+        "Ns.T".into(),
+        "Ns/T.cs".into(),
+        Some("M".into()),
+        None,
+    );
+    assert!(
+        !serde_json::to_string(&ladder).unwrap().contains("source"),
+        "an ordinary uses-member edge omits `source` entirely"
+    );
+
+    let confirmed = Edge::uses_member_semantic(
+        "F.cs".into(),
+        1,
+        "Ns.T".into(),
+        "Ns/T.cs".into(),
+        Some("M".into()),
+        SemanticProvenance::Semantic,
+        None,
+    );
+    assert!(!confirmed.is_heuristic());
+    assert_eq!(confirmed.tier(), None);
+    assert_eq!(confirmed.provenance(), Some(SemanticProvenance::Semantic));
+    assert_eq!(
+        serde_json::to_string(&confirmed).unwrap(),
+        r#"{"kind":"uses-member","from_file":"F.cs","from_line":1,"to":"Ns.T","to_file":"Ns/T.cs","member":"M","source":"semantic"}"#
+    );
+
+    let discovered = Edge::uses_member_semantic(
+        "F.cs".into(),
+        1,
+        "Ns.T".into(),
+        "Ns/T.cs".into(),
+        Some("M".into()),
+        SemanticProvenance::SemanticDiscovered,
+        None,
+    );
+    assert_eq!(
+        discovered.provenance(),
+        Some(SemanticProvenance::SemanticDiscovered)
+    );
+    assert!(serde_json::to_string(&discovered)
+        .unwrap()
+        .ends_with(r#""source":"semantic-discovered"}"#));
+
+    assert_eq!(
+        serde_json::from_str::<Edge>(&serde_json::to_string(&confirmed).unwrap()).unwrap(),
+        confirmed
+    );
+}
+
+// `overload_signature` appends LAST, after `source`, and travels only with a
+// compiler-vouched edge whose own admitted occurrence actually named one --
+// the exact identity that keeps two same-line overloads of one member
+// distinguishable once projected onto the graph.
+#[test]
+fn overload_signature_appends_last_after_source_and_is_omitted_when_absent() {
+    let no_signature = Edge::uses_member_semantic(
+        "F.cs".into(),
+        1,
+        "Ns.T".into(),
+        "Ns/T.cs".into(),
+        Some("M".into()),
+        SemanticProvenance::Semantic,
+        None,
+    );
+    assert!(
+        !serde_json::to_string(&no_signature)
+            .unwrap()
+            .contains("overload_signature"),
+        "an admitted occurrence naming no overload signature must not write the key at all"
+    );
+
+    let with_signature = Edge::uses_member_semantic(
+        "F.cs".into(),
+        1,
+        "Ns.T".into(),
+        "Ns/T.cs".into(),
+        Some("M".into()),
+        SemanticProvenance::Semantic,
+        Some("(bool)->void".into()),
+    );
+    assert_eq!(
+        serde_json::to_string(&with_signature).unwrap(),
+        r#"{"kind":"uses-member","from_file":"F.cs","from_line":1,"to":"Ns.T","to_file":"Ns/T.cs","member":"M","source":"semantic","overload_signature":"(bool)->void"}"#
+    );
+    assert_eq!(
+        serde_json::from_str::<Edge>(&serde_json::to_string(&with_signature).unwrap()).unwrap(),
+        with_signature
     );
 }
 

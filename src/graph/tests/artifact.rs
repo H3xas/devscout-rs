@@ -15,6 +15,7 @@ fn stats_appends_test_def_count_last_and_always_writes_it() {
         test_def_count: 0,
         heuristic_by_tier: HeuristicByTier::default(),
         ts: None,
+        semantic: None,
     };
     let json = serde_json::to_string(&stats).unwrap();
     assert!(
@@ -49,6 +50,7 @@ fn stats_keeps_heuristic_by_tier_last_even_when_a_ts_block_is_present() {
             external_import_count: 3,
             unresolved_ref_count: 4,
         }),
+        semantic: None,
     };
     let json = serde_json::to_string(&stats).unwrap();
     assert!(
@@ -75,6 +77,7 @@ fn empty_stats() -> Stats {
         test_def_count: 0,
         heuristic_by_tier: HeuristicByTier::default(),
         ts: None,
+        semantic: None,
     }
 }
 

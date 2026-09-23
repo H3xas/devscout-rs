@@ -44,6 +44,10 @@ pub mod render;
 pub mod repo;
 /// Resolution of extracted C# fragments into a graph.
 pub mod resolve;
+/// Resolve-time consumption of admitted compiler facts: same-context
+/// precedence, compiler-discovered-site projection, freshness, and
+/// uncertainty mapping.
+pub mod semantic;
 /// SQLite-backed hook freshness and content stores.
 pub mod store;
 /// Symbol-name suggestions for unsuccessful queries.

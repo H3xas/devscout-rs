@@ -101,7 +101,9 @@ pub use compiler_facts::{
 #[cfg(test)]
 pub(crate) use compiler_facts::{recompute_context_summary, CompilationRef};
 pub use def::{AlsoIn, Def};
-pub use edge::{Candidate, Edge, EdgesByKind, HeuristicByTier, HeuristicTier};
+pub use edge::{
+    Candidate, Edge, EdgesByKind, HeuristicByTier, HeuristicTier, SemanticProvenance, SemanticStats,
+};
 pub use fragment::{fragment_from_extraction, markup_fragment};
 pub use fragment_types::{
     AnyFragment, FragDef, FragExtensionMethod, FragFact, FragLambdaSlot, FragName, FragRef,

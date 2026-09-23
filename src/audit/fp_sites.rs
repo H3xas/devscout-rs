@@ -5,9 +5,9 @@
 // the report prints: the rows of one class and tier always number exactly
 // that tier's counter for the class.
 
-use super::{EdgeRow, OracleRef};
+use super::model::{EdgeRow, OracleRef};
 
-pub(super) struct FpSite {
+pub struct FpSite {
     file: String,
     line: usize,
     tier: &'static str,
@@ -30,12 +30,7 @@ impl FpSite {
         self.class
     }
 
-    pub(super) fn new(
-        e: &EdgeRow,
-        class: &'static str,
-        evidence: &[&OracleRef],
-        structural: bool,
-    ) -> FpSite {
+    pub fn new(e: &EdgeRow, class: &'static str, evidence: &[&OracleRef], structural: bool) -> FpSite {
         let mut expected: Vec<String> = Vec::new();
         for r in evidence.iter().filter(|r| !r.external) {
             if let Some(t) = &r.target {
@@ -59,7 +54,7 @@ impl FpSite {
 }
 
 /// JSON Lines, one object per row, in the order the edges were scored.
-pub(super) fn render(rows: &[FpSite]) -> String {
+pub fn render(rows: &[FpSite]) -> String {
     let mut out = String::new();
     for s in rows {
         let row = serde_json::json!({
@@ -81,9 +76,11 @@ pub(super) fn render(rows: &[FpSite]) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use std::path::PathBuf;
 
-    use super::super::{score, DefRow, Inputs, Tier};
+    use super::super::model::{DefRow, Inputs, Tier};
+    use super::super::score::score;
     use super::*;
 
     fn edge(line: usize, tier: Tier, member: &str) -> EdgeRow {
@@ -126,6 +123,8 @@ mod tests {
             records,
             units: Vec::new(),
             universe: ["F.cs".to_string()].into_iter().collect(),
+            lane: "syntax",
+            discovered_shapes: HashMap::new(),
             collect_fp_sites: true,
         }
     }

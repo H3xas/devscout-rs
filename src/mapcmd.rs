@@ -162,28 +162,11 @@ mod hashkey {
     }
 }
 
-/// Options for `map_repo` -- see the module header.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct MapOptions {
-    /// Content-hash reuse (module header). `MapOptions::default()` keeps `false`
-    /// (mtime keying); the binary's env default is `true` -- see `from_env`.
-    pub hash_reuse: bool,
-}
-
-impl MapOptions {
-    /// Binary default: hash reuse ON. Exactly `SCOUT_MTIME_REUSE=1` drops back to
-    /// mtime keying; anything else (including unset) keeps hash reuse. The retired
-    /// opt-in `SCOUT_HASH_REUSE` is deliberately not read any more -- it named what
-    /// is now the default. A free function rather than folded into `map_repo`
-    /// itself so tests (and any future caller) can construct `MapOptions` directly
-    /// -- deterministic, no process-env mutation shared across parallel `cargo
-    /// test` threads.
-    pub fn from_env() -> Self {
-        MapOptions {
-            hash_reuse: std::env::var("SCOUT_MTIME_REUSE").as_deref() != Ok("1"),
-        }
-    }
-}
+// `MapOptions` lives in its own sibling file, `mapcmd/options.rs` -- this
+// file sits at its exact size-ratchet ceiling with zero headroom (see that
+// file's own header comment).
+mod options;
+pub use options::MapOptions;
 
 /// Counts + timing `devscout map`'s CLI line reports, plus the scoped-merge
 /// bookkeeping. Every field but `total_manifest_entries`/`merged_out_of_scope`
@@ -695,18 +678,26 @@ pub fn map_repo(root: &Path, scope_dirs: &[String], opts: MapOptions) -> io::Res
     // `None` when the repo declares no project, which keeps graph.json's
     // bytes exactly as they were.
     let project_model = project::discover(root, &scope)?;
+    // `--no-semantic` (`MapOptions::no_semantic`) is the rollback lever: with
+    // it set, an admitted compiler-facts artifact is never loaded, so this
+    // run's graph is exactly what a build with no artifact admitted would
+    // produce, regardless of what is actually sitting on disk.
+    let semantic_layer = if opts.no_semantic {
+        None
+    } else {
+        crate::semantic::SemanticLayer::load(root)
+    };
 
-    // `graph::index_is_stale` decides whether the graph must be rebuilt (any
-    // graph file's cache key changed, or the set of graph files changed size),
-    // reused here rather than re-implemented. The project model is the second
-    // half of that decision, for the reason above: `project::sidecar_differs`
-    // compares this run's model against the one the last rebuild persisted, so
-    // a `ProjectReference` added or dropped rebuilds the graph even though not
-    // one indexed file moved. Deliberately OR-ed, not short-circuited the
-    // other way: a repo with no csproj at all always answers false here and
-    // the whole check costs nothing.
+    // Graph rebuild triggers, OR-ed (a repo with none of the three answers
+    // false at no cost): any indexed file's cache key changed
+    // (`graph::index_is_stale`); the csproj model changed since the last
+    // rebuild (`project::sidecar_differs`); or an admitted compiler-facts
+    // artifact is present ON DISK at all -- checked independently of
+    // `semantic_layer` so `--no-semantic` still fires this trigger and
+    // rebuilds even though it forces `semantic_layer` to `None` itself.
     let changed = graph::index_is_stale(&graph_index, &graph_files)
-        || project::sidecar_differs(root, project_model.as_ref());
+        || project::sidecar_differs(root, project_model.as_ref())
+        || options::compiler_facts_artifact_present(root);
 
     let graph_start = Instant::now();
     let outcome = graph::rebuild_graph(
@@ -715,6 +706,7 @@ pub fn map_repo(root: &Path, scope_dirs: &[String], opts: MapOptions) -> io::Res
         &fresh_fragments,
         changed,
         project_model.as_ref(),
+        semantic_layer.as_ref(),
     )?;
     let graph_seconds = graph_start.elapsed().as_secs_f64();
 
@@ -1273,7 +1265,10 @@ mod tests {
     #[test]
     fn hash_reuse_survives_an_mtime_only_touch() {
         let root = temp_dir("hash-reuse");
-        let opts = MapOptions { hash_reuse: true };
+        let opts = MapOptions {
+            hash_reuse: true,
+            ..Default::default()
+        };
         let content = "namespace Fixtures.MapCmd { public class A {} }\n";
         write_file(&root.join("src/A.cs"), content);
         let first = map_repo(&root, &[], opts).unwrap();
@@ -1300,7 +1295,10 @@ mod tests {
     #[test]
     fn hash_reuse_reparses_on_real_content_change() {
         let root = temp_dir("hash-reparse");
-        let opts = MapOptions { hash_reuse: true };
+        let opts = MapOptions {
+            hash_reuse: true,
+            ..Default::default()
+        };
         write_file(
             &root.join("src/A.cs"),
             "namespace Fixtures.MapCmd { public class A {} }\n",

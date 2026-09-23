@@ -100,6 +100,7 @@ pub fn rebuild_graph(
     fresh_fragments: &HashMap<String, AnyFragment>,
     changed: bool,
     model: Option<&crate::project::ProjectModel>,
+    semantic_layer: Option<&crate::semantic::SemanticLayer>,
 ) -> io::Result<RebuildOutcome> {
     if !changed && graph_json_path(root).exists() && graph_schema_is_current(root) {
         return Ok(RebuildOutcome::NotRebuilt);
@@ -133,7 +134,13 @@ pub fn rebuild_graph(
         );
     }
 
-    let graph = crate::resolve::resolve_graph_with_model(root, &merged_cs, &merged_ts, model);
+    let graph = crate::resolve::resolve_graph_with_model(
+        root,
+        &merged_cs,
+        &merged_ts,
+        model,
+        semantic_layer,
+    );
     write_graph(root, &graph)?;
     write_project_units(root, model)?;
     write_fragments_cache(root, &new_cache)?;

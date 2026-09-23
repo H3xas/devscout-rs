@@ -5,7 +5,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use super::def::Def;
-use super::edge::{Edge, EdgesByKind, HeuristicByTier};
+use super::edge::{Edge, EdgesByKind, HeuristicByTier, SemanticStats};
 use super::ordered::Percent1;
 use super::paths::{atomic_write_json, graph_json_path};
 
@@ -53,6 +53,11 @@ pub struct Stats {
     /// still follows `test_def_count` directly and the bytes are unchanged.
     #[serde(default)]
     pub heuristic_by_tier: HeuristicByTier,
+    /// The resolve-time compiler-fact consumption path's own run-level
+    /// counters, appended LAST and omitted entirely when the semantic layer
+    /// did not load for this run -- see `SemanticStats`'s own doc comment.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub semantic: Option<SemanticStats>,
 }
 
 /// One row of the full name index. Field order (`name`, `kind`,
