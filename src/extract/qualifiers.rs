@@ -171,10 +171,52 @@ pub(super) fn member_name_text(node: Option<Node>, src: &[u8]) -> Option<String>
 pub(super) struct QualifierResolution {
     pub(super) text: String,
     pub(super) generic: bool,
+    /// The qualifier's own LEAF-segment type-argument count -- `Some(n)`
+    /// only when the qualifier is a candidate type name and its own leaf
+    /// segment carries a type-argument list (`Some(0)` when it carries
+    /// none), `None` for `this`/`base`, a chain tail (never built through
+    /// this function -- see `resolve_call_chain_tail`), and a bare
+    /// qualifier the enclosing scope already holds an instance fact for. A
+    /// variable's name carries no type arity; only a type name's own arity
+    /// is ever recorded. Never inherited from an inner segment of a dotted
+    /// chain -- `generic` alone answers "is some segment of this qualifier
+    /// generic", `arity` answers the narrower "how many type arguments did
+    /// the BOUND-TO segment carry", which is why it is a field of its own
+    /// rather than folded into `generic`.
+    pub(super) arity: Option<usize>,
     pub(super) receiver: Option<Fact>,
     pub(super) property_owner: Option<String>,
     pub(super) receiver_base: bool,
     pub(super) receiver_local: bool,
+}
+
+// The type-argument list carried DIRECTLY on a qualifier's own leaf
+// segment: the qualifier's own `generic_name` for a bare `Foo<T>`, or a
+// dotted qualifier's trailing `name` field (`Ns.Foo<T>`) -- never a list an
+// inner segment of a longer chain carries. Counts only commas that are
+// DIRECT children of the type-argument list, unlike `type_argument_arity`
+// (used for uses-type/inherits refs), which scans the list's full text span
+// and so over-counts a nested generic argument's own commas
+// (`Outer<Inner<A, B>>` would read 2 instead of 1). Kept as its own
+// function rather than a fix to that one: that one also backs
+// `record_single_type`, a surface this rule does not touch.
+fn qualifier_leaf_arity(node: Node) -> Option<usize> {
+    let leaf = match node.kind() {
+        "member_access_expression" => node.child_by_field_name("name")?,
+        _ => node,
+    };
+    if leaf.kind() != "generic_name" {
+        return Some(0);
+    }
+    let list = named_children(leaf)
+        .into_iter()
+        .find(|c| c.kind() == "type_argument_list")?;
+    let mut cursor = list.walk();
+    let commas = list
+        .children(&mut cursor)
+        .filter(|c| c.kind() == ",")
+        .count();
+    Some(commas + 1)
 }
 
 pub(super) fn resolve_member_qualifier(
@@ -183,7 +225,8 @@ pub(super) fn resolve_member_qualifier(
     type_stack: &[String],
     scope: &Scope,
 ) -> Option<QualifierResolution> {
-    let kind = qualifier?.kind();
+    let node = qualifier?;
+    let kind = node.kind();
     let (qt, generic) = member_qualifier_info(qualifier, src, type_stack)?;
     // `this`/`base` are bare anonymous tokens in this grammar (verified
     // against the shipped grammar: neither wraps in a
@@ -191,7 +234,8 @@ pub(super) fn resolve_member_qualifier(
     // shape whose receiver is asked of `type_stack` directly rather than of
     // the enclosing scope's local/field fact table -- a coincidentally
     // same-named local or field must never stand in for the enclosing type
-    // itself.
+    // itself. Both keywords name the enclosing type whatever its own arity,
+    // so neither ever carries a type-argument count.
     if kind == "this" || kind == "base" {
         let receiver_args = if scope.type_params.is_empty() {
             None
@@ -210,6 +254,7 @@ pub(super) fn resolve_member_qualifier(
             }),
             text: qt,
             generic,
+            arity: None,
             property_owner: None,
             receiver_base: kind == "base",
             receiver_local: false,
@@ -234,6 +279,19 @@ pub(super) fn resolve_member_qualifier(
     // bare-identifier field/property fallback (Unit B) needs exactly that
     // distinction to let a local always shadow a same-named field.
     let receiver_local = bare && scope.has_local_fact(&qt, src);
+    // A bare qualifier the extractor already holds SOME in-scope fact for --
+    // typed or not, local or the enclosing type's own field/primary-ctor
+    // parameter -- is an instance reference, never a type name: a variable
+    // carries no type arity. `name_is_claimed` is the same "is this name
+    // claimed by anything in scope" test the chain-tail static-qualifier
+    // fallback already relies on. An unclaimed bare qualifier IS a
+    // candidate type name and reads arity 0, the same as a bare uses-type
+    // reference already does.
+    let arity = if bare && scope.name_is_claimed(&qt, src) {
+        None
+    } else {
+        qualifier_leaf_arity(node)
+    };
     // The head of a TWO-segment chain, and only when the scope vouches for
     // its type: "a.Settings" asks what `a` is, while "x.y.Settings" and a
     // namespace path ask nothing, because a head this file cannot type is a
@@ -246,6 +304,7 @@ pub(super) fn resolve_member_qualifier(
     Some(QualifierResolution {
         text: qt,
         generic,
+        arity,
         receiver,
         property_owner,
         receiver_base: false,

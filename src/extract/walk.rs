@@ -388,6 +388,7 @@ fn walk<'a>(
                         q.receiver_base,
                         q.receiver_local,
                         invocation_lambda_arg_arity(node, src),
+                        q.arity,
                     );
                 }
             } else if let (Some(qn), Some(m)) = (expr_field, &member) {
@@ -438,6 +439,10 @@ fn walk<'a>(
                             head_is_base,
                             false,
                             invocation_lambda_arg_arity(node, src),
+                            // The qualifier's OWN source text is an
+                            // invocation's own source, never a type name a
+                            // type-argument list could sit on.
+                            None,
                         );
                     }
                 }
@@ -490,6 +495,7 @@ fn walk<'a>(
                             q.receiver_base,
                             q.receiver_local,
                             invocation_lambda_arg_arity(node, src),
+                            q.arity,
                         );
                     }
                 }

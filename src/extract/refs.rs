@@ -524,6 +524,14 @@ pub(super) fn push_ctor_param_ref(
 // of, exactly like `arg_count`, and is threaded in as its own parameter for
 // the same reason -- computed by the caller from its OWN node, appended
 // LAST of all, after `receiver_local`.
+//
+// `arity` fills the ref's own `type_arg_count` -- the qualifier's own
+// leaf-segment type-argument count, computed by the caller
+// (`resolve_member_qualifier`'s `QualifierResolution::arity`) since that is
+// where the qualifier's node and the scope's instance facts are both in
+// hand. `None` for a chain-tail window, whose qualifier text is an
+// invocation's own source and never a type name. Appended LAST of all,
+// after `lambda_arg_arity`.
 pub(super) fn push_member_ref(
     refs: &mut Vec<RefRecord>,
     qualifier_text: &str,
@@ -538,6 +546,7 @@ pub(super) fn push_member_ref(
     receiver_base: bool,
     receiver_local: bool,
     lambda_arg_arity: Option<Vec<Option<usize>>>,
+    arity: Option<usize>,
 ) {
     // A call fact records the CALLEE it depends on and never a receiver type;
     // a lambda-slot fact records the SLOT this untyped parameter fills on a
@@ -587,7 +596,7 @@ pub(super) fn push_member_ref(
             member: Some(member),
             line,
             namespace: Some(ns),
-            type_arg_count: None,
+            type_arg_count: arity,
             generic,
             receiver_type,
             arg_count,
@@ -611,7 +620,7 @@ pub(super) fn push_member_ref(
             member: Some(member),
             line,
             namespace: Some(ns),
-            type_arg_count: None,
+            type_arg_count: arity,
             generic,
             receiver_type,
             arg_count,
