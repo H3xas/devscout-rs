@@ -78,6 +78,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   by a new fixture tree (`fixtures/csharp-target-qualification/`), a new composition script
   (`tools/qualify-dotnet-targets.py`) and a dotnet-free test
   (`tests/dotnet_target_qualification.rs`); no `src/*.rs` change.
+- Offline extension-impact qualification harness reporting candidate-edge and complete-answer
+  precision against compiler-reference evidence. It preserves production traversal and records
+  failed admission gates without promoting evidence tiers.
 
 ### Changed
 
