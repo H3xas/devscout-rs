@@ -101,6 +101,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `Value`, `HasValue` or `GetValueOrDefault`. On the pinned MassTransit benchmark, precise false
   positives against external targets and structural impossibilities drop to 0 (precision 0.989 to
   0.993). The fragment cache moves to `fragments-v20.json`, so an existing cache re-extracts once.
+- **A member qualifier's own type-argument count now decides which same-named type it binds.**
+  `Foo.M()` and `Foo<T>.M()` on the same line each resolve to their own definition -- a bare
+  qualifier to the zero-type-parameter sibling, a one-argument qualifier to the one-type-parameter
+  sibling -- regardless of which definition the index visits first. A qualifier whose written
+  argument count has no matching definition (for example a two-argument qualifier where only a
+  bare and a one-argument sibling exist) earns no precise edge instead of binding a same-named
+  guess. The fragment cache moves to `fragments-v21.json`, so an existing cache re-extracts once.
 
 ## [0.6.0] - 2026-09-09
 
