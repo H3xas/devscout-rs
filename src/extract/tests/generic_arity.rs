@@ -83,3 +83,86 @@ fn nested_generic_type_arguments_are_all_recorded() {
     // "string" is a predefined_type -- never a candidate.
     assert!(!uses_type_names.contains(&"string"));
 }
+
+// --- member-qualifier arity (uses-member's own type_arg_count) --------
+
+#[test]
+fn a_member_qualifiers_own_leaf_arity_is_recorded_on_the_wire() {
+    let e = extract_src(
+        r#"
+namespace App.Arity;
+
+public class A { }
+public class B { }
+public class Bar<X, Y> { }
+public class Widget { }
+
+public class Host
+{
+    private Widget local;
+    private Widget a;
+
+    public void Run()
+    {
+        Foo<A>.M1();
+        Foo<A, B>.M2();
+        Foo<Bar<A, B>>.M3();
+        Ns.Foo<A>.M4();
+        Foo.M5();
+        this.M6();
+        base.M7();
+        var chained = a.B2().C();
+        local.M8();
+    }
+}
+"#,
+    );
+    let arity_of = |member: &str| -> Option<Option<usize>> {
+        e.refs
+            .iter()
+            .find(|r| r.kind == "uses-member" && r.member.as_deref() == Some(member))
+            .map(|r| r.type_arg_count)
+    };
+    assert_eq!(arity_of("M1"), Some(Some(1)), "Foo<A>.M1()");
+    assert_eq!(arity_of("M2"), Some(Some(2)), "Foo<A, B>.M2()");
+    assert_eq!(
+        arity_of("M3"),
+        Some(Some(1)),
+        "Foo<Bar<A, B>>.M3(): a nested generic argument's own comma must not count"
+    );
+    assert_eq!(arity_of("M4"), Some(Some(1)), "Ns.Foo<A>.M4()");
+    assert_eq!(arity_of("M5"), Some(Some(0)), "bare Foo.M5()");
+    assert_eq!(
+        arity_of("M6"),
+        Some(None),
+        "this.M6() keeps an arity-blind lookup"
+    );
+    assert_eq!(
+        arity_of("M7"),
+        Some(None),
+        "base.M7() keeps an arity-blind lookup"
+    );
+    assert_eq!(
+        arity_of("C"),
+        Some(None),
+        "a chain-tail window's qualifier is an invocation's own source, never a type name"
+    );
+    assert_eq!(
+        arity_of("M8"),
+        Some(None),
+        "a bare qualifier the extractor already holds a field fact for carries no type arity"
+    );
+}
+
+#[test]
+fn uses_type_arity_stays_untouched_by_the_member_qualifier_rule() {
+    let e = extract_src(
+        "namespace App.Arity; public class A {} public class Bar<X, Y> {} public class Host { private Bar<A, A> Field; }",
+    );
+    let bar = e
+        .refs
+        .iter()
+        .find(|r| r.kind == "uses-type" && r.name == "Bar")
+        .expect("Bar<A, A> field type records a uses-type ref");
+    assert_eq!(bar.type_arg_count, Some(2));
+}
