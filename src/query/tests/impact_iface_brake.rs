@@ -474,7 +474,11 @@ fn build_impact_model_leaves_a_contract_at_exactly_the_fan_in_threshold_hopping(
     files.sort();
     assert_eq!(
         files,
-        vec!["Widgets/ClockConsumer0.cs", "Widgets/ClockConsumer1.cs", "Widgets/GadgetService.cs"],
+        vec![
+            "Widgets/ClockConsumer0.cs",
+            "Widgets/ClockConsumer1.cs",
+            "Widgets/GadgetService.cs"
+        ],
         "one below the fan-in, the same contract brakes"
     );
     assert_eq!(
