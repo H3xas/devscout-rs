@@ -1835,7 +1835,7 @@ run             import`'s own default requested profile; 34161 symbols, 21 diagn
                 855cf1752c94ca9498e0c45ce8d09fdc9e957dd6 (the corpus's own pinned commit -- a real
                 git repository, not `--no-git`), dirty: false
 Acquisition     37.3s wall (`time dotnet run ... --emit compiler-facts`), well under the gate's 300s
-time            budget and under any reasonable multiple of a normal build of this solution
+time            budget (see Run 8 for the measured cost-ratio criterion on this corpus)
 Admission       `devscout compiler-facts import`: admitted, coverage incomplete (1 unit), 163606
                 occurrences admitted, 18 ambiguous, 1812 unresolved -- 2.7s wall
 Rebuild         `devscout map .` after admission: graph rebuilt in 2.73s, 9951 defs (unchanged),
@@ -1893,7 +1893,7 @@ recall precise+ext 0.572) on this exact corpus and this exact devscout base:
 | 1 | recall precise+ext gain >= +0.10 absolute AND >= 0.70 floor | 0.572 | 0.854 (+0.282) | **met** |
 | 2 | `tiers.precise` precision not more than 0.005 below its paired syntax figure | 0.989 | 0.969 (-0.020) | **not met** |
 | 3 | cold acquisition <= 300s wall | n/a | 37.3s | met |
-| 4 | cold acquisition <= 2x `dotnet build -c Release` of the same solution | n/a | 37.3s vs. a full-solution build that does not itself succeed at `-c Release` without per-project scoping (a pre-existing corpus target-framework gap, the same class criterion 3's environment note names) | met on any reasonable reading (37s is not close to any plausible multiple of this solution's own build time) |
+| 4 | cold acquisition <= 2x `dotnet build -c Release` of the same solution | n/a | 37.3s vs. a full-solution build that does not itself succeed at `-c Release` without per-project scoping (a pre-existing corpus target-framework gap, the same class criterion 3's environment note names) | not demonstrated (no measured Release-build figure at this run; see Run 8 for the measured cost ratio) |
 
 **Criterion 2 fails.** This is not a rounding artifact: `tiers.precise` drops from 31450 edges to
 4026 in the enriched lane, because the same-context override (by design, per this ticket's own
@@ -2039,20 +2039,199 @@ below" band on the correct side (above, not below) by a comfortable margin. The 
 | 1 | recall precise+ext gain >= +0.10 absolute AND >= 0.70 floor | 0.572 | 0.854 (+0.282) | **met** (unchanged) |
 | 2 | union of the enriched lane's precise and semantic rows not more than 0.005 below the syntax lane's own paired precise figure | 0.989 | 0.9958 (+0.0068) | **met** |
 | 3 | cold acquisition <= 300s wall | n/a | 37.3s | **met** (unchanged) |
-| 4 | cold acquisition <= 2x `dotnet build -c Release` of the same solution | n/a | 37.3s, far under any reasonable multiple | **met** (unchanged) |
+| 4 | cold acquisition <= 2x `dotnet build -c Release` of the same solution | n/a | no measured Release-build figure at this run | not demonstrated (unchanged; see Run 8 for the measured cost ratio) |
 
-**Gate outcome under the amended criterion: all four criteria met.** Criteria 1, 3 and 4 are
-unaffected by the amendment and stand exactly as Run 7 recorded them. Criterion 2, under the amended
-text, reads the population the override design actually produces (the union) rather than a residual
-the override's own selection effect shrank and hardened (`tiers.precise` alone, per the reasoning
-behind that amendment, given above) -- and that population clears the bar. This changes this run's
-outcome from the registered negative result recorded earlier to a **passing registered shipping
-gate**, subject to the same consumer-conformance caveat the paired-independent-evaluation label
-attaches to every figure in this section: the independent-truth leg has not run, so this is not yet
-independent proof of the enriched lane's real-world precision, only of the mechanism's conformance to
-its own input artifact on this pinned corpus. Whether this passing result is sufficient to change the
-ship/no-ship recommendation, given that caveat, is the technical review's judgement to issue, not
-this results document's to assert.
+**Gate outcome under the amended criterion: criteria 1-3 met, criterion 4 not demonstrated.**
+Criteria 1 and 3 are unaffected by the amendment and stand exactly as Run 7 recorded them. Criterion
+2, under the amended text, reads the population the override design actually produces (the union)
+rather than a residual the override's own selection effect shrank and hardened (`tiers.precise`
+alone, per the reasoning behind that amendment, given above) -- and that population clears the bar.
+Criterion 4 was never measured at this run and stays not demonstrated, unchanged from Run 7; this
+changes this run's outcome from the registered negative result recorded earlier (criterion 2 was the
+sole failure) to three of four criteria met and the fourth not demonstrated, subject to the same
+consumer-conformance caveat the paired-independent-evaluation label attaches to every figure in this
+section: the independent-truth leg has not run, so this is not yet independent proof of the enriched
+lane's real-world precision, only of the mechanism's conformance to its own input artifact on this
+pinned corpus. Whether this outcome is sufficient to change the ship/no-ship recommendation, given
+that caveat, is the technical review's judgement to issue, not this results document's to assert.
+
+## Run 8 — public registered corpus, re-measured after a dedup-key widening in the same-context
+override (2026-09-23)
+
+This section restores, corrects and renumbers a section this branch's rebase onto the 0.7.0 base
+had dropped. It describes the measurement taken before that rebase, at revision `eb61f15` (three
+revisions past the round-2-reviewed head). It is not re-scored here and carries no figure measured
+at this branch's current, rebased head; the corrections below (this fix round, 2026-09-23) are
+textual only.
+
+Three revisions landed on top of the round-2-reviewed head since Run 7/7b: a same-line,
+same-target-type overload's projected edge now carries the overload's own signature, so two
+admitted compiler facts at one site that previously collapsed into one identical projected edge
+(because the dedup key compared target type alone) can now project as two distinct edges when
+their overload signatures differ. That change lives entirely in the enriched-lane consumer's own
+fact-to-edge projection, never in extraction, so the syntax lane is expected to be unaffected;
+whether it moves the enriched lane's own tier tables at corpus scale was an open question this run
+answers directly, rather than assuming "unchanged" from a code-path argument alone.
+
+**Registered prediction, before this run.** Syntax lane: predicted byte-identical to Run 6 (the
+widened dedup key is read only when projecting an admitted compiler fact to an edge, a path the
+syntax lane never executes). Enriched lane: predicted very likely byte-identical to Run 7/7b, since
+a same-line, same-target-type, different-overload-signature collision at one site is expected to be
+rare on a mature, already-disambiguated production codebase — registered as a prediction of no
+material change, not a certainty, checked directly below.
+
+**Consumer conformance only**, identically to Run 7: both lanes are scored against the same oracle
+output this section's own environment table names, not an independent reviewed truth source.
+
+### Environment
+
+```
+Date            2026-09-23
+Corpus          MassTransit/MassTransit @ 855cf1752c94ca9498e0c45ce8d09fdc9e957dd6 (bench/corpus.lock,
+                unchanged; re-cloned graph cache cleared and rebuilt fresh this run, same pin)
+Devscout base   devscout-rs 6a47cc7e96042f4610857901fb90f26a2606da26 on this ticket's branch (three
+                revisions past the round-2-reviewed head, landing the dedup-key widening described
+                above plus an unrelated producer-side offline-restore fix that does not touch this
+                corpus's own restore state)
+Oracle          tools/scout-semantic, Roslyn (Microsoft.CodeAnalysis.CSharp.Workspaces) 4.14.0,
+                Microsoft.Build.Locator, re-walked fresh this run (not reused): 112190 refs.jsonl
+                records / 66924 sites, 56 units (0 failed), 26 workspace diagnostics — byte-identical
+                to Run 6/7's own oracle output
+Compiler-facts  --tfm net9.0 -p Configuration=Debug -p Platform=AnyCPU; 34161 symbols, 21
+run             diagnostics, 1 incomplete unit — byte-identical to Run 7's own producer output;
+                occurrences: 163606 admitted, 18 ambiguous, 1812 unresolved (161776 confirmed)
+Acquisition     48.9s wall (`time dotnet run ... --emit compiler-facts`, isolated from the
+time            surrounding script), well under the gate's 300s budget
+Admission       `devscout compiler-facts import`: admitted, coverage incomplete (1 unit), 163606
+                occurrences admitted
+Rebuild         `devscout map .` after admission: graph rebuilt in 2.92s, 9951 defs (unchanged),
+                193598 edges (Run 7: 193586 — see "What moved" below)
+Tool version    devscout 0.6.0 (crate version), this ticket's branch, head
+                6a47cc7e96042f4610857901fb90f26a2606da26
+Build           cargo build --release -j 4, rustc 1.97.1 (8bab26f4f 2026-07-14), aarch64-apple-darwin
+SDK             dotnet 9.0.305 (msbuild 9.0.305)
+Host            macOS (Darwin 25.2.0 kernel), Apple M2 Max, arm64, 12 cores, 64 GiB RAM
+Bench root      bench/ (throwaway; nothing installed globally); SCOUT_REGISTRY/SCOUT_CONTENT_DB
+                redirected under bench/state/
+Network         setup only (corpus already cloned and pinned; no re-clone this run); offline for the
+                oracle walk, the compiler-facts run, the import, the rebuild and the audit
+Reps            1 (the registered gate evaluation; determinism is proven separately by
+                `tests/semantic_enrichment.rs`'s own byte-identical-two-runs test)
+```
+
+### Syntax-lane audit (verbatim; unchanged from Run 6, confirmed byte-identical this run)
+
+```
+tier        edges     tp     fp   precision
+precise     31450  31090    360       0.989
+ext          2536   2514     22       0.991
+guess        9033   5086   3947       0.563
+recall (57607 in-graph member sites)  precise 0.529  precise+ext 0.572  all 0.660
+```
+
+### Enriched-lane audit text output (verbatim; `root` rewritten bench-relative, nothing else changed)
+
+```
+devscout audit --semantic  root bench/corpora/csharp  lane enriched  oracle 112190 records / 66924 sites  units ok 56 failed 0  method units
+tier        edges     tp     fp   precision   fp:no-site  fp:external  fp:wrong  structural  unjudged
+precise      3982   3859    123       0.969           44           28        51           0         0
+ext           387    365     22       0.943            5           17         0           0         0
+guess        3567   1043   2524       0.292           48         2097       379           0         0
+semantic    46445  46357     88       0.998            0           85         3           0         0
+semantic-discovered  46082   8075   2406       0.770         1514          140       752           2     35601
+recall (57607 in-graph member sites)  precise 0.848  precise+ext 0.854  all 0.891
+external sites 19153  silent-correct 12684  leaked 6469
+structural  impossible 86  checked 100463
+fan-out  1: 38123  2: 16110  3: 5327  4+: 3166
+partial file mismatch 1740
+ambiguous 137
+edges outside universe (not judged) 740
+```
+
+`top fp targets`/`top missed` are omitted here (no gate-relevant figure); the full `--json` output
+is not committed (`bench/out/` is gitignored).
+
+### What moved, and what it means
+
+Comparing tier-by-tier against Run 7/7b's own already-recorded numbers, tier-relative to
+`semantic-discovered`'s own `unjudged` count (35601, unchanged) held constant:
+
+| tier | edges (Run 7/7b) | edges (this run) | delta | tp delta | fp delta |
+| --- | --- | --- | --- | --- | --- |
+| `precise` | 4026 | 3982 | −44 | −44 | 0 |
+| `ext` | 389 | 387 | −2 | −2 | 0 |
+| `guess` | 3565 | 3567 | +2 | 0 | +2 |
+| `semantic` | 46381 | 46445 | +64 | +66 | −2 |
+| `semantic-discovered` | 46090 | 46082 | −8 | −8 | 0 |
+| **graph total** | 193586 | 193598 | **+12** | — | — |
+
+**Correction (2026-09-23, this fix round).** This run's own text, as first published, attributed
+the entire table above to the dedup-key widening ("44 sites ... previously collapsed to one edge
+now correctly project as two, redistributing a net +12 edges"). That attribution is wrong in
+mechanism and in direction, and is retracted here. Two separate changes explain the table, each a
+different, disjoint slice of it. Only the dedup-key widening landed in the three revisions this
+run's own environment table names; the arity narrowing below predates them, already landed on top
+of Run 7/7b:
+
+- **Arity narrowing**, not the dedup-key widening, accounts for the entire `precise`/`ext`/`guess`/
+  `semantic` redistribution: −44/−2/+2/+64, net **+20** edges across those four tiers. A prior
+  narrowing fix, already landed on top of Run 7/7b, resolves 44 same-line calls of differing arity
+  that the type-level dedup key previously left in `precise` or `guess`; narrowing moves each to the
+  tier its own confirmed target belongs in (hand-checked examples: `Testing/PublishedMessageList.cs:66`'s
+  two same-line `Any` calls of different arity; `Behaviors/LastBehavior.cs:48,54`'s 2-arg and 0-arg
+  `Behavior.Faulted<TSaga, T>()` calls; `Middleware/RetryFilter.cs:143`'s `Task.Delay` call, correctly
+  re-targeted to the external 2-arg overload). This has nothing to do with the dedup-key widening
+  this run's own heading names.
+- **The dedup-key widening's only effect** on this corpus is the `semantic-discovered` row's **−8**
+  edges, and those 8 are all oracle true positives: all eight sit at
+  `MassTransit.SagaStateMachine.MessageFactory.Create`,
+  `src/MassTransit/SagaStateMachine/SagaStateMachine/MessageFactory.cs:206,271,428,498,657,718,845,911`.
+  Each site's admitted facts hold two confirmed occurrences of the same declaring type with
+  different overload signatures and no extractor-emitted reference to narrow against; the widened
+  dedup key keeps both targets distinct, `resolved_targets.len() == 2` reports `Ambiguous`, and
+  nothing is projected there any more, where the narrower key previously projected one (correct,
+  oracle-confirmed) type-level edge. The widening's real, sole effect here is the **opposite** of
+  "previously collapsed to one edge now correctly project as two": at the one place it acts on this
+  corpus, two confirmed facts that used to project as one edge now project as none.
+
+The gate-relevant headline figures are unaffected by either change: `recall.precise`/
+`recall.precise+ext` are byte-identical to Run 7 (0.848 / 0.854 — the redistribution moves which
+tier an edge lands in, not whether a site is covered at all); `recall.all` moves by one point
+(0.890 → 0.891, a non-gated diagnostic). The per-corpus-floor union below is recomputed from this
+run's own tier table, not carried from Run 7.
+
+### Registered shipping gate evaluation
+
+The four criteria, evaluated against Run 6's own syntax-lane figures (unchanged, confirmed
+byte-identical this run) on this exact corpus:
+
+| # | criterion | syntax (Run 6) | enriched (this run) | result |
+| --- | --- | --- | --- | --- |
+| 1 | recall precise+ext gain >= +0.10 absolute AND >= 0.70 floor | 0.572 | 0.854 (+0.282) | **met** |
+| 2 | union of the enriched lane's precise and semantic rows not more than 0.005 below the syntax lane's own paired precise figure | 0.98855 (exact) | 0.99582 (exact; 50427 edges, 50216 tp) — delta **+0.00726** | **met** |
+| 3 | cold acquisition <= 300s wall | n/a | 48.9s | **met** |
+| 4 | cold acquisition <= 2x `dotnet build -c Release` of the same solution | n/a | acquisition 38.3–40.2 s vs. Release build (53 of 55 projects) 13.5–15.6 s — ratio **2.46x–2.98x** against that subset; the whole solution's Release build is not measurable under SDK 9.0.305 (2 projects fail the assets check; the solution also targets net10.0) | **not demonstrated** |
+
+**Cost-ratio source.** The acquisition and Release-build figures in row 4 are one measurement set,
+taken on the same machine, same sitting, warm package cache, at this run's own head (`eb61f15`) —
+not this run's own 48.9s `dotnet run` figure in row 3 above, which adds a build-freshness check on
+top of the engine-direct walk this measurement used. The Release build ran
+`-c Release --no-restore -p:TargetFrameworks=net9.0`, build server shut down first, three runs. It
+is never an estimate. The outcome is **not demonstrated**: the ratio is measured only against the
+53-project subset that builds under those conditions, never against the whole solution. Of the 2
+remaining projects, both stop at NETSDK1005 under the `-p:TargetFrameworks=net9.0` override — not
+because SDK 9.0.305 cannot build their own netstandard2.0 or net8.0 targets — and the solution as a
+whole also declares a net10.0 target this SDK does not support.
+
+**Gate outcome: criteria 1-3 met, criterion 4 not demonstrated.** Criteria 1 and 3 carry forward
+unchanged from Run 7/7b. Criterion 2 has a wider union margin here than Run 7/7b's own
+amended-criterion figure (+0.0073 here vs +0.0068 there — both comfortably inside the band; the
+earlier figure's own three-decimal syntax rounding, 0.989, is what narrowed it). This run is the
+corpus-scale confirmation the prior "unchanged" inference could not itself supply, for criteria 1-3.
+Criterion 4 was never measured at this run's own head; the figures in its row above, measured at
+this exact revision (`eb61f15`) under the conditions stated above, are this document's own public
+cost-ratio publication for the pinned corpus, replacing every earlier unmeasured pass claim for
+this criterion.
 
 ## The private application corpus
 

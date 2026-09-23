@@ -30,7 +30,8 @@
 > lane's precise-row-and-semantic-row UNION against the syntax lane's own paired precise figure, not
 > the `precise` row alone, because the override mechanism redistributes a comparable population
 > across those two rows rather than shrinking a comparable one. Evaluated against that amended
-> criterion, the SAME Run 7 numbers (no re-measurement) now pass all four criteria — see
+> criterion, the SAME Run 7 numbers (no re-measurement) now meet criteria 1-3, with criterion 4
+> (the cost ratio) not demonstrated — see
 > [`docs/benchmarks/results/2026-09-resolver-precision.md`](../benchmarks/results/2026-09-resolver-precision.md)'s
 > "Run 7 under the amended precision-hold criterion" section. This is a consumer-conformance figure
 > only (both lanes scored against the same oracle), not independent proof; whether it changes the
