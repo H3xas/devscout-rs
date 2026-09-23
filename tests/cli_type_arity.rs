@@ -226,3 +226,38 @@ fn a_member_qualifier_whose_arity_has_no_sibling_earns_no_precise_edge() {
         "the drop is scoped to the mismatched line, not its matching-arity siblings: {graph}"
     );
 }
+
+// A second sibling pair, `Volumes.Codex` / `Volumes.Codex<T>`, whose GENERIC
+// file sorts before its bare file -- the opposite order from the Anthology
+// pair above. A bare qualifier's own arity must bind its own sibling
+// independent of which file the def index happens to walk first.
+fn codex_fixture() -> Fixture {
+    Fixture::with_files(&["CodexGeneric.cs", "CodexPlain.cs", "CodexConsumers.cs"])
+}
+
+#[test]
+fn a_bare_member_qualifier_binds_its_own_sibling_independent_of_index_order() {
+    let fx = codex_fixture();
+    let graph = fx.graph();
+    let edges = graph["edges"].as_array().unwrap();
+
+    let precise_line_to_file = |line: i64| -> Option<&str> {
+        edges
+            .iter()
+            .find(|e| {
+                e["kind"] == "uses-member" && e["from_line"] == line && e.get("heuristic").is_none()
+            })
+            .and_then(|e| e["to_file"].as_str())
+    };
+
+    assert_eq!(
+        precise_line_to_file(11),
+        Some("CodexPlain.cs"),
+        "the bare line must bind the arity-0 sibling even though the generic file's own is indexed first: {graph}"
+    );
+    assert_eq!(
+        precise_line_to_file(12),
+        Some("CodexGeneric.cs"),
+        "the generic line must keep binding the arity-1 sibling: {graph}"
+    );
+}
