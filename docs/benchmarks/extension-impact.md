@@ -97,6 +97,51 @@ regresses substantially. Multi-hop behavior correctness and a production provena
 contract remain unqualified. A stronger predicate requires independent evidence and a new
 qualification decision; renaming the tier is not a remedy.
 
+## Measurement at 2026-09-23
+
+Engine source: `4df6069d079bc5a6efa77a498c7df2c6678905a4` (the implementation base on the 0.7.0
+release line; two resolver revisions landed on this line after 0.6.0 and move the precise and
+extension edge tiers). Corpus: MassTransit at `855cf1752c94ca9498e0c45ce8d09fdc9e957dd6`,
+unchanged. Reference denominator: the same **2026-09-05 integration re-baseline**, retained as
+`bench/out/semantic/MassTransit-main-c2bce9f/audit.json`: precise precision **0.989**, recall
+**0.529**, and **57,607** eligible oracle records. The truth instrument is held fixed; only the
+engine moved.
+
+Measured 2026-09-23 using the retained oracle: 112,190 records, 56 loaded units, zero failed
+units. The scored universe contains 5,427 files; 733 member edges outside that universe are
+unjudged.
+
+| Edge cohort | Edges | TP | FP | Precision | Recall |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Precise | 31,240 | 31,026 | 214 | 0.993150 | 0.527783 |
+| Retained extension tier | 2,543 | 2,521 | 22 | 0.991349 | 0.043675 |
+| Fixed candidate | 2,372 | 2,350 | 22 | 0.990725 | 0.040724 |
+| Precise + candidate | 33,612 | 33,376 | 236 | 0.992979 | 0.568507 |
+
+Whole native answers use the same 195 seed files and 67,470 oracle-reachable seed/file pairs:
+
+| Answer cohort | Rows | TP | FP | Precision | Recall |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Baseline, all shown | 2,476 | 2,374 | 102 | 0.958805 | 0.035186 |
+| Candidate, all shown | 4,871 | 4,701 | 170 | 0.965100 | 0.069675 |
+| Baseline, asserted affected | 917 | 917 | 0 | 1.000000 | 0.013591 |
+| Candidate, asserted affected | 4,315 | 4,248 | 67 | 0.984473 | 0.062961 |
+| Newly shown | 2,810 | 2,727 | 83 | 0.970463 | 0.040418 |
+| Displaced | 415 | 400 | 15 | 0.963855 | 0.005929 |
+
+All-shown precision improves by 0.630 percentage points; asserted affected precision falls by
+1.553 points, from a perfect baseline to 0.984473. Candidate all-shown answers below 0.95 rise
+from 20 to 24; 8 asserted answer cohorts fail the floor. Macro all-shown precision is 0.956775
+to 0.965218, but the worst candidate all-shown answer is 0.0. Four seed files return no shown
+rows in each arm and are reported as undefined, not perfect precision.
+
+**No-go holds on this engine.** The replay above returns exit 2: candidate edge precision clears
+0.95, but individual all-shown answers still fail the floor and asserted affected precision still
+regresses, so the recommendation is unchanged. A second, private corpus was also measured at
+this commit against its own retained oracle; every one of its numerical gates held. Neither
+result changes the outcome: **no admission**, still pending a stronger, independently qualified
+predicate.
+
 ## Reproduce
 
 Keep corpus artifacts in ignored output directories. Build the current source, regenerate the
