@@ -140,6 +140,18 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Compiler-discovered edges are emitted in a deterministic order.** The enriched lane's own
+  discovered-site projection used to walk its site keys in the underlying `HashMap`'s own
+  iteration order, so `graph.json` was not guaranteed byte-identical across two separate `map`
+  processes over the same admitted artifact whenever more than one discovered site existed. It now
+  walks them in a fixed, sorted order.
+- **Two confirmed same-type overloads at a compiler-discovered site now project as two distinct
+  edges, not one ambiguous outcome.** A discovered site carries no caller-side argument count to
+  narrow an overload set by (unlike an extractor-emitted reference), so two same-line, same-type,
+  different-signature confirmed facts used to collapse together and project nothing. Each now
+  projects with its own overload signature, the same way arity narrowing already lets an
+  extractor-emitted reference resolve two same-line overloads independently; a survivor set naming
+  more than one distinct type is unaffected and still projects nothing.
 - **A repository-authored MSBuild import is identified by its own root-relative path, not just
   its bare file name.** `Directory.Build.props` and its kin previously normalized to their bare
   name alone; a same-named override file at a different repository depth (a root

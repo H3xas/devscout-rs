@@ -1654,3 +1654,161 @@ fn arity_narrowing_resolves_two_same_line_overloads_to_their_own_distinct_target
         "each overload must resolve to ITS OWN confirmed target, never the other's and never falling back to the ladder's own `Options` guess: {edges:?}"
     );
 }
+
+// `discovered.rs`'s own `project` used to iterate `SemanticLayer::
+// site_keys()` in the underlying `HashMap`'s own iteration order --
+// randomized per process by Rust's default hasher -- so the edges it
+// appends, and therefore `graph.json` itself, were not guaranteed
+// byte-identical across two separate `map` processes over the SAME
+// admitted artifact whenever more than one discovered site existed.
+// `two_runs_from_the_same_admitted_artifact_are_byte_identical` above
+// cannot see this: it admits exactly one occurrence at an
+// EXTRACTOR-EMITTED site (`same_context_override`), which never reaches
+// `discovered.rs` at all. This fixture admits three sites the extractor
+// never referenced (invented member names no real call in `Caller.cs`
+// ever names, so none is tracked into `precedence::track_reference`'s own
+// site set), forcing every one of them through `discovered.rs::project`.
+#[test]
+fn compiler_discovered_edges_are_emitted_in_a_deterministic_order() {
+    let fx = Fixture::build("discovered-determinism");
+    fx.map();
+    let head = fx.head();
+    let identity = compilation_identity();
+
+    let ghost = |member: &str, target: &str| {
+        occurrence_site(
+            1,
+            "confirmed",
+            Some(target),
+            Some(member),
+            vec![],
+            &identity,
+            COMPILATION_FINGERPRINT,
+        )
+    };
+    let candidate = build_candidate(
+        &head,
+        false,
+        graph::EXPECTED_DEPENDENCY_FINGERPRINT,
+        "complete",
+        &identity,
+        COMPILATION_FINGERPRINT,
+        vec![
+            ghost("GhostFirst", "Fixtures.Enrichment.Options"),
+            ghost("GhostSecond", "Fixtures.Enrichment.Widgets.BetaWidget"),
+            ghost("GhostThird", "Fixtures.Enrichment.Alpha.Config"),
+        ],
+    );
+    fx.import(&candidate, true);
+
+    fx.map();
+    let graph_path = graph::graph_json_path(&fx.repo);
+    let first = fs::read(&graph_path).expect("read graph.json (first run)");
+    fx.map();
+    let second = fs::read(&graph_path).expect("read graph.json (second run)");
+
+    assert_eq!(
+        first, second,
+        "graph.json must be byte-identical across two separate `map` processes over the same admitted artifact, including its compiler-discovered edges"
+    );
+
+    // Not vacuous: all three discovered sites actually landed.
+    let g: Value = serde_json::from_slice(&second).expect("graph.json is valid JSON");
+    for member in ["GhostFirst", "GhostSecond", "GhostThird"] {
+        let edges = Fixture::member_edges_at(&g, CALLER_FILE, 1, member);
+        assert_eq!(
+            edges.len(),
+            1,
+            "discovered site for {member} must project exactly one edge: {edges:?}"
+        );
+        assert_eq!(edges[0]["source"], "semantic-discovered");
+    }
+}
+
+// At a compiler-discovered key (no `FragRef` at all, so `discovered.rs`
+// always calls `SemanticLayer::lookup` with `caller_arg_count: None`), two
+// confirmed occurrences naming DIFFERENT overloads of the SAME member on
+// the SAME type used to collapse to `LookupOutcome::Other(Uncertainty::
+// Ambiguous)`: `resolved_targets` held two distinct `SemanticTarget`s
+// (same `to_def_id`/`to_file`, different `overload_signature`, so `dedup`
+// could not merge them) and the old `Confirmed`-only match in
+// `discovered.rs` treated anything else as unprojectable. This fixture is
+// the discovered-site twin of `two_same_line_overloads_of_one_member_
+// survive_as_distinct_facts` above (which proves the same shape at an
+// EXTRACTOR-EMITTED site, through arity narrowing): one compatibility key,
+// two same-type, same-member, different-signature confirmed facts, no
+// extractor reference at all -- the shape a one-line conditional choosing
+// between two overloads of the same call produces.
+#[test]
+fn two_confirmed_same_type_overloads_at_a_discovered_site_project_as_distinct_edges() {
+    let fx = Fixture::build("discovered-same-type-overloads");
+    fx.map();
+    let head = fx.head();
+    let identity = compilation_identity();
+
+    let zero_arg = occurrence_site_with_overload(
+        1,
+        "confirmed",
+        Some("Fixtures.Enrichment.Options"),
+        Some("GhostCreate"),
+        "()->void",
+        0,
+        vec![],
+        &identity,
+        COMPILATION_FINGERPRINT,
+    );
+    let two_arg = occurrence_site_with_overload(
+        1,
+        "confirmed",
+        Some("Fixtures.Enrichment.Options"),
+        Some("GhostCreate"),
+        "(bool, string)->void",
+        0,
+        vec![],
+        &identity,
+        COMPILATION_FINGERPRINT,
+    );
+    let candidate = build_candidate(
+        &head,
+        false,
+        graph::EXPECTED_DEPENDENCY_FINGERPRINT,
+        "complete",
+        &identity,
+        COMPILATION_FINGERPRINT,
+        vec![zero_arg, two_arg],
+    );
+    fx.import(&candidate, true);
+    fx.map();
+    let g = fx.graph();
+
+    let edges = Fixture::member_edges_at(&g, CALLER_FILE, 1, "GhostCreate");
+    assert_eq!(
+        edges.len(),
+        2,
+        "both same-type overloads at this discovered site must project, never collapsing to one ambiguous outcome: {edges:?}"
+    );
+    for e in &edges {
+        assert_eq!(e["to"], "Fixtures.Enrichment.Options");
+        assert_eq!(e["source"], "semantic-discovered");
+    }
+    let mut signatures: Vec<Option<&str>> = edges
+        .iter()
+        .map(|e| e["overload_signature"].as_str())
+        .collect();
+    signatures.sort_unstable();
+    assert_eq!(
+        signatures,
+        vec![Some("()->void"), Some("(bool, string)->void")],
+        "each overload's own projected edge must carry its own signature: {edges:?}"
+    );
+    assert_ne!(
+        edges[0], edges[1],
+        "the two overloads' projected edges must not be byte-identical: {edges:?}"
+    );
+
+    let stats = &g["stats"]["semantic"];
+    assert_eq!(
+        stats["discovered"], 2,
+        "both same-line discovered overloads must be counted, never folded into one: {stats}"
+    );
+}

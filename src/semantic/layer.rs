@@ -424,6 +424,18 @@ pub enum LookupOutcome {
     /// A fact exists but is not confirmed-and-translatable; every other
     /// consumer-visible state.
     Other(Uncertainty),
+    /// More than one distinct confirmed target survived (no caller-side
+    /// arity narrowed the set to one, or there was none to narrow with in
+    /// the first place). Never itself an ambiguity: it is the caller's own
+    /// choice whether "more than one confirmed target, nothing left to pick
+    /// between them" projects every one of them or degrades to
+    /// `Other(Uncertainty::Ambiguous)` -- see `discovered.rs` (which
+    /// projects same-type overloads, since it carries no caller argument
+    /// count to disambiguate with at all) and `precedence.rs` (which
+    /// degrades, since an extractor-emitted reference already has its own
+    /// single-target slot to fill and a real caller-side tie there is
+    /// genuine ambiguity, not a projection opportunity).
+    ConfirmedMany(Vec<SemanticTarget>),
 }
 
 /// The resolve-time consumption path's built-once layer: freshness, plus a
@@ -604,7 +616,7 @@ impl SemanticLayer {
                 .map(LookupOutcome::Other)
                 .unwrap_or(LookupOutcome::NoFact),
             1 => LookupOutcome::Confirmed(resolved_targets.remove(0)),
-            _ => LookupOutcome::Other(Uncertainty::Ambiguous),
+            _ => LookupOutcome::ConfirmedMany(resolved_targets),
         }
     }
 }

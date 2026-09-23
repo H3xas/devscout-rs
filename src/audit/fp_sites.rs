@@ -30,7 +30,12 @@ impl FpSite {
         self.class
     }
 
-    pub fn new(e: &EdgeRow, class: &'static str, evidence: &[&OracleRef], structural: bool) -> FpSite {
+    pub fn new(
+        e: &EdgeRow,
+        class: &'static str,
+        evidence: &[&OracleRef],
+        structural: bool,
+    ) -> FpSite {
         let mut expected: Vec<String> = Vec::new();
         for r in evidence.iter().filter(|r| !r.external) {
             if let Some(t) = &r.target {
