@@ -1655,6 +1655,87 @@ fn arity_narrowing_resolves_two_same_line_overloads_to_their_own_distinct_target
     );
 }
 
+// An extractor-emitted site where the caller's own argument count cannot
+// break the tie: two confirmed facts name the SAME declaring type and
+// member with different overload signatures of the SAME arity, so
+// `SemanticLayer::lookup`'s own arity-narrowing filter matches both
+// candidates and never narrows to one. `precedence::decide` only ever
+// matches `LookupOutcome::Confirmed`, never `ConfirmedMany`, so no override
+// fires here -- distinct from `discovered.rs`'s own `ConfirmedMany`
+// consumer (projecting every survivor at a site the extractor never
+// referenced at all), which is a different call site with no pre-existing
+// reference to preserve.
+#[test]
+fn an_equal_arity_overload_tie_at_an_extractor_emitted_site_never_overrides() {
+    let fx = Fixture::build("equal-arity-tie");
+    fx.map();
+    let head = fx.head();
+    let identity = compilation_identity();
+
+    let caller_src =
+        fs::read_to_string(fixture_root().join("src/Caller.cs")).expect("read fixture");
+    let line = caller_src
+        .lines()
+        .enumerate()
+        .find(|(_, l)| l.contains("tie.Resolve(true);"))
+        .map(|(i, _)| (i + 1) as u64)
+        .expect("tie.Resolve(true); line present in fixture");
+
+    let bool_overload = occurrence_site_with_overload(
+        line,
+        "confirmed",
+        Some("Fixtures.Enrichment.Tie"),
+        Some("Resolve"),
+        "(bool)->void",
+        0,
+        vec![],
+        &identity,
+        COMPILATION_FINGERPRINT,
+    );
+    let int_overload = occurrence_site_with_overload(
+        line,
+        "confirmed",
+        Some("Fixtures.Enrichment.Tie"),
+        Some("Resolve"),
+        "(int)->void",
+        0,
+        vec![],
+        &identity,
+        COMPILATION_FINGERPRINT,
+    );
+    let candidate = build_candidate(
+        &head,
+        false,
+        graph::EXPECTED_DEPENDENCY_FINGERPRINT,
+        "complete",
+        &identity,
+        COMPILATION_FINGERPRINT,
+        vec![bool_overload, int_overload],
+    );
+    fx.import(&candidate, true);
+    fx.map();
+    let g = fx.graph();
+
+    let edges = Fixture::member_edges_at(&g, CALLER_FILE, line, "Resolve");
+    assert_eq!(
+        edges.len(),
+        1,
+        "a real tie at one reference's own compatibility key must never project more than the ladder's own single edge: {edges:?}"
+    );
+    assert!(
+        edges[0]["source"].is_null(),
+        "a tied fact never overrides -- the ladder's own edge must carry no enriched provenance: {edges:?}"
+    );
+    assert_eq!(edges[0]["to"], "Fixtures.Enrichment.Tie");
+
+    let stats = &g["stats"]["semantic"];
+    assert_eq!(
+        stats["confirmed"], 0,
+        "neither tied candidate may register as a same-context confirmation: {stats}"
+    );
+    assert_eq!(stats["disagreements"], 0, "{stats}");
+}
+
 // `discovered.rs`'s own `project` used to iterate `SemanticLayer::
 // site_keys()` in the underlying `HashMap`'s own iteration order --
 // randomized per process by Rust's default hasher -- so the edges it

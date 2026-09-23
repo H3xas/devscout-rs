@@ -64,5 +64,11 @@ namespace Fixtures.Enrichment
         {
             var options = new Options(); options.Configure(); options.Configure(true);
         }
+
+        public void EqualArityOverloadTie()
+        {
+            var tie = new Tie();
+            tie.Resolve(true);
+        }
     }
 }

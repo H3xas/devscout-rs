@@ -77,6 +77,23 @@ producer output is ever involved.
   consumer's `SemanticLayer::lookup` uses it, matched against each call's
   own argument count, to keep the two overloads as distinct facts rather
   than collapsing them into one ambiguous outcome.
+- `src/Tie.cs`'s single-overload `Resolve(bool)`, paired with `Caller.cs`'s
+  `EqualArityOverloadTie` method (`tie.Resolve(true);`, its own single
+  reference), gives an extractor-emitted site where two admitted facts name
+  the SAME declaring type and member but different overload signatures of
+  the SAME argument count, so the call's own argument count cannot narrow
+  the pair to one. It is a dedicated type rather than a third call through
+  `Options` so this case's own `refs Resolve --json` surface stays isolated
+  from `OverloadedSameLine`'s `refs Configure --json` count above. Unlike
+  `OverloadedSameLine`, where two DIFFERENT calls at one shared key each
+  narrow to their own single candidate, this is one call whose own arity
+  ties both candidates at once: `SemanticLayer::lookup` reports
+  `ConfirmedMany`, and `precedence::decide` only ever matches
+  `LookupOutcome::Confirmed`, so no override fires and the syntax ladder's
+  own precise edge (bound off the `Tie`-typed local) survives untouched --
+  the same fall-through an outright ambiguous fact gets, for a different
+  reason (a real tie the compiler facts cannot break, rather than a fact
+  the layer itself could not confirm).
 
 Every occurrence fact the test admits is constructed by hand in
 `tests/semantic_enrichment.rs` itself (line numbers are read back from a
