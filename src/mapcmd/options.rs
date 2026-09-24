@@ -1,9 +1,9 @@
 // `MapOptions` -- see `mapcmd.rs`'s own module header for `hash_reuse`. Kept
 // in its own sibling file (not inline in `mapcmd.rs`) because that file sits
 // at its exact `tools/size-ratchet.toml` ceiling with zero headroom; adding
-// `no_semantic` here, rather than growing the frozen file, is what the
-// size ratchet's "new code lands in new sibling modules" rule means in
-// practice for a struct that already lived in the file being protected.
+// `no_semantic` here, rather than growing the frozen file, keeps new code
+// out of a capped file by moving the struct it belongs to into a sibling
+// module.
 //
 // `compiler_facts_artifact_present` lives here for the same reason: it is
 // `map_repo`'s rebuild-trigger input for the `--no-semantic` rollback lever,

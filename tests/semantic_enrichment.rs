@@ -1558,14 +1558,11 @@ fn two_same_line_overloads_of_one_member_survive_as_distinct_facts() {
     );
 }
 
-// The fixture above proves two same-line overloads survive, but not that
-// the arity narrowing in `SemanticLayer::lookup` is load-bearing: both of
-// its overloads resolve to the SAME `SemanticTarget` (the type-level
-// identity `resolve_target` returns) whether or not narrowing runs, since
-// `resolved_targets` collapses two identical targets to one via `dedup`,
-// so a regression that stopped narrowing would still pass there. Here the
-// two same-line, same-member occurrences below resolve to GENUINELY
-// DIFFERENT target types (two
+// The fixture above proves two same-line overloads survive, but it keeps
+// both overloads on one declaring type, so its edges' `to` cannot show that
+// each call reached its own overload's target. Here the two same-line,
+// same-member occurrences below resolve to GENUINELY DIFFERENT target types,
+// so each edge's `to` does (two
 // pre-existing fixture types that happen to share no relationship other than
 // both declaring a zero/one-arg call site here). Without narrowing, EVERY
 // reference at this shared `(file, line, member)` key sees BOTH occurrences,
