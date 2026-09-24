@@ -44,9 +44,10 @@ pub(super) fn edge_loc(e: &graph::Edge) -> (&str, usize) {
         | graph::Edge::UsesMember { from_file, from_line, .. }
         | graph::Edge::Implements { from_file, from_line, .. }
         | graph::Edge::Overrides { from_file, from_line, .. }
+        | graph::Edge::BusHop { from_file, from_line, .. }
         | graph::Edge::Imports { from_file, from_line, .. }
         | graph::Edge::Ambiguous { from_file, from_line, .. }
-        // Never actually reached: 'ctor-di' edges are never pushed into any
+        // Never actually reached: a 'ctor-di' edge is never pushed into any
         // structure this helper sorts (see the query-index builder's own
         // CtorDi arm). Included only for exhaustiveness, as are the four
         // TS/TSX kinds below, for the same reason.

@@ -63,10 +63,10 @@ index
 
 query
   find <query> [--resources] search the manifest by name or purpose
-  refs <symbol>              references to a symbol   [--out --all --no-guess --no-dispatch --pick N --json|--compact]
-  read <symbol>              decl span + inbound refs [--no-guess --no-dispatch --pick N --json|--compact]
-  impact <file|symbol>       blast radius             [--hops N --no-guess --no-dispatch --no-imports --pick N --json|--compact]
-  tests <symbol>             tests reaching a symbol  [--no-guess --no-dispatch --pick N --json|--compact]
+  refs <symbol>              references to a symbol   [--out --all --no-guess --no-dispatch --no-bus --pick N --json|--compact]
+  read <symbol>              decl span + inbound refs [--no-guess --no-dispatch --no-bus --pick N --json|--compact]
+  impact <file|symbol>       blast radius             [--hops N --no-guess --no-dispatch --no-bus --no-imports --pick N --json|--compact]
+  tests <symbol>             tests reaching a symbol  [--no-guess --no-dispatch --no-bus --pick N --json|--compact]
   import-edges <file> --repo <id>  load a cross-repo edge export for `impact` to read
   compiler-facts run|import|status  optional engine-derived facts [--target --configuration --platform]
   stats                      index + cache summary for this repo

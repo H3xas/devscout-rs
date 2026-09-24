@@ -47,6 +47,8 @@ fn impact_row(
         from_lines: vec![],
         infra: false,
         why: Why::UsesMemberPrecise,
+        bus_only: false,
+        bus_origin: None,
     }
 }
 

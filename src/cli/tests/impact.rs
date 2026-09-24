@@ -44,6 +44,8 @@ fn impact_json_appends_heuristic_count_then_heuristic_after_score_and_heuristic_
         } else {
             query::Why::UsesMemberPrecise
         },
+        bus_only: false,
+        bus_origin: None,
     };
     let model = query::ImpactModel {
         kind: query::SeedKind::Symbol,
@@ -96,6 +98,8 @@ fn impact_json_braked_array_carries_hub_file_entries_after_every_interface_entry
         from_lines: vec![],
         infra,
         why: query::Why::UsesMemberPrecise,
+        bus_only: false,
+        bus_origin: None,
     };
     let model = query::ImpactModel {
         kind: query::SeedKind::Symbol,
@@ -173,6 +177,8 @@ fn impact_json_tier_sits_between_heuristic_and_iface_via() {
             graph::HeuristicTier::Ext => query::Why::UsesMemberExt,
             graph::HeuristicTier::Guess => query::Why::UsesMemberGuess,
         },
+        bus_only: false,
+        bus_origin: None,
     };
     let model = query::ImpactModel {
         kind: query::SeedKind::Symbol,

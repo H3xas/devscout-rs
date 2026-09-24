@@ -187,7 +187,7 @@ pub(super) fn resolve_ctor_param(
 // dotted. Unlike `index::name_probe` (bare names only), this is what lets a
 // qualified service or implementation type resolve through the ladder's own
 // exact-qualified step.
-pub(super) fn type_probe(raw: &str, ns: &str) -> FragRef {
+pub(super) fn type_probe(raw: &str, ns: &str, outer_types: &[String]) -> FragRef {
     let (name, qualified) = match raw.rfind('.') {
         Some(dot) => (raw[dot + 1..].to_string(), Some(raw.to_string())),
         None => (raw.to_string(), None),
@@ -204,7 +204,7 @@ pub(super) fn type_probe(raw: &str, ns: &str) -> FragRef {
         receiver_type: None,
         arg_count: None,
         receiver_args: None,
-        outer_types: Vec::new(),
+        outer_types: outer_types.to_vec(),
         args: None,
         receiver_property_owner: None,
         receiver_call_owner: None,

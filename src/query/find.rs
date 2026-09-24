@@ -11,6 +11,7 @@ use super::refs::trim_source;
 // ============================================================================
 
 /// The literal line a declaration sits on, ASCII-trimmed by `trim_source`.
+///
 /// Returns `""` on an unreadable file or an out-of-range line; the caller then
 /// prints `file:line` with nothing after it rather than a row ending in a
 /// dangling separator.
@@ -130,12 +131,14 @@ pub fn file_inbound_counts(graph: &graph::Graph) -> HashMap<String, usize> {
             // still fails the exhaustiveness check here. `implements`/
             // `overrides` sit out for the same reason `ctor-di` does: DI/
             // dispatch wiring, not an ordinary reference this centrality
-            // measure counts.
+            // measure counts. `bus-hop` sits out the same way, undecided
+            // until the layer that reads it weighs in.
             graph::Edge::Imports { .. }
             | graph::Edge::Import { .. }
             | graph::Edge::CtorDi { .. }
             | graph::Edge::Implements { .. }
             | graph::Edge::Overrides { .. }
+            | graph::Edge::BusHop { .. }
             | graph::Edge::Ambiguous { .. } => continue,
         };
         if from_file == to_file {

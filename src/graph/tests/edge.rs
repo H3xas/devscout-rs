@@ -211,6 +211,7 @@ fn edges_by_kind_appends_the_four_ts_counts_after_ctor_di_when_present() {
         call: Some(7),
         jsx_use: Some(8),
         dispatch: Some(9),
+        bus_hop: None,
     };
     let json = serde_json::to_string(&s).unwrap();
     assert_eq!(

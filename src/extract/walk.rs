@@ -2,6 +2,8 @@ use std::collections::HashSet;
 
 use tree_sitter::Node;
 
+use super::bus::{array_message_bases, nested_base_type_args, publish_fact};
+use super::bus_vocab::{handler_registration_fact, property_message_args};
 use super::qualifiers::{
     member_name_text, resolve_call_chain_tail, resolve_member_qualifier, Scope, MEMBER_SCOPE_NODES,
 };
@@ -111,6 +113,17 @@ fn walk<'a>(
                 &type_params,
             );
             record_base_list(node, ns, type_stack, src, &mut out.refs);
+            // The nested sibling of `base_generic_args` (see bus.rs), set on
+            // the def `record_type_def` just pushed: a base's inner
+            // type-argument descriptor needs the same base_list walk
+            // `record_base_list` already ran, so it is computed once here
+            // rather than re-derived from the pushed def's own flattened
+            // fields.
+            if let Some(last) = out.defs.last_mut() {
+                last.base_type_args = nested_base_type_args(node, src, &type_params);
+                last.property_message_args = property_message_args(node, src, &type_params);
+                last.array_message_bases = array_message_bases(node, src, &type_params);
+            }
             let name = declared_name(node, src);
             let new_stack: Vec<String> = if name.is_empty() {
                 type_stack.to_vec()
@@ -363,6 +376,12 @@ fn walk<'a>(
                 if let Some(reg) = registration_fact(node, ns, src) {
                     out.registrations.push(reg);
                 }
+                if let Some(publish) = publish_fact(node, ns, type_stack, src, scope) {
+                    out.publishes.push(publish);
+                }
+                if let Some(handler) = handler_registration_fact(node, ns, src, scope) {
+                    out.handler_registrations.push(handler);
+                }
             }
             let expr_field = node.child_by_field_name("expression");
             // The member itself can be a generic_name too ("Foo.Bar<T>(...)"):
@@ -569,6 +588,8 @@ pub fn extract(source: &str) -> Extraction {
         refs: Vec::new(),
         names: Vec::new(),
         registrations: Vec::new(),
+        publishes: Vec::new(),
+        handler_registrations: Vec::new(),
     };
     walk_list(
         named_children(root),
