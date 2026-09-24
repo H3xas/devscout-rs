@@ -108,13 +108,13 @@ Nine mechanisms; sizes sum to 170. Each row's `mechanism` names its group.
 | `inherited-member-read-as-type` | 6 | A bare qualifier that names an inherited property (`RoutingSlip`, `Filter`) is resolved as the same-named type imported by a `using` or declared as the enclosing type; C# finds the member first. | `assembly.rs` `resolve_graph_with_model` type-qualifier arm, admitted by `ladder.rs` `type_qualifier_arm_admits`; the member facts it needs are read by `receiver.rs` `bare_receiver_field_or_property_type` | rule-only | low |
 | `using-before-enclosing-namespace` | 6 | The ladder answers a bare type name from the file's `using` directives before the enclosing namespace, so `TestInstance` imported from `TestFramework.Sagas` wins over the `TestInstance` declared in the site's own namespace. | `ladder.rs` `resolve_ref` (step 2 before step 3) | rule-only for these sites; the general order interleaves each namespace level's types with that level's `using` directives, which needs each directive's level | medium |
 | `qualified-receiver-type-truncated` | 5 | A receiver declared with a qualified type (`Outbox.OutboxSendEndpoint`, `ConfigurationHostSettings.ConfigurationBatchSettings`) is recorded by its last segment, which the ladder then resolves to a different same-named type. For 4 of the 5 that type sits in a project the site's project cannot reference, answered by the graph-wide-unique step. | consumer: the typed-receiver probe in `assembly.rs` `resolve_graph_with_model` through `arity.rs` `resolve_receiver_type`; the fact comes from `base_type_identifier` (`src/extract/refs.rs`) | new fact: the receiver type's written qualifier | low |
-| `lambda-return-shape-unchecked` | 5 | A one-parameter lambda passes the delegate-arity gate for `Action<TFilter>` although its value-returning body (`_ => true`, `m => m switch { … }`, `_ => classMapConfigurator`) cannot convert to a void or differently-typed delegate; 3 of the 5 come from the property hop, which does not apply the gate at all. | `lambda_arity.rs` `lambda_arity_admits`; the property hop in `assembly.rs` `resolve_graph_with_model` calls `declares_member` without it | new fact: the lambda body's return shape | low |
+| `lambda-applicability-unchecked` | 5 | A lambda argument is checked against a candidate overload only by the parameter count of the delegate it would convert to, and 3 of the 5 come from the property hop, which does not apply even that check. At 4 sites (`harness.Published/Sent/Consumed.SelectAsync(_ => true)`, `messageList.Any(m => m switch { … })`) the bound type declares two overloads that pass it: `SelectAsync`/`Any(Action<…Filter>, …)`, which the value body (`true`, a switch expression, neither a statement expression) cannot convert to, and `SelectAsync<T>`/`Any<T>(FilterDelegate<I…Message<T>>, …)`, which the one-parameter, `bool`-valued lambda fits by count and by return type; C# rejects that one only because `T` occurs solely in the delegate's parameter type, from which an implicitly typed lambda gives type inference nothing to fix it. A check of the body's return shape alone leaves these 4 sites bound to the same wrong target. At the fifth (`configurator.ClassMap(_ => classMapConfigurator)`) the interface's `ClassMap(Func<IServiceProvider, BsonClassMap<TSaga>>)` expects a value and gets one, a parameter declared `Action<BsonClassMap<TSaga>>`; only the body's type compared with the delegate's return type rejects it. | `lambda_arity.rs` `lambda_arity_admits`, whose per-overload predicate has to carry every check; the property hop in `assembly.rs` `resolve_graph_with_model` calls `declares_member` without it and walks no base, so at its 3 sites a correct check removes the wrong edge without producing the right one | new facts: whether a lambda is implicitly typed and whether its body yields a value (4 sites); each overload's own method type parameters and where they occur in its parameter types, which the recorded `*` does not tell apart from the declaring type's (4 sites; the per-overload generic-parameter fact `type-argument-count-unchecked` also needs); the static type of the body's value (1 site; the argument-type fact `argument-type-unchecked` needs) | medium |
 | `property-hop-arity-blind` | 1 | The property hop resolves a property's declared type (`IReceivedMessageList<TMessage>`, type arguments recorded) without its type-argument count and lands on the non-generic sibling, which is not in the receiver's hierarchy; it then checks the member with `declares_member` alone. | `assembly.rs` `resolve_graph_with_model` property hop; `arity.rs` `resolve_receiver_type` and `members.rs` `declares_here_for_ref` are what the typed-receiver tier uses for the same two steps | rule-only | low |
 
 Emitting steps by group: `argument-type-unchecked` 67 `typed-receiver`, 6 `qualifier-type`, 1
 `property-hop`; `explicit-implementation-as-member` 3 `typed-receiver`, 2 `property-hop`, 1
 `qualifier-type`; `inherited-member-read-as-type` 6 `qualifier-type`;
-`lambda-return-shape-unchecked` 3 `property-hop`, 2 `typed-receiver`; `property-hop-arity-blind` 1
+`lambda-applicability-unchecked` 3 `property-hop`, 2 `typed-receiver`; `property-hop-arity-blind` 1
 `property-hop`; every other group is all `typed-receiver`.
 
 ## Recommended sequence
@@ -132,12 +132,21 @@ before it is widened:
    where only a same-signature redeclaration hides.
 4. **using-before-enclosing-namespace** (6, rule-only, medium) — small, but it reorders every type
    resolution, so it is measured graph-wide before anything else lands on top of it.
-5. **explicit-implementation-as-member** (6), **qualified-receiver-type-truncated** (5) and
-   **lambda-return-shape-unchecked** (5) — new extractor facts, each low risk; they can share one
-   fragment-cache generation bump.
+5. **explicit-implementation-as-member** (6) and **qualified-receiver-type-truncated** (5) — new
+   extractor facts, each low risk; they can share one fragment-cache generation bump.
 6. **type-argument-count-unchecked** (43, new fact, low) — mechanical once both counts are recorded,
-   and it only refuses a candidate when both are known.
-7. **argument-type-unchecked** (74, new fact, high) — the only group that touches the member-
+   and it only refuses a candidate when both are known. The per-overload generic-parameter fact it
+   records, kept as the list of the method's own type parameters, is what item 7 reads.
+7. **lambda-applicability-unchecked** (5, new facts, medium) — after 6, because four of its sites
+   need each overload's own method type parameters as well as whether the lambda's body yields a
+   value; the three property-hop sites also need item 1's declaration check in the hop, and a base
+   walk in the hop to bind the right target rather than none. Refusing an overload whose method
+   type parameter cannot be inferred is the riskier half, since it drops a whole overload: it
+   applies only when the call writes no type arguments and every occurrence of that type parameter
+   sits in the parameter types of the delegate an implicitly typed lambda converts to. The fifth
+   site needs the static type of the body's value, the fact item 8 introduces for arguments, and
+   lands with it.
+8. **argument-type-unchecked** (74, new fact, high) — the only group that touches the member-
    declaration check for arbitrary argument shapes. Split it by how the argument's type is known:
    10 sites are decided by an argument whose type its syntax alone gives (a string literal, an
    interpolated string, `typeof`); the rest need a declared local, field or parameter type, a
@@ -163,7 +172,8 @@ SCOUT_EDGE_PROVENANCE="$OUT/provenance.jsonl" "$TARGET/release/devscout" map .
   --fp-sites "$OUT/fp-sites.jsonl" --json
 ```
 
-`$EXPORT`, `$TARGET`, `$CORPUS`, `$ORACLE` and `$OUT` are fresh directories outside the corpus;
+`$EXPORT`, `$TARGET`, `$ORACLE` and `$OUT` are fresh directories outside the corpus, and `$CORPUS`
+is a path outside it that does not exist yet (`bench/clone-corpus.sh` refuses an existing destination);
 every path passed to `audit` is absolute, so it resolves from inside the corpus copy. Run with an
 isolated `HOME`, `SCOUT_REGISTRY` and `SCOUT_CONTENT_DB`; a second arm on another fresh copy with
 `SCOUT_EDGE_PROVENANCE` unset gives the graph-identity check.
