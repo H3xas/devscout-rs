@@ -14,6 +14,7 @@ fn stats_appends_test_def_count_last_and_always_writes_it() {
         heuristic_edge_count: 0,
         test_def_count: 0,
         heuristic_by_tier: HeuristicByTier::default(),
+        bus_vocabulary_derived: None,
         ts: None,
         semantic: None,
     };
@@ -44,6 +45,7 @@ fn stats_keeps_heuristic_by_tier_last_even_when_a_ts_block_is_present() {
         heuristic_edge_count: 0,
         test_def_count: 0,
         heuristic_by_tier: HeuristicByTier::default(),
+        bus_vocabulary_derived: None,
         ts: Some(crate::tsgraph::TsStats {
             ts_file_count: 1,
             ts_def_count: 2,
@@ -76,6 +78,7 @@ fn empty_stats() -> Stats {
         heuristic_edge_count: 0,
         test_def_count: 0,
         heuristic_by_tier: HeuristicByTier::default(),
+        bus_vocabulary_derived: None,
         ts: None,
         semantic: None,
     }

@@ -4,8 +4,8 @@ use std::path::Path;
 use crate::extract;
 
 use super::fragment_types::{
-    FragDef, FragExtensionMethod, FragFact, FragLambdaSlot, FragName, FragRef, FragRegistration,
-    FragUsing, Fragment,
+    FragDef, FragEnclosingCall, FragExtensionMethod, FragFact, FragHandlerRegistration,
+    FragLambdaSlot, FragName, FragPublish, FragRef, FragRegistration, FragUsing, Fragment,
 };
 use super::ordered::OrderedMap;
 
@@ -107,6 +107,15 @@ pub fn fragment_from_extraction(e: &extract::Extraction) -> Fragment {
                     m
                 },
                 override_methods: d.override_methods.clone(),
+                base_type_args: {
+                    let mut m = OrderedMap::new();
+                    for (name, args) in &d.base_type_args {
+                        m.insert(name.clone(), args.clone());
+                    }
+                    m
+                },
+                property_message_args: d.property_message_args.clone(),
+                array_message_bases: d.array_message_bases.clone(),
                 end_line: d.end_line,
             })
             .collect(),
@@ -184,6 +193,33 @@ pub fn fragment_from_extraction(e: &extract::Extraction) -> Fragment {
                 line: r.line,
             })
             .collect(),
+        publishes: e
+            .publishes
+            .iter()
+            .map(|p| FragPublish {
+                verb: p.verb.clone(),
+                message: p.message.clone(),
+                namespace: p.namespace.clone(),
+                line: p.line,
+                outer_types: p.outer_types.clone(),
+                enclosing_method: p.enclosing_method.clone(),
+                arg_count: p.arg_count,
+                enclosing_call: p.enclosing_call.as_ref().map(|c| FragEnclosingCall {
+                    verb: c.verb.clone(),
+                    arg_position: c.arg_position,
+                    arg_count: c.arg_count,
+                }),
+            })
+            .collect(),
+        handler_registrations: e
+            .handler_registrations
+            .iter()
+            .map(|r| FragHandlerRegistration {
+                handler: r.handler.clone(),
+                namespace: r.namespace.clone(),
+                line: r.line,
+            })
+            .collect(),
     }
 }
 
@@ -225,6 +261,9 @@ pub fn markup_fragment(root: &Path, rel: &str) -> Option<Fragment> {
                 method_arities: OrderedMap::new(),
                 method_params: OrderedMap::new(),
                 override_methods: Vec::new(),
+                base_type_args: OrderedMap::new(),
+                property_message_args: Vec::new(),
+                array_message_bases: Vec::new(),
                 end_line: d.line,
             })
             .collect(),
@@ -271,5 +310,7 @@ pub fn markup_fragment(root: &Path, rel: &str) -> Option<Fragment> {
             })
             .collect(),
         registrations: Vec::new(),
+        publishes: Vec::new(),
+        handler_registrations: Vec::new(),
     })
 }

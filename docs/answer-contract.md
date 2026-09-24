@@ -104,6 +104,7 @@ why they are *unresolved*, a different question from which rule produced a settl
 | `test-attribute` | A `tests` row earned because a def declared in the file carries a test-runner attribute (`[Fact]`, `[Test]`, `[TestMethod]`, and their qualified/targeted/shared-bracket forms). |
 | `test-project` | A `tests` row earned because the project model places the file's unit inside a project marked `test`, with no attributed def of its own. |
 | `imported-edge` | An `impact` row reached only through an imported cross-repo edge -- never one of this graph's own -- carrying the foreign `repo` id and the export's `provenance` id. The weakest evidence this vocabulary names: a foreign, producer-asserted fact never outranks anything this crate resolved for itself. |
+| `bus-hop` | A recognized publish or dispatch site's message reaches a registered consumer/handler across project and assembly boundaries. A possible route, runtime routing unverified -- see [`bus-hop`](#bus-hop) below. |
 
 **Vocabulary growth.** `why` and `outcome` may each gain a new word over time without a
 `schema_version` bump, the same way an added key never bumps it. A consumer must treat a `why`
@@ -119,6 +120,15 @@ its kind, and, for a `uses-member` edge, its `tier` (`ext`, `guess`, or absent, 
 An `impact` row can fold more than one edge kind into a single per-file summary; when it does,
 the strongest evidence wins -- an explicit `ctor-di` site over a plain resolved reference, over
 the broader interface hop, over a guess, in that order.
+
+A `bus-hop` joins that same fold, one step past a guess: `ctor-di`, then a resolved reference, then
+an ambiguous one, then the interface hop, then a guess, then a `bus-hop` -- never displacing any of
+the five, since every one of them is at least a confirmed edge the resolver merely guessed the
+target of, where a `bus-hop` is a candidate the analyzer found in source with runtime routing still
+unverified. A file whose only path back to the seed crosses a `bus-hop` keeps that possible-route
+marker through later ordinary-reference hops; one that also has an independent non-bus path drops
+it and reports that path's stronger `why` instead (`impact`'s `busOnly` row key -- see
+[`bus-hop`](#bus-hop)).
 
 ## `freshness`
 
@@ -167,6 +177,69 @@ or implied an `occurrenceIndex` -- truncation stays truncation, never a silent m
 
 This key is additive under the forward-compatibility rule above: it is new, appended last, and
 `schema_version` does not move.
+
+## `bus-hop`
+
+`refs`/`read`'s `bus` table is a separate, always-built table (`RefsModel.bus`, after `memberRefs`
+and before `outcome` on the top-level JSON object) combining every inbound (this symbol is the
+handler) and outbound (this symbol's own file publishes) `bus-hop` row for the resolved symbol.
+Neither `freshness`'s true-last-key position nor `occurrenceIndex`'s row-collision rule changes:
+both are about different tables and a different scope than this one. An array message is
+identified by its element's id followed by its array suffix (`[]` for one array layer): a single
+message and an array of that same message are distinct identities on both sides of a hop. An
+array of arrays is not yet told apart from a single further layer -- a named gap.
+
+Every bus-hop row is a **possible route with runtime routing unverified** -- a candidate type
+relationship the analyzer found in source, never a confirmed delivery. This is stated three ways:
+
+- **Text.** Every rendered bus-hop line (`refs`/`read`) ends with the words `(possible route,
+  runtime routing unverified)`.
+- **`--json`.** The row's own object carries an additive `possibleRoute` key (its true last key,
+  after `handlers`): `{"unverified": true, "verify": {"publisher": "<file>:<line>", "message":
+  "<id>", "handler": "<id>", "handlerFile": "<file>"}, "missingEvidence": [...]}`. `verify` names
+  the exact identity a human would re-check by hand; `missingEvidence` is a fixed list of the
+  evidence classes this analyzer never establishes at all (receiver registration at runtime,
+  endpoint/routing topology, host co-location) -- never a search this analyzer ran, only the
+  classes it cannot see from source.
+- **`--compact`.** The row collapses to its existing terse marker (`file:line` plus the direction
+  letter) with a trailing `?`, and the block's own header names the path back to the full row
+  (`bus-hop (? = possible route, rerun without --compact for the full row)`).
+
+`impact`'s blast radius carries the same uncertainty downstream, in both directions: a seeded
+handler reaches its publishers (the reverse hop `refs`/`read` also show), and a seeded publish site
+-- or a symbol whose declaration contains one -- reaches its candidate handlers in turn, at every
+later hop within the requested depth and the shared brake, the same as every other edge kind.
+`--no-bus` reproduces the answer neither direction would have contributed, byte for byte.
+
+A row whose only path back to the seed crosses a bus hop, at any hop depth, discloses it the same
+three ways a `refs`/`read` bus-hop row does:
+
+- **Text.** The row's line ends with the words `(possible route, runtime routing unverified` plus,
+  since an `impact` row carries no message/handler fields of its own otherwise, the identity to
+  re-check: `: message=<id> handler=<id> handlerFile=<file>)`.
+- **`--json`.** The row carries an additive `busOnly: true` key (`--json`, after `why`) plus a
+  `possibleRoute` object shaped exactly like a `refs`/`read` bus-hop row's own (`unverified`,
+  `verify`, `missingEvidence`), fed from the specific hop the row's marker traces back to -- the
+  lowest by (publisher file, line, message, handler) when more than one hop could have supplied it.
+  `busOnly` is kept alongside `possibleRoute`, never replaced by it.
+- **`--compact`.** The row carries a trailing `?` marker and a pointer to rerun without `--compact`
+  for the full row, the same shape `refs`' own compact bus block uses.
+
+A row also reached by an independent non-bus path -- at that hop or an earlier one -- carries
+neither: its stronger evidence (the `why` a non-bus edge kind supplies) stands on its own, the same
+way an explicit `ctor-di` site already outranks a plain reference, and it discloses no bus-hop
+identity at all.
+
+`tests` carries the same disclosure for its OWN bus-hop half: a test file that PUBLISHES to the
+seeded handler, over a bus hop, is a possible route the same three ways -- its own `bus-hop` table
+(text and `--compact` blocks, and a `--json` `bus-hop` key mirroring `refs`' own) reuses the
+identical row shape and wording `refs`/`read` already use. These rows are counted in neither
+`testFileCount`/`refCount` nor their heuristic twins: a possible route must never inflate precise
+test coverage.
+
+Nothing here adds a graph field, a schema field, a `why` word or an evidence word: this is
+query-time rendering over facts the graph already carries (see [`why`](#why) for `bus-hop`'s own
+weakest-evidence place in the fold-when-more-than-one-kind-fired rule).
 
 ## One worked example per verb
 

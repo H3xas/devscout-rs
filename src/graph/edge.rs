@@ -307,6 +307,33 @@ pub enum Edge {
         /// The value value.
         member: Option<String>,
     },
+    /// A message-bus hop: a publish site whose resolved message reaches a
+    /// registered consumer/handler def, both ends resolved through the
+    /// ordinary ladder in their own file's context, never a bare-name or
+    /// same-line match. `to`/`to_file` name the consumer; `message` names
+    /// the resolved message def's own id, followed by an array suffix
+    /// (`[]` per array layer) when the identity both sides agreed on is an
+    /// array of that def rather than the def alone -- never the raw text
+    /// either site wrote it as, so two same-named messages in different
+    /// namespaces, or a message and an array of it, can never be
+    /// conflated. `evidence` names which consumer shape the hop was
+    /// established through -- see `resolve/bus.rs`'s own closed word list,
+    /// the one place any of its words is spelled.
+    #[serde(rename = "bus-hop")]
+    BusHop {
+        /// The value value.
+        from_file: String,
+        /// The value value.
+        from_line: usize,
+        /// The value value.
+        message: String,
+        /// The value value.
+        to: String,
+        /// The value value.
+        to_file: String,
+        /// The value value.
+        evidence: String,
+    },
 }
 
 impl Edge {
@@ -435,6 +462,12 @@ pub struct EdgesByKind {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     /// The dispatch value.
     pub dispatch: Option<usize>,
+    /// The message-bus `bus-hop` edges, appended LAST, after `dispatch`.
+    /// `None` (never `Some(0)`) for a repository with no bus hop at all, so
+    /// a bus-free graph's stats block serializes exactly as it did before
+    /// this kind existed.
+    #[serde(rename = "bus-hop", default, skip_serializing_if = "Option::is_none")]
+    pub bus_hop: Option<usize>,
 }
 
 /// `heuristic_edge_count` split by the tier that emitted each edge, in the

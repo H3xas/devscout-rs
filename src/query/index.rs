@@ -4,6 +4,7 @@ use std::path::Path;
 use crate::graph;
 use crate::manifest;
 
+use super::bus;
 use super::dispatch;
 use super::seq::push_ordered_unique;
 
@@ -26,6 +27,8 @@ pub struct InboundEntry {
     pub implements: Vec<usize>,
     /// `overrides` edges naming this def as their target, same rule.
     pub overrides: Vec<usize>,
+    /// `bus-hop` edges naming this def as their handler (`to`).
+    pub bus_hop: Vec<usize>,
 }
 
 /// The value shape of both `heuristic_inbound` and `heuristic_outbound_by_file`
@@ -47,6 +50,8 @@ pub struct OutboundEntry {
     pub implements: Vec<usize>,
     /// `overrides` edges originating in this file, same rule.
     pub overrides: Vec<usize>,
+    /// `bus-hop` edges whose publish site sits in this file.
+    pub bus_hop: Vec<usize>,
     /// The imports value.
     pub imports: Vec<usize>,
 }
@@ -83,7 +88,7 @@ pub struct GraphIndex<'g> {
     pub ambiguous_by_file: HashMap<String, Vec<usize>>,
     /// Def id -> its inbound HEURISTIC edges by kind. Heuristic edges live in
     /// their own adjacency, never mixed into the precise one, so every consumer
-    /// (the impact walk's frontier, the refs tables, PageRank's edge set) reads
+    /// (the impact walk's frontier, the refs tables, `PageRank`'s edge set) reads
     /// only precise edges unless it asks for guesses by name. Mixing them in
     /// and filtering later is the shape that eventually leaks a guess into a
     /// fact -- a filter forgotten in one call site is silent.
@@ -159,7 +164,11 @@ impl<'g> GraphIndex<'g> {
     }
 }
 
-fn note_file(flagged: &mut HashSet<String>, manifest_paths: Option<&HashSet<String>>, file: &str) {
+pub(super) fn note_file(
+    flagged: &mut HashSet<String>,
+    manifest_paths: Option<&HashSet<String>>,
+    file: &str,
+) {
     if let Some(paths) = manifest_paths {
         if !file.is_empty() && !paths.contains(file) {
             flagged.insert(file.to_string());
@@ -191,17 +200,21 @@ pub struct IndexOptions {
     /// build time" reasoning `include_guesses` already uses, applied to a
     /// kind that is never itself a guess.
     pub include_dispatch: bool,
+    /// Whether `bus-hop` edges join the adjacency at all -- `false`
+    /// (`--no-bus`) admits none, the same terms `include_dispatch` states.
+    pub include_bus: bool,
 }
 
 impl Default for IndexOptions {
-    /// Guesses and dispatch edges are IN by default: every caller that does
-    /// not ask asked for the whole index, and a default that quietly
-    /// narrowed the answer would change what `refs` means without anyone
-    /// typing a flag.
+    /// Guesses, dispatch and bus-hop edges are IN by default: every caller
+    /// that does not ask asked for the whole index, and a default that
+    /// quietly narrowed the answer would change what `refs` means without
+    /// anyone typing a flag.
     fn default() -> Self {
         IndexOptions {
             include_guesses: true,
             include_dispatch: true,
+            include_bus: true,
         }
     }
 }
@@ -448,14 +461,10 @@ pub fn load_graph_index_with<'g>(
                 }
             }
             // `implements`/`overrides` join `inbound`/`outbound_by_file`
-            // exactly like `inherits` does -- recorded against the
-            // IMPLEMENTATION/`override` type's own declaring file and line
-            // (see `graph.rs`'s `Edge::Implements`/`Edge::Overrides`), so the
-            // same file-attribution `symbol_refs`/`impact_walk` already use
-            // for `inherits` finds them with no changes to either. Gated by
-            // `include_dispatch` (`--no-dispatch`) the same way a heuristic
-            // edge is gated by `include_guesses`: an edge `--no-dispatch`
-            // refuses earns no bucket at all, in either adjacency.
+            // like `inherits` does, against the IMPLEMENTATION/`override`
+            // type's own file and line -- gated by `include_dispatch`
+            // (`--no-dispatch`) the same way a guess is gated by
+            // `include_guesses`.
             graph::Edge::Implements {
                 from_file,
                 to,
@@ -468,14 +477,13 @@ pub fn load_graph_index_with<'g>(
                 to_file,
                 ..
             } => {
-                note_file(&mut flagged_files, manifest_paths_ref, from_file);
-                note_file(&mut flagged_files, manifest_paths_ref, to_file);
-                if !to_file.is_empty() && !from_file.is_empty() && to_file != from_file {
-                    hub_referrers_by_file
-                        .entry(to_file.clone())
-                        .or_default()
-                        .insert(from_file.clone());
-                }
+                dispatch::note_dispatch_files(
+                    &mut flagged_files,
+                    manifest_paths_ref,
+                    &mut hub_referrers_by_file,
+                    from_file,
+                    to_file,
+                );
                 if opts.include_dispatch {
                     dispatch::record_dispatch_edge(
                         e,
@@ -488,10 +496,9 @@ pub fn load_graph_index_with<'g>(
                 }
             }
             // 'ctor-di' is deliberately NOT one of the kinds `refs`/`impact`
-            // render -- that kind list is fixed to
-            // inherits/uses-type/uses-member -- so it earns no `inbound`/
-            // `outbound_by_file` entry. It DOES earn its own reverse index,
-            // keyed by the resolved implementor, when it carries one.
+            // render, so it earns no `inbound`/`outbound_by_file` entry. It
+            // DOES earn its own reverse index, keyed by the resolved
+            // implementor, when it carries one.
             graph::Edge::CtorDi {
                 from_file,
                 from_line,
@@ -510,15 +517,32 @@ pub fn load_graph_index_with<'g>(
                     ctor_di_by_to.entry(to.clone()).or_default().push(i);
                 }
             }
-            // The four TS/TSX edge kinds earn no entry in this C#-shaped index,
-            // the same stance the `ctor-di` arm above states for its own kind:
-            // `refs`/`impact` render a fixed kind list. Listed rather than
-            // caught by a wildcard so a future edge kind still fails the
-            // exhaustiveness check here.
+            // The four TS/TSX edge kinds earn no entry here either, same
+            // stance as `ctor-di`. Listed rather than caught by a wildcard
+            // so a future edge kind still fails the exhaustiveness check.
             graph::Edge::Import { .. }
             | graph::Edge::Call { .. }
             | graph::Edge::JsxUse { .. }
             | graph::Edge::Dispatch { .. } => {}
+            // `bus-hop` joins the same way, keyed by the HANDLER (`to`)
+            // inbound and the PUBLISH SITE's own file outbound.
+            graph::Edge::BusHop {
+                from_file,
+                to,
+                to_file,
+                ..
+            } => {
+                if opts.include_bus {
+                    dispatch::note_dispatch_files(
+                        &mut flagged_files,
+                        manifest_paths_ref,
+                        &mut hub_referrers_by_file,
+                        from_file,
+                        to_file,
+                    );
+                    bus::record_bus_edge(i, from_file, to, &mut outbound_by_file, &mut inbound);
+                }
+            }
         }
     }
 

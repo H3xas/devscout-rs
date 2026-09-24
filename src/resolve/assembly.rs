@@ -1,4 +1,5 @@
 use super::arity::{arity_accepts, generic_args_unify, resolve_receiver_type};
+use super::bus::append_bus_edges;
 use super::dispatch::append_dispatch_edges;
 use super::edges::{
     build_graph_names, build_implementor_index, heuristic_edge_key, resolve_ctor_param, type_edge,
@@ -1216,6 +1217,13 @@ pub fn resolve_graph_with_model(
         &mut edges,
         &mut edges_by_kind,
     );
+    let bus_vocabulary_derived = append_bus_edges(
+        fragments_by_file,
+        &index,
+        &file_contexts,
+        &mut edges,
+        &mut edges_by_kind,
+    );
 
     // Compiler-discovered sites project once per run; see `semantic::finish`.
     let semantic_stats = crate::semantic::finish(
@@ -1285,6 +1293,7 @@ pub fn resolve_graph_with_model(
             // population of guesses.
             heuristic_by_tier,
             ts: None,
+            bus_vocabulary_derived,
             semantic: semantic_stats,
         },
         defs: index.defs,

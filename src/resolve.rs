@@ -46,6 +46,8 @@
 
 mod arity;
 mod assembly;
+mod bus;
+mod bus_vocab;
 mod dispatch;
 mod edges;
 mod index;
@@ -55,7 +57,6 @@ mod members;
 mod provenance;
 mod receiver;
 mod scope;
-
 pub use assembly::{resolve_graph, resolve_graph_with_model, resolve_graph_with_ts};
 pub use index::{DefIndex, ExtCandidate, MemberLists, MethodOverloadParams};
 

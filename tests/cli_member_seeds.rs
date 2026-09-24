@@ -270,7 +270,7 @@ fn pick_rejects_a_zero_non_numeric_or_missing_value_with_usage_error() {
     let fx = Fixture::build();
 
     const USAGE: &str =
-        "usage: devscout refs <symbol> [--out] [--all] [--no-guess] [--no-dispatch] [--pick N] [--json|--compact]";
+        "usage: devscout refs <symbol> [--out] [--all] [--no-guess] [--no-dispatch] [--no-bus] [--pick N] [--json|--compact]";
 
     for args in [
         vec!["refs", "Stow", "--pick", "0"],

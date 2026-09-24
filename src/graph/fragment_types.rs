@@ -197,6 +197,45 @@ pub struct FragDef {
         skip_serializing_if = "Vec::is_empty"
     )]
     pub override_methods: Vec<String>,
+    /// Per base name that carries a NESTED generic type argument, that
+    /// argument's own recursive descriptor -- see
+    /// `extract::DefRecord::base_type_args`. Appended LAST of all, after
+    /// `overrideMethods`, omitted when empty. Joined the schema with the
+    /// v20 cache bump: a v19 fragment read back carries none, so the inner
+    /// type argument of a nested base (`IConsumer<Batch<T>>`'s `T`) would
+    /// be unrecoverable from the flattened `baseGenericArgs` alone.
+    #[serde(
+        default,
+        rename = "baseTypeArgs",
+        skip_serializing_if = "OrderedMap::is_empty"
+    )]
+    pub base_type_args: OrderedMap<Vec<String>>,
+    /// Every distinct single type argument this type's own properties wrap
+    /// -- see `extract::DefRecord::property_message_args`. Appended LAST of
+    /// all, after `baseTypeArgs`, omitted when empty. Joined the schema
+    /// with the v21 cache bump: a v20 fragment read back carries none, so a
+    /// handler binding its messages on properties rather than on its base
+    /// list would look like it handled nothing.
+    #[serde(
+        default,
+        rename = "propertyMessageArgs",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub property_message_args: Vec<String>,
+    /// Base names (a subset of `bases`) whose message-position argument at
+    /// `baseGenericArgs`' own position 0 is an array type
+    /// (`IConsumer<M[]>`) -- see `extract::DefRecord::array_message_bases`.
+    /// Appended LAST of all, after `propertyMessageArgs`, omitted when
+    /// empty. Joined the schema with the v23 cache bump: a v22 fragment
+    /// read back carries none, so a single message and an array of it would
+    /// read as the same base-list argument and a publish of one would
+    /// silently reach a consumer of the other.
+    #[serde(
+        default,
+        rename = "arrayMessageBases",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub array_message_bases: Vec<String>,
     #[serde(default, rename = "endLine", skip_serializing_if = "is_zero")]
     /// The end line value.
     pub end_line: usize,
@@ -217,6 +256,80 @@ pub struct FragRegistration {
     pub service: String,
     /// The implementation (second type argument) name.
     pub implementation: String,
+    /// The registration call's enclosing namespace.
+    pub namespace: String,
+    /// The registration call's 1-based line.
+    pub line: usize,
+}
+
+/// One message-bus publish-site fact a file's invocations record -- see
+/// `extract::PublishRecord`. Field order (`verb`, `message`, `namespace`,
+/// `line`, `outerTypes`, `enclosingMethod`, `argCount`, `enclosingCall`) is
+/// significant; `outerTypes` is omitted when empty, `enclosingMethod` when
+/// absent, `argCount` when zero and `enclosingCall` when absent.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FragPublish {
+    /// The invoked method name.
+    pub verb: String,
+    /// The resolved message-type descriptor.
+    pub message: String,
+    /// The call's enclosing namespace.
+    pub namespace: String,
+    /// The call's 1-based line.
+    pub line: usize,
+    /// Enclosing-type stack (see `FragRef::outer_types`).
+    #[serde(default, rename = "outerTypes", skip_serializing_if = "Vec::is_empty")]
+    pub outer_types: Vec<String>,
+    /// The enclosing method's name, set only when this publish hands on its
+    /// own caller's message -- see `extract::PublishRecord::enclosing_method`.
+    /// Appended LAST, omitted when absent. Joined the schema with the v21
+    /// cache bump.
+    #[serde(
+        default,
+        rename = "enclosingMethod",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub enclosing_method: Option<String>,
+    /// The call's own argument count -- see `extract::PublishRecord::arg_count`.
+    /// Appended LAST, after `enclosingMethod`, omitted when zero. Stays
+    /// within the v22 generation (no accepted or released build has ever
+    /// written v22).
+    #[serde(default, rename = "argCount", skip_serializing_if = "is_zero")]
+    pub arg_count: usize,
+    /// The enclosing invocation the call's own lambda sits inside, when it
+    /// sits inside one -- see `extract::PublishRecord::enclosing_call`.
+    /// Appended LAST, after `argCount`, omitted when absent.
+    #[serde(
+        default,
+        rename = "enclosingCall",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub enclosing_call: Option<FragEnclosingCall>,
+}
+
+/// One publish call's own enclosing-lambda-argument fact -- see
+/// `extract::EnclosingCallFact`. Field order (`verb`, `argPosition`,
+/// `argCount`) is significant.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FragEnclosingCall {
+    /// The enclosing invocation's own callee bare name.
+    pub verb: String,
+    /// The 0-based position the lambda occupies among the enclosing
+    /// invocation's arguments.
+    #[serde(rename = "argPosition")]
+    pub arg_position: usize,
+    /// The enclosing invocation's own total argument count.
+    #[serde(rename = "argCount")]
+    pub arg_count: usize,
+}
+
+/// One one-type-argument handler registration a file's invocations record
+/// -- see `extract::HandlerRegistrationRecord`. Field order (`handler`,
+/// `namespace`, `line`) is significant.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FragHandlerRegistration {
+    /// The registered type's descriptor, as written.
+    pub handler: String,
     /// The registration call's enclosing namespace.
     pub namespace: String,
     /// The registration call's 1-based line.
@@ -322,7 +435,7 @@ pub struct FragRef {
     pub line: usize,
     /// Always serialized, including when `null` (imports refs) -- NOT
     /// `skip_serializing_if`, unlike `qualified`/`member` which are omitted
-    /// entirely when absent. See extract.rs's RefRecord doc comment.
+    /// entirely when absent. See extract.rs's `RefRecord` doc comment.
     pub namespace: Option<String>,
     #[serde(
         default,
@@ -331,12 +444,12 @@ pub struct FragRef {
     )]
     /// The type arg count value.
     pub type_arg_count: Option<usize>,
-    /// Type-certainty flag (see extract.rs's RefRecord). Serialized last and
+    /// Type-certainty flag (see extract.rs's `RefRecord`). Serialized last and
     /// only when `true`; an absent key reads back as false, which also makes
     /// an older fragment JSON parse safely.
     #[serde(default, skip_serializing_if = "is_false")]
     pub generic: bool,
-    /// Receiver fact (see extract.rs's RefRecord). Appended AFTER `generic`,
+    /// Receiver fact (see extract.rs's `RefRecord`). Appended AFTER `generic`,
     /// and set only when a fact actually fired -- so it serializes last and
     /// only when present, and an absent key reads back as "no fact", the safe
     /// default.
@@ -346,14 +459,14 @@ pub struct FragRef {
         skip_serializing_if = "Option::is_none"
     )]
     pub receiver_type: Option<String>,
-    /// The callee arg count (see extract.rs's RefRecord). Appended AFTER
+    /// The callee arg count (see extract.rs's `RefRecord`). Appended AFTER
     /// `receiverType`, set only when the member access was the callee of an
     /// invocation -- so it serializes last and only when present, and an
     /// absent key reads back as "not a call", which is what keeps a property
     /// read out of the extension tier.
     #[serde(default, rename = "argCount", skip_serializing_if = "Option::is_none")]
     pub arg_count: Option<usize>,
-    /// Receiver generic-arg descriptors (see extract.rs's RefRecord). Appended
+    /// Receiver generic-arg descriptors (see extract.rs's `RefRecord`). Appended
     /// LAST, after `argCount`, set only when the receiver's DECLARED type was
     /// generic -- an absent key reads back as "not generic", which is what
     /// makes a generic-vs-non-generic pairing fail to unify.
@@ -363,7 +476,7 @@ pub struct FragRef {
         skip_serializing_if = "Option::is_none"
     )]
     pub receiver_args: Option<Vec<String>>,
-    /// Enclosing-type stack (see extract.rs's RefRecord). Appended LAST, after
+    /// Enclosing-type stack (see extract.rs's `RefRecord`). Appended LAST, after
     /// `receiverArgs`, and set only when non-empty. A Vec rather than an Option
     /// because empty and absent mean the same thing here -- a ref at namespace
     /// level and an older cached fragment both read back as "no enclosing
@@ -371,11 +484,11 @@ pub struct FragRef {
     #[serde(default, rename = "outerTypes", skip_serializing_if = "Vec::is_empty")]
     pub outer_types: Vec<String>,
     /// Generic-arg descriptors for a 'ctor-param' ref (see extract.rs's
-    /// RefRecord). Appended LAST of all, after `outerTypes`, and set only when
+    /// `RefRecord`). Appended LAST of all, after `outerTypes`, and set only when
     /// the parameter's type was generic.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub args: Option<Vec<String>>,
-    /// (See extract.rs's RefRecord.) The type whose PROPERTY the
+    /// (See extract.rs's `RefRecord`.) The type whose PROPERTY the
     /// qualifier's last segment is, for a two-segment chain whose head the
     /// enclosing scope could type. Appended after `args`, and never present
     /// alongside `receiverType`.
@@ -385,7 +498,7 @@ pub struct FragRef {
         skip_serializing_if = "Option::is_none"
     )]
     pub receiver_property_owner: Option<String>,
-    /// (See extract.rs's RefRecord.) The type whose METHOD a
+    /// (See extract.rs's `RefRecord`.) The type whose METHOD a
     /// `var x = Q.M(...)` initializer called, and that method's name. Appended
     /// LAST of all, always as a pair, and never alongside `receiverType`: an
     /// absent pair reads back as "no call fact", which is what leaves the local
@@ -488,6 +601,7 @@ pub(crate) fn is_zero(n: &usize) -> bool {
 }
 
 /// One declared member, with the line its own NAME token sits on.
+///
 /// Field order (`name`, `kind`, `line`, `owner`) is significant, and `owner`
 /// is omitted when empty -- which is how
 /// a markup or resource key, owned by no C# type, serializes with three fields.
@@ -525,6 +639,24 @@ pub struct Fragment {
     /// as it did before this field existed.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub registrations: Vec<FragRegistration>,
+    /// The file's message-bus publish-site facts -- see `FragPublish`.
+    /// Appended LAST, after `registrations`, and omitted when empty.
+    /// Joined the schema with the v20 cache bump: a v19 fragment read back
+    /// carries none, so every publish-site fact from an unchanged file
+    /// would silently disappear from a reused cache.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub publishes: Vec<FragPublish>,
+    /// The file's one-type-argument handler registrations, appended LAST
+    /// after `publishes` and omitted when empty. Joined the schema with the
+    /// v21 cache bump: a v20 fragment read back carries none, so a
+    /// repository's own handler vocabulary would be underivable from a
+    /// reused cache.
+    #[serde(
+        default,
+        rename = "handlerRegistrations",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub handler_registrations: Vec<FragHandlerRegistration>,
 }
 
 /// The two shapes a cached fragment can have. Each rel is keyed to whichever

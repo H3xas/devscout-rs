@@ -3,6 +3,7 @@ use std::path::Path;
 
 use crate::graph;
 
+use super::bus::{self, BusHopRow};
 use super::dispatch::{
     self, outbound_foreign, push_ranked, RankedOutbound, K_IMPLEMENTS, K_IMPORTS, K_INHERITS,
     K_OVERRIDES, K_USES_MEMBER, K_USES_TYPE,
@@ -107,6 +108,8 @@ pub struct RefsModel {
     pub outbound: Option<OutboundTables>,
     /// The ambiguous value.
     pub ambiguous: AmbiguousTables,
+    /// Every `bus-hop` row naming this symbol, combined -- see `bus::BusHopRow`.
+    pub bus: Table<BusHopRow>,
     /// Number of files present in the graph but absent from the manifest.
     pub manifest_gap: usize,
     /// `Some` only for an enum with member-level references; `None` for every
@@ -373,6 +376,7 @@ fn member_group_model(
             inbound: empty_table(),
             outbound: empty_table(),
         },
+        bus: bus::empty_bus_table(),
         manifest_gap: index.flagged_files.len(),
         member_refs: None,
     }
@@ -773,6 +777,7 @@ pub(super) fn build_refs_model_inner(
         inbound: build_table(refs.ambiguous_inbound, edges, cap, ambiguous_row),
         outbound: build_table(refs.ambiguous_outbound, edges, cap, ambiguous_row),
     };
+    let bus = bus::symbol_bus_rows(index, &id, cap);
 
     let member_refs = if def.kind == "enum" {
         enum_member_refs(index, &id)
@@ -788,6 +793,7 @@ pub(super) fn build_refs_model_inner(
         inbound,
         outbound,
         ambiguous,
+        bus,
         manifest_gap: index.flagged_files.len(),
         member_refs,
     })

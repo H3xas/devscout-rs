@@ -1,5 +1,8 @@
 use super::ts_fragment_types::TsFragment;
-use super::types::{DefRecord, Extraction, Fact, NameRecord, RefRecord, UsingRecord};
+use super::types::{
+    DefRecord, Extraction, Fact, HandlerRegistrationRecord, NameRecord, PublishRecord, RefRecord,
+    UsingRecord,
+};
 
 // Hand-rolled JSON value + pretty printer matching
 // `JSON.stringify(value, null, 2)` byte-for-byte (2-space indent, no
@@ -212,7 +215,39 @@ pub(super) fn def_to_json(d: &DefRecord) -> Json {
             ),
         ));
     }
-    // Appended after baseGenericArgs.
+    // Appended after baseTypeArgs, same non-empty gate: the messages a
+    // type's own properties wrap, which its base list never names.
+    if !d.property_message_args.is_empty() {
+        fields.push((
+            "propertyMessageArgs",
+            Json::Arr(
+                d.property_message_args
+                    .iter()
+                    .map(|a| Json::Str(a.clone()))
+                    .collect(),
+            ),
+        ));
+    }
+    // Appended after baseGenericArgs, same non-empty gate but keyed to a
+    // base carrying a NESTED generic argument -- a base whose arguments are
+    // all flat has nothing new to say here and contributes no key.
+    if !d.base_type_args.is_empty() {
+        fields.push((
+            "baseTypeArgs",
+            Json::Map(
+                d.base_type_args
+                    .iter()
+                    .map(|(k, v)| {
+                        (
+                            k.clone(),
+                            Json::Arr(v.iter().map(|a| Json::Str(a.clone())).collect()),
+                        )
+                    })
+                    .collect(),
+            ),
+        ));
+    }
+    // Appended after baseTypeArgs.
     if !d.test_methods.is_empty() {
         fields.push((
             "testMethods",
@@ -375,6 +410,37 @@ fn name_to_json(n: &NameRecord) -> Json {
     Json::Obj(fields)
 }
 
+// Field order (`verb`, `message`, `namespace`, `line`, `outerTypes`,
+// `enclosingMethod`) is significant; `outerTypes` is omitted when empty,
+// same as `ref_to_json`'s, and `enclosingMethod` is omitted when absent.
+fn publish_to_json(p: &PublishRecord) -> Json {
+    let mut fields: Vec<(&'static str, Json)> = vec![
+        ("verb", Json::Str(p.verb.clone())),
+        ("message", Json::Str(p.message.clone())),
+        ("namespace", Json::Str(p.namespace.clone())),
+        ("line", Json::Num(p.line)),
+    ];
+    if !p.outer_types.is_empty() {
+        fields.push((
+            "outerTypes",
+            Json::Arr(p.outer_types.iter().map(|t| Json::Str(t.clone())).collect()),
+        ));
+    }
+    if let Some(method) = &p.enclosing_method {
+        fields.push(("enclosingMethod", Json::Str(method.clone())));
+    }
+    Json::Obj(fields)
+}
+
+// Field order (`handler`, `namespace`, `line`) is significant.
+fn handler_registration_to_json(r: &HandlerRegistrationRecord) -> Json {
+    Json::Obj(vec![
+        ("handler", Json::Str(r.handler.clone())),
+        ("namespace", Json::Str(r.namespace.clone())),
+        ("line", Json::Num(r.line)),
+    ])
+}
+
 /// Serializes a C# extraction as JSON.
 pub fn extraction_to_json(e: &Extraction) -> String {
     let purpose_json = match &e.purpose {
@@ -392,6 +458,19 @@ pub fn extraction_to_json(e: &Extraction) -> String {
         (
             "names",
             Json::Arr(e.names.iter().map(name_to_json).collect()),
+        ),
+        (
+            "publishes",
+            Json::Arr(e.publishes.iter().map(publish_to_json).collect()),
+        ),
+        (
+            "handlerRegistrations",
+            Json::Arr(
+                e.handler_registrations
+                    .iter()
+                    .map(handler_registration_to_json)
+                    .collect(),
+            ),
         ),
     ]);
     root.to_pretty_string()
