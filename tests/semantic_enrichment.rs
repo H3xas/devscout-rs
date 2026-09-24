@@ -3,9 +3,9 @@
 //!
 //! Every admitted-artifact candidate here is constructed BY HAND, field by
 //! field, inside this file -- never derived from a real `dotnet`/Roslyn run
-//! or from devscout's own output -- matching the acceptance checks' own
-//! evidence rule that a fixture's expected state is authored independently
-//! of any producer. The one exception is the reference LINE NUMBER a
+//! or from devscout's own output -- so a fixture's expected state is
+//! authored independently of any producer and can never merely echo the
+//! output it is meant to judge. The one exception is the reference LINE NUMBER a
 //! candidate names for each occurrence: read back from a syntax-only `map`
 //! run's own `graph.json`, never hand-guessed, so a fixture edit can never
 //! silently point an occurrence at the wrong line.
@@ -260,7 +260,7 @@ fn occurrence_site(
 /// committed snapshot field for field (`caller`/`target`: `assembly`,
 /// `type`, `member`, `genericArity`, `overloadSignature`; `span`: flat
 /// `startLine`/`startChar`/`endLine`/`endChar`, never the nested
-/// `{start:{...},end:{...}}` shape an earlier round of this fixture used).
+/// `{start:{...},end:{...}}` shape an earlier version of this fixture used).
 /// This is the exact identity the consumer's own `RawOccurrence` must carry
 /// alongside its `(file, startLine, member)` compatibility key.
 #[allow(clippy::too_many_arguments)]
@@ -828,9 +828,9 @@ fn a_confirmed_compiler_fact_recovers_a_typed_indexer_result_site() {
 // inheritance -- the same blind spot `InheritedGenericCallback` proves for a
 // method, here applied to a PROPERTY -- and, distinct from every case above,
 // the receiver of `.Render()` is itself a QUALIFIED (dotted) property-access
-// expression (`registry.Current`), never a bare local. This is the named
-// "qualified property access" receiver category the Design's own list of
-// invented cases requires; `Config.Load()` (`SameContextOverride` /
+// expression (`registry.Current`), never a bare local. This covers the
+// "qualified property access" receiver category, which needs a
+// hand-authored case of its own; `Config.Load()` (`SameContextOverride` /
 // `NegativeCollision`) is a type-qualified STATIC METHOD call, already
 // resolvable (if ambiguously) by the syntax ladder via `using`, and is not
 // this category -- it is the fixture's own same-context-override/negative-
@@ -1558,15 +1558,14 @@ fn two_same_line_overloads_of_one_member_survive_as_distinct_facts() {
     );
 }
 
-// The evidence gap the round-2 technical review named: the fixture above
-// proves two same-line overloads survive, but never proves the arity
-// narrowing in `SemanticLayer::lookup` is load-bearing, because both
-// overloads resolve to the SAME `SemanticTarget` (the type-level identity
-// `resolve_target` returns) regardless of whether narrowing runs at all --
-// with narrowing disabled, `resolved_targets` still collapses the two
-// identical targets to one via `dedup`, and every enrichment test passed
-// unchanged. This fixture closes that gap: the two same-line, same-member
-// occurrences below resolve to GENUINELY DIFFERENT target types (two
+// The fixture above proves two same-line overloads survive, but not that
+// the arity narrowing in `SemanticLayer::lookup` is load-bearing: both of
+// its overloads resolve to the SAME `SemanticTarget` (the type-level
+// identity `resolve_target` returns) whether or not narrowing runs, since
+// `resolved_targets` collapses two identical targets to one via `dedup`,
+// so a regression that stopped narrowing would still pass there. Here the
+// two same-line, same-member occurrences below resolve to GENUINELY
+// DIFFERENT target types (two
 // pre-existing fixture types that happen to share no relationship other than
 // both declaring a zero/one-arg call site here). Without narrowing, EVERY
 // reference at this shared `(file, line, member)` key sees BOTH occurrences,
@@ -1576,10 +1575,9 @@ fn two_same_line_overloads_of_one_member_survive_as_distinct_facts() {
 // local, which the ladder can already do without any compiler fact) survives
 // unchanged, naming `Options`, not either fabricated target. With narrowing,
 // each call's own argument count picks out the ONE candidate whose signature
-// matches, and each resolves to its own correct, distinct target -- proven
-// by re-running this exact test with the narrowing step of `lookup` disabled
-// in a scratch edit and observing the failure (recorded in the journal,
-// never shipped as a runtime toggle).
+// matches, and each resolves to its own correct, distinct target. With the
+// narrowing step of `lookup` removed, this test fails; narrowing has no
+// runtime switch, so this test is what keeps it from silently regressing.
 #[test]
 fn arity_narrowing_resolves_two_same_line_overloads_to_their_own_distinct_targets() {
     let fx = Fixture::build("same-line-overloads-distinct-targets");

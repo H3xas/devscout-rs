@@ -1703,7 +1703,7 @@ per-reference, same-context override at resolve time can reach at all. The remai
 sit at sites the extractor never emits a reference for at all; these are reachable only through a
 separate discovered-sites lane, which is additive to the enriched lane and explicitly does **not**
 move the syntax-lane recall denominator (57607 stays the comparison base for every future run).
-**The design document's 27,140-record ceiling is not reproduced or endorsed here as a predicted
+**An earlier 27,140-record ceiling estimate is not reproduced or endorsed here as a predicted
 gain** — this run's own two subsets (6775 and 12813) are the only figures this work treats as a
 registered, evidenced ceiling on what each mechanism could possibly reach, and neither number is a
 claim about what either mechanism actually will resolve once the admitted occurrence facts are
@@ -1720,7 +1720,7 @@ this results-doc section itself, not a new binary.
 
 ### Run 6b — registered-miss-intersection, corrected (2026-09-22)
 
-A later review of this run's own numbers flags a real
+A later re-check of this run's own numbers found a real
 inconsistency in Run 6's table above: the enriched lane's precise-class recall (Run 7, `precise+ext`
 0.854, 49202 of 57607) cannot exceed the override-reachable ceiling `extractor-emitted` is supposed to
 name — `SemanticDiscovered` edges never count toward `recall_precise`/`recall_precise_ext`
@@ -1773,8 +1773,8 @@ exclusively through the compiler-discovered-sites lane. The largest swing is the
 (bare invocation-result receivers, e.g. generic method returns and indexer results): its own
 `extractor-emitted` count rises only modestly (907 in Run 6's proxy to 468 here -- see caveat below),
 because a `call`-shape receiver's own reference is frequently one the syntax extractor genuinely never
-records a `uses-member` ref for at all (not merely fails to resolve), consistent with the Design's own
-"local call results" language for this receiver family.
+records a `uses-member` ref for at all (not merely fails to resolve), consistent with this receiver
+family being local call results.
 
 **Caveat.** The `call` family's own extractor-emitted count (468) is LOWER here than Run 6's own proxy
 figure (907) -- the only family where the correction moves the number down rather than up. This is not
@@ -1804,7 +1804,7 @@ same pinned corpus and the same oracle output Run 6 used, per the gate's own pai
 
 **Consumer conformance only.** This run's syntax lane and enriched lane are both scored against the
 SAME oracle output (Run 6's own `refs.jsonl`/`units.jsonl`, reused unchanged, named explicitly in the
-Environment table below) rather than against independent reviewed truth or a separate trusted
+Environment table below) rather than against independently verified truth or a separate trusted
 compilation of the tested inputs. Per the paired-independent-evaluation check's own text
 ("same-oracle roundtripping is labelled consumer conformance only"), every figure in this section --
 the two build identities, the paired-precision comparison, the recall gain, and the registered
@@ -1820,8 +1820,8 @@ reference to this run elsewhere, exactly as that check's own text requires.
 Date            2026-09-22
 Corpus          MassTransit/MassTransit @ 855cf1752c94ca9498e0c45ce8d09fdc9e957dd6 (bench/corpus.lock,
                 unchanged from Run 6 -- the SAME clone, SAME oracle refs.jsonl/units.jsonl)
-Devscout base   devscout-rs b16c96550791afe8a3950b19d46af1a72ada026c on this ticket's branch (the
-                consumer's production code, fully wired; steps up to and including the enriched
+Devscout base   devscout-rs b16c96550791afe8a3950b19d46af1a72ada026c on the compiler-enrichment
+                branch (the consumer's production code, fully wired; steps up to and including the enriched
                 audit lane and its fixture/test suite)
 Oracle          tools/scout-semantic, Roslyn (Microsoft.CodeAnalysis.CSharp.Workspaces) 4.14.0,
                 Microsoft.Build.Locator, run twice: once in oracle mode (Run 6's own refs.jsonl/
@@ -1829,8 +1829,8 @@ Oracle          tools/scout-semantic, Roslyn (Microsoft.CodeAnalysis.CSharp.Work
 Compiler-facts  --tfm net9.0 -p Configuration=Debug -p Platform=AnyCPU, matching `compiler-facts
 run             import`'s own default requested profile; 34161 symbols, 21 diagnostics, 1 incomplete
                 unit (MassTransit.Analyzers.Tests|net9.0, a pre-existing corpus target-framework
-                gap unrelated to this ticket -- the same class Run 6's own environment notes as a
-                restore-time `-p:TargetFrameworks=net9.0` override, not a regression here);
+                gap unrelated to the enrichment consumer -- the same class Run 6's own
+                environment notes as a restore-time `-p:TargetFrameworks=net9.0` override, not a regression here);
                 occurrences: 161776 confirmed, 1812 unresolved, 18 ambiguous; sourceSnapshot.headSha
                 855cf1752c94ca9498e0c45ce8d09fdc9e957dd6 (the corpus's own pinned commit -- a real
                 git repository, not `--no-git`), dirty: false
@@ -1841,7 +1841,7 @@ Admission       `devscout compiler-facts import`: admitted, coverage incomplete 
 Rebuild         `devscout map .` after admission: graph rebuilt in 2.73s, 9951 defs (unchanged),
                 193586 edges (up from 136154 in the syntax-lane graph -- the enriched lane's own
                 additional edges)
-Tool version    devscout 0.6.0 (crate version), this ticket's branch
+Tool version    devscout 0.6.0 (crate version), the compiler-enrichment branch
 Build           cargo build --release, rustc 1.97.1 (8bab26f4f 2026-07-14), aarch64-apple-darwin
 SDK             dotnet 9.0.305 (msbuild 9.0.305)
 Host            macOS (Darwin 25.2.0 kernel), Apple M2 Max, arm64, 12 cores, 64 GiB RAM
@@ -1879,9 +1879,9 @@ edges outside universe (not judged) 740
 figure and are identical in shape to Run 6's own); the full `--json` output is not committed
 (`bench/out/` is gitignored, matching every other bench run).
 
-Recall denominator (57607) is unchanged from the syntax lane, confirming the "the syntax-lane
-recall denominator does not move" property this ticket's own Design commits to holds on a real
-corpus, not only on the hand-authored fixture `tests/semantic_enrichment.rs` already proves it on.
+Recall denominator (57607) is unchanged from the syntax lane, confirming that the enrichment
+consumer's "the syntax-lane recall denominator does not move" property holds on a real corpus, not
+only on the hand-authored fixture `tests/semantic_enrichment.rs` already proves it on.
 
 ### Registered shipping gate evaluation
 
@@ -1896,9 +1896,9 @@ recall precise+ext 0.572) on this exact corpus and this exact devscout base:
 | 4 | cold acquisition <= 2x `dotnet build -c Release` of the same solution | n/a | 37.3s vs. a full-solution build that does not itself succeed at `-c Release` without per-project scoping (a pre-existing corpus target-framework gap, the same class criterion 3's environment note names) | not demonstrated (no measured Release-build figure at this run; see Run 8 for the measured cost ratio) |
 
 **Criterion 2 fails.** This is not a rounding artifact: `tiers.precise` drops from 31450 edges to
-4026 in the enriched lane, because the same-context override (by design, per this ticket's own
-Decision retiring D2) replaces the ladder's push at EVERY reference a confirmed compiler fact
-covers, including the large majority of cases where the compiler fact agrees with what the ladder
+4026 in the enriched lane, because the same-context override (by design, since the design
+document's **D2** was retired) replaces the ladder's push at EVERY reference a confirmed compiler
+fact covers, including the large majority of cases where the compiler fact agrees with what the ladder
 already found -- so what remains in `tiers.precise` after enrichment is a *different, smaller,
 harder population*: only the references no confirmed compiler fact ever reached. That residual
 population's own precision (0.969) is measurably worse than the original blended `tiers.precise`
@@ -1907,30 +1907,29 @@ skew toward the easier, already-correct cases; what is left over skews toward th
 a defect in the override mechanism itself -- `tiers.semantic` (the population the override actually
 produced) posts a precision of 0.998, higher than the original blended figure, and the union of
 `tiers.precise` and `tiers.semantic` (50407 edges, 50194 TP, precision 0.9958) comfortably clears
-both the 0.95 floor and would clear a "not more than 0.005 below 0.989" reading too. The acceptance
-check's own text names `tiers.precise` specifically, not the union, so this run reports the
+both the 0.95 floor and would clear a "not more than 0.005 below 0.989" reading too. The
+criterion's own text names `tiers.precise` specifically, not the union, so this run reports the
 measured failure against the literal criterion rather than substituting a more favorable reading.
 
 `tiers.semantic-discovered` (the population devscout's own extractor never emitted a reference for
-at all) posts a much lower precision, 0.175, against this same oracle. No acceptance check sets a
-floor for this population specifically -- the Design's own language ("their absence from the native
+at all) posts a much lower precision, 0.175, against this same oracle. No gate criterion sets a
+floor for this population specifically -- it is diagnostic, not gated: its absence from the native
 lane is measured and reported as a native recall gap and never treated as proof that no relation
-exists") treats it as diagnostic, not gated -- but the number is reported here rather than omitted.
+exists -- but the number is reported here rather than omitted.
 13680 of its 38007 false-against-the-oracle sites are `fp_no_site` (the oracle carries no record at
 that site at all, which the oracle's own known exclusions -- constructors, and sites with an empty
 symbol and candidate set -- can produce without any devscout-side error); the remaining 24327
 (`fp_external_site` 6009 + `fp_wrong_target` 18318) are sites where the oracle DOES have a record
 and disagrees with the discovered edge's own target. This is recorded as a concrete, unresolved
-finding for whoever continues this ticket's own corpus work, not diagnosed further here -- the two
+finding for whoever continues the enrichment corpus work, not diagnosed further here -- the two
 candidate explanations (the identity-translation step mis-resolving a real fraction of discovered
 occurrences, versus this population genuinely concentrating the corpus's own harder, more
 speculative or generated-code sites) are both plausible and are not distinguished by this run alone.
 
 ### Gate outcome
 
-**Per this ticket's own Design ("if the shipping gate fails, that is not a stop condition requiring
-return to design -- it is the ticket's own defined negative-result outcome, and the ticket closes on
-that basis"), this is the measured negative result.** The enrichment layer's mechanism is real,
+**A failed shipping gate is a defined negative-result outcome, recorded as measured rather than
+designed around; this is that measured negative result.** The enrichment layer's mechanism is real,
 correct on every fixture and unit test in the enrichment consumer's own fixture/test suite, and produces a large,
 genuine precise-class recall gain (+0.282 absolute, far past the +0.10/0.70 gate) with both the
 `semantic` row and the `precise`+`semantic` union comfortably above the 0.95 precision floor -- but
@@ -1945,7 +1944,7 @@ unmodified `map` run with no artifact present.
 
 Run 7 reported `tiers.semantic-discovered`'s own precision against the oracle as 0.175 (46090 edges,
 8083 tp, 38007 fp), flagged as "reported, not diagnosed" -- a real, open finding for whoever continued
-this ticket's own corpus work. A read-only diagnosis (recorded separately, not in this repository)
+the enrichment corpus work. A read-only diagnosis (recorded separately, not in this repository)
 sampled 159 of the discovered tier's false-against-the-oracle edges and found ZERO identity-
 translation defects (`src/semantic/`'s own Roslyn-to-def-id translation re-derived by hand for every
 sampled edge, always correct); the population's own low precision has two real causes, both on the
@@ -1958,14 +1957,14 @@ oracle/scoring side of the boundary, not in the consumer:
    35601 of the discovered tier's 46090 edges (77.2%) and post ~0% precision by construction: no
    oracle record can exist for them, so scoring them as false positives scores the oracle's own blind
    spot, not the discovered edge's correctness.
-2. **Site-join line-alignment artifact** (diagnosed, not yet fixed here -- see "Not fixed this round"
+2. **Site-join line-alignment artifact** (diagnosed, not yet fixed here -- see "Not fixed in this run"
    below): the oracle's `startLine` join key is a chained MemberAccessExpression's OWN span start (the
    receiver's line), while the compiler-facts walker records the member name token's own line: a
    multi-line fluent chain files every `.member` under the chain's first line in the oracle, while the
    matching discovered edge sits at the member's true, later line. Exact-line-only joins miss the true
    record.
 
-**Fix applied this round (bounded, scorer-only, never touching `src/semantic/`).** `devscout audit`
+**Fix applied in this run (bounded, scorer-only, never touching `src/semantic/`).** `devscout audit`
 now reads this checkout's own admitted compiler-facts artifact directly (`src/audit/load.rs`'s new
 `discovered_occurrence_shapes`, via the same `graph::read_compiler_facts` reader `src/semantic/`
 itself uses, parsing only the `shape` field the artifact already writes verbatim -- no second
@@ -2002,10 +2001,10 @@ precision-if-fixed estimate (8083/10490 = 0.771) almost exactly (this run's own 
 consistent with the diagnosis being a 159-edge SAMPLE-derived approximation, not a full recount, while
 this run computes the exact population).
 
-**Not fixed this round.** The diagnosis's option (b) (an exact span-based join for the discovered tier,
+**Not fixed in this run.** The diagnosis's option (b) (an exact span-based join for the discovered tier,
 using an added `endLine` on oracle records without changing `startLine` semantics) is not implemented
 here -- it requires a change to `tools/scout-semantic/Walker.cs` (the oracle) and a corpus re-walk,
-which is a materially larger and riskier change than this round's scorer-only fix, and the diagnosis
+which is a materially larger and riskier change than this run's scorer-only fix, and the diagnosis
 itself frames (a) and (b) as independently acceptable, not both required. `fp_wrong_target` (752, down
 from 18318) and `fp_no_site` (1514, down from 13680) on the judged population still include the
 line-alignment artifact's own residual; whoever picks up option (b) should expect the judged
@@ -2034,7 +2033,7 @@ matching this doc's own convention; unrounded 0.99577). Against the syntax lane'
 `tiers.precise` figure (0.989): 0.9958 - 0.989 = **+0.0068**, inside the amended "not more than 0.005
 below" band on the correct side (above, not below) by a comfortable margin. The prediction above holds.
 
-| # | criterion (amended text in step) | syntax (Run 6) | enriched (Run 7) | result |
+| # | criterion (amended text) | syntax (Run 6) | enriched (Run 7) | result |
 | --- | --- | --- | --- | --- |
 | 1 | recall precise+ext gain >= +0.10 absolute AND >= 0.70 floor | 0.572 | 0.854 (+0.282) | **met** (unchanged) |
 | 2 | union of the enriched lane's precise and semantic rows not more than 0.005 below the syntax lane's own paired precise figure | 0.989 | 0.9958 (+0.0068) | **met** |
@@ -2053,19 +2052,19 @@ consumer-conformance caveat the paired-independent-evaluation label attaches to 
 section: the independent-truth leg has not run, so this is not yet independent proof of the enriched
 lane's real-world precision, only of the mechanism's conformance to its own input artifact on this
 pinned corpus. Whether this outcome is sufficient to change the ship/no-ship recommendation, given
-that caveat, is the technical review's judgement to issue, not this results document's to assert.
+that caveat, is a release decision, not this results document's to assert.
 
 ## Run 8 — public registered corpus, re-measured after a dedup-key widening in the same-context
 override (2026-09-23)
 
 This section restores, corrects and renumbers a section this branch's rebase onto the 0.7.0 base
 had dropped. It describes the measurement taken before that rebase, at revision `eb61f15` (three
-revisions past the round-2-reviewed head). It is not re-scored here and carries no figure measured
-at this branch's current, rebased head; the corrections below (this fix round, 2026-09-23) are
-textual only.
+revisions past the pre-widening head, the last pre-rebase head without the dedup-key widening). It
+is not re-scored here and carries no figure measured at this branch's current, rebased head; the
+corrections below (2026-09-23) are textual only.
 
-Three revisions landed on top of the round-2-reviewed head since Run 7/7b: a same-line,
-same-target-type overload's projected edge now carries the overload's own signature, so two
+Three revisions landed on top of the pre-widening head after Run 7/7b. The one relevant here: a
+same-line, same-target-type overload's projected edge now carries the overload's own signature, so two
 admitted compiler facts at one site that previously collapsed into one identical projected edge
 (because the dedup key compared target type alone) can now project as two distinct edges when
 their overload signatures differ. That change lives entirely in the enriched-lane consumer's own
@@ -2081,7 +2080,7 @@ rare on a mature, already-disambiguated production codebase — registered as a 
 material change, not a certainty, checked directly below.
 
 **Consumer conformance only**, identically to Run 7: both lanes are scored against the same oracle
-output this section's own environment table names, not an independent reviewed truth source.
+output this section's own environment table names, not an independently verified truth source.
 
 ### Environment
 
@@ -2089,8 +2088,8 @@ output this section's own environment table names, not an independent reviewed t
 Date            2026-09-23
 Corpus          MassTransit/MassTransit @ 855cf1752c94ca9498e0c45ce8d09fdc9e957dd6 (bench/corpus.lock,
                 unchanged; re-cloned graph cache cleared and rebuilt fresh this run, same pin)
-Devscout base   devscout-rs 6a47cc7e96042f4610857901fb90f26a2606da26 on this ticket's branch (three
-                revisions past the round-2-reviewed head, landing the dedup-key widening described
+Devscout base   devscout-rs 6a47cc7e96042f4610857901fb90f26a2606da26 on the compiler-enrichment
+                branch (three revisions past the pre-widening head, landing the dedup-key widening described
                 above plus an unrelated producer-side offline-restore fix that does not touch this
                 corpus's own restore state)
 Oracle          tools/scout-semantic, Roslyn (Microsoft.CodeAnalysis.CSharp.Workspaces) 4.14.0,
@@ -2106,7 +2105,7 @@ Admission       `devscout compiler-facts import`: admitted, coverage incomplete 
                 occurrences admitted
 Rebuild         `devscout map .` after admission: graph rebuilt in 2.92s, 9951 defs (unchanged),
                 193598 edges (Run 7: 193586 — see "What moved" below)
-Tool version    devscout 0.6.0 (crate version), this ticket's branch, head
+Tool version    devscout 0.6.0 (crate version), the compiler-enrichment branch, head
                 6a47cc7e96042f4610857901fb90f26a2606da26
 Build           cargo build --release -j 4, rustc 1.97.1 (8bab26f4f 2026-07-14), aarch64-apple-darwin
 SDK             dotnet 9.0.305 (msbuild 9.0.305)
@@ -2165,7 +2164,7 @@ Comparing tier-by-tier against Run 7/7b's own already-recorded numbers, tier-rel
 | `semantic-discovered` | 46090 | 46082 | −8 | −8 | 0 |
 | **graph total** | 193586 | 193598 | **+12** | — | — |
 
-**Correction (2026-09-23, this fix round).** This run's own text, as first published, attributed
+**Correction (2026-09-23).** This run's own text, as first published, attributed
 the entire table above to the dedup-key widening ("44 sites ... previously collapsed to one edge
 now correctly project as two, redistributing a net +12 edges"). That attribution is wrong in
 mechanism and in direction, and is retracted here. Two separate changes explain the table, each a

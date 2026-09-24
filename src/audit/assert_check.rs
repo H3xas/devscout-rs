@@ -16,8 +16,8 @@ fn lookup_metric<'a>(v: &'a serde_json::Value, path: &str) -> Option<&'a serde_j
 /// `13`, not `13.0`; `0.381`, not `0.38100000000000001` -- the same
 /// whole-number-drops-its-decimal rule `cli.rs`'s `js_float_string` applies,
 /// reimplemented locally rather than reused (that function is private to
-/// cli.rs and out of this ticket's scope to touch beyond `J`/
-/// `to_json_string`/`require_repo`).
+/// cli.rs, and widening cli.rs's exports beyond `J`/`to_json_string`/
+/// `require_repo` for one formatter is not worth the coupling).
 fn fmt_num(x: f64) -> String {
     if x == x.trunc() && x.abs() < 1e15 {
         format!("{}", x as i64)

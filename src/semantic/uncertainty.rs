@@ -1,12 +1,12 @@
-// The eight-state uncertainty vocabulary the compiler-enrichment design
-// names, and the one place every producer-side and consumer-owned signal
+// The eight-state uncertainty vocabulary every compiler fact is classified
+// into, and the one place every producer-side and consumer-owned signal
 // folds into it. Only `Confirmed` ever participates in the resolver's
 // same-context override (`precedence.rs`); every other state falls through
 // to the syntax ladder unchanged, which is what makes "absence of a record
 // is never a negative fact" true by construction rather than by a second
 // check somewhere else.
 
-/// One of the design's eight distinct, reasoned uncertainty states.
+/// One of eight distinct uncertainty states, each carrying its own reason.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Uncertainty {
     /// A same-context compiler fact names exactly one target.
@@ -20,8 +20,8 @@ pub enum Uncertainty {
     /// The compiler found no candidate at all for this occurrence.
     Unresolved,
     /// The compiler bound the occurrence to something this consumer does not
-    /// treat as a same-context answer -- dynamic dispatch (late binding) is
-    /// the design's own named example.
+    /// treat as a same-context answer -- dynamic dispatch (late binding), for
+    /// example.
     Unsupported,
     /// The compiler found a candidate and explicitly ruled it out
     /// (inaccessible from the call site), rather than merely failing to
@@ -45,7 +45,7 @@ pub enum Uncertainty {
 
 impl Uncertainty {
     /// A short, stable, machine-readable reason string -- every state
-    /// carries one, per the design's own "each with a reason" requirement.
+    /// carries one, so every fall-through to the syntax ladder is explainable.
     pub fn reason(&self) -> String {
         match self {
             Uncertainty::Confirmed => "confirmed".to_string(),

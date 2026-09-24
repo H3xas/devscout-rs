@@ -1,8 +1,8 @@
 // `MapOptions` -- see `mapcmd.rs`'s own module header for `hash_reuse`. Kept
 // in its own sibling file (not inline in `mapcmd.rs`) because that file sits
 // at its exact `tools/size-ratchet.toml` ceiling with zero headroom; adding
-// `no_semantic` here, rather than growing the frozen file, is what "new code
-// lands in new sibling modules" (this ticket's own Decision) means in
+// `no_semantic` here, rather than growing the frozen file, is what the
+// size ratchet's "new code lands in new sibling modules" rule means in
 // practice for a struct that already lived in the file being protected.
 //
 // `compiler_facts_artifact_present` lives here for the same reason: it is
@@ -25,9 +25,8 @@ pub struct MapOptions {
     /// build with no artifact admitted would -- a zero-cost, always-available
     /// escape hatch back to pre-enrichment behavior. A CLI flag, not an
     /// environment switch, following this crate's own `--no-guess`-shaped
-    /// precedent rather than `SCOUT_MTIME_REUSE`'s env-switch shape: the
-    /// consumer's design explicitly retains D11 ("a flag, not an environment
-    /// switch") for this lever.
+    /// precedent rather than `SCOUT_MTIME_REUSE`'s env-switch shape, so the
+    /// lever is visible on the command line that produced a graph.
     pub no_semantic: bool,
 }
 

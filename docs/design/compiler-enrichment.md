@@ -35,7 +35,7 @@
 > [`docs/benchmarks/results/2026-09-resolver-precision.md`](../benchmarks/results/2026-09-resolver-precision.md)'s
 > "Run 7 under the amended precision-hold criterion" section. This is a consumer-conformance figure
 > only (both lanes scored against the same oracle), not independent proof; whether it changes the
-> ship/no-ship recommendation is left to review.
+> ship/no-ship recommendation is a release decision this document does not make.
 
 A design, not an implementation. Nothing here exists in `src/` today: every artifact, flag, field
 and constant this document introduces is marked **new** or **proposed** where it is first named,

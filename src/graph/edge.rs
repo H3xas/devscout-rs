@@ -454,8 +454,8 @@ pub struct HeuristicByTier {
 /// The resolve-time consumption path's own run-level counters: appended to
 /// `Stats` only when the semantic layer actually loaded for this run, so a
 /// syntax-only build (no admitted artifact, or a stale one) carries no
-/// `semantic` key at all -- the same omit-when-absent rule every fact this
-/// ticket adds follows, and what keeps a graph built without the layer
+/// `semantic` key at all -- the same omit-when-absent rule every
+/// enrichment-layer fact follows, and what keeps a graph built without the layer
 /// byte-identical to one built before it existed.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 pub struct SemanticStats {

@@ -24,8 +24,8 @@ producer output is ever involved.
 - `src/Factory.cs`'s generic `Get<T>()` plus `src/Caller.cs`'s
   `LocalCallResult` method give a reference (`thing.Render()`) whose
   receiver's real type only exists through generic-method type inference --
-  a case the ticket's Design names explicitly ("local call results") as a
-  site the syntax extractor alone still misses.
+  a local call result, the kind of site the syntax extractor alone still
+  misses.
 - `src/Handler.cs`'s `Handler<T>` (an abstract generic base declaring
   `Get()`, returning `T`) and its non-generic derived `WidgetHandler :
   Handler<BetaWidget>`, paired with `Caller.cs`'s `InheritedGenericCallback`
@@ -97,6 +97,5 @@ producer output is ever involved.
 
 Every occurrence fact the test admits is constructed by hand in
 `tests/semantic_enrichment.rs` itself (line numbers are read back from a
-syntax-only `map` run first, never hand-guessed), matching the acceptance
-checks' own evidence rule that a fixture's expected state is authored
-independently of any producer's output.
+syntax-only `map` run first, never hand-guessed), so a fixture's expected
+state is authored independently of any producer's output.

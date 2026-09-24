@@ -1,9 +1,9 @@
 // The resolve-time compiler-fact consumption path: the compiler-enrichment
-// design's only production module family, sibling to `graph/` and
+// layer's only production module family, sibling to `graph/` and
 // `resolve/`. Reached only from `resolve::assembly`'s own per-reference
 // wrapper and `mapcmd::map_repo`'s existing load point -- the resolver
 // itself does no file I/O, and neither does anything on the hook path, per
-// the retained design shape every module here preserves: fail open to the
+// the shape every module here preserves: fail open to the
 // syntax ladder, one admitted artifact, no second admission path, no second
 // identity scheme.
 
