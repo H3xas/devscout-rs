@@ -58,11 +58,15 @@ pub enum Why {
     /// producer-asserted fact never outranks anything this crate resolved
     /// for itself.
     ImportedEdge,
+    /// A `bus-hop` edge: a publish site's resolved message reaching a
+    /// registered consumer/handler def. Appended after `imported-edge`, the
+    /// fourteenth and newest word, so no existing word moves.
+    BusHop,
 }
 
 impl Why {
     /// Every value, in the order the doc comment above lists them.
-    pub const ALL: [Why; 13] = [
+    pub const ALL: [Why; 14] = [
         Why::Inherits,
         Why::UsesType,
         Why::UsesMemberPrecise,
@@ -76,6 +80,7 @@ impl Why {
         Why::Implements,
         Why::Overrides,
         Why::ImportedEdge,
+        Why::BusHop,
     ];
 
     /// The exact `--json` word for this value.
@@ -94,6 +99,7 @@ impl Why {
             Why::Implements => "implements",
             Why::Overrides => "overrides",
             Why::ImportedEdge => "imported-edge",
+            Why::BusHop => "bus-hop",
         }
     }
 }
@@ -119,9 +125,10 @@ pub(crate) fn why_for_uses_member(heuristic: bool, tier: Option<graph::Heuristic
 
 /// The `why` value for the edge that produced a row, derived from its kind
 /// and -- for `uses-member` -- its own `heuristic`/`tier`. Only ever called
-/// with an `inherits`/`uses-type`/`uses-member`/`imports`/`ambiguous` edge,
-/// the only kinds that ever populate a `refs`/`read`/`impact` row; every
-/// other kind is unreachable here by construction (see the module header).
+/// with an `inherits`/`uses-type`/`uses-member`/`imports`/`implements`/
+/// `overrides`/`bus-hop`/`ambiguous` edge, the only kinds that ever populate
+/// a `refs`/`read`/`impact` row; every other kind is unreachable here by
+/// construction (see the module header).
 pub(crate) fn why_for_edge(edge: &graph::Edge) -> Why {
     match edge {
         graph::Edge::Inherits { .. } => Why::Inherits,
@@ -130,6 +137,7 @@ pub(crate) fn why_for_edge(edge: &graph::Edge) -> Why {
         graph::Edge::Imports { .. } => Why::Imports,
         graph::Edge::Implements { .. } => Why::Implements,
         graph::Edge::Overrides { .. } => Why::Overrides,
+        graph::Edge::BusHop { .. } => Why::BusHop,
         // An ambiguous edge's `origin` is the same ref-kind string the ladder
         // steps record for a resolved edge ("inherits"/"uses-type"/
         // "uses-member"); an ambiguous edge is never heuristic (ambiguity and
@@ -141,7 +149,7 @@ pub(crate) fn why_for_edge(edge: &graph::Edge) -> Why {
             _ => Why::UsesMemberPrecise,
         },
         _ => unreachable!(
-            "why_for_edge is only called with inherits/uses-type/uses-member/imports/implements/overrides/ambiguous edges, the only kinds that ever populate a refs/read/impact row"
+            "why_for_edge is only called with inherits/uses-type/uses-member/imports/implements/overrides/bus-hop/ambiguous edges, the only kinds that ever populate a refs/read/impact row"
         ),
     }
 }
@@ -166,6 +174,7 @@ mod tests {
             "implements",
             "overrides",
             "imported-edge",
+            "bus-hop",
         ];
         let words: Vec<&str> = Why::ALL.iter().map(|w| w.as_str()).collect();
         for word in &words {
@@ -245,5 +254,19 @@ mod tests {
             candidate_count: 2,
         };
         assert_eq!(why_for_edge(&uses_member), Why::UsesMemberPrecise);
+    }
+
+    #[test]
+    fn why_for_edge_reads_bus_hop_as_its_own_word() {
+        let hop = graph::Edge::BusHop {
+            from_file: "Publisher.cs".to_string(),
+            from_line: 1,
+            message: "App.Msg".to_string(),
+            to: "App.Handler".to_string(),
+            to_file: "Handler.cs".to_string(),
+            evidence: "base-arg".to_string(),
+        };
+        assert_eq!(why_for_edge(&hop), Why::BusHop);
+        assert_eq!(Why::BusHop.as_str(), "bus-hop");
     }
 }

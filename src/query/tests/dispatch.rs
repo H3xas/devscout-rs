@@ -209,6 +209,7 @@ fn no_dispatch_excludes_implements_edges_from_refs_and_the_impact_interface_hop(
         IndexOptions {
             include_guesses: true,
             include_dispatch: false,
+            include_bus: true,
         },
     );
 

@@ -21,7 +21,7 @@ use super::root::{require_graph, require_repo};
 // present reports the missing-repo error even if the query itself is also
 // absent-adjacent.
 const REFS_USAGE: &str =
-    "usage: devscout refs <symbol> [--out] [--all] [--no-guess] [--no-dispatch] [--pick N] [--json|--compact]";
+    "usage: devscout refs <symbol> [--out] [--all] [--no-guess] [--no-dispatch] [--no-bus] [--pick N] [--json|--compact]";
 
 // The row count `refs`/`read` telemetry reports for a resolved answer: every
 // inbound row plus, under `--out`, every outbound row -- the same rows the

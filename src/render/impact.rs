@@ -2,7 +2,28 @@ use crate::graph;
 use crate::query;
 
 use super::blocks::rle;
-use super::markers::{compact_marker, heuristic_suffix, seed_kind_str, INFRA_SUFFIX};
+use super::markers::{
+    compact_marker, heuristic_suffix, seed_kind_str, BUS_HOP_UNVERIFIED, INFRA_SUFFIX,
+};
+
+// The default-renderer suffix for a row every path to it crossed a
+// `bus-hop`: the SAME disclosure sentence `refs`/`read`'s own bus-hop rows
+// carry, plus the identity to re-check -- an impact row is a file-level
+// aggregate with no message/handler fields of its own to show otherwise,
+// unlike a `refs` row which already names them. Empty when the row is not
+// bus-only, or when (defensively) no origin identity survived to be shown.
+fn bus_origin_suffix(bus_only: bool, origin: Option<&query::BusOrigin>) -> String {
+    if !bus_only {
+        return String::new();
+    }
+    match origin {
+        Some(o) => format!(
+            " ({BUS_HOP_UNVERIFIED}: message={} handler={} handlerFile={})",
+            o.message, o.to, o.to_file
+        ),
+        None => format!(" ({BUS_HOP_UNVERIFIED})"),
+    }
+}
 
 /// Default (non-compact) `impact` rendering.
 pub fn render_impact_text(query: &str, model: &query::ImpactModel) -> String {
@@ -72,8 +93,9 @@ pub fn render_impact_text(query: &str, model: &query::ImpactModel) -> String {
         // row, so the reader never has to join the trailer to the table to learn
         // which row the walk stopped at.
         let class_suffix = if r.infra { INFRA_SUFFIX } else { "" };
+        let bus_only_suffix = bus_origin_suffix(r.bus_only, r.bus_origin.as_ref());
         out.push(format!(
-            "{}  {}  {via}  {syms}{iface_via}{}{class_suffix}",
+            "{}  {}  {via}  {syms}{iface_via}{}{class_suffix}{bus_only_suffix}",
             r.file,
             r.hop,
             heuristic_suffix(r.heuristic, r.tier)
@@ -173,7 +195,19 @@ pub fn render_impact_compact(query: &str, model: &query::ImpactModel) -> String 
                 };
                 // Same conditional-suffix rule as the default renderer's class.
                 let class_suffix = if r.infra { " class=infra" } else { "" };
-                format!("{} via={via}{iface_suffix}{class_suffix}", r.file)
+                // The marker-plus-path-to-full-row shape `refs`' own compact
+                // bus block established: compact has no room for the full
+                // disclosure text or the origin identity, only a marker and
+                // where to find them.
+                let bus_only_suffix = if r.bus_only {
+                    " ? (rerun without --compact for the full row)"
+                } else {
+                    ""
+                };
+                format!(
+                    "{} via={via}{iface_suffix}{class_suffix}{bus_only_suffix}",
+                    r.file
+                )
             })
             .collect();
         for line in rle(&lines) {

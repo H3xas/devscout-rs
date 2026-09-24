@@ -3,15 +3,18 @@
 // exact-match half (`member_dispatch_edges` and its row-building helpers).
 // Split out of `index.rs`/`refs.rs` to keep both under this crate's
 // per-file line budget; see this crate's architecture guide for the
-// invariants these edges keep.
+// invariants these edges keep. `inbound_walk_kinds` and `note_dispatch_files`
+// are shared with the `bus-hop` kind too -- the seam that lets `impact` cross
+// a bus hop and `index.rs`'s own `BusHop` arm push its adjacency with no
+// duplicated bookkeeping.
 
 use crate::graph;
 
-use super::index::{def_files, GraphIndex, InboundEntry, OutboundEntry, SymbolRefs};
+use super::index::{def_files, note_file, GraphIndex, InboundEntry, OutboundEntry, SymbolRefs};
 use super::refs::project_of;
 use super::refs_tables::{loc_cmp, InboundRow, Table};
 use super::seq::SeqSet;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 // The interface def id(s) a class def's OWN file(s) declare an `inherits` OR
 // `implements` edge to, restricted to a def of kind `"interface"` -- a plain
@@ -46,17 +49,41 @@ pub(super) fn implemented_interfaces(index: &GraphIndex, def_id: &str) -> Vec<St
     seen.into_vec()
 }
 
-/// The five inbound edge-kind lists `impact`'s reverse walk crosses, in the
-/// order it crosses them -- spelled here so the two dispatch kinds join that
-/// walk in exactly one place.
-pub(super) fn inbound_walk_kinds(inb: &InboundEntry) -> [&Vec<usize>; 5] {
+/// The six inbound edge-kind lists `impact`'s reverse walk crosses, in the
+/// order it crosses them -- spelled here so the dispatch pair and the
+/// bus-hop kind all join that walk in exactly one place.
+pub(super) fn inbound_walk_kinds(inb: &InboundEntry) -> [&Vec<usize>; 6] {
     [
         &inb.inherits,
         &inb.uses_type,
         &inb.uses_member,
         &inb.implements,
         &inb.overrides,
+        &inb.bus_hop,
     ]
+}
+
+/// The `note_file`/`hub_referrers_by_file` bookkeeping shared by every
+/// dispatch-shaped edge kind (`implements`/`overrides`/`bus-hop`) before its
+/// own adjacency push: both ends flagged against the manifest, then the
+/// cross-file hub count -- pulled out once here so `index.rs`'s own
+/// per-kind arms stay one call each rather than three copies of the same
+/// eight lines.
+pub(super) fn note_dispatch_files(
+    flagged_files: &mut HashSet<String>,
+    manifest_paths: Option<&HashSet<String>>,
+    hub_referrers_by_file: &mut HashMap<String, HashSet<String>>,
+    from_file: &str,
+    to_file: &str,
+) {
+    note_file(flagged_files, manifest_paths, from_file);
+    note_file(flagged_files, manifest_paths, to_file);
+    if !to_file.is_empty() && !from_file.is_empty() && to_file != from_file {
+        hub_referrers_by_file
+            .entry(to_file.to_string())
+            .or_default()
+            .insert(from_file.to_string());
+    }
 }
 
 /// Pushes edge `i` into both `outbound_by_file[from_file]` and

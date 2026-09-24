@@ -82,6 +82,71 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   precision against compiler-reference evidence. It preserves production traversal and records
   failed admission gates without promoting evidence tiers.
 
+- **Native message-bus candidate links across one repository.** A recognized publish or
+  dispatch call whose message resolves to one in-graph definition gains a `bus-hop` to each
+  matching handler declaration anywhere in the indexed repository. A project or
+  `ProjectReference` is not a boundary: a publisher and its handler in different projects or
+  assemblies are still connected. Both message identities resolve through the ordinary type
+  ladder in their own file contexts, so a shared short name, an adjacent type mention or a
+  method spelling alone supplies no message identity. A message and an array of that same
+  message are distinct identities on both sides of a hop -- a single publish never reaches an
+  array consumer and an array publish never reaches a single-message consumer -- covering a
+  generic-argument array, an explicit or implicitly typed array creation, a declared
+  array-typed local and a property-bound array alike; the edge's own `message` carries the
+  array suffix.
+  These are candidate type relationships: receiver registration, endpoint routing, test-host
+  co-location and runtime delivery are not established. Behaviour precision and recall are
+  unmeasured, and no gain in `uses-member` recall is claimed.
+- **The message vocabulary is read from the repository, not shipped with the engine.** A
+  repository's own one-type-argument handler registrations name the types it treats as
+  handlers, and a registered type's generic bases are that repository's handler bases. Two
+  closures spread what it says about itself: a base reached through a locally declared
+  pass-through intermediate is still a handler base, and a method that hands its caller's
+  message to a publish is itself a publish, followed exactly one hop. A small set of common
+  handler shapes seeds the vocabulary so a repository that registers nothing still works, and
+  `stats.bus_vocabulary_derived` reports whether the repository contributed -- `false` says the
+  engine fell back to what it ships, which is a coverage gap rather than an absence of routes.
+- **Inspectable handler evidence.** `base-arg` names a plain single generic message argument,
+  `nested-base-arg` names the inner argument of a single-argument generic wrapper,
+  `mediator-request` names a handler shape with a second type argument beside the message, and
+  `property-arg` names a message a recognized handler binds on a property rather than on its
+  base list. Calls may span lines, construct the message directly or inside a lambda, or name a
+  message variable declared earlier. External or ambiguous message identities emit no hop. A
+  publish written inside a mocking-library or repository-declared test-double setup/verify
+  lambda -- an expression-tree-typed parameter, whether the call is written in extension or
+  static form, and whether an optional trailing argument of that call is passed or left out --
+  earns no hop either; a plain-delegate lambda around the same call is real dispatch and keeps
+  its hop. A static-form call of a `this`-marked helper that leaves out an optional argument,
+  while an equally admissible extension reading of the same call points its lambda at a
+  parameter that is not expression-tree typed, is not yet told the two readings apart and keeps
+  its hop -- a named gap.
+- **`refs`, `read`, `impact` and `tests` traverse candidate hops**, with `--no-bus` to restore
+  prior traversal and hub classification. The common report carries the publisher's `file:line`,
+  query direction, resolved message, handler and declaring file, handler evidence, and how many
+  handlers that message reaches in all; `bus-hop` remains the `why` word. That last count is
+  what separates one route from one shared contract every publisher appears to reach, and it is
+  computed from the edges rather than stored. Bus edges contribute distinct referring files to
+  the existing file in-degree brake, and `--hub-max-indegree` controls further impact expansion
+  through those files.
+- **Every bus-hop row discloses it is a possible route.** Runtime routing is not verified:
+  text, `--json` and `--compact` answers each state so, and the JSON row additionally carries
+  the verification targets (publisher `file:line`, resolved message, handler identity and file,
+  and which evidence is missing) as an additive object. A file reached only through a bus hop
+  keeps that marker through later ordinary-reference hops within `impact`'s walk; a file also
+  reached by an independent non-bus path keeps that path's stronger evidence instead.
+- **Measured on the pinned C# corpus.** At MassTransit commit
+  `855cf1752c94ca9498e0c45ce8d09fdc9e957dd6`, mapping the whole tree emits 23,687 candidate
+  hops over 171 distinct messages, of which one shared test message accounts for 23,068 across
+  79 handlers -- concentration every row now states rather than leaves to be inferred. An array
+  of that same shared message is its own identity, reaching only the two handlers declared
+  against the array: 4 hops from its 2 publish sites, no longer the 79 single-message handlers
+  a rank-blind identity previously reached. Every non-bus edge kind and count is unchanged from
+  the same commit's non-bus map. A registered type's own generic base is admitted into the
+  handler vocabulary only when that type is not itself a sent message and actually receives,
+  through a declared parameter or a bound property, a message the corpus does send -- a
+  self-referential library base can no longer route a message to itself. These counts measure
+  reach, not precision.
+
 ### Changed
 
 - **`--tfm` is now repeatable**, with each requested target its own compilation identity and no
@@ -93,6 +158,17 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`--strict` gains an artifact-level check for `--emit context`**: exit 2 unless every
   non-`excluded` record is `complete`, alongside its existing checks. A project a `--projects`
   filter leaves out is `excluded`, not `failed`, so it never trips this check.
+- **Fragment cache generation v23.** The fragment shape gains publish-site facts, a handler's
+  nested base type arguments, the single type arguments a type's properties wrap, one-argument
+  handler registrations, publish sites named under a verb this engine does not ship, and the
+  array-marked subset of a handler's own base names (so a single message and an array of that
+  same message never collapse into the same base-list argument). The first run after upgrading
+  remaps; every earlier generation, including v20, v21 and v22, is deleted on that run, because
+  a reused earlier fragment would leave a supported hop unfound, or a single/array identity
+  distinction lost, with nothing on disk to show for it. v22 was never present in a shipped
+  release. The graph schema stays at 3: the `bus-hop` counter is absent rather than zero when a
+  repository has no publish site, so a repository with no bus in it serializes byte for byte as
+  it did before.
 
 ### Fixed
 

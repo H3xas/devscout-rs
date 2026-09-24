@@ -85,6 +85,11 @@ fn json_refs_model(rows: Vec<query::InboundRow>, out: bool) -> query::RefsModel 
                 rows: Vec::new(),
             },
         },
+        bus: query::Table {
+            total: 0,
+            dropped: 0,
+            rows: Vec::<query::BusHopRow>::new(),
+        },
         manifest_gap: 0,
         member_refs: None,
     }

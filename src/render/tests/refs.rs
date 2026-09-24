@@ -43,6 +43,7 @@ fn refs_model(
         inbound,
         outbound: Some(outbound),
         ambiguous,
+        bus: table(vec![], 0),
         manifest_gap,
         member_refs: None,
     }

@@ -1,4 +1,5 @@
 use super::arity::{arity_accepts, generic_args_unify, resolve_receiver_type};
+use super::bus::append_bus_edges;
 use super::dispatch::append_dispatch_edges;
 use super::edges::{build_implementor_index, heuristic_edge_key, resolve_ctor_param, type_edge};
 use super::index::{build_def_index, name_probe, ExtCandidate};
@@ -1196,7 +1197,13 @@ pub fn resolve_graph_with_model(
         &mut edges,
         &mut edges_by_kind,
     );
-
+    let bus_vocabulary_derived = append_bus_edges(
+        fragments_by_file,
+        &index,
+        &file_contexts,
+        &mut edges,
+        &mut edges_by_kind,
+    );
     // The full name index. Every name the mapped set declares, with the file
     // and line it is declared on: one entry per fragment def (its own `line`,
     // so `find` and `refs` point a caller at the same site), then that file's
@@ -1292,6 +1299,7 @@ pub fn resolve_graph_with_model(
             // population of guesses.
             heuristic_by_tier,
             ts: None,
+            bus_vocabulary_derived,
         },
         defs: index.defs,
         edges,

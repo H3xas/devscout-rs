@@ -23,7 +23,7 @@ use super::root::{require_graph, require_repo};
 // cannot drift between the two verbs; only the resolved arm grows the
 // declaration span.
 const READ_USAGE: &str =
-    "usage: devscout read <symbol> [--no-guess] [--no-dispatch] [--pick N] [--json|--compact]";
+    "usage: devscout read <symbol> [--no-guess] [--no-dispatch] [--no-bus] [--pick N] [--json|--compact]";
 
 pub(crate) fn cmd_read(cwd: &Path, args: &[String]) -> (i32, String, Option<&'static str>) {
     let start = Instant::now();

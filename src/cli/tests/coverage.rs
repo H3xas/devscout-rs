@@ -29,6 +29,11 @@ fn tests_json_appends_via_project_last_and_omits_it_for_an_attribute_row() {
         ref_count: 3,
         heuristic_file_count: 0,
         heuristic_ref_count: 0,
+        bus: query::Table {
+            total: 0,
+            dropped: 0,
+            rows: vec![],
+        },
     };
     let json = tests_model_to_json(&model);
     assert!(
@@ -56,6 +61,11 @@ fn tests_json_leads_with_schema_version_ahead_of_status() {
         ref_count: 0,
         heuristic_file_count: 0,
         heuristic_ref_count: 0,
+        bus: query::Table {
+            total: 0,
+            dropped: 0,
+            rows: vec![],
+        },
     };
     let json = tests_model_to_json(&model);
     assert!(

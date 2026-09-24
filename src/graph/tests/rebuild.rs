@@ -76,12 +76,17 @@ fn rebuild_graph_reuses_a_cached_fragment_at_matching_mtime() {
             method_arities: OrderedMap::new(),
             method_params: OrderedMap::new(),
             override_methods: vec![],
+            base_type_args: OrderedMap::new(),
+            property_message_args: Vec::new(),
+            array_message_bases: Vec::new(),
             end_line: 1,
         }],
         usings: vec![],
         refs: vec![],
         names: vec![],
         registrations: vec![],
+        publishes: vec![],
+        handler_registrations: vec![],
     };
     // First build: nothing cached, comes from fresh_fragments.
     let mut fresh = HashMap::new();

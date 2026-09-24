@@ -14,6 +14,7 @@ fn tests_model(rows: Vec<TestRow>) -> TestsModel {
         heuristic_file_count: guessed.len(),
         heuristic_ref_count: guessed.iter().map(|r| r.ref_count).sum(),
         rows,
+        bus: table(vec![], 0),
     }
 }
 
