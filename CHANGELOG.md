@@ -9,6 +9,18 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **The compiler-facts producer restores a missing `PackageReference` assembly offline, before
+  opening the workspace for facts.** A never-restored working copy used to leave every
+  `PackageReference`-resolved type unresolved (`CS0234`/`CS0246`), even though `FrameworkReference`
+  assemblies loaded fine, because `MSBuildWorkspace` evaluates but never restores. The engine now
+  finds each project the workspace opened whose MSBuild-evaluated assets file is missing (asking
+  the SDK's own `dotnet msbuild` when the in-process evaluator cannot load a project) and restores
+  exactly those, one at a time, from the local NuGet global packages folder alone -- never a
+  configured feed, a project's additional source, or the network, and never touching a project
+  whose assets file already exists. `--no-restore` opts back out. A project whose restore failed,
+  in this run or as recorded in its assets file by an earlier one, is `partial`/`unrestored`
+  (ahead of the generic `binding-error`), and its compiler-facts `coverage.incompleteUnits` reason
+  names the restore failure instead of the first compiler error.
 - **`compiler-facts run|import|status`** admits a versioned, optional compiler-derived fact
   artifact -- either from a one-shot local engine run or from a build/CI-produced artifact --
   through one Rust admission path, publishing it atomically beside `graph.json`. `map` and every
@@ -146,6 +158,28 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   through a declared parameter or a bound property, a message the corpus does send -- a
   self-referential library base can no longer route a message to itself. These counts measure
   reach, not precision.
+- **`map` consumes an admitted compiler-facts artifact at resolve time.** A same-context
+  compiler fact determines the answer at its own occurrence, including where it contradicts a
+  syntax-derived edge; the displaced syntax answer is preserved as a disagreement diagnostic
+  (`stats.semantic` in `graph.json`), never retained as a graph edge. A compiler-verified
+  occurrence the syntax extractor never emitted a reference for at all is projected as its own,
+  separately provenanced population (`source: "semantic-discovered"`, never pooled with the
+  per-reference overrides, and never moving the syntax-lane recall denominator). Freshness is
+  whole-artifact: a changed git head or a dirty working tree since the artifact was captured
+  invalidates every fact it carries, even for a consuming file that is itself byte-identical.
+  `map --no-semantic` skips an admitted artifact even when one is present, always producing the
+  exact syntax-only graph a build with no artifact admitted would. `audit --semantic` reports
+  the enriched lane's two new tiers (`semantic`, `semantic-discovered`) alongside the syntax
+  tiers, and a `lane` key naming which kind of graph was audited. Registered against a public
+  ship/no-ship gate: see
+  [`docs/benchmarks/results/2026-09-resolver-precision.md`](docs/benchmarks/results/2026-09-resolver-precision.md)'s
+  "Run 7" section for the measured result. See [Compiler facts](README.md#compiler-facts).
+- **CI exercises the enriched lane end to end.** The `semantic-audit` workflow job now also runs
+  the real oracle in `--emit compiler-facts` mode against the `csharp-semantic` fixture (inside the
+  checkout itself, so the admitted artifact's own `sourceSnapshot.headSha` is a real commit), admits
+  it, rebuilds the graph, and asserts `audit --semantic --json`'s `lane` key reads `"enriched"` --
+  proving the real restore/build/oracle/admission/rebuild/audit pipeline, never a second proof of
+  the resolver itself (that is `tests/semantic_enrichment.rs`'s own job).
 
 ### Changed
 
@@ -169,9 +203,46 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   release. The graph schema stays at 3: the `bus-hop` counter is absent rather than zero when a
   repository has no publish site, so a repository with no bus in it serializes byte for byte as
   it did before.
+- **`src/audit.rs` is a thin module root over `src/audit/`** — the data model, filesystem load,
+  pure scoring primitives, per-tier counters, rendering and the `--assert` threshold check, each in
+  their own file, with the unit tests split the same way under `src/audit/tests/`. `audit --semantic`
+  text and `--json` output are byte-identical before and after the split on the committed fixture.
+- **`audit --semantic` reports a per-tier `unjudged` count.** A `semantic-discovered` edge whose
+  originating compiler occurrence carries `shape: "identifier"` -- a bare field/property/event read
+  the oracle's own walker records no case for at all -- is reported in its own `unjudged` count
+  instead of scored as a false positive, since no oracle record could ever exist to judge it by.
+  Read directly from this checkout's own admitted compiler-facts artifact (the occurrence's already-
+  written `shape` field), never from `src/semantic/`. Every other tier's `unjudged` count is always
+  0, and every other tier's figures, and the syntax-lane recall figures, are unaffected. See
+  [`docs/benchmarks/results/2026-09-resolver-precision.md`](docs/benchmarks/results/2026-09-resolver-precision.md)'s
+  "Run 7b" section.
 
 ### Fixed
 
+- **Compiler-discovered edges are emitted in a deterministic order.** The enriched lane's own
+  discovered-site projection used to walk its site keys in the underlying `HashMap`'s own
+  iteration order, so `graph.json` was not guaranteed byte-identical across two separate `map`
+  processes over the same admitted artifact whenever more than one discovered site existed. It now
+  walks them in a fixed, sorted order.
+- **Two confirmed same-type overloads at a compiler-discovered site now project as two distinct
+  edges, not one ambiguous outcome.** A discovered site carries no caller-side argument count to
+  narrow an overload set by (unlike an extractor-emitted reference), so two same-line, same-type,
+  different-signature confirmed facts used to collapse together and project nothing. Each now
+  projects with its own overload signature, the same way arity narrowing already lets an
+  extractor-emitted reference resolve two same-line overloads independently; a survivor set naming
+  more than one distinct type is unaffected and still projects nothing.
+- **A repository-authored MSBuild import is identified by its own root-relative path, not just
+  its bare file name.** `Directory.Build.props` and its kin previously normalized to their bare
+  name alone; a same-named override file at a different repository depth (a root
+  `Directory.Build.props` plus a subtree's own override, an ordinary MSBuild pattern) collided
+  onto that one identity, and the freshness check -- which joins an import identity under the
+  repository root before re-hashing it -- then compared one file's recorded hash against a
+  different file's live content and read the whole artifact as stale on every run touching either
+  one, even though nothing had changed. An installed .NET workload's manifest tree
+  (`sdk-manifests/`) is now also recognized as SDK-owned, the same way the SDK's own `sdk/` tree
+  already was, closing the matching gap where an unrecognized workload-manifest import fell
+  through to the same bare-name identity and could never be located under the repository root at
+  all -- both silently degraded the enriched lane to syntax-only rather than reporting an error.
 - **The precise tier no longer emits `uses-member` edges C# name lookup cannot produce.** Five
   resolver shapes are refused instead of guessed: a bare qualifier resolved only by graph-wide
   simple-name uniqueness; a receiver whose written type-argument count has no in-tree match; a

@@ -34,7 +34,7 @@ fn stage6_admission_a_scored_guess_never_names_a_def_in_a_project_the_site_canno
         unit("src/Domain/Domain.csproj", &[], false),
         unit("src/Unreachable/Unreachable.csproj", &[], false),
     ]);
-    let g = resolve_graph_with_model(&root, &files, &[], Some(&model));
+    let g = resolve_graph_with_model(&root, &files, &[], Some(&model), None);
     assert_eq!(
         heuristic_member_edge_targets(&g),
         vec!["Fixture.Domain.Order"],
@@ -81,7 +81,7 @@ fn stage6_admission_a_non_test_site_never_names_a_def_in_a_test_project_even_whe
         ),
         unit("tests/App.Tests/App.Tests.csproj", &[], true),
     ]);
-    let g = resolve_graph_with_model(&root, &files, &[], Some(&model));
+    let g = resolve_graph_with_model(&root, &files, &[], Some(&model), None);
     assert_eq!(
         g.stats.test_def_count, 0,
         "AdapterFixture declares no test method, so def-level test detection never marked it -- the UNIT is what makes it test-only"
@@ -115,7 +115,7 @@ fn stage6_admission_a_test_site_may_name_a_def_in_a_referenced_test_utility_proj
         ),
         unit("tests/Test.Utilities/Test.Utilities.csproj", &[], true),
     ]);
-    let g = resolve_graph_with_model(&no_git_root(), &files, &[], Some(&model));
+    let g = resolve_graph_with_model(&no_git_root(), &files, &[], Some(&model), None);
     assert_eq!(
         heuristic_member_edges_from(&g, "tests/App.Tests/WorkerTests.cs"),
         vec![("Fixture.Test.Utilities.FakeServer", 9)],
@@ -172,7 +172,7 @@ fn stage6_admission_tier_f_ignores_an_unreachable_duplicate_and_emits_the_reacha
         unit("src/Ext.Adapters/Ext.Adapters.csproj", &[], false),
         unit("src/Unreachable/Unreachable.csproj", &[], false),
     ]);
-    let g = resolve_graph_with_model(&root, &files, &[], Some(&model));
+    let g = resolve_graph_with_model(&root, &files, &[], Some(&model), None);
     assert_eq!(
         heuristic_member_edges_from(&g, "src/App/Startup.cs"),
         vec![("Fixture.Registration.ServiceCollectionExtensions", 8)],
@@ -209,7 +209,7 @@ fn stage6_admission_a_file_outside_every_project_fails_open() {
         ),
     ]);
     let model = model_of(vec![unit("src/App/App.csproj", &[], false)]);
-    let g = resolve_graph_with_model(&no_git_root(), &files, &[], Some(&model));
+    let g = resolve_graph_with_model(&no_git_root(), &files, &[], Some(&model), None);
 
     assert_eq!(
         heuristic_member_edges_from(&g, "src/App/Runner.cs"),
@@ -251,7 +251,7 @@ fn stage6_global_usings_are_scoped_to_the_declaring_unit_when_a_model_exists() {
             false,
         ),
     ]);
-    let g = resolve_graph_with_model(&no_git_root(), &files, &[], Some(&model));
+    let g = resolve_graph_with_model(&no_git_root(), &files, &[], Some(&model), None);
 
     assert_eq!(
         member_edges_from(&g, "src/App/AppConsumer.cs"),
@@ -320,7 +320,7 @@ fn stage6_global_usings_fall_open_to_the_repo_wide_pool_for_a_file_no_project_ow
             false,
         ),
     ]);
-    let g = resolve_graph_with_model(&no_git_root(), &files, &[], Some(&model));
+    let g = resolve_graph_with_model(&no_git_root(), &files, &[], Some(&model), None);
 
     assert_eq!(
         model.unit_of_file("Loose/LooseConsumer.cs"),
@@ -380,7 +380,7 @@ fn stage6_narrowing_turns_a_two_project_ambiguity_into_a_precise_edge_when_only_
         unit("src/App/App.csproj", &["src/Alpha/Alpha.csproj"], false),
         unit("src/Beta/Beta.csproj", &[], false),
     ]);
-    let g = resolve_graph_with_model(&root, &files, &[], Some(&model));
+    let g = resolve_graph_with_model(&root, &files, &[], Some(&model), None);
 
     assert_eq!(
         type_edge_targets_from(&g, "src/App/Runner.cs"),
@@ -447,7 +447,7 @@ fn stage6_narrowing_settles_the_receiver_probe_so_a_field_hop_lands_on_a_precise
         unit("src/App/App.csproj", &["src/Alpha/Alpha.csproj"], false),
         unit("src/Beta/Beta.csproj", &[], false),
     ]);
-    let g = resolve_graph_with_model(&root, &files, &[], Some(&model));
+    let g = resolve_graph_with_model(&root, &files, &[], Some(&model), None);
     assert_eq!(
         member_edges_from(&g, "src/App/Runner.cs"),
         vec![("Fixture.Alpha.Config", 8)],
@@ -476,7 +476,7 @@ fn stage6_narrowing_keeps_an_ambiguity_between_two_reachable_projects() {
         ),
         unit("src/Beta/Beta.csproj", &[], false),
     ]);
-    let g = resolve_graph_with_model(&root, &files, &[], Some(&model));
+    let g = resolve_graph_with_model(&root, &files, &[], Some(&model), None);
 
     assert_eq!(
         ambiguous_edges_from(&g, "src/App/Runner.cs"),
@@ -554,7 +554,13 @@ fn stage6_narrowing_never_touches_ctor_di_implementor_choice() {
         }
     };
     assert_eq!(
-        ctor_di(&resolve_graph_with_model(&root, &files, &[], Some(&model))),
+        ctor_di(&resolve_graph_with_model(
+            &root,
+            &files,
+            &[],
+            Some(&model),
+            None
+        )),
         ctor_di(&resolve_graph(&root, &files)),
         "two implementors is two implementors, model or no model"
     );
@@ -606,7 +612,7 @@ fn stage6_narrowing_to_zero_gives_the_scored_tier_an_empty_pool_not_a_graph_wide
         unit("src/Beta/Beta.csproj", &[], false),
         unit("src/Shared/Shared.csproj", &[], false),
     ]);
-    let g = resolve_graph_with_model(&root, &files, &[], Some(&model));
+    let g = resolve_graph_with_model(&root, &files, &[], Some(&model), None);
 
     assert!(
         ambiguous_edges_from(&g, "src/App/Runner.cs").is_empty(),
@@ -670,7 +676,7 @@ fn stage6_a_bare_qualifier_narrowed_to_zero_declines_while_an_unfound_one_still_
         unit("src/Beta/Beta.csproj", &[], false),
         unit("src/Shared/Shared.csproj", &[], false),
     ]);
-    let g = resolve_graph_with_model(&root, &files, &[], Some(&model));
+    let g = resolve_graph_with_model(&root, &files, &[], Some(&model), None);
 
     assert_eq!(
         heuristic_member_edges_from(&g, "src/App/Runner.cs"),

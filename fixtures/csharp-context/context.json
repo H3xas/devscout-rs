@@ -17,7 +17,7 @@
       },
       "state": "partial",
       "reason": "workspace-failure",
-      "fingerprint": "654372a6273eb2ba0d4f08ce9eaa34dea0863e19",
+      "fingerprint": "7fc774bfe7bf753721a20964524491486faceb82",
       "versions": {
         "sdk": "9.0.305",
         "msbuild": "17.14.21.41108",
@@ -1014,10 +1014,6 @@
         {
           "identity": "external-file:Directory.Build.props",
           "hash": "e430464dfd655dfdcc4d6a0cfc7b45696006d182"
-        },
-        {
-          "identity": "external-file:WorkloadManifest.targets",
-          "hash": "82dc5e0b1dd793d309f239bb022d3229b01c19b8"
         }
       ],
       "languageOptions": {
@@ -1068,7 +1064,7 @@
       },
       "state": "partial",
       "reason": "missing",
-      "fingerprint": "014fafe3643dbe6de0a316a6a8e4bcb8307bb855",
+      "fingerprint": "37b43a6595f1724b1f18b9ff53fe454cf57cbb39",
       "versions": {
         "sdk": "9.0.305",
         "msbuild": "17.14.21.41108",
@@ -2065,10 +2061,6 @@
         {
           "identity": "external-file:Directory.Build.props",
           "hash": "e430464dfd655dfdcc4d6a0cfc7b45696006d182"
-        },
-        {
-          "identity": "external-file:WorkloadManifest.targets",
-          "hash": "82dc5e0b1dd793d309f239bb022d3229b01c19b8"
         }
       ],
       "languageOptions": {

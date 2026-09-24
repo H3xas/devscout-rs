@@ -18,10 +18,42 @@ It is **not** part of the Rust crate build: `Cargo.toml` excludes `tools/`, and 
   dotnet build   tools/scout-semantic --no-restore -c Release
   ```
 
-- **The target solution must be restored first.** Roslyn's `MSBuildWorkspace` evaluates the
-  target's MSBuild files in an out-of-process build host; it does not restore for you, and an
-  unrestored project loads without its metadata references, which silently turns real symbols
-  into unresolved candidates.
+- **A never-restored target is restored automatically, offline.** Roslyn's `MSBuildWorkspace`
+  evaluates the target's MSBuild files in an out-of-process build host; it does not restore for
+  you, and an unrestored project loads without its `PackageReference`-resolved metadata
+  references, which silently turns real symbols into unresolved candidates. Before the workspace
+  is used for facts, the tool therefore checks every project the workspace opened (including a
+  project reference that target selection left out) for its assets file, at the location MSBuild
+  evaluates for it, so a custom intermediate path is honoured. A project the tool's in-process
+  MSBuild cannot evaluate (a `netstandard2.0` project, for one) is evaluated by the installed
+  SDK's own `dotnet msbuild -getProperty:ProjectAssetsFile` with the run's `-p:` properties.
+  Each project whose assets file is missing is restored alone, without its project-reference
+  closure, from the local NuGet global packages folder only -- the folder NuGet resolves for the
+  analysed root (`NUGET_PACKAGES`, a `globalPackagesFolder` setting, or the default
+  `~/.nuget/packages`). The restore passes that folder as `--source` and pins
+  `RestoreSources` to it and `RestoreAdditionalProjectSources` to empty after every forwarded
+  `-p:` property, so neither a configured feed, a project's own additional source, nor a forwarded
+  source property is consulted, and the restore never reaches the network. A package that folder
+  cannot satisfy stays unresolved rather than triggering a wider search. A project whose assets
+  file already exists is never restored again (the file's bytes and timestamp are unchanged). The
+  restore writes wherever MSBuild places its output, normally the git-ignored `obj/` directory --
+  the same side effect an ordinary `dotnet restore` has, performed by this tool instead of by
+  hand.
+
+  `--no-restore` skips this step entirely and reproduces the tool's pre-restore behaviour: an
+  unrestored project's `PackageReference` types report `CS0234`/`CS0246` exactly as before. A
+  project the restore could not complete -- the package is not in the local cache, or the restore
+  otherwise failed -- is reported with build-context state `partial` and reason `unrestored`,
+  ahead of the generic `binding-error` reason its compiler diagnostics would otherwise produce,
+  and in `--emit compiler-facts` its `coverage.incompleteUnits` entry names the restore failure
+  instead of the first compiler error; see [Build-context envelope](#build-context-envelope) and
+  [Compiler-facts protocol](#compiler-facts-protocol) below. A failed restore still writes an
+  assets file that records the error in its `logs`; later runs read that record, keep reporting
+  the project `unrestored` with the recorded error, and do not restore it again. Delete the
+  project's assets file (or restore it by hand) once the package is available locally.
+
+  A manual restore ahead of time still works exactly as before and is a no-op for this tool (its
+  own check finds the assets file already there):
 
   ```sh
   dotnet restore <path/to/Target.sln> [-p:Name=Value ...]
@@ -29,7 +61,9 @@ It is **not** part of the Rust crate build: `Cargo.toml` excludes `tools/`, and 
 
   Pass the same `-p:` properties to `dotnet restore` and to this tool. A solution whose
   projects multi-target a framework newer than the installed SDK needs, for example,
-  `-p:TargetFrameworks=net9.0` (fallback `-p:TargetFramework=net9.0`) on both.
+  `-p:TargetFrameworks=net9.0` (fallback `-p:TargetFramework=net9.0`) on both -- the offline
+  restore step forwards this tool's own `-p:` properties to its `dotnet restore` invocation the
+  same way.
 
 ## Usage
 
@@ -43,6 +77,8 @@ scout-semantic <path.sln|path.csproj> --root <repo-root> --out <refs.jsonl>
     [--context <path|->]      build-context envelope, required with `--emit context`, `-` is stdout
     [--repo <id>]             repo id in the fact/context header (default: --root's last segment)
     [--no-git]                do not stamp git identity in the fact header
+    [--no-restore]            skip the automatic offline restore of any project missing its
+                               assets file
     [--publish-calls a,b]     extra publish method names, repeatable
     [--consumer-bases a,b]    extra consumer base type names, repeatable
     [--scope dir[,dir]]       walk only documents under these root-relative dirs
@@ -355,7 +391,10 @@ tell a truncated or killed run apart from a genuinely complete one.
 load is `missing`, never `processed`. `coverage.state` is `incomplete`, with one
 `{unit, reason}` entry per affected unit under `coverage.incompleteUnits`, whenever a processed
 unit's compilation carries at least one error diagnostic -- the run still succeeds and writes the
-document; nothing here is gated by `--strict`. Every diagnostic (error or warning) is reported
+document; nothing here is gated by `--strict`. A unit the offline restore (see Prerequisites) could
+not complete reports its restore failure as this entry's `reason` instead of the first compiler
+error -- the same `unrestored` root cause the build-context envelope's state table names, reported
+here even without `--emit context`. Every diagnostic (error or warning) is reported
 under `diagnostics`, each carrying its own file and line. `symbols` carries one entry per named
 type (`member` absent) and one per its ordinary methods and constructors (`member` present),
 each with the declaring assembly, fully-qualified type name, generic arity, a parameter-derived
@@ -436,7 +475,7 @@ always paired with a machine-readable reason:
 | State | Reason (examples) | Meaning |
 |---|---|---|
 | `complete` | `complete` | Every expected document loaded, no compiler error, no unresolved reference, and the independent inventory was available. |
-| `partial` | `binding-error`, `missing`, `linked-outside-root`, `skipped-directory`, `out-of-scope`, `workspace-failure`, `inventory-unavailable` | A non-null compilation whose inventory or diagnostics are incomplete. |
+| `partial` | `unrestored`, `binding-error`, `missing`, `linked-outside-root`, `skipped-directory`, `out-of-scope`, `workspace-failure`, `inventory-unavailable` | A non-null compilation whose inventory or diagnostics are incomplete. `unrestored`: the offline restore (see Prerequisites) failed for this project in this run, or its existing assets file records an earlier restore error -- named ahead of `binding-error` even though the same missing `PackageReference` types also produce compiler diagnostics, since the restore failure is the record's root cause. |
 | `unsupported` | `undeclared-target` | A requested `--tfm` the project does not declare; zero facts under this identity. |
 | `failed` | `project-not-loaded`, `workspace-failure` | A project the solution names but that never reached the workspace at all, or one Roslyn accepted but produced no compilation for. |
 | `excluded` | `not-requested` | A declared variant that was not the deterministic selection when no target was requested, or a project a `--projects` filter left out. |
@@ -544,6 +583,12 @@ CI-regenerated.
 - There is no `--help` flag: an unknown option prints the usage block on stderr and exits 1.
 - Source-generated documents are not walked by `oracle`/`flowtrace-facts`; only files on disk are.
   `--emit context` inventories them separately (see [Build-context envelope](#build-context-envelope)).
+- The offline restore is skipped, with a `warning: restore:` line on stderr, for a project whose
+  assets file location neither the in-process MSBuild nor the SDK's `dotnet msbuild` can evaluate,
+  or when the `dotnet` host cannot be found beside the registered MSBuild instance: guessing a
+  location could re-restore a project whose real assets file lives elsewhere. Such a project keeps
+  whatever state its compilation produces. Evaluating a project out of process costs one
+  `dotnet msbuild` start (about a second) per project the in-process MSBuild cannot evaluate.
 
 ## Packages
 

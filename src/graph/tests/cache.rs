@@ -72,7 +72,7 @@ fn rebuild_graph_writes_the_v13_caches_and_deletes_every_superseded_generation()
         rel: "src/A.cs".to_string(),
         mtime: 222,
     }];
-    rebuild_graph(&dir, &graph_files, &fresh, true, None).unwrap();
+    rebuild_graph(&dir, &graph_files, &fresh, true, None, None).unwrap();
 
     assert!(
         graph_dir(&dir).join("fragments-v23.json").exists(),
@@ -132,7 +132,7 @@ fn fragments_cache_v23_supersedes_v22() {
         rel: "src/A.cs".to_string(),
         mtime: 1,
     }];
-    rebuild_graph(&dir, &graph_files, &fresh, true, None).unwrap();
+    rebuild_graph(&dir, &graph_files, &fresh, true, None, None).unwrap();
 
     assert!(graph_dir(&dir).join("fragments-v23.json").exists());
     assert!(graph_dir(&dir).join("fragments-index-v23.json").exists());
@@ -252,7 +252,7 @@ fn fresh_bus_fragments() -> HashMap<String, AnyFragment> {
 }
 
 fn rebuilt(dir: &std::path::Path) -> Graph {
-    match rebuild_graph(dir, &bus_files(), &fresh_bus_fragments(), true, None).unwrap() {
+    match rebuild_graph(dir, &bus_files(), &fresh_bus_fragments(), true, None, None).unwrap() {
         RebuildOutcome::Rebuilt(g) => g,
         RebuildOutcome::NotRebuilt => unreachable!("changed is true"),
     }
@@ -308,7 +308,7 @@ fn a_rebuild_with_no_publish_site_writes_no_bus_hop_counter_at_all() {
         })
         .collect();
     let fresh: HashMap<String, AnyFragment> = message_and_consumer().into_iter().collect();
-    let g = match rebuild_graph(&dir, &files, &fresh, true, None).unwrap() {
+    let g = match rebuild_graph(&dir, &files, &fresh, true, None, None).unwrap() {
         RebuildOutcome::Rebuilt(g) => g,
         RebuildOutcome::NotRebuilt => unreachable!("changed is true"),
     };
@@ -466,6 +466,7 @@ fn a_warm_v22_cache_is_rebuilt_rather_than_read_without_array_facts() {
         &fresh_array_bus_fragments(),
         true,
         None,
+        None,
     )
     .unwrap()
     {
@@ -494,6 +495,7 @@ fn a_warm_v22_cache_is_rebuilt_rather_than_read_without_array_facts() {
         &array_bus_files(),
         &fresh_array_bus_fragments(),
         true,
+        None,
         None,
     )
     .unwrap()

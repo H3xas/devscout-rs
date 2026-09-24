@@ -34,6 +34,9 @@ jobs:
       - name: Architecture guide names every module
         run: sh tools/check-architecture.sh
 
+      - name: Docs hygiene (tracker ids and acceptance-check labels)
+        run: sh tools/check-docs-hygiene.sh
+
       - name: Size and complexity ratchet
         run: sh tools/check-size-and-complexity.sh
 
@@ -317,6 +320,53 @@ jobs:
           ./target/release/devscout -C "$RUNNER_TEMP/semantic-repo" map src tests
           ./target/release/devscout -C "$RUNNER_TEMP/semantic-repo" audit --semantic "$PWD/out/semantic/refs.jsonl" --units "$PWD/out/semantic/units.jsonl"
           ./target/release/devscout -C "$RUNNER_TEMP/semantic-repo" audit --semantic "$PWD/out/semantic/refs.jsonl" --units "$PWD/out/semantic/units.jsonl" --assert "$PWD/fixtures/csharp-semantic/expected.json"
+
+      # The enriched lane, end to end, against the real oracle and the real
+      # admission path -- the syntax-lane steps above prove the resolver;
+      # this proves the wiring a real CI run exercises: a genuine compiler-
+      # facts run, a real admission, a rebuilt graph, and an enriched-lane
+      # audit. Runs IN the checkout itself (not an isolated copy, unlike the
+      # syntax-lane step above) so the admitted artifact's own
+      # `sourceSnapshot.headSha` is a real commit the consumer's own
+      # freshness check can verify against -- this repository's actual git
+      # state, not a copy with no git history of its own at all. `out/` is
+      # gitignored, so the working tree the oracle's own dirty check reads
+      # stays clean throughout. Reuses `out/semantic/refs.jsonl`/
+      # `units.jsonl` from the syntax-lane oracle run above unchanged, the
+      # same "same-run pairing" `bench/semantic-enriched.sh` follows for the
+      # real corpus. The mechanism this exercises is already proven correct
+      # by `tests/semantic_enrichment.rs`'s own hand-built fixture and by the
+      # real-corpus bench run in docs/benchmarks/results/; this step's own
+      # job is the plumbing, not a second proof of the resolver.
+      - name: Run the oracle in compiler-facts mode on the semantic fixture
+        run: |
+          dotnet run --project tools/scout-semantic --no-build -c Release -- \
+            fixtures/csharp-semantic/Fixture.sln --root fixtures/csharp-semantic \
+            --emit compiler-facts --compiler-facts out/compiler-facts/csharp-semantic.json \
+            --tfm net9.0 -p Configuration=Debug -p Platform=AnyCPU
+
+      - name: Admit the compiler-facts artifact and rebuild the enriched-lane graph
+        env:
+          HOME: ${{ runner.temp }}/home-enriched
+          SCOUT_REGISTRY: ${{ runner.temp }}/home-enriched/repos.json
+          SCOUT_CONTENT_DB: ${{ runner.temp }}/home-enriched/content.db
+        run: |
+          mkdir -p "$HOME"
+          ./target/release/devscout -C fixtures/csharp-semantic compiler-facts import "$PWD/out/compiler-facts/csharp-semantic.json"
+          ./target/release/devscout -C fixtures/csharp-semantic map src tests
+
+      - name: Audit the enriched lane and confirm the lane actually flipped
+        env:
+          HOME: ${{ runner.temp }}/home-enriched
+          SCOUT_REGISTRY: ${{ runner.temp }}/home-enriched/repos.json
+          SCOUT_CONTENT_DB: ${{ runner.temp }}/home-enriched/content.db
+        run: |
+          ./target/release/devscout -C fixtures/csharp-semantic audit --semantic "$PWD/out/semantic/refs.jsonl" --units "$PWD/out/semantic/units.jsonl" --json > out/semantic/audit-enriched.json
+          lane=$(jq -r '.lane' out/semantic/audit-enriched.json)
+          if [ "$lane" != "enriched" ]; then
+            echo "::error::expected lane enriched after admitting a compiler-facts artifact, got $lane"
+            exit 1
+          fi
 
       # The base/interface direction fixture: its own solution, its own
       # committed snapshot, the same oracle-diff-then-audit flow. Restored

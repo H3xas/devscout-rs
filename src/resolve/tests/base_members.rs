@@ -519,6 +519,8 @@ fn stage7_an_untyped_in_file_local_still_shadows_a_same_named_field_fact() {
             member: Some("Spin".to_string()),
             heuristic: true,
             tier: Some(HeuristicTier::Guess),
+            source: None,
+            overload_signature: None,
         }],
         "the one edge present is the SCORED tier's own heuristic guess, never a precise edge \
          from the field/property fallback (which the shadowing rule keeps from ever running \
