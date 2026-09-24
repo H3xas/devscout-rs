@@ -1559,10 +1559,10 @@ fn two_same_line_overloads_of_one_member_survive_as_distinct_facts() {
 }
 
 // The fixture above proves two same-line overloads survive, but it keeps
-// both overloads on one declaring type, so its edges' `to` cannot show that
-// each call reached its own overload's target. Here the two same-line,
-// same-member occurrences below resolve to GENUINELY DIFFERENT target types,
-// so each edge's `to` does (two
+// both overloads on one declaring type, so its two edges share one `to`.
+// Here the two same-line, same-member occurrences below resolve to
+// GENUINELY DIFFERENT target types, so the two edges' `to` values must
+// differ (two
 // pre-existing fixture types that happen to share no relationship other than
 // both declaring a zero/one-arg call site here). Without narrowing, EVERY
 // reference at this shared `(file, line, member)` key sees BOTH occurrences,
@@ -1646,7 +1646,7 @@ fn arity_narrowing_resolves_two_same_line_overloads_to_their_own_distinct_target
     assert_eq!(
         targets,
         vec!["Fixtures.Enrichment.Alpha.Config", "Fixtures.Enrichment.Beta.Config"],
-        "each overload must resolve to ITS OWN confirmed target, never the other's and never falling back to the ladder's own `Options` guess: {edges:?}"
+        "the two overloads must resolve to two distinct confirmed targets, never one shared target and never the ladder's own `Options` guess: {edges:?}"
     );
 }
 

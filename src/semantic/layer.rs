@@ -59,7 +59,7 @@ struct RawOccurrence {
     compilation_identity: Value,
     #[allow(
         dead_code,
-        reason = "the exact identity this consumer's own model carries alongside the compatibility key, parsed for a future consumer (an exact-identity export, a disagreement diagnostic naming the exact overload) -- target_overload_signature is the one field lookup reads today, for its own arity narrowing"
+        reason = "the exact identity this consumer's own model carries alongside the compatibility key, parsed for a future consumer (an exact-identity export, a disagreement diagnostic naming the exact overload) -- target_overload_signature is the one field lookup reads today, for its own arity narrowing and target identity"
     )]
     target_assembly: Option<String>,
     #[allow(dead_code, reason = "see target_assembly's own allow above")]

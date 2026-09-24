@@ -1,13 +1,13 @@
 // `MapOptions` -- see `mapcmd.rs`'s own module header for `hash_reuse`. Kept
 // in its own sibling file (not inline in `mapcmd.rs`) because that file sits
-// at its exact `tools/size-ratchet.toml` ceiling with zero headroom; adding
+// within two lines of its `tools/size-ratchet.toml` ceiling; adding
 // `no_semantic` here, rather than growing the frozen file, keeps new code
 // out of a capped file by moving the struct it belongs to into a sibling
 // module.
 //
 // `compiler_facts_artifact_present` lives here for the same reason: it is
 // `map_repo`'s rebuild-trigger input for the `--no-semantic` rollback lever,
-// and `mapcmd.rs` has no line budget left to host it directly.
+// and `mapcmd.rs` has too little line budget left to host it directly.
 
 use std::path::Path;
 
