@@ -108,7 +108,9 @@ artifact leaves the syntax-only graph exactly as before.
   tiers, and a `lane` key naming which kind of graph was audited. Registered against a public
   ship/no-ship gate: see
   [`docs/benchmarks/results/2026-09-resolver-precision.md`](docs/benchmarks/results/2026-09-resolver-precision.md)'s
-  "Run 7" section for the measured result. See [Compiler facts](README.md#compiler-facts).
+  "Run 7" section for the measured result, and
+  [`docs/benchmarks/results/2026-09-25-release-0.8.0.md`](docs/benchmarks/results/2026-09-25-release-0.8.0.md)
+  for the measurement of this release's tree. See [Compiler facts](README.md#compiler-facts).
 - **CI exercises the enriched lane end to end.** The `semantic-audit` workflow job now also runs
   the real oracle in `--emit compiler-facts` mode against the `csharp-semantic` fixture (inside the
   checkout itself, so the admitted artifact's own `sourceSnapshot.headSha` is a real commit), admits
