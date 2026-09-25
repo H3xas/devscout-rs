@@ -112,11 +112,12 @@ artifact leaves the syntax-only graph exactly as before.
   [`docs/benchmarks/results/2026-09-25-release-0.8.0.md`](docs/benchmarks/results/2026-09-25-release-0.8.0.md)
   for the measurement of this release's tree. See [Compiler facts](README.md#compiler-facts).
 - **CI exercises the enriched lane end to end.** The `semantic-audit` workflow job now also runs
-  the real oracle in `--emit compiler-facts` mode against the `csharp-semantic` fixture (inside the
-  checkout itself, so the admitted artifact's own `sourceSnapshot.headSha` is a real commit), admits
-  it, rebuilds the graph, and asserts `audit --semantic --json`'s `lane` key reads `"enriched"` --
-  proving the real restore/build/oracle/admission/rebuild/audit pipeline, never a second proof of
-  the resolver itself (that is `tests/semantic_enrichment.rs`'s own job).
+  the oracle in `--emit compiler-facts` mode on the `csharp-semantic` fixture from the checkout
+  root, so the artifact's `sourceSnapshot.headSha` is a real commit and its paths match the
+  graph's. It admits the artifact, rebuilds the fixture's graph, and audits it against the same
+  run's oracle output. The audit must report the enriched lane, the fixture's exact numbers of
+  confirmed and discovered edges, and semantic precision 1.0, as pinned in
+  `fixtures/csharp-semantic/expected-enriched.json`.
 
 ### Changed
 
