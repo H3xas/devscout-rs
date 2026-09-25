@@ -13,6 +13,7 @@
     "csharp73-net7.0-sdkstyle": { "required_state": "passing" },
     "csharp73-net8.0-sdkstyle": { "required_state": "passing" },
     "csharp73-net9.0-sdkstyle": { "required_state": "passing" },
+    "csharp73-net10.0-sdkstyle": { "required_state": "passing" },
     "csharp73-netstandard1.0-sdkstyle": { "required_state": "passing" },
     "csharp73-netstandard1.1-sdkstyle": { "required_state": "passing" },
     "csharp73-netstandard1.2-sdkstyle": { "required_state": "passing" },

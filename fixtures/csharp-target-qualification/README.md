@@ -19,17 +19,21 @@ repository's own build. Composed and diffed by
 
 ## Profiles (`profiles/`)
 
-Twenty-one leaf projects, one compilation identity each. Every profile links the two shared
+Twenty-two leaf projects, one compilation identity each. Every profile links the two shared
 cases; the six Framework profiles additionally reference the pinned
 `Microsoft.NETFramework.ReferenceAssemblies` companion for their own TFM. The seven
 `netstandard1.x` profiles declare no package: the SDK's implicit `NETStandard.Library` reference is
 the reference source under test, and its resolved graph is recorded in the row. Restoring that
 graph may print NuGet audit warnings for the old `System.*` packages it pulls in; they do not
-change a row's exit codes, and this tree is never packed, published or run.
+change a row's exit codes, and this tree is never packed, published or run. `net10.0-sdkstyle` carries its own `global.json`
+pinning SDK 10.0.302 with roll-forward disabled, because the tree's 9.0.305 pin cannot target
+`net10.0`; the composition script runs that row from its own directory, under a dotnet root that
+lists that exact band, and records the band the oracle registered.
 
 | Profile directory | TFM | Track |
 | --- | --- | --- |
 | `net5.0-sdkstyle` .. `net9.0-sdkstyle` | net5.0 .. net9.0 | modern |
+| `net10.0-sdkstyle` (own SDK pin, 10.0.302) | net10.0 | modern |
 | `netstandard1.0-sdkstyle` .. `netstandard1.6-sdkstyle` | netstandard1.0 .. netstandard1.6 | modern |
 | `netstandard2.0-sdkstyle`, `netstandard2.1-sdkstyle` | netstandard2.0, netstandard2.1 | modern |
 | `netcoreapp3.1-sdkstyle` | netcoreapp3.1 | modern |
@@ -38,7 +42,7 @@ change a row's exit codes, and this tree is never packed, published or run.
 ## Deep-case bundles (`deep/`)
 
 Two representative profiles (`net8.0-deep`, `net472-deep`) carry the case families beyond the
-per-profile positive/boundary pair. The other nineteen profiles are not independently
+per-profile positive/boundary pair. The other twenty profiles are not independently
 executed for these families -- recorded in the published document, never hidden.
 
 | File | Case family | What it exercises |

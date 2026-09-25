@@ -46,6 +46,7 @@ joins this table only by executing, and leaves the Wave 2 table when it does.
 | `csharp73-net7.0-sdkstyle` | net7.0 | modern | passing | SDK 9.0.305, sdk-implicit references | positive case bound; boundary case binds (expected) |
 | `csharp73-net8.0-sdkstyle` | net8.0 | modern | passing | SDK 9.0.305, sdk-implicit references | positive case bound; boundary case binds (expected) |
 | `csharp73-net9.0-sdkstyle` | net9.0 | modern | passing | SDK 9.0.305, sdk-implicit references | positive case bound; boundary case binds (expected) |
+| `csharp73-net10.0-sdkstyle` | net10.0 | modern | passing | SDK 10.0.302, sdk-implicit references | positive case bound; boundary case binds (expected) |
 | `csharp73-netstandard1.0-sdkstyle` | netstandard1.0 | modern | passing | SDK 9.0.305, `NETStandard.Library`@1.6.1, 25 packages resolved | positive case bound; boundary case does not bind (expected, `CS1501`) |
 | `csharp73-netstandard1.1-sdkstyle` | netstandard1.1 | modern | passing | SDK 9.0.305, `NETStandard.Library`@1.6.1, 33 packages resolved | positive case bound; boundary case does not bind (expected, `CS1501`) |
 | `csharp73-netstandard1.2-sdkstyle` | netstandard1.2 | modern | passing | SDK 9.0.305, `NETStandard.Library`@1.6.1, 34 packages resolved | positive case bound; boundary case does not bind (expected, `CS1501`) |
@@ -63,6 +64,13 @@ joins this table only by executing, and leaves the Wave 2 table when it does.
 | `csharp73-net472-sdkstyle` | net472 | framework-f1 | passing | SDK 9.0.305, `Microsoft.NETFramework.ReferenceAssemblies[.net472]@1.0.3` | positive case bound; boundary case does not bind (expected, `CS1501`) |
 | `csharp73-net48-sdkstyle` | net48 | framework-f1 | passing | SDK 9.0.305, `Microsoft.NETFramework.ReferenceAssemblies[.net48]@1.0.3` | positive case bound; boundary case does not bind (expected, `CS1501`) |
 
+The `net10.0` row builds under its own pinned SDK band, 10.0.302, from a `global.json` beside
+its project with roll-forward disabled; every other row builds under the tree's 9.0.305 pin. The
+row also records the MSBuild band the compiler-fact path registered and the diagnostic count of
+the unit it loaded, and reads `passing` only when that band is its own pin and the count is zero:
+a run hosted under another band was observed to load the unit with the positive case bound while
+evaluating it against a different SDK.
+
 Below .NET Standard 2.0 the SDK references the `NETStandard.Library` package rather than a
 targeting pack, so those seven rows record the package version and the number of packages the
 restore resolved; a different resolved graph changes the row.
@@ -74,9 +82,9 @@ from `context_acquisition` alone -- `semantic_conformance` and `framework_modeli
 required too.
 
 **The six `framework-f1` rows above (`net40`, `net45`, `net452`, `net461`, `net472`, `net48`)
-publish as a target-API-surface result only.** They qualify reference-assembly target-API semantics from an
-SDK-style project on this repository's existing non-Windows runner; they are not a claim of
-full .NET Framework support. Their Track F2 obligations -- legacy non-SDK `.csproj`,
+publish as a target-API-surface result only.** They qualify reference-assembly target-API
+semantics from an SDK-style project on this repository's existing non-Windows runner; they are
+not a claim of full .NET Framework support. Their Track F2 obligations -- legacy non-SDK `.csproj`,
 `packages.config`, Windows build tasks, classic ASP.NET, WPF/WinForms, and the 4.0 Client
 Profile -- are unmet and remain `unavailable` in the Wave 2 table below, pending a qualified
 Windows worker. Only the F1/F2 pair together is full Framework support.
@@ -85,10 +93,10 @@ Windows worker. Only the F1/F2 pair together is full Framework support.
 
 Two representative profiles carry the case families named beyond the per-profile
 positive/boundary pair: unrelated same-name collision, configured wrapper, incompatible
-reference, generated and linked input, and unknown framework. The other nineteen measured
-profiles are **not independently executed** for these five families -- recorded here, never hidden -- because
-they exercise project-loading and tooling machinery that varies by project system and worker,
-not by individual TFM.
+reference, generated and linked input, and unknown framework. The other twenty measured
+profiles are **not independently executed** for these five families -- recorded here, never
+hidden -- because they exercise project-loading and tooling machinery that varies by project
+system and worker, not by individual TFM.
 
 | Bundle | TFM | Track | State | Case families |
 | --- | --- | --- | --- | --- |
@@ -120,7 +128,6 @@ Not executed yet. Each row waits on a named unlock and stays here until it runs.
 
 | Target | State | Named unlock |
 | --- | --- | --- |
-| net10.0 | planned | a second pinned SDK band able to target net10.0 |
 | net403, net451, net46, net462, net47, net471, net481 | planned | reference-assembly companion package verification per TFM, same shape as the measured F1 rows |
 | Framework 4.0 Client Profile | planned | its own profile: a smaller API surface than plain net40 |
 | Legacy non-SDK `.csproj`, `packages.config`, Windows build tasks, classic ASP.NET Web Application/Web Site | unavailable | a qualified Windows worker with legacy tooling (Track F2); no verification job in this repository runs on Windows today |
@@ -147,17 +154,17 @@ Results land under `docs/benchmarks/results/` once the run has executed at least
 
 ## Follow-ups
 
-- **Eighteen of the twenty-one measured `passing` profiles have no held-out row.** The held-out
+- **Nineteen of the twenty-two measured `passing` profiles have no held-out row.** The held-out
   run below currently exercises `net8.0`, `net6.0` and `netstandard2.0` only, from the one pinned
-  held-out family available today. `net5.0`, `net7.0`, `net9.0`, `netstandard1.0` through
-  `netstandard1.6`, `netstandard2.1`, `netcoreapp3.1`, `net40`, `net45`, `net452`, `net461`,
-  `net472` and `net48` are published `passing` on their own recorded fixture evidence, without an
-  independent held-out row. Closes when a held-out run (this family or a second one)
+  held-out family available today. `net5.0`, `net7.0`, `net9.0`, `net10.0`, `netstandard1.0`
+  through `netstandard1.6`, `netstandard2.1`, `netcoreapp3.1`, `net40`, `net45`, `net452`,
+  `net461`, `net472` and `net48` are published `passing` on their own recorded fixture evidence,
+  without an independent held-out row. Closes when a held-out run (this family or a second one)
   covers the remaining strata, or when this asymmetry is otherwise resolved.
-- **The `framework-f1`, `netstandard1` and `netcoreapp3.1` held-out strata are registered but not
-  exercised.** See the held-out report below for the exact reason per stratum; the pinned family
-  declares none of the `netstandard1` targets, and that stratum was registered after the last
-  held-out run.
+- **The `framework-f1`, `netstandard1`, `modern-sdk10` and `netcoreapp3.1` held-out strata are
+  registered but not exercised.** See the held-out report below for the exact reason per stratum;
+  the pinned family declares none of the `netstandard1` or `modern-sdk10` targets, and those two
+  strata were registered after the last held-out run.
 - **Three measured rows miss the registered `unsupported_coverage` floor.** The 2026-09-21
   held-out run computes `unsupported_coverage` (the 2026-09-17 run never computed this metric)
   and reports `MISS` against the registered `min: 1.0` for `csharp73-net6.0-sdkstyle` (net6.0,

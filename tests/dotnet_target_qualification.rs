@@ -60,8 +60,8 @@ fn committed_rows() -> Vec<(String, Value)> {
     rows.sort_by(|a, b| a.0.cmp(&b.0));
     assert_eq!(
         rows.len(),
-        25,
-        "expected 25 committed rows, found {}",
+        26,
+        "expected 26 committed rows, found {}",
         rows.len()
     );
     rows
@@ -164,7 +164,7 @@ fn every_profile_row_names_its_own_compilation_identity() {
             "{id}: compilation identity {identity} is not unique across rows"
         );
     }
-    assert_eq!(identities.len(), 23, "21 profiles + 2 deep bundles");
+    assert_eq!(identities.len(), 24, "22 profiles + 2 deep bundles");
 }
 
 #[test]
@@ -186,6 +186,83 @@ fn no_framework_row_reaches_passing_from_context_acquisition_alone() {
             );
         }
     }
+}
+
+/// The SDK band the tree's own `global.json` pins; a row built under another band carries its
+/// own `global.json` beside its project.
+fn tree_sdk_pin() -> String {
+    let text = fs::read_to_string(tree_dir().join("global.json")).unwrap();
+    let value: Value = serde_json::from_str(&text).unwrap();
+    value["sdk"]["version"].as_str().unwrap().to_string()
+}
+
+#[test]
+fn a_row_on_its_own_sdk_band_records_that_band_end_to_end() {
+    let tree_pin = tree_sdk_pin();
+    let mut own_band_rows = 0;
+    for (id, row) in committed_rows() {
+        let ctx = &row["context_acquisition"];
+        let pin = ctx["sdk_pin"].as_str().unwrap_or_default();
+        if row["kind"] != "profile" || pin == tree_pin {
+            assert!(
+                ctx.get("oracle_msbuild_registered").is_none(),
+                "{id}: only a row on its own band records the oracle's registration"
+            );
+            continue;
+        }
+        own_band_rows += 1;
+        let tfm = row["tfm"].as_str().unwrap_or_default();
+        let local: Value = serde_json::from_str(
+            &fs::read_to_string(tree_dir().join(format!("profiles/{tfm}-sdkstyle/global.json")))
+                .unwrap_or_else(|_| panic!("{id}: its own band needs a row-local global.json")),
+        )
+        .unwrap();
+        assert_eq!(
+            local["sdk"]["version"].as_str(),
+            Some(pin),
+            "{id}: row-local pin"
+        );
+        assert_eq!(
+            local["sdk"]["rollForward"].as_str(),
+            Some("disable"),
+            "{id}: row-local pin must not roll forward"
+        );
+        assert_eq!(
+            ctx["sdk"].as_str(),
+            Some(pin),
+            "{id}: resolved SDK is not its own pin"
+        );
+        if state(&row, "unsupported_state") == "passing" {
+            assert_eq!(
+                ctx["oracle_msbuild_registered"].as_str(),
+                Some(pin),
+                "{id}: a passing row's oracle must have registered its own band"
+            );
+            assert_eq!(
+                ctx["oracle_unit_diagnostics"].as_u64(),
+                Some(0),
+                "{id}: a passing row's oracle unit must report no diagnostics"
+            );
+        }
+    }
+    assert_eq!(
+        own_band_rows, 1,
+        "net10.0 is the one row on its own SDK band"
+    );
+}
+
+#[test]
+fn net10_row_never_cites_net9_evidence() {
+    let rows = committed_rows();
+    let (_, row) = rows
+        .iter()
+        .find(|(id, _)| id == "csharp73-net10.0-sdkstyle")
+        .expect("net10.0 row is committed");
+    let text = row.to_string();
+    assert!(
+        !names_target(&text, "net9.0") && !text.contains(&tree_sdk_pin()),
+        "net10.0 row must cite neither net9.0 evidence nor the tree's SDK band: {text}"
+    );
 }
 
 #[test]
@@ -236,7 +313,6 @@ fn a_snapshot_exists_iff_its_row_state_implies_an_executed_run() {
     }
     // The inverse direction: no planned/excluded/unqualified target has a committed snapshot.
     let never_executed = [
-        "net10.0",
         "net403",
         "net451",
         "net46",
@@ -382,7 +458,6 @@ fn a_truncated_copy_of_the_document_fails_the_sync_check() {
 fn every_inventory_row_including_wave_2_is_present() {
     let doc = fs::read_to_string(doc_path()).expect("docs/dotnet-target-coverage.md exists");
     let wave2_and_excluded = [
-        "net10.0",
         "net403",
         "net451",
         "net46",
@@ -723,7 +798,7 @@ fn every_inventory_target_is_a_row_in_the_document() {
 #[test]
 fn the_sweep_covers_every_target_that_is_not_passing() {
     let not_passing = not_passing_tfms();
-    for tfm in ["net10.0", "net46", "net47", "net481", "netcoreapp3.0"] {
+    for tfm in ["net46", "net47", "net481", "netcoreapp3.0"] {
         assert!(
             not_passing.contains(&tfm),
             "{tfm} has no passing row and must stay in the support-sentence sweep"
