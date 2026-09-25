@@ -204,3 +204,33 @@ fn ordinary_members_beside_explicit_ones_are_recorded_as_before() {
         "the overload table still counts the explicit declarations"
     );
 }
+
+#[test]
+fn generic_and_qualified_interface_specifiers_are_explicit_too() {
+    let e = extract_src(
+        "namespace Ns;\n\
+         public class Bag : IReadOnlyDictionary<string, object>, Outer.IRunner\n\
+         {\n\
+         \tIEnumerable<string> IReadOnlyDictionary<string, object>.Keys => null;\n\
+         \tvoid Outer.IRunner.Run() { }\n\
+         \tpublic void Fill()\n\
+         \t{\n\
+         \t\tKeys.Count();\n\
+         \t}\n\
+         }\n",
+    );
+    let d = find_def(&e, "Ns.Bag").expect("Bag def present");
+    assert!(d.properties.is_empty());
+    assert!(d.property_types.is_empty());
+    assert_eq!(d.methods, vec!["Fill"]);
+    assert!(d.non_public_methods.is_empty());
+    assert_eq!(member_facts(&e), vec![("Count", None)]);
+    assert_eq!(
+        names_of(&e),
+        vec![
+            ("Keys", "property", 4),
+            ("Run", "method", 5),
+            ("Fill", "method", 6)
+        ]
+    );
+}
