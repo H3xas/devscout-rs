@@ -25,10 +25,9 @@ It is **not** part of the Rust crate build: `Cargo.toml` excludes `tools/`, and 
   is used for facts, the tool therefore checks every project the workspace opened (including a
   project reference that target selection left out) for its assets file, at the location MSBuild
   evaluates for it, so a custom intermediate path is honoured. A project the tool's in-process
-  MSBuild fails to evaluate for any reason (a `netstandard2.0` project calling an intrinsic it
-  does not implement, or a registered MSBuild whose assemblies cannot bind in process) is
-  evaluated by the installed SDK's own `dotnet msbuild -getProperty:ProjectAssetsFile` with the
-  run's `-p:` properties.
+  MSBuild fails to evaluate for any reason, whether a project error or an MSBuild assembly that
+  cannot load in process, is evaluated by the installed SDK's own
+  `dotnet msbuild -getProperty:ProjectAssetsFile` with the run's `-p:` properties.
   Each project whose assets file is missing is restored alone, without its project-reference
   closure, from the local NuGet global packages folder only -- the folder NuGet resolves for the
   analysed root (`NUGET_PACKAGES`, a `globalPackagesFolder` setting, or the default
