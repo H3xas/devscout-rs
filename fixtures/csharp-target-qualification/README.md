@@ -15,25 +15,34 @@ repository's own build. Composed and diffed by
 | File | What it exercises |
 | --- | --- |
 | `shared/PositiveCase.cs` | The positive case linked into every profile: `IContract`/`Service`/`Caller`, BCL-only, no target-specific API. |
-| `shared/BoundaryCase.cs` | The target-API boundary case: `string.Contains(string, StringComparison)` binds under net5.0+/netstandard2.1/netcoreapp3.1 and fails `CS1501` under net40/net472/net48/netstandard2.0 -- a compiler-verified prediction, not a hand-written expectation. |
+| `shared/BoundaryCase.cs` | The target-API boundary case: `string.Contains(string, StringComparison)` binds under net5.0+/netstandard2.1/netcoreapp3.1 and fails `CS1501` under every Framework profile here and every .NET Standard profile before 2.1 -- a compiler-verified prediction, not a hand-written expectation. |
 
 ## Profiles (`profiles/`)
 
-Eleven leaf projects, one compilation identity each. Every profile links the two shared cases;
-the three Framework profiles additionally reference the pinned
-`Microsoft.NETFramework.ReferenceAssemblies` companion for their own TFM.
+Twenty-two leaf projects, one compilation identity each. Every profile links the two shared
+cases; the six Framework profiles additionally reference the pinned
+`Microsoft.NETFramework.ReferenceAssemblies` companion for their own TFM. The seven
+`netstandard1.x` profiles declare no package: the SDK's implicit `NETStandard.Library` reference is
+the reference source under test, and its resolved graph is recorded in the row. Restoring that
+graph may print NuGet audit warnings for the old `System.*` packages it pulls in; they do not
+change a row's exit codes, and this tree is never packed, published or run. `net10.0-sdkstyle` carries its own `global.json`
+pinning SDK 10.0.302 with roll-forward disabled, because the tree's 9.0.305 pin cannot target
+`net10.0`; the composition script runs that row from its own directory, under a dotnet root that
+lists that exact band, and records the band the oracle registered.
 
 | Profile directory | TFM | Track |
 | --- | --- | --- |
 | `net5.0-sdkstyle` .. `net9.0-sdkstyle` | net5.0 .. net9.0 | modern |
+| `net10.0-sdkstyle` (own SDK pin, 10.0.302) | net10.0 | modern |
+| `netstandard1.0-sdkstyle` .. `netstandard1.6-sdkstyle` | netstandard1.0 .. netstandard1.6 | modern |
 | `netstandard2.0-sdkstyle`, `netstandard2.1-sdkstyle` | netstandard2.0, netstandard2.1 | modern |
 | `netcoreapp3.1-sdkstyle` | netcoreapp3.1 | modern |
-| `net40-sdkstyle`, `net472-sdkstyle`, `net48-sdkstyle` | net40, net472, net48 | framework-f1 |
+| `net40-sdkstyle`, `net45-sdkstyle`, `net452-sdkstyle`, `net461-sdkstyle`, `net472-sdkstyle`, `net48-sdkstyle` | net40, net45, net452, net461, net472, net48 | framework-f1 |
 
 ## Deep-case bundles (`deep/`)
 
 Two representative profiles (`net8.0-deep`, `net472-deep`) carry the case families beyond the
-per-profile positive/boundary pair. The other nine wave-1 profiles are not independently
+per-profile positive/boundary pair. The other twenty profiles are not independently
 executed for these families -- recorded in the published document, never hidden.
 
 | File | Case family | What it exercises |

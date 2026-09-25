@@ -14,8 +14,9 @@
 //! 3. Substitution controls: both prior-art controls are recorded from their own independently
 //!    inspected evidence, never from the oracle's own status line -- one control's fixed defect
 //!    now reads `passing` from a positively observed refusal, the other still reads `failing`.
-//! 4. Publication: no support sentence in the document or `README.md` names a target outside
-//!    wave 1's measured rows, and the document states its own scope in its own words.
+//! 4. Publication: no support sentence in the document, `README.md` or `CHANGELOG.md` names a
+//!    target whose row is not `passing`, `README.md` names no target without a held-out row, and
+//!    the document states its own scope in its own words.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -59,8 +60,8 @@ fn committed_rows() -> Vec<(String, Value)> {
     rows.sort_by(|a, b| a.0.cmp(&b.0));
     assert_eq!(
         rows.len(),
-        15,
-        "expected 15 committed rows, found {}",
+        26,
+        "expected 26 committed rows, found {}",
         rows.len()
     );
     rows
@@ -105,12 +106,12 @@ fn every_committed_row_carries_all_five_obligation_fields() {
 }
 
 #[test]
-fn every_wave1_row_is_execution_assumptions_static_only() {
+fn every_row_is_execution_assumptions_static_only() {
     for (id, row) in committed_rows() {
         assert_eq!(
             state(&row, "execution_assumptions"),
             "static-only",
-            "{id}: execution_assumptions must be static-only (this ticket produces no runtime rows)"
+            "{id}: execution_assumptions must be static-only (no row here is a runtime observation)"
         );
     }
 }
@@ -144,7 +145,7 @@ fn an_empty_analyzer_result_fails_the_positive_obligation() {
 }
 
 #[test]
-fn every_wave1_profile_row_names_its_own_compilation_identity() {
+fn every_profile_row_names_its_own_compilation_identity() {
     let mut identities = BTreeSet::new();
     for (id, row) in committed_rows() {
         if row["kind"] != "profile" && row["kind"] != "deep" {
@@ -160,10 +161,10 @@ fn every_wave1_profile_row_names_its_own_compilation_identity() {
         );
         assert!(
             identities.insert(identity.clone()),
-            "{id}: compilation identity {identity} is not unique across wave-1 rows"
+            "{id}: compilation identity {identity} is not unique across rows"
         );
     }
-    assert_eq!(identities.len(), 13, "11 profiles + 2 deep bundles");
+    assert_eq!(identities.len(), 24, "22 profiles + 2 deep bundles");
 }
 
 #[test]
@@ -185,6 +186,83 @@ fn no_framework_row_reaches_passing_from_context_acquisition_alone() {
             );
         }
     }
+}
+
+/// The SDK band the tree's own `global.json` pins; a row built under another band carries its
+/// own `global.json` beside its project.
+fn tree_sdk_pin() -> String {
+    let text = fs::read_to_string(tree_dir().join("global.json")).unwrap();
+    let value: Value = serde_json::from_str(&text).unwrap();
+    value["sdk"]["version"].as_str().unwrap().to_string()
+}
+
+#[test]
+fn a_row_on_its_own_sdk_band_records_that_band_end_to_end() {
+    let tree_pin = tree_sdk_pin();
+    let mut own_band_rows = 0;
+    for (id, row) in committed_rows() {
+        let ctx = &row["context_acquisition"];
+        let pin = ctx["sdk_pin"].as_str().unwrap_or_default();
+        if row["kind"] != "profile" || pin == tree_pin {
+            assert!(
+                ctx.get("oracle_msbuild_registered").is_none(),
+                "{id}: only a row on its own band records the oracle's registration"
+            );
+            continue;
+        }
+        own_band_rows += 1;
+        let tfm = row["tfm"].as_str().unwrap_or_default();
+        let local: Value = serde_json::from_str(
+            &fs::read_to_string(tree_dir().join(format!("profiles/{tfm}-sdkstyle/global.json")))
+                .unwrap_or_else(|_| panic!("{id}: its own band needs a row-local global.json")),
+        )
+        .unwrap();
+        assert_eq!(
+            local["sdk"]["version"].as_str(),
+            Some(pin),
+            "{id}: row-local pin"
+        );
+        assert_eq!(
+            local["sdk"]["rollForward"].as_str(),
+            Some("disable"),
+            "{id}: row-local pin must not roll forward"
+        );
+        assert_eq!(
+            ctx["sdk"].as_str(),
+            Some(pin),
+            "{id}: resolved SDK is not its own pin"
+        );
+        if state(&row, "unsupported_state") == "passing" {
+            assert_eq!(
+                ctx["oracle_msbuild_registered"].as_str(),
+                Some(pin),
+                "{id}: a passing row's oracle must have registered its own band"
+            );
+            assert_eq!(
+                ctx["oracle_unit_diagnostics"].as_u64(),
+                Some(0),
+                "{id}: a passing row's oracle unit must report no diagnostics"
+            );
+        }
+    }
+    assert_eq!(
+        own_band_rows, 1,
+        "net10.0 is the one row on its own SDK band"
+    );
+}
+
+#[test]
+fn net10_row_never_cites_net9_evidence() {
+    let rows = committed_rows();
+    let (_, row) = rows
+        .iter()
+        .find(|(id, _)| id == "csharp73-net10.0-sdkstyle")
+        .expect("net10.0 row is committed");
+    let text = row.to_string();
+    assert!(
+        !names_target(&text, "net9.0") && !text.contains(&tree_sdk_pin()),
+        "net10.0 row must cite neither net9.0 evidence nor the tree's SDK band: {text}"
+    );
 }
 
 #[test]
@@ -233,11 +311,14 @@ fn a_snapshot_exists_iff_its_row_state_implies_an_executed_run() {
             "{id}: a committed row's state must imply an executed run, got {s}"
         );
     }
-    // The inverse direction: no wave-2/excluded/unqualified target has a committed snapshot.
+    // The inverse direction: no planned/excluded/unqualified target has a committed snapshot.
     let never_executed = [
-        "net10.0",
-        "netstandard1.0",
         "net403",
+        "net451",
+        "net46",
+        "net462",
+        "net47",
+        "net471",
         "net481",
         "netcoreapp3.0",
         "netcoreapp1.0",
@@ -246,8 +327,8 @@ fn a_snapshot_exists_iff_its_row_state_implies_an_executed_run() {
     let names: BTreeSet<String> = committed_rows().into_iter().map(|(id, _)| id).collect();
     for target in never_executed {
         assert!(
-            !names.iter().any(|id| id.contains(target)),
-            "{target} is not a wave-1 row and must carry no committed snapshot"
+            !names.iter().any(|id| names_target(id, target)),
+            "{target} is not an executed row and must carry no committed snapshot"
         );
     }
 }
@@ -269,7 +350,7 @@ fn every_committed_row_appears_in_the_document_and_vice_versa() {
 
 /// Parses every markdown table in the document that has a `State` column, returning
 /// `(row id, published state)` for each row whose first cell is a backtick-quoted committed
-/// row id (`csharp73-...`/`control-...`). Wave-2/excluded/unqualified rows use plain target
+/// row id (`csharp73-...`/`control-...`). Planned/excluded/unqualified rows use plain target
 /// names, not backticked row ids, so they are never picked up here.
 fn parse_doc_state_rows(doc: &str) -> Vec<(String, String)> {
     let mut out = Vec::new();
@@ -377,9 +458,12 @@ fn a_truncated_copy_of_the_document_fails_the_sync_check() {
 fn every_inventory_row_including_wave_2_is_present() {
     let doc = fs::read_to_string(doc_path()).expect("docs/dotnet-target-coverage.md exists");
     let wave2_and_excluded = [
-        "net10.0",
-        "netstandard1.0",
         "net403",
+        "net451",
+        "net46",
+        "net462",
+        "net47",
+        "net471",
         "net481",
         "Client Profile",
         "netcoreapp3.0",
@@ -390,7 +474,7 @@ fn every_inventory_row_including_wave_2_is_present() {
     ];
     for name in wave2_and_excluded {
         assert!(
-            doc.contains(name),
+            names_target(&doc, name),
             "docs/dotnet-target-coverage.md is missing inventory row for {name}"
         );
     }
@@ -607,6 +691,127 @@ fn no_document_or_readme_emits_an_aggregate_dotnet_supported_flag() {
     }
 }
 
+/// Every target framework moniker the published inventory stages, measured or not. A target
+/// leaves the support-sentence sweep only by becoming a committed `passing` profile row, never by
+/// being dropped from this list.
+const INVENTORY_TFMS: &[&str] = &[
+    "net5.0",
+    "net6.0",
+    "net7.0",
+    "net8.0",
+    "net9.0",
+    "net10.0",
+    "netstandard1.0",
+    "netstandard1.1",
+    "netstandard1.2",
+    "netstandard1.3",
+    "netstandard1.4",
+    "netstandard1.5",
+    "netstandard1.6",
+    "netstandard2.0",
+    "netstandard2.1",
+    "netcoreapp3.0",
+    "netcoreapp3.1",
+    "net40",
+    "net403",
+    "net45",
+    "net451",
+    "net452",
+    "net46",
+    "net461",
+    "net462",
+    "net47",
+    "net471",
+    "net472",
+    "net48",
+    "net481",
+];
+
+/// The targets the pinned held-out family actually measured; every other `passing` target is
+/// published on its own fixture evidence only and is disclosed, not advertised.
+const HELD_OUT_MEASURED_TFMS: &[&str] = &["net6.0", "net8.0", "netstandard2.0"];
+
+/// Whether `text` names `target` as a whole moniker: `net46` inside `net461`, or `net47` inside
+/// `net472`, is a different target, so a substring match would both hide a real mention and
+/// report a false one.
+fn names_target(text: &str, target: &str) -> bool {
+    let continues = |c: char| c.is_ascii_alphanumeric() || c == '_';
+    text.match_indices(target).any(|(start, _)| {
+        let before = text[..start].chars().next_back();
+        let mut after = text[start + target.len()..].chars();
+        let joined_before = before.is_some_and(|c| continues(c) || c == '.');
+        let joined_after = match after.next() {
+            Some('.') => after.next().is_some_and(|c| c.is_ascii_digit()),
+            Some(c) => continues(c),
+            None => false,
+        };
+        !joined_before && !joined_after
+    })
+}
+
+fn passing_profile_tfms() -> BTreeSet<String> {
+    committed_rows()
+        .into_iter()
+        .filter(|(_, row)| row["kind"] == "profile" && state(row, "unsupported_state") == "passing")
+        .map(|(_, row)| row["tfm"].as_str().unwrap_or_default().to_string())
+        .collect()
+}
+
+fn not_passing_tfms() -> Vec<&'static str> {
+    let passing = passing_profile_tfms();
+    INVENTORY_TFMS
+        .iter()
+        .copied()
+        .filter(|tfm| !passing.contains(*tfm))
+        .collect()
+}
+
+#[test]
+fn target_names_match_whole_monikers_only() {
+    assert!(!names_target("csharp73-net461-sdkstyle", "net46"));
+    assert!(!names_target("net472", "net47"));
+    assert!(!names_target("netstandard1.0.1", "netstandard1.0"));
+    assert!(!names_target("Xnet45", "net45"));
+    assert!(names_target("net403, net451, net46, net462", "net46"));
+    assert!(names_target("targets `net47`.", "net47"));
+    assert!(names_target("ends with net47.", "net47"));
+    assert!(names_target("csharp73-net46-sdkstyle", "net46"));
+}
+
+#[test]
+fn every_inventory_target_is_a_row_in_the_document() {
+    let doc = fs::read_to_string(doc_path()).unwrap();
+    for tfm in INVENTORY_TFMS {
+        assert!(
+            names_target(&doc, tfm),
+            "docs/dotnet-target-coverage.md names no row for inventory target {tfm}"
+        );
+    }
+    for tfm in passing_profile_tfms() {
+        assert!(
+            INVENTORY_TFMS.contains(&tfm.as_str()),
+            "{tfm} has a passing row but is missing from the inventory the sweep derives from"
+        );
+    }
+}
+
+#[test]
+fn the_sweep_covers_every_target_that_is_not_passing() {
+    let not_passing = not_passing_tfms();
+    for tfm in ["net46", "net47", "net481", "netcoreapp3.0"] {
+        assert!(
+            not_passing.contains(&tfm),
+            "{tfm} has no passing row and must stay in the support-sentence sweep"
+        );
+    }
+    let passing = passing_profile_tfms();
+    assert_eq!(
+        not_passing.len() + passing.len(),
+        INVENTORY_TFMS.len(),
+        "every inventory target is either a passing row or swept"
+    );
+}
+
 #[test]
 fn no_support_sentence_names_a_target_ahead_of_its_row() {
     let doc = fs::read_to_string(doc_path()).unwrap();
@@ -615,42 +820,32 @@ fn no_support_sentence_names_a_target_ahead_of_its_row() {
     let (before_wave2, _) = doc
         .split_once("## Wave 2")
         .expect("the document has a Wave 2 section boundary");
-    // Derived from the inventory itself, not a hand-picked sample: every wave-2/excluded/
-    // unqualified target that is not a wave-1 passing row.
-    let not_passing = [
-        "net10.0",
-        "netstandard1.0",
-        "netstandard1.1",
-        "netstandard1.2",
-        "netstandard1.3",
-        "netstandard1.4",
-        "netstandard1.5",
-        "netstandard1.6",
-        "net403",
-        "net45",
-        "net451",
-        "net452",
-        "net46",
-        "net461",
-        "net462",
-        // "net47" is deliberately not swept here: it is a substring of the wave-1 passing
-        // "net472", so a literal match would be a false positive, not a real violation.
-        "net471",
-        "net481",
-        "netcoreapp3.0",
-    ];
-    for target in not_passing {
+    for target in not_passing_tfms() {
         assert!(
-            !before_wave2.contains(target),
-            "{target} is not a wave-1 passing row and must not appear before the Wave 2 heading"
+            !names_target(before_wave2, target),
+            "{target} is not a passing row and must not appear before the Wave 2 heading"
         );
         assert!(
-            !readme.contains(target),
-            "{target} is not a wave-1 passing row and must not appear in README.md"
+            !names_target(&readme, target),
+            "{target} is not a passing row and must not appear in README.md"
         );
         assert!(
-            !changelog.contains(target),
-            "{target} is not a wave-1 passing row and must not appear in CHANGELOG.md"
+            !names_target(&changelog, target),
+            "{target} is not a passing row and must not appear in CHANGELOG.md"
+        );
+    }
+}
+
+#[test]
+fn readme_advertises_no_target_without_a_held_out_row() {
+    let readme = fs::read_to_string(readme_path()).unwrap();
+    for tfm in passing_profile_tfms() {
+        if HELD_OUT_MEASURED_TFMS.contains(&tfm.as_str()) {
+            continue;
+        }
+        assert!(
+            !names_target(&readme, &tfm),
+            "{tfm} has no held-out row and must not be advertised in README.md"
         );
     }
 }

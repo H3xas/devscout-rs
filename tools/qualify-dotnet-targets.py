@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Compose per-profile capability rows for fixtures/csharp-target-qualification/.
 
-For each wave-1 row (profile, deep-case bundle or substitution-defect control) this
+For each row (profile, deep-case bundle or substitution-defect control) this
 script restores and builds its project(s), runs the existing tools/scout-semantic
 oracle over it, and writes a five-field capability row to
 fixtures/csharp-target-qualification/results/<row-id>.json. It is the only place in
@@ -41,9 +41,11 @@ ORACLE_PROJECT = REPO_ROOT / "tools" / "scout-semantic"
 
 SDK_VERSION = "9.0.305"
 
-# Profiles this SDK band and worker can execute today (see the Design's wave-1
-# boundary). Each tuple: (profile id, csproj path relative to TREE, tfm, track,
-# boundary case expected to bind).
+# Profiles this SDK band and worker can execute today, each restorable from the pinned
+# packages alone. Each tuple: (profile id, csproj path relative to TREE, tfm, track,
+# boundary case expected to bind[, row-local SDK pin]). A row carrying its own pin has a
+# global.json beside its project and runs from that directory under that SDK band; every
+# other row runs from TREE under SDK_VERSION.
 MODERN_TRACK = "modern"
 FRAMEWORK_TRACK = "framework-f1"
 
@@ -53,10 +55,21 @@ PROFILE_ROWS = [
     ("csharp73-net7.0-sdkstyle", "profiles/net7.0-sdkstyle/Profile.csproj", "net7.0", MODERN_TRACK, True),
     ("csharp73-net8.0-sdkstyle", "profiles/net8.0-sdkstyle/Profile.csproj", "net8.0", MODERN_TRACK, True),
     ("csharp73-net9.0-sdkstyle", "profiles/net9.0-sdkstyle/Profile.csproj", "net9.0", MODERN_TRACK, True),
+    ("csharp73-net10.0-sdkstyle", "profiles/net10.0-sdkstyle/Profile.csproj", "net10.0", MODERN_TRACK, True, "10.0.302"),
+    ("csharp73-netstandard1.0-sdkstyle", "profiles/netstandard1.0-sdkstyle/Profile.csproj", "netstandard1.0", MODERN_TRACK, False),
+    ("csharp73-netstandard1.1-sdkstyle", "profiles/netstandard1.1-sdkstyle/Profile.csproj", "netstandard1.1", MODERN_TRACK, False),
+    ("csharp73-netstandard1.2-sdkstyle", "profiles/netstandard1.2-sdkstyle/Profile.csproj", "netstandard1.2", MODERN_TRACK, False),
+    ("csharp73-netstandard1.3-sdkstyle", "profiles/netstandard1.3-sdkstyle/Profile.csproj", "netstandard1.3", MODERN_TRACK, False),
+    ("csharp73-netstandard1.4-sdkstyle", "profiles/netstandard1.4-sdkstyle/Profile.csproj", "netstandard1.4", MODERN_TRACK, False),
+    ("csharp73-netstandard1.5-sdkstyle", "profiles/netstandard1.5-sdkstyle/Profile.csproj", "netstandard1.5", MODERN_TRACK, False),
+    ("csharp73-netstandard1.6-sdkstyle", "profiles/netstandard1.6-sdkstyle/Profile.csproj", "netstandard1.6", MODERN_TRACK, False),
     ("csharp73-netstandard2.0-sdkstyle", "profiles/netstandard2.0-sdkstyle/Profile.csproj", "netstandard2.0", MODERN_TRACK, False),
     ("csharp73-netstandard2.1-sdkstyle", "profiles/netstandard2.1-sdkstyle/Profile.csproj", "netstandard2.1", MODERN_TRACK, True),
     ("csharp73-netcoreapp3.1-sdkstyle", "profiles/netcoreapp3.1-sdkstyle/Profile.csproj", "netcoreapp3.1", MODERN_TRACK, True),
     ("csharp73-net40-sdkstyle", "profiles/net40-sdkstyle/Profile.csproj", "net40", FRAMEWORK_TRACK, False),
+    ("csharp73-net45-sdkstyle", "profiles/net45-sdkstyle/Profile.csproj", "net45", FRAMEWORK_TRACK, False),
+    ("csharp73-net452-sdkstyle", "profiles/net452-sdkstyle/Profile.csproj", "net452", FRAMEWORK_TRACK, False),
+    ("csharp73-net461-sdkstyle", "profiles/net461-sdkstyle/Profile.csproj", "net461", FRAMEWORK_TRACK, False),
     ("csharp73-net472-sdkstyle", "profiles/net472-sdkstyle/Profile.csproj", "net472", FRAMEWORK_TRACK, False),
     ("csharp73-net48-sdkstyle", "profiles/net48-sdkstyle/Profile.csproj", "net48", FRAMEWORK_TRACK, False),
 ]
@@ -82,9 +95,12 @@ BOUNDARY_DIAGNOSTIC = "CS1501"
 DOTNET_ENV = {"MSBUILDDISABLENODEREUSE": "1", "DOTNET_CLI_UI_LANGUAGE": "en"}
 
 
-def run(args, cwd=None):
+def run(args, cwd=None, host=None):
     env = dict(os.environ)
     env.update(DOTNET_ENV)
+    if host is not None:
+        env.update(host.env)
+        cwd = cwd or host.cwd
     # Every dotnet invocation this script makes runs with the qualification tree as its
     # working directory by default, not the repository root: the .NET CLI resolves
     # global.json from the process's current directory, so a call made from anywhere else
@@ -130,6 +146,60 @@ def observed_sdk_root():
     return _OBSERVED_SDK_ROOT
 
 
+_ROW_SDK_ROOTS = []
+
+
+class MissingSdkBand(Exception):
+    """A row's pinned SDK band is listed by no dotnet root on this host."""
+
+
+class RowHost:
+    """Where a row carrying its own SDK pin runs: its project directory (so the CLI resolves
+    the row's own global.json) and one dotnet root that lists the exact pin. That root goes
+    first on PATH and is DOTNET_ROOT for every process of the row, because the oracle's
+    out-of-process build host follows PATH; the oracle also rolls forward to the latest major
+    runtime, because its in-process MSBuild registration follows the runtime it runs on. Either
+    one missing was observed to load the unit under another band while still reporting it ok."""
+
+    def __init__(self, cwd, root, pin):
+        self.cwd = cwd
+        self.root = root
+        self.pin = pin
+        self.dotnet = str(Path(root) / "dotnet")
+        self.env = {"PATH": root + os.pathsep + os.environ.get("PATH", ""), "DOTNET_ROOT": root}
+        self.oracle_env = {"DOTNET_ROLL_FORWARD": "LatestMajor"}
+
+
+def _roots_listing(dotnet):
+    env = dict(os.environ)
+    env.update(DOTNET_ENV)
+    try:
+        proc = subprocess.run([dotnet, "--list-sdks"], cwd=TREE, capture_output=True, text=True, check=False, env=env)
+    except OSError:
+        return []
+    if proc.returncode != 0:
+        return []
+    return re.findall(r"^(\S+) \[([^\]]+)\]", proc.stdout, re.MULTILINE)
+
+
+def resolve_row_host(csproj_rel, pin):
+    """The PATH host's root when it lists the pin (a CI job that installed the band), otherwise
+    the per-user root the official install script uses. A host with neither is refused by name;
+    the row is never skipped, never run under another band and never read back from its record."""
+    candidates = [("dotnet", None), (str(Path.home() / ".dotnet" / "dotnet"), str(Path.home() / ".dotnet"))]
+    for dotnet, root in candidates:
+        for version, sdk_dir in _roots_listing(dotnet):
+            if version == pin:
+                row_root = root or str(Path(sdk_dir).parent)
+                if sdk_dir not in _ROW_SDK_ROOTS:
+                    _ROW_SDK_ROOTS.append(sdk_dir)
+                return RowHost((TREE / csproj_rel).parent, row_root, pin)
+    raise MissingSdkBand(
+        f"{csproj_rel}: no dotnet root on this host lists SDK {pin} (checked the PATH host and "
+        f"$HOME/.dotnet); install that exact band to regenerate this row"
+    )
+
+
 def strip_local_paths(text):
     """Removes the authoring machine's absolute filesystem paths from diagnostic
     text before it can reach a committed snapshot; a raw NuGet/MSBuild diagnostic
@@ -142,6 +212,8 @@ def strip_local_paths(text):
     sdk_root = observed_sdk_root()
     if sdk_root:
         text = text.replace(sdk_root, "<sdk-root>")
+    for row_sdk_root in _ROW_SDK_ROOTS:
+        text = text.replace(row_sdk_root, "<sdk-root>")
     text = re.sub(r"/[A-Za-z0-9_./-]*/(\.nuget|\.dotnet)/", r"<home>/\1/", text)
     text = re.sub(r"/Users/[A-Za-z0-9_.-]+", "<home>", text)
     text = re.sub(r"/home/[A-Za-z0-9_.-]+", "<home>", text)
@@ -150,10 +222,9 @@ def strip_local_paths(text):
 
 def _selftest():
     """Pure, dotnet-free checks for strip_local_paths' path-sanitizing rules,
-    including the SDK-root rule this round adds. Run with --selftest; not part
-    of the cargo test path, which stays dotnet-free by never importing this
-    script at all -- this is the composition script's own unit-level check,
-    exercised directly by the implementation gate re-run."""
+    including both SDK-root rules, and for reading the oracle's registered
+    MSBuild band. Run with --selftest; not part of the cargo test path, which
+    stays dotnet-free by never importing this script at all."""
     global _OBSERVED_SDK_ROOT
     failures = []
 
@@ -183,12 +254,26 @@ def _selftest():
     check("still strips a /Users home path", strip_local_paths("/Users/example/x") == "<home>/x")
     check("still strips a /home home path", strip_local_paths("/home/example/x") == "<home>/x")
 
+    _ROW_SDK_ROOTS.append("/home/example/.dotnet/sdk")
+    try:
+        check(
+            "normalizes a row's own sdk root like the tree's",
+            strip_local_paths("/home/example/.dotnet/sdk/10.0.302/Sdks") == "<sdk-root>/10.0.302/Sdks",
+        )
+    finally:
+        _ROW_SDK_ROOTS.pop()
+    check(
+        "reads the msbuild band the oracle registered",
+        registered_msbuild("warning: x\nmsbuild 10.0.302 at /opt/dotnet/sdk/10.0.302/\n") == "10.0.302",
+    )
+    check("an oracle that registered nothing reads unregistered", registered_msbuild("") == "unregistered")
+
     if failures:
         print("qualify-dotnet-targets --selftest: FAILED", file=sys.stderr)
         for name in failures:
             print(f"  {name}", file=sys.stderr)
         return 1
-    print("qualify-dotnet-targets --selftest: 6 check(s) passed")
+    print("qualify-dotnet-targets --selftest: 9 check(s) passed")
     return 0
 
 
@@ -215,37 +300,42 @@ def clean_build_state(csproj):
             shutil.rmtree(target)
 
 
-def restore_and_build(csproj_rel, no_restore):
+def restore_and_build(csproj_rel, no_restore, host=None):
     csproj = TREE / csproj_rel
+    dotnet = host.dotnet if host else "dotnet"
     restore_code = 0
     restore_out = ""
     if not no_restore:
         clean_build_state(csproj)
-        restore_code, restore_out, restore_err = run(["dotnet", "restore", str(csproj), "-v", "minimal"])
+        restore_code, restore_out, restore_err = run([dotnet, "restore", str(csproj), "-v", "minimal"], host=host)
         restore_out = restore_out + restore_err
     # Debug, not Release: the oracle opens each project through MSBuildWorkspace with no
     # explicit Configuration override, which defaults to Debug, so an analyzer/generator
     # project reference must be built for Debug or the workspace cannot find its output DLL.
     build_code, build_out, build_err = run(
-        ["dotnet", "build", str(csproj), "--no-restore", "-c", "Debug", "-v", "minimal"]
+        [dotnet, "build", str(csproj), "--no-restore", "-c", "Debug", "-v", "minimal"], host=host
     )
     build_out = build_out + build_err
     return restore_code, restore_out, build_code, build_out
 
 
-def run_oracle(csproj_rel, tfm, out_dir):
+def run_oracle(csproj_rel, tfm, out_dir, host=None):
     out_dir.mkdir(parents=True, exist_ok=True)
     refs = out_dir / "refs.jsonl"
     units = out_dir / "units.jsonl"
     defs = out_dir / "defs.jsonl"
     args = [
-        "dotnet", "run", "--project", str(ORACLE_PROJECT), "--no-build", "-c", "Release", "--",
+        host.dotnet if host else "dotnet", "run", "--project", str(ORACLE_PROJECT), "--no-build", "-c", "Release", "--",
         str(TREE / csproj_rel), "--root", str(TREE),
         "--out", str(refs), "--units", str(units), "--defs", str(defs),
     ]
     if tfm:
         args += ["--tfm", tfm]
-    code, out, err = run(args)
+    oracle_host = None
+    if host is not None:
+        oracle_host = RowHost(host.cwd, host.root, host.pin)
+        oracle_host.env.update(host.oracle_env)
+    code, out, err = run(args, host=oracle_host)
     unit_records = _read_jsonl(units)
     ref_records = _read_jsonl(refs)
     def_records = _read_jsonl(defs)
@@ -261,9 +351,41 @@ def _read_jsonl(path):
     return records
 
 
-def compose_profile_row(profile_id, csproj_rel, tfm, track, bind_expected, out_dir, no_restore):
-    restore_code, restore_out, build_code, build_out = restore_and_build(csproj_rel, no_restore)
-    oracle_code, oracle_log, units, refs, defs = run_oracle(csproj_rel, tfm, out_dir)
+def resolves_netstandard_library_graph(tfm):
+    """Below .NET Standard 2.0 the SDK references the NETStandard.Library package instead of a
+    targeting pack, so the reference surface is whatever package graph restore resolved."""
+    return tfm.startswith("netstandard1.")
+
+
+def netstandard_library_graph(csproj_rel):
+    """The NETStandard.Library version and the number of packages restore resolved, read from
+    the restore's own assets file, so a different resolved graph diffs the snapshot."""
+    assets = (TREE / csproj_rel).parent / "obj" / "project.assets.json"
+    libraries = {}
+    if assets.exists():
+        libraries = json.loads(assets.read_text(encoding="utf-8")).get("libraries", {})
+    packages = [key for key, entry in libraries.items() if entry.get("type") == "package"]
+    version = next(
+        (key.split("/", 1)[1] for key in packages if key.split("/", 1)[0].lower() == "netstandard.library"),
+        "unresolved",
+    )
+    return f"netstandard.library@{version}", len(packages)
+
+
+def row_sdk_version(host):
+    code, out, err = run([host.dotnet, "--version"], host=host)
+    return out.strip() if code == 0 and out.strip() else f"unresolved (exit {code}): {(out + err).strip()}"
+
+
+def registered_msbuild(oracle_log):
+    match = re.search(r"^msbuild (\S+) at ", oracle_log, re.MULTILINE)
+    return match.group(1) if match else "unregistered"
+
+
+def compose_profile_row(profile_id, csproj_rel, tfm, track, bind_expected, out_dir, no_restore, sdk_pin=None):
+    host = resolve_row_host(csproj_rel, sdk_pin) if sdk_pin else None
+    restore_code, restore_out, build_code, build_out = restore_and_build(csproj_rel, no_restore, host)
+    oracle_code, oracle_log, units, refs, defs = run_oracle(csproj_rel, tfm, out_dir, host)
 
     bind_observed = BOUNDARY_DIAGNOSTIC not in build_out
     unit = units[0] if units else None
@@ -271,8 +393,8 @@ def compose_profile_row(profile_id, csproj_rel, tfm, track, bind_expected, out_d
 
     context_acquisition = {
         "state": "passing" if restore_code == 0 else "failing",
-        "sdk": observed_sdk_version(),
-        "sdk_pin": SDK_VERSION,
+        "sdk": row_sdk_version(host) if host else observed_sdk_version(),
+        "sdk_pin": sdk_pin or SDK_VERSION,
         "project_format": "sdk-style",
         "reference_source": "microsoft.netframework.referenceassemblies@1.0.3"
         if track == FRAMEWORK_TRACK
@@ -282,6 +404,19 @@ def compose_profile_row(profile_id, csproj_rel, tfm, track, bind_expected, out_d
         "expected_documents": ["PositiveCase.cs", "BoundaryCase.cs"],
         "loaded_documents": sorted(unit["files"]) if unit else [],
     }
+    if resolves_netstandard_library_graph(tfm):
+        reference_source, package_count = netstandard_library_graph(csproj_rel)
+        context_acquisition["reference_source"] = reference_source
+        context_acquisition["resolved_package_count"] = package_count
+    hosted_on_its_own_band = True
+    if host:
+        # Only a row on its own band records these, so every other row keeps its bytes.
+        context_acquisition["oracle_msbuild_registered"] = registered_msbuild(oracle_log)
+        context_acquisition["oracle_unit_diagnostics"] = unit.get("diagnostics") if unit else None
+        hosted_on_its_own_band = (
+            context_acquisition["oracle_msbuild_registered"] == sdk_pin
+            and context_acquisition["oracle_unit_diagnostics"] == 0
+        )
     semantic_conformance = {
         "state": "passing" if positive_bound else "failing",
         "positive_case_bound": positive_bound,
@@ -300,6 +435,7 @@ def compose_profile_row(profile_id, csproj_rel, tfm, track, bind_expected, out_d
         and restore_code == 0
         and unit is not None
         and unit.get("status") == "ok"
+        and hosted_on_its_own_band
     )
     unsupported_state = {
         "state": "passing" if passing else "failing",
@@ -628,9 +764,10 @@ def compose_all(no_restore):
     rows = {}
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
-        for profile_id, csproj_rel, tfm, track, bind_expected in PROFILE_ROWS:
+        for profile_id, csproj_rel, tfm, track, bind_expected, *row_pin in PROFILE_ROWS:
             rows[profile_id] = compose_profile_row(
-                profile_id, csproj_rel, tfm, track, bind_expected, tmp_path / profile_id, no_restore
+                profile_id, csproj_rel, tfm, track, bind_expected, tmp_path / profile_id, no_restore,
+                row_pin[0] if row_pin else None,
             )
         for profile_id, csproj_rel, tfm, track in DEEP_ROWS:
             rows[profile_id] = compose_deep_row(profile_id, csproj_rel, tfm, track, tmp_path / profile_id, no_restore)
@@ -657,7 +794,11 @@ def main():
     if args.selftest:
         return _selftest()
 
-    rows = compose_all(args.no_restore)
+    try:
+        rows = compose_all(args.no_restore)
+    except MissingSdkBand as missing:
+        print(f"qualify-dotnet-targets: {missing}", file=sys.stderr)
+        return 2
 
     RESULTS.mkdir(parents=True, exist_ok=True)
     if args.write:

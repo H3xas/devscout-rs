@@ -8,11 +8,25 @@
       "recall": { "min": 0.60 },
       "unsupported_coverage": { "min": 1.0 }
     },
+    "modern-sdk10": {
+      "tfms": ["net10.0"],
+      "precision": { "min": 0.90 },
+      "recall": { "min": 0.60 },
+      "unsupported_coverage": { "min": 1.0 },
+      "note": "its own stratum with the modern stratum's thresholds: the row builds under a second pinned SDK band, and the already-measured modern stratum keeps its meaning"
+    },
     "netstandard": {
       "tfms": ["netstandard2.0", "netstandard2.1"],
       "precision": { "min": 0.90 },
       "recall": { "min": 0.50 },
       "unsupported_coverage": { "min": 1.0 }
+    },
+    "netstandard1": {
+      "tfms": ["netstandard1.0", "netstandard1.1", "netstandard1.2", "netstandard1.3", "netstandard1.4", "netstandard1.5", "netstandard1.6"],
+      "precision": { "min": 0.90 },
+      "recall": { "min": 0.50 },
+      "unsupported_coverage": { "min": 1.0 },
+      "note": "its own stratum with the netstandard stratum's thresholds, so the already-measured netstandard stratum keeps its meaning"
     },
     "netcoreapp3.1": {
       "tfms": ["netcoreapp3.1"],
@@ -21,7 +35,7 @@
       "unsupported_coverage": { "min": 1.0 }
     },
     "framework-f1": {
-      "tfms": ["net40", "net472", "net48"],
+      "tfms": ["net40", "net45", "net452", "net461", "net472", "net48"],
       "precision": { "min": 0.85 },
       "recall": { "min": 0.30 },
       "unsupported_coverage": { "min": 1.0 },

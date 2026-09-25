@@ -343,6 +343,14 @@ jobs:
           ./target/release/devscout -C "$RUNNER_TEMP/direction-repo" audit --semantic "$PWD/out/direction/refs.jsonl" --units "$PWD/out/direction/units.jsonl"
           ./target/release/devscout -C "$RUNNER_TEMP/direction-repo" audit --semantic "$PWD/out/direction/refs.jsonl" --units "$PWD/out/direction/units.jsonl" --assert "$PWD/fixtures/csharp-direction/expected.json"
 
+      # The net10.0 qualification row pins its own SDK band in a global.json beside its
+      # project. Installed only here, after every other .NET step: with no repository-root
+      # global.json, a root holding both bands resolves the higher one, which would move
+      # every earlier step and the snapshots it diffs onto the 10.0 band.
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.302
+
       # The .NET target/project/framework qualification tree: its own global.json SDK pin,
       # restored and rebuilt row by row, then diffed byte-for-byte against the committed
       # capability snapshots. This is the only step in CI that shells out through the tree's
