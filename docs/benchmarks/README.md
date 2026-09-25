@@ -61,4 +61,6 @@ per cell, with its integrity caveats leading.
 
 The same eight scripted tasks were rerun on the 0.7.0 release tree, beside a resolver-precision
 audit of that tree, in [`results/2026-09-25-release-0.7.0.md`](results/2026-09-25-release-0.7.0.md),
-with predictions registered first.
+with predictions registered first. The 0.8.0 release tree has the same treatment in
+[`results/2026-09-25-release-0.8.0.md`](results/2026-09-25-release-0.8.0.md), which adds the reach
+of the `bus-hop` edges and the opt-in enriched lane.

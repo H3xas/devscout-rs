@@ -18,13 +18,14 @@ much.
 | `devscout init [scope ...]` | Register the repo, create the artifact directory, install the agent hooks, run a first map |
 | `devscout map [scope ...] [--no-semantic]` | Build or refresh the index; incremental — unchanged files are reused. `--no-semantic` skips an admitted compiler-facts artifact even when one is present (see [Compiler facts](#compiler-facts)) |
 | `devscout find <query>` | Search the manifest by symbol name or by file purpose |
-| `devscout refs <symbol>` | Inbound references to a symbol, grouped by edge kind (`inherits`, `uses-type`, `uses-member`, `implements`, `overrides`) |
+| `devscout refs <symbol>` | Inbound references to a symbol, grouped by edge kind (`inherits`, `uses-type`, `uses-member`, `implements`, `overrides`), plus `bus-hop` rows for a handler or for a type whose file publishes a message: possible routes from a recognized publish or dispatch call to a matching handler, runtime routing unverified |
 | `devscout read <symbol>` | The symbol's declaration span and verbatim source plus the same inbound answer as `refs` |
 | `devscout impact <file\|symbol>` | Blast radius: the files reachable from a seed within N hops |
 | `devscout import-edges <file> --repo <id>` | Load a versioned cross-repo edge export; `impact` then reports files reached only through it (`--no-imports` to skip it) |
 | `devscout compiler-facts run\|import\|status` | Optional: acquire or import a versioned compiler-derived fact artifact (see [Compiler facts](#compiler-facts)); `map` and every query never need it and never start it |
 | `devscout tests <symbol>` | The test files that reach a symbol |
 | `devscout <verb> <symbol> --pick N` | On any of the four verbs above, narrows a member seed with several declaring types to its nth candidate |
+| `devscout <verb> <seed> --no-bus` | On `refs`, `read`, `impact` and `tests`, skips `bus-hop` edges and restores the traversal and hub classification those verbs had before them |
 | `devscout stats` | Index and cache summary for the current repo |
 | `devscout clear` | Drop freshness rows by age or by session |
 
@@ -422,9 +423,9 @@ corpus SHA it ran against. The methodology, the peer tools an agent could instal
 agentic-lane protocol, and the dated result documents are separate files there, and the harness
 is in [`bench/`](bench/README.md).
 
-**Scorecard** (devscout 0.7.0 vs the `rg` baseline, MassTransit corpus; the scripted rows' full
+**Scorecard** (devscout 0.8.0 vs the `rg` baseline, MassTransit corpus; the scripted rows' full
 numbers, per-cell commands and grades are in
-[`docs/benchmarks/results/2026-09-25-release-0.7.0.md`](docs/benchmarks/results/2026-09-25-release-0.7.0.md),
+[`docs/benchmarks/results/2026-09-25-release-0.8.0.md`](docs/benchmarks/results/2026-09-25-release-0.8.0.md),
 the agentic row and its preliminary-run caveats in
 [`docs/benchmarks/results/2026-08.md`](docs/benchmarks/results/2026-08.md)):
 
@@ -436,11 +437,12 @@ the agentic row and its preliminary-run caveats in
 | End-to-end retrieval | 1/2 correct | 2/2 correct | rg wins |
 | Agentic, Opus (preliminary, measured on 0.2.0) | 4/4 correct, median 180k tokens | 3/4 correct + 1 partial, median 199k tokens | No correctness edge; ~25k-token saving only |
 
-The four scripted rows were measured on 0.7.0's final tree, one run per cell. 0.2.0 read
-devscout 5 correct / 3 partial against rg's 6 / 2; 0.7.0 reads 4 / 4, and the whole difference is
-one references task, where devscout now also names three files that call `IJobService` members
-through a property typed with it, which a truth set built by text search cannot hold. The
-agentic row is the preliminary 0.2.0 round and has not been re-measured. Releases 0.3.0 to 0.6.0
+The four scripted rows were measured on 0.8.0's final tree, one run per cell, and every
+devscout answer is byte-identical to 0.7.0's. 0.2.0 read devscout 5 correct / 3 partial against
+rg's 6 / 2; 0.7.0 and 0.8.0 read 4 / 4, and the whole difference is one references task, where
+devscout also names three files that call `IJobService` members through a property typed with
+it, which a truth set built by text search cannot hold. The agentic row is the preliminary 0.2.0
+round and has not been re-measured. Releases 0.3.0 to 0.6.0
 were not measured on the scorecard: 0.3.0 changes `find` output ordering and reference resolution
 (exact generic arity); 0.4.0 changes resolver output again (heuristic tiers and recall), measured
 in
@@ -467,8 +469,18 @@ Release 0.8.0 changes resolver output by default: a recognized publish or dispat
 and `refs`, `read`, `impact` and `tests` traverse those candidate routes unless `--no-bus` is
 given; a repository with no publish site gains no edges. The compiler-fact enrichment is opt-in:
 `map` consumes a compiler-facts artifact only after one has been admitted, and without one, or
-with `map --no-semantic`, the default graph is unchanged. The scorecard rows above were measured
-on 0.7.0.
+with `map --no-semantic`, the default graph is unchanged. Its final tree is measured in
+[`docs/benchmarks/results/2026-09-25-release-0.8.0.md`](docs/benchmarks/results/2026-09-25-release-0.8.0.md).
+The default lane scores exactly as 0.7.0 does (precise precision 0.993; recall 0.528 precise,
+0.571 precise+ext, 0.659 over all tiers), and with `--no-bus` every measured `refs` and `impact`
+answer is byte-identical to 0.7.0's. On the pinned corpus `map` emits 23,687 `bus-hop` edges over
+171 messages, 97.4% of them on one shared test message that reaches 79 handlers; these measure
+reach, and route precision and recall are unmeasured. The opt-in enriched lane, on an artifact
+in which 53 of the 54 loaded compilations are complete, reaches recall 0.920 precise and 0.921
+precise+ext at 0.997 precision over its precise and semantic tiers together, scored against the
+same oracle it was produced from. Offline, the restore needed `-p:NuGetAudit=false` for that: with the package
+audit on, its unreachable-feed warning marked every compilation partial and the lane confirmed
+nothing.
 
 A separate scripted-lane run measured **tool calls issued per task**: the index arm used fewer
 calls in all four query kinds, largest on references (5.0 vs 11.8 per lane, ~2.4x) — single-run
