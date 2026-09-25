@@ -7,6 +7,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-25
+
+A compiler-evidence release: `compiler-facts` admits a versioned compiler-derived fact artifact
+beside `graph.json`, the precise tier stops emitting `uses-member` edges C# name lookup cannot
+produce, and the compiler-fact path's .NET target coverage is published per target.
+
 ### Added
 
 - **`compiler-facts run|import|status`** admits a versioned, optional compiler-derived fact

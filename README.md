@@ -416,6 +416,17 @@ pinned corpus, so those figures carry over unchanged. Release 0.6.0 raises the g
 3 and adds the `implements` and `overrides` edges, so its `graph.json` is not byte-identical to
 0.5.0's and the scorecard has not been re-measured against it; a repository whose code registers
 nothing through dependency injection gains no edges and answers as it did.
+Release 0.7.0 changes resolver output again: the precise tier refuses `uses-member` edges C# name
+lookup cannot produce, and a member qualifier's written type-argument count decides which
+same-named type it binds. The refusals are measured under Run 5 in
+[`docs/benchmarks/results/2026-09-resolver-precision.md`](docs/benchmarks/results/2026-09-resolver-precision.md)
+(precise precision 0.989 to 0.993); 0.7.0's `graph.json` is not byte-identical to 0.6.0's and the
+scorecard has not been re-measured against it.
+
+Release 0.7.0 also adds an
+[extension-impact qualification harness](docs/benchmarks/extension-impact.md). It measures
+precision for candidate edges and complete answers separately without changing production
+traversal. These measurements do not replace the task scorecard above.
 
 A separate scripted-lane run measured **tool calls issued per task**: the index arm used fewer
 calls in all four query kinds, largest on references (5.0 vs 11.8 per lane, ~2.4x) — single-run
