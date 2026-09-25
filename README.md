@@ -159,7 +159,7 @@ untracked files and are shared correctly by worktrees:
 <git-common-dir>/scout/manifest.json              file -> purpose + symbol index
 <git-common-dir>/scout/index-state.json           HEAD + timestamp the index was built at
 <git-common-dir>/scout/graph/graph.json           definitions, edges, and project units
-<git-common-dir>/scout/graph/fragments-v23.json   per-file extraction cache (incremental map)
+<git-common-dir>/scout/graph/fragments-v24.json   per-file extraction cache (incremental map)
 <git-common-dir>/scout/graph/project-units.json   csproj staleness sidecar (present only with a project model)
 <git-common-dir>/scout/graph/compiler-facts-v1.json  optional versioned compiler-fact artifact (see Compiler facts below); absent unless `compiler-facts run|import` has admitted one
 <git-common-dir>/scout/log/queries.jsonl          query-verb telemetry, one JSON line per answered invocation (opt-in; SCOUT_TELEMETRY=1)
@@ -341,14 +341,15 @@ Known, rather than hidden:
   and arity can tell.** The declaring type in the receiver's static chain — inherited,
   overridden and hidden members, interface members through interface, implementing-class
   and base-interface receivers, static members through bare, qualified and generic derived
-  type names — is what the edge targets. Four shapes are decided by information the graph
-  does not carry and bind the wrong side of an `inherits` edge: same-arity overloads split
-  across base and derived by parameter type; an `internal new` member hiding a public base
-  member (only `public` counts as visible to a receiver other than `this`, so an `internal
-  override` is a silent miss instead); a `private new` field shadowing a public base
-  property when read from outside its type; and `this.M()` in a class that both inherits a
-  public `M` and explicitly implements an interface's `M`. Each is pinned as a known false
-  positive in `fixtures/csharp-direction`.
+  type names — is what the edge targets. An explicit interface implementation is a member
+  only of its interface, so `this.M()` in a class that both inherits a public `M` and
+  explicitly implements an interface's `M` binds the base. Three shapes are decided by
+  information the graph does not carry and bind the wrong side of an `inherits` edge:
+  same-arity overloads split across base and derived by parameter type; an `internal new`
+  member hiding a public base member (only `public` counts as visible to a receiver other
+  than `this`, so an `internal override` is a silent miss instead); and a `private new` field
+  shadowing a public base property when read from outside its type. Each is pinned as a known
+  false positive in `fixtures/csharp-direction`.
 - **A written type-argument count picks between same-named generic siblings.** A receiver
   written `Foo<X>` and a base written `Foo` each bind the declaration with that many type
   parameters, not whichever of `Foo` and `Foo<T>` the index met first; a name with no
@@ -515,7 +516,7 @@ expected -- for every tier, not only the precise one.
 
 Two fixture solutions carry an oracle snapshot and a thresholds file of their own:
 `fixtures/csharp-semantic/` holds the per-tier precision and recall numbers, and
-`fixtures/csharp-direction/` holds the base-and-interface direction shapes, including the four
+`fixtures/csharp-direction/` holds the base-and-interface direction shapes, including the three
 known false positives named under Limitations. CI regenerates each snapshot from the oracle,
 diffs it against the committed one, then indexes an isolated copy of the fixture and asserts its
 thresholds.

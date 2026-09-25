@@ -128,13 +128,9 @@ fn audit_scores_the_direction_fixture_against_the_committed_oracle_snapshot() {
     let stdout = stdout_of(&out);
     let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("valid JSON");
 
-    // 60 precise edges. The four false positives are the documented shapes
+    // 60 precise edges. The three false positives are the documented shapes
     // the resolver cannot decide from names and arity alone, each pinned by
     // its own `// case` comment in the fixture:
-    //   - `this.Stamp()` inside a class that derives from a base declaring
-    //     Stamp AND explicitly implements an interface's Stamp (the explicit
-    //     implementation sits in the class's non-public member list under
-    //     its bare name);
     //   - an `internal new` member hiding a public base member (only
     //     `public` counts as visible to a receiver other than `this`);
     //   - a `private new` field shadowing a public base property, read from
@@ -147,10 +143,13 @@ fn audit_scores_the_direction_fixture_against_the_committed_oracle_snapshot() {
     // `this.` and `base.` receivers, interface members through interface,
     // implementing-class and base-interface receivers, static members
     // through bare, qualified and generic derived type names -- scores as a
-    // true positive.
+    // true positive. So does `this.Stamp()` inside a class that derives from
+    // a base declaring Stamp AND explicitly implements an interface's Stamp:
+    // the explicit implementation is no member of the class itself, so the
+    // call reaches the base's public Stamp.
     assert_eq!(v["tiers"]["precise"]["edges"], 60, "{stdout}");
-    assert_eq!(v["tiers"]["precise"]["tp"], 56, "{stdout}");
-    assert_eq!(v["tiers"]["precise"]["fp"], 4, "{stdout}");
+    assert_eq!(v["tiers"]["precise"]["tp"], 57, "{stdout}");
+    assert_eq!(v["tiers"]["precise"]["fp"], 3, "{stdout}");
     assert!(
         v["tiers"]["ext"].is_null() && v["tiers"]["guess"].is_null(),
         "the fixture has no extension methods and every receiver resolves in-graph, so no \
@@ -161,8 +160,8 @@ fn audit_scores_the_direction_fixture_against_the_committed_oracle_snapshot() {
     // excluded from recall's denominator, which counts `access` records
     // only), one cast receiver `((IContract)x).Fulfil()` (untyped), and one
     // `internal override` (invisible to a non-`this` receiver). Recall's own
-    // six misses over its 62 sites are the two no-edge access records plus
-    // the four false-positive sites above, whose edge names the wrong type.
+    // five misses over its 62 sites are the two no-edge access records plus
+    // the three false-positive sites above, whose edge names the wrong type.
     let recall_all = v["recall"]["all"].as_f64().expect("recall.all is a number");
     assert!(recall_all >= 0.9, "recall.all = {recall_all}: {stdout}");
     assert_eq!(v["structural"]["impossible"], 0, "{stdout}");
@@ -196,15 +195,14 @@ fn audit_assert_passes_the_direction_fixture_thresholds() {
     );
 }
 
-/// End-to-end proof that `--fp-sites` reaches the CLI wiring: the four
-/// documented wrong-target shapes on this fixture (`this.Stamp()` racing an
-/// explicit interface implementation, an `internal new` hide, a `private
-/// new` shadow, and a same-arity overload split by parameter type) must
-/// still show up as four rows once the flag is parsed and `cmd_audit` turns
-/// it into `inputs.collect_fp_sites`, not just when a test builds `Inputs`
-/// by hand.
+/// End-to-end proof that `--fp-sites` reaches the CLI wiring: the three
+/// documented wrong-target shapes on this fixture (an `internal new` hide, a
+/// `private new` shadow, and a same-arity overload split by parameter type)
+/// must still show up as three rows once the flag is parsed and `cmd_audit`
+/// turns it into `inputs.collect_fp_sites`, not just when a test builds
+/// `Inputs` by hand.
 #[test]
-fn fp_sites_writes_the_four_precise_wrong_target_rows_with_bound_and_expected() {
+fn fp_sites_writes_the_three_precise_wrong_target_rows_with_bound_and_expected() {
     let fx = Fixture::build("fpsites");
     let refs = refs_path();
     let units = units_path();
@@ -231,8 +229,8 @@ fn fp_sites_writes_the_four_precise_wrong_target_rows_with_bound_and_expected() 
         .collect();
     assert_eq!(
         wrong_target.len(),
-        4,
-        "the fixture's precise tier scores exactly 4 wrong-target false \
+        3,
+        "the fixture's precise tier scores exactly 3 wrong-target false \
          positives (fp_wrong_target in the report above): {written}"
     );
     for row in &wrong_target {

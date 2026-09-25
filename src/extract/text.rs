@@ -113,6 +113,14 @@ pub(super) fn is_override(node: Node, src: &[u8]) -> bool {
         .any(|c| c.kind() == "modifier" && text(c, src) == "override")
 }
 
+// `IFace.Member` declarations: member lookup on the declaring type never
+// finds them, only a receiver typed as the interface does.
+pub(super) fn is_explicit_implementation(node: Node) -> bool {
+    named_children(node)
+        .into_iter()
+        .any(|c| c.kind() == "explicit_interface_specifier")
+}
+
 fn strip_async_suffix(name: &str) -> String {
     name.strip_suffix("Async").unwrap_or(name).to_string()
 }

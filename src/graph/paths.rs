@@ -100,16 +100,23 @@ pub fn project_units_path(root: &Path) -> PathBuf {
 // accepted or released build; every run that wrote one, including this
 // lane's own measurement runs, is superseded by the rename same as any
 // other generation.
+// v24 drops explicit interface implementations (`IFace.Member` declarations)
+// from a def's `methods`, `methodReturns`, `methodReturnArgs`,
+// `nonPublicMethods`, `properties` and `propertyTypes`, and from the
+// class-scope receiver facts a bare property name reads -- a cached v23
+// fragment of an unchanged file still lists them, so `this.M()`, a property
+// hop and a bare name inside the implementing type would keep binding a
+// member C# lookup never finds there.
 // The rename IS the invalidation mechanism:
 // pre-bump caches stop being found, every file reparses
 // once, no reader carries version-compat logic. Writers delete every
 // superseded generation (see `remove_superseded_caches`).
 pub(crate) fn fragments_cache_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-v23.json")
+    graph_dir(root).join("fragments-v24.json")
 }
 
 pub(crate) fn fragments_index_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-index-v23.json")
+    graph_dir(root).join("fragments-index-v24.json")
 }
 
 // Every generation below the current one, not just the immediately previous:
@@ -160,6 +167,8 @@ pub(crate) const SUPERSEDED_CACHE_FILES: &[&str] = &[
     "fragments-index-v21.json",
     "fragments-v22.json",
     "fragments-index-v22.json",
+    "fragments-v23.json",
+    "fragments-index-v23.json",
 ];
 
 pub(crate) fn remove_superseded_caches(root: &Path) {

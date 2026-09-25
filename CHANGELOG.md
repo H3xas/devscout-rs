@@ -7,6 +7,18 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **An explicit interface implementation is no longer treated as an ordinary member of the type
+  that declares it.** C# reaches `void IFace.Run()` or `IHost IBus.Host` only through a receiver
+  typed as the interface, so inside the implementing type a call, a property hop or a bare name now
+  binds what C# binds: `this.Run()` binds a base class's public `Run` or earns no precise edge
+  instead of pointing at the invisible explicit method, `bus.Host.Open()` reads the public `Host`
+  property's type even when the explicit one is declared first, and a bare `LogContext.Info` names
+  the `LogContext` type rather than an explicit property of that name. An explicit implementation is
+  still found through the interface, by `find` and `read`, and by `implements` pairing. The
+  fragment cache moves to `fragments-v24.json`, so an existing cache re-extracts once.
+
 ## [0.8.0] - 2026-09-25
 
 A candidate-route release: a recognized publish or dispatch call gains `bus-hop` edges to the

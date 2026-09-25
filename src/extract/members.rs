@@ -6,7 +6,9 @@ use super::receivers::type_fact;
 use super::refs::{
     base_type_identifier, generic_arg_descriptors, type_descriptor, type_parameter_names,
 };
-use super::text::{declared_name, is_override, is_public, named_children, text};
+use super::text::{
+    declared_name, is_explicit_implementation, is_override, is_public, named_children, text,
+};
 use super::types::{ExtensionMethod, Fact};
 
 // Deliberately NOT public_method_names: that one strips a trailing "Async"
@@ -28,11 +30,17 @@ pub(super) fn raw_method_names(node: Node, src: &[u8], kind: &str) -> Vec<String
 // can never drift apart: method_returns is a map PARALLEL to methods, not a
 // second, wider survey of the type.
 fn is_recorded_method(node: Node, src: &[u8], kind: &str) -> bool {
-    node.kind() == "method_declaration" && (kind == "interface" || is_public(node, src))
+    is_lookup_method(node) && (kind == "interface" || is_public(node, src))
+}
+
+// A method declaration member lookup can find on its declaring type.
+fn is_lookup_method(node: Node) -> bool {
+    node.kind() == "method_declaration" && !is_explicit_implementation(node)
 }
 
 // `non_public_methods`: the exact complement of `is_recorded_method` among
-// method_declaration nodes -- every method NOT recorded in `methods`. An
+// the method declarations member lookup can find -- every such method NOT
+// recorded in `methods`. An
 // interface's methods are ALL recorded as public by `is_recorded_method`
 // (the `kind == "interface"` short-circuit), so this list is always empty
 // for an interface, by construction rather than by a second check here.
@@ -42,7 +50,7 @@ pub(super) fn raw_non_public_method_names(node: Node, src: &[u8], kind: &str) ->
     };
     named_children(body)
         .into_iter()
-        .filter(|c| c.kind() == "method_declaration" && !is_recorded_method(*c, src, kind))
+        .filter(|c| is_lookup_method(*c) && !is_recorded_method(*c, src, kind))
         .map(|c| declared_name(c, src))
         .filter(|n| !n.is_empty())
         .collect()
@@ -218,7 +226,8 @@ fn method_param_descriptors(
 // a different grammar node (indexer_declaration) so they are excluded by
 // construction; expression-bodied properties are property_declaration like
 // any other, so they are included. No accessibility filter -- see
-// DefRecord::properties.
+// DefRecord::properties -- but an explicit interface implementation is left
+// out, so it can never claim the name ahead of the ordinary property.
 pub(super) fn raw_property_names(node: Node, src: &[u8]) -> Vec<String> {
     let Some(body) = node.child_by_field_name("body") else {
         return Vec::new();
@@ -226,7 +235,7 @@ pub(super) fn raw_property_names(node: Node, src: &[u8]) -> Vec<String> {
     let mut seen: HashSet<String> = HashSet::new();
     let mut names = Vec::new();
     for c in named_children(body) {
-        if c.kind() != "property_declaration" {
+        if c.kind() != "property_declaration" || is_explicit_implementation(c) {
             continue;
         }
         let name = declared_name(c, src);
@@ -254,7 +263,7 @@ pub(super) fn raw_property_types(
     let mut seen: HashSet<String> = HashSet::new();
     let mut pairs = Vec::new();
     for c in named_children(body) {
-        if c.kind() != "property_declaration" {
+        if c.kind() != "property_declaration" || is_explicit_implementation(c) {
             continue;
         }
         let name = declared_name(c, src);
