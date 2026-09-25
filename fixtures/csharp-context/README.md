@@ -32,8 +32,14 @@ by `tests/context_envelope.rs`, the same as `fixtures/csharp-context-fingerprint
 Every file above was also generated twice and diffed byte-identical before being committed, and
 regenerating from a different absolute checkout path reproduces the same bytes: no local path, no
 username, and no restore-generated `obj/*.nuget.g.props`/`.targets` content is folded into the
-envelope. `versions.sdk`/`versions.msbuild` are stamped from the SDK that generated the fixture and
-CI pins that same SDK patch exactly, so the committed bytes and a CI regeneration agree.
+envelope. `versions.sdk`/`versions.msbuild` are stamped from the SDK that generated the fixture, and
+reference identities (assembly MVIDs) are hashed from that SDK's install, so the install layout
+matters as much as the patch number. `context.json` and
+`fixtures/csharp-compiler-facts/compiler-facts.json`, the two snapshots CI regenerates, come from a
+9.0.305 install laid out the way CI's `dotnet-install` lays it out, selected through the same
+`global.json` pin CI writes: a macOS `.pkg` install of the same patch ships reference assemblies
+with different MVIDs. The other four files are only checked offline and keep the bytes they were
+generated with.
 
 ## Known gaps
 
