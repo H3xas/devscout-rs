@@ -78,6 +78,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   by a new fixture tree (`fixtures/csharp-target-qualification/`), a new composition script
   (`tools/qualify-dotnet-targets.py`) and a dotnet-free test
   (`tests/dotnet_target_qualification.rs`); no `src/*.rs` change.
+- **Ten more measured rows in `docs/dotnet-target-coverage.md`:** the .NET Framework 4.5, 4.5.2
+  and 4.6.1 reference-assembly profiles on the Framework track, and .NET Standard 1.0 through 1.6,
+  whose rows record the `NETStandard.Library` version and the number of packages their restore
+  resolved. Each compiles from its own single-target project and records the same boundary
+  non-bind (`CS1501`) as the other Framework and pre-2.1 Standard rows. None has a held-out row
+  yet; the document lists that gap. The coverage test's support-sentence sweep now matches whole
+  target monikers, so a measured target no longer masks, or trips on, a longer or shorter one that
+  is still unmeasured.
 - Offline extension-impact qualification harness reporting candidate-edge and complete-answer
   precision against compiler-reference evidence. It preserves production traversal and records
   failed admission gates without promoting evidence tiers.

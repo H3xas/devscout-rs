@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Compose per-profile capability rows for fixtures/csharp-target-qualification/.
 
-For each wave-1 row (profile, deep-case bundle or substitution-defect control) this
+For each row (profile, deep-case bundle or substitution-defect control) this
 script restores and builds its project(s), runs the existing tools/scout-semantic
 oracle over it, and writes a five-field capability row to
 fixtures/csharp-target-qualification/results/<row-id>.json. It is the only place in
@@ -41,8 +41,8 @@ ORACLE_PROJECT = REPO_ROOT / "tools" / "scout-semantic"
 
 SDK_VERSION = "9.0.305"
 
-# Profiles this SDK band and worker can execute today (see the Design's wave-1
-# boundary). Each tuple: (profile id, csproj path relative to TREE, tfm, track,
+# Profiles this SDK band and worker can execute today, each restorable from the pinned
+# packages alone. Each tuple: (profile id, csproj path relative to TREE, tfm, track,
 # boundary case expected to bind).
 MODERN_TRACK = "modern"
 FRAMEWORK_TRACK = "framework-f1"
@@ -53,10 +53,20 @@ PROFILE_ROWS = [
     ("csharp73-net7.0-sdkstyle", "profiles/net7.0-sdkstyle/Profile.csproj", "net7.0", MODERN_TRACK, True),
     ("csharp73-net8.0-sdkstyle", "profiles/net8.0-sdkstyle/Profile.csproj", "net8.0", MODERN_TRACK, True),
     ("csharp73-net9.0-sdkstyle", "profiles/net9.0-sdkstyle/Profile.csproj", "net9.0", MODERN_TRACK, True),
+    ("csharp73-netstandard1.0-sdkstyle", "profiles/netstandard1.0-sdkstyle/Profile.csproj", "netstandard1.0", MODERN_TRACK, False),
+    ("csharp73-netstandard1.1-sdkstyle", "profiles/netstandard1.1-sdkstyle/Profile.csproj", "netstandard1.1", MODERN_TRACK, False),
+    ("csharp73-netstandard1.2-sdkstyle", "profiles/netstandard1.2-sdkstyle/Profile.csproj", "netstandard1.2", MODERN_TRACK, False),
+    ("csharp73-netstandard1.3-sdkstyle", "profiles/netstandard1.3-sdkstyle/Profile.csproj", "netstandard1.3", MODERN_TRACK, False),
+    ("csharp73-netstandard1.4-sdkstyle", "profiles/netstandard1.4-sdkstyle/Profile.csproj", "netstandard1.4", MODERN_TRACK, False),
+    ("csharp73-netstandard1.5-sdkstyle", "profiles/netstandard1.5-sdkstyle/Profile.csproj", "netstandard1.5", MODERN_TRACK, False),
+    ("csharp73-netstandard1.6-sdkstyle", "profiles/netstandard1.6-sdkstyle/Profile.csproj", "netstandard1.6", MODERN_TRACK, False),
     ("csharp73-netstandard2.0-sdkstyle", "profiles/netstandard2.0-sdkstyle/Profile.csproj", "netstandard2.0", MODERN_TRACK, False),
     ("csharp73-netstandard2.1-sdkstyle", "profiles/netstandard2.1-sdkstyle/Profile.csproj", "netstandard2.1", MODERN_TRACK, True),
     ("csharp73-netcoreapp3.1-sdkstyle", "profiles/netcoreapp3.1-sdkstyle/Profile.csproj", "netcoreapp3.1", MODERN_TRACK, True),
     ("csharp73-net40-sdkstyle", "profiles/net40-sdkstyle/Profile.csproj", "net40", FRAMEWORK_TRACK, False),
+    ("csharp73-net45-sdkstyle", "profiles/net45-sdkstyle/Profile.csproj", "net45", FRAMEWORK_TRACK, False),
+    ("csharp73-net452-sdkstyle", "profiles/net452-sdkstyle/Profile.csproj", "net452", FRAMEWORK_TRACK, False),
+    ("csharp73-net461-sdkstyle", "profiles/net461-sdkstyle/Profile.csproj", "net461", FRAMEWORK_TRACK, False),
     ("csharp73-net472-sdkstyle", "profiles/net472-sdkstyle/Profile.csproj", "net472", FRAMEWORK_TRACK, False),
     ("csharp73-net48-sdkstyle", "profiles/net48-sdkstyle/Profile.csproj", "net48", FRAMEWORK_TRACK, False),
 ]
@@ -261,6 +271,27 @@ def _read_jsonl(path):
     return records
 
 
+def resolves_netstandard_library_graph(tfm):
+    """Below .NET Standard 2.0 the SDK references the NETStandard.Library package instead of a
+    targeting pack, so the reference surface is whatever package graph restore resolved."""
+    return tfm.startswith("netstandard1.")
+
+
+def netstandard_library_graph(csproj_rel):
+    """The NETStandard.Library version and the number of packages restore resolved, read from
+    the restore's own assets file, so a different resolved graph diffs the snapshot."""
+    assets = (TREE / csproj_rel).parent / "obj" / "project.assets.json"
+    libraries = {}
+    if assets.exists():
+        libraries = json.loads(assets.read_text(encoding="utf-8")).get("libraries", {})
+    packages = [key for key, entry in libraries.items() if entry.get("type") == "package"]
+    version = next(
+        (key.split("/", 1)[1] for key in packages if key.split("/", 1)[0].lower() == "netstandard.library"),
+        "unresolved",
+    )
+    return f"netstandard.library@{version}", len(packages)
+
+
 def compose_profile_row(profile_id, csproj_rel, tfm, track, bind_expected, out_dir, no_restore):
     restore_code, restore_out, build_code, build_out = restore_and_build(csproj_rel, no_restore)
     oracle_code, oracle_log, units, refs, defs = run_oracle(csproj_rel, tfm, out_dir)
@@ -282,6 +313,10 @@ def compose_profile_row(profile_id, csproj_rel, tfm, track, bind_expected, out_d
         "expected_documents": ["PositiveCase.cs", "BoundaryCase.cs"],
         "loaded_documents": sorted(unit["files"]) if unit else [],
     }
+    if resolves_netstandard_library_graph(tfm):
+        reference_source, package_count = netstandard_library_graph(csproj_rel)
+        context_acquisition["reference_source"] = reference_source
+        context_acquisition["resolved_package_count"] = package_count
     semantic_conformance = {
         "state": "passing" if positive_bound else "failing",
         "positive_case_bound": positive_bound,
