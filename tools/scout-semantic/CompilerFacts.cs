@@ -307,11 +307,7 @@ internal static class CompilerFactsEmitter
             .ThenBy(s => s.Member, StringComparer.Ordinal)
             .ThenBy(s => s.OverloadSignature, StringComparer.Ordinal)
             .ToList();
-        var diagnostics = acc.Diagnostics
-            .OrderBy(d => d.File, StringComparer.Ordinal)
-            .ThenBy(d => d.Line)
-            .ThenBy(d => d.Code, StringComparer.Ordinal)
-            .ToList();
+        var diagnostics = CompilerDiagnosticOrder.Sorted(acc.Diagnostics);
         var processed = acc.Processed.OrderBy(u => u, StringComparer.Ordinal).ToList();
         var missing = acc.Missing.OrderBy(u => u, StringComparer.Ordinal).ToList();
         var incomplete = acc.Incomplete.OrderBy(u => u.Unit, StringComparer.Ordinal).ToList();
