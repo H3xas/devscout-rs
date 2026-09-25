@@ -141,6 +141,7 @@ jobs:
           # every fingerprint, so a floating `9.0.3xx` band could resolve to a
           # newer patch on the runner and diff the committed snapshot on SDK
           # servicing alone, unrelated to any change this repository made.
+          # Installing it only makes it available; the pin step below selects it.
           dotnet-version: 9.0.305
 
       - uses: actions/setup-dotnet@v4
@@ -149,6 +150,19 @@ jobs:
           # rollForward disabled, independent of the floating band above, so
           # its restore/build is reproducible even if the band's latest patch moves.
           dotnet-version: 9.0.305
+
+      # The runner image already carries newer SDKs (a 10.0 band among them), and
+      # with no global.json in reach the host selects the highest one installed,
+      # which moves every recorded SDK/MSBuild version, reference identity and
+      # fingerprint off the committed snapshots. The host searches for global.json
+      # upward from the working directory, so a pin in the checkout's parent
+      # directory holds for every step run from the checkout while leaving the
+      # working tree clean for the oracle's git-state provenance. The
+      # qualification tree and its net10.0 row keep their own, closer pins.
+      - name: Pin the .NET SDK for steps run from the checkout
+        run: |
+          printf '{"sdk": {"version": "9.0.305", "rollForward": "disable"}}\n' > "$GITHUB_WORKSPACE/../global.json"
+          test "$(dotnet --version)" = 9.0.305
 
       - uses: actions/cache@v4
         with:
@@ -344,9 +358,9 @@ jobs:
           ./target/release/devscout -C "$RUNNER_TEMP/direction-repo" audit --semantic "$PWD/out/direction/refs.jsonl" --units "$PWD/out/direction/units.jsonl" --assert "$PWD/fixtures/csharp-direction/expected.json"
 
       # The net10.0 qualification row pins its own SDK band in a global.json beside its
-      # project. Installed only here, after every other .NET step: with no repository-root
-      # global.json, a root holding both bands resolves the higher one, which would move
-      # every earlier step and the snapshots it diffs onto the 10.0 band.
+      # project. Installed only here, after every other .NET step; the earlier steps
+      # resolve the parent-directory pin above either way, so this install cannot move
+      # them or the snapshots they diff onto the 10.0 band.
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.302
