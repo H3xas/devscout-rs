@@ -3,7 +3,7 @@
 // (read-only). `run` and `import` converge on the identical
 // `graph::admit_and_publish` call -- the concrete mechanism behind one
 // admission path for both producers. `status` never opens `graph.json` and
-// is not a query verb; it is the one place this ticket's own
+// is not a query verb; it is the one place the artifact's own
 // engine-informed-vs-syntax-only state is reported.
 
 use std::fs;

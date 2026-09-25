@@ -13,8 +13,7 @@ namespace ScoutSemanticTests;
 /// (two <c>System.Text.Json</c> serializer contexts) ever reports a
 /// diagnostic of its own, so <c>generated.diagnostics</c> is <c>[]</c> in
 /// every committed envelope and a defect in the attribution path would be
-/// invisible to every other gate -- this is the positive exercise the
-/// ticket's round-2 review (M2) asked for.
+/// invisible to every other gate -- this is its only positive check.
 /// </summary>
 public sealed class GeneratedDiagnosticsTests
 {

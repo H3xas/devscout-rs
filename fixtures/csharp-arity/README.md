@@ -2,8 +2,8 @@
 
 Each row below is one file `tests/cli_type_arity.rs` draws on. Case notes live
 here, never as a narrative header inside the fixture source. Only the files
-below are documented here; the directory's other fixtures back tests outside
-this ticket's authority.
+below are documented here; the directory's other fixtures back other
+test files.
 
 | File | What it exercises |
 | --- | --- |

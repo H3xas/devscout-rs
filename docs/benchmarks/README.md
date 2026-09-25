@@ -58,3 +58,7 @@ in the loop, against the pinned MassTransit corpus. It reports this tool losing 
 tasks to a skilled `rg` baseline and never breaking even on setup cost, because that is what it
 measured. The agentic (model-in-the-loop) round is now appended to that same file — preliminary, one run
 per cell, with its integrity caveats leading.
+
+The same eight scripted tasks were rerun on the 0.7.0 release tree, beside a resolver-precision
+audit of that tree, in [`results/2026-09-25-release-0.7.0.md`](results/2026-09-25-release-0.7.0.md),
+with predictions registered first.

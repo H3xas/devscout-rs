@@ -134,7 +134,7 @@ public class Host
     // of the SAME method (a foreach-derived local in one arm, an
     // explicit local in the other): the flat member table collapses both
     // to the same taken-but-unknown slot -- the ordinary `add_fact`
-    // conflict rule, unchanged by this ticket -- with no fall-through to
+    // conflict rule, unchanged here -- with no fall-through to
     // the enclosing field of the same name.
     assert_eq!(member_facts(&e), vec![("Go", None), ("Go", None)]);
 }
@@ -142,7 +142,7 @@ public class Host
 #[test]
 fn ds0011_a_destructuring_foreach_variable_is_left_alone() {
     // `foreach (var (a, b) in pairs)` has no single name for the element
-    // fact to name -- deliberately outside this ticket's scope, and its
+    // fact to name -- deliberately left without a fact, and its
     // absence must not disturb an ordinary sibling declaration's own fact.
     let e = extract_src(
         r#"

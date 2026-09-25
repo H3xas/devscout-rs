@@ -8,8 +8,8 @@ namespace ScoutSemanticTests;
 
 /// <summary>
 /// Exercises <c>CompilerFactsEmitter.Render</c>'s <c>sourceSnapshot</c> block directly
-/// (unit-level, no fixture run and no real git checkout needed): the Design's "freshness
-/// has two legs" decision requires <c>dirty</c>/<c>dirtyDigest</c> to adopt the exact
+/// (unit-level, no fixture run and no real git checkout needed): freshness has two
+/// legs, which requires <c>dirty</c>/<c>dirtyDigest</c> to adopt the exact
 /// convention <see cref="GitIdentity"/> already carries for the flow-tracer document,
 /// rather than a second, <c>headSha</c>-only scheme that is blind to an uncommitted edit.
 /// </summary>

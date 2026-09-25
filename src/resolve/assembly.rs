@@ -211,7 +211,7 @@ pub fn resolve_graph_with_model(
                 // treating a `base.` ref as an ordinary receiver fact: falling
                 // through to them would let the enclosing type's OWN
                 // `receiver_type` reintroduce the exact self-edge this rule
-                // forbids, or let the scored tier guess where the design
+                // forbids, or let the scored tier guess where the rule
                 // requires silent external.
                 //
                 // A CHAIN TAIL carrying the bit (`base.Make().Validate()`,

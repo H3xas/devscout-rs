@@ -355,7 +355,7 @@ internal static class CompilerFactsEmitter
 
             if (git is not null)
             {
-                // Two freshness legs, per the Design's own "dirty state" decision: `headSha`
+                // Two freshness legs, because a snapshot has a dirty state too: `headSha`
                 // alone is blind to an uncommitted edit, so `dirty`/`dirtyDigest` adopt the
                 // exact convention `FactsWriter.Render` already writes for the flow-tracer
                 // document -- the same `GitIdentity`, the same fields, no second scheme.

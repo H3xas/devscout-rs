@@ -42,10 +42,10 @@ fn stage4_byte_identity_dropping_the_heuristic_edges_reproduces_the_pre_stage4_e
     );
 }
 
-// Stage 6 adds a project model the resolver may consult; a repo that
+// The project model is something the resolver may consult; a repo that
 // declares no `.csproj` has none, and for such a repo the WHOLE artifact
 // -- not just the edge array -- must serialize exactly as it did before
-// stage 6 existed. Whole-graph bytes rather than a spot check on `units`:
+// the project model existed. Whole-graph bytes rather than a spot check on `units`:
 // an omitted key is only half the guarantee, the other half is that
 // threading the model through moved nothing else.
 #[test]
@@ -68,7 +68,7 @@ fn stage6_without_a_project_model_the_byte_identity_fixture_serializes_exactly_a
     );
 }
 
-// --- stage 6: the admission gate on the two heuristic tiers -----------
+// --- The admission gate on the two heuristic tiers --------------------
 //
 // A heuristic tier guesses from NAMES; the project model is the one fact
 // that can disprove such a guess structurally -- a def the site's assembly

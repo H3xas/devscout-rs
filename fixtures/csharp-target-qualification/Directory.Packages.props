@@ -3,11 +3,13 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
   <ItemGroup>
-    <!-- Framework reference-assembly packages: current at 1.0.3 for every companion
-         used here as of 2026-09-17, matching the version the compatibility research
-         demonstrated for net472. -->
+    <!-- Framework reference-assembly packages: every companion used here is pinned at
+         1.0.3, the version the compatibility research demonstrated for net472. -->
     <PackageVersion Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" />
     <PackageVersion Include="Microsoft.NETFramework.ReferenceAssemblies.net40" Version="1.0.3" />
+    <PackageVersion Include="Microsoft.NETFramework.ReferenceAssemblies.net45" Version="1.0.3" />
+    <PackageVersion Include="Microsoft.NETFramework.ReferenceAssemblies.net452" Version="1.0.3" />
+    <PackageVersion Include="Microsoft.NETFramework.ReferenceAssemblies.net461" Version="1.0.3" />
     <PackageVersion Include="Microsoft.NETFramework.ReferenceAssemblies.net472" Version="1.0.3" />
     <PackageVersion Include="Microsoft.NETFramework.ReferenceAssemblies.net48" Version="1.0.3" />
     <!-- The minimal generated-input deep case: an analyzer-role reference already

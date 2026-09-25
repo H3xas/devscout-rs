@@ -49,7 +49,7 @@ internal sealed class ProjectInventory
 /// never the ambient one <c>MSBuildWorkspace</c> uses -- so a project or
 /// document Roslyn's own load silently drops is still reportable. A leaf
 /// module: nothing in <see cref="Walker"/> or <c>FactsWalker</c> calls into
-/// it, so the oracle and fact walk this ticket must leave byte-identical
+/// it, so the oracle and fact walk, whose output must stay byte-identical,
 /// stay untouched by construction.
 /// </summary>
 internal static class ContextInventory
@@ -113,7 +113,7 @@ internal static class ContextInventory
     /// Evaluates one project through <paramref name="collection"/> -- a fresh
     /// collection the caller owns and disposes, distinct from
     /// <c>MSBuildWorkspace</c>'s ambient one -- and reads the properties and
-    /// items this ticket's context report needs.
+    /// items the context report needs.
     /// </summary>
     public static ProjectInventory Evaluate(
         ProjectCollection collection,

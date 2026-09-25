@@ -63,8 +63,8 @@ type reads the same way everywhere in one artifact.
 This snapshot's diff from the pre-occurrence-facts snapshot is exactly: the new
 `Callers.cs`/`Other.cs`-derived `symbols`/`diagnostics` growth, the new top-level `occurrences` key,
 the real embedded `context.envelope` (replacing a frozen placeholder), and the two header literals
-`artifactSchemaVersion`/`producer.engineRevision` this delta deliberately moves -- reviewed as part
-of this change, not assumed clean by precedent.
+`artifactSchemaVersion`/`producer.engineRevision` this delta deliberately moves -- each checked
+field by field, not assumed clean by precedent.
 
 Regenerate with (from the repository root, after `dotnet build tools/scout-semantic -c Release`):
 

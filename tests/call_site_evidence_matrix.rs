@@ -110,7 +110,7 @@ fn export_path() -> PathBuf {
 // ORDER via a `BTreeMap` at the top level only -- the per-answer bytes below
 // that are untouched, still hand-built by `query::json`) and re-serialized
 // with two-space indentation for a reviewable diff. Not a `devscout` output
-// format of its own -- an evidence bundle this ticket's own tests build.
+// format of its own -- an evidence bundle these tests build.
 fn build_export(fx: &Fixture) -> String {
     let mut bundle: BTreeMap<&str, serde_json::Value> = BTreeMap::new();
     for query in ["Record", "RecordAsync", "Recurse"] {

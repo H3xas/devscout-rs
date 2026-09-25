@@ -1,0 +1,42 @@
+{
+  "context_acquisition": {
+    "build_exit_code": 1,
+    "expected_documents": [
+      "PositiveCase.cs",
+      "BoundaryCase.cs"
+    ],
+    "loaded_documents": [
+      "shared/BoundaryCase.cs",
+      "shared/PositiveCase.cs"
+    ],
+    "project_format": "sdk-style",
+    "reference_source": "microsoft.netframework.referenceassemblies@1.0.3",
+    "restore_exit_code": 0,
+    "sdk": "9.0.305",
+    "sdk_pin": "9.0.305",
+    "state": "passing"
+  },
+  "execution_assumptions": {
+    "state": "static-only"
+  },
+  "framework_modeling": {
+    "reason": "no framework adapter is exercised by the wave-1 case source",
+    "state": "not-claimed"
+  },
+  "kind": "profile",
+  "profile_id": "csharp73-net461-sdkstyle",
+  "semantic_conformance": {
+    "boundary_case_bind_expected": false,
+    "boundary_case_bind_observed": false,
+    "boundary_case_matches_expectation": true,
+    "build_diagnostic_excerpt": "<repo>/fixtures/csharp-target-qualification/shared/BoundaryCase.cs(15,29): error CS1501: No overload for method 'Contains' takes 2 arguments [<repo>/fixtures/csharp-target-qualification/profiles/net461-sdkstyle/Profile.csproj]",
+    "positive_case_bound": true,
+    "state": "passing"
+  },
+  "tfm": "net461",
+  "track": "framework-f1",
+  "unsupported_state": {
+    "reason": "target-API surface qualified from its own compilation context",
+    "state": "passing"
+  }
+}

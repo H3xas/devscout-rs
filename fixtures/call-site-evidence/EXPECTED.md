@@ -28,15 +28,15 @@ Totals expected on `refs Record --json`'s `uses-member` inbound table: **6 rows*
 rows (the awaited-sequence pair plus the parallel-launch-join pair). `Recurse` answers its own
 `refs Recurse` query with its own 1 row (line 64).
 
-**Recorded gap, not a witness of this ticket's own change:** an EARLIER draft of the recursion
+**Recorded gap, not a witness of the `occurrenceIndex` change:** an EARLIER draft of the recursion
 case called `Recurse(depth - 1)` unqualified (no `this.`). Running the audited surfaces against
 that draft, before any other change, showed `refs Recurse --json` answering zero rows -- an
 unqualified same-type call has no member-access expression for the extractor to build a reference
 from at all, so it is invisible to every native surface, not merely uncounted. This is a genuine,
 confirmed capability gap (recorded in the capability matrix as an explicit gap on the "caller
 identity"/"invocation source range" columns for the unqualified-self-call shape) and is NOT
-addressed by this ticket: closing it would mean extending `src/extract.rs`'s reference-extraction
-rules, which the implementation plan's own occurrence-identity decision explicitly keeps out of
+addressed here: closing it would mean extending `src/extract.rs`'s reference-extraction
+rules, which the occurrence-identity work explicitly keeps out of
 scope. The fixture's recursion case uses `this.Recurse(...)` so it exercises what native devscout
 already establishes, the same as every other case here; the unqualified-call gap is cited in the
 matrix from this note, not re-demonstrated by a second, uncaptured case.
@@ -45,8 +45,7 @@ The line-40 pair is the one genuine serialization collision this fixture demonst
 `uses-member` edges with identical `(file, line, to, heuristic)` before `occurrenceIndex` existed.
 Every other row above is already distinguished by line, so it round-trips correctly on unmodified
 `main` -- the audit's own attribution step (`tests/call_site_evidence.rs`) proves this by running
-the fixture against unmodified `main` before Stage 4's change is authored, per the ticket's Design
-Order line.
+the fixture against unmodified `main` before the `occurrenceIndex` change is applied.
 
 No control-flow, await-ordering or dispatch-target claim is asserted for any site above beyond
 "this line calls this member": devscout's native surface models none of that, and the negative
