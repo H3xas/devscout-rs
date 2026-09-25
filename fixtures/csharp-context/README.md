@@ -37,20 +37,19 @@ CI pins that same SDK patch exactly, so the committed bytes and a CI regeneratio
 
 ## Known gaps
 
-- **`net472` evaluation.** `Legacy`'s `net472` variant compiles fine through Roslyn's own
-  out-of-process BuildHost (using `Microsoft.NETFramework.ReferenceAssemblies`), but this
-  fixture's independent, in-process `ContextInventory` evaluation of that same variant throws
-  inside MSBuild's `FrameworkLocationHelper` on this machine (and, believed but not separately
-  verified, any non-Windows CI runner) -- classic .NET Framework GAC/registry resolution has no
-  non-Windows equivalent. The record still reports the compiler-diagnostic-driven `partial`/
-  `binding-error` state correctly (that comes from Roslyn's own diagnostics, not the independent
-  inventory), but the independent document-inventory diff is unavailable for that one variant, and
-  the record says so explicitly: `documents.inventoryAvailable` reads `false` even though a
-  compiler diagnostic already demotes this record to `partial`/`binding-error` on its own, and
-  `configuration`/`platform` stay `null`. See
-  `tools/scout-semantic/README.md#build-context-envelope` for the general rule this is one instance
-  of: a compilation whose independent inventory failed is never reported `complete` by falling back
-  to "nothing was missing".
+- **`net472` evaluation.** `Legacy`'s `net472` variant compiles through Roslyn's own
+  out-of-process BuildHost (using `Microsoft.NETFramework.ReferenceAssemblies`), and this
+  fixture's independent, in-process `ContextInventory` evaluation of that same variant succeeds on
+  non-Windows machines too, so its document inventory is available: `documents.inventoryAvailable`
+  reads `true` and `configuration`/`platform` read `Debug`/`AnyCPU`. That evaluation used to throw
+  inside the type initializer of MSBuild's `FrameworkLocationHelper`. The cause was not missing
+  .NET Framework GAC/registry resolution: it was an older copy of an MSBuild library the tool
+  shipped alongside itself, which the SDK's newer MSBuild loaded in place of its own. The tool now
+  ships none, so the SDK supplies every MSBuild assembly. The record stays `partial`/
+  `binding-error` through its own compiler diagnostic, which comes from Roslyn, not from the
+  independent inventory. See `tools/scout-semantic/README.md#build-context-envelope` for the
+  general rule on a compilation whose independent inventory fails: it is never reported `complete`
+  by falling back to "nothing was missing".
 - The fingerprint's mutation-class matrix and the four-way multi-target/multi-configuration
   identity round trip both moved to a dedicated fixture, `fixtures/csharp-context-fingerprint/`
   (its own `README.md`), so that evidence no longer has to fit this fixture's own three engineered
