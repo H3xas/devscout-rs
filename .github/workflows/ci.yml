@@ -196,11 +196,11 @@ jobs:
 
       # The offline-restore tests create and build projects under the temp
       # directory, so it has to sit under the pinned parent for those builds to
-      # resolve the same SDK as the oracle.
+      # resolve the same SDK as the oracle. It is spelled without `..` because
+      # the tests compare the paths they build under it with resolved ones.
       - name: Context schema unit tests
-        env:
-          TMPDIR: ${{ github.workspace }}/../tmp
-        run: dotnet test tools/scout-semantic.Tests --no-restore -c Release
+        run: |
+          TMPDIR="$(dirname "$GITHUB_WORKSPACE")/tmp" dotnet test tools/scout-semantic.Tests --no-restore -c Release
 
       - name: Run oracle on the fixture solution
         run: |
