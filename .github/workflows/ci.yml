@@ -123,7 +123,7 @@ jobs:
       - name: Install stable Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -164,7 +164,7 @@ jobs:
           printf '{"sdk": {"version": "9.0.305", "rollForward": "disable"}}\n' > "$GITHUB_WORKSPACE/../global.json"
           test "$(dotnet --version)" = 9.0.305
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.nuget/packages
           key: ${{ runner.os }}-nuget-${{ hashFiles('tools/scout-semantic/packages.lock.json', 'tools/scout-semantic.Tests/packages.lock.json', 'fixtures/csharp-semantic/Directory.Packages.props', 'fixtures/csharp-target-qualification/Directory.Packages.props') }}
