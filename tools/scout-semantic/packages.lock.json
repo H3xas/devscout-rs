@@ -2,6 +2,32 @@
   "version": 1,
   "dependencies": {
     "net9.0": {
+      "Microsoft.Build": {
+        "type": "Direct",
+        "requested": "[17.7.2, )",
+        "resolved": "17.7.2",
+        "contentHash": "AmWnumxsMiRycFfE3kq/XnFFTAoPpCWl3UuiKQWCa5Z0+hBKVoiydzS2iXJGd3x+jry+qaTR9GzoezjV9NFT5A==",
+        "dependencies": {
+          "Microsoft.Build.Framework": "17.7.2",
+          "Microsoft.NET.StringTools": "17.7.2",
+          "System.Collections.Immutable": "7.0.0",
+          "System.Configuration.ConfigurationManager": "7.0.0",
+          "System.Reflection.Metadata": "7.0.0",
+          "System.Reflection.MetadataLoadContext": "7.0.0",
+          "System.Security.Permissions": "7.0.0",
+          "System.Text.Json": "7.0.0",
+          "System.Threading.Tasks.Dataflow": "7.0.0"
+        }
+      },
+      "Microsoft.Build.Framework": {
+        "type": "Direct",
+        "requested": "[17.7.2, )",
+        "resolved": "17.7.2",
+        "contentHash": "F+SglYQv6ij5RK4Bmd1X4q01E2ry4M8/huTIZ/1Vk7ZoxdT2J3vmV23cnJZsA/ZLunOTv3B905TU5J1eFmWNPw==",
+        "dependencies": {
+          "System.Security.Permissions": "7.0.0"
+        }
+      },
       "Microsoft.Build.Locator": {
         "type": "Direct",
         "requested": "[1.9.1, )",
@@ -67,30 +93,6 @@
         "type": "Transitive",
         "resolved": "2.14.1",
         "contentHash": "lQKvtaTDOXnoVJ20ibTuSIOf2i0uO0MPbDhd1jm238I+U/2ZnRENj0cktKZhtchBMtCUSRQ5v4xBCUbKNmyVMw=="
-      },
-      "Microsoft.Build": {
-        "type": "Transitive",
-        "resolved": "17.7.2",
-        "contentHash": "AmWnumxsMiRycFfE3kq/XnFFTAoPpCWl3UuiKQWCa5Z0+hBKVoiydzS2iXJGd3x+jry+qaTR9GzoezjV9NFT5A==",
-        "dependencies": {
-          "Microsoft.Build.Framework": "17.7.2",
-          "Microsoft.NET.StringTools": "17.7.2",
-          "System.Collections.Immutable": "7.0.0",
-          "System.Configuration.ConfigurationManager": "7.0.0",
-          "System.Reflection.Metadata": "7.0.0",
-          "System.Reflection.MetadataLoadContext": "7.0.0",
-          "System.Security.Permissions": "7.0.0",
-          "System.Text.Json": "7.0.0",
-          "System.Threading.Tasks.Dataflow": "7.0.0"
-        }
-      },
-      "Microsoft.Build.Framework": {
-        "type": "Transitive",
-        "resolved": "17.7.2",
-        "contentHash": "F+SglYQv6ij5RK4Bmd1X4q01E2ry4M8/huTIZ/1Vk7ZoxdT2J3vmV23cnJZsA/ZLunOTv3B905TU5J1eFmWNPw==",
-        "dependencies": {
-          "System.Security.Permissions": "7.0.0"
-        }
       },
       "Microsoft.Build.Tasks.Core": {
         "type": "Transitive",

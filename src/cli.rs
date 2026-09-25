@@ -12,6 +12,7 @@
 mod admin;
 mod answer;
 mod args;
+mod compiler_facts;
 mod coverage;
 mod dispatch;
 mod find;

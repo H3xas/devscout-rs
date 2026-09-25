@@ -86,14 +86,20 @@ impl Fixture {
     }
 
     fn run(&self, args: &[&str]) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_devscout"))
-            .args(args)
+        self.run_env(args, &[])
+    }
+
+    fn run_env(&self, args: &[&str], env: &[(&str, &str)]) -> Output {
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_devscout"));
+        cmd.args(args)
             .current_dir(&self.repo)
             .env("HOME", &self.home)
             .env("SCOUT_REGISTRY", self.home.join("repos.json"))
-            .env("SCOUT_CONTENT_DB", self.home.join("content.db"))
-            .output()
-            .expect("devscout must run")
+            .env("SCOUT_CONTENT_DB", self.home.join("content.db"));
+        for (k, v) in env {
+            cmd.env(k, v);
+        }
+        cmd.output().expect("devscout must run")
     }
 }
 
@@ -130,9 +136,9 @@ fn audit_scores_the_fixture_against_the_committed_oracle_snapshot() {
     let stdout = stdout_of(&out);
     let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("valid JSON");
 
-    assert_eq!(v["tiers"]["precise"]["tp"], 29, "{stdout}");
+    assert_eq!(v["tiers"]["precise"]["tp"], 36, "{stdout}");
     assert_eq!(v["tiers"]["precise"]["fp"], 0, "{stdout}");
-    assert_eq!(v["tiers"]["ext"]["tp"], 3, "{stdout}");
+    assert_eq!(v["tiers"]["ext"]["tp"], 6, "{stdout}");
     assert_eq!(v["tiers"]["ext"]["fp"], 0, "{stdout}");
     assert_eq!(v["tiers"]["guess"]["tp"], 4, "{stdout}");
     assert_eq!(v["tiers"]["guess"]["fp"], 0, "{stdout}");
@@ -236,5 +242,94 @@ fn audit_assert_passes_the_fixture_thresholds_and_fails_a_violated_one() {
     assert!(
         parsed.get("tiers").is_some(),
         "and it is the report object, not a fragment: {json_stdout}"
+    );
+}
+
+/// Asking for the row file leaves the report itself alone: a caller that
+/// reads stdout sees the same bytes whether or not the rows were written.
+#[test]
+fn writing_the_false_positive_rows_leaves_both_report_formats_byte_identical() {
+    let fx = Fixture::build("fprows");
+    let refs = refs_path();
+    let units = units_path();
+    let rows = fx.repo.join("rows.jsonl");
+    for extra in [None, Some(rows.to_str().unwrap())] {
+        for format in [vec![], vec!["--json"]] {
+            let mut args = vec![
+                "audit",
+                "--semantic",
+                refs.to_str().unwrap(),
+                "--units",
+                units.to_str().unwrap(),
+            ];
+            args.extend(format.iter().copied());
+            if let Some(path) = extra {
+                args.extend(["--fp-sites", path]);
+            }
+            let out = fx.run(&args);
+            assert!(out.status.success(), "audit failed: {out:?}");
+            let baseline = fx.repo.join(if format.is_empty() {
+                "baseline.txt"
+            } else {
+                "baseline.json"
+            });
+            let stdout = stdout_of(&out);
+            if extra.is_none() {
+                fs::write(&baseline, &stdout).expect("record the baseline report");
+            } else {
+                let before = fs::read_to_string(&baseline).expect("read the baseline report");
+                assert_eq!(before, stdout, "the row file changed the report");
+            }
+        }
+    }
+    assert!(rows.is_file(), "the row file must be written");
+    let written = fs::read_to_string(&rows).expect("read the rows");
+    assert!(
+        written.is_empty(),
+        "the fixture scores no false positive, so it has no rows: {written}"
+    );
+}
+
+/// The emission record is an observation, never an input: a graph built with
+/// it switched on is byte-for-byte the graph built without it, and the record
+/// accounts for every `uses-member` edge that graph carries.
+#[test]
+fn recording_edge_provenance_does_not_change_the_graph_it_records() {
+    let fx = Fixture::build("provenance");
+    let graph = fx.repo.join(".scout/graph/graph.json");
+    let unobserved = fs::read(&graph).expect("read the mapped graph");
+
+    // A fresh graph short-circuits `map`, so the resolver would never run.
+    fs::remove_file(&graph).expect("drop the graph so the remap resolves");
+    let record = fx.repo.join("provenance.jsonl");
+    let remap = fx.run_env(
+        &["map", "src", "tests"],
+        &[("SCOUT_EDGE_PROVENANCE", record.to_str().unwrap())],
+    );
+    assert!(remap.status.success(), "map failed: {remap:?}");
+    assert_eq!(
+        unobserved,
+        fs::read(&graph).expect("read the observed graph"),
+        "recording provenance changed the graph"
+    );
+
+    let rows = fs::read_to_string(&record).expect("read the provenance record");
+    let parsed: Vec<serde_json::Value> = rows
+        .lines()
+        .map(|l| serde_json::from_str(l).expect("each row is valid JSON"))
+        .collect();
+    let graph_value: serde_json::Value =
+        serde_json::from_slice(&unobserved).expect("the graph is valid JSON");
+    let uses_member = graph_value["edges"]
+        .as_array()
+        .expect("edges is an array")
+        .iter()
+        .filter(|e| e["kind"] == "uses-member")
+        .count();
+    assert!(uses_member > 0, "the fixture must carry uses-member edges");
+    assert_eq!(parsed.len(), uses_member, "one row per uses-member edge");
+    assert!(
+        parsed.iter().all(|r| r["step"].is_string()),
+        "every edge must name the arm that emitted it: {rows}"
     );
 }

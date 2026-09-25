@@ -105,7 +105,7 @@ pub(crate) fn cmd_find(cwd: &Path, query_str: &str, resources: bool) -> (i32, St
                 decl_lines,
                 r,
             );
-            finish_query(&root, "find", query_str, start, answer)
+            finish_query(&root, "find", query_str, start, false, answer)
         }
         Err(e) => (1, format!("error: {e}")),
     }

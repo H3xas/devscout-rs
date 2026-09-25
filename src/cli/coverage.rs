@@ -81,5 +81,5 @@ pub(crate) fn cmd_tests(cwd: &Path, args: &[String]) -> (i32, String) {
             (0, out, query::Outcome::Hit, count)
         }
     };
-    finish_query(&root, "tests", q, start, answer)
+    finish_query(&root, "tests", q, start, json, answer)
 }

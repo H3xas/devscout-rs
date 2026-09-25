@@ -272,3 +272,80 @@ fn a_root_alias_resolves_for_a_file_with_no_nested_tsconfig() {
         calls
     );
 }
+
+// A `System.Nullable<T>` receiver's own CLR unwrap (`Entry? found;
+// found.Value`) must never bind the struct's OWN same-named member, however
+// loudly `Entry` declares one. C#, not TS/TSX, and self-contained rather
+// than built on this file's `Fixture`/`copy_tree` helpers above: a
+// nullable-unwrap fixture needs no tsconfig chain, no barrel, and no JSX.
+// The fixture types `Entry.Value` as `Entry` rather than a predefined type
+// because the property-owner hop that keeps `.Page` resolving after `.Value`
+// reads `Value`'s own declared type, and a predefined-typed property carries
+// no such fact.
+#[test]
+fn a_nullable_value_type_receiver_never_binds_the_underlying_types_own_value_member() {
+    let base = temp_dir("nullable-unwrap");
+    let repo = base.join("repo");
+    let home = base.join("home");
+    fs::create_dir_all(&home).expect("create home dir");
+    fs::create_dir_all(&repo).expect("create repo dir");
+    fs::copy(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/csharp-nullable-unwrap/Entry.cs"),
+        repo.join("Entry.cs"),
+    )
+    .expect("copy fixture file");
+
+    let run = |args: &[&str]| -> Output {
+        Command::new(env!("CARGO_BIN_EXE_devscout"))
+            .args(args)
+            .current_dir(&repo)
+            .env("HOME", &home)
+            .env("SCOUT_REGISTRY", home.join("repos.json"))
+            .env("SCOUT_CONTENT_DB", home.join("content.db"))
+            .output()
+            .expect("devscout must run")
+    };
+    let out = run(&["init", "--no-hooks"]);
+    assert!(
+        out.status.success(),
+        "devscout init failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let graph: Value = serde_json::from_str(
+        &fs::read_to_string(repo.join(".scout/graph/graph.json")).expect("graph.json must exist"),
+    )
+    .expect("graph.json is valid JSON");
+    let member_edges: Vec<&Value> = edges(&graph)
+        .iter()
+        .filter(|e| e["kind"] == "uses-member" && e["from_file"] == "Entry.cs")
+        .collect();
+
+    // `found.Value.Page` (line 16): the first `.Value` window is the CLR's
+    // own `Nullable<Entry>.Value` unwrap and must stay fully external --
+    // never bound to the struct's own same-named `Value` property.
+    assert!(
+        !member_edges
+            .iter()
+            .any(|e| e["from_line"] == 16 && e["member"] == "Value"),
+        "the nullable unwrap's own .Value must not bind Entry's own Value property: {member_edges:#?}"
+    );
+    // The window after the unwrap keeps resolving precisely -- only the
+    // unwrap itself is refused, not the rest of the chain.
+    assert!(
+        member_edges
+            .iter()
+            .any(|e| e["from_line"] == 16 && e["member"] == "Page" && e["heuristic"].is_null()),
+        "the member after the unwrap must still resolve precisely to Entry.Page: {member_edges:#?}"
+    );
+    // `present.Value` (line 23): a NON-nullable receiver's own `Value`
+    // property must keep its ordinary precise edge -- the guard that the
+    // veto is scoped to a nullable-annotated receiver, not every struct
+    // that happens to declare a member named `Value`.
+    assert!(
+        member_edges
+            .iter()
+            .any(|e| e["from_line"] == 23 && e["member"] == "Value" && e["heuristic"].is_null()),
+        "a non-nullable receiver's own Value member must still resolve precisely: {member_edges:#?}"
+    );
+}

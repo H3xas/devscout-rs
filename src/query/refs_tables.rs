@@ -91,7 +91,9 @@ pub(super) fn row_tier(heuristic: bool, ext_seen: bool) -> Option<graph::Heurist
 /// One inbound-table row: `file` and `line` of the referencing site, then
 /// `heuristic` (whether the edge was guessed), `tier` (which guess tier said
 /// so) and `source` (the trimmed referencing line). An empty `source` is
-/// omitted from `--json`.
+/// omitted from `--json`. `occurrence_index` distinguishes two rows that would
+/// otherwise be equal on every other field (see the `occurrence` module);
+/// it is `None` on every row outside such a collision.
 #[derive(Debug, Clone, PartialEq)]
 pub struct InboundRow {
     /// The file value.
@@ -105,6 +107,12 @@ pub struct InboundRow {
     pub tier: Option<graph::HeuristicTier>,
     /// The source value.
     pub source: String,
+    /// A 0-based position among rows of this same table that are otherwise
+    /// identical, assigned in the table's existing stable emission order;
+    /// `None` for a row with no such collision. Scoped to one table of one
+    /// answer against one graph snapshot -- never a cross-query or
+    /// cross-snapshot identity. See the `occurrence` module.
+    pub occurrence_index: Option<usize>,
 }
 
 /// One outbound-table row: `file`/`line` of the referencing site, `to_file`/`to`
@@ -129,6 +137,8 @@ pub struct OutboundRow {
     pub tier: Option<graph::HeuristicTier>,
     /// The source value.
     pub source: String,
+    /// Same rule as [`InboundRow::occurrence_index`], scoped to this table.
+    pub occurrence_index: Option<usize>,
 }
 
 /// One imports-table row: `file`/`line`, the imported `target` namespace, and

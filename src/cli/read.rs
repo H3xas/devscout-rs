@@ -93,6 +93,6 @@ pub(crate) fn cmd_read(cwd: &Path, args: &[String]) -> (i32, String, Option<&'st
         }
     };
     let note = (answer.2 != query::Outcome::ZeroHit).then_some(ZERO_HIT_READ);
-    let (code, out) = finish_query(&root, "read", q, start, answer);
+    let (code, out) = finish_query(&root, "read", q, start, json, answer);
     (code, out, note)
 }

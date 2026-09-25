@@ -1,7 +1,9 @@
 // Exercises route composition: a class-level route template, a bare-verb
 // action, an action combining an explicit Route with two bare verbs, an
-// action with no verb at all (any-method), an inline message publish, and
-// a private helper that should only ever produce a method_span.
+// action with no verb at all (any-method), an inline message publish, a
+// private helper that should only ever produce a method_span, and a private
+// expression-bodied helper calling a ctor-injected field, so method_call
+// covers both body forms.
 namespace Courier.Api.Controllers;
 
 using Courier.Api.Contracts;
@@ -44,4 +46,8 @@ public sealed class ParcelsController : ControllerBase
     public IActionResult Archive([FromRoute] int id) => Ok(id);
 
     private string BuildParcelId(CreateParcel request) => $"{request.Recipient}-{request.Address.Length}";
+
+    // Expression-bodied, not a block -- proves method_call is not silently
+    // scoped to block-bodied methods only.
+    private bool HasRecord(int id) => _repository.Find(id) is not null;
 }

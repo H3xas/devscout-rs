@@ -659,3 +659,27 @@ oracle step, the `diff -u` against the committed snapshot, and the `--assert` ag
 - **Incremental compilation inside the oracle.** A re-run is always a cold run; incrementality
   lives entirely in per-file cache validity, where a hash decides it rather than a build system's
   own idea of what changed.
+
+## Amendment (2026-09-17): the admitted-artifact concern is superseded
+
+This section amends the document above rather than editing it silently. Everything above this
+line stands as originally written and still describes the per-site resolver-override cache this
+document proposes (`semantic-v1.json`, `SCOUT_SEMANTIC_TOOL`, `devscout semantic run|import|status`)
+-- none of which has shipped.
+
+A separate, now-implemented concern is a versioned, atomically admitted artifact carrying a
+one-shot engine run's own symbol identities, diagnostics and compilation-context health, produced
+either by a local engine run or by a build/CI-produced import, and admitted through one Rust
+path. That artifact is `compiler-facts-v1.json`, its own file beside `graph.json`, admitted by
+`devscout compiler-facts run|import|status` -- see [`README.md`](../../README.md#compiler-facts).
+It supersedes this document's proposed cache shape for the admitted-artifact concern specifically:
+a resolver-override cache still needs everything `D4` above proposes (a per-site override keyed to
+resolver behaviour), but the shape of "the versioned file an engine run produces and this crate
+admits" is now the shipped `compiler-facts-v1.json` contract, not a fresh `semantic-v1.json` design.
+Any future implementation of the resolver-override cache this document proposes should read the
+admitted `compiler-facts-v1.json` artifact as its own compiler-fact source rather than defining a
+second admission path.
+
+Nothing in `D4` through `D14` above is retracted; this amendment narrows only which artifact
+"the versioned file beside the fragments cache" now names for the admission concern, and leaves
+the resolver-override cache proposal itself open and unimplemented.

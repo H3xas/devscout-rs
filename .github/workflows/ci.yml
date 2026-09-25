@@ -135,24 +135,60 @@ jobs:
 
       - uses: actions/setup-dotnet@v4
         with:
-          # Pinned to the feature band the oracle is built and snapshotted
-          # against; `9.0.x` would float across bands and can change Roslyn
-          # behaviour under the committed oracle diff.
-          dotnet-version: 9.0.3xx
+          # Pinned to the exact patch the build-context fixture is snapshotted
+          # against, not just its feature band: the envelope's own `versions`
+          # block records the resolved SDK/MSBuild version and folds it into
+          # every fingerprint, so a floating `9.0.3xx` band could resolve to a
+          # newer patch on the runner and diff the committed snapshot on SDK
+          # servicing alone, unrelated to any change this repository made.
+          # Installing it only makes it available; the pin step below selects it.
+          dotnet-version: 9.0.305
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          # The qualification tree's own global.json pins one exact patch with
+          # rollForward disabled, independent of the floating band above, so
+          # its restore/build is reproducible even if the band's latest patch moves.
+          dotnet-version: 9.0.305
+
+      # The runner image already carries newer SDKs (a 10.0 band among them), and
+      # with no global.json in reach the host selects the highest one installed,
+      # which moves every recorded SDK/MSBuild version, reference identity and
+      # fingerprint off the committed snapshots. The host searches for global.json
+      # upward from the working directory, so a pin in the checkout's parent
+      # directory holds for every step run from the checkout while leaving the
+      # working tree clean for the oracle's git-state provenance. The
+      # qualification tree and its net10.0 row keep their own, closer pins.
+      - name: Pin the .NET SDK for steps run from the checkout
+        run: |
+          printf '{"sdk": {"version": "9.0.305", "rollForward": "disable"}}\n' > "$GITHUB_WORKSPACE/../global.json"
+          test "$(dotnet --version)" = 9.0.305
 
       - uses: actions/cache@v4
         with:
           path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ hashFiles('tools/scout-semantic/packages.lock.json', 'fixtures/csharp-semantic/Directory.Packages.props') }}
+          key: ${{ runner.os }}-nuget-${{ hashFiles('tools/scout-semantic/packages.lock.json', 'tools/scout-semantic.Tests/packages.lock.json', 'fixtures/csharp-semantic/Directory.Packages.props', 'fixtures/csharp-target-qualification/Directory.Packages.props') }}
 
-      - name: Restore (oracle locked, fixture CPM-pinned)
+      - name: Restore (oracle locked, context tests locked, fixtures CPM-pinned or plain)
         run: |
           dotnet restore tools/scout-semantic --locked-mode
+          dotnet restore tools/scout-semantic.Tests --locked-mode
           dotnet restore fixtures/csharp-semantic/Fixture.sln
           dotnet restore fixtures/csharp-flowtrace/Fixture.sln
+          # Per project, not the .sln: the fixture's own Fixture.sln names a
+          # Vanished project that deliberately does not exist on disk (the
+          # fixture case for a project the workspace never sees at all), and
+          # restoring the whole .sln fails outright on that entry, unlike
+          # `dotnet run`'s own MSBuildWorkspace load, which tolerates it.
+          dotnet restore fixtures/csharp-context/src/Clean/Clean.csproj
+          dotnet restore fixtures/csharp-context/src/Legacy/Legacy.csproj
+          dotnet restore fixtures/csharp-context/src/Broken/Broken.csproj
 
       - name: Build oracle
         run: dotnet build tools/scout-semantic --no-restore -c Release
+
+      - name: Context schema unit tests
+        run: dotnet test tools/scout-semantic.Tests --no-restore -c Release
 
       - name: Run oracle on the fixture solution
         run: |
@@ -174,6 +210,111 @@ jobs:
 
       - name: Facts output matches the committed snapshot
         run: diff -u fixtures/csharp-flowtrace/facts.json out/facts/csharp-flowtrace.json
+
+      - name: Restore the compiler-facts fixture (package-free)
+        run: dotnet restore fixtures/csharp-compiler-facts/Fixture.csproj
+
+      - name: Run the oracle in compiler-facts protocol mode on its own fixture
+        run: |
+          dotnet run --project tools/scout-semantic --no-build -c Release -- \
+            fixtures/csharp-compiler-facts/Fixture.csproj --root fixtures/csharp-compiler-facts \
+            --emit compiler-facts --compiler-facts out/compiler-facts/csharp-compiler-facts.json \
+            --tfm net9.0 -p Configuration=Debug -p Platform=AnyCPU --no-git
+
+      - name: Compiler-facts output matches the committed snapshot
+        run: diff -u fixtures/csharp-compiler-facts/compiler-facts.json out/compiler-facts/csharp-compiler-facts.json
+
+      # The committed snapshot is the engine's own unflagged default (which
+      # now includes occurrences); this proves the byte identity of every
+      # existing output field still holds under an explicit, narrower
+      # request -- field-by-field, rather than doubling the committed
+      # fixture's size with a second full snapshot.
+      - name: Capability-restricted run carries no occurrences key and reports its own provided set
+        run: |
+          dotnet run --project tools/scout-semantic --no-build -c Release -- \
+            fixtures/csharp-compiler-facts/Fixture.csproj --root fixtures/csharp-compiler-facts \
+            --emit compiler-facts --compiler-facts out/compiler-facts/csharp-compiler-facts-restricted.json \
+            --tfm net9.0 -p Configuration=Debug -p Platform=AnyCPU --capabilities symbols,diagnostics --no-git
+          if jq -e 'has("occurrences")' out/compiler-facts/csharp-compiler-facts-restricted.json > /dev/null; then
+            echo "::error::a capabilities-restricted run must carry no occurrences key at all"
+            exit 1
+          fi
+          provided=$(jq -c '.capabilities.provided' out/compiler-facts/csharp-compiler-facts-restricted.json)
+          if [ "$provided" != '["symbols","diagnostics"]' ]; then
+            echo "::error::expected capabilities.provided [\"symbols\",\"diagnostics\"], got $provided"
+            exit 1
+          fi
+
+      - name: Run the oracle in context mode on its own fixture (default selection)
+        run: |
+          dotnet run --project tools/scout-semantic --no-build -c Release -- \
+            fixtures/csharp-context/Fixture.sln --root fixtures/csharp-context \
+            --emit context --context out/context/csharp-context.json
+
+      - name: Context output matches the committed snapshot
+        run: diff -u fixtures/csharp-context/context.json out/context/csharp-context.json
+
+      - name: Two context runs over the same pinned inputs are byte-identical
+        run: |
+          dotnet run --project tools/scout-semantic --no-build -c Release -- \
+            fixtures/csharp-context/Fixture.sln --root fixtures/csharp-context \
+            --emit context --context out/context/csharp-context-2.json
+          diff -u out/context/csharp-context.json out/context/csharp-context-2.json
+
+      # Not every record in the default selection is complete (Legacy's own
+      # net472 control is a deliberate binding error) -- --strict is required
+      # to exit 2 rather than the default run's own exit 0, so the negative
+      # case is checked as explicitly as the positive ones above.
+      - name: --strict exits non-zero for an artifact that is not complete
+        run: |
+          if dotnet run --project tools/scout-semantic --no-build -c Release -- \
+            fixtures/csharp-context/Fixture.sln --root fixtures/csharp-context \
+            --emit context --context out/context/csharp-context-strict.json --strict; then
+            echo "::error::--strict exited 0 for a non-complete context artifact"
+            exit 1
+          fi
+
+      # The check above also passes with the artifact-level rollup deleted,
+      # because the whole-solution run already fails --strict's older,
+      # pre-existing check (Vanished never reaches the workspace at all).
+      # Clean.csproj on its own trips no such pre-existing check -- it loads
+      # cleanly -- so this is the one case only the new rollup can fail.
+      - name: --strict exits non-zero for a single partial project via the rollup alone
+        run: |
+          if dotnet run --project tools/scout-semantic --no-build -c Release -- \
+            fixtures/csharp-context/src/Clean/Clean.csproj --root fixtures/csharp-context \
+            --emit context --context out/context/csharp-context-strict-clean.json --strict; then
+            echo "::error::--strict exited 0 for a project only the rollup demotes"
+            exit 1
+          fi
+
+      # Broken and Vanished's own failures come from MSBuildWorkspace's
+      # whole-solution load, which happens before --projects' own per-group
+      # filtering -- so a --projects-scoped *.sln run still carries their
+      # unrelated diagnostics. A project passed directly, bypassing the
+      # solution entirely, isolates the scoped-and-healthy case --strict
+      # exiting 0 depends on.
+      - name: --projects excludes rather than fails a filtered-out project
+        run: |
+          dotnet run --project tools/scout-semantic --no-build -c Release -- \
+            fixtures/csharp-context/Fixture.sln --root fixtures/csharp-context \
+            --projects Legacy --tfm net9.0 \
+            --emit context --context out/context/csharp-context-projects-filtered.json
+          for name in Clean Broken; do
+            state=$(jq -r --arg n "$name" '.compilations[] | select(.identity.projectName == $n) | .state' out/context/csharp-context-projects-filtered.json)
+            reason=$(jq -r --arg n "$name" '.compilations[] | select(.identity.projectName == $n) | .reason' out/context/csharp-context-projects-filtered.json)
+            if [ "$state" != "excluded" ] || [ "$reason" != "not-requested" ]; then
+              echo "::error::$name: expected excluded/not-requested, got $state/$reason"
+              exit 1
+            fi
+          done
+
+      - name: --strict exits zero for a healthy scoped run
+        run: |
+          dotnet run --project tools/scout-semantic --no-build -c Release -- \
+            fixtures/csharp-context/src/Legacy/Legacy.csproj --root fixtures/csharp-context \
+            --tfm net9.0 \
+            --emit context --context out/context/csharp-context-scoped-strict.json --strict
 
       - name: Build devscout
         run: cargo build --locked --release
@@ -215,6 +356,21 @@ jobs:
           ./target/release/devscout -C "$RUNNER_TEMP/direction-repo" map src
           ./target/release/devscout -C "$RUNNER_TEMP/direction-repo" audit --semantic "$PWD/out/direction/refs.jsonl" --units "$PWD/out/direction/units.jsonl"
           ./target/release/devscout -C "$RUNNER_TEMP/direction-repo" audit --semantic "$PWD/out/direction/refs.jsonl" --units "$PWD/out/direction/units.jsonl" --assert "$PWD/fixtures/csharp-direction/expected.json"
+
+      # The net10.0 qualification row pins its own SDK band in a global.json beside its
+      # project. Installed only here, after every other .NET step; the earlier steps
+      # resolve the parent-directory pin above either way, so this install cannot move
+      # them or the snapshots they diff onto the 10.0 band.
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.302
+
+      # The .NET target/project/framework qualification tree: its own global.json SDK pin,
+      # restored and rebuilt row by row, then diffed byte-for-byte against the committed
+      # capability snapshots. This is the only step in CI that shells out through the tree's
+      # own composition script rather than the oracle directly.
+      - name: Regenerate and diff the .NET target qualification matrix
+        run: python3 tools/qualify-dotnet-targets.py --check
 
   supply-chain:
     name: cargo deny (licenses, advisories, bans, sources)

@@ -68,17 +68,28 @@ pub fn project_units_path(root: &Path) -> PathBuf {
 // declares) and the fragment-level `registrations` list (each two-type-argument
 // DI service registration a file's invocations record) -- a cached v18
 // fragment carries neither, so every override-chain lookup and every
-// registration-driven `implements` edge would silently see no facts. The
-// rename IS the invalidation mechanism:
+// registration-driven `implements` edge would silently see no facts. v20
+// added ref `receiverNullable` and `lambdaArgArity` -- a cached v19
+// fragment carries neither, so a `T?` receiver's own `Nullable<T>.Value`/
+// `HasValue`/`GetValueOrDefault` unwrap would silently keep resolving
+// against `T`'s own same-named member, and a delegate-shaped argument whose
+// own parameter count disagrees with a candidate's delegate parameter
+// shape would silently keep binding it. v21 fills ref `typeArgCount` on
+// every `uses-member` ref -- a cached v20 fragment carries `null` there, so
+// a member qualifier written with a type-argument list would silently keep
+// binding a same-named sibling of the WRONG arity, and a bare qualifier
+// would silently keep binding whichever same-named sibling the def index
+// happened to order first. The rename IS the invalidation
+// mechanism:
 // pre-bump caches stop being found, every file reparses
 // once, no reader carries version-compat logic. Writers delete every
 // superseded generation (see `remove_superseded_caches`).
 pub(crate) fn fragments_cache_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-v19.json")
+    graph_dir(root).join("fragments-v21.json")
 }
 
 pub(crate) fn fragments_index_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-index-v19.json")
+    graph_dir(root).join("fragments-index-v21.json")
 }
 
 // Every generation below the current one, not just the immediately previous:
@@ -121,6 +132,10 @@ pub(crate) const SUPERSEDED_CACHE_FILES: &[&str] = &[
     "fragments-index-v17.json",
     "fragments-v18.json",
     "fragments-index-v18.json",
+    "fragments-v19.json",
+    "fragments-index-v19.json",
+    "fragments-v20.json",
+    "fragments-index-v20.json",
 ];
 
 pub(crate) fn remove_superseded_caches(root: &Path) {

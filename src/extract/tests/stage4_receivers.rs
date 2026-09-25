@@ -1,6 +1,6 @@
 use super::*;
 
-// --- Stage 4: this/base/conditional receivers, await/cast/pattern facts ----
+// --- this/base/conditional receivers, await/cast/pattern facts -------------
 
 #[test]
 fn stage4_this_qualifier_yields_a_uses_member_ref_typed_by_the_enclosing_type() {

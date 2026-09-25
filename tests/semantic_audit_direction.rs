@@ -195,3 +195,63 @@ fn audit_assert_passes_the_direction_fixture_thresholds() {
         "the report is printed on stdout even with --assert: {stdout}"
     );
 }
+
+/// End-to-end proof that `--fp-sites` reaches the CLI wiring: the four
+/// documented wrong-target shapes on this fixture (`this.Stamp()` racing an
+/// explicit interface implementation, an `internal new` hide, a `private
+/// new` shadow, and a same-arity overload split by parameter type) must
+/// still show up as four rows once the flag is parsed and `cmd_audit` turns
+/// it into `inputs.collect_fp_sites`, not just when a test builds `Inputs`
+/// by hand.
+#[test]
+fn fp_sites_writes_the_four_precise_wrong_target_rows_with_bound_and_expected() {
+    let fx = Fixture::build("fpsites");
+    let refs = refs_path();
+    let units = units_path();
+    let rows = fx.repo.join("fp-sites.jsonl");
+    let out = fx.run(&[
+        "audit",
+        "--semantic",
+        refs.to_str().unwrap(),
+        "--units",
+        units.to_str().unwrap(),
+        "--fp-sites",
+        rows.to_str().unwrap(),
+    ]);
+    assert!(out.status.success(), "audit --fp-sites failed: {out:?}");
+
+    let written = fs::read_to_string(&rows).expect("read the fp-sites rows");
+    let parsed: Vec<serde_json::Value> = written
+        .lines()
+        .map(|l| serde_json::from_str(l).expect("each row is valid JSON"))
+        .collect();
+    let wrong_target: Vec<&serde_json::Value> = parsed
+        .iter()
+        .filter(|r| r["tier"] == "precise" && r["class"] == "wrong-target")
+        .collect();
+    assert_eq!(
+        wrong_target.len(),
+        4,
+        "the fixture's precise tier scores exactly 4 wrong-target false \
+         positives (fp_wrong_target in the report above): {written}"
+    );
+    for row in &wrong_target {
+        let bound = row["bound"].as_str().unwrap_or("");
+        assert!(
+            !bound.is_empty(),
+            "every wrong-target row names the target the resolver bound: {row}"
+        );
+        let expected = row["expected"]
+            .as_array()
+            .expect("expected is an array of in-tree oracle targets");
+        assert!(
+            !expected.is_empty(),
+            "every wrong-target row names the target the oracle expected: {row}"
+        );
+        assert_ne!(
+            Some(bound),
+            expected[0].as_str(),
+            "a wrong-target row's bound and expected targets must differ: {row}"
+        );
+    }
+}

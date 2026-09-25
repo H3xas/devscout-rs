@@ -356,7 +356,7 @@ fn ds0010_ambiguous_out_of_graph_and_return_less_callees_stay_taken_but_unknown(
     assert!(member_edge_targets(&g).is_empty());
 }
 
-// --- Stage 7: this/base receiver typing, awaited Task unwrap ------------
+// --- this/base receiver typing, awaited Task unwrap ---------------------
 //
 // All four run real C# through the extractor (`fragments_for`), the same
 // choice the tier-(e) end-to-end block above makes: a `this.`/`base.`

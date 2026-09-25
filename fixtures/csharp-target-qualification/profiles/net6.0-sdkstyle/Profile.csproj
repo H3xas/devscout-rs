@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="../../shared/PositiveCase.cs" Link="PositiveCase.cs" />
+    <Compile Include="../../shared/BoundaryCase.cs" Link="BoundaryCase.cs" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net472" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- A net472 consumer cannot restore a net8.0-only reference at all: the sharper of the
+         two incompatible-reference failure shapes, isolated in its own tiny project so its
+         restore failure does not take the rest of the net472-deep bundle down with it. -->
+    <ProjectReference Include="../../IncompatibleRefModern/IncompatibleRefModern.csproj" />
+  </ItemGroup>
+
+</Project>

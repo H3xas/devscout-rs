@@ -1,0 +1,38 @@
+{
+  "_comment": "Per-row required-field and state assertions for the committed capability snapshots under results/. Every row named here must exist under results/<id>.json, carry every field in required_fields with a non-null value, and read unsupported_state.state == required_state.",
+  "required_fields": [
+    "context_acquisition",
+    "semantic_conformance",
+    "framework_modeling",
+    "unsupported_state",
+    "execution_assumptions"
+  ],
+  "rows": {
+    "csharp73-net5.0-sdkstyle": { "required_state": "passing" },
+    "csharp73-net6.0-sdkstyle": { "required_state": "passing" },
+    "csharp73-net7.0-sdkstyle": { "required_state": "passing" },
+    "csharp73-net8.0-sdkstyle": { "required_state": "passing" },
+    "csharp73-net9.0-sdkstyle": { "required_state": "passing" },
+    "csharp73-net10.0-sdkstyle": { "required_state": "passing" },
+    "csharp73-netstandard1.0-sdkstyle": { "required_state": "passing" },
+    "csharp73-netstandard1.1-sdkstyle": { "required_state": "passing" },
+    "csharp73-netstandard1.2-sdkstyle": { "required_state": "passing" },
+    "csharp73-netstandard1.3-sdkstyle": { "required_state": "passing" },
+    "csharp73-netstandard1.4-sdkstyle": { "required_state": "passing" },
+    "csharp73-netstandard1.5-sdkstyle": { "required_state": "passing" },
+    "csharp73-netstandard1.6-sdkstyle": { "required_state": "passing" },
+    "csharp73-netstandard2.0-sdkstyle": { "required_state": "passing" },
+    "csharp73-netstandard2.1-sdkstyle": { "required_state": "passing" },
+    "csharp73-netcoreapp3.1-sdkstyle": { "required_state": "passing" },
+    "csharp73-net40-sdkstyle": { "required_state": "passing" },
+    "csharp73-net45-sdkstyle": { "required_state": "passing" },
+    "csharp73-net452-sdkstyle": { "required_state": "passing" },
+    "csharp73-net461-sdkstyle": { "required_state": "passing" },
+    "csharp73-net472-sdkstyle": { "required_state": "passing" },
+    "csharp73-net48-sdkstyle": { "required_state": "passing" },
+    "csharp73-net8.0-deep": { "required_state": "passing" },
+    "csharp73-net472-deep": { "required_state": "passing" },
+    "control-tfm-not-supplied": { "required_state": "passing" },
+    "control-reference-tfm-mismatch": { "required_state": "failing" }
+  }
+}

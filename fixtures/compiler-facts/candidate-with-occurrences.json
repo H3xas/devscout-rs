@@ -1,0 +1,78 @@
+{
+  "format": "compiler-facts",
+  "contractVersion": 1,
+  "artifactSchemaVersion": 2,
+  "producer": { "name": "scout-semantic", "engineRevision": "2" },
+  "profile": { "target": "net9.0", "configuration": "Debug", "platform": "AnyCPU" },
+  "dependencyFingerprint": "1b08b298ead60b49666b3bfa8d389386770d87dc150a9b1eced58896652f3d43",
+  "context": {
+    "schemaVersion": 1,
+    "contextFingerprint": "237c76497dbf4bbb0be85f0d250256d9f12012321645f682abcb92f1512e6fa9",
+    "envelope": {
+      "compilations": [
+        {
+          "identity": { "projectName": "Api", "projectPath": "Api/Api.csproj", "requestedTfm": "net9.0" },
+          "fingerprint": "1e2d3c4b5a69788796a5b4c3d2e1f0a1b2c3d4e5f60718293a4b5c6d7e8f901"
+        },
+        {
+          "identity": { "projectName": "Shared", "projectPath": "Shared/Shared.csproj", "requestedTfm": "net9.0" },
+          "fingerprint": "2e2d3c4b5a69788796a5b4c3d2e1f0a1b2c3d4e5f60718293a4b5c6d7e8f902"
+        }
+      ]
+    }
+  },
+  "sourceSnapshot": { "headSha": "0000000000000000000000000000000000000f" },
+  "capabilities": { "requested": ["symbols", "diagnostics", "occurrences"], "provided": ["symbols", "diagnostics", "occurrences"] },
+  "completion": { "terminal": true },
+  "units": { "processed": ["Api|net9.0", "Shared|net9.0"], "missing": [] },
+  "coverage": { "state": "complete" },
+  "diagnostics": [
+    { "severity": "warning", "code": "CS0219", "message": "variable assigned but never used", "file": "Api/Widgets/Widget.cs", "line": 40 }
+  ],
+  "symbols": [
+    { "assembly": "Api", "type": "Api.Widgets.Widget", "member": "Render", "genericArity": 0, "overloadSignature": "()->void", "file": "Api/Widgets/Widget.cs", "line": 12, "spanEncoding": "utf16-code-unit" },
+    { "assembly": "Api", "type": "Api.Widgets.Widget", "member": "Render", "genericArity": 0, "overloadSignature": "(bool)->void", "file": "Api/Widgets/Widget.cs", "line": 12, "spanEncoding": "utf16-code-unit" },
+    { "assembly": "Api", "type": "Api.Widgets.Gadget", "member": "Render", "genericArity": 0, "overloadSignature": "()->void", "file": "Api/Widgets/Widget.cs", "line": 12, "spanEncoding": "utf16-code-unit" },
+    { "assembly": "Api", "type": "Api.Widgets.Widget", "member": "Bind", "genericArity": 0, "overloadSignature": "unresolved", "file": "Api/Widgets/Widget.cs", "line": 30, "spanEncoding": "utf16-code-unit", "unresolved": true },
+    { "assembly": "Api", "type": "Api.Widgets.Widget", "member": "Load", "genericArity": 0, "overloadSignature": "failed-binding", "file": "Api/Widgets/Widget.cs", "line": 40, "spanEncoding": "utf16-code-unit", "bindingFailed": true, "diagnostic": "CS1061" }
+  ],
+  "occurrences": {
+    "spanEncoding": "utf16-code-unit-line1-char0-end-exclusive",
+    "sites": [
+      {
+        "file": "Api/Widgets/Widget.cs",
+        "shape": "invocation",
+        "span": { "startLine": 12, "startChar": 8, "endLine": 12, "endChar": 20 },
+        "name": { "line": 12, "char": 8 },
+        "caller": { "assembly": "Api", "type": "Api.Callers", "member": "Go", "genericArity": 0, "overloadSignature": "()->void" },
+        "resolution": "confirmed",
+        "candidateReason": "None",
+        "target": { "assembly": "Api", "type": "Api.Widgets.Widget", "member": "Render", "genericArity": 0, "overloadSignature": "()->void" },
+        "candidates": [],
+        "compilation": {
+          "identity": { "projectName": "Api", "projectPath": "Api/Api.csproj", "requestedTfm": "net9.0" },
+          "fingerprint": "1e2d3c4b5a69788796a5b4c3d2e1f0a1b2c3d4e5f60718293a4b5c6d7e8f901"
+        },
+        "documentContentIdentity": "sha1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "targetDocumentContentIdentities": ["sha1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]
+      },
+      {
+        "file": "Api/Widgets/Widget.cs",
+        "shape": "identifier",
+        "span": { "startLine": 30, "startChar": 4, "endLine": 30, "endChar": 17 },
+        "name": { "line": 30, "char": 4 },
+        "caller": { "assembly": "Api", "type": "Api.Callers", "member": "Go", "genericArity": 0, "overloadSignature": "()->void" },
+        "resolution": "unresolved",
+        "candidateReason": "None",
+        "target": null,
+        "candidates": [],
+        "compilation": {
+          "identity": { "projectName": "Api", "projectPath": "Api/Api.csproj", "requestedTfm": "net9.0" },
+          "fingerprint": "1e2d3c4b5a69788796a5b4c3d2e1f0a1b2c3d4e5f60718293a4b5c6d7e8f901"
+        },
+        "documentContentIdentity": "sha1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "targetDocumentContentIdentities": []
+      }
+    ]
+  }
+}

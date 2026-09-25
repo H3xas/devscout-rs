@@ -84,7 +84,8 @@ const EXPECTED_JSON: &str = concat!(
     r#"{"file":"CatalogStoreTests.cs","hop":2,"viaCount":2,"ambiguousCount":0,"#,
     r#""topSymbols":["InMemoryCatalogStore"],"topSymbolsMore":0,"score":0.15227392859677333,"#,
     r#""fromLines":{"direct":11},"why":"uses-type"}],"#,
-    r#""dropped":0,"manifestGap":0,"heuristicAffected":0,"testsAffected":1,"outcome":"hit"}"#,
+    r#""dropped":0,"manifestGap":0,"heuristicAffected":0,"testsAffected":1,"outcome":"hit","#,
+    r#""freshness":{"state":"unknown","reason":"no-index-state"}}"#,
 );
 
 #[test]

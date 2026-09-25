@@ -3,8 +3,9 @@
 // `resolve_graph`.
 // Pure: no file I/O, no tree-sitter -- the only I/O this module performs is the
 // single `git rev-parse HEAD` shell-out inside `resolve_graph`, delegated to
-// `manifest::git_head`. Artifact load/save and the fragments cache live in
-// `graph.rs`.
+// `manifest::git_head`, and the emission record `provenance` writes when
+// `SCOUT_EDGE_PROVENANCE` names a path, which no resolution ever reads.
+// Artifact load/save and the fragments cache live in `graph.rs`.
 //
 // Ladder rules (see `resolve_ref`'s doc comment for the exact order):
 //   0. Type ALIASES (`using Foo = Some.Ns.Bar;` and `global` counterpart)
@@ -49,7 +50,9 @@ mod dispatch;
 mod edges;
 mod index;
 mod ladder;
+mod lambda_arity;
 mod members;
+mod provenance;
 mod receiver;
 mod scope;
 

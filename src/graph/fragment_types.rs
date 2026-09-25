@@ -452,6 +452,31 @@ pub struct FragRef {
         skip_serializing_if = "Option::is_none"
     )]
     pub receiver_lambda: Option<FragLambdaSlot>,
+    /// `true` when `receiverType` came off a declaration whose own type
+    /// node carried a `?` (see extract.rs's `RefRecord`). Appended LAST of
+    /// all, after `receiverLambda`, and omitted when `false` -- an absent
+    /// key reads back as `false`, the same as a non-nullable receiver and
+    /// as every ref kind that never sets it. Joined the schema with the
+    /// v20 cache bump: a v19 fragment read back carries none, so a
+    /// `T?` receiver's own `Nullable<T>.Value`/`HasValue`/
+    /// `GetValueOrDefault` unwrap would silently keep resolving against
+    /// `T`'s own same-named member.
+    #[serde(default, rename = "receiverNullable", skip_serializing_if = "is_false")]
+    pub receiver_nullable: bool,
+    /// The parameter count of each delegate-shaped argument of the
+    /// invocation this ref is the callee of -- a lambda literal, or a
+    /// local function passed as a method group (see extract.rs's
+    /// `RefRecord`). Appended LAST of all, after `receiverNullable`,
+    /// omitted when absent. Joined the schema with the v20 cache bump: a
+    /// v19 fragment read back carries none, and a candidate whose delegate
+    /// parameter shape the call's own argument cannot fill would silently
+    /// keep earning a precise edge.
+    #[serde(
+        default,
+        rename = "lambdaArgArity",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub lambda_arg_arity: Option<Vec<Option<usize>>>,
 }
 
 pub(crate) fn is_false(b: &bool) -> bool {

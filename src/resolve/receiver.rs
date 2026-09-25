@@ -35,6 +35,26 @@ pub(super) fn is_this_shaped_receiver(r: &FragRef) -> bool {
     }
 }
 
+// `receiverType`/`receiverNullable` read together, as the one fact they are:
+// the `?` a declaration carried is recorded on the SAME `Fact` the type name
+// came off (see `extract.rs`'s `Fact::nullable`), so the two never disagree
+// on which ref they describe.
+pub(super) fn receiver_type_and_nullable(r: &FragRef) -> (Option<String>, bool) {
+    (r.receiver_type.clone(), r.receiver_nullable)
+}
+
+// `System.Nullable<T>`'s own unwrap (`Widget? w; w.Value`) is never `T`'s
+// member of the same name, however loudly a `struct`/`enum` `T` declares
+// one: the CLR resolves `.Value`/`.HasValue`/`.GetValueOrDefault` against
+// the wrapper before `T` is even in play. `kind` is the resolved receiver
+// def's own kind -- a REFERENCE type's `?` is ordinary nullable-reference
+// annotation, not `Nullable<T>`, so a class or interface never vetoes here
+// even when it declares one of these names itself.
+pub(super) fn nullable_unwrap_owns_member(kind: &str, member: Option<&str>) -> bool {
+    (kind == "struct" || kind == "enum")
+        && matches!(member, Some("Value" | "HasValue" | "GetValueOrDefault"))
+}
+
 // One def's own field or property fact for `name`, field_types tried first
 // -- the order the caller's doc comment names. Never widens to the def's
 // bases; the walk that does is the caller's job.
@@ -217,7 +237,7 @@ fn descriptor_args(text: &str) -> Vec<String> {
 // An ARRAY of delegates is not a delegate (`Action<Options>[]` takes a
 // collection, never a lambda), so a descriptor that ends in brackets answers
 // nothing at all.
-fn delegate_parameters(
+pub(super) fn delegate_parameters(
     text: &str,
     index: &DefIndex,
     file_contexts: &HashMap<String, FileContext>,

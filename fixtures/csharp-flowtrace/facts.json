@@ -115,6 +115,24 @@
       "endLine": 28
     },
     {
+      "type": "method_call",
+      "file": "src/Api/Consumers/DeliveryScheduledConsumer.cs",
+      "line": 26,
+      "class": "DeliveryScheduledConsumer",
+      "method": "NotifyLost",
+      "field": "_repository",
+      "calledMethod": "Find"
+    },
+    {
+      "type": "method_call",
+      "file": "src/Api/Consumers/DeliveryScheduledConsumer.cs",
+      "line": 27,
+      "class": "DeliveryScheduledConsumer",
+      "method": "NotifyLost",
+      "field": "_bus",
+      "calledMethod": "Publish"
+    },
+    {
       "type": "publish",
       "file": "src/Api/Consumers/DeliveryScheduledConsumer.cs",
       "line": 27,
@@ -230,15 +248,15 @@
     {
       "type": "method_span",
       "file": "src/Api/Controllers/ParcelsController.cs",
-      "line": 18,
+      "line": 20,
       "class": "ParcelsController",
       "method": "ParcelsController",
-      "endLine": 22
+      "endLine": 24
     },
     {
       "type": "ctor_field",
       "file": "src/Api/Controllers/ParcelsController.cs",
-      "line": 20,
+      "line": 22,
       "class": "ParcelsController",
       "field": "_repository",
       "paramType": "IParcelRepository",
@@ -247,7 +265,7 @@
     {
       "type": "ctor_field",
       "file": "src/Api/Controllers/ParcelsController.cs",
-      "line": 21,
+      "line": 23,
       "class": "ParcelsController",
       "field": "_bus",
       "paramType": "IPublishEndpoint",
@@ -256,7 +274,7 @@
     {
       "type": "route",
       "file": "src/Api/Controllers/ParcelsController.cs",
-      "line": 24,
+      "line": 26,
       "controller": "ParcelsController",
       "action": "Get",
       "verb": "GET",
@@ -265,15 +283,24 @@
     {
       "type": "method_span",
       "file": "src/Api/Controllers/ParcelsController.cs",
-      "line": 25,
+      "line": 27,
       "class": "ParcelsController",
       "method": "Get",
-      "endLine": 29
+      "endLine": 31
+    },
+    {
+      "type": "method_call",
+      "file": "src/Api/Controllers/ParcelsController.cs",
+      "line": 29,
+      "class": "ParcelsController",
+      "method": "Get",
+      "field": "_repository",
+      "calledMethod": "Find"
     },
     {
       "type": "route",
       "file": "src/Api/Controllers/ParcelsController.cs",
-      "line": 31,
+      "line": 33,
       "controller": "ParcelsController",
       "action": "Create",
       "verb": "POST",
@@ -282,22 +309,31 @@
     {
       "type": "method_span",
       "file": "src/Api/Controllers/ParcelsController.cs",
-      "line": 32,
+      "line": 34,
       "class": "ParcelsController",
       "method": "Create",
-      "endLine": 36
+      "endLine": 38
+    },
+    {
+      "type": "method_call",
+      "file": "src/Api/Controllers/ParcelsController.cs",
+      "line": 36,
+      "class": "ParcelsController",
+      "method": "Create",
+      "field": "_bus",
+      "calledMethod": "Publish"
     },
     {
       "type": "publish",
       "file": "src/Api/Controllers/ParcelsController.cs",
-      "line": 34,
+      "line": 36,
       "message": "ParcelDispatchedMessage",
       "fqn": "Courier.Api.Messaging.Messages.ParcelDispatchedMessage"
     },
     {
       "type": "route",
       "file": "src/Api/Controllers/ParcelsController.cs",
-      "line": 38,
+      "line": 40,
       "controller": "ParcelsController",
       "action": "Search",
       "verb": "GET",
@@ -306,7 +342,7 @@
     {
       "type": "route",
       "file": "src/Api/Controllers/ParcelsController.cs",
-      "line": 38,
+      "line": 40,
       "controller": "ParcelsController",
       "action": "Search",
       "verb": "POST",
@@ -315,15 +351,15 @@
     {
       "type": "method_span",
       "file": "src/Api/Controllers/ParcelsController.cs",
-      "line": 41,
+      "line": 43,
       "class": "ParcelsController",
       "method": "Search",
-      "endLine": 41
+      "endLine": 43
     },
     {
       "type": "route",
       "file": "src/Api/Controllers/ParcelsController.cs",
-      "line": 43,
+      "line": 45,
       "controller": "ParcelsController",
       "action": "Archive",
       "verb": "ANY",
@@ -332,18 +368,35 @@
     {
       "type": "method_span",
       "file": "src/Api/Controllers/ParcelsController.cs",
-      "line": 44,
+      "line": 46,
       "class": "ParcelsController",
       "method": "Archive",
-      "endLine": 44
+      "endLine": 46
     },
     {
       "type": "method_span",
       "file": "src/Api/Controllers/ParcelsController.cs",
-      "line": 46,
+      "line": 48,
       "class": "ParcelsController",
       "method": "BuildParcelId",
-      "endLine": 46
+      "endLine": 48
+    },
+    {
+      "type": "method_call",
+      "file": "src/Api/Controllers/ParcelsController.cs",
+      "line": 52,
+      "class": "ParcelsController",
+      "method": "HasRecord",
+      "field": "_repository",
+      "calledMethod": "Find"
+    },
+    {
+      "type": "method_span",
+      "file": "src/Api/Controllers/ParcelsController.cs",
+      "line": 52,
+      "class": "ParcelsController",
+      "method": "HasRecord",
+      "endLine": 52
     },
     {
       "type": "method_span",
@@ -472,6 +525,15 @@
       "class": "GetParcelHandler",
       "method": "Handle",
       "endLine": 25
+    },
+    {
+      "type": "method_call",
+      "file": "src/Api/Handlers/GetParcelHandler.cs",
+      "line": 23,
+      "class": "GetParcelHandler",
+      "method": "Handle",
+      "field": "_repository",
+      "calledMethod": "Find"
     },
     {
       "type": "iface_impl",

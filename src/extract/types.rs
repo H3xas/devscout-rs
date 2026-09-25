@@ -312,6 +312,28 @@ pub struct RefRecord {
     /// IS a member-scoped name), and `receiver_type` stays `None`. Appended
     /// LAST of all, after `receiver_local`.
     pub receiver_lambda: Option<LambdaSlot>,
+    /// `true` when `receiver_type` came off a declaration whose own type
+    /// node was a `nullable_type` (`Widget? w`) -- see `Fact::nullable`,
+    /// which this carries verbatim off the SAME receiver fact
+    /// `receiver_type`/`receiver_args` already came off. `false` for every
+    /// ref kind, and for a `receiver_type` that came from anywhere but a
+    /// plain declared-type fact (a call-hop return, a lambda-slot type, a
+    /// bare field/property fallback: none of those can be nullable-
+    /// annotated, since none of them read a type node directly). Appended
+    /// LAST of all, after `receiver_lambda`.
+    pub receiver_nullable: bool,
+    /// The parameter count of each delegate-shaped argument of the
+    /// invocation this ref is the callee of -- a lambda literal, or a bare
+    /// identifier naming one unshadowed local function in scope -- one
+    /// entry per argument position (`None` at every other position), or
+    /// `None` entirely when the ref is not invocation-shaped or names no
+    /// such argument at all. `x => ...` counts 1 parameter, `(a, b) => ...`
+    /// counts 2, `() => ...` counts 0, a local function counts its own
+    /// declared parameters -- the argument's OWN arity, never the delegate
+    /// type it will end up bound to (that binding is exactly what this fact
+    /// lets the resolver judge, rather than assume). Appended LAST of all,
+    /// after `receiver_nullable`.
+    pub lambda_arg_arity: Option<Vec<Option<usize>>>,
 }
 
 /// Represents `UsingRecord`.
@@ -459,6 +481,18 @@ pub struct Fact {
     /// `Widget[]` apart from `Widget` even though both facts otherwise read
     /// identically. Part of the equality the table compares.
     pub is_array: bool,
+    /// `true` when the declaration's own type node was, at its TOP level, a
+    /// `nullable_type` (`Widget?`) -- set ONLY by `type_fact`, `false`
+    /// everywhere else, mirroring `is_array`: a call fact, a receiver-args
+    /// unwrap and `this`/`base`'s own fact are never nullable-annotated.
+    /// `base_type_identifier` already unwraps `Widget?` to the same
+    /// `type_name` a plain `Widget` field would carry, so this bit is the
+    /// only signal left that a `System.Nullable<T>` sits between the
+    /// declared name and the value -- needed so the resolver can refuse a
+    /// member the wrapper itself owns (`.Value`, `.HasValue`,
+    /// `.GetValueOrDefault`) rather than binding `T`'s own same-named
+    /// member. Part of the equality the table compares.
+    pub nullable: bool,
     /// When set, the name is an untyped lambda parameter whose type is the
     /// corresponding delegate parameter of the callee this slot names -- a
     /// lookup only the resolver can do; `type_name` is empty and `call` is

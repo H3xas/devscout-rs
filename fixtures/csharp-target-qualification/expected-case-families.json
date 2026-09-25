@@ -1,0 +1,19 @@
+{
+  "_comment": "Independently authored expected observed=true/false outcome per deep-case family, committed before tools/qualify-dotnet-targets.py composes case_families evidence from the compiler oracle. tests/dotnet_target_qualification.rs checks each committed row's case_families.<family>.observed against this file, not against a string the composition script writes about itself.",
+  "rows": {
+    "csharp73-net8.0-deep": {
+      "collision": true,
+      "wrapper": true,
+      "incompatible_reference": true,
+      "generated_input": true,
+      "unknown_framework": true
+    },
+    "csharp73-net472-deep": {
+      "collision": true,
+      "wrapper": true,
+      "incompatible_reference": true,
+      "generated_input": true,
+      "unknown_framework": true
+    }
+  }
+}

@@ -14,6 +14,8 @@ pub mod audit;
 pub mod cli;
 /// C# and TypeScript declaration and reference extraction.
 pub mod extract;
+/// Query-time index-freshness state for a programmatic (`--json`) consumer.
+pub mod freshness;
 /// Persisted graph and fragment data structures.
 pub mod graph;
 /// Agent-hook input processing.
@@ -48,6 +50,8 @@ pub mod store;
 pub mod suggest;
 /// Query-verb telemetry: one JSON line per invocation under `SCOUT_TELEMETRY=1`.
 pub mod telemetry;
+/// The independent semantic-truth, profile, and falsification harness.
+pub mod truth;
 /// Resolution of extracted TypeScript fragments into a graph.
 pub mod tsgraph;
 /// Source-tree walking and default file-purpose generation.

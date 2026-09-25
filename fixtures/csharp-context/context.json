@@ -1,0 +1,2330 @@
+{
+  "schemaVersion": 1,
+  "producer": "scout-semantic",
+  "version": "0.1.0",
+  "repo": "csharp-context",
+  "solution": "Fixture.sln",
+  "compilations": [
+    {
+      "identity": {
+        "projectPath": "src/Broken/Broken.csproj",
+        "projectName": "Broken",
+        "requestedTfm": null,
+        "effectiveTfm": "net9.0",
+        "configuration": "Debug",
+        "platform": "AnyCPU",
+        "declaredTfms": null
+      },
+      "state": "partial",
+      "reason": "workspace-failure",
+      "fingerprint": "2b5b165707c1d283dcc73f5b1c035978997b1eb6",
+      "versions": {
+        "sdk": "9.0.305",
+        "msbuild": "17.14.21.41108",
+        "compiler": "4.14.0-3.25262.10+8edf7bcd4f1594c3d68a6a567469f41dbd33dd1b",
+        "engine": "0.1.0"
+      },
+      "references": [
+        {
+          "kind": "metadata",
+          "name": "Microsoft.CSharp",
+          "identity": "Microsoft.CSharp|mvid:159181c1-ff54-4b3d-8bce-5c5b3431a97d",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "Microsoft.VisualBasic.Core",
+          "identity": "Microsoft.VisualBasic.Core|mvid:71e760f1-680e-4e8b-b605-83da0359eaf3",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "Microsoft.VisualBasic",
+          "identity": "Microsoft.VisualBasic|mvid:6ec9202c-1163-4104-9cfe-5fe84d6af4a2",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "Microsoft.Win32.Primitives",
+          "identity": "Microsoft.Win32.Primitives|mvid:2e1a5a62-5156-4903-b15f-886a525d5aa5",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "Microsoft.Win32.Registry",
+          "identity": "Microsoft.Win32.Registry|mvid:c5640037-e583-4cf0-bb54-7ff44c302cb7",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "mscorlib",
+          "identity": "mscorlib|mvid:77008c5c-10f5-40ba-b6ac-a6467d6299c9",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "netstandard",
+          "identity": "netstandard|mvid:4f2eb19d-ce93-4e90-afa3-209bf8f649eb",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.AppContext",
+          "identity": "System.AppContext|mvid:096e3e16-a32f-4dfc-a4a8-0be6c1aaaa8a",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Buffers",
+          "identity": "System.Buffers|mvid:99215c3f-6f61-4372-a2bd-510b422ec4c4",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Collections.Concurrent",
+          "identity": "System.Collections.Concurrent|mvid:2efeb561-ab0f-44dd-94d6-672e51b8cc13",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Collections",
+          "identity": "System.Collections|mvid:1cb0ee42-3e6b-4136-91ae-e222686aa63e",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Collections.Immutable",
+          "identity": "System.Collections.Immutable|mvid:0fab08d8-485d-46b7-96c9-6e70a84513a7",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Collections.NonGeneric",
+          "identity": "System.Collections.NonGeneric|mvid:c8fd9d20-c9ae-4b25-91d4-f58c1f6f1736",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Collections.Specialized",
+          "identity": "System.Collections.Specialized|mvid:a7e1146a-7ad4-4b3a-b1ab-3f9571ef9e3a",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.ComponentModel.Annotations",
+          "identity": "System.ComponentModel.Annotations|mvid:39357449-c967-43a1-b69d-8518641b5d96",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.ComponentModel.DataAnnotations",
+          "identity": "System.ComponentModel.DataAnnotations|mvid:e0dd3f44-ea84-4e7a-9cfc-a5c84e8b800e",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.ComponentModel",
+          "identity": "System.ComponentModel|mvid:cafed6b4-28e3-4ba6-8178-990425029774",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.ComponentModel.EventBasedAsync",
+          "identity": "System.ComponentModel.EventBasedAsync|mvid:c380d806-8fe8-4f51-ae26-a13d3087f0bd",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.ComponentModel.Primitives",
+          "identity": "System.ComponentModel.Primitives|mvid:aebba2e4-285b-4b29-8883-08240b1be870",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.ComponentModel.TypeConverter",
+          "identity": "System.ComponentModel.TypeConverter|mvid:0747fc22-eec7-497f-aa9b-1929016391f4",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Configuration",
+          "identity": "System.Configuration|mvid:a500e35f-1f97-4fa3-884a-e7dcbd8148b8",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Console",
+          "identity": "System.Console|mvid:b0f9d965-89b8-4190-aae5-50d1f7bbf81d",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Core",
+          "identity": "System.Core|mvid:be4cd0e2-8be5-40f4-b9a1-0790db3b05ae",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Data.Common",
+          "identity": "System.Data.Common|mvid:f9b5103f-081f-4ce5-aa19-09d6c7e1a993",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Data.DataSetExtensions",
+          "identity": "System.Data.DataSetExtensions|mvid:59707448-2fef-4c8a-a02b-57232ee7e69a",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Data",
+          "identity": "System.Data|mvid:e5ca9145-a4f9-4e03-9abf-2ba02e0e6d7e",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Diagnostics.Contracts",
+          "identity": "System.Diagnostics.Contracts|mvid:7f59b65e-0185-424d-9e7f-9ca4fc3aff3c",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Diagnostics.Debug",
+          "identity": "System.Diagnostics.Debug|mvid:436fb393-b019-45d5-b1fe-dcbfab0b66b2",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Diagnostics.DiagnosticSource",
+          "identity": "System.Diagnostics.DiagnosticSource|mvid:ab4601ba-ba11-449e-b461-48e3513f934f",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Diagnostics.FileVersionInfo",
+          "identity": "System.Diagnostics.FileVersionInfo|mvid:2e74a074-6e3b-4135-99d4-83fa3956da42",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Diagnostics.Process",
+          "identity": "System.Diagnostics.Process|mvid:1537e19c-cf15-406d-9936-d97f331bc6a4",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Diagnostics.StackTrace",
+          "identity": "System.Diagnostics.StackTrace|mvid:3fcac56e-bf26-4fbb-a7cc-eda393b61195",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Diagnostics.TextWriterTraceListener",
+          "identity": "System.Diagnostics.TextWriterTraceListener|mvid:43f02d5d-d9e4-43b6-a381-12fa947be7b3",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Diagnostics.Tools",
+          "identity": "System.Diagnostics.Tools|mvid:f16217a6-84de-4726-b0e8-27e6ad9f6c49",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Diagnostics.TraceSource",
+          "identity": "System.Diagnostics.TraceSource|mvid:a4e7b365-2044-4965-b61c-b50749653d0b",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Diagnostics.Tracing",
+          "identity": "System.Diagnostics.Tracing|mvid:6aab9c4e-663d-44c4-ad82-6ac6d39af85c",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System",
+          "identity": "System|mvid:98ea47f7-5763-4e72-a2fe-95cb9e528fc7",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Drawing",
+          "identity": "System.Drawing|mvid:f7be533b-c96b-4855-b3b5-428e4846c23f",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Drawing.Primitives",
+          "identity": "System.Drawing.Primitives|mvid:098cebab-6d28-4ffd-b59a-116f1920f5ad",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Dynamic.Runtime",
+          "identity": "System.Dynamic.Runtime|mvid:f86b3d71-3c34-46e7-ab16-0228abbd5e08",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Formats.Asn1",
+          "identity": "System.Formats.Asn1|mvid:93953e83-b4f9-4a6f-884e-de60c6b0ef38",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Formats.Tar",
+          "identity": "System.Formats.Tar|mvid:c57bcdff-b6f6-44da-825f-de4809958d1d",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Globalization.Calendars",
+          "identity": "System.Globalization.Calendars|mvid:96b71330-aece-448d-8648-6d34930f9cde",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Globalization",
+          "identity": "System.Globalization|mvid:1fbc4579-9c73-45a6-a57a-9af680d6d0a5",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Globalization.Extensions",
+          "identity": "System.Globalization.Extensions|mvid:b1dd0ffc-34ae-4ae8-9867-3fedd828fff5",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.IO.Compression.Brotli",
+          "identity": "System.IO.Compression.Brotli|mvid:9ac8d3ba-0f04-40b6-acb4-deae12b0df54",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.IO.Compression",
+          "identity": "System.IO.Compression|mvid:03ab27eb-5575-4f1d-a735-2fbaea0b39f7",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.IO.Compression.FileSystem",
+          "identity": "System.IO.Compression.FileSystem|mvid:f49422bf-ccf0-4aa3-8e42-0398621441cc",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.IO.Compression.ZipFile",
+          "identity": "System.IO.Compression.ZipFile|mvid:caf5f83e-758d-4909-b65c-9697ffe7fbae",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.IO",
+          "identity": "System.IO|mvid:67a478bb-5bd2-4bad-b086-31c4c07328ff",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.IO.FileSystem.AccessControl",
+          "identity": "System.IO.FileSystem.AccessControl|mvid:5b91cfe8-21b1-4775-a33b-85c95c9b3969",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.IO.FileSystem",
+          "identity": "System.IO.FileSystem|mvid:cd5c483b-faab-4411-91cc-69501d6415f0",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.IO.FileSystem.DriveInfo",
+          "identity": "System.IO.FileSystem.DriveInfo|mvid:71adaaa9-7a77-44db-8e98-5c5e4ffb194d",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.IO.FileSystem.Primitives",
+          "identity": "System.IO.FileSystem.Primitives|mvid:7a483e38-092c-4e6c-9f71-11b762bcb2aa",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.IO.FileSystem.Watcher",
+          "identity": "System.IO.FileSystem.Watcher|mvid:31a5ebeb-8668-4870-92be-10adeb68607b",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.IO.IsolatedStorage",
+          "identity": "System.IO.IsolatedStorage|mvid:76c6bd46-ba26-4293-a17b-be7dfac238ed",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.IO.MemoryMappedFiles",
+          "identity": "System.IO.MemoryMappedFiles|mvid:2a187403-acf4-4f9c-8e1b-c857b0539f4c",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.IO.Pipelines",
+          "identity": "System.IO.Pipelines|mvid:658423f3-0a48-4219-93dd-36d1e2513b24",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.IO.Pipes.AccessControl",
+          "identity": "System.IO.Pipes.AccessControl|mvid:2ec9c068-7821-4e3f-8ac0-1ee05d19eb9d",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.IO.Pipes",
+          "identity": "System.IO.Pipes|mvid:96704165-f1ff-417e-8b46-497fb9d364a2",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.IO.UnmanagedMemoryStream",
+          "identity": "System.IO.UnmanagedMemoryStream|mvid:c2ae3cbf-3f98-4ef8-8698-c140697a3a8f",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Linq",
+          "identity": "System.Linq|mvid:3c0e4590-769b-4d71-896b-de7ad2b4a5a9",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Linq.Expressions",
+          "identity": "System.Linq.Expressions|mvid:93cb04ad-bc3c-4743-84e7-68490e81cbe7",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Linq.Parallel",
+          "identity": "System.Linq.Parallel|mvid:fc757539-8dea-4440-9367-4783bcd870f5",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Linq.Queryable",
+          "identity": "System.Linq.Queryable|mvid:fb2f2d9c-d777-49a1-bfe6-b51820ab1972",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Memory",
+          "identity": "System.Memory|mvid:d3845c69-6523-43c6-879e-31919f7ff7c3",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Net",
+          "identity": "System.Net|mvid:5a3a38f8-006e-4462-854c-9b98996a2e01",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Net.Http",
+          "identity": "System.Net.Http|mvid:05763805-89bb-4a2c-ba99-607d1dccaf17",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Net.Http.Json",
+          "identity": "System.Net.Http.Json|mvid:7acd7adf-f3cb-411a-a09a-ac705b139ee7",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Net.HttpListener",
+          "identity": "System.Net.HttpListener|mvid:6e6b8c44-0ab2-478c-ad1b-d5d2646e44e4",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Net.Mail",
+          "identity": "System.Net.Mail|mvid:cf373bba-e42d-4134-9409-1537a483900c",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Net.NameResolution",
+          "identity": "System.Net.NameResolution|mvid:97c89e02-9849-4e81-85f8-b42387c8723d",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Net.NetworkInformation",
+          "identity": "System.Net.NetworkInformation|mvid:a1776aa8-152b-4b8f-b706-59d16d5a85ec",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Net.Ping",
+          "identity": "System.Net.Ping|mvid:479c7aea-be7f-41ba-bad4-1975913280ef",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Net.Primitives",
+          "identity": "System.Net.Primitives|mvid:9f124c54-d6f9-4fba-aede-2cf61299bdb2",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Net.Quic",
+          "identity": "System.Net.Quic|mvid:cfbdf20f-4451-4a66-80ad-b0dabb71c355",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Net.Requests",
+          "identity": "System.Net.Requests|mvid:37be02a1-b03f-4f6f-9c8d-ab1814abf093",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Net.Security",
+          "identity": "System.Net.Security|mvid:92fa457d-6474-4352-918a-db656d750ea1",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Net.ServicePoint",
+          "identity": "System.Net.ServicePoint|mvid:ea6049aa-051e-41d4-9cd6-391116512cc8",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Net.Sockets",
+          "identity": "System.Net.Sockets|mvid:1fa72439-b37d-41d4-8e74-1e0f344a7bf1",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Net.WebClient",
+          "identity": "System.Net.WebClient|mvid:327839a7-36b9-4eba-ba4b-b471e4b74881",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Net.WebHeaderCollection",
+          "identity": "System.Net.WebHeaderCollection|mvid:f3551c4e-bbd4-4aa3-a420-5d5f8613004e",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Net.WebProxy",
+          "identity": "System.Net.WebProxy|mvid:16a9c9cd-1a21-4c23-bc28-42bd630933a9",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Net.WebSockets.Client",
+          "identity": "System.Net.WebSockets.Client|mvid:23bc7c94-75b5-49ef-8ae2-d6a0c411fe1c",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Net.WebSockets",
+          "identity": "System.Net.WebSockets|mvid:9ac5070b-34b1-4102-9efe-9ab38b3ae4bd",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Numerics",
+          "identity": "System.Numerics|mvid:a08e0c83-de40-4187-953d-e6b402aaa093",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Numerics.Vectors",
+          "identity": "System.Numerics.Vectors|mvid:2e5d1c00-f6f9-4fce-a4b0-367a6dffdacb",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.ObjectModel",
+          "identity": "System.ObjectModel|mvid:4e3ab2a8-b43f-408b-b150-cfbb8bc80288",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Reflection.DispatchProxy",
+          "identity": "System.Reflection.DispatchProxy|mvid:d8cd258a-e72d-48da-afdf-e2bbbb23c1ae",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Reflection",
+          "identity": "System.Reflection|mvid:757e84bb-fd4c-45e6-9abd-04f247f73f2d",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Reflection.Emit",
+          "identity": "System.Reflection.Emit|mvid:f3e1dc7a-f900-493b-9dca-00a9d7a6910f",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Reflection.Emit.ILGeneration",
+          "identity": "System.Reflection.Emit.ILGeneration|mvid:a3c17a3b-f797-4f8e-ba75-c060cdcf40f9",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Reflection.Emit.Lightweight",
+          "identity": "System.Reflection.Emit.Lightweight|mvid:b4750fb7-d345-4538-b227-3fecc64c0e6b",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Reflection.Extensions",
+          "identity": "System.Reflection.Extensions|mvid:339b8ffc-a3ff-47a2-afc0-97725affda27",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Reflection.Metadata",
+          "identity": "System.Reflection.Metadata|mvid:b77f11cd-39e1-4a20-8825-38cdad661dd7",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Reflection.Primitives",
+          "identity": "System.Reflection.Primitives|mvid:5656a60f-7880-4450-b9fc-0742fd07f75a",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Reflection.TypeExtensions",
+          "identity": "System.Reflection.TypeExtensions|mvid:7b2dadea-98a1-4622-b724-bd5b6cf2df67",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Resources.Reader",
+          "identity": "System.Resources.Reader|mvid:70ec51dc-a86d-4a7f-a8c9-d3711e6803c0",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Resources.ResourceManager",
+          "identity": "System.Resources.ResourceManager|mvid:9baab1e7-22f1-456f-b87b-ab31e190c489",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Resources.Writer",
+          "identity": "System.Resources.Writer|mvid:0697f26a-b829-4cd7-8536-3630e4a834cb",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Runtime.CompilerServices.Unsafe",
+          "identity": "System.Runtime.CompilerServices.Unsafe|mvid:27872cae-df97-42fa-be24-6ac35319036d",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Runtime.CompilerServices.VisualC",
+          "identity": "System.Runtime.CompilerServices.VisualC|mvid:f872e346-38f3-4fc9-abf3-7570b7cbe3a4",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Runtime",
+          "identity": "System.Runtime|mvid:e8843df8-275b-47f6-ab9d-5268c9191dde",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Runtime.Extensions",
+          "identity": "System.Runtime.Extensions|mvid:66bc1543-444d-4845-83a2-ec983e668e47",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Runtime.Handles",
+          "identity": "System.Runtime.Handles|mvid:66383dab-5e6e-4f29-8889-ec74e0ae1c4b",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Runtime.InteropServices",
+          "identity": "System.Runtime.InteropServices|mvid:156e3139-68dc-48b1-89c4-a760e57a8fae",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Runtime.InteropServices.JavaScript",
+          "identity": "System.Runtime.InteropServices.JavaScript|mvid:53f98d02-9d46-4588-9d62-3431da4a10d3",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Runtime.InteropServices.RuntimeInformation",
+          "identity": "System.Runtime.InteropServices.RuntimeInformation|mvid:a81cdd15-f9d0-4078-8aa7-072d21f0433d",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Runtime.Intrinsics",
+          "identity": "System.Runtime.Intrinsics|mvid:9288cd4b-ac39-4e96-96b8-abd16abbd12e",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Runtime.Loader",
+          "identity": "System.Runtime.Loader|mvid:b6a9e112-6bda-48ee-9156-0e930daf37a5",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Runtime.Numerics",
+          "identity": "System.Runtime.Numerics|mvid:4ed0f3c8-9d37-43ef-9af8-e7654e6119cc",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Runtime.Serialization",
+          "identity": "System.Runtime.Serialization|mvid:fa787aa1-904b-41c1-8465-6168f48f450d",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Runtime.Serialization.Formatters",
+          "identity": "System.Runtime.Serialization.Formatters|mvid:daf24f91-44c5-4f0e-80b1-dcda90f86328",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Runtime.Serialization.Json",
+          "identity": "System.Runtime.Serialization.Json|mvid:fbc82d35-efad-4f36-b31e-4360137a36c0",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Runtime.Serialization.Primitives",
+          "identity": "System.Runtime.Serialization.Primitives|mvid:e9bead82-d9c5-4f01-9e26-e359e0d0ba80",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Runtime.Serialization.Xml",
+          "identity": "System.Runtime.Serialization.Xml|mvid:896552af-48e0-4ff8-9ff0-b64f2dcd01a0",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Security.AccessControl",
+          "identity": "System.Security.AccessControl|mvid:420938d2-2ac8-4799-a595-8fa59b639ca8",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Security.Claims",
+          "identity": "System.Security.Claims|mvid:83ad8be7-2d52-4ead-a2b2-d410ee8a2b2c",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Security.Cryptography.Algorithms",
+          "identity": "System.Security.Cryptography.Algorithms|mvid:97906414-8f78-446c-8f2a-10334c402809",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Security.Cryptography.Cng",
+          "identity": "System.Security.Cryptography.Cng|mvid:6dfb4087-843b-4597-910f-4c027150a936",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Security.Cryptography.Csp",
+          "identity": "System.Security.Cryptography.Csp|mvid:a3b178ea-72c4-4757-8204-81d07410dbab",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Security.Cryptography",
+          "identity": "System.Security.Cryptography|mvid:28e610e9-7722-4e9a-bd33-70f0b10408bd",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Security.Cryptography.Encoding",
+          "identity": "System.Security.Cryptography.Encoding|mvid:947d936d-75ef-40e4-8cf7-243fa0e9e641",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Security.Cryptography.OpenSsl",
+          "identity": "System.Security.Cryptography.OpenSsl|mvid:57fbb1c4-e0b2-4298-86a6-6b602afdc190",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Security.Cryptography.Primitives",
+          "identity": "System.Security.Cryptography.Primitives|mvid:4936da23-2a54-4352-9de9-4d28a140148d",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Security.Cryptography.X509Certificates",
+          "identity": "System.Security.Cryptography.X509Certificates|mvid:8991b3fe-519b-45e8-ab76-e57e7e077f46",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Security",
+          "identity": "System.Security|mvid:d4ee72e4-983f-4ee5-bdac-933c681412e5",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Security.Principal",
+          "identity": "System.Security.Principal|mvid:0c30507a-eaad-456f-acda-b62600bd3586",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Security.Principal.Windows",
+          "identity": "System.Security.Principal.Windows|mvid:5ed377c8-7c88-435d-840c-10b050ff106c",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Security.SecureString",
+          "identity": "System.Security.SecureString|mvid:4427462b-215e-4763-90e1-232d799b061e",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.ServiceModel.Web",
+          "identity": "System.ServiceModel.Web|mvid:6be52135-6744-4ff4-91ed-a89daa84b2fa",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.ServiceProcess",
+          "identity": "System.ServiceProcess|mvid:a9db354d-a9ad-4c9b-a5e2-8c7866d3a3cc",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Text.Encoding.CodePages",
+          "identity": "System.Text.Encoding.CodePages|mvid:dd8ab657-ff3b-4cb4-830f-df0da4232fc4",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Text.Encoding",
+          "identity": "System.Text.Encoding|mvid:9fb67da4-9450-4243-b7f0-d95bcf8288cd",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Text.Encoding.Extensions",
+          "identity": "System.Text.Encoding.Extensions|mvid:4e7a92c9-fc5d-4d55-89ed-6d5169b3ec28",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Text.Encodings.Web",
+          "identity": "System.Text.Encodings.Web|mvid:b8f86a30-4119-48a4-beeb-3b06dbe4f997",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Text.Json",
+          "identity": "System.Text.Json|mvid:e25944c4-da46-4d93-a2df-2ff4b0dbdd5a",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Text.RegularExpressions",
+          "identity": "System.Text.RegularExpressions|mvid:14e74c8a-b1bf-45f9-8a3f-4439d6401d25",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Threading.Channels",
+          "identity": "System.Threading.Channels|mvid:8f405c37-09da-4882-92db-a4ba45f748b1",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Threading",
+          "identity": "System.Threading|mvid:d04eb233-5725-4a90-a815-812dda8114e4",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Threading.Overlapped",
+          "identity": "System.Threading.Overlapped|mvid:dee0977c-dc46-4d44-ba3c-358c868a6446",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Threading.Tasks.Dataflow",
+          "identity": "System.Threading.Tasks.Dataflow|mvid:057df757-feb6-49da-97eb-cf61d4fb943d",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Threading.Tasks",
+          "identity": "System.Threading.Tasks|mvid:44482751-12c1-4e19-9a4e-151b036af1ec",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Threading.Tasks.Extensions",
+          "identity": "System.Threading.Tasks.Extensions|mvid:028a491b-a5a0-4f4b-ab23-df264a3ab194",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Threading.Tasks.Parallel",
+          "identity": "System.Threading.Tasks.Parallel|mvid:61e5dbed-5e24-42d0-9a65-71a11580c933",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Threading.Thread",
+          "identity": "System.Threading.Thread|mvid:a557d9c5-732a-4798-a822-753a32ada329",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Threading.ThreadPool",
+          "identity": "System.Threading.ThreadPool|mvid:918ae03e-ab75-4b55-abf2-7e4f5bee0444",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Threading.Timer",
+          "identity": "System.Threading.Timer|mvid:f87017ab-7c0c-4d43-b875-b8962d68acf3",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Transactions",
+          "identity": "System.Transactions|mvid:3334e631-c4a4-424f-b8bc-abd2b9dc9670",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Transactions.Local",
+          "identity": "System.Transactions.Local|mvid:67266048-d9da-4840-a74a-e883ad54b9a5",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.ValueTuple",
+          "identity": "System.ValueTuple|mvid:17ca8825-d059-4a54-9f7f-e388f67275dc",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Web",
+          "identity": "System.Web|mvid:72f218a4-0516-48cf-a421-dfeb0108b779",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Web.HttpUtility",
+          "identity": "System.Web.HttpUtility|mvid:e8915cb3-659a-427b-960b-247ef9f4054a",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Windows",
+          "identity": "System.Windows|mvid:a45b672f-6a67-482f-8ec3-52e0241fc3e7",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Xml",
+          "identity": "System.Xml|mvid:d9263cdd-1c8d-4c7e-8a46-e1a60a25cc04",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Xml.Linq",
+          "identity": "System.Xml.Linq|mvid:3efb780a-a3e9-4b20-8a95-9d0eef5be06f",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Xml.ReaderWriter",
+          "identity": "System.Xml.ReaderWriter|mvid:6db408c5-03c2-4102-9e13-96df4c461ca2",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Xml.Serialization",
+          "identity": "System.Xml.Serialization|mvid:354380f4-9da9-4003-86c0-28236c23bed7",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Xml.XDocument",
+          "identity": "System.Xml.XDocument|mvid:36ec81d9-8ca2-4499-953b-cae924e50ced",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Xml.XmlDocument",
+          "identity": "System.Xml.XmlDocument|mvid:a1f643ec-730c-4ee4-97c0-5033f52b3a49",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Xml.XmlSerializer",
+          "identity": "System.Xml.XmlSerializer|mvid:6312f742-29c6-4d86-8b7c-93af6d5c6128",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Xml.XPath",
+          "identity": "System.Xml.XPath|mvid:6fa11e3b-5f6a-4be5-91a3-a30ba011b1d1",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Xml.XPath.XDocument",
+          "identity": "System.Xml.XPath.XDocument|mvid:aff26de3-310f-4991-bf44-d44f1a2b166d",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "WindowsBase",
+          "identity": "WindowsBase|mvid:3f20e3e9-f177-48e3-b69b-f77a4f418ed5",
+          "fingerprint": null
+        }
+      ],
+      "imports": [
+        {
+          "identity": "external-file:Directory.Build.props",
+          "hash": "e430464dfd655dfdcc4d6a0cfc7b45696006d182"
+        },
+        {
+          "identity": "external-file:WorkloadManifest.targets",
+          "hash": "746d7e119b141d6804a2d96be4b21603179e2e17"
+        }
+      ],
+      "languageOptions": {
+        "allowUnsafeBlocks": "False",
+        "languageVersion": "13.0",
+        "nullable": "enable"
+      },
+      "preprocessorSymbols": [
+        "DEBUG",
+        "NET",
+        "NET9_0",
+        "NETCOREAPP",
+        "TRACE"
+      ],
+      "documents": {
+        "expected": [
+          "src/Broken/Program.cs"
+        ],
+        "loaded": [
+          "src/Broken/Program.cs"
+        ],
+        "dropped": [],
+        "inventoryAvailable": true
+      },
+      "generated": {
+        "documents": [],
+        "diagnostics": []
+      },
+      "diagnostics": {
+        "workspace": [
+          {
+            "kind": "Failure",
+            "message": "Msbuild failed when processing the file 'src/Broken/Broken.csproj' with message: The referenced project ../Missing/Missing.csproj does not exist."
+          }
+        ],
+        "compiler": []
+      }
+    },
+    {
+      "identity": {
+        "projectPath": "src/Clean/Clean.csproj",
+        "projectName": "Clean",
+        "requestedTfm": null,
+        "effectiveTfm": "net9.0",
+        "configuration": "Debug",
+        "platform": "AnyCPU",
+        "declaredTfms": null
+      },
+      "state": "partial",
+      "reason": "missing",
+      "fingerprint": "4213d6292e4f29d4580516fc062c715aeab923dd",
+      "versions": {
+        "sdk": "9.0.305",
+        "msbuild": "17.14.21.41108",
+        "compiler": "4.14.0-3.25262.10+8edf7bcd4f1594c3d68a6a567469f41dbd33dd1b",
+        "engine": "0.1.0"
+      },
+      "references": [
+        {
+          "kind": "metadata",
+          "name": "Microsoft.CSharp",
+          "identity": "Microsoft.CSharp|mvid:159181c1-ff54-4b3d-8bce-5c5b3431a97d",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "Microsoft.VisualBasic.Core",
+          "identity": "Microsoft.VisualBasic.Core|mvid:71e760f1-680e-4e8b-b605-83da0359eaf3",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "Microsoft.VisualBasic",
+          "identity": "Microsoft.VisualBasic|mvid:6ec9202c-1163-4104-9cfe-5fe84d6af4a2",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "Microsoft.Win32.Primitives",
+          "identity": "Microsoft.Win32.Primitives|mvid:2e1a5a62-5156-4903-b15f-886a525d5aa5",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "Microsoft.Win32.Registry",
+          "identity": "Microsoft.Win32.Registry|mvid:c5640037-e583-4cf0-bb54-7ff44c302cb7",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "mscorlib",
+          "identity": "mscorlib|mvid:77008c5c-10f5-40ba-b6ac-a6467d6299c9",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "netstandard",
+          "identity": "netstandard|mvid:4f2eb19d-ce93-4e90-afa3-209bf8f649eb",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.AppContext",
+          "identity": "System.AppContext|mvid:096e3e16-a32f-4dfc-a4a8-0be6c1aaaa8a",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Buffers",
+          "identity": "System.Buffers|mvid:99215c3f-6f61-4372-a2bd-510b422ec4c4",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Collections.Concurrent",
+          "identity": "System.Collections.Concurrent|mvid:2efeb561-ab0f-44dd-94d6-672e51b8cc13",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Collections",
+          "identity": "System.Collections|mvid:1cb0ee42-3e6b-4136-91ae-e222686aa63e",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Collections.Immutable",
+          "identity": "System.Collections.Immutable|mvid:0fab08d8-485d-46b7-96c9-6e70a84513a7",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Collections.NonGeneric",
+          "identity": "System.Collections.NonGeneric|mvid:c8fd9d20-c9ae-4b25-91d4-f58c1f6f1736",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Collections.Specialized",
+          "identity": "System.Collections.Specialized|mvid:a7e1146a-7ad4-4b3a-b1ab-3f9571ef9e3a",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.ComponentModel.Annotations",
+          "identity": "System.ComponentModel.Annotations|mvid:39357449-c967-43a1-b69d-8518641b5d96",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.ComponentModel.DataAnnotations",
+          "identity": "System.ComponentModel.DataAnnotations|mvid:e0dd3f44-ea84-4e7a-9cfc-a5c84e8b800e",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.ComponentModel",
+          "identity": "System.ComponentModel|mvid:cafed6b4-28e3-4ba6-8178-990425029774",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.ComponentModel.EventBasedAsync",
+          "identity": "System.ComponentModel.EventBasedAsync|mvid:c380d806-8fe8-4f51-ae26-a13d3087f0bd",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.ComponentModel.Primitives",
+          "identity": "System.ComponentModel.Primitives|mvid:aebba2e4-285b-4b29-8883-08240b1be870",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.ComponentModel.TypeConverter",
+          "identity": "System.ComponentModel.TypeConverter|mvid:0747fc22-eec7-497f-aa9b-1929016391f4",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Configuration",
+          "identity": "System.Configuration|mvid:a500e35f-1f97-4fa3-884a-e7dcbd8148b8",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Console",
+          "identity": "System.Console|mvid:b0f9d965-89b8-4190-aae5-50d1f7bbf81d",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Core",
+          "identity": "System.Core|mvid:be4cd0e2-8be5-40f4-b9a1-0790db3b05ae",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Data.Common",
+          "identity": "System.Data.Common|mvid:f9b5103f-081f-4ce5-aa19-09d6c7e1a993",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Data.DataSetExtensions",
+          "identity": "System.Data.DataSetExtensions|mvid:59707448-2fef-4c8a-a02b-57232ee7e69a",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Data",
+          "identity": "System.Data|mvid:e5ca9145-a4f9-4e03-9abf-2ba02e0e6d7e",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Diagnostics.Contracts",
+          "identity": "System.Diagnostics.Contracts|mvid:7f59b65e-0185-424d-9e7f-9ca4fc3aff3c",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Diagnostics.Debug",
+          "identity": "System.Diagnostics.Debug|mvid:436fb393-b019-45d5-b1fe-dcbfab0b66b2",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Diagnostics.DiagnosticSource",
+          "identity": "System.Diagnostics.DiagnosticSource|mvid:ab4601ba-ba11-449e-b461-48e3513f934f",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Diagnostics.FileVersionInfo",
+          "identity": "System.Diagnostics.FileVersionInfo|mvid:2e74a074-6e3b-4135-99d4-83fa3956da42",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Diagnostics.Process",
+          "identity": "System.Diagnostics.Process|mvid:1537e19c-cf15-406d-9936-d97f331bc6a4",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Diagnostics.StackTrace",
+          "identity": "System.Diagnostics.StackTrace|mvid:3fcac56e-bf26-4fbb-a7cc-eda393b61195",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Diagnostics.TextWriterTraceListener",
+          "identity": "System.Diagnostics.TextWriterTraceListener|mvid:43f02d5d-d9e4-43b6-a381-12fa947be7b3",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Diagnostics.Tools",
+          "identity": "System.Diagnostics.Tools|mvid:f16217a6-84de-4726-b0e8-27e6ad9f6c49",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Diagnostics.TraceSource",
+          "identity": "System.Diagnostics.TraceSource|mvid:a4e7b365-2044-4965-b61c-b50749653d0b",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Diagnostics.Tracing",
+          "identity": "System.Diagnostics.Tracing|mvid:6aab9c4e-663d-44c4-ad82-6ac6d39af85c",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System",
+          "identity": "System|mvid:98ea47f7-5763-4e72-a2fe-95cb9e528fc7",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Drawing",
+          "identity": "System.Drawing|mvid:f7be533b-c96b-4855-b3b5-428e4846c23f",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Drawing.Primitives",
+          "identity": "System.Drawing.Primitives|mvid:098cebab-6d28-4ffd-b59a-116f1920f5ad",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Dynamic.Runtime",
+          "identity": "System.Dynamic.Runtime|mvid:f86b3d71-3c34-46e7-ab16-0228abbd5e08",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Formats.Asn1",
+          "identity": "System.Formats.Asn1|mvid:93953e83-b4f9-4a6f-884e-de60c6b0ef38",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Formats.Tar",
+          "identity": "System.Formats.Tar|mvid:c57bcdff-b6f6-44da-825f-de4809958d1d",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Globalization.Calendars",
+          "identity": "System.Globalization.Calendars|mvid:96b71330-aece-448d-8648-6d34930f9cde",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Globalization",
+          "identity": "System.Globalization|mvid:1fbc4579-9c73-45a6-a57a-9af680d6d0a5",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Globalization.Extensions",
+          "identity": "System.Globalization.Extensions|mvid:b1dd0ffc-34ae-4ae8-9867-3fedd828fff5",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.IO.Compression.Brotli",
+          "identity": "System.IO.Compression.Brotli|mvid:9ac8d3ba-0f04-40b6-acb4-deae12b0df54",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.IO.Compression",
+          "identity": "System.IO.Compression|mvid:03ab27eb-5575-4f1d-a735-2fbaea0b39f7",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.IO.Compression.FileSystem",
+          "identity": "System.IO.Compression.FileSystem|mvid:f49422bf-ccf0-4aa3-8e42-0398621441cc",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.IO.Compression.ZipFile",
+          "identity": "System.IO.Compression.ZipFile|mvid:caf5f83e-758d-4909-b65c-9697ffe7fbae",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.IO",
+          "identity": "System.IO|mvid:67a478bb-5bd2-4bad-b086-31c4c07328ff",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.IO.FileSystem.AccessControl",
+          "identity": "System.IO.FileSystem.AccessControl|mvid:5b91cfe8-21b1-4775-a33b-85c95c9b3969",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.IO.FileSystem",
+          "identity": "System.IO.FileSystem|mvid:cd5c483b-faab-4411-91cc-69501d6415f0",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.IO.FileSystem.DriveInfo",
+          "identity": "System.IO.FileSystem.DriveInfo|mvid:71adaaa9-7a77-44db-8e98-5c5e4ffb194d",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.IO.FileSystem.Primitives",
+          "identity": "System.IO.FileSystem.Primitives|mvid:7a483e38-092c-4e6c-9f71-11b762bcb2aa",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.IO.FileSystem.Watcher",
+          "identity": "System.IO.FileSystem.Watcher|mvid:31a5ebeb-8668-4870-92be-10adeb68607b",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.IO.IsolatedStorage",
+          "identity": "System.IO.IsolatedStorage|mvid:76c6bd46-ba26-4293-a17b-be7dfac238ed",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.IO.MemoryMappedFiles",
+          "identity": "System.IO.MemoryMappedFiles|mvid:2a187403-acf4-4f9c-8e1b-c857b0539f4c",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.IO.Pipelines",
+          "identity": "System.IO.Pipelines|mvid:658423f3-0a48-4219-93dd-36d1e2513b24",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.IO.Pipes.AccessControl",
+          "identity": "System.IO.Pipes.AccessControl|mvid:2ec9c068-7821-4e3f-8ac0-1ee05d19eb9d",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.IO.Pipes",
+          "identity": "System.IO.Pipes|mvid:96704165-f1ff-417e-8b46-497fb9d364a2",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.IO.UnmanagedMemoryStream",
+          "identity": "System.IO.UnmanagedMemoryStream|mvid:c2ae3cbf-3f98-4ef8-8698-c140697a3a8f",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Linq",
+          "identity": "System.Linq|mvid:3c0e4590-769b-4d71-896b-de7ad2b4a5a9",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Linq.Expressions",
+          "identity": "System.Linq.Expressions|mvid:93cb04ad-bc3c-4743-84e7-68490e81cbe7",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Linq.Parallel",
+          "identity": "System.Linq.Parallel|mvid:fc757539-8dea-4440-9367-4783bcd870f5",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Linq.Queryable",
+          "identity": "System.Linq.Queryable|mvid:fb2f2d9c-d777-49a1-bfe6-b51820ab1972",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Memory",
+          "identity": "System.Memory|mvid:d3845c69-6523-43c6-879e-31919f7ff7c3",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Net",
+          "identity": "System.Net|mvid:5a3a38f8-006e-4462-854c-9b98996a2e01",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Net.Http",
+          "identity": "System.Net.Http|mvid:05763805-89bb-4a2c-ba99-607d1dccaf17",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Net.Http.Json",
+          "identity": "System.Net.Http.Json|mvid:7acd7adf-f3cb-411a-a09a-ac705b139ee7",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Net.HttpListener",
+          "identity": "System.Net.HttpListener|mvid:6e6b8c44-0ab2-478c-ad1b-d5d2646e44e4",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Net.Mail",
+          "identity": "System.Net.Mail|mvid:cf373bba-e42d-4134-9409-1537a483900c",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Net.NameResolution",
+          "identity": "System.Net.NameResolution|mvid:97c89e02-9849-4e81-85f8-b42387c8723d",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Net.NetworkInformation",
+          "identity": "System.Net.NetworkInformation|mvid:a1776aa8-152b-4b8f-b706-59d16d5a85ec",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Net.Ping",
+          "identity": "System.Net.Ping|mvid:479c7aea-be7f-41ba-bad4-1975913280ef",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Net.Primitives",
+          "identity": "System.Net.Primitives|mvid:9f124c54-d6f9-4fba-aede-2cf61299bdb2",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Net.Quic",
+          "identity": "System.Net.Quic|mvid:cfbdf20f-4451-4a66-80ad-b0dabb71c355",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Net.Requests",
+          "identity": "System.Net.Requests|mvid:37be02a1-b03f-4f6f-9c8d-ab1814abf093",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Net.Security",
+          "identity": "System.Net.Security|mvid:92fa457d-6474-4352-918a-db656d750ea1",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Net.ServicePoint",
+          "identity": "System.Net.ServicePoint|mvid:ea6049aa-051e-41d4-9cd6-391116512cc8",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Net.Sockets",
+          "identity": "System.Net.Sockets|mvid:1fa72439-b37d-41d4-8e74-1e0f344a7bf1",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Net.WebClient",
+          "identity": "System.Net.WebClient|mvid:327839a7-36b9-4eba-ba4b-b471e4b74881",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Net.WebHeaderCollection",
+          "identity": "System.Net.WebHeaderCollection|mvid:f3551c4e-bbd4-4aa3-a420-5d5f8613004e",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Net.WebProxy",
+          "identity": "System.Net.WebProxy|mvid:16a9c9cd-1a21-4c23-bc28-42bd630933a9",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Net.WebSockets.Client",
+          "identity": "System.Net.WebSockets.Client|mvid:23bc7c94-75b5-49ef-8ae2-d6a0c411fe1c",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Net.WebSockets",
+          "identity": "System.Net.WebSockets|mvid:9ac5070b-34b1-4102-9efe-9ab38b3ae4bd",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Numerics",
+          "identity": "System.Numerics|mvid:a08e0c83-de40-4187-953d-e6b402aaa093",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Numerics.Vectors",
+          "identity": "System.Numerics.Vectors|mvid:2e5d1c00-f6f9-4fce-a4b0-367a6dffdacb",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.ObjectModel",
+          "identity": "System.ObjectModel|mvid:4e3ab2a8-b43f-408b-b150-cfbb8bc80288",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Reflection.DispatchProxy",
+          "identity": "System.Reflection.DispatchProxy|mvid:d8cd258a-e72d-48da-afdf-e2bbbb23c1ae",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Reflection",
+          "identity": "System.Reflection|mvid:757e84bb-fd4c-45e6-9abd-04f247f73f2d",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Reflection.Emit",
+          "identity": "System.Reflection.Emit|mvid:f3e1dc7a-f900-493b-9dca-00a9d7a6910f",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Reflection.Emit.ILGeneration",
+          "identity": "System.Reflection.Emit.ILGeneration|mvid:a3c17a3b-f797-4f8e-ba75-c060cdcf40f9",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Reflection.Emit.Lightweight",
+          "identity": "System.Reflection.Emit.Lightweight|mvid:b4750fb7-d345-4538-b227-3fecc64c0e6b",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Reflection.Extensions",
+          "identity": "System.Reflection.Extensions|mvid:339b8ffc-a3ff-47a2-afc0-97725affda27",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Reflection.Metadata",
+          "identity": "System.Reflection.Metadata|mvid:b77f11cd-39e1-4a20-8825-38cdad661dd7",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Reflection.Primitives",
+          "identity": "System.Reflection.Primitives|mvid:5656a60f-7880-4450-b9fc-0742fd07f75a",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Reflection.TypeExtensions",
+          "identity": "System.Reflection.TypeExtensions|mvid:7b2dadea-98a1-4622-b724-bd5b6cf2df67",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Resources.Reader",
+          "identity": "System.Resources.Reader|mvid:70ec51dc-a86d-4a7f-a8c9-d3711e6803c0",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Resources.ResourceManager",
+          "identity": "System.Resources.ResourceManager|mvid:9baab1e7-22f1-456f-b87b-ab31e190c489",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Resources.Writer",
+          "identity": "System.Resources.Writer|mvid:0697f26a-b829-4cd7-8536-3630e4a834cb",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Runtime.CompilerServices.Unsafe",
+          "identity": "System.Runtime.CompilerServices.Unsafe|mvid:27872cae-df97-42fa-be24-6ac35319036d",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Runtime.CompilerServices.VisualC",
+          "identity": "System.Runtime.CompilerServices.VisualC|mvid:f872e346-38f3-4fc9-abf3-7570b7cbe3a4",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Runtime",
+          "identity": "System.Runtime|mvid:e8843df8-275b-47f6-ab9d-5268c9191dde",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Runtime.Extensions",
+          "identity": "System.Runtime.Extensions|mvid:66bc1543-444d-4845-83a2-ec983e668e47",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Runtime.Handles",
+          "identity": "System.Runtime.Handles|mvid:66383dab-5e6e-4f29-8889-ec74e0ae1c4b",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Runtime.InteropServices",
+          "identity": "System.Runtime.InteropServices|mvid:156e3139-68dc-48b1-89c4-a760e57a8fae",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Runtime.InteropServices.JavaScript",
+          "identity": "System.Runtime.InteropServices.JavaScript|mvid:53f98d02-9d46-4588-9d62-3431da4a10d3",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Runtime.InteropServices.RuntimeInformation",
+          "identity": "System.Runtime.InteropServices.RuntimeInformation|mvid:a81cdd15-f9d0-4078-8aa7-072d21f0433d",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Runtime.Intrinsics",
+          "identity": "System.Runtime.Intrinsics|mvid:9288cd4b-ac39-4e96-96b8-abd16abbd12e",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Runtime.Loader",
+          "identity": "System.Runtime.Loader|mvid:b6a9e112-6bda-48ee-9156-0e930daf37a5",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Runtime.Numerics",
+          "identity": "System.Runtime.Numerics|mvid:4ed0f3c8-9d37-43ef-9af8-e7654e6119cc",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Runtime.Serialization",
+          "identity": "System.Runtime.Serialization|mvid:fa787aa1-904b-41c1-8465-6168f48f450d",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Runtime.Serialization.Formatters",
+          "identity": "System.Runtime.Serialization.Formatters|mvid:daf24f91-44c5-4f0e-80b1-dcda90f86328",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Runtime.Serialization.Json",
+          "identity": "System.Runtime.Serialization.Json|mvid:fbc82d35-efad-4f36-b31e-4360137a36c0",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Runtime.Serialization.Primitives",
+          "identity": "System.Runtime.Serialization.Primitives|mvid:e9bead82-d9c5-4f01-9e26-e359e0d0ba80",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Runtime.Serialization.Xml",
+          "identity": "System.Runtime.Serialization.Xml|mvid:896552af-48e0-4ff8-9ff0-b64f2dcd01a0",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Security.AccessControl",
+          "identity": "System.Security.AccessControl|mvid:420938d2-2ac8-4799-a595-8fa59b639ca8",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Security.Claims",
+          "identity": "System.Security.Claims|mvid:83ad8be7-2d52-4ead-a2b2-d410ee8a2b2c",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Security.Cryptography.Algorithms",
+          "identity": "System.Security.Cryptography.Algorithms|mvid:97906414-8f78-446c-8f2a-10334c402809",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Security.Cryptography.Cng",
+          "identity": "System.Security.Cryptography.Cng|mvid:6dfb4087-843b-4597-910f-4c027150a936",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Security.Cryptography.Csp",
+          "identity": "System.Security.Cryptography.Csp|mvid:a3b178ea-72c4-4757-8204-81d07410dbab",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Security.Cryptography",
+          "identity": "System.Security.Cryptography|mvid:28e610e9-7722-4e9a-bd33-70f0b10408bd",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Security.Cryptography.Encoding",
+          "identity": "System.Security.Cryptography.Encoding|mvid:947d936d-75ef-40e4-8cf7-243fa0e9e641",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Security.Cryptography.OpenSsl",
+          "identity": "System.Security.Cryptography.OpenSsl|mvid:57fbb1c4-e0b2-4298-86a6-6b602afdc190",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Security.Cryptography.Primitives",
+          "identity": "System.Security.Cryptography.Primitives|mvid:4936da23-2a54-4352-9de9-4d28a140148d",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Security.Cryptography.X509Certificates",
+          "identity": "System.Security.Cryptography.X509Certificates|mvid:8991b3fe-519b-45e8-ab76-e57e7e077f46",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Security",
+          "identity": "System.Security|mvid:d4ee72e4-983f-4ee5-bdac-933c681412e5",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Security.Principal",
+          "identity": "System.Security.Principal|mvid:0c30507a-eaad-456f-acda-b62600bd3586",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Security.Principal.Windows",
+          "identity": "System.Security.Principal.Windows|mvid:5ed377c8-7c88-435d-840c-10b050ff106c",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Security.SecureString",
+          "identity": "System.Security.SecureString|mvid:4427462b-215e-4763-90e1-232d799b061e",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.ServiceModel.Web",
+          "identity": "System.ServiceModel.Web|mvid:6be52135-6744-4ff4-91ed-a89daa84b2fa",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.ServiceProcess",
+          "identity": "System.ServiceProcess|mvid:a9db354d-a9ad-4c9b-a5e2-8c7866d3a3cc",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Text.Encoding.CodePages",
+          "identity": "System.Text.Encoding.CodePages|mvid:dd8ab657-ff3b-4cb4-830f-df0da4232fc4",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Text.Encoding",
+          "identity": "System.Text.Encoding|mvid:9fb67da4-9450-4243-b7f0-d95bcf8288cd",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Text.Encoding.Extensions",
+          "identity": "System.Text.Encoding.Extensions|mvid:4e7a92c9-fc5d-4d55-89ed-6d5169b3ec28",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Text.Encodings.Web",
+          "identity": "System.Text.Encodings.Web|mvid:b8f86a30-4119-48a4-beeb-3b06dbe4f997",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Text.Json",
+          "identity": "System.Text.Json|mvid:e25944c4-da46-4d93-a2df-2ff4b0dbdd5a",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Text.RegularExpressions",
+          "identity": "System.Text.RegularExpressions|mvid:14e74c8a-b1bf-45f9-8a3f-4439d6401d25",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Threading.Channels",
+          "identity": "System.Threading.Channels|mvid:8f405c37-09da-4882-92db-a4ba45f748b1",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Threading",
+          "identity": "System.Threading|mvid:d04eb233-5725-4a90-a815-812dda8114e4",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Threading.Overlapped",
+          "identity": "System.Threading.Overlapped|mvid:dee0977c-dc46-4d44-ba3c-358c868a6446",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Threading.Tasks.Dataflow",
+          "identity": "System.Threading.Tasks.Dataflow|mvid:057df757-feb6-49da-97eb-cf61d4fb943d",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Threading.Tasks",
+          "identity": "System.Threading.Tasks|mvid:44482751-12c1-4e19-9a4e-151b036af1ec",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Threading.Tasks.Extensions",
+          "identity": "System.Threading.Tasks.Extensions|mvid:028a491b-a5a0-4f4b-ab23-df264a3ab194",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Threading.Tasks.Parallel",
+          "identity": "System.Threading.Tasks.Parallel|mvid:61e5dbed-5e24-42d0-9a65-71a11580c933",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Threading.Thread",
+          "identity": "System.Threading.Thread|mvid:a557d9c5-732a-4798-a822-753a32ada329",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Threading.ThreadPool",
+          "identity": "System.Threading.ThreadPool|mvid:918ae03e-ab75-4b55-abf2-7e4f5bee0444",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Threading.Timer",
+          "identity": "System.Threading.Timer|mvid:f87017ab-7c0c-4d43-b875-b8962d68acf3",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Transactions",
+          "identity": "System.Transactions|mvid:3334e631-c4a4-424f-b8bc-abd2b9dc9670",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Transactions.Local",
+          "identity": "System.Transactions.Local|mvid:67266048-d9da-4840-a74a-e883ad54b9a5",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.ValueTuple",
+          "identity": "System.ValueTuple|mvid:17ca8825-d059-4a54-9f7f-e388f67275dc",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Web",
+          "identity": "System.Web|mvid:72f218a4-0516-48cf-a421-dfeb0108b779",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Web.HttpUtility",
+          "identity": "System.Web.HttpUtility|mvid:e8915cb3-659a-427b-960b-247ef9f4054a",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Windows",
+          "identity": "System.Windows|mvid:a45b672f-6a67-482f-8ec3-52e0241fc3e7",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Xml",
+          "identity": "System.Xml|mvid:d9263cdd-1c8d-4c7e-8a46-e1a60a25cc04",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Xml.Linq",
+          "identity": "System.Xml.Linq|mvid:3efb780a-a3e9-4b20-8a95-9d0eef5be06f",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Xml.ReaderWriter",
+          "identity": "System.Xml.ReaderWriter|mvid:6db408c5-03c2-4102-9e13-96df4c461ca2",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Xml.Serialization",
+          "identity": "System.Xml.Serialization|mvid:354380f4-9da9-4003-86c0-28236c23bed7",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Xml.XDocument",
+          "identity": "System.Xml.XDocument|mvid:36ec81d9-8ca2-4499-953b-cae924e50ced",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Xml.XmlDocument",
+          "identity": "System.Xml.XmlDocument|mvid:a1f643ec-730c-4ee4-97c0-5033f52b3a49",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Xml.XmlSerializer",
+          "identity": "System.Xml.XmlSerializer|mvid:6312f742-29c6-4d86-8b7c-93af6d5c6128",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Xml.XPath",
+          "identity": "System.Xml.XPath|mvid:6fa11e3b-5f6a-4be5-91a3-a30ba011b1d1",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Xml.XPath.XDocument",
+          "identity": "System.Xml.XPath.XDocument|mvid:aff26de3-310f-4991-bf44-d44f1a2b166d",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "WindowsBase",
+          "identity": "WindowsBase|mvid:3f20e3e9-f177-48e3-b69b-f77a4f418ed5",
+          "fingerprint": null
+        }
+      ],
+      "imports": [
+        {
+          "identity": "external-file:Directory.Build.props",
+          "hash": "e430464dfd655dfdcc4d6a0cfc7b45696006d182"
+        },
+        {
+          "identity": "external-file:WorkloadManifest.targets",
+          "hash": "746d7e119b141d6804a2d96be4b21603179e2e17"
+        }
+      ],
+      "languageOptions": {
+        "allowUnsafeBlocks": "False",
+        "languageVersion": "13.0",
+        "nullable": "enable"
+      },
+      "preprocessorSymbols": [
+        "DEBUG",
+        "NET",
+        "NET9_0",
+        "NETCOREAPP",
+        "TRACE"
+      ],
+      "documents": {
+        "expected": [
+          "../csharp-context-outside/Linked.cs",
+          "src/Clean/Ghost.cs",
+          "src/Clean/Program.cs",
+          "src/Clean/bin/Stub.cs"
+        ],
+        "loaded": [
+          "src/Clean/Ghost.cs",
+          "src/Clean/Program.cs"
+        ],
+        "dropped": [
+          {
+            "path": "../csharp-context-outside/Linked.cs",
+            "reason": "linked-outside-root"
+          },
+          {
+            "path": "src/Clean/Ghost.cs",
+            "reason": "missing"
+          },
+          {
+            "path": "src/Clean/bin/Stub.cs",
+            "reason": "skipped-directory"
+          }
+        ],
+        "inventoryAvailable": true
+      },
+      "generated": {
+        "documents": [
+          {
+            "hintName": "GreetingJsonContext.GetJsonTypeInfo.g.cs",
+            "generator": "unknown"
+          },
+          {
+            "hintName": "GreetingJsonContext.Greeting.g.cs",
+            "generator": "unknown"
+          },
+          {
+            "hintName": "GreetingJsonContext.PropertyNames.g.cs",
+            "generator": "unknown"
+          },
+          {
+            "hintName": "GreetingJsonContext.String.g.cs",
+            "generator": "unknown"
+          },
+          {
+            "hintName": "GreetingJsonContext.g.cs",
+            "generator": "unknown"
+          }
+        ],
+        "diagnostics": []
+      },
+      "diagnostics": {
+        "workspace": [],
+        "compiler": []
+      }
+    },
+    {
+      "identity": {
+        "projectPath": "src/Legacy/Legacy.csproj",
+        "projectName": "Legacy",
+        "requestedTfm": null,
+        "effectiveTfm": "net472",
+        "configuration": null,
+        "platform": null,
+        "declaredTfms": null
+      },
+      "state": "partial",
+      "reason": "binding-error",
+      "fingerprint": "544a398c0b690e9db16806dadd40ae93a6f718a5",
+      "versions": {
+        "sdk": "9.0.305",
+        "msbuild": "17.14.21.41108",
+        "compiler": "4.14.0-3.25262.10+8edf7bcd4f1594c3d68a6a567469f41dbd33dd1b",
+        "engine": "0.1.0"
+      },
+      "references": [
+        {
+          "kind": "metadata",
+          "name": "mscorlib",
+          "identity": "mscorlib|mvid:cafb29d5-2338-47fb-b4ed-cf8d7c32b1e3",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Core",
+          "identity": "System.Core|mvid:3c9e850c-90c5-48a0-af7e-388089bbdae9",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Data",
+          "identity": "System.Data|mvid:9830c18b-4ae5-4d31-89f1-6c37283329f2",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System",
+          "identity": "System|mvid:da2502c5-0798-42b1-9aaf-45d431b1301b",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Drawing",
+          "identity": "System.Drawing|mvid:76e5685a-ed56-42c2-b08f-6e049526ab12",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.IO.Compression.FileSystem",
+          "identity": "System.IO.Compression.FileSystem|mvid:be636da5-b9a7-459d-ba9a-f713d30adf42",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Numerics",
+          "identity": "System.Numerics|mvid:64a5d4a2-a435-4531-b41c-65ed5e5534b2",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Runtime.Serialization",
+          "identity": "System.Runtime.Serialization|mvid:40dd49b3-da7b-4fe9-aa1f-e56059d48289",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Xml",
+          "identity": "System.Xml|mvid:82ca8cb8-9d1a-481b-adc1-6322e06a8f03",
+          "fingerprint": null
+        },
+        {
+          "kind": "metadata",
+          "name": "System.Xml.Linq",
+          "identity": "System.Xml.Linq|mvid:a51d290b-b294-47c7-b3e5-b8d0df4c4e4e",
+          "fingerprint": null
+        }
+      ],
+      "imports": [],
+      "languageOptions": {
+        "allowUnsafeBlocks": null,
+        "languageVersion": "13.0",
+        "nullable": null
+      },
+      "preprocessorSymbols": [],
+      "documents": {
+        "expected": [
+          "src/Legacy/Program.cs"
+        ],
+        "loaded": [
+          "src/Legacy/Program.cs"
+        ],
+        "dropped": [],
+        "inventoryAvailable": false
+      },
+      "generated": {
+        "documents": [],
+        "diagnostics": []
+      },
+      "diagnostics": {
+        "workspace": [],
+        "compiler": [
+          {
+            "severity": "Error",
+            "id": "CS1501",
+            "message": "No overload for method 'Contains' takes 2 arguments",
+            "file": "src/Legacy/Program.cs",
+            "line": 13
+          }
+        ]
+      }
+    },
+    {
+      "identity": {
+        "projectPath": "src/Legacy/Legacy.csproj",
+        "projectName": "Legacy",
+        "requestedTfm": null,
+        "effectiveTfm": "net9.0",
+        "configuration": null,
+        "platform": null,
+        "declaredTfms": null
+      },
+      "state": "excluded",
+      "reason": "not-requested",
+      "fingerprint": null,
+      "versions": null,
+      "references": [],
+      "imports": [],
+      "languageOptions": {},
+      "preprocessorSymbols": [],
+      "documents": {
+        "expected": [],
+        "loaded": [],
+        "dropped": [],
+        "inventoryAvailable": true
+      },
+      "generated": {
+        "documents": [],
+        "diagnostics": []
+      },
+      "diagnostics": {
+        "workspace": [],
+        "compiler": []
+      }
+    },
+    {
+      "identity": {
+        "projectPath": "src/Vanished/Vanished.csproj",
+        "projectName": "Vanished",
+        "requestedTfm": null,
+        "effectiveTfm": null,
+        "configuration": null,
+        "platform": null,
+        "declaredTfms": null
+      },
+      "state": "failed",
+      "reason": "project-not-loaded",
+      "fingerprint": null,
+      "versions": {
+        "sdk": "9.0.305",
+        "msbuild": "17.14.21.41108",
+        "compiler": "4.14.0-3.25262.10+8edf7bcd4f1594c3d68a6a567469f41dbd33dd1b",
+        "engine": "0.1.0"
+      },
+      "references": [],
+      "imports": [],
+      "languageOptions": {},
+      "preprocessorSymbols": [],
+      "documents": {
+        "expected": [],
+        "loaded": [],
+        "dropped": [],
+        "inventoryAvailable": true
+      },
+      "generated": {
+        "documents": [],
+        "diagnostics": []
+      },
+      "diagnostics": {
+        "workspace": [],
+        "compiler": []
+      }
+    }
+  ]
+}

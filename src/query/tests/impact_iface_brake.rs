@@ -430,6 +430,67 @@ fn build_impact_model_iface_max_fanin_zero_disables_the_brake_and_restores_the_d
 }
 
 #[test]
+fn build_impact_model_leaves_a_contract_at_exactly_the_fan_in_threshold_hopping() {
+    let graph = broad_iface_fixture_graph();
+    let root = broad_iface_fixture_root();
+    let index = load_graph_index(&graph, &root);
+    assert_eq!(index.ctor_di_fanin.get("IWidgetRepository"), Some(&9));
+
+    let at_threshold = match build_impact_model(
+        &index,
+        "WidgetRepository",
+        1,
+        DEFAULT_CAP,
+        true,
+        9,
+        DEFAULT_HUB_MAX_INDEGREE,
+    ) {
+        ImpactResult::Resolved(m) => m,
+        other => panic!("expected Resolved, got {other:?}"),
+    };
+    assert_eq!(
+        at_threshold.rows.len(),
+        12,
+        "a contract AT the threshold still hops; the brake compares strictly greater"
+    );
+    assert!(
+        at_threshold.braked.is_empty(),
+        "a threshold equal to the fan-in never brakes"
+    );
+
+    let one_below = match build_impact_model(
+        &index,
+        "WidgetRepository",
+        1,
+        DEFAULT_CAP,
+        true,
+        8,
+        DEFAULT_HUB_MAX_INDEGREE,
+    ) {
+        ImpactResult::Resolved(m) => m,
+        other => panic!("expected Resolved, got {other:?}"),
+    };
+    let mut files: Vec<&str> = one_below.rows.iter().map(|r| r.file.as_str()).collect();
+    files.sort();
+    assert_eq!(
+        files,
+        vec![
+            "Widgets/ClockConsumer0.cs",
+            "Widgets/ClockConsumer1.cs",
+            "Widgets/GadgetService.cs"
+        ],
+        "one below the fan-in, the same contract brakes"
+    );
+    assert_eq!(
+        one_below.braked,
+        vec![BrakedIface {
+            iface: "IWidgetRepository".to_string(),
+            fanin: 9
+        }]
+    );
+}
+
+#[test]
 fn build_impact_model_no_iface_keeps_its_ds_0050_meaning_no_hop_at_all_and_no_brake_report() {
     let graph = broad_iface_fixture_graph();
     let root = broad_iface_fixture_root();

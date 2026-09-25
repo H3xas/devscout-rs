@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <!-- Lets the dependency-fingerprint fixture pair move only Shared's own
+       build symbols, and through the project-reference fold Probe's
+       fingerprint too, without touching Probe's own direct inputs at all. -->
+  <PropertyGroup Condition="'$(SharedExtraSymbol)' != ''">
+    <DefineConstants>$(DefineConstants);$(SharedExtraSymbol)</DefineConstants>
+  </PropertyGroup>
+
+</Project>

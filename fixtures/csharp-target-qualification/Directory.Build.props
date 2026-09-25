@@ -1,0 +1,14 @@
+<Project>
+  <PropertyGroup>
+    <!-- One language version across the target axis: a difference between two
+         rows must be a target difference, never a language difference. -->
+    <LangVersion>7.3</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <Deterministic>true</Deterministic>
+    <!-- Every leaf project restores/builds standalone; nothing here changes
+         how the repository or the sidecar itself builds. -->
+  </PropertyGroup>
+</Project>

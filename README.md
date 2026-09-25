@@ -22,6 +22,7 @@ much.
 | `devscout read <symbol>` | The symbol's declaration span and verbatim source plus the same inbound answer as `refs` |
 | `devscout impact <file\|symbol>` | Blast radius: the files reachable from a seed within N hops |
 | `devscout import-edges <file> --repo <id>` | Load a versioned cross-repo edge export; `impact` then reports files reached only through it (`--no-imports` to skip it) |
+| `devscout compiler-facts run\|import\|status` | Optional: acquire or import a versioned compiler-derived fact artifact (see [Compiler facts](#compiler-facts)); `map` and every query never need it and never start it |
 | `devscout tests <symbol>` | The test files that reach a symbol |
 | `devscout <verb> <symbol> --pick N` | On any of the four verbs above, narrows a member seed with several declaring types to its nth candidate |
 | `devscout stats` | Index and cache summary for the current repo |
@@ -157,8 +158,9 @@ untracked files and are shared correctly by worktrees:
 <git-common-dir>/scout/manifest.json              file -> purpose + symbol index
 <git-common-dir>/scout/index-state.json           HEAD + timestamp the index was built at
 <git-common-dir>/scout/graph/graph.json           definitions, edges, and project units
-<git-common-dir>/scout/graph/fragments-v19.json   per-file extraction cache (incremental map)
+<git-common-dir>/scout/graph/fragments-v21.json   per-file extraction cache (incremental map)
 <git-common-dir>/scout/graph/project-units.json   csproj staleness sidecar (present only with a project model)
+<git-common-dir>/scout/graph/compiler-facts-v1.json  optional versioned compiler-fact artifact (see Compiler facts below); absent unless `compiler-facts run|import` has admitted one
 <git-common-dir>/scout/graph/semantic-v1.json      planned: compiler-backed enrichment cache (see docs/design/compiler-enrichment.md)
 <git-common-dir>/scout/log/queries.jsonl          query-verb telemetry, one JSON line per answered invocation (opt-in; SCOUT_TELEMETRY=1)
 ```
@@ -183,7 +185,33 @@ Two stores live outside the repo:
 | `SCOUT_MTIME_REUSE` | `1` switches `map` from content-hash fragment reuse back to mtime-based reuse. |
 | `SCOUT_DEBUG` | `1` turns on hook debug output. Equivalent to creating a `.scout/debug` file. |
 | `SCOUT_TELEMETRY` | Opt-in query telemetry. Export `1` in the shell that runs `find`/`refs`/`read`/`impact`/`tests` to append one JSON line per answered invocation to `scout/log/queries.jsonl`; a usage error or a seed with no resolved repository or graph logs nothing. Unset (or any other value) writes nothing. The agent hooks never run these verbs, so `devscout init` does not set this variable for them. |
+| `SCOUT_COMPILER_ENGINE` | Path to a built compiler-facts engine executable. Read only by `compiler-facts run`; no default and nothing is downloaded. Unset (or empty) refuses with one line and touches nothing. |
 | `HOME` | Used to locate the registry, content database, and agent settings file. |
+
+## Compiler facts
+
+`devscout compiler-facts run|import|status` is entirely optional: `map` and every query verb
+answer from source-level extraction alone and never spawn a compiler or touch the network. When a
+compiler-derived artifact has been admitted, a future consumer can layer compiler-checked facts on
+top of that same syntax-only coverage; today this verb group only acquires, validates and reports
+that artifact.
+
+- `run` launches a one-shot engine located by `SCOUT_COMPILER_ENGINE` (no default, nothing
+  downloaded), captures its output under a wall-clock timeout and a byte cap, and admits it.
+- `import <file>` admits a build- or CI-produced artifact through the identical admission path
+  `run` uses, so a locally acquired and an externally produced artifact reach the same accept or
+  refuse decision for the same bytes.
+- `status` is read-only and reports `coverage: syntax-only` when no artifact has ever been
+  admitted, or the admitted artifact's own coverage state otherwise.
+
+Every check runs before a single byte is published: a mismatched engine revision, contract
+version, requested profile, dependency fingerprint, compilation-context version or fingerprint, or
+source-snapshot identity is refused with a stable reason and writes nothing; a killed, timed-out,
+over-budget, truncated, malformed, or internally incoherent run leaves the previously admitted
+artifact byte-identical. A structurally valid artifact that declares incomplete coverage is still
+admitted, together with its per-unit diagnostics, and is never reported as clean or complete.
+Publication is atomic — a validate-then-rename through the same same-directory temp file scheme
+every other artifact in this crate already uses.
 
 ## Reading a symbol
 
@@ -344,6 +372,11 @@ Known, rather than hidden:
   the measured status,
   pinned by `fixtures/csharp-syntax/` and `tests/csharp_syntax_matrix.rs`; the rows that are
   silent today are listed there as follow-ups rather than discovered by the next corpus.
+- **Which .NET targets, project systems and framework profiles are qualified is catalogued
+  separately.** [`docs/dotnet-target-coverage.md`](docs/dotnet-target-coverage.md) lists every
+  staged target's capability row alongside the ones still planned or excluded, pinned by
+  `fixtures/csharp-target-qualification/` and `tests/dotnet_target_qualification.rs`. It
+  qualifies the compiler-fact path measured there, not this README's own construct catalogue.
 
 `devscout` began as the Rust half of a two-implementation tool, and a number of source comments
 still describe behaviour by reference to that original implementation. Those notes are history:
@@ -361,32 +394,50 @@ corpus SHA it ran against. The methodology, the peer tools an agent could instal
 agentic-lane protocol, and the dated result documents are separate files there, and the harness
 is in [`bench/`](bench/README.md).
 
-**Scorecard** (devscout 0.2.0 vs the `rg` baseline, MassTransit corpus; full numbers, per-cell
-commands, and the preliminary-run caveats are in
+**Scorecard** (devscout 0.7.0 vs the `rg` baseline, MassTransit corpus; the scripted rows' full
+numbers, per-cell commands and grades are in
+[`docs/benchmarks/results/2026-09-25-release-0.7.0.md`](docs/benchmarks/results/2026-09-25-release-0.7.0.md),
+the agentic row and its preliminary-run caveats in
 [`docs/benchmarks/results/2026-08.md`](docs/benchmarks/results/2026-08.md)):
 
 | Kind | devscout | rg | Verdict |
 | --- | --- | --- | --- |
-| Locate | 2/2 correct | 2/2 correct, ~2x faster | Tie — use rg |
-| References | 2/2 correct (needs `--all`) | 2/2 correct | Tie, cost mixed |
+| Locate | 2/2 correct | 2/2 correct, faster | Tie — use rg |
+| References | 1/2 correct + 1 partial (needs `--all`) | 2/2 correct | rg on a text-built truth set; devscout's extra files are real references it cannot credit |
 | Impact | 2/2 partial, better precision, 1 call | 2/2 partial, 4-call chain | devscout wins |
 | End-to-end retrieval | 1/2 correct | 2/2 correct | rg wins |
-| Agentic, Opus (preliminary) | 4/4 correct, median 180k tokens | 3/4 correct + 1 partial, median 199k tokens | No correctness edge; ~25k-token saving only |
+| Agentic, Opus (preliminary, measured on 0.2.0) | 4/4 correct, median 180k tokens | 3/4 correct + 1 partial, median 199k tokens | No correctness edge; ~25k-token saving only |
 
-These numbers were measured on 0.2.0. Release 0.3.0 changes `find` output ordering and
-reference resolution (exact generic arity), and has not been re-benchmarked; treat the
-scorecard as 0.2.0-specific until the next round. Release 0.4.0 changes resolver output again
-(heuristic tiers and recall), measured in
-[`docs/benchmarks/results/2026-09-resolver-precision.md`](docs/benchmarks/results/2026-09-resolver-precision.md).
-Release 0.5.0 changes no resolver output: it produces a byte-identical `graph.json` on the
-pinned corpus, so those figures carry over unchanged. Release 0.6.0 raises the graph schema to
-3 and adds the `implements` and `overrides` edges, so its `graph.json` is not byte-identical to
-0.5.0's and the scorecard has not been re-measured against it; a repository whose code registers
-nothing through dependency injection gains no edges and answers as it did.
+The four scripted rows were measured on 0.7.0's final tree, one run per cell. 0.2.0 read
+devscout 5 correct / 3 partial against rg's 6 / 2; 0.7.0 reads 4 / 4, and the whole difference is
+one references task, where devscout now also names three files that call `IJobService` members
+through a property typed with it, which a truth set built by text search cannot hold. The
+agentic row is the preliminary 0.2.0 round and has not been re-measured. Releases 0.3.0 to 0.6.0
+were not measured on the scorecard: 0.3.0 changes `find` output ordering and reference resolution
+(exact generic arity); 0.4.0 changes resolver output again (heuristic tiers and recall), measured
+in
+[`docs/benchmarks/results/2026-09-resolver-precision.md`](docs/benchmarks/results/2026-09-resolver-precision.md);
+0.5.0 changes no resolver output and produces a byte-identical `graph.json` on the pinned corpus;
+0.6.0 raises the graph schema to 3 and adds the `implements` and `overrides` edges, so its
+`graph.json` is not byte-identical to 0.5.0's, and a repository whose code registers nothing
+through dependency injection gains no edges and answers as it did.
+Release 0.7.0 changes resolver output again: the precise tier refuses `uses-member` edges C# name
+lookup cannot produce, and a member qualifier's written type-argument count decides which
+same-named type it binds. Its final tree is measured in
+[`docs/benchmarks/results/2026-09-25-release-0.7.0.md`](docs/benchmarks/results/2026-09-25-release-0.7.0.md):
+precise precision 0.993 (0.989 before the refusals), no precise false positive against an
+external target or across an impossible project reference, and recall 0.528 precise, 0.571
+precise+ext, 0.659 over all tiers. 0.7.0's `graph.json` is not byte-identical to 0.6.0's.
+
+Release 0.7.0 also adds an
+[extension-impact qualification harness](docs/benchmarks/extension-impact.md). It measures
+precision for candidate edges and complete answers separately without changing production
+traversal. These measurements do not replace the task scorecard above.
 
 A separate scripted-lane run measured **tool calls issued per task**: the index arm used fewer
 calls in all four query kinds, largest on references (5.0 vs 11.8 per lane, ~2.4x) — single-run
-proxy, details under "Tool-call proxy" in the dated results.
+proxy, details under "Tool-call proxy" in
+[`docs/benchmarks/results/2026-08.md`](docs/benchmarks/results/2026-08.md).
 
 Gaps are published in both directions. `devscout` answers name-level and reachability questions
 from a prebuilt graph; questions that reduce to finding one distinctive string are answered
@@ -407,10 +458,12 @@ and fails the run under `--strict`. The fixture under `fixtures/csharp-flowtrace
 output byte-for-byte in CI. Roslyn stays in the sidecar -- the `devscout` binary never links it.
 
 The plumbing verb `devscout audit --semantic <refs.jsonl> [--units F] [--defs F] [--json]
-[--assert F]` scores an indexed repository's `uses-member` edges against those oracle records:
-precision per tier, recall over in-graph member sites, external-receiver leaks, structurally
-impossible edges, and fan-out. `--assert` reads a thresholds file and exits 1 on any
-violated or missing key, reporting every one.
+[--assert F] [--fp-sites F]` scores an indexed repository's `uses-member` edges against those
+oracle records: precision per tier, recall over in-graph member sites, external-receiver leaks,
+structurally impossible edges, and fan-out. `--assert` reads a thresholds file and exits 1 on any
+violated or missing key, reporting every one. `--fp-sites` writes one JSON Lines row per false
+positive -- file, line, tier, class, the target the resolver bound, and the target(s) the oracle
+expected -- for every tier, not only the precise one.
 
 Two fixture solutions carry an oracle snapshot and a thresholds file of their own:
 `fixtures/csharp-semantic/` holds the per-tier precision and recall numbers, and

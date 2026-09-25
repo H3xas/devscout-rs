@@ -212,6 +212,7 @@ pub(super) fn lambda_slot_fact(
         call: None,
         awaited: false,
         is_array: false,
+        nullable: false,
         lambda: Some(LambdaSlot {
             owner,
             member: slot.member.clone(),
@@ -269,6 +270,7 @@ pub(super) fn lambda_receiver_element_fact(
                 call: None,
                 awaited: false,
                 is_array: false,
+                nullable: false,
                 lambda: None,
             })
         } else {
@@ -282,6 +284,7 @@ pub(super) fn lambda_receiver_element_fact(
             call: None,
             awaited: false,
             is_array: false,
+            nullable: false,
             lambda: None,
         }),
         _ => None,

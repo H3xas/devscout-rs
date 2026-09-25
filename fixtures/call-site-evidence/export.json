@@ -1,0 +1,378 @@
+{
+  "read_Ledger": {
+    "ambiguous": {
+      "inbound": {
+        "dropped": 0,
+        "rows": [],
+        "total": 0
+      },
+      "outbound": {
+        "dropped": 0,
+        "rows": [],
+        "total": 0
+      }
+    },
+    "freshness": {
+      "reason": "no-index-state",
+      "state": "unknown"
+    },
+    "id": "Evidence.Ledger",
+    "inbound": {
+      "inherits": {
+        "dropped": 0,
+        "rows": [],
+        "total": 0
+      },
+      "uses-member": {
+        "dropped": 0,
+        "rows": [
+          {
+            "file": "Witness.cs",
+            "line": 33,
+            "source": "_ledger.Record();",
+            "why": "uses-member-precise"
+          },
+          {
+            "file": "Witness.cs",
+            "line": 34,
+            "source": "_ledger.Record();",
+            "why": "uses-member-precise"
+          },
+          {
+            "file": "Witness.cs",
+            "line": 40,
+            "occurrenceIndex": 0,
+            "source": "_ledger.Record(); _ledger.Record();",
+            "why": "uses-member-precise"
+          },
+          {
+            "file": "Witness.cs",
+            "line": 40,
+            "occurrenceIndex": 1,
+            "source": "_ledger.Record(); _ledger.Record();",
+            "why": "uses-member-precise"
+          },
+          {
+            "file": "Witness.cs",
+            "line": 47,
+            "source": "_ledger.Record();",
+            "why": "uses-member-precise"
+          },
+          {
+            "file": "Witness.cs",
+            "line": 48,
+            "source": "_ledger.Record(7);",
+            "why": "uses-member-precise"
+          },
+          {
+            "file": "Witness.cs",
+            "line": 71,
+            "source": "await _ledger.RecordAsync();",
+            "why": "uses-member-precise"
+          },
+          {
+            "file": "Witness.cs",
+            "line": 72,
+            "source": "await _ledger.RecordAsync();",
+            "why": "uses-member-precise"
+          },
+          {
+            "file": "Witness.cs",
+            "line": 79,
+            "source": "var first = _ledger.RecordAsync();",
+            "why": "uses-member-precise"
+          },
+          {
+            "file": "Witness.cs",
+            "line": 80,
+            "source": "var second = _ledger.RecordAsync();",
+            "why": "uses-member-precise"
+          }
+        ],
+        "total": 10
+      },
+      "uses-type": {
+        "dropped": 0,
+        "rows": [
+          {
+            "file": "Witness.cs",
+            "line": 28,
+            "occurrenceIndex": 0,
+            "source": "private readonly Ledger _ledger = new Ledger();",
+            "why": "uses-type"
+          },
+          {
+            "file": "Witness.cs",
+            "line": 28,
+            "occurrenceIndex": 1,
+            "source": "private readonly Ledger _ledger = new Ledger();",
+            "why": "uses-type"
+          }
+        ],
+        "total": 2
+      }
+    },
+    "kind": "class",
+    "manifestGap": 0,
+    "outcome": "hit",
+    "query": "Ledger",
+    "schema_version": 1,
+    "sites": [
+      {
+        "file": "Witness.cs",
+        "line": 6
+      }
+    ],
+    "span": {
+      "endLine": 20,
+      "file": "Witness.cs",
+      "source": "public class Ledger\n{\n    public void Record()\n    {\n    }\n\n    public void Record(int amount)\n    {\n    }\n\n    public System.Threading.Tasks.Task RecordAsync()\n    {\n        return System.Threading.Tasks.Task.CompletedTask;\n    }\n}",
+      "startLine": 6,
+      "why": "declaration"
+    },
+    "status": "resolved"
+  },
+  "refs_Record": {
+    "freshness": {
+      "reason": "no-index-state",
+      "state": "unknown"
+    },
+    "members": [
+      {
+        "ambiguous": {
+          "inbound": {
+            "dropped": 0,
+            "rows": [],
+            "total": 0
+          },
+          "outbound": {
+            "dropped": 0,
+            "rows": [],
+            "total": 0
+          }
+        },
+        "id": "Evidence.Ledger.Record",
+        "inbound": {
+          "inherits": {
+            "dropped": 0,
+            "rows": [],
+            "total": 0
+          },
+          "uses-member": {
+            "dropped": 0,
+            "rows": [
+              {
+                "file": "Witness.cs",
+                "line": 33,
+                "source": "_ledger.Record();",
+                "why": "uses-member-precise"
+              },
+              {
+                "file": "Witness.cs",
+                "line": 34,
+                "source": "_ledger.Record();",
+                "why": "uses-member-precise"
+              },
+              {
+                "file": "Witness.cs",
+                "line": 40,
+                "occurrenceIndex": 0,
+                "source": "_ledger.Record(); _ledger.Record();",
+                "why": "uses-member-precise"
+              },
+              {
+                "file": "Witness.cs",
+                "line": 40,
+                "occurrenceIndex": 1,
+                "source": "_ledger.Record(); _ledger.Record();",
+                "why": "uses-member-precise"
+              },
+              {
+                "file": "Witness.cs",
+                "line": 47,
+                "source": "_ledger.Record();",
+                "why": "uses-member-precise"
+              },
+              {
+                "file": "Witness.cs",
+                "line": 48,
+                "source": "_ledger.Record(7);",
+                "why": "uses-member-precise"
+              }
+            ],
+            "total": 6
+          },
+          "uses-type": {
+            "dropped": 0,
+            "rows": [],
+            "total": 0
+          }
+        },
+        "kind": "member",
+        "manifestGap": 0,
+        "outcome": "hit",
+        "query": "Record",
+        "schema_version": 1,
+        "sites": [
+          {
+            "file": "Witness.cs",
+            "line": 8
+          },
+          {
+            "file": "Witness.cs",
+            "line": 12
+          }
+        ],
+        "status": "resolved"
+      }
+    ],
+    "outcome": "hit",
+    "query": "Record",
+    "schema_version": 1,
+    "status": "members"
+  },
+  "refs_RecordAsync": {
+    "freshness": {
+      "reason": "no-index-state",
+      "state": "unknown"
+    },
+    "members": [
+      {
+        "ambiguous": {
+          "inbound": {
+            "dropped": 0,
+            "rows": [],
+            "total": 0
+          },
+          "outbound": {
+            "dropped": 0,
+            "rows": [],
+            "total": 0
+          }
+        },
+        "id": "Evidence.Ledger.RecordAsync",
+        "inbound": {
+          "inherits": {
+            "dropped": 0,
+            "rows": [],
+            "total": 0
+          },
+          "uses-member": {
+            "dropped": 0,
+            "rows": [
+              {
+                "file": "Witness.cs",
+                "line": 71,
+                "source": "await _ledger.RecordAsync();",
+                "why": "uses-member-precise"
+              },
+              {
+                "file": "Witness.cs",
+                "line": 72,
+                "source": "await _ledger.RecordAsync();",
+                "why": "uses-member-precise"
+              },
+              {
+                "file": "Witness.cs",
+                "line": 79,
+                "source": "var first = _ledger.RecordAsync();",
+                "why": "uses-member-precise"
+              },
+              {
+                "file": "Witness.cs",
+                "line": 80,
+                "source": "var second = _ledger.RecordAsync();",
+                "why": "uses-member-precise"
+              }
+            ],
+            "total": 4
+          },
+          "uses-type": {
+            "dropped": 0,
+            "rows": [],
+            "total": 0
+          }
+        },
+        "kind": "member",
+        "manifestGap": 0,
+        "outcome": "hit",
+        "query": "RecordAsync",
+        "schema_version": 1,
+        "sites": [
+          {
+            "file": "Witness.cs",
+            "line": 16
+          }
+        ],
+        "status": "resolved"
+      }
+    ],
+    "outcome": "hit",
+    "query": "RecordAsync",
+    "schema_version": 1,
+    "status": "members"
+  },
+  "refs_Recurse": {
+    "freshness": {
+      "reason": "no-index-state",
+      "state": "unknown"
+    },
+    "members": [
+      {
+        "ambiguous": {
+          "inbound": {
+            "dropped": 0,
+            "rows": [],
+            "total": 0
+          },
+          "outbound": {
+            "dropped": 0,
+            "rows": [],
+            "total": 0
+          }
+        },
+        "id": "Evidence.Caller.Recurse",
+        "inbound": {
+          "inherits": {
+            "dropped": 0,
+            "rows": [],
+            "total": 0
+          },
+          "uses-member": {
+            "dropped": 0,
+            "rows": [
+              {
+                "file": "Witness.cs",
+                "line": 64,
+                "source": "this.Recurse(depth - 1);",
+                "why": "uses-member-precise"
+              }
+            ],
+            "total": 1
+          },
+          "uses-type": {
+            "dropped": 0,
+            "rows": [],
+            "total": 0
+          }
+        },
+        "kind": "member",
+        "manifestGap": 0,
+        "outcome": "hit",
+        "query": "Recurse",
+        "schema_version": 1,
+        "sites": [
+          {
+            "file": "Witness.cs",
+            "line": 58
+          }
+        ],
+        "status": "resolved"
+      }
+    ],
+    "outcome": "hit",
+    "query": "Recurse",
+    "schema_version": 1,
+    "status": "members"
+  }
+}

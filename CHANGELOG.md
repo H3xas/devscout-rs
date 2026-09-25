@@ -7,6 +7,129 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-25
+
+A compiler-evidence release: `compiler-facts` admits a versioned compiler-derived fact artifact
+beside `graph.json`, the precise tier stops emitting `uses-member` edges C# name lookup cannot
+produce, and the compiler-fact path's .NET target coverage is published per target.
+
+### Added
+
+- **`compiler-facts run|import|status`** admits a versioned, optional compiler-derived fact
+  artifact -- either from a one-shot local engine run or from a build/CI-produced artifact --
+  through one Rust admission path, publishing it atomically beside `graph.json`. `map` and every
+  query verb never spawn the engine and never require the network; `status` reports
+  `coverage: syntax-only` when no artifact has ever been admitted. A mismatched engine revision,
+  contract version, requested profile, dependency fingerprint, compilation-context version or
+  fingerprint, or source-snapshot identity is refused with a stable reason and writes nothing; a
+  killed, timed-out, over-budget, truncated, malformed, or internally incoherent run leaves any
+  previously admitted artifact byte-identical. A structurally valid artifact declaring incomplete
+  coverage is still admitted, with its per-unit diagnostics, and is never reported as clean or
+  complete. The default CLI distribution carries no managed runtime, targeting pack or engine
+  assembly. The artifact additionally carries, by default, a per-reference **occurrence** fact for
+  every invocation, member-access, conditional-member and identifier reference site the compiler
+  can see: the caller's and bound target's complete identity, resolution state (confirmed,
+  ambiguous, unresolved, inaccessible or dynamic) with the compiler's own candidate set, the
+  binding compilation's identity and fingerprint, and per-document content identity -- produced by
+  a walker independent of the existing declared-symbol facts, admitted through the same path under
+  three new stable refusal reasons for a self-contradictory occurrence payload, and reported by
+  `status` as its own coverage line. The artifact's header context summary is now recomputed from
+  the real embedded build-context envelope's own per-compilation identity/fingerprint pairs rather
+  than compared against a placeholder copy of itself. `engineRevision` moves to `"2"` and
+  `artifactSchemaVersion` to `2`; `contractVersion` and the artifact filename are unchanged. See
+  [Compiler facts](README.md#compiler-facts).
+- **The Roslyn oracle emits a build-context envelope.** `tools/scout-semantic --emit context`
+  writes one record per compilation identity (project path and name, requested target,
+  configuration, platform), each carrying one of `complete`, `partial`, `unsupported`, `failed` or
+  `excluded` with a machine-readable reason; the expected-versus-loaded document inventory with
+  every difference classified (`missing`, `linked-outside-root`, `skipped-directory`,
+  `out-of-scope`); raw restore/workspace/compiler diagnostics; generated and linked documents;
+  SDK/MSBuild/compiler/engine versions; and a context fingerprint that moves with a reference,
+  import, analyzer reference, generator input, build option, or dependency compilation's own
+  fingerprint. A non-null compilation is never `complete` by itself, including when its own
+  independent inventory could not be obtained at all -- `documents.inventoryAvailable` marks that
+  case explicitly, even when a stronger reason already demotes the record's own `state`/`reason`.
+  Additive: `refs.jsonl`, `units.jsonl`,
+  `defs.jsonl` and the flow-tracer fact document stay byte-identical for unchanged inputs.
+  Fixture: `fixtures/csharp-context/` and `fixtures/csharp-context-fingerprint/`. See
+  `tools/scout-semantic/README.md#build-context-envelope`.
+- **`refs`/`read`/`impact`/`tests --json` gain two additive top-level/row keys.** `freshness` is a
+  new top-level object, always the true last key after `outcome`, reporting whether the index was
+  built at the working tree's current HEAD (`"fresh"`, `"stale"` with both heads and the changed
+  files, or `"unknown"` with a reason) -- the same signal the existing stderr freshness note
+  already carries, now reachable by a programmatic consumer. `occurrenceIndex` is a new row key on
+  `inbound`/`outbound` entries of `refs`/`read`, appended after `why` and omitted whenever a row has
+  no same-table collision; it disambiguates two calls to one target that would otherwise serialize
+  to byte-identical rows (for example two calls on one line), scoped to one table of one answer
+  against one graph snapshot -- not a stable cross-run identity. No existing key is renamed, removed
+  or reordered and `schema_version` is unchanged. See [`docs/answer-contract.md`](docs/answer-contract.md#freshness)
+  and its [`occurrenceIndex`](docs/answer-contract.md#occurrenceindex) section.
+- **A new offline semantic-truth harness and fixture pack** (`devscout_rs::truth`, dev/test
+  infrastructure only, no new CLI verb): a versioned case manifest schema with independently
+  reviewed expectations, span-based occurrence identity, a nine-row fault-control battery, a
+  compatibility-profile registry with a machine-readable capability matrix, freshness/
+  transformation controls, and a committed truthful red baseline recording today's known
+  analyzer misses rather than repairing them. Offline and deterministic: no `dotnet` and no
+  network in the fast lane. A separate scheduled workflow probes the demonstrated profiles
+  against a real compiler.
+- **`audit --fp-sites <file>`** writes one JSON Lines row per false-positive `uses-member` edge --
+  file, line, tier, class, the target the resolver bound, and the target(s) the oracle expected --
+  for every tier, not only the precise one. Without the flag, `audit`'s text and `--json` output
+  are unchanged.
+- **`docs/dotnet-target-coverage.md`** publishes a per-target, per-project-system capability
+  matrix for the compiler-fact path (`tools/scout-semantic`), separate from the language-level
+  construct catalogue: modern .NET, .NET Standard and `netcoreapp3.1` profiles measured from
+  their own exact compilation context, .NET Framework staged on its own track, and every
+  planned, unavailable, excluded or unqualified target kept visible rather than omitted. Pinned
+  by a new fixture tree (`fixtures/csharp-target-qualification/`), a new composition script
+  (`tools/qualify-dotnet-targets.py`) and a dotnet-free test
+  (`tests/dotnet_target_qualification.rs`); no `src/*.rs` change.
+- **Eleven more measured rows in `docs/dotnet-target-coverage.md`:** .NET 10, built under its own
+  pinned SDK band (10.0.302) from a `global.json` beside its project while every other row keeps
+  the tree's 9.0.305 pin, and recording the MSBuild band the compiler-fact path registered; the
+  .NET Framework 4.5, 4.5.2 and 4.6.1 reference-assembly profiles on the Framework track; and .NET
+  Standard 1.0 through 1.6, whose rows record the `NETStandard.Library` version and the number of
+  packages their restore resolved. Each compiles from its own single-target project; the Framework
+  and pre-2.1 Standard rows record the same boundary non-bind (`CS1501`) as the existing ones, and
+  the .NET 10 row binds it. None has a held-out row yet; the document lists that gap. CI installs
+  the 10.0.302 band immediately before the matrix regeneration step, so every earlier .NET step
+  keeps resolving 9.0.305. The coverage test's support-sentence sweep now matches whole
+  target monikers, so a measured target no longer masks, or trips on, a longer or shorter one that
+  is still unmeasured.
+- Offline extension-impact qualification harness reporting candidate-edge and complete-answer
+  precision against compiler-reference evidence. It preserves production traversal and records
+  failed admission gates without promoting evidence tiers.
+
+### Changed
+
+- **`--tfm` is now repeatable**, with each requested target its own compilation identity and no
+  silent substitution when a project does not declare it; with no `--tfm`, selection is
+  deterministic (ordinal-least declared target) rather than dependent on workspace enumeration
+  order. This reaches `--emit oracle`/`flowtrace-facts` too: a project whose sole declared target
+  does not match `--tfm` is now dropped from the run rather than kept regardless of the request,
+  and a run where every project is dropped exits 3 where it previously produced facts.
+- **`--strict` gains an artifact-level check for `--emit context`**: exit 2 unless every
+  non-`excluded` record is `complete`, alongside its existing checks. A project a `--projects`
+  filter leaves out is `excluded`, not `failed`, so it never trips this check.
+
+### Fixed
+
+- **The precise tier no longer emits `uses-member` edges C# name lookup cannot produce.** Five
+  resolver shapes are refused instead of guessed: a bare qualifier resolved only by graph-wide
+  simple-name uniqueness; a receiver whose written type-argument count has no in-tree match; a
+  property whose name shadows a same-named type; a lambda or local-function argument whose
+  parameter count cannot fit the candidate's delegate; and a nullable value-type receiver's own
+  `Value`, `HasValue` or `GetValueOrDefault`. On the pinned MassTransit benchmark, precise false
+  positives against external targets and structural impossibilities drop to 0 (precision 0.989 to
+  0.993). The fragment cache moves to `fragments-v20.json`, so an existing cache re-extracts once.
+- **A member qualifier's own type-argument count now decides which same-named type it binds.**
+  `Foo.M()` and `Foo<T>.M()` on the same line each resolve to their own definition -- a bare
+  qualifier to the zero-type-parameter sibling, a one-argument qualifier to the one-type-parameter
+  sibling -- regardless of which definition the index visits first. A qualifier whose written
+  argument count has no matching definition (for example a two-argument qualifier where only a
+  bare and a one-argument sibling exist) earns no precise edge instead of binding a same-named
+  guess. The fragment cache moves to `fragments-v21.json`, so an existing cache re-extracts once.
+
 ## [0.6.0] - 2026-09-09
 
 A reach release: the graph learns which implementation a registered service resolves to, and
