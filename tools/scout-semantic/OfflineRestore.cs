@@ -1,8 +1,8 @@
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 
 using Microsoft.Build.Evaluation;
-using Microsoft.Build.Exceptions;
 
 namespace ScoutSemantic;
 
@@ -80,11 +80,10 @@ internal static class OfflineRestore
         }
 
         var dotnetHost = ResolveDotnetHost(Program.MsBuildPath);
-        using var collection = new ProjectCollection();
         var missing = new List<string>();
         foreach (var (path, tfm) in distinct)
         {
-            var assetsFile = LocateAssetsFile(collection, dotnetHost, path, options.Properties, tfm);
+            var assetsFile = LocateAssetsFile(dotnetHost, path, options.Properties, tfm);
             if (assetsFile is null)
             {
                 // Guessing a location could restore a project whose real
@@ -188,10 +187,9 @@ internal static class OfflineRestore
 
     /// <summary>The MSBuild-evaluated assets file location for one project, honouring a custom
     /// intermediate path. Evaluated in process first; a project the in-process evaluator cannot
-    /// load is evaluated by the SDK's own MSBuild in a child process. Null when neither can
-    /// evaluate it.</summary>
+    /// evaluate for any reason is evaluated by the SDK's own MSBuild in a child process. Null when
+    /// neither can evaluate it.</summary>
     private static string? LocateAssetsFile(
-        ProjectCollection collection,
         string? dotnetHost,
         string projectFullPath,
         IReadOnlyDictionary<string, string> baseGlobalProperties,
@@ -204,24 +202,47 @@ internal static class OfflineRestore
         }
 
         var projectDir = Path.GetDirectoryName(projectFullPath) is { Length: > 0 } dir ? dir : ".";
-        Project project;
+        var value = EvaluateWithFallback(
+            () => EvaluateInProcess(projectFullPath, globals),
+            () => dotnetHost is null ? null : EvaluateOutOfProcess(dotnetHost, projectFullPath, globals));
+        return value is null ? null : Path.GetFullPath(value, projectDir);
+    }
+
+    /// <summary>The in-process answer, or the out-of-process one when the in-process evaluation
+    /// throws anything at all. The in-process side is a read-only query for one property whose
+    /// authority is the SDK's own MSBuild, so asking that MSBuild instead can only change how the
+    /// value is computed; the in-process evaluator falls short of it on intrinsics a newer SDK's
+    /// targets call, and on any assembly a newer registered MSBuild cannot bind. A process out of
+    /// memory is in no state to launch a child, so that one propagates. A successful in-process
+    /// answer, null included, is final.</summary>
+    internal static string? EvaluateWithFallback(Func<string?> inProcess, Func<string?> outOfProcess)
+    {
         try
         {
-            project = new Project(projectFullPath, globals, toolsVersion: null, collection);
+            return inProcess();
         }
-        catch (Exception e) when (e is InvalidProjectFileException or IOException or InvalidOperationException)
+        catch (OutOfMemoryException)
         {
-            // The in-process Microsoft.Build is pinned older than the installed
-            // SDK, and some SDK targets (netstandard2.0 projects, for one) call
-            // intrinsics it does not implement. The SDK's own MSBuild can.
-            var outOfProcess = dotnetHost is null ? null : EvaluateOutOfProcess(dotnetHost, projectFullPath, globals);
-            return outOfProcess is null ? null : Path.GetFullPath(outOfProcess, projectDir);
+            throw;
         }
+        catch (Exception)
+        {
+            return outOfProcess();
+        }
+    }
 
+    /// <summary>Everything that names a Microsoft.Build type lives here, so a failure to load or
+    /// bind Microsoft.Build itself surfaces when this method is compiled, which happens inside
+    /// <see cref="EvaluateWithFallback"/>'s handler rather than in its caller.</summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static string? EvaluateInProcess(string projectFullPath, IDictionary<string, string> globals)
+    {
+        using var collection = new ProjectCollection();
+        var project = new Project(projectFullPath, globals, toolsVersion: null, collection);
         try
         {
             var value = project.GetPropertyValue("ProjectAssetsFile");
-            return string.IsNullOrEmpty(value) ? null : Path.GetFullPath(value, projectDir);
+            return string.IsNullOrEmpty(value) ? null : value;
         }
         finally
         {
