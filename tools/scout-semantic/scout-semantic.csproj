@@ -38,6 +38,16 @@
          function the older assembly does not implement. -->
     <PackageReference Include="Microsoft.Build" Version="17.7.2" ExcludeAssets="runtime" />
     <PackageReference Include="Microsoft.Build.Framework" Version="17.7.2" ExcludeAssets="runtime" />
+    <!-- The rest of the MSBuild family arrives only transitively, through
+         Workspaces.MSBuild and Microsoft.Build itself, and would otherwise be
+         copied to the output directory. A newer registered MSBuild then binds
+         these app-local older copies first and calls a member they lack (a
+         10.0 SDK's evaluator on StringTools 17.7.2, for one). A direct
+         reference at the already-resolved version with ExcludeAssets="runtime"
+         keeps them out, so the registered SDK supplies every one. -->
+    <PackageReference Include="Microsoft.Build.Tasks.Core" Version="17.7.2" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.Build.Utilities.Core" Version="17.7.2" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.NET.StringTools" Version="17.7.2" ExcludeAssets="runtime" />
   </ItemGroup>
 
   <ItemGroup>
