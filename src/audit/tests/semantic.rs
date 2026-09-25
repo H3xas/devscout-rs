@@ -1,5 +1,5 @@
-// Reserved for the enriched-lane audit tests the semantic-consumption work
-// adds (own fixtures, own failure-mode table) -- kept as its own file from
-// the start rather than grown out of `scoring.rs`, which already sits close
-// to this crate's flat per-file line cap. Populated once that work lands;
-// empty until then.
+// Reserved for enriched-lane audit tests that need their own fixtures and
+// failure-mode table -- kept as its own file rather than grown out of
+// `scoring.rs`, which already sits close to this crate's flat per-file line
+// cap. The current enriched-lane cases live in `scoring.rs` and in
+// `tests/semantic_enrichment.rs`, so this file is empty for now.

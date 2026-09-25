@@ -1619,11 +1619,11 @@ recall cost across the branch is phase 2's, attributed in item 6 under "Defects 
 its own method".
 ## Run 6 — syntax-lane baseline on the compiler-enrichment implementation base, before any resolver change (2026-09-22)
 
-Not a resolver-behavior run: this is the mandatory pre-change syntax-lane re-measurement the
-compiler-enrichment consumer work requires before any compiler-fact consumption code is written,
-on the exact base that work implements against. A private 0.572 figure from a 2026-09-05
-integration re-baseline (0.4.0-era, never committed to this repository) is superseded by this run;
-only this run's own numbers govern the enrichment layer's shipping gate from here on.
+Not a resolver-behavior run: this is the syntax-lane re-measurement taken before any
+compiler-fact consumption code existed, on the exact revision that code was then built on. A
+private 0.572 figure from a 2026-09-05 integration re-baseline (0.4.0-era, never committed to this
+repository) is superseded by this run; only this run's own numbers govern the enrichment layer's
+shipping gate from here on.
 
 ### Environment
 
@@ -1631,10 +1631,9 @@ only this run's own numbers govern the enrichment layer's shipping gate from her
 Date            2026-09-22
 Corpus          MassTransit/MassTransit @ 855cf1752c94ca9498e0c45ce8d09fdc9e957dd6 (bench/corpus.lock, registered)
                 5634 files mapped by devscout map; 9951 defs, 136154 edges (graph rebuilt in 2.13s)
-Devscout base   devscout-rs bd0fa4afd15ccd10abaa85b3a781847300ec0634 (the compiler-enrichment
-                consumer work's stacked implementation base: the approved occurrence-facts delta
-                merged with the approved context-manifest delta; no consumer-side production code
-                present at this commit)
+Devscout base   devscout-rs bd0fa4afd15ccd10abaa85b3a781847300ec0634 (occurrence facts and the
+                build-context manifest present; no compiler-fact consumption code present at
+                this commit)
 Oracle          tools/scout-semantic, Roslyn (Microsoft.CodeAnalysis.CSharp.Workspaces) 4.14.0,
                 Microsoft.Build.Locator (tools/scout-semantic/packages.lock.json)
 Units           56 loaded, 0 failed
@@ -1672,8 +1671,8 @@ edges outside universe (not judged) 740
 
 Precise precision 0.989 and recall precise+ext 0.572 both match the private, never-committed 2026-09-05
 figures exactly (0.989 / 0.572) despite the intervening 0.4.0 -> 0.6.0 devscout changes and the
-context-manifest/occurrence-facts merge, evidence the resolver's own syntax-lane behavior is
-unaffected by either — expected, since neither delta touches `src/resolve/` or `src/extract/`.
+context-manifest and occurrence-facts additions, evidence the resolver's own syntax-lane behavior
+is unaffected by either — expected, since neither addition touches `src/resolve/` or `src/extract/`.
 
 ### Registered-miss-intersection report
 
@@ -1706,7 +1705,7 @@ sit at sites the extractor never emits a reference for at all; these are reachab
 separate discovered-sites lane, which is additive to the enriched lane and explicitly does **not**
 move the syntax-lane recall denominator (57607 stays the comparison base for every future run).
 **An earlier 27,140-record ceiling estimate is not reproduced or endorsed here as a predicted
-gain** — this run's own two subsets (6775 and 12813) are the only figures this work treats as a
+gain** — this run's own two subsets (6775 and 12813) are the only figures this document treats as a
 registered, evidenced ceiling on what each mechanism could possibly reach, and neither number is a
 claim about what either mechanism actually will resolve once the admitted occurrence facts are
 consumed (the per-corpus precision floor and the shipping gate govern the real, achieved figure).
@@ -1923,7 +1922,7 @@ that site at all, which the oracle's own known exclusions -- constructors, and s
 symbol and candidate set -- can produce without any devscout-side error); the remaining 24327
 (`fp_external_site` 6009 + `fp_wrong_target` 18318) are sites where the oracle DOES have a record
 and disagrees with the discovered edge's own target. This is recorded as a concrete, unresolved
-finding for whoever continues the enrichment corpus work, not diagnosed further here -- the two
+question, not diagnosed further here -- the two
 candidate explanations (the identity-translation step mis-resolving a real fraction of discovered
 occurrences, versus this population genuinely concentrating the corpus's own harder, more
 speculative or generated-code sites) are both plausible and are not distinguished by this run alone.
@@ -1945,12 +1944,11 @@ unmodified `map` run with no artifact present.
 ## Run 7b — the semantic-discovered tier, re-measured with a bounded scorer fix (2026-09-22)
 
 Run 7 reported `tiers.semantic-discovered`'s own precision against the oracle as 0.175 (46090 edges,
-8083 tp, 38007 fp), flagged as "reported, not diagnosed" -- a real, open finding for whoever continued
-the enrichment corpus work. A read-only diagnosis (recorded separately, not in this repository)
-sampled 159 of the discovered tier's false-against-the-oracle edges and found ZERO identity-
-translation defects (`src/semantic/`'s own Roslyn-to-def-id translation re-derived by hand for every
-sampled edge, always correct); the population's own low precision has two real causes, both on the
-oracle/scoring side of the boundary, not in the consumer:
+8083 tp, 38007 fp), flagged as "reported, not diagnosed". A read-only diagnosis (recorded
+separately, not in this repository) sampled 159 of the discovered tier's false-against-the-oracle
+edges and found ZERO identity-translation defects (`src/semantic/`'s own Roslyn-to-def-id translation
+re-derived by hand for every sampled edge, always correct); the population's own low precision has
+two real causes, both on the oracle/scoring side of the boundary, not in the consumer:
 
 1. **Oracle shape-vocabulary gap.** The compiler-facts occurrence walker
    (`tools/scout-semantic/CompilerOccurrences.cs`) records a fourth occurrence shape, `identifier`
@@ -2009,8 +2007,8 @@ here -- it requires a change to `tools/scout-semantic/Walker.cs` (the oracle) an
 which is a materially larger and riskier change than this run's scorer-only fix, and the diagnosis
 itself frames (a) and (b) as independently acceptable, not both required. `fp_wrong_target` (752, down
 from 18318) and `fp_no_site` (1514, down from 13680) on the judged population still include the
-line-alignment artifact's own residual; whoever picks up option (b) should expect the judged
-population's own precision to rise further, not to move the numbers this run already locked in.
+line-alignment artifact's own residual; option (b) is expected to raise the judged population's
+own precision further, not to move the numbers this run already locked in.
 
 ## Run 7 under the amended precision-hold criterion (2026-09-22)
 
@@ -2059,11 +2057,10 @@ that caveat, is a release decision, not this results document's to assert.
 ## Run 8 — public registered corpus, re-measured after a dedup-key widening in the same-context
 override (2026-09-23)
 
-This section restores, corrects and renumbers a section this branch's rebase onto the 0.7.0 base
-had dropped. It describes the measurement taken before that rebase, at revision `eb61f15` (three
-revisions past the pre-widening head, the last pre-rebase head without the dedup-key widening). It
-is not re-scored here and carries no figure measured at this branch's current, rebased head; the
-corrections below (2026-09-23) are textual only.
+This section describes the measurement taken before the rebase onto the 0.7.0 line, at revision
+`eb61f15` (three revisions past the pre-widening head, the last pre-rebase head without the
+dedup-key widening). It is not re-scored here and carries no figure measured at the current,
+rebased head; the corrections below (2026-09-23) are textual only.
 
 Three revisions landed on top of the pre-widening head after Run 7/7b. The one relevant here: a
 same-line, same-target-type overload's projected edge now carries the overload's own signature, so two

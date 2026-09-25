@@ -32,7 +32,7 @@ pub enum Tier {
 }
 
 impl Tier {
-    /// Fixed, spec-mandated iteration/display order for every tier-keyed
+    /// Fixed iteration/display order for every tier-keyed
     /// output (text table rows, `tiers` JSON keys): precise, ext, guess,
     /// heuristic, then the two enriched-lane tiers, appended last.
     pub const ORDER: [Tier; 6] = [
