@@ -17,7 +17,7 @@
       },
       "state": "partial",
       "reason": "workspace-failure",
-      "fingerprint": "654372a6273eb2ba0d4f08ce9eaa34dea0863e19",
+      "fingerprint": "7fc774bfe7bf753721a20964524491486faceb82",
       "versions": {
         "sdk": "9.0.305",
         "msbuild": "17.14.21.41108",
@@ -1014,10 +1014,6 @@
         {
           "identity": "external-file:Directory.Build.props",
           "hash": "e430464dfd655dfdcc4d6a0cfc7b45696006d182"
-        },
-        {
-          "identity": "external-file:WorkloadManifest.targets",
-          "hash": "82dc5e0b1dd793d309f239bb022d3229b01c19b8"
         }
       ],
       "languageOptions": {
@@ -1071,7 +1067,7 @@
       },
       "state": "partial",
       "reason": "linked-outside-root",
-      "fingerprint": "014fafe3643dbe6de0a316a6a8e4bcb8307bb855",
+      "fingerprint": "37b43a6595f1724b1f18b9ff53fe454cf57cbb39",
       "versions": {
         "sdk": "9.0.305",
         "msbuild": "17.14.21.41108",
@@ -2068,10 +2064,6 @@
         {
           "identity": "external-file:Directory.Build.props",
           "hash": "e430464dfd655dfdcc4d6a0cfc7b45696006d182"
-        },
-        {
-          "identity": "external-file:WorkloadManifest.targets",
-          "hash": "82dc5e0b1dd793d309f239bb022d3229b01c19b8"
         }
       ],
       "languageOptions": {
@@ -2150,13 +2142,13 @@
         "projectName": "Legacy",
         "requestedTfm": null,
         "effectiveTfm": "net472",
-        "configuration": null,
-        "platform": null,
+        "configuration": "Debug",
+        "platform": "AnyCPU",
         "declaredTfms": null
       },
       "state": "partial",
       "reason": "binding-error",
-      "fingerprint": "544a398c0b690e9db16806dadd40ae93a6f718a5",
+      "fingerprint": "3fa9702b5c89f44083730d3e976af601f7e5c66d",
       "versions": {
         "sdk": "9.0.305",
         "msbuild": "17.14.21.41108",
@@ -2225,13 +2217,27 @@
           "fingerprint": null
         }
       ],
-      "imports": [],
+      "imports": [
+        {
+          "identity": "external-file:Directory.Build.props",
+          "hash": "e430464dfd655dfdcc4d6a0cfc7b45696006d182"
+        },
+        {
+          "identity": "nuget:microsoft.netframework.referenceassemblies.net472/1.0.3/build/Microsoft.NETFramework.ReferenceAssemblies.net472.targets",
+          "hash": "3784b79a89e7627fbde239d27cc30c26bf0f1914"
+        }
+      ],
       "languageOptions": {
-        "allowUnsafeBlocks": null,
+        "allowUnsafeBlocks": "False",
         "languageVersion": "13.0",
-        "nullable": null
+        "nullable": "enable"
       },
-      "preprocessorSymbols": [],
+      "preprocessorSymbols": [
+        "DEBUG",
+        "NET472",
+        "NETFRAMEWORK",
+        "TRACE"
+      ],
       "documents": {
         "expected": [
           "src/Legacy/Program.cs"
@@ -2240,7 +2246,7 @@
           "src/Legacy/Program.cs"
         ],
         "dropped": [],
-        "inventoryAvailable": false
+        "inventoryAvailable": true
       },
       "generated": {
         "documents": [],

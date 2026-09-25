@@ -24,6 +24,11 @@ const GUESS_SUFFIX: &str = " (guess)";
 // position.
 pub(crate) const INFRA_SUFFIX: &str = " (infra)";
 
+// The one wording every `bus-hop` disclosure -- `refs`/`read`'s own bus
+// rows, and `impact`/`tests`' possible-route rows -- states, so the several
+// renderers that carry it can never drift from each other's wording again.
+pub(crate) const BUS_HOP_UNVERIFIED: &str = "possible route, runtime routing unverified";
+
 // `tests`-only: marks a row whose file earned its place through the project
 // model alone (`TestVia::Project`) rather than an attributed test def in the
 // file itself. Composes after the heuristic suffix, never instead of it -- a

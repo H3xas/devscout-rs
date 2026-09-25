@@ -160,6 +160,15 @@ pub(super) fn record_type_def(
         method_arities: raw_method_arities(node, src),
         method_params: raw_method_params(node, src, type_params),
         override_methods: raw_override_method_names(node, src),
+        // Set by the walk's own class/interface/struct/record arm right
+        // after this def is pushed (see walk.rs) -- the nested base
+        // type-argument fact, the property-message fact and the array-marked
+        // base names all need the same base_list walk `record_base_list`
+        // already runs there, so each is computed once at that call site
+        // rather than re-derived here.
+        base_type_args: Vec::new(),
+        property_message_args: Vec::new(),
+        array_message_bases: Vec::new(),
         end_line: node.end_position().row + 1,
     });
 }
@@ -213,6 +222,9 @@ pub(super) fn record_enum_members(
             method_arities: Vec::new(),
             method_params: Vec::new(),
             override_methods: Vec::new(),
+            base_type_args: Vec::new(),
+            property_message_args: Vec::new(),
+            array_message_bases: Vec::new(),
             end_line: member.end_position().row + 1,
         });
     }

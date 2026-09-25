@@ -31,6 +31,8 @@ fn frag_with_registrations(defs: Vec<FragDef>, registrations: Vec<FragRegistrati
         refs: vec![],
         names: vec![],
         registrations,
+        publishes: vec![],
+        handler_registrations: vec![],
     }
 }
 

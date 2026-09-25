@@ -43,7 +43,7 @@ pub struct DefRecord {
     /// declaration whose return type yields no fact (void, var, a
     /// predefined type) BLOCKS the name rather than letting a later
     /// overload stand in for it. A Vec of pairs, not a map: the serialized
-    /// key order is significant (see graph.rs's FragDef).
+    /// key order is significant (see graph.rs's `FragDef`).
     pub method_returns: Vec<(String, String)>,
     /// The extension methods this type declares: every method
     /// whose FIRST parameter carries the `this` modifier, in source order,
@@ -56,7 +56,7 @@ pub struct DefRecord {
     /// discriminator.
     pub extension_methods: Vec<ExtensionMethod>,
     /// The DIRECT base-type identifiers this
-    /// declaration lists, in source order, deduped. Same base_list traversal
+    /// declaration lists, in source order, deduped. Same `base_list` traversal
     /// `record_base_list` walks for its `inherits` refs, reduced to a base
     /// IDENTIFIER because the resolver re-RESOLVES these names through the
     /// ordinary ladder rather than matching them; the resulting closure is
@@ -169,8 +169,94 @@ pub struct DefRecord {
     /// itself run only for a type the resolver already knows is a
     /// registered DI implementation -- see `graph.rs`'s `FragDef`.
     pub override_methods: Vec<String>,
+    /// Per base name that carries a top-level type argument which is
+    /// ITSELF generic, that argument list rendered by `type_descriptor`
+    /// (nested structure intact) rather than the flattened bare
+    /// identifiers `base_generic_args` carries -- `IConsumer<Batch<
+    /// LoanRequested>>` records `[("IConsumer", ["Batch<LoanRequested>"])]`
+    /// here, so the inner message type survives extraction instead of
+    /// collapsing to `Batch`. A base whose arguments are all non-generic
+    /// contributes no entry: `base_generic_args` already carries that
+    /// shape, so a second copy would add no fact. Appended LAST of all,
+    /// after `override_methods`.
+    pub base_type_args: Vec<(String, Vec<String>)>,
+    /// Every distinct single type argument the type's own properties wrap
+    /// (`Event<LoanRequested>` records `LoanRequested`), in declaration
+    /// order. A long-running handler names the further messages it binds
+    /// this way rather than on its base list, so the base list alone would
+    /// miss them. Recorded for every type; the resolver keeps these only
+    /// for a type it already holds to be a handler. Appended LAST of all,
+    /// after `base_type_args`.
+    pub property_message_args: Vec<String>,
+    /// Base names (a subset of `bases`) whose message-position argument --
+    /// `base_generic_args`' own position 0 -- is itself an array type
+    /// (`IConsumer<M[]>`). `base_generic_args`/`generic_arg_descriptors`
+    /// both already look THROUGH an `array_type` to its element (the same
+    /// unwrapping `base_type_identifier` performs generally), so this is
+    /// the only place left that still knows the wrapper was there at all --
+    /// the lane-owned sibling of the array bit `extract::receivers::type_fact`
+    /// keeps for a declared local/parameter. A base whose nested argument
+    /// already carries its own array suffix through `base_type_args`
+    /// (`IConsumer<Batch<M[]>>`) needs no entry here: that reading is
+    /// structural, off the rendered descriptor, and never loses the
+    /// bracket. Appended LAST of all, after `property_message_args`.
+    pub array_message_bases: Vec<String>,
     /// 1-based last line of the complete declaration node.
     pub end_line: usize,
+}
+
+/// One message-bus publish-site fact: an invocation handing a message
+/// instance to a bus, mediator or scheduler.
+///
+/// `message` is a RESOLVED type descriptor -- read off a generic type
+/// argument, a constructed type, or a declared local/parameter type
+/// through the ordinary scope ladder, never a bare identifier merely
+/// co-located on the same source line as the call. See `extract/bus.rs`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PublishRecord {
+    /// The invoked method name (`Publish`, `PublishAsync`, `SubmitJob`,
+    /// `Reply`, `Send`).
+    pub verb: String,
+    /// The resolved message-type descriptor the call hands off.
+    pub message: String,
+    /// The call's enclosing namespace.
+    pub namespace: String,
+    /// The call's 1-based line -- the SAME line no matter how many source
+    /// lines the call itself spans, so a split call still records exactly
+    /// one site.
+    pub line: usize,
+    /// The walk's own `type_stack` (see `RefRecord::outer_types`).
+    pub outer_types: Vec<String>,
+    /// The name of the method this call sits in, recorded ONLY when the
+    /// message is an unbound type parameter. That pairing is the signature
+    /// of a forwarding wrapper -- a method that hands its own caller's
+    /// message on to a bus -- and the method name is what the resolver
+    /// needs to recognize this repository's own calls to it. An ordinary
+    /// publish site names a concrete message and records nothing here.
+    /// Appended LAST, after `outer_types`.
+    pub enclosing_method: Option<String>,
+    /// The call's own argument count -- see `extract::refs::invocation_arg_count`.
+    /// Appended LAST, after `enclosing_method`.
+    pub arg_count: usize,
+    /// Set when the call sits inside a lambda body that is itself an
+    /// argument of an ENCLOSING invocation (a test-double setup/verify
+    /// lambda, or an ordinary delegate lambda -- this fact alone does not
+    /// distinguish the two; see `extract::bus::enclosing_call_through_lambda`).
+    /// Appended LAST, after `arg_count`.
+    pub enclosing_call: Option<EnclosingCallFact>,
+}
+
+/// The enclosing invocation a publish call's own lambda sits inside, when
+/// it sits inside one at all. See `PublishRecord::enclosing_call`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct EnclosingCallFact {
+    /// The enclosing invocation's own callee bare name.
+    pub verb: String,
+    /// The 0-based position the lambda occupies among the enclosing
+    /// invocation's arguments.
+    pub arg_position: usize,
+    /// The enclosing invocation's own total argument count.
+    pub arg_count: usize,
 }
 
 /// One `extensionMethods` entry. Field order (`name`, `thisType`, `arityMin`,
@@ -243,8 +329,8 @@ pub struct RefRecord {
     /// Travels with `receiver_type` -- the fact carries both or neither.
     /// Appended LAST, after `arg_count`.
     pub receiver_args: Option<Vec<String>>,
-    /// The walk's own type_stack verbatim: the enclosing type simple
-    /// names, OUTERMOST first, the same order type_id joins with "+" to build
+    /// The walk's own `type_stack` verbatim: the enclosing type simple
+    /// names, OUTERMOST first, the same order `type_id` joins with "+" to build
     /// a nested def id. Empty at namespace level, and empty is exactly what an
     /// absent key deserializes to. Appended LAST, after `receiver_args`.
     pub outer_types: Vec<String>,
@@ -373,6 +459,33 @@ pub struct Extraction {
     /// invocations record, appended LAST after `names`. See
     /// `RegistrationRecord`.
     pub registrations: Vec<RegistrationRecord>,
+    /// Every message-bus publish-site fact the file's invocations record,
+    /// appended LAST after `registrations`. See `PublishRecord`.
+    pub publishes: Vec<PublishRecord>,
+    /// Every one-type-argument handler registration the file's invocations
+    /// record, appended LAST after `publishes`. See
+    /// `HandlerRegistrationRecord`.
+    pub handler_registrations: Vec<HandlerRegistrationRecord>,
+}
+
+/// One one-type-argument handler registration: an invocation whose name
+/// reads as an installation and which names exactly one type.
+///
+/// This is the fact a repository's own message vocabulary is derived from.
+/// The named type's base list says which generic base that repository
+/// treats as a handler shape and at which position it carries its message,
+/// so a bus whose type names appear nowhere in this engine is still
+/// recognized from the repository's own registrations. `handler` carries
+/// the type argument's descriptor as written; resolving it is the
+/// resolver's job, not the extractor's.
+#[derive(Debug, Clone, PartialEq)]
+pub struct HandlerRegistrationRecord {
+    /// The registered type's descriptor, as written.
+    pub handler: String,
+    /// The registration call's enclosing namespace.
+    pub namespace: String,
+    /// The registration call's 1-based line.
+    pub line: usize,
 }
 
 /// One two-type-argument DI service registration.

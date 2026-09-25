@@ -68,6 +68,8 @@ fn empty_model(seed_files: Vec<&str>, rows: Vec<(&str, u32)>) -> ImpactModel {
                 from_lines: vec![],
                 infra: false,
                 why: Why::UsesType,
+                bus_only: false,
+                bus_origin: None,
             })
             .collect(),
         dropped: 0,

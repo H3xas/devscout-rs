@@ -5,7 +5,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use super::def::Def;
-use super::edge::{Edge, EdgesByKind, HeuristicByTier};
+use super::edge::{Edge, EdgesByKind, HeuristicByTier, SemanticStats};
 use super::ordered::Percent1;
 use super::paths::{atomic_write_json, graph_json_path};
 
@@ -53,6 +53,28 @@ pub struct Stats {
     /// still follows `test_def_count` directly and the bytes are unchanged.
     #[serde(default)]
     pub heuristic_by_tier: HeuristicByTier,
+    /// Whether the repository's own handler registrations contributed to the
+    /// message vocabulary the bus pass ran with. Appended LAST and written
+    /// ONLY alongside a bus-hop count, so a graph with no hop carries no such
+    /// key and its bytes are unchanged.
+    ///
+    /// `Some(false)` is the answer worth reading: the pass fell back to the
+    /// handler shapes this engine ships because the repository registers its
+    /// handlers somewhere this pass cannot see them -- by scanning an
+    /// assembly, most often. Hops are still emitted, but their coverage is
+    /// whatever the fallback shapes happened to match, which is a gap to
+    /// state rather than one to infer from a low count.
+    #[serde(
+        default,
+        rename = "bus_vocabulary_derived",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub bus_vocabulary_derived: Option<bool>,
+    /// The resolve-time compiler-fact consumption path's own run-level
+    /// counters, appended LAST and omitted entirely when the semantic layer
+    /// did not load for this run -- see `SemanticStats`'s own doc comment.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub semantic: Option<SemanticStats>,
 }
 
 /// One row of the full name index. Field order (`name`, `kind`,

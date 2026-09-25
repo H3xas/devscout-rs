@@ -39,7 +39,7 @@ fn resolve_registered_type(
     index: &DefIndex,
     file_contexts: &HashMap<String, FileContext>,
 ) -> Option<usize> {
-    let probe = type_probe(raw, ns);
+    let probe = type_probe(raw, ns, &[]);
     match resolve_ref(
         &probe,
         &file_ctx.usings,

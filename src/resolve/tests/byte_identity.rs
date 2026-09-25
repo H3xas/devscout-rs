@@ -55,7 +55,7 @@ fn stage6_without_a_project_model_the_byte_identity_fixture_serializes_exactly_a
 
     let legacy = serde_json::to_string(&resolve_graph(&root, &files)).unwrap();
     let modelled =
-        serde_json::to_string(&resolve_graph_with_model(&root, &files, &[], None)).unwrap();
+        serde_json::to_string(&resolve_graph_with_model(&root, &files, &[], None, None)).unwrap();
     assert_eq!(
         legacy, modelled,
         "a None model must leave the artifact byte-identical, key for key"

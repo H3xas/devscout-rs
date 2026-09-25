@@ -1,6 +1,6 @@
 [package]
 name = "devscout-rs"
-version = "0.7.0"
+version = "0.8.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/H3xas/devscout-rs"
@@ -21,6 +21,11 @@ rusqlite = { version = "=0.40.2", features = ["bundled"] }
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.151"
 sha2 = "=0.11.0"
+# Same RustCrypto family and pinning discipline as sha2 above -- needed only
+# to re-hash a compiler-facts import file (`semantic::freshness`) in the
+# producer's own SHA-1 encoding, matched byte for byte against its recorded
+# hash offline.
+sha1 = "=0.11.0"
 # tree-sitter-c-sharp 0.23.5 depends on the lightweight `tree-sitter-language`
 # crate (^0.1) for its ABI, not on `tree-sitter` directly -- grammar crates
 # decoupled from the parser crate's version starting ~0.22. That means the

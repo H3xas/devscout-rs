@@ -2,7 +2,7 @@ use super::arity::generic_args_unify;
 use super::index::{name_probe, DefIndex};
 use super::ladder::{capped_candidates, resolve_ref, Resolution};
 use super::scope::FileContext;
-use crate::graph::{Candidate, Def, Edge, FragRef, HeuristicTier};
+use crate::graph::{Candidate, Def, Edge, FragRef, Fragment, GraphName, HeuristicTier};
 use std::collections::{HashMap, HashSet};
 
 // ---------------------------------------------------------------------------
@@ -187,7 +187,7 @@ pub(super) fn resolve_ctor_param(
 // dotted. Unlike `index::name_probe` (bare names only), this is what lets a
 // qualified service or implementation type resolve through the ladder's own
 // exact-qualified step.
-pub(super) fn type_probe(raw: &str, ns: &str) -> FragRef {
+pub(super) fn type_probe(raw: &str, ns: &str, outer_types: &[String]) -> FragRef {
     let (name, qualified) = match raw.rfind('.') {
         Some(dot) => (raw[dot + 1..].to_string(), Some(raw.to_string())),
         None => (raw.to_string(), None),
@@ -204,7 +204,7 @@ pub(super) fn type_probe(raw: &str, ns: &str) -> FragRef {
         receiver_type: None,
         arg_count: None,
         receiver_args: None,
-        outer_types: Vec::new(),
+        outer_types: outer_types.to_vec(),
         args: None,
         receiver_property_owner: None,
         receiver_call_owner: None,
@@ -275,6 +275,7 @@ pub(super) fn heuristic_edge_key(e: &Edge) -> Option<String> {
             heuristic: true,
             tier,
             member,
+            ..
         } => (
             "uses-member",
             from_file,
@@ -295,4 +296,47 @@ pub(super) fn heuristic_edge_key(e: &Edge) -> Option<String> {
     Some(format!(
         "{kind} {from_file} {from_line} {to} {to_file} {tier} {member}"
     ))
+}
+
+/// The full name index: every name the mapped set declares, with the file
+/// and line it is declared on -- one entry per fragment def (its own
+/// `line`, so `find` and `refs` point a caller at the same site), then that
+/// file's member and markup names in source order. Types come off the
+/// FRAGMENT defs rather than the merged rows, so a partial class
+/// contributes each declaring site instead of only the first. Build order
+/// is fragment-map order, the same order the edge loop walks -- these
+/// bytes must be emitted in that order or the artifacts diverge.
+///
+/// A MARKUP def is the one def that contributes no row here. Its
+/// declaration is already in the index, one entry earlier, as the
+/// `markup-class` name the same scan emitted from the same `x:Class` on the
+/// same line -- under the FULLY QUALIFIED spelling markup writes it in,
+/// which is strictly more than a bare-name row would carry. Emitting both
+/// would put two rows on one declaration and change what every existing
+/// `find` over a markup repo returns.
+pub(super) fn build_graph_names(fragments_by_file: &[(String, Fragment)]) -> Vec<GraphName> {
+    let mut names: Vec<GraphName> = Vec::new();
+    for (file, frag) in fragments_by_file {
+        if !crate::markup::is_markup(file) {
+            for d in &frag.defs {
+                names.push(GraphName {
+                    name: d.name.clone(),
+                    kind: d.kind.clone(),
+                    file: file.clone(),
+                    line: d.line,
+                    owner: String::new(),
+                });
+            }
+        }
+        for n in &frag.names {
+            names.push(GraphName {
+                name: n.name.clone(),
+                kind: n.kind.clone(),
+                file: file.clone(),
+                line: n.line,
+                owner: n.owner.clone(),
+            });
+        }
+    }
+    names
 }

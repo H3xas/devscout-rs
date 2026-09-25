@@ -1,6 +1,9 @@
 use super::arity::{arity_accepts, generic_args_unify, resolve_receiver_type};
+use super::bus::append_bus_edges;
 use super::dispatch::append_dispatch_edges;
-use super::edges::{build_implementor_index, heuristic_edge_key, resolve_ctor_param, type_edge};
+use super::edges::{
+    build_graph_names, build_implementor_index, heuristic_edge_key, resolve_ctor_param, type_edge,
+};
 use super::index::{build_def_index, name_probe, ExtCandidate};
 use super::ladder::{
     capped_candidates, narrow_by_reachability, narrow_tracked, resolve_ref, type_candidate,
@@ -22,7 +25,7 @@ use super::scope::{
     FileContext,
 };
 use crate::graph::{
-    Edge, EdgesByKind, Fragment, Graph, GraphName, HeuristicByTier, HeuristicTier, Percent1, Stats,
+    Edge, EdgesByKind, Fragment, Graph, HeuristicByTier, HeuristicTier, Percent1, Stats,
     GRAPH_SCHEMA_VERSION,
 };
 use crate::manifest;
@@ -44,7 +47,7 @@ const SCORED_EMIT_CAP: usize = 3;
 /// set changed, and unit-testable without a parser (see this module's tests,
 /// which build `Fragment` values by hand).
 pub fn resolve_graph(root: &Path, fragments_by_file: &[(String, Fragment)]) -> Graph {
-    resolve_graph_with_model(root, fragments_by_file, &[], None)
+    resolve_graph_with_model(root, fragments_by_file, &[], None, None)
 }
 
 /// The same resolve, with the TS/TSX half alongside. The caller passes the two
@@ -61,7 +64,7 @@ pub fn resolve_graph_with_ts(
     fragments_by_file: &[(String, Fragment)],
     ts_fragments_by_file: &[(String, crate::extract::TsFragment)],
 ) -> Graph {
-    resolve_graph_with_model(root, fragments_by_file, ts_fragments_by_file, None)
+    resolve_graph_with_model(root, fragments_by_file, ts_fragments_by_file, None, None)
 }
 
 /// The same resolve again, now with the repo's `.csproj` project model
@@ -83,6 +86,7 @@ pub fn resolve_graph_with_model(
     fragments_by_file: &[(String, Fragment)],
     ts_fragments_by_file: &[(String, crate::extract::TsFragment)],
     model: Option<&crate::project::ProjectModel>,
+    semantic_layer: Option<&crate::semantic::SemanticLayer>,
 ) -> Graph {
     let index = build_def_index(fragments_by_file);
     // Ownership, resolved once for every fragment file and then once for every
@@ -127,6 +131,9 @@ pub fn resolve_graph_with_model(
     // "is this candidate assignable to this receiver type" question once per
     // call site, and the answer is a base-closure walk.
     let mut assignable_cache: AssignabilityCache = HashMap::new();
+    // Compiler-fact consumption's own per-run state; see `semantic::apply`.
+    let mut semantic_diag = crate::semantic::SemanticDiagnostics::default();
+    let mut semantic_sites: HashSet<(String, usize, String)> = HashSet::new();
 
     for (file, frag) in fragments_by_file {
         // Local alias shadows a same-named global one -- see
@@ -151,6 +158,8 @@ pub fn resolve_graph_with_model(
             let ns = r.namespace.as_deref().unwrap_or("");
 
             if r.kind == "uses-member" {
+                let semantic_pre_len = edges.len();
+                crate::semantic::track_reference(semantic_layer, &mut semantic_sites, file, r);
                 // Resolve the qualifier through the SAME ladder as a type
                 // ref, then only act when it lands on exactly one candidate
                 // that clears an emission tier. Enums emit unconditionally
@@ -1124,6 +1133,18 @@ pub fn resolve_graph_with_model(
                         }
                     }
                 }
+                crate::semantic::apply(
+                    semantic_layer,
+                    &index,
+                    &mut edges,
+                    &mut edges_by_kind,
+                    &mut heuristic_edge_count,
+                    &mut heuristic_by_tier,
+                    &mut semantic_diag,
+                    semantic_pre_len,
+                    file,
+                    r,
+                );
                 continue;
             }
 
@@ -1196,46 +1217,26 @@ pub fn resolve_graph_with_model(
         &mut edges,
         &mut edges_by_kind,
     );
+    let bus_vocabulary_derived = append_bus_edges(
+        fragments_by_file,
+        &index,
+        &file_contexts,
+        &mut edges,
+        &mut edges_by_kind,
+    );
 
-    // The full name index. Every name the mapped set declares, with the file
-    // and line it is declared on: one entry per fragment def (its own `line`,
-    // so `find` and `refs` point a caller at the same site), then that file's
-    // member and markup names in source order. Types come off the FRAGMENT defs
-    // rather than the merged rows, so a partial class contributes each declaring
-    // site instead of only the first. Build order is fragment-map order, the
-    // same order the edge loop above walks -- these bytes must be emitted in
-    // that order or the artifacts diverge.
-    //
-    // A MARKUP def is the one def that contributes no row here. Its declaration
-    // is already in the index, one entry earlier, as the `markup-class` name the
-    // same scan emitted from the same `x:Class` on the same line -- under the
-    // FULLY QUALIFIED spelling markup writes it in, which is strictly more than
-    // a bare-name row would carry. Emitting both would put two rows on one
-    // declaration and change what every existing `find` over a markup repo
-    // returns.
-    let mut names: Vec<GraphName> = Vec::new();
-    for (file, frag) in fragments_by_file {
-        if !crate::markup::is_markup(file) {
-            for d in &frag.defs {
-                names.push(GraphName {
-                    name: d.name.clone(),
-                    kind: d.kind.clone(),
-                    file: file.clone(),
-                    line: d.line,
-                    owner: String::new(),
-                });
-            }
-        }
-        for n in &frag.names {
-            names.push(GraphName {
-                name: n.name.clone(),
-                kind: n.kind.clone(),
-                file: file.clone(),
-                line: n.line,
-                owner: n.owner.clone(),
-            });
-        }
-    }
+    // Compiler-discovered sites project once per run; see `semantic::finish`.
+    let semantic_stats = crate::semantic::finish(
+        semantic_layer,
+        &index,
+        &semantic_sites,
+        &mut edges,
+        semantic_diag,
+    );
+
+    // The full name index -- see `edges::build_graph_names`'s own doc
+    // comment for the exact contract (build order, the markup exclusion).
+    let names = build_graph_names(fragments_by_file);
 
     // Heuristic-side dedup, single pass, first occurrence wins. Independent
     // guess tiers (and repeated windows over one chain) can name the same
@@ -1292,6 +1293,8 @@ pub fn resolve_graph_with_model(
             // population of guesses.
             heuristic_by_tier,
             ts: None,
+            bus_vocabulary_derived,
+            semantic: semantic_stats,
         },
         defs: index.defs,
         edges,

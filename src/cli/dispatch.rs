@@ -57,16 +57,16 @@ usage: devscout <command> [args]
 index
   init [scope ...]           register this repo, install hooks, first map
                              [--label L] [--no-hooks] [--no-map]
-  map [scope ...] [--refresh]  build the index for the given scopes
+  map [scope ...] [--refresh] [--no-semantic]  build the index for the given scopes
   clear --older-than <days>  drop freshness rows older than N days
   clear --session <id>       drop one session's freshness rows
 
 query
   find <query> [--resources] search the manifest by name or purpose
-  refs <symbol>              references to a symbol   [--out --all --no-guess --no-dispatch --pick N --json|--compact]
-  read <symbol>              decl span + inbound refs [--no-guess --no-dispatch --pick N --json|--compact]
-  impact <file|symbol>       blast radius             [--hops N --no-guess --no-dispatch --no-imports --pick N --json|--compact]
-  tests <symbol>             tests reaching a symbol  [--no-guess --no-dispatch --pick N --json|--compact]
+  refs <symbol>              references to a symbol   [--out --all --no-guess --no-dispatch --no-bus --pick N --json|--compact]
+  read <symbol>              decl span + inbound refs [--no-guess --no-dispatch --no-bus --pick N --json|--compact]
+  impact <file|symbol>       blast radius             [--hops N --no-guess --no-dispatch --no-bus --no-imports --pick N --json|--compact]
+  tests <symbol>             tests reaching a symbol  [--no-guess --no-dispatch --no-bus --pick N --json|--compact]
   import-edges <file> --repo <id>  load a cross-repo edge export for `impact` to read
   compiler-facts run|import|status  optional engine-derived facts [--target --configuration --platform]
   stats                      index + cache summary for this repo

@@ -269,7 +269,7 @@ fn usage_and_flag_conflicts_keep_their_own_codes_and_silence() {
     assert_eq!(missing.status.code(), Some(2), "{missing:?}");
     assert_eq!(
         stdout_of(&missing),
-        "usage: devscout read <symbol> [--no-guess] [--no-dispatch] [--pick N] [--json|--compact]\n"
+        "usage: devscout read <symbol> [--no-guess] [--no-dispatch] [--no-bus] [--pick N] [--json|--compact]\n"
     );
 
     let conflict = fx.run(&["read", "IThing", "--compact", "--json"]);
@@ -321,21 +321,28 @@ fn map_rerun_reuses_fragments_and_a_missing_cache_re_extracts_with_spans() {
     );
 
     let graph_dir = fx.graph_dir();
-    let v21 = graph_dir.join("fragments-v21.json");
-    assert!(v21.exists(), "the current cache generation is on disk");
+    let current_cache = graph_dir.join("fragments-v23.json");
+    assert!(
+        current_cache.exists(),
+        "the current cache generation is on disk"
+    );
 
-    // Simulate the pre-bump world: only a superseded pair present. BOTH v21 files
-    // must go -- reuse is decided against the mtime-only index, so leaving it
-    // behind would let every file look reusable off an empty payload cache.
-    // The next map then finds nothing reusable, re-extracts every file,
-    // writes the v21 pair again, and deletes the superseded generation.
+    // Simulate the pre-bump world: only a superseded pair present. BOTH files
+    // of the current pair must go -- reuse is decided against the mtime-only
+    // index, so leaving it behind would let every file look reusable off an
+    // empty payload cache. The next map then finds nothing reusable,
+    // re-extracts every file, writes the current pair again, and deletes the
+    // superseded generation.
     fs::write(graph_dir.join("fragments-v16.json"), b"{}").unwrap();
-    fs::remove_file(&v21).unwrap();
-    fs::remove_file(graph_dir.join("fragments-index-v21.json")).unwrap();
+    fs::remove_file(&current_cache).unwrap();
+    fs::remove_file(graph_dir.join("fragments-index-v23.json")).unwrap();
 
     let rebuild = fx.run(&["map", "."]);
     assert!(rebuild.status.success(), "{rebuild:?}");
-    assert!(v21.exists(), "re-extraction rewrote the current generation");
+    assert!(
+        current_cache.exists(),
+        "re-extraction rewrote the current generation"
+    );
     assert!(
         !graph_dir.join("fragments-v16.json").exists(),
         "rename IS the invalidation: superseded generations are deleted"

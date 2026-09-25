@@ -9,7 +9,7 @@ fn rebuild_graph_skips_when_unchanged_and_graph_already_exists() {
     let dir = temp_dir("rebuild-unchanged");
     fs::create_dir_all(graph_dir(&dir)).unwrap();
     fs::write(graph_json_path(&dir), b"{\"schema_version\":3,\"built_at_head\":null,\"defs\":[],\"edges\":[],\"stats\":{\"def_count\":0,\"file_count\":0,\"edges_by_kind\":{\"inherits\":0,\"uses-type\":0,\"imports\":0,\"uses-member\":0},\"ambiguous_count\":0,\"ambiguous_pct\":0,\"unresolved_external_count\":0}}").unwrap();
-    let outcome = rebuild_graph(&dir, &[], &HashMap::new(), false, None).unwrap();
+    let outcome = rebuild_graph(&dir, &[], &HashMap::new(), false, None, None).unwrap();
     assert!(matches!(outcome, RebuildOutcome::NotRebuilt));
 }
 
@@ -23,7 +23,7 @@ fn rebuild_graph_rebuilds_when_the_existing_graph_carries_an_older_schema_versio
     let dir = temp_dir("rebuild-old-schema");
     fs::create_dir_all(graph_dir(&dir)).unwrap();
     fs::write(graph_json_path(&dir), b"{\"schema_version\":1,\"built_at_head\":null,\"defs\":[],\"edges\":[],\"stats\":{\"def_count\":0,\"file_count\":0,\"edges_by_kind\":{\"inherits\":0,\"uses-type\":0,\"imports\":0,\"uses-member\":0},\"ambiguous_count\":0,\"ambiguous_pct\":0,\"unresolved_external_count\":0}}").unwrap();
-    let outcome = rebuild_graph(&dir, &[], &HashMap::new(), false, None).unwrap();
+    let outcome = rebuild_graph(&dir, &[], &HashMap::new(), false, None, None).unwrap();
     let RebuildOutcome::Rebuilt(graph) = outcome else {
         panic!("an older-schema graph must be rebuilt on the unchanged path");
     };
@@ -45,7 +45,7 @@ fn rebuild_graph_rebuilds_when_the_existing_graph_is_too_short_to_carry_a_versio
     fs::write(graph_json_path(&dir), b"{").unwrap();
     assert!(!graph_schema_is_current(&dir));
     assert!(matches!(
-        rebuild_graph(&dir, &[], &HashMap::new(), false, None).unwrap(),
+        rebuild_graph(&dir, &[], &HashMap::new(), false, None, None).unwrap(),
         RebuildOutcome::Rebuilt(_)
     ));
 }
@@ -76,12 +76,17 @@ fn rebuild_graph_reuses_a_cached_fragment_at_matching_mtime() {
             method_arities: OrderedMap::new(),
             method_params: OrderedMap::new(),
             override_methods: vec![],
+            base_type_args: OrderedMap::new(),
+            property_message_args: Vec::new(),
+            array_message_bases: Vec::new(),
             end_line: 1,
         }],
         usings: vec![],
         refs: vec![],
         names: vec![],
         registrations: vec![],
+        publishes: vec![],
+        handler_registrations: vec![],
     };
     // First build: nothing cached, comes from fresh_fragments.
     let mut fresh = HashMap::new();
@@ -90,13 +95,13 @@ fn rebuild_graph_reuses_a_cached_fragment_at_matching_mtime() {
         rel: "A.cs".to_string(),
         mtime: 111,
     }];
-    let first = rebuild_graph(&dir, &graph_files, &fresh, true, None).unwrap();
+    let first = rebuild_graph(&dir, &graph_files, &fresh, true, None, None).unwrap();
     assert!(matches!(first, RebuildOutcome::Rebuilt(_)));
 
     // Second build: same mtime, EMPTY fresh_fragments -- must reuse the
     // cache, not silently drop the file from the graph.
     let empty: HashMap<String, AnyFragment> = HashMap::new();
-    let second = rebuild_graph(&dir, &graph_files, &empty, true, None).unwrap();
+    let second = rebuild_graph(&dir, &graph_files, &empty, true, None, None).unwrap();
     match second {
         RebuildOutcome::Rebuilt(g) => {
             assert_eq!(g.defs.len(), 1, "cached fragment must still be used")

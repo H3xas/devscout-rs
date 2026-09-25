@@ -474,8 +474,11 @@
           "Microsoft.Build": "[17.7.2, )",
           "Microsoft.Build.Framework": "[17.7.2, )",
           "Microsoft.Build.Locator": "[1.9.1, )",
+          "Microsoft.Build.Tasks.Core": "[17.7.2, )",
+          "Microsoft.Build.Utilities.Core": "[17.7.2, )",
           "Microsoft.CodeAnalysis.CSharp.Workspaces": "[4.14.0, )",
-          "Microsoft.CodeAnalysis.Workspaces.MSBuild": "[4.14.0, )"
+          "Microsoft.CodeAnalysis.Workspaces.MSBuild": "[4.14.0, )",
+          "Microsoft.NET.StringTools": "[17.7.2, )"
         }
       }
     }

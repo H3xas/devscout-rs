@@ -191,7 +191,7 @@ internal static class ContextInventory
                     continue;
                 }
 
-                imports.Add(new ContextImport { Identity = NormalizeImportIdentity(importPath), Hash = FactsWriter.Sha1(content) });
+                imports.Add(new ContextImport { Identity = NormalizeImportIdentity(importPath, paths), Hash = FactsWriter.Sha1(content) });
             }
 
             imports = imports
@@ -268,14 +268,43 @@ internal static class ContextInventory
     }
 
     /// <summary>
+    /// Path segments that mark a file as owned by the installed .NET SDK
+    /// rather than by the analysed repository: the SDK's own tree
+    /// (<c>/sdk/</c>) and, separately, an installed workload's manifest tree
+    /// (<c>/sdk-manifests/</c> -- present whenever any workload, e.g. MAUI or
+    /// Android, is installed alongside the SDK actually in use here; it does
+    /// not require the analysed solution to use that workload). Both move in
+    /// lockstep with the installed SDK, never with this repository's own
+    /// commits, which is exactly what <see cref="NormalizeImportIdentity"/>'s
+    /// caller filters <c>sdk-file:</c> identities out for.
+    /// </summary>
+    private static readonly string[] SdkOwnedMarkers = ["/sdk/", "/sdk-manifests/"];
+
+    /// <summary>
     /// An SDK <c>.props</c>/<c>.targets</c> file or a NuGet package's build
     /// file lives outside the analysed repository; it is recorded by a
     /// normalized identity (package id + version when the well-known NuGet
-    /// global-packages path shape is recognizable, else the file's bare
-    /// name) rather than its absolute local path, which
-    /// <see cref="ContextSchema"/> also rejects as defense in depth.
+    /// global-packages path shape is recognizable, an SDK-relative tail when
+    /// an <see cref="SdkOwnedMarkers"/> segment is recognizable, else the
+    /// file's bare name) rather than its absolute local path, which
+    /// <see cref="ContextSchema"/> also rejects as defense in depth. A
+    /// repository-authored import (<c>Directory.Build.props</c> and its kin,
+    /// found by <paramref name="paths"/> the same way a <c>Compile</c> item
+    /// is) is recorded by its own root-relative path instead of its bare
+    /// name: more than one same-named override file at different repository
+    /// depths -- a root <c>Directory.Build.props</c> plus a subtree's own
+    /// override, an ordinary MSBuild pattern -- otherwise collide onto one
+    /// identity, and the consumer's freshness re-hash, which joins the
+    /// identity under the repository root, then compares different files'
+    /// content against each other and reports every one of them changed. An
+    /// unrecognized SDK-owned or otherwise-external path shape falls through
+    /// to the bare-name case, which the consumer's own freshness check
+    /// re-hashes against the repository root and finds missing there --
+    /// silently degrading the whole artifact to stale on every run touching
+    /// that path, exactly the failure an unrecognized workload-manifest
+    /// import already caused before <c>/sdk-manifests/</c> was added here.
     /// </summary>
-    private static string NormalizeImportIdentity(string fullPath)
+    internal static string NormalizeImportIdentity(string fullPath, RepoPaths paths)
     {
         var normalized = fullPath.Replace('\\', '/');
         var nugetMarker = "/.nuget/packages/";
@@ -289,12 +318,20 @@ internal static class ContextInventory
             }
         }
 
-        var sdkMarker = "/sdk/";
-        var sdkIndex = normalized.ToLowerInvariant().IndexOf(sdkMarker, StringComparison.Ordinal);
-        if (sdkIndex >= 0)
+        var repoRelative = paths.RelativeProjectPath(fullPath);
+        if (repoRelative is not null)
         {
-            var tail = normalized[(sdkIndex + sdkMarker.Length)..].Split('/');
-            return "sdk-file:" + string.Join('/', tail.TakeLast(Math.Min(3, tail.Length)));
+            return "external-file:" + repoRelative;
+        }
+
+        foreach (var sdkMarker in SdkOwnedMarkers)
+        {
+            var sdkIndex = normalized.ToLowerInvariant().IndexOf(sdkMarker, StringComparison.Ordinal);
+            if (sdkIndex >= 0)
+            {
+                var tail = normalized[(sdkIndex + sdkMarker.Length)..].Split('/');
+                return "sdk-file:" + string.Join('/', tail.TakeLast(Math.Min(3, tail.Length)));
+            }
         }
 
         return "external-file:" + Path.GetFileName(normalized);

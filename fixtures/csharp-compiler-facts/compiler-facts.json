@@ -14,7 +14,7 @@
   "dependencyFingerprint": "1b08b298ead60b49666b3bfa8d389386770d87dc150a9b1eced58896652f3d43",
   "context": {
     "schemaVersion": 1,
-    "contextFingerprint": "358d373a13dbfc7c21bbcfb2cbfe8655093af4321b609b2eff05ace564ace95f",
+    "contextFingerprint": "1e95de4dffc62516bc85a5f5405736d4152985e5f1d9068fa04cecb330e9f327",
     "envelope": {
       "compilations": [
         {
@@ -29,7 +29,7 @@
           },
           "state": "partial",
           "reason": "binding-error",
-          "fingerprint": "081f8c7343c988072d3a27252f0a765e9451d597",
+          "fingerprint": "343028f7b883718e7ef32a8a655a2ab3a0681499",
           "versions": {
             "sdk": "9.0.305",
             "msbuild": "17.14.21.41108",
@@ -1026,10 +1026,6 @@
             {
               "identity": "external-file:Directory.Build.props",
               "hash": "626f5ccf33933f2acc39031bbfd7cd198ea77a50"
-            },
-            {
-              "identity": "external-file:WorkloadManifest.targets",
-              "hash": "746d7e119b141d6804a2d96be4b21603179e2e17"
             }
           ],
           "languageOptions": {
@@ -1360,7 +1356,7 @@
             "platform": "AnyCPU",
             "declaredTfms": null
           },
-          "fingerprint": "081f8c7343c988072d3a27252f0a765e9451d597"
+          "fingerprint": "343028f7b883718e7ef32a8a655a2ab3a0681499"
         },
         "documentContentIdentity": "sha1:50f9ea9ae56e56fbcb71c0092fc9b00cec4b5bc6",
         "targetDocumentContentIdentities": [
@@ -1407,7 +1403,7 @@
             "platform": "AnyCPU",
             "declaredTfms": null
           },
-          "fingerprint": "081f8c7343c988072d3a27252f0a765e9451d597"
+          "fingerprint": "343028f7b883718e7ef32a8a655a2ab3a0681499"
         },
         "documentContentIdentity": "sha1:50f9ea9ae56e56fbcb71c0092fc9b00cec4b5bc6",
         "targetDocumentContentIdentities": [
@@ -1454,7 +1450,7 @@
             "platform": "AnyCPU",
             "declaredTfms": null
           },
-          "fingerprint": "081f8c7343c988072d3a27252f0a765e9451d597"
+          "fingerprint": "343028f7b883718e7ef32a8a655a2ab3a0681499"
         },
         "documentContentIdentity": "sha1:50f9ea9ae56e56fbcb71c0092fc9b00cec4b5bc6",
         "targetDocumentContentIdentities": [
@@ -1501,7 +1497,7 @@
             "platform": "AnyCPU",
             "declaredTfms": null
           },
-          "fingerprint": "081f8c7343c988072d3a27252f0a765e9451d597"
+          "fingerprint": "343028f7b883718e7ef32a8a655a2ab3a0681499"
         },
         "documentContentIdentity": "sha1:50f9ea9ae56e56fbcb71c0092fc9b00cec4b5bc6",
         "targetDocumentContentIdentities": [
@@ -1550,7 +1546,7 @@
             "platform": "AnyCPU",
             "declaredTfms": null
           },
-          "fingerprint": "081f8c7343c988072d3a27252f0a765e9451d597"
+          "fingerprint": "343028f7b883718e7ef32a8a655a2ab3a0681499"
         },
         "documentContentIdentity": "sha1:50f9ea9ae56e56fbcb71c0092fc9b00cec4b5bc6",
         "targetDocumentContentIdentities": []
@@ -1604,7 +1600,7 @@
             "platform": "AnyCPU",
             "declaredTfms": null
           },
-          "fingerprint": "081f8c7343c988072d3a27252f0a765e9451d597"
+          "fingerprint": "343028f7b883718e7ef32a8a655a2ab3a0681499"
         },
         "documentContentIdentity": "sha1:50f9ea9ae56e56fbcb71c0092fc9b00cec4b5bc6",
         "targetDocumentContentIdentities": []
@@ -1649,7 +1645,7 @@
             "platform": "AnyCPU",
             "declaredTfms": null
           },
-          "fingerprint": "081f8c7343c988072d3a27252f0a765e9451d597"
+          "fingerprint": "343028f7b883718e7ef32a8a655a2ab3a0681499"
         },
         "documentContentIdentity": "sha1:50f9ea9ae56e56fbcb71c0092fc9b00cec4b5bc6",
         "targetDocumentContentIdentities": [
@@ -1705,7 +1701,7 @@
             "platform": "AnyCPU",
             "declaredTfms": null
           },
-          "fingerprint": "081f8c7343c988072d3a27252f0a765e9451d597"
+          "fingerprint": "343028f7b883718e7ef32a8a655a2ab3a0681499"
         },
         "documentContentIdentity": "sha1:50f9ea9ae56e56fbcb71c0092fc9b00cec4b5bc6",
         "targetDocumentContentIdentities": []
@@ -1750,7 +1746,7 @@
             "platform": "AnyCPU",
             "declaredTfms": null
           },
-          "fingerprint": "081f8c7343c988072d3a27252f0a765e9451d597"
+          "fingerprint": "343028f7b883718e7ef32a8a655a2ab3a0681499"
         },
         "documentContentIdentity": "sha1:50f9ea9ae56e56fbcb71c0092fc9b00cec4b5bc6",
         "targetDocumentContentIdentities": [
@@ -1791,7 +1787,7 @@
             "platform": "AnyCPU",
             "declaredTfms": null
           },
-          "fingerprint": "081f8c7343c988072d3a27252f0a765e9451d597"
+          "fingerprint": "343028f7b883718e7ef32a8a655a2ab3a0681499"
         },
         "documentContentIdentity": "sha1:cc1c22c556ba3e6fee590323c7b0a052af862164",
         "targetDocumentContentIdentities": []
@@ -1964,7 +1960,7 @@
             "platform": "AnyCPU",
             "declaredTfms": null
           },
-          "fingerprint": "081f8c7343c988072d3a27252f0a765e9451d597"
+          "fingerprint": "343028f7b883718e7ef32a8a655a2ab3a0681499"
         },
         "documentContentIdentity": "sha1:cc1c22c556ba3e6fee590323c7b0a052af862164",
         "targetDocumentContentIdentities": []
@@ -2003,7 +1999,7 @@
             "platform": "AnyCPU",
             "declaredTfms": null
           },
-          "fingerprint": "081f8c7343c988072d3a27252f0a765e9451d597"
+          "fingerprint": "343028f7b883718e7ef32a8a655a2ab3a0681499"
         },
         "documentContentIdentity": "sha1:cc1c22c556ba3e6fee590323c7b0a052af862164",
         "targetDocumentContentIdentities": []

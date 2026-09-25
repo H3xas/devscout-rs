@@ -3,7 +3,8 @@ use std::collections::{HashMap, HashSet};
 use crate::graph;
 
 use super::dispatch::{implemented_interfaces, inbound_walk_kinds};
-use super::impact_why::{self, Why, WhyTrack};
+use super::impact_why::{self, Hit, Why};
+pub use super::impact_why::{BusOrigin, KindLines};
 use super::index::{def_files, GraphIndex};
 use super::infra::is_infra_file;
 use super::member::{self, MemberCandidate, MemberSeedResolution};
@@ -25,55 +26,6 @@ pub const DEFAULT_IFACE_MAX_FANIN: usize = 8;
 // ============================================================================
 // impact_walk + personalized_page_rank.
 // ============================================================================
-
-/// One representative referencing line PER EDGE KIND that reached this file,
-/// the lowest line per kind. `0` means "this kind never contributed", which
-/// keeps a row a kind never touched free of that key in `--json`. `direct_amb`
-/// is the ambiguous half of the `direct` kind, kept apart only so
-/// `build_impact_model` can apply the resolved-over-ambiguous tie-break instead
-/// of letting an ambiguous line win by being numerically smaller.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct KindLines {
-    /// The direct value.
-    pub direct: usize,
-    /// The direct amb value.
-    pub direct_amb: usize,
-    /// The ctor di value.
-    pub ctor_di: usize,
-    /// The heuristic value.
-    pub heuristic: usize,
-    /// The iface value.
-    pub iface: usize,
-}
-
-// The lowest-line-wins guard for `ctor_di`, whose `why` is always `ctor-di`;
-// every other `KindLines` slot routes through `Hit`'s `note_*` methods instead.
-fn note_line(slot: &mut usize, line: usize) {
-    if line > 0 && (*slot == 0 || line < *slot) {
-        *slot = line;
-    }
-}
-
-// `pub(super)` throughout: `impact_why::build_visited_entry` reads every
-// field of a finished `Hit` to assemble one `VisitedEntry`.
-#[derive(Debug, Clone, Default)]
-pub(super) struct Hit {
-    pub(super) via_count: u32,
-    pub(super) ambiguous_count: u32,
-    pub(super) heuristic_count: u32,
-    // How many of `heuristic_count` came from the EXTENSION tier. Counted
-    // rather than flagged so the walk keeps one shape for both tiers, and one
-    // is all the row needs to call itself an extension (see `row_tier`).
-    pub(super) ext_count: u32,
-    pub(super) symbols: SeqSet<String>,
-    // The `via` labels an interface-hop hit at this file carries
-    // (`"IFoo (ctor-di)"` or bare `"IFoo"`), first-seen order.
-    pub(super) iface_via: SeqSet<String>,
-    // One representative line per edge kind (see `KindLines`).
-    pub(super) lines: KindLines,
-    // Which edge explains each of `lines`' slots -- see `impact_why::WhyTrack`.
-    pub(super) why_track: WhyTrack,
-}
 
 /// One visited file's entry in an impact walk.
 #[derive(Debug, Clone, PartialEq)]
@@ -99,6 +51,11 @@ pub struct VisitedEntry {
     pub infra: bool,
     /// Why this file was reached, folded across every kind that fired.
     pub why: Why,
+    /// `true` when every path found to this file crosses a `bus-hop`.
+    pub bus_only: bool,
+    /// The lowest-ordered bus-hop origin any path to this file crossed,
+    /// present whenever `bus_only` is -- see `impact_why::BusOrigin`.
+    pub bus_origin: Option<BusOrigin>,
 }
 
 /// An interface the walk refused to widen through, and how many distinct
@@ -205,22 +162,28 @@ pub fn impact_walk(
         frontier.insert(id.clone());
     }
     let mut seen_defs: HashSet<String> = seed_ids.iter().cloned().collect();
+    // A def -> the bus-hop origin its sourcing file was reached through, when
+    // every path to it crossed one; absent (or `None`) means untainted -- a
+    // real, non-bus path already reaches it.
+    let mut def_taint: HashMap<String, Option<BusOrigin>> = HashMap::new();
 
     let mut hop = 1u32;
     while hop <= hops && frontier.len() > 0 {
         let mut hits: SeqMap<Hit> = SeqMap::new();
 
         for def_id in frontier.iter() {
+            let def_tainted: Option<BusOrigin> = def_taint.get(def_id).cloned().flatten();
             if let Some(inb) = index.inbound.get(def_id) {
                 for kind_edges in inbound_walk_kinds(inb) {
                     for &ei in kind_edges {
                         let (loc_file, loc_line) = edge_loc(&index.graph.edges[ei]);
                         let from_file = loc_file.to_string();
+                        let edge = &index.graph.edges[ei];
                         {
                             let h = hits.get_or_insert_default(&from_file);
                             h.via_count += 1;
                             h.symbols.insert(def_id.clone());
-                            h.note_direct(loc_line, &index.graph.edges[ei]);
+                            impact_why::note_kind_edge(h, loc_line, edge, def_tainted.as_ref());
                         }
                         for sf in def_files(index, def_id) {
                             add_adj(&mut fwd_adj, &sf, &from_file);
@@ -235,11 +198,47 @@ pub fn impact_walk(
                     {
                         let h = hits.get_or_insert_default(&from_file);
                         h.ambiguous_count += 1;
-                        h.note_direct_amb(loc_line, &index.graph.edges[ei]);
+                        h.note_direct_amb(loc_line, &index.graph.edges[ei], def_tainted.as_ref());
                     }
                     for sf in def_files(index, def_id) {
                         add_adj(&mut fwd_adj, &sf, &from_file);
                     }
+                }
+            }
+            // The forward half of a bus hop: a file whose declared def
+            // contains a publish site also affects every handler that
+            // site's message reaches, at every hop within depth and the
+            // shared brake, exactly like every other edge kind. The far
+            // side's own adjacency (`outbound_by_file`) is admitted at
+            // index-build time alongside the reverse (`inbound`) direction
+            // (see `query::bus::record_bus_edge`); this only reads it, so
+            // `--no-bus` needs no special case here -- the suppressor already
+            // leaves `outbound_by_file[file].bus_hop` empty.
+            for file in def_files(index, def_id) {
+                let Some(outb) = index.outbound_by_file.get(&file) else {
+                    continue;
+                };
+                for &ei in &outb.bus_hop {
+                    let edge = &index.graph.edges[ei];
+                    let graph::Edge::BusHop {
+                        from_line, to_file, ..
+                    } = edge
+                    else {
+                        continue;
+                    };
+                    {
+                        let h = hits.get_or_insert_default(to_file);
+                        // Matches the reverse walk's own bookkeeping for
+                        // every inbound kind (`inbound_walk_kinds` already
+                        // includes `bus_hop`): a bus-hop route counts toward
+                        // `via_count` the same as any other precise edge, so
+                        // a row reached only this way is never mistaken for
+                        // a heuristic (name-guessed) one.
+                        h.via_count += 1;
+                        h.symbols.insert(def_id.clone());
+                        impact_why::note_kind_edge(h, *from_line, edge, def_tainted.as_ref());
+                    }
+                    add_adj(&mut fwd_adj, &file, to_file);
                 }
             }
             // The interface hop. `seen_sites` dedupes a ctor-injected
@@ -273,7 +272,8 @@ pub fn impact_walk(
                             h.via_count += 1;
                             h.symbols.insert(def_id.clone());
                             h.iface_via.insert(format!("{iface_name} (ctor-di)"));
-                            note_line(&mut h.lines.ctor_di, *from_line);
+                            impact_why::note_line(&mut h.lines.ctor_di, *from_line);
+                            h.note_taint(def_tainted.as_ref());
                         }
                         seen_sites.insert((from_file.clone(), *from_line));
                         for sf in def_files(index, def_id) {
@@ -310,7 +310,11 @@ pub fn impact_walk(
                                 h.via_count += 1;
                                 h.symbols.insert(def_id.clone());
                                 h.iface_via.insert(iface_name.clone());
-                                h.note_iface(loc_line, &index.graph.edges[ei]);
+                                h.note_iface(
+                                    loc_line,
+                                    &index.graph.edges[ei],
+                                    def_tainted.as_ref(),
+                                );
                             }
                             for sf in def_files(index, def_id) {
                                 add_adj(&mut fwd_adj, &sf, &from_file);
@@ -337,7 +341,7 @@ pub fn impact_walk(
                             h.ext_count += 1;
                         }
                         h.symbols.insert(def_id.clone());
-                        h.note_heuristic(loc_line, &index.graph.edges[ei]);
+                        h.note_heuristic(loc_line, &index.graph.edges[ei], def_tainted.as_ref());
                     }
                 }
             }
@@ -382,6 +386,16 @@ pub fn impact_walk(
                     if !seen_defs.contains(def_id) {
                         seen_defs.insert(def_id.clone());
                         next_frontier.insert(def_id.clone());
+                        // Every def this file declares inherits ITS taint,
+                        // carrying the origin identity forward so a later
+                        // hop's row can disclose the hop its own marker came
+                        // from, not just that one exists.
+                        let inherited = if h.has_non_bus_path {
+                            None
+                        } else {
+                            h.bus_origin.clone()
+                        };
+                        def_taint.insert(def_id.clone(), inherited);
                     }
                 }
             }
@@ -577,11 +591,11 @@ pub struct ImpactRow {
     /// omitted from `--json`) on every other row.
     pub iface_via: Vec<String>,
     /// One representative referencing line per EDGE KIND that actually reached
-    /// this file, in the fixed order `direct, ctor-di, heuristic, iface`; a
-    /// kind that never contributed is absent, and a row no kind could attribute
-    /// a line to carries no entry at all. The file is the row's own `file` --
-    /// every edge folded into one row is an edge OUT OF that file -- so a line
-    /// alone locates the site.
+    /// this file, in the fixed order `direct, ctor-di, heuristic, iface, bus`;
+    /// a kind that never contributed is absent, and a row no kind could
+    /// attribute a line to carries no entry at all. The file is the row's own
+    /// `file` -- every edge folded into one row is an edge OUT OF that file --
+    /// so a line alone locates the site.
     pub from_lines: Vec<(&'static str, usize)>,
     /// Set only on a hub file. The row is still an affected file; this says the
     /// walk stopped THERE rather than continuing through it. `false` means the
@@ -589,6 +603,15 @@ pub struct ImpactRow {
     pub infra: bool,
     /// Why this file was reached, carried unchanged from `VisitedEntry`.
     pub why: Why,
+    /// `true` when every path found to this file crosses a `bus-hop`.
+    /// `false` means the key is absent in `--json`, same as `infra`.
+    pub bus_only: bool,
+    /// The hop this row's `bus_only` marker discloses -- present exactly
+    /// when `bus_only` is, absent otherwise. Carried unchanged from
+    /// `VisitedEntry`; for a row reached both directly by a bus hop and
+    /// downstream of one, the lowest by (publisher file, line, message,
+    /// handler). See `impact_why::BusOrigin`.
+    pub bus_origin: Option<BusOrigin>,
 }
 
 /// The resolved `impact` result for one seed.
@@ -643,31 +666,6 @@ pub enum ImpactResult {
     },
     /// The seed named a member declared by more than one type.
     MemberAmbiguous(Vec<MemberCandidate>),
-}
-
-// Assembles a row's per-kind representative lines. The resolved-over-ambiguous
-// tie-break decides the `direct` kind: a resolved site outranks an ambiguous
-// one, and the ambiguous line is used only when the resolved half never fired.
-fn from_lines_of(lines: &KindLines) -> Vec<(&'static str, usize)> {
-    let mut out: Vec<(&'static str, usize)> = Vec::new();
-    let direct = if lines.direct != 0 {
-        lines.direct
-    } else {
-        lines.direct_amb
-    };
-    if direct != 0 {
-        out.push(("direct", direct));
-    }
-    if lines.ctor_di != 0 {
-        out.push(("ctor-di", lines.ctor_di));
-    }
-    if lines.heuristic != 0 {
-        out.push(("heuristic", lines.heuristic));
-    }
-    if lines.iface != 0 {
-        out.push(("iface", lines.iface));
-    }
-    out
 }
 
 /// Blast radius for a seed, ranked. Never filters beyond the stated `cap`:
@@ -749,9 +747,11 @@ pub fn build_impact_model(
                 heuristic,
                 tier: row_tier(heuristic, h.ext_count > 0),
                 iface_via: h.iface_via.clone(),
-                from_lines: from_lines_of(&h.lines),
+                from_lines: impact_why::from_lines_of(&h.lines),
                 infra: h.infra,
                 why: h.why,
+                bus_only: h.bus_only,
+                bus_origin: h.bus_origin.clone(),
             }
         })
         .collect();

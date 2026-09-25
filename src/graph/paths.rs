@@ -79,17 +79,37 @@ pub fn project_units_path(root: &Path) -> PathBuf {
 // a member qualifier written with a type-argument list would silently keep
 // binding a same-named sibling of the WRONG arity, and a bare qualifier
 // would silently keep binding whichever same-named sibling the def index
-// happened to order first. The rename IS the invalidation
-// mechanism:
+// happened to order first. v22 added def `baseTypeArgs` (a base's NESTED
+// generic-argument descriptors, alongside the already-flat
+// `baseGenericArgs`), the fragment-level `publishes` list (each
+// message-bus publish-site fact a file's invocations record), def
+// `propertyMessageArgs` (the single type arguments a type's own properties
+// wrap), publish `enclosingMethod` (set when a publish hands on its own
+// caller's message, which makes the enclosing method a forwarding
+// wrapper), the fragment-level `handlerRegistrations` list (each
+// one-type-argument handler registration a file's invocations record), and
+// publish sites whose message is named by the call itself under a verb
+// this engine does not ship -- a cached v21 fragment carries none of them,
+// so a nested base's inner type argument (`IConsumer<Batch<T>>`'s `T`),
+// every publish-site fact and every message vocabulary a repository
+// declares about itself would silently be missing from a reused cache.
+// v23 added def `arrayMessageBases` (the array-marked subset of a def's own
+// `bases`, for a base whose message-position argument is an array type) --
+// a cached v22 fragment carries none, so a single message and an array of
+// it would read as the same base-list argument. v22 never shipped in an
+// accepted or released build; every run that wrote one, including this
+// lane's own measurement runs, is superseded by the rename same as any
+// other generation.
+// The rename IS the invalidation mechanism:
 // pre-bump caches stop being found, every file reparses
 // once, no reader carries version-compat logic. Writers delete every
 // superseded generation (see `remove_superseded_caches`).
 pub(crate) fn fragments_cache_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-v21.json")
+    graph_dir(root).join("fragments-v23.json")
 }
 
 pub(crate) fn fragments_index_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-index-v21.json")
+    graph_dir(root).join("fragments-index-v23.json")
 }
 
 // Every generation below the current one, not just the immediately previous:
@@ -136,6 +156,10 @@ pub(crate) const SUPERSEDED_CACHE_FILES: &[&str] = &[
     "fragments-index-v19.json",
     "fragments-v20.json",
     "fragments-index-v20.json",
+    "fragments-v21.json",
+    "fragments-index-v21.json",
+    "fragments-v22.json",
+    "fragments-index-v22.json",
 ];
 
 pub(crate) fn remove_superseded_caches(root: &Path) {

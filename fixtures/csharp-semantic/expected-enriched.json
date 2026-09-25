@@ -1,0 +1,8 @@
+{
+  "tiers.semantic.edges": { "min": 46, "max": 46 },
+  "tiers.semantic.precision": { "min": 1.0 },
+  "tiers.semantic-discovered.edges": { "min": 31, "max": 31 },
+  "oracle.records": { "min": 81 },
+  "oracle.dropped": { "max": 0 },
+  "units.failed": { "max": 0 }
+}

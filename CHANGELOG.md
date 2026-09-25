@@ -7,6 +7,182 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-09-25
+
+A candidate-route release: a recognized publish or dispatch call gains `bus-hop` edges to the
+matching handlers anywhere in the indexed repository, which `refs`, `read`, `impact` and `tests`
+traverse and disclose as possible routes (`--no-bus` restores prior traversal), and `map` consumes
+an admitted compiler-facts artifact at resolve time, while `map --no-semantic` or no admitted
+artifact leaves the syntax-only graph exactly as before.
+
+### Added
+
+- **The compiler-facts producer restores a missing `PackageReference` assembly offline, before
+  opening the workspace for facts.** A never-restored working copy used to leave every
+  `PackageReference`-resolved type unresolved (`CS0234`/`CS0246`), even though `FrameworkReference`
+  assemblies loaded fine, because `MSBuildWorkspace` evaluates but never restores. The engine now
+  finds each project the workspace opened whose MSBuild-evaluated assets file is missing (asking
+  the SDK's own `dotnet msbuild` when the in-process evaluator cannot load a project) and restores
+  exactly those, one at a time, from the local NuGet global packages folder alone -- never a
+  configured feed, a project's additional source, or the network, and never touching a project
+  whose assets file already exists. `--no-restore` opts back out. A project whose restore failed,
+  in this run or as recorded in its assets file by an earlier one, is `partial`/`unrestored`
+  (ahead of the generic `binding-error`), and its compiler-facts `coverage.incompleteUnits` reason
+  names the restore failure instead of the first compiler error.
+- **Native message-bus candidate links across one repository.** A recognized publish or
+  dispatch call whose message resolves to one in-graph definition gains a `bus-hop` to each
+  matching handler declaration anywhere in the indexed repository. A project or
+  `ProjectReference` is not a boundary: a publisher and its handler in different projects or
+  assemblies are still connected. Both message identities resolve through the ordinary type
+  ladder in their own file contexts, so a shared short name, an adjacent type mention or a
+  method spelling alone supplies no message identity. A message and an array of that same
+  message are distinct identities on both sides of a hop -- a single publish never reaches an
+  array consumer and an array publish never reaches a single-message consumer -- covering a
+  generic-argument array, an explicit or implicitly typed array creation, a declared
+  array-typed local and a property-bound array alike; the edge's own `message` carries the
+  array suffix.
+  These are candidate type relationships: receiver registration, endpoint routing, test-host
+  co-location and runtime delivery are not established. Behaviour precision and recall are
+  unmeasured, and no gain in `uses-member` recall is claimed.
+- **The message vocabulary is read from the repository, not shipped with the engine.** A
+  repository's own one-type-argument handler registrations name the types it treats as
+  handlers, and a registered type's generic bases are that repository's handler bases. Two
+  closures spread what it says about itself: a base reached through a locally declared
+  pass-through intermediate is still a handler base, and a method that hands its caller's
+  message to a publish is itself a publish, followed exactly one hop. A small set of common
+  handler shapes seeds the vocabulary so a repository that registers nothing still works, and
+  `stats.bus_vocabulary_derived` reports whether the repository contributed -- `false` says the
+  engine fell back to what it ships, which is a coverage gap rather than an absence of routes.
+- **Inspectable handler evidence.** `base-arg` names a plain single generic message argument,
+  `nested-base-arg` names the inner argument of a single-argument generic wrapper,
+  `mediator-request` names a handler shape with a second type argument beside the message, and
+  `property-arg` names a message a recognized handler binds on a property rather than on its
+  base list. Calls may span lines, construct the message directly or inside a lambda, or name a
+  message variable declared earlier. External or ambiguous message identities emit no hop. A
+  publish written inside a mocking-library or repository-declared test-double setup/verify
+  lambda -- an expression-tree-typed parameter, whether the call is written in extension or
+  static form, and whether an optional trailing argument of that call is passed or left out --
+  earns no hop either; a plain-delegate lambda around the same call is real dispatch and keeps
+  its hop. A static-form call of a `this`-marked helper that leaves out an optional argument,
+  while an equally admissible extension reading of the same call points its lambda at a
+  parameter that is not expression-tree typed, is not yet told the two readings apart and keeps
+  its hop -- a named gap.
+- **`refs`, `read`, `impact` and `tests` traverse candidate hops**, with `--no-bus` to restore
+  prior traversal and hub classification. The common report carries the publisher's `file:line`,
+  query direction, resolved message, handler and declaring file, handler evidence, and how many
+  handlers that message reaches in all; `bus-hop` remains the `why` word. That last count is
+  what separates one route from one shared contract every publisher appears to reach, and it is
+  computed from the edges rather than stored. Bus edges contribute distinct referring files to
+  the existing file in-degree brake, and `--hub-max-indegree` controls further impact expansion
+  through those files.
+- **Every bus-hop row discloses it is a possible route.** Runtime routing is not verified:
+  text, `--json` and `--compact` answers each state so, and the JSON row additionally carries
+  the verification targets (publisher `file:line`, resolved message, handler identity and file,
+  and which evidence is missing) as an additive object. A file reached only through a bus hop
+  keeps that marker through later ordinary-reference hops within `impact`'s walk; a file also
+  reached by an independent non-bus path keeps that path's stronger evidence instead.
+- **Measured on the pinned C# corpus.** At MassTransit commit
+  `855cf1752c94ca9498e0c45ce8d09fdc9e957dd6`, mapping the whole tree emits 23,687 candidate
+  hops over 171 distinct messages, of which one shared test message accounts for 23,068 across
+  79 handlers -- concentration every row now states rather than leaves to be inferred. An array
+  of that same shared message is its own identity, reaching only the two handlers declared
+  against the array: 4 hops from its 2 publish sites, no longer the 79 single-message handlers
+  a rank-blind identity previously reached. Every non-bus edge kind and count is unchanged from
+  the same commit's non-bus map. A registered type's own generic base is admitted into the
+  handler vocabulary only when that type is not itself a sent message and actually receives,
+  through a declared parameter or a bound property, a message the corpus does send -- a
+  self-referential library base can no longer route a message to itself. These counts measure
+  reach, not precision.
+- **`map` consumes an admitted compiler-facts artifact at resolve time.** A same-context
+  compiler fact determines the answer at its own occurrence, including where it contradicts a
+  syntax-derived edge; the displaced syntax answer is preserved as a disagreement diagnostic
+  (`stats.semantic` in `graph.json`), never retained as a graph edge. A compiler-verified
+  occurrence the syntax extractor never emitted a reference for at all is projected as its own,
+  separately provenanced population (`source: "semantic-discovered"`, never pooled with the
+  per-reference overrides, and never moving the syntax-lane recall denominator). Freshness is
+  whole-artifact: a changed git head or a dirty working tree since the artifact was captured
+  invalidates every fact it carries, even for a consuming file that is itself byte-identical.
+  `map --no-semantic` skips an admitted artifact even when one is present, always producing the
+  exact syntax-only graph a build with no artifact admitted would. `audit --semantic` reports
+  the enriched lane's two new tiers (`semantic`, `semantic-discovered`) alongside the syntax
+  tiers, and a `lane` key naming which kind of graph was audited. Registered against a public
+  ship/no-ship gate: see
+  [`docs/benchmarks/results/2026-09-resolver-precision.md`](docs/benchmarks/results/2026-09-resolver-precision.md)'s
+  "Run 7" section for the measured result, and
+  [`docs/benchmarks/results/2026-09-25-release-0.8.0.md`](docs/benchmarks/results/2026-09-25-release-0.8.0.md)
+  for the measurement of this release's tree. See [Compiler facts](README.md#compiler-facts).
+- **CI exercises the enriched lane end to end.** The `semantic-audit` workflow job now also runs
+  the oracle in `--emit compiler-facts` mode on the `csharp-semantic` fixture from the checkout
+  root, so the artifact's `sourceSnapshot.headSha` is a real commit and its paths match the
+  graph's. It admits the artifact, rebuilds the fixture's graph, and audits it against the same
+  run's oracle output. The audit must report the enriched lane, the fixture's exact numbers of
+  confirmed and discovered edges, and semantic precision 1.0, as pinned in
+  `fixtures/csharp-semantic/expected-enriched.json`.
+
+### Changed
+
+- **Fragment cache generation v23.** The fragment shape gains publish-site facts, a handler's
+  nested base type arguments, the single type arguments a type's properties wrap, one-argument
+  handler registrations, publish sites named under a verb this engine does not ship, and the
+  array-marked subset of a handler's own base names (so a single message and an array of that
+  same message never collapse into the same base-list argument). The first run after upgrading
+  remaps; every earlier generation, including v20, v21 and v22, is deleted on that run, because
+  a reused earlier fragment would leave a supported hop unfound, or a single/array identity
+  distinction lost, with nothing on disk to show for it. v22 was never present in a shipped
+  release. The graph schema stays at 3: the `bus-hop` counter is absent rather than zero when a
+  repository has no publish site, so a repository with no bus in it serializes byte for byte as
+  it did before.
+- **`src/audit.rs` is a thin module root over `src/audit/`** — the data model, filesystem load,
+  pure scoring primitives, per-tier counters, rendering and the `--assert` threshold check, each in
+  their own file, with the unit tests split the same way under `src/audit/tests/`. `audit --semantic`
+  text and `--json` output are byte-identical before and after the split on the committed fixture.
+- **`audit --semantic` reports a per-tier `unjudged` count.** A `semantic-discovered` edge whose
+  originating compiler occurrence carries `shape: "identifier"` -- a bare field/property/event read
+  the oracle's own walker records no case for at all -- is reported in its own `unjudged` count
+  instead of scored as a false positive, since no oracle record could ever exist to judge it by.
+  Read directly from this checkout's own admitted compiler-facts artifact (the occurrence's already-
+  written `shape` field), never from `src/semantic/`. Every other tier's `unjudged` count is always
+  0, and every other tier's figures, and the syntax-lane recall figures, are unaffected. See
+  [`docs/benchmarks/results/2026-09-resolver-precision.md`](docs/benchmarks/results/2026-09-resolver-precision.md)'s
+  "Run 7b" section.
+
+### Fixed
+
+- **The compiler-facts producer works under a registered MSBuild newer than its own packages.**
+  The tool shipped its own older copies of three MSBuild assemblies (`Microsoft.Build.Tasks.Core`,
+  `Microsoft.Build.Utilities.Core` and `Microsoft.NET.StringTools`), which a newer registered
+  MSBuild bound ahead of its own: under a 10.0 SDK both the offline restore's project evaluation
+  and `--emit context` aborted with a `MissingMethodException`. The installed SDK now supplies
+  every MSBuild assembly. The offline restore also falls back to the SDK's own `dotnet msbuild`
+  whenever its in-process evaluation fails for any reason, not only on a project error, so a
+  binding failure there no longer ends the run. `--emit context` now also obtains the independent
+  document inventory of a .NET Framework target on non-Windows machines, where it used to report
+  that inventory unavailable.
+- **Compiler-discovered edges are emitted in a deterministic order.** The enriched lane's own
+  discovered-site projection used to walk its site keys in the underlying `HashMap`'s own
+  iteration order, so `graph.json` was not guaranteed byte-identical across two separate `map`
+  processes over the same admitted artifact whenever more than one discovered site existed. It now
+  walks them in a fixed, sorted order.
+- **Two confirmed same-type overloads at a compiler-discovered site now project as two distinct
+  edges, not one ambiguous outcome.** A discovered site carries no caller-side argument count to
+  narrow an overload set by (unlike an extractor-emitted reference), so two same-line, same-type,
+  different-signature confirmed facts used to collapse together and project nothing. Each now
+  projects with its own overload signature, the same way arity narrowing already lets an
+  extractor-emitted reference resolve two same-line overloads independently; a survivor set naming
+  more than one distinct type is unaffected and still projects nothing.
+- **A repository-authored MSBuild import is identified by its own root-relative path, not just
+  its bare file name.** `Directory.Build.props` and its kin previously normalized to their bare
+  name alone; a same-named override file at a different repository depth (a root
+  `Directory.Build.props` plus a subtree's own override, an ordinary MSBuild pattern) collided
+  onto that one identity, and the freshness check -- which joins an import identity under the
+  repository root before re-hashing it -- then compared one file's recorded hash against a
+  different file's live content and read the whole artifact as stale on every run touching either
+  one, even though nothing had changed. An installed .NET workload's manifest tree
+  (`sdk-manifests/`) is now also recognized as SDK-owned, the same way the SDK's own `sdk/` tree
+  already was, closing the matching gap where an unrecognized workload-manifest import fell
+  through to the same bare-name identity and could never be located under the repository root at
+  all -- both silently degraded the enriched lane to syntax-only rather than reporting an error.
+
 ## [0.7.0] - 2026-09-25
 
 A compiler-evidence release: `compiler-facts` admits a versioned compiler-derived fact artifact

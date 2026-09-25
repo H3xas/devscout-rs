@@ -23,14 +23,16 @@
 // Split by concern, C# side first: `text` (tree-sitter/text primitives
 // shared with the TypeScript-family extraction below), `types` (the C# data
 // model -- DefRecord/RefRecord/UsingRecord/Extraction/NameRecord/Fact/
-// LambdaSlot), `refs` (building RefRecord candidates plus the type/generic
-// descriptor primitives that feed them), `members` (raw per-member fact
-// extraction: methods/properties/fields/bases/extension methods/test
-// methods), `type_defs` (assembling DefRecord/NameRecord/UsingRecord
-// instances from those raw facts), `receivers` (the local/field fact
-// tables a member-access qualifier resolves against), `lambdas` (untyped
-// lambda-parameter slot typing), `delegate_args` (the parameter count a
+// LambdaSlot/PublishRecord), `refs` (building RefRecord candidates plus the
+// type/generic descriptor primitives that feed them), `members` (raw
+// per-member fact extraction: methods/properties/fields/bases/extension
+// methods/test methods), `type_defs` (assembling DefRecord/NameRecord/
+// UsingRecord instances from those raw facts), `bus` (message-bus
+// publish-site facts and the nested base type-argument fact a generic
+// consumer base needs), `delegate_args` (the parameter count a
 // lambda-literal or local-function call argument brings to its call),
+// `receivers` (the local/field fact tables a member-access qualifier
+// resolves against), `lambdas` (untyped lambda-parameter slot typing),
 // `qualifiers` (`Scope` and member-access qualifier resolution), `walk` (the
 // top-level recursive-descent AST walk and its `extract` entry point),
 // `dump` (the `extract-dump` subcommand).
@@ -38,6 +40,8 @@
 // TS-family fragment shapes. `ts_purpose`, `ts_fragment_types` and
 // `ts_fragment` hold the TypeScript-family purpose and reference-fact
 // extraction.
+mod bus;
+mod bus_vocab;
 mod delegate_args;
 mod dump;
 mod json;
@@ -64,8 +68,8 @@ pub use ts_purpose::{
     compose_hybrid_ts_purpose, extract_ts_purpose, extract_ts_purpose_with_heuristic,
 };
 pub use types::{
-    DefRecord, ExtensionMethod, Extraction, Fact, LambdaSlot, NameRecord, RefRecord,
-    RegistrationRecord, UsingRecord,
+    DefRecord, EnclosingCallFact, ExtensionMethod, Extraction, Fact, HandlerRegistrationRecord,
+    LambdaSlot, NameRecord, PublishRecord, RefRecord, RegistrationRecord, UsingRecord,
 };
 pub use walk::extract;
 

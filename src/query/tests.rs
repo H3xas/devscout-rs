@@ -7,6 +7,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use super::refs_tables::edge_loc;
 use crate::graph;
 
+mod bus;
+mod bus_hub;
 mod coverage;
 mod dispatch;
 mod find;
@@ -74,6 +76,8 @@ fn dummy_stats() -> graph::Stats {
         // Incidental: `ts` has no bearing on this C#-only query-layer
         // fixture.
         ts: None,
+        bus_vocabulary_derived: None,
+        semantic: None,
     }
 }
 
@@ -177,6 +181,8 @@ fn uses_member(from_file: &str, from_line: usize, to: &str, to_file: &str) -> gr
         heuristic: false,
         tier: None,
         member: None,
+        source: None,
+        overload_signature: None,
     }
 }
 
@@ -196,6 +202,8 @@ fn heuristic_uses_member(
         heuristic: true,
         tier: Some(graph::HeuristicTier::Guess),
         member: None,
+        source: None,
+        overload_signature: None,
     }
 }
 
@@ -210,6 +218,8 @@ fn ext_uses_member(from_file: &str, from_line: usize, to: &str, to_file: &str) -
         heuristic: true,
         tier: Some(graph::HeuristicTier::Ext),
         member: None,
+        source: None,
+        overload_signature: None,
     }
 }
 
@@ -220,6 +230,23 @@ fn heuristic_uses_type(from_file: &str, from_line: usize, to: &str, to_file: &st
         to: to.into(),
         to_file: to_file.into(),
         heuristic: true,
+    }
+}
+
+fn bus_hop(
+    from_file: &str,
+    from_line: usize,
+    message: &str,
+    to: &str,
+    to_file: &str,
+) -> graph::Edge {
+    graph::Edge::BusHop {
+        from_file: from_file.into(),
+        from_line,
+        message: message.into(),
+        to: to.into(),
+        to_file: to_file.into(),
+        evidence: "base-arg".into(),
     }
 }
 

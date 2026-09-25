@@ -16,15 +16,16 @@ much.
 | Command | What you get |
 | --- | --- |
 | `devscout init [scope ...]` | Register the repo, create the artifact directory, install the agent hooks, run a first map |
-| `devscout map [scope ...]` | Build or refresh the index; incremental — unchanged files are reused |
+| `devscout map [scope ...] [--no-semantic]` | Build or refresh the index; incremental — unchanged files are reused. `--no-semantic` skips an admitted compiler-facts artifact even when one is present (see [Compiler facts](#compiler-facts)) |
 | `devscout find <query>` | Search the manifest by symbol name or by file purpose |
-| `devscout refs <symbol>` | Inbound references to a symbol, grouped by edge kind (`inherits`, `uses-type`, `uses-member`, `implements`, `overrides`) |
+| `devscout refs <symbol>` | Inbound references to a symbol, grouped by edge kind (`inherits`, `uses-type`, `uses-member`, `implements`, `overrides`), plus `bus-hop` rows for a handler or for a type whose file publishes a message: possible routes from a recognized publish or dispatch call to a matching handler, runtime routing unverified |
 | `devscout read <symbol>` | The symbol's declaration span and verbatim source plus the same inbound answer as `refs` |
 | `devscout impact <file\|symbol>` | Blast radius: the files reachable from a seed within N hops |
 | `devscout import-edges <file> --repo <id>` | Load a versioned cross-repo edge export; `impact` then reports files reached only through it (`--no-imports` to skip it) |
 | `devscout compiler-facts run\|import\|status` | Optional: acquire or import a versioned compiler-derived fact artifact (see [Compiler facts](#compiler-facts)); `map` and every query never need it and never start it |
 | `devscout tests <symbol>` | The test files that reach a symbol |
 | `devscout <verb> <symbol> --pick N` | On any of the four verbs above, narrows a member seed with several declaring types to its nth candidate |
+| `devscout <verb> <seed> --no-bus` | On `refs`, `read`, `impact` and `tests`, skips `bus-hop` edges and restores the traversal and hub classification those verbs had before them |
 | `devscout stats` | Index and cache summary for the current repo |
 | `devscout clear` | Drop freshness rows by age or by session |
 
@@ -158,10 +159,9 @@ untracked files and are shared correctly by worktrees:
 <git-common-dir>/scout/manifest.json              file -> purpose + symbol index
 <git-common-dir>/scout/index-state.json           HEAD + timestamp the index was built at
 <git-common-dir>/scout/graph/graph.json           definitions, edges, and project units
-<git-common-dir>/scout/graph/fragments-v21.json   per-file extraction cache (incremental map)
+<git-common-dir>/scout/graph/fragments-v23.json   per-file extraction cache (incremental map)
 <git-common-dir>/scout/graph/project-units.json   csproj staleness sidecar (present only with a project model)
 <git-common-dir>/scout/graph/compiler-facts-v1.json  optional versioned compiler-fact artifact (see Compiler facts below); absent unless `compiler-facts run|import` has admitted one
-<git-common-dir>/scout/graph/semantic-v1.json      planned: compiler-backed enrichment cache (see docs/design/compiler-enrichment.md)
 <git-common-dir>/scout/log/queries.jsonl          query-verb telemetry, one JSON line per answered invocation (opt-in; SCOUT_TELEMETRY=1)
 ```
 
@@ -192,9 +192,9 @@ Two stores live outside the repo:
 
 `devscout compiler-facts run|import|status` is entirely optional: `map` and every query verb
 answer from source-level extraction alone and never spawn a compiler or touch the network. When a
-compiler-derived artifact has been admitted, a future consumer can layer compiler-checked facts on
-top of that same syntax-only coverage; today this verb group only acquires, validates and reports
-that artifact.
+compiler-derived artifact has been admitted, the resolver consumes it at the next `map`; `map
+--no-semantic` skips an admitted artifact even when one is present, always producing the exact
+syntax-only graph a build with no artifact admitted would.
 
 - `run` launches a one-shot engine located by `SCOUT_COMPILER_ENGINE` (no default, nothing
   downloaded), captures its output under a wall-clock timeout and a byte cap, and admits it.
@@ -212,6 +212,25 @@ artifact byte-identical. A structurally valid artifact that declares incomplete 
 admitted, together with its per-unit diagnostics, and is never reported as clean or complete.
 Publication is atomic — a validate-then-rename through the same same-directory temp file scheme
 every other artifact in this crate already uses.
+
+**Consuming an admitted artifact.** At `map` time, a same-context compiler fact determines the
+answer at its own occurrence, including where it contradicts a syntax-derived edge; the displaced
+syntax answer is preserved as a disagreement diagnostic (`stats.semantic.disagreements` in
+`graph.json`), never as a graph edge. A compiler-verified occurrence the syntax extractor never
+referenced at all is projected as its own, separately provenanced population
+(`source: "semantic-discovered"`, never pooled with the per-reference overrides). Freshness is
+whole-artifact: any change to the checkout's git head or working-tree cleanliness since the
+artifact was captured invalidates every fact it carries, even for a consuming file that is itself
+byte-identical. So does a changed MSBuild import (`Directory.Build.props`, `Directory.Packages.props`,
+a `.targets` file) the artifact's own compilation context named at capture time, re-checked offline
+against its recorded hash -- the case a git-only check misses when the import lives outside the
+mapped repository. `devscout audit --semantic` reports both an enriched graph's `semantic` and
+`semantic-discovered` tiers alongside the syntax tiers, and a `lane` key (`"syntax"` or
+`"enriched"`) naming which kind of graph was audited. This mechanism is registered against a ship/
+no-ship gate on a public corpus; see
+[`docs/benchmarks/results/2026-09-resolver-precision.md`](docs/benchmarks/results/2026-09-resolver-precision.md)'s
+"Run 7" section for the measured result — the layer is additive and always available on request,
+but is not currently recommended enabled by default on the strength of that measurement.
 
 ## Reading a symbol
 
@@ -304,10 +323,20 @@ Known, rather than hidden:
   to the project that declared it. Without any `.csproj` files, nothing changes.
 - **Graph schema 2 adds `member`, `tier`, `units`, and `stats.heuristic_by_tier`.** `member`
   is written on every `uses-member` edge, `tier` on the heuristic ones; `units` (the discovered
-  `.csproj` projects) is appended last. A reserved `source` slot is set aside for a future
-  semantic-provenance tag. A v1 graph.json is rebuilt automatically on the next `map`. Schema 3
-  adds the `implements`/`overrides` edge kinds and their `edges_by_kind` counters; a v2
-  graph.json is rebuilt the same way a v1 one is.
+  `.csproj` projects) is appended last. A `uses-member` edge also carries an optional `source`
+  key (`"semantic"` or `"semantic-discovered"`), set only when an admitted compiler-facts
+  artifact produced the edge and omitted entirely otherwise, so a syntax-only graph stays
+  byte-identical to one built before compiler-fact consumption existed. A v1 graph.json is
+  rebuilt automatically on the next `map`. Schema 3 adds the `implements`/`overrides` edge
+  kinds and their `edges_by_kind` counters; a v2 graph.json is rebuilt the same way a v1 one is.
+- **Compiler-fact enrichment measurably moves the `precise` tier's own precision figure.** Once
+  an admitted artifact is consumed, most references a confirmed compiler fact covers move from
+  the `precise`/`ext`/`guess` tiers into the `semantic` tier — including references where the
+  compiler fact merely agrees with what the syntax ladder already found, not only the ones it
+  corrects. What remains in `tiers.precise` is therefore a different, smaller population (the
+  references no confirmed fact reached), and its own precision can read measurably lower than
+  the same corpus's syntax-only `tiers.precise` figure even though the `semantic` tier and the
+  `precise`+`semantic` union both hold a high floor — see the shipping-gate note above.
 - **A precise `uses-member` edge binds the type that declares the member, as far as names
   and arity can tell.** The declaring type in the receiver's static chain — inherited,
   overridden and hidden members, interface members through interface, implementing-class
@@ -394,9 +423,9 @@ corpus SHA it ran against. The methodology, the peer tools an agent could instal
 agentic-lane protocol, and the dated result documents are separate files there, and the harness
 is in [`bench/`](bench/README.md).
 
-**Scorecard** (devscout 0.7.0 vs the `rg` baseline, MassTransit corpus; the scripted rows' full
+**Scorecard** (devscout 0.8.0 vs the `rg` baseline, MassTransit corpus; the scripted rows' full
 numbers, per-cell commands and grades are in
-[`docs/benchmarks/results/2026-09-25-release-0.7.0.md`](docs/benchmarks/results/2026-09-25-release-0.7.0.md),
+[`docs/benchmarks/results/2026-09-25-release-0.8.0.md`](docs/benchmarks/results/2026-09-25-release-0.8.0.md),
 the agentic row and its preliminary-run caveats in
 [`docs/benchmarks/results/2026-08.md`](docs/benchmarks/results/2026-08.md)):
 
@@ -408,11 +437,12 @@ the agentic row and its preliminary-run caveats in
 | End-to-end retrieval | 1/2 correct | 2/2 correct | rg wins |
 | Agentic, Opus (preliminary, measured on 0.2.0) | 4/4 correct, median 180k tokens | 3/4 correct + 1 partial, median 199k tokens | No correctness edge; ~25k-token saving only |
 
-The four scripted rows were measured on 0.7.0's final tree, one run per cell. 0.2.0 read
-devscout 5 correct / 3 partial against rg's 6 / 2; 0.7.0 reads 4 / 4, and the whole difference is
-one references task, where devscout now also names three files that call `IJobService` members
-through a property typed with it, which a truth set built by text search cannot hold. The
-agentic row is the preliminary 0.2.0 round and has not been re-measured. Releases 0.3.0 to 0.6.0
+The four scripted rows were measured on 0.8.0's final tree, one run per cell, and every
+devscout answer is byte-identical to 0.7.0's. 0.2.0 read devscout 5 correct / 3 partial against
+rg's 6 / 2; 0.7.0 and 0.8.0 read 4 / 4, and the whole difference is one references task, where
+devscout also names three files that call `IJobService` members through a property typed with
+it, which a truth set built by text search cannot hold. The agentic row is the preliminary 0.2.0
+round and has not been re-measured. Releases 0.3.0 to 0.6.0
 were not measured on the scorecard: 0.3.0 changes `find` output ordering and reference resolution
 (exact generic arity); 0.4.0 changes resolver output again (heuristic tiers and recall), measured
 in
@@ -433,6 +463,24 @@ Release 0.7.0 also adds an
 [extension-impact qualification harness](docs/benchmarks/extension-impact.md). It measures
 precision for candidate edges and complete answers separately without changing production
 traversal. These measurements do not replace the task scorecard above.
+
+Release 0.8.0 changes resolver output by default: a recognized publish or dispatch call gains a
+`bus-hop` edge, a new edge kind, to each matching handler declaration in the indexed repository,
+and `refs`, `read`, `impact` and `tests` traverse those candidate routes unless `--no-bus` is
+given; a repository with no publish site gains no edges. The compiler-fact enrichment is opt-in:
+`map` consumes a compiler-facts artifact only after one has been admitted, and without one, or
+with `map --no-semantic`, the default graph is unchanged. Its final tree is measured in
+[`docs/benchmarks/results/2026-09-25-release-0.8.0.md`](docs/benchmarks/results/2026-09-25-release-0.8.0.md).
+The default lane scores exactly as 0.7.0 does (precise precision 0.993; recall 0.528 precise,
+0.571 precise+ext, 0.659 over all tiers), and with `--no-bus` every measured `refs` and `impact`
+answer is byte-identical to 0.7.0's. On the pinned corpus `map` emits 23,687 `bus-hop` edges over
+171 messages, 97.4% of them on one shared test message that reaches 79 handlers; these measure
+reach, and route precision and recall are unmeasured. The opt-in enriched lane, on an artifact
+in which 53 of the 54 loaded compilations are complete, reaches recall 0.920 precise and 0.921
+precise+ext at 0.997 precision over its precise and semantic tiers together, scored against the
+same oracle it was produced from. Offline, the restore needed `-p:NuGetAudit=false` for that: with the package
+audit on, its unreachable-feed warning marked every compilation partial and the lane confirmed
+nothing.
 
 A separate scripted-lane run measured **tool calls issued per task**: the index arm used fewer
 calls in all four query kinds, largest on references (5.0 vs 11.8 per lane, ~2.4x) — single-run

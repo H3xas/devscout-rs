@@ -1,5 +1,42 @@
 # Compiler-backed enrichment layer
 
+> **Dated amendment (2026-09-22).** This document stays the historical record of the original
+> attempt, per its own closing paragraph ("if the gate fails, the layer is not shipped and this
+> document is the record of the attempt"); it is not rewritten. A later revision superseded three
+> of this document's own decisions before an implementation shipped: **D2** (a syntax-derived
+> precise edge is never overridden) is retired, because it would preserve a known-incorrect
+> binding, which is exactly the defect a same-context compiler fact should remove; **D5** (a
+> record in a byte-identical file stays applicable until the next producer run) is retired in
+> favor of compilation-scoped freshness, so a changed referenced declaration invalidates a fact
+> even when the consuming file itself is unchanged; and the assumption running through **D1**/
+> **D3** that enrichment is capped at sites the syntax extractor already emits a reference for is
+> retired, because that cap makes a claimed recall gain unable to separate the consumer's own
+> reach from the extractor's blind spots — a compiler-verified occurrence the extractor never
+> referenced at all is now admitted as its own, separately provenanced population instead. An
+> implementation shipping these three changes was then measured against this document's own
+> **D10** shipping gate, on the same corpus and threshold table this document names: the recall
+> criteria (gain and floor) both passed with a wide margin, but the precision-hold criterion (the
+> `precise` tier's own figure staying within 0.005 of the syntax-only baseline) measured a larger
+> drop once the override mechanism's own selection effect on that tier's population is accounted
+> for. See
+> [`docs/benchmarks/results/2026-09-resolver-precision.md`](../benchmarks/results/2026-09-resolver-precision.md)'s
+> "Run 7" section for the exact numbers and the gate evaluation. Every other decision below
+> (**D1**'s own placement, **D4**, **D6**–**D9**, **D11**–**D14**) stands as this document
+> originally recorded it; see [`README.md#compiler-facts`](../../README.md#compiler-facts) for
+> what actually shipped.
+>
+> **Further dated amendment (2026-09-22, same day).** In light of the measured result above,
+> **D10**'s own precision-hold criterion was amended to match: the comparison is now the enriched
+> lane's precise-row-and-semantic-row UNION against the syntax lane's own paired precise figure, not
+> the `precise` row alone, because the override mechanism redistributes a comparable population
+> across those two rows rather than shrinking a comparable one. Evaluated against that amended
+> criterion, the SAME Run 7 numbers (no re-measurement) now meet criteria 1-3, with criterion 4
+> (the cost ratio) not demonstrated — see
+> [`docs/benchmarks/results/2026-09-resolver-precision.md`](../benchmarks/results/2026-09-resolver-precision.md)'s
+> "Run 7 under the amended precision-hold criterion" section. This is a consumer-conformance figure
+> only (both lanes scored against the same oracle), not independent proof; whether it changes the
+> ship/no-ship recommendation is a release decision this document does not make.
+
 A design, not an implementation. Nothing here exists in `src/` today: every artifact, flag, field
 and constant this document introduces is marked **new** or **proposed** where it is first named,
 and everything else is grep-verifiable at `1774b1b`, the commit that introduced this file; the

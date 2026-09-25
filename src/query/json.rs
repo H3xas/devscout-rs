@@ -100,7 +100,7 @@ pub(crate) fn js_float_string(v: f64) -> String {
     }
 }
 
-fn j_table<R>(t: &query::Table<R>, row: impl Fn(&R) -> J) -> J {
+pub(super) fn j_table<R>(t: &query::Table<R>, row: impl Fn(&R) -> J) -> J {
     J::Obj(vec![
         ("total", J::UInt(t.total as u64)),
         ("dropped", J::UInt(t.dropped as u64)),
@@ -118,7 +118,7 @@ fn j_table<R>(t: &query::Table<R>, row: impl Fn(&R) -> J) -> J {
 // A row that declares itself a guess but names no tier writes no `tier` key at
 // all -- the same omit-when-empty rule every optional field here follows, and
 // the same fallback the text renderer's umbrella `(heuristic)` word takes.
-fn push_heuristic(
+pub(super) fn push_heuristic(
     fields: &mut Vec<(&'static str, J)>,
     heuristic: bool,
     tier: Option<graph::HeuristicTier>,
@@ -224,6 +224,77 @@ fn j_import_row(r: &query::ImportRow) -> J {
     fields.push(("why", J::Str(Why::Imports.as_str().to_string())));
     J::Obj(fields)
 }
+// A `bus-hop` row names both ends of the edge regardless of `direction`,
+// unlike an inbound/outbound row -- `to`/`toFile` are the handler's whether
+// the queried symbol IS the handler (`direction: "in"`) or publishes to one
+// elsewhere (`"out"`). `evidence` is a pass-through of `resolve/bus.rs`'s own
+// word, never respelled here.
+// The fixed evidence classes static analysis cannot establish here, being
+// settled at run time or by deployment rather than in source -- naming a
+// missing class is not the same as claiming a search for it came up empty.
+const BUS_HOP_MISSING_EVIDENCE: [&str; 3] = [
+    "receiver-registration",
+    "runtime-routing",
+    "host-colocation",
+];
+
+// Every bus-hop row is a possible route, runtime routing unverified: the
+// exact identity to re-check by hand, and which evidence this analyzer never
+// establishes. Appended after `handlers` on a `refs`/`tests` row, absolute
+// last on an `impact` row -- fed from a `BusHopRow`'s own fields directly,
+// or from an `impact`/`tests` row's inherited `BusOrigin` (same five
+// fields), so both callers share exactly this one shape.
+fn j_possible_route(
+    publisher_file: &str,
+    publisher_line: usize,
+    message: &str,
+    handler: &str,
+    handler_file: &str,
+) -> J {
+    J::Obj(vec![
+        ("unverified", J::Bool(true)),
+        (
+            "verify",
+            J::Obj(vec![
+                (
+                    "publisher",
+                    J::Str(format!("{publisher_file}:{publisher_line}")),
+                ),
+                ("message", J::Str(message.to_string())),
+                ("handler", J::Str(handler.to_string())),
+                ("handlerFile", J::Str(handler_file.to_string())),
+            ]),
+        ),
+        (
+            "missingEvidence",
+            J::Arr(
+                BUS_HOP_MISSING_EVIDENCE
+                    .iter()
+                    .map(|w| J::Str((*w).to_string()))
+                    .collect(),
+            ),
+        ),
+    ])
+}
+
+pub(super) fn j_bus_row(r: &query::BusHopRow) -> J {
+    J::Obj(vec![
+        ("file", J::Str(r.file.clone())),
+        ("line", J::UInt(r.line as u64)),
+        ("message", J::Str(r.message.clone())),
+        ("to", J::Str(r.to.clone())),
+        ("toFile", J::Str(r.to_file.clone())),
+        ("evidence", J::Str(r.evidence.clone())),
+        ("direction", J::Str(r.direction.as_str().to_string())),
+        ("why", J::Str(Why::BusHop.as_str().to_string())),
+        ("handlers", J::UInt(r.message_handlers as u64)),
+        (
+            "possibleRoute",
+            j_possible_route(&r.file, r.line, &r.message, &r.to, &r.to_file),
+        ),
+    ])
+}
+
 fn j_ambiguous_row(r: &query::AmbiguousRow) -> J {
     J::Obj(vec![
         ("file", J::Str(r.file.clone())),
@@ -236,10 +307,11 @@ fn j_ambiguous_row(r: &query::AmbiguousRow) -> J {
 
 // The resolved `refs` JSON shape (`build_refs_model`'s resolved return):
 // `{status, query, id, kind, sites, inbound, [outbound], ambiguous,
-// manifestGap, [memberRefs], outcome}`, in that key order. `outbound` sits
-// between `inbound` and `ambiguous` only under `--out`; the key is either in
-// that slot or absent entirely. `outcome` is always `"hit"` here and always
-// last: every path that reaches this builder already resolved.
+// manifestGap, [memberRefs], [bus-hop], outcome}`, in that key order.
+// `outbound` sits between `inbound` and `ambiguous` only under `--out`; the
+// key is either in that slot or absent entirely. `outcome` is always `"hit"`
+// here and always last: every path that reaches this builder already
+// resolved.
 pub(crate) fn refs_model_to_json(model: &query::RefsModel) -> String {
     refs_model_j(model, query::Outcome::Hit).to_json_string()
 }
@@ -455,7 +527,13 @@ fn refs_model_fields(model: &query::RefsModel, outcome: query::Outcome) -> Vec<(
             ]),
         ));
     }
-    // Appended absolute LAST, after `memberRefs`: every path building this
+    // Appended after `memberRefs`, present only when the symbol carries at
+    // least one bus-hop row (either direction) -- present-only-when-applicable,
+    // the same rule `memberRefs` itself follows.
+    if model.bus.total != 0 {
+        fields.push(("bus-hop", j_table(&model.bus, j_bus_row)));
+    }
+    // Appended absolute LAST, after `bus-hop`: every path building this
     // model already resolved, so the word is `hit` unless the caller knows the
     // answer is empty -- additive, since no key here changes value or moves.
     fields.push(("outcome", J::Str(outcome.as_str().to_string())));
@@ -511,9 +589,29 @@ fn j_impact_row(r: &query::ImpactRow) -> J {
     if r.infra {
         fields.push(("class", J::Str("infra".to_string())));
     }
-    // Appended absolute LAST, after `class`: the one rule or tier that best
-    // explains why this file was reached, always present.
+    // `why` was absolute last until `busOnly` joined it: still always present,
+    // the one rule or tier that best explains why this file was reached.
     fields.push(("why", J::Str(r.why.as_str().to_string())));
+    // Appended absolute LAST, present only when every path found to this row
+    // crosses a `bus-hop` -- a possible route, not a confirmed one. `busOnly`
+    // is kept alongside the fuller `possibleRoute` object (additive, not a
+    // replacement) so an existing reader keyed on `busOnly` alone keeps
+    // reading the same byte it always has.
+    if r.bus_only {
+        fields.push(("busOnly", J::Bool(true)));
+        if let Some(origin) = &r.bus_origin {
+            fields.push((
+                "possibleRoute",
+                j_possible_route(
+                    &origin.file,
+                    origin.line,
+                    &origin.message,
+                    &origin.to,
+                    &origin.to_file,
+                ),
+            ));
+        }
+    }
     J::Obj(fields)
 }
 
@@ -655,73 +753,7 @@ pub(crate) fn impact_model_to_json_with_imports(
     J::Obj(fields).to_json_string()
 }
 
-// The resolved `tests` JSON shape (`build_tests_model`'s resolved return):
-// `{status, query, symbol, defFiles, rows, testFileCount, refCount,
-// heuristicFileCount, heuristicRefCount, outcome}`, in that key order, with
-// the heuristic pair before `outcome`, always last. Each row carries
-// `via: "project"` as its own last key, appended after `heuristic`/`tier`,
-// ONLY when the row's vouch is the project model -- an attribute-vouched row
-// emits no `via` key at all, so today's bytes for every graph without a
-// project model are unchanged. `outcome` is always `"hit"`: reaching this
-// builder means the seed already resolved.
-pub(crate) fn tests_model_to_json(model: &query::TestsModel) -> String {
-    J::Obj(vec![
-        ("schema_version", J::UInt(query::SCHEMA_VERSION)),
-        ("status", J::Str("resolved".to_string())),
-        ("query", J::Str(model.query.clone())),
-        ("symbol", J::Str(model.symbol.clone())),
-        (
-            "defFiles",
-            J::Arr(model.def_files.iter().map(|f| J::Str(f.clone())).collect()),
-        ),
-        (
-            "rows",
-            J::Arr(
-                model
-                    .rows
-                    .iter()
-                    .map(|r| {
-                        let mut fields = vec![
-                            ("file", J::Str(r.file.clone())),
-                            (
-                                "testDefs",
-                                J::Arr(r.test_defs.iter().map(|d| J::Str(d.clone())).collect()),
-                            ),
-                            (
-                                "lines",
-                                J::Arr(r.lines.iter().map(|l| J::UInt(*l as u64)).collect()),
-                            ),
-                            ("refCount", J::UInt(r.ref_count as u64)),
-                        ];
-                        push_heuristic(&mut fields, r.heuristic, r.tier);
-                        // `via` is appended LAST, after `heuristic`/`tier`, and only
-                        // when the row's vouch is the project model: an
-                        // attribute-vouched row keeps today's exact bytes.
-                        let why = if r.via == query::TestVia::Project {
-                            fields.push(("via", J::Str("project".to_string())));
-                            Why::TestProject
-                        } else {
-                            Why::TestAttribute
-                        };
-                        // Appended absolute LAST, after `via` when present: which of
-                        // the two ways `tests` reaches a file earned this row.
-                        fields.push(("why", J::Str(why.as_str().to_string())));
-                        J::Obj(fields)
-                    })
-                    .collect(),
-            ),
-        ),
-        ("testFileCount", J::UInt(model.test_file_count as u64)),
-        ("refCount", J::UInt(model.ref_count as u64)),
-        (
-            "heuristicFileCount",
-            J::UInt(model.heuristic_file_count as u64),
-        ),
-        (
-            "heuristicRefCount",
-            J::UInt(model.heuristic_ref_count as u64),
-        ),
-        ("outcome", J::Str(query::Outcome::Hit.as_str().to_string())),
-    ])
-    .to_json_string()
-}
+// Split into its own sibling module to keep this file under its flat line
+// limit -- see `json/tests_model.rs`'s own doc comment.
+mod tests_model;
+pub(crate) use tests_model::tests_model_to_json;

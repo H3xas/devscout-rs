@@ -9,6 +9,7 @@ use crate::manifest;
 
 mod base_members;
 mod base_walk;
+mod bus;
 mod byte_identity;
 mod ctor_di;
 mod dispatch;
@@ -57,6 +58,9 @@ fn def(id: &str, name: &str, ns: &str, kind: &str) -> FragDef {
         method_arities: crate::graph::OrderedMap::new(),
         method_params: crate::graph::OrderedMap::new(),
         override_methods: vec![],
+        base_type_args: crate::graph::OrderedMap::new(),
+        property_message_args: Vec::new(),
+        array_message_bases: Vec::new(),
         end_line: 0,
     }
 }
@@ -178,6 +182,8 @@ fn frag(defs: Vec<FragDef>, usings: Vec<FragUsing>, refs: Vec<FragRef>) -> Fragm
         refs,
         names: Vec::new(),
         registrations: Vec::new(),
+        publishes: Vec::new(),
+        handler_registrations: Vec::new(),
     }
 }
 

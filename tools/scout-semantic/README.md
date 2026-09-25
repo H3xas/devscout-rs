@@ -18,10 +18,43 @@ It is **not** part of the Rust crate build: `Cargo.toml` excludes `tools/`, and 
   dotnet build   tools/scout-semantic --no-restore -c Release
   ```
 
-- **The target solution must be restored first.** Roslyn's `MSBuildWorkspace` evaluates the
-  target's MSBuild files in an out-of-process build host; it does not restore for you, and an
-  unrestored project loads without its metadata references, which silently turns real symbols
-  into unresolved candidates.
+- **A never-restored target is restored automatically, offline.** Roslyn's `MSBuildWorkspace`
+  evaluates the target's MSBuild files in an out-of-process build host; it does not restore for
+  you, and an unrestored project loads without its `PackageReference`-resolved metadata
+  references, which silently turns real symbols into unresolved candidates. Before the workspace
+  is used for facts, the tool therefore checks every project the workspace opened (including a
+  project reference that target selection left out) for its assets file, at the location MSBuild
+  evaluates for it, so a custom intermediate path is honoured. A project the tool's in-process
+  MSBuild fails to evaluate for any reason, whether a project error or an MSBuild assembly that
+  cannot load in process, is evaluated by the installed SDK's own
+  `dotnet msbuild -getProperty:ProjectAssetsFile` with the run's `-p:` properties.
+  Each project whose assets file is missing is restored alone, without its project-reference
+  closure, from the local NuGet global packages folder only -- the folder NuGet resolves for the
+  analysed root (`NUGET_PACKAGES`, a `globalPackagesFolder` setting, or the default
+  `~/.nuget/packages`). The restore passes that folder as `--source` and pins
+  `RestoreSources` to it and `RestoreAdditionalProjectSources` to empty after every forwarded
+  `-p:` property, so neither a configured feed, a project's own additional source, nor a forwarded
+  source property is consulted, and the restore never reaches the network. A package that folder
+  cannot satisfy stays unresolved rather than triggering a wider search. A project whose assets
+  file already exists is never restored again (the file's bytes and timestamp are unchanged). The
+  restore writes wherever MSBuild places its output, normally the git-ignored `obj/` directory --
+  the same side effect an ordinary `dotnet restore` has, performed by this tool instead of by
+  hand.
+
+  `--no-restore` skips this step entirely and reproduces the tool's pre-restore behaviour: an
+  unrestored project's `PackageReference` types report `CS0234`/`CS0246` exactly as before. A
+  project the restore could not complete -- the package is not in the local cache, or the restore
+  otherwise failed -- is reported with build-context state `partial` and reason `unrestored`,
+  ahead of the generic `binding-error` reason its compiler diagnostics would otherwise produce,
+  and in `--emit compiler-facts` its `coverage.incompleteUnits` entry names the restore failure
+  instead of the first compiler error; see [Build-context envelope](#build-context-envelope) and
+  [Compiler-facts protocol](#compiler-facts-protocol) below. A failed restore still writes an
+  assets file that records the error in its `logs`; later runs read that record, keep reporting
+  the project `unrestored` with the recorded error, and do not restore it again. Delete the
+  project's assets file (or restore it by hand) once the package is available locally.
+
+  A manual restore ahead of time still works exactly as before and is a no-op for this tool (its
+  own check finds the assets file already there):
 
   ```sh
   dotnet restore <path/to/Target.sln> [-p:Name=Value ...]
@@ -29,7 +62,9 @@ It is **not** part of the Rust crate build: `Cargo.toml` excludes `tools/`, and 
 
   Pass the same `-p:` properties to `dotnet restore` and to this tool. A solution whose
   projects multi-target a framework newer than the installed SDK needs, for example,
-  `-p:TargetFrameworks=net9.0` (fallback `-p:TargetFramework=net9.0`) on both.
+  `-p:TargetFrameworks=net9.0` (fallback `-p:TargetFramework=net9.0`) on both -- the offline
+  restore step forwards this tool's own `-p:` properties to its `dotnet restore` invocation the
+  same way.
 
 ## Usage
 
@@ -43,6 +78,8 @@ scout-semantic <path.sln|path.csproj> --root <repo-root> --out <refs.jsonl>
     [--context <path|->]      build-context envelope, required with `--emit context`, `-` is stdout
     [--repo <id>]             repo id in the fact/context header (default: --root's last segment)
     [--no-git]                do not stamp git identity in the fact header
+    [--no-restore]            skip the automatic offline restore of any project missing its
+                               assets file
     [--publish-calls a,b]     extra publish method names, repeatable
     [--consumer-bases a,b]    extra consumer base type names, repeatable
     [--scope dir[,dir]]       walk only documents under these root-relative dirs
@@ -355,7 +392,10 @@ tell a truncated or killed run apart from a genuinely complete one.
 load is `missing`, never `processed`. `coverage.state` is `incomplete`, with one
 `{unit, reason}` entry per affected unit under `coverage.incompleteUnits`, whenever a processed
 unit's compilation carries at least one error diagnostic -- the run still succeeds and writes the
-document; nothing here is gated by `--strict`. Every diagnostic (error or warning) is reported
+document; nothing here is gated by `--strict`. A unit the offline restore (see Prerequisites) could
+not complete reports its restore failure as this entry's `reason` instead of the first compiler
+error -- the same `unrestored` root cause the build-context envelope's state table names, reported
+here even without `--emit context`. Every diagnostic (error or warning) is reported
 under `diagnostics`, each carrying its own file and line. `symbols` carries one entry per named
 type (`member` absent) and one per its ordinary methods and constructors (`member` present),
 each with the declaring assembly, fully-qualified type name, generic arity, a parameter-derived
@@ -436,7 +476,7 @@ always paired with a machine-readable reason:
 | State | Reason (examples) | Meaning |
 |---|---|---|
 | `complete` | `complete` | Every expected document loaded, no compiler error, no unresolved reference, and the independent inventory was available. |
-| `partial` | `binding-error`, `missing`, `linked-outside-root`, `skipped-directory`, `out-of-scope`, `workspace-failure`, `inventory-unavailable` | A non-null compilation whose inventory or diagnostics are incomplete. |
+| `partial` | `unrestored`, `binding-error`, `missing`, `linked-outside-root`, `skipped-directory`, `out-of-scope`, `workspace-failure`, `inventory-unavailable` | A non-null compilation whose inventory or diagnostics are incomplete. `unrestored`: the offline restore (see Prerequisites) failed for this project in this run, or its existing assets file records an earlier restore error -- named ahead of `binding-error` even though the same missing `PackageReference` types also produce compiler diagnostics, since the restore failure is the record's root cause. |
 | `unsupported` | `undeclared-target` | A requested `--tfm` the project does not declare; zero facts under this identity. |
 | `failed` | `project-not-loaded`, `workspace-failure` | A project the solution names but that never reached the workspace at all, or one Roslyn accepted but produced no compilation for. |
 | `excluded` | `not-requested` | A declared variant that was not the deterministic selection when no target was requested, or a project a `--projects` filter left out. |
@@ -453,8 +493,8 @@ the solution file directly and re-evaluating each project through its own fresh
 project) the workspace silently drops is still reportable, and a document Roslyn's own walk
 tolerantly "loads" with empty content (a `Compile` item whose file was never created) is still
 named missing. See `tools/scout-semantic/ContextInventory.cs`. When that independent evaluation
-itself throws (observed for a `net472` target's evaluation on a non-Windows machine, where classic
-.NET Framework GAC/registry resolution has no equivalent), `documents.inventoryAvailable` reads
+itself throws (for example, when MSBuild cannot evaluate a project in process),
+`documents.inventoryAvailable` reads
 `false` and, unless a stronger reason (a compiler error, an unresolved reference, a dropped
 document) already demotes the record, its state is `partial`/`inventory-unavailable`.
 `inventoryAvailable` is written explicitly on every record, `true` or `false`, and stays `false`
@@ -544,6 +584,14 @@ CI-regenerated.
 - There is no `--help` flag: an unknown option prints the usage block on stderr and exits 1.
 - Source-generated documents are not walked by `oracle`/`flowtrace-facts`; only files on disk are.
   `--emit context` inventories them separately (see [Build-context envelope](#build-context-envelope)).
+- The offline restore is skipped, with a `warning: restore:` line on stderr, for a project whose
+  assets file location neither the in-process MSBuild nor the SDK's `dotnet msbuild` can evaluate,
+  or when the `dotnet` host cannot be found beside the registered MSBuild instance: guessing a
+  location could re-restore a project whose real assets file lives elsewhere. Such a project keeps
+  whatever state its compilation produces. Any failure of the in-process evaluation, not only a
+  project error, falls back to the SDK's `dotnet msbuild`; only running out of memory ends the run.
+  Evaluating a project out of process costs one `dotnet msbuild` start (about a second) per
+  project the in-process MSBuild cannot evaluate.
 
 ## Packages
 
@@ -556,15 +604,24 @@ Pinned in `packages.lock.json` and restored with `--locked-mode`:
 | `Microsoft.CodeAnalysis.Workspaces.MSBuild` | 4.14.0 |
 | `Microsoft.Build` | 17.7.2 (`ExcludeAssets="runtime"`) |
 | `Microsoft.Build.Framework` | 17.7.2 (`ExcludeAssets="runtime"`) |
+| `Microsoft.Build.Tasks.Core` | 17.7.2 (`ExcludeAssets="runtime"`) |
+| `Microsoft.Build.Utilities.Core` | 17.7.2 (`ExcludeAssets="runtime"`) |
+| `Microsoft.NET.StringTools` | 17.7.2 (`ExcludeAssets="runtime"`) |
 
 4.14.0 is the newest 4.14.x release and the Roslyn line that ships with the 9.0.3xx SDK.
 Bumping to a 5.x line requires a matching newer SDK and a lock-file refresh
 (`dotnet restore tools/scout-semantic --force-evaluate`).
 
-`Microsoft.Build`/`Microsoft.Build.Framework` are already transitive dependencies of
-`Microsoft.CodeAnalysis.Workspaces.MSBuild`; pinning them explicitly with `ExcludeAssets="runtime"`
-adds no new package and no version bump, but keeps their DLLs out of the build output so
-`ContextInventory`'s own in-process `ProjectCollection` resolves its assemblies through
-`MSBuildLocator`'s redirect to the installed SDK at run time, not a locally-copied NuGet build --
-without this, evaluating some projects throws on an MSBuild intrinsic function the older
-transitively-resolved assembly does not implement.
+The registered SDK supplies every MSBuild-family assembly: `Microsoft.Build`, each
+`Microsoft.Build.*` package except `Microsoft.Build.Locator`, and `Microsoft.NET.StringTools`. All
+five are already transitive dependencies of `Microsoft.CodeAnalysis.Workspaces.MSBuild` (StringTools
+also through `Microsoft.Build` itself); pinning them explicitly at the resolved version with
+`ExcludeAssets="runtime"` adds no new package and no version bump, but keeps their DLLs out of the
+build output and out of `scout-semantic.deps.json`. The in-process `ProjectCollection`s (the
+restore step's assets-file evaluation and `ContextInventory`) then resolve every one of them
+through `MSBuildLocator`'s redirect to the installed SDK at run time. The locator can redirect only
+an assembly the tool does not ship itself: an app-local older copy binds first, so a newer
+registered MSBuild fails on a member that copy lacks (a 10.0 SDK's evaluator on StringTools 17.7.2,
+for one), and an older `Microsoft.Build` throws on an intrinsic function the installed SDK's
+targets call. A test reads the tool's dependency manifest and names any MSBuild-family library that
+still carries a runtime asset.

@@ -34,6 +34,9 @@ jobs:
       - name: Architecture guide names every module
         run: sh tools/check-architecture.sh
 
+      - name: Docs hygiene (tracker ids and acceptance-check labels)
+        run: sh tools/check-docs-hygiene.sh
+
       - name: Size and complexity ratchet
         run: sh tools/check-size-and-complexity.sh
 
@@ -146,9 +149,9 @@ jobs:
 
       - uses: actions/setup-dotnet@v6
         with:
-          # The qualification tree's own global.json pins one exact patch with
-          # rollForward disabled, independent of the floating band above, so
-          # its restore/build is reproducible even if the band's latest patch moves.
+          # The qualification tree's own global.json pins this exact patch with
+          # rollForward disabled, so its restore/build resolves the same SDK
+          # whichever working directory the qualification script runs from.
           dotnet-version: 9.0.305
 
       # The runner image already carries newer SDKs (a 10.0 band among them), and
@@ -158,10 +161,14 @@ jobs:
       # upward from the working directory, so a pin in the checkout's parent
       # directory holds for every step run from the checkout while leaving the
       # working tree clean for the oracle's git-state provenance. The
-      # qualification tree and its net10.0 row keep their own, closer pins.
+      # qualification tree and its net10.0 row keep their own, closer pins. The
+      # temporary directory beside the pin is for tests that build projects of
+      # their own: under the system temp directory they would resolve the newest
+      # SDK instead.
       - name: Pin the .NET SDK for steps run from the checkout
         run: |
           printf '{"sdk": {"version": "9.0.305", "rollForward": "disable"}}\n' > "$GITHUB_WORKSPACE/../global.json"
+          mkdir -p "$GITHUB_WORKSPACE/../tmp"
           test "$(dotnet --version)" = 9.0.305
 
       - uses: actions/cache@v6
@@ -187,8 +194,13 @@ jobs:
       - name: Build oracle
         run: dotnet build tools/scout-semantic --no-restore -c Release
 
+      # The offline-restore tests create and build projects under the temp
+      # directory, so it has to sit under the pinned parent for those builds to
+      # resolve the same SDK as the oracle. It is spelled without `..` because
+      # the tests compare the paths they build under it with resolved ones.
       - name: Context schema unit tests
-        run: dotnet test tools/scout-semantic.Tests --no-restore -c Release
+        run: |
+          TMPDIR="$(dirname "$GITHUB_WORKSPACE")/tmp" dotnet test tools/scout-semantic.Tests --no-restore -c Release
 
       - name: Run oracle on the fixture solution
         run: |
@@ -331,6 +343,61 @@ jobs:
           ./target/release/devscout -C "$RUNNER_TEMP/semantic-repo" map src tests
           ./target/release/devscout -C "$RUNNER_TEMP/semantic-repo" audit --semantic "$PWD/out/semantic/refs.jsonl" --units "$PWD/out/semantic/units.jsonl"
           ./target/release/devscout -C "$RUNNER_TEMP/semantic-repo" audit --semantic "$PWD/out/semantic/refs.jsonl" --units "$PWD/out/semantic/units.jsonl" --assert "$PWD/fixtures/csharp-semantic/expected.json"
+
+      # The enriched lane, end to end: a compiler-facts run on the semantic
+      # fixture, its admission, a rebuilt graph of the fixture, and an audit
+      # against the same run's oracle output that must report the enriched
+      # lane, the fixture's exact counts of confirmed facts and discovered
+      # edges, and semantic precision 1.0
+      # (fixtures/csharp-semantic/expected-enriched.json). The lane label
+      # alone proves nothing: any admitted artifact sets it, even one whose
+      # facts all go unused.
+      #
+      # A compiler fact joins the graph by its repository-relative path, so
+      # the compiler-facts run, the judged oracle run and the rebuilt graph
+      # all use the checkout root. With the fixture as the oracle root, every
+      # fact's path misses the graph and nothing is consumed; with
+      # fixture-root judging input, the audit drops every oracle record.
+      # Running in the checkout also makes the artifact's
+      # `sourceSnapshot.headSha` a real, clean commit that the freshness
+      # check can verify, so everything written before `map` goes under the
+      # ignored `out/`. `--strict` fails a partial compilation at its source
+      # instead of letting it surface as missing counts.
+      - name: Run the oracle in compiler-facts mode on the semantic fixture
+        run: |
+          dotnet run --project tools/scout-semantic --no-build -c Release -- \
+            fixtures/csharp-semantic/Fixture.sln --root . \
+            --emit compiler-facts --compiler-facts out/compiler-facts/csharp-semantic.json \
+            --tfm net9.0 -p Configuration=Debug -p Platform=AnyCPU
+
+      - name: Run the oracle at the checkout root to judge the enriched lane
+        run: |
+          dotnet run --project tools/scout-semantic --no-build -c Release -- \
+            fixtures/csharp-semantic/Fixture.sln --root . \
+            --out out/semantic-enriched/refs.jsonl --units out/semantic-enriched/units.jsonl --strict
+
+      - name: Admit the compiler-facts artifact and rebuild the enriched-lane graph
+        env:
+          HOME: ${{ runner.temp }}/home-enriched
+          SCOUT_REGISTRY: ${{ runner.temp }}/home-enriched/repos.json
+          SCOUT_CONTENT_DB: ${{ runner.temp }}/home-enriched/content.db
+        run: |
+          mkdir -p "$HOME"
+          ./target/release/devscout compiler-facts import out/compiler-facts/csharp-semantic.json
+          ./target/release/devscout map fixtures/csharp-semantic/src fixtures/csharp-semantic/tests
+
+      - name: Audit the enriched lane and assert the admitted facts were consumed
+        env:
+          HOME: ${{ runner.temp }}/home-enriched
+          SCOUT_REGISTRY: ${{ runner.temp }}/home-enriched/repos.json
+          SCOUT_CONTENT_DB: ${{ runner.temp }}/home-enriched/content.db
+        run: |
+          ./target/release/devscout audit --semantic out/semantic-enriched/refs.jsonl --units out/semantic-enriched/units.jsonl --json --assert fixtures/csharp-semantic/expected-enriched.json > out/semantic/audit-enriched.json
+          lane=$(jq -r '.lane' out/semantic/audit-enriched.json)
+          if [ "$lane" != "enriched" ]; then
+            echo "::error::expected lane enriched after admitting a compiler-facts artifact, got $lane"
+            exit 1
+          fi
 
       # The base/interface direction fixture: its own solution, its own
       # committed snapshot, the same oracle-diff-then-audit flow. Restored

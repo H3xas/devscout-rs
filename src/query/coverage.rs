@@ -2,9 +2,10 @@ use std::collections::HashMap;
 
 use crate::graph;
 
+use super::bus::{self, BusDirection, BusHopRow};
 use super::index::{def_files, symbol_refs, GraphIndex};
 use super::member::{self, MemberCandidate, MemberSeedResolution};
-use super::refs_tables::{edge_loc, row_tier};
+use super::refs_tables::{cap_rows, edge_loc, row_tier, Table, DEFAULT_CAP};
 use super::symbol::{resolve_symbol, Resolution};
 
 // ============================================================================
@@ -71,6 +72,14 @@ pub struct TestsModel {
     pub heuristic_file_count: usize,
     /// The heuristic ref count value.
     pub heuristic_ref_count: usize,
+    /// Test files that PUBLISH a message this symbol (a handler) receives,
+    /// over a `bus-hop` -- a possible route, runtime routing unverified,
+    /// never counted in `test_file_count`/`ref_count` or their heuristic
+    /// twins: a possible route must never inflate precise coverage.
+    /// Structurally separate from `rows` by construction -- a different
+    /// field entirely, not a flag on an existing row -- so nothing has to
+    /// remember to exclude it. `--json` omits the key entirely when empty.
+    pub bus: Table<BusHopRow>,
 }
 
 /// The outcome of a `tests` query: resolved, ambiguous, or not found.
@@ -217,5 +226,36 @@ pub fn build_tests_model(index: &GraphIndex, query: &str) -> TestsResult {
         ref_count,
         heuristic_file_count,
         heuristic_ref_count,
+        bus: test_bus_rows(index, &id),
     })
+}
+
+// Every `bus-hop` row reaching this symbol (a handler) FROM a publish site a
+// test file vouches for -- the same `In`-direction half `refs`' own `bus`
+// table shows, filtered to the publish site's own file being a test file by
+// the SAME rule `collect_test_rows` applies to an ordinary reference
+// (`test_defs_by_file`, falling back to `is_test_file`). Reuses
+// `query::bus::symbol_bus_rows` rather than a second bus-hop lookup, so a
+// route the reverse walk already resolved is never re-derived here; the
+// filter runs on the UNCAPPED set (`usize::MAX`) so a large `Out`-direction
+// or non-test share of this symbol's own bus rows can never push a
+// legitimate test-vouched row out before the filter ever sees it, and the
+// cap this table itself reports is applied only after filtering.
+fn test_bus_rows(index: &GraphIndex, id: &str) -> Table<BusHopRow> {
+    let all = bus::symbol_bus_rows(index, id, usize::MAX);
+    let filtered: Vec<BusHopRow> = all
+        .rows
+        .into_iter()
+        .filter(|r| {
+            r.direction == BusDirection::In
+                && (index.test_defs_by_file.contains_key(&r.file) || index.is_test_file(&r.file))
+        })
+        .collect();
+    let total = filtered.len();
+    let (rows, dropped) = cap_rows(filtered, DEFAULT_CAP);
+    Table {
+        total,
+        dropped,
+        rows,
+    }
 }

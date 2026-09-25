@@ -62,9 +62,14 @@
 // kind of split: a query-time-only helper that tags two otherwise-identical
 // rows of one inbound/outbound table with a stable position, called from
 // `refs.rs` after ranking/capping and never touching the graph it reads.
+// `bus` holds the `bus-hop` mirror of the dispatch plumbing
+// (`record_bus_edge`, the provenance row `refs.rs` renders) -- `impact`'s
+// own reach needs no code here at all, since `bus_hop` joining
+// `inbound_walk_kinds` (`dispatch.rs`) is enough.
 // Every public item keeps the path it had before the split via the
 // `pub use`s below.
 
+mod bus;
 mod coverage;
 mod dispatch;
 mod find;
@@ -88,12 +93,13 @@ mod seq;
 mod symbol;
 mod why;
 
+pub use bus::{BusDirection, BusHopRow};
 pub use coverage::{build_tests_model, TestRow, TestVia, TestsModel, TestsResult};
 pub use find::{file_inbound_counts, find_names, first_decl_line_by_file, name_tier, source_line};
 pub use impact::{
     build_impact_model, impact_walk, looks_like_file_path, resolve_impact_seed, BrakedFile,
-    BrakedIface, ImpactModel, ImpactResult, ImpactRow, ImpactWalkResult, KindLines, SeedKind,
-    SeedResolution, VisitedEntry, DEFAULT_HOPS, DEFAULT_IFACE_MAX_FANIN,
+    BrakedIface, BusOrigin, ImpactModel, ImpactResult, ImpactRow, ImpactWalkResult, KindLines,
+    SeedKind, SeedResolution, VisitedEntry, DEFAULT_HOPS, DEFAULT_IFACE_MAX_FANIN,
 };
 pub use imported::{build_imported_section, ImportedRow, ImportedSection};
 pub use index::{

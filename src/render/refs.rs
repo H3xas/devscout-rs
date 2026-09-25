@@ -1,7 +1,7 @@
 use crate::query;
 
 use super::blocks::{compact_block, ref_kind_block, ref_kind_block_if_any};
-use super::markers::{compact_marker, heuristic_suffix, source_suffix};
+use super::markers::{compact_marker, heuristic_suffix, source_suffix, BUS_HOP_UNVERIFIED};
 
 // The one line that splits an enum's inbound member edges by which MEMBER they
 // land on. `refs Toggles` already counted them all under `uses-member`; this
@@ -24,6 +24,29 @@ fn member_refs_line(m: &query::MemberRefs) -> String {
     format!(
         "member refs: {} across {} member(s): {named}{more}",
         m.total, m.member_count
+    )
+}
+
+// One `bus-hop` provenance row: publisher (`file:line`), direction, the
+// resolved message, the handler (`to`/`to_file`), the evidence word, and how
+// many handlers the message reaches in all -- every fact a bus-hop row must
+// show, regardless of which side of the edge the queried symbol sits on (see
+// `BusHopRow`'s own doc comment). `handlers` is what separates one route
+// from one shared contract every publisher appears to reach. `pub(super)` so
+// `render::coverage`'s own `tests` bus table reuses this verbatim rather
+// than respelling the disclosure a second time.
+pub(super) fn bus_hop_line(r: &query::BusHopRow) -> String {
+    format!(
+        "{}:{}  {}  message={}  handler={}  handlerFile={}  evidence={}  handlers={}  \
+         ({BUS_HOP_UNVERIFIED})",
+        r.file,
+        r.line,
+        r.direction.as_str(),
+        r.message,
+        r.to,
+        r.to_file,
+        r.evidence,
+        r.message_handlers
     )
 }
 
@@ -130,6 +153,11 @@ pub fn render_refs_text(model: &query::RefsModel) -> String {
     if let Some(m) = &model.member_refs {
         out.push(member_refs_line(m));
     }
+    // Prints only when the symbol carries at least one bus-hop row -- the
+    // same present-only-when-non-empty rule `implements`/`overrides` follow,
+    // so a symbol untouched by a bus hop renders exactly as it did before
+    // this section existed.
+    ref_kind_block_if_any(&mut out, "bus-hop", &model.bus, bus_hop_line);
 
     if let Some(ob) = &model.outbound {
         out.push("outbound:".to_string());
@@ -334,6 +362,20 @@ pub fn render_refs_compact(model: &query::RefsModel) -> String {
         file_of_ib,
         line_ib,
     );
+    // The direction letter ('i'/'o') stands in for the full `in`/`out` word --
+    // compact strips message/evidence to the same terse shape every other
+    // block here already takes. The trailing '?' is the possible-route
+    // marker: every bus-hop row is unverified, and compact mode has no room
+    // for the full disclosure text, only a marker plus where to find it.
+    let file_of_bus: fn(&query::BusHopRow) -> &str = |r| r.file.as_str();
+    let line_bus = |r: &query::BusHopRow| format!("{}{}?", r.line, &r.direction.as_str()[..1]);
+    compact_block(
+        &mut out,
+        "bus-hop (? = possible route, rerun without --compact for the full row)",
+        Some(&model.bus),
+        file_of_bus,
+        line_bus,
+    );
 
     if let Some(ob) = &model.outbound {
         let file_of_ob: fn(&query::OutboundRow) -> &str = |r| r.file.as_str();
@@ -405,6 +447,7 @@ pub fn render_refs_compact(model: &query::RefsModel) -> String {
         + model.inbound.uses_member.total
         + model.inbound.implements.total
         + model.inbound.overrides.total
+        + model.bus.total
         + ob_sum(|o| {
             o.inherits.total
                 + o.uses_type.total
@@ -418,6 +461,7 @@ pub fn render_refs_compact(model: &query::RefsModel) -> String {
         + model.inbound.uses_member.rows.len()
         + model.inbound.implements.rows.len()
         + model.inbound.overrides.rows.len()
+        + model.bus.rows.len()
         + ob_sum(|o| {
             o.inherits.rows.len()
                 + o.uses_type.rows.len()
@@ -431,6 +475,7 @@ pub fn render_refs_compact(model: &query::RefsModel) -> String {
         + model.inbound.uses_member.dropped
         + model.inbound.implements.dropped
         + model.inbound.overrides.dropped
+        + model.bus.dropped
         + ob_sum(|o| {
             o.inherits.dropped
                 + o.uses_type.dropped
