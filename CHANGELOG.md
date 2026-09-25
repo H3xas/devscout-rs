@@ -145,6 +145,14 @@ artifact leaves the syntax-only graph exactly as before.
 
 ### Fixed
 
+- **The compiler-facts producer works under a registered MSBuild newer than its own packages.**
+  The tool shipped its own older copies of three MSBuild assemblies (`Microsoft.Build.Tasks.Core`,
+  `Microsoft.Build.Utilities.Core` and `Microsoft.NET.StringTools`), which a newer registered
+  MSBuild bound ahead of its own: under a 10.0 SDK both the offline restore's project evaluation
+  and `--emit context` aborted with a `MissingMethodException`. The installed SDK now supplies
+  every MSBuild assembly. The offline restore also falls back to the SDK's own `dotnet msbuild`
+  whenever its in-process evaluation fails for any reason, not only on a project error, so a
+  binding failure there no longer ends the run.
 - **Compiler-discovered edges are emitted in a deterministic order.** The enriched lane's own
   discovered-site projection used to walk its site keys in the underlying `HashMap`'s own
   iteration order, so `graph.json` was not guaranteed byte-identical across two separate `map`
