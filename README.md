@@ -394,34 +394,40 @@ corpus SHA it ran against. The methodology, the peer tools an agent could instal
 agentic-lane protocol, and the dated result documents are separate files there, and the harness
 is in [`bench/`](bench/README.md).
 
-**Scorecard** (devscout 0.2.0 vs the `rg` baseline, MassTransit corpus; full numbers, per-cell
-commands, and the preliminary-run caveats are in
+**Scorecard** (devscout 0.7.0 vs the `rg` baseline, MassTransit corpus; the scripted rows' full
+numbers, per-cell commands and grades are in
+[`docs/benchmarks/results/2026-09-25-release-0.7.0.md`](docs/benchmarks/results/2026-09-25-release-0.7.0.md),
+the agentic row and its preliminary-run caveats in
 [`docs/benchmarks/results/2026-08.md`](docs/benchmarks/results/2026-08.md)):
 
 | Kind | devscout | rg | Verdict |
 | --- | --- | --- | --- |
-| Locate | 2/2 correct | 2/2 correct, ~2x faster | Tie — use rg |
-| References | 2/2 correct (needs `--all`) | 2/2 correct | Tie, cost mixed |
+| Locate | 2/2 correct | 2/2 correct, faster | Tie — use rg |
+| References | 1/2 correct + 1 partial (needs `--all`) | 2/2 correct | rg on a text-built truth set; devscout's extra files are real references it cannot credit |
 | Impact | 2/2 partial, better precision, 1 call | 2/2 partial, 4-call chain | devscout wins |
 | End-to-end retrieval | 1/2 correct | 2/2 correct | rg wins |
-| Agentic, Opus (preliminary) | 4/4 correct, median 180k tokens | 3/4 correct + 1 partial, median 199k tokens | No correctness edge; ~25k-token saving only |
+| Agentic, Opus (preliminary, measured on 0.2.0) | 4/4 correct, median 180k tokens | 3/4 correct + 1 partial, median 199k tokens | No correctness edge; ~25k-token saving only |
 
-These numbers were measured on 0.2.0. Release 0.3.0 changes `find` output ordering and
-reference resolution (exact generic arity), and has not been re-benchmarked; treat the
-scorecard as 0.2.0-specific until the next round. Release 0.4.0 changes resolver output again
-(heuristic tiers and recall), measured in
-[`docs/benchmarks/results/2026-09-resolver-precision.md`](docs/benchmarks/results/2026-09-resolver-precision.md).
-Release 0.5.0 changes no resolver output: it produces a byte-identical `graph.json` on the
-pinned corpus, so those figures carry over unchanged. Release 0.6.0 raises the graph schema to
-3 and adds the `implements` and `overrides` edges, so its `graph.json` is not byte-identical to
-0.5.0's and the scorecard has not been re-measured against it; a repository whose code registers
-nothing through dependency injection gains no edges and answers as it did.
+The four scripted rows were measured on 0.7.0's final tree, one run per cell. 0.2.0 read
+devscout 5 correct / 3 partial against rg's 6 / 2; 0.7.0 reads 4 / 4, and the whole difference is
+one references task, where devscout now also names three files that call `IJobService` members
+through a property typed with it, which a truth set built by text search cannot hold. The
+agentic row is the preliminary 0.2.0 round and has not been re-measured. Releases 0.3.0 to 0.6.0
+were not measured on the scorecard: 0.3.0 changes `find` output ordering and reference resolution
+(exact generic arity); 0.4.0 changes resolver output again (heuristic tiers and recall), measured
+in
+[`docs/benchmarks/results/2026-09-resolver-precision.md`](docs/benchmarks/results/2026-09-resolver-precision.md);
+0.5.0 changes no resolver output and produces a byte-identical `graph.json` on the pinned corpus;
+0.6.0 raises the graph schema to 3 and adds the `implements` and `overrides` edges, so its
+`graph.json` is not byte-identical to 0.5.0's, and a repository whose code registers nothing
+through dependency injection gains no edges and answers as it did.
 Release 0.7.0 changes resolver output again: the precise tier refuses `uses-member` edges C# name
 lookup cannot produce, and a member qualifier's written type-argument count decides which
-same-named type it binds. The refusals are measured under Run 5 in
-[`docs/benchmarks/results/2026-09-resolver-precision.md`](docs/benchmarks/results/2026-09-resolver-precision.md)
-(precise precision 0.989 to 0.993); 0.7.0's `graph.json` is not byte-identical to 0.6.0's and the
-scorecard has not been re-measured against it.
+same-named type it binds. Its final tree is measured in
+[`docs/benchmarks/results/2026-09-25-release-0.7.0.md`](docs/benchmarks/results/2026-09-25-release-0.7.0.md):
+precise precision 0.993 (0.989 before the refusals), no precise false positive against an
+external target or across an impossible project reference, and recall 0.528 precise, 0.571
+precise+ext, 0.659 over all tiers. 0.7.0's `graph.json` is not byte-identical to 0.6.0's.
 
 Release 0.7.0 also adds an
 [extension-impact qualification harness](docs/benchmarks/extension-impact.md). It measures
@@ -430,7 +436,8 @@ traversal. These measurements do not replace the task scorecard above.
 
 A separate scripted-lane run measured **tool calls issued per task**: the index arm used fewer
 calls in all four query kinds, largest on references (5.0 vs 11.8 per lane, ~2.4x) — single-run
-proxy, details under "Tool-call proxy" in the dated results.
+proxy, details under "Tool-call proxy" in
+[`docs/benchmarks/results/2026-08.md`](docs/benchmarks/results/2026-08.md).
 
 Gaps are published in both directions. `devscout` answers name-level and reachability questions
 from a prebuilt graph; questions that reduce to finding one distinctive string are answered
