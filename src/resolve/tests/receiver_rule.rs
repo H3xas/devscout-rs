@@ -371,7 +371,7 @@ fn stage5_receiver_rule_an_in_graph_receiver_still_resolves_precisely() {
     assert_eq!(g.stats.heuristic_edge_count, 0);
 }
 
-// The probe the design asked for: a base written with its namespace
+// A base written with its namespace
 // (`class Handle : System.IDisposable`) is recorded as the bare identifier
 // `IDisposable`, and a receiver declared the same dotted way is recorded
 // bare too, so the two raw strings meet and the rule admits the candidate.

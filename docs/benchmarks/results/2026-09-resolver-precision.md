@@ -8,7 +8,7 @@
 > appended below rather than overwriting this section, so a regression in one tier alongside an
 > improvement in another stays visible.
 >
-> The `tier` key has not landed yet (W2 in the design). This run reports two buckets only,
+> The `tier` key has not landed yet. This run reports two buckets only,
 > `precise` and `heuristic` — the latter is `ext` and `guess` combined, undifferentiated. Three
 > of the five registered predictions name `ext` or `guess` alone and cannot be cleanly checked
 > against a merged bucket; see "Registered predictions" and "Defects" below for how each was
@@ -88,8 +88,7 @@ console tool) instead of grading retrieval on a task. Full definitions are in
 
 ## Registered predictions (2026-09-03, before Run 0)
 
-Copied verbatim from the design doc (§8, "Corpus runs, docs, changelog"), registered before any
-number in this document was seen:
+Registered before any number in this document was seen:
 
 > Public predictions (MassTransit, registered before Run 0 numbers are seen): precise precision
 > ≥ 0.95; ext precision ≥ 0.95; guess precision < 0.30; recall(precise) 0.45–0.65; leaked
@@ -241,7 +240,7 @@ The top-20 FP list above is published regardless, per the clause's instruction.
 ## Defects this run found in its own method
 
 1. **Three of five predictions are not evaluable pre-tier-split.** `ext` and `guess` predictions
-   were written assuming the `tier` key (W2) would exist by Run 0; it has not landed, so the
+   were written assuming the `tier` key would exist by Run 0; it has not landed, so the
    audit reports one `heuristic` bucket mixing both. The `heuristic`-precision and
    leaked/`heuristic`-edges figures above are the closest available proxies, not the metrics the
    predictions actually name — Run 1 (once tiers split) is the first point these can be checked
@@ -251,7 +250,7 @@ The top-20 FP list above is published regardless, per the clause's instruction.
    structurally impossible edge in the tier meant to be the audit's floor is unexpected and
    worth a defect ticket independent of the aggregate number clearing 0.95.
 3. **`this`/`base` receiver kinds recall 0.000, `call` recalls 0.033.** Expected from the
-   extractor's documented qualifier list (`src/extract.rs:697-720` per the design doc: `this`,
+   extractor's documented qualifier list (`src/extract.rs:697-720` at the time: `this`,
    `base`, and invocation-result qualifiers are not accepted as `uses-member` qualifiers today),
    but it means recall(all) 0.481 is propped up almost entirely by `ident` (0.561) and
    `qualified` (0.218) sites — the headline number hides a near-total miss on three of five
@@ -275,7 +274,7 @@ The top-20 FP list above is published regardless, per the clause's instruction.
    (0.12% and 0.06%), reported here as the first baseline reading — worth tracking for drift
    across future runs rather than a defect in themselves.
 7. **Zero failed units.** All 56 projects returned a compilation; `--strict` would have exited 0
-   this run. The load-failure fail-open path (§10 risk 1 in the design doc) was not exercised by
+   this run. The load-failure fail-open path was not exercised by
    this corpus.
 
 ## Run 1 — after resolver changes
@@ -286,7 +285,7 @@ commit (`564739a`) are unchanged from Run 0's Environment block — verified: `r
 Run 0's numbers above. No re-baseline needed; this run's predicted-figure claims are still claims
 about Run 0's own bucket sizes.
 
-This round lands the `tier` key (W2) plus a csproj project model (W3: unit discovery, admission on
+This run lands the `tier` key plus a csproj project model (unit discovery, admission on
 the heuristic tiers, per-unit global usings, ambiguous-narrowing by project reachability) and a set
 of scored-tier resolver fixes (a call-shaped ref no longer vouched by a property/field; a guess
 under an external receiver must be nominally assignable). It also refines `audit --semantic` itself
@@ -465,7 +464,7 @@ receiver-kind miss the extractor still does not accept as a qualifier — Defect
 
 ### Predictions vs. actual
 
-The `tier` key has landed, so all five of the design doc's registered predictions are directly
+The `tier` key has landed, so all five registered predictions are directly
 checkable for the first time (Run 0 could only evaluate `precise` and `recall(precise)`).
 
 | Prediction | Actual | Verdict |
@@ -485,7 +484,7 @@ reading it as an unqualified clean pass (see Defect 8's updated numbers).
 Carried forward from Run 0, still applicable:
 
 1. ~~Three of five predictions not evaluable pre-tier-split~~ — **resolved this run**: the `tier`
-   key landed (W2), so all five predictions are directly checkable above.
+   key landed, so all five predictions are directly checkable above.
 2. **The `precise` tier's own FP subclasses still cut against an unqualified clean pass.** Of 706
    FPs, 599 are `fp_wrong_target` and 12 are `structural` (was 556 / 14 of 1108 in Run 0) — the
    `structural` count is now FP-only by construction (Defect 8), so 12 is not directly comparable to
@@ -1069,41 +1068,42 @@ regeneration that moved the recall denominator from 56713 to 57607, so Run 4's o
 the comparison point here. Phases 1 and 2 reproduce, tier for tier, the figures they measured
 before the rebase.
 
-**Phase 1** (graph rebuilt in 2.74s, 9951 defs, 136074 edges) landed G1
+**Phase 1** (graph rebuilt in 2.74s, 9951 defs, 136074 edges) landed the global-qualifier refusal
 (`src/resolve/ladder.rs` splits `Via::Global` into `Via::Suffix`/`Via::Global`;
-`src/resolve/assembly.rs`'s uses-member type-qualifier arm refuses a `Via::Global` answer unless
-the def id is nested, and its enum arm now requires the qualified member to exist), G2
-(`src/resolve/arity.rs` adds `resolve_receiver_type`, forcing the exact-arity pass with no
-arity-blind fallback once a second same-named def proves the graph has an opinion on arity), and
-G5+G6 (the same type-qualifier arm enters only when the ref carries no `receiver_type` fact, or is
-`this`-shaped). `structural` reached 0 and `fp:external` reached exactly 9, as phase 1 was scoped
-to.
+`src/resolve/assembly.rs`'s uses-member type-qualifier arm refuses a `Via::Global` answer unless the
+def id is nested, and its enum arm now requires the qualified member to exist), the exact-arity
+receiver (`src/resolve/arity.rs` adds `resolve_receiver_type`, forcing the exact-arity pass with no
+arity-blind fallback once a second same-named def proves the graph has an opinion on arity), and the
+Color-Color and property-name qualifier checks (the same type-qualifier arm enters only when the ref
+carries no `receiver_type` fact, or is `this`-shaped). `structural` reached 0 and `fp:external`
+reached exactly 9, as phase 1 was scoped to.
 
-**Phase 2** (graph rebuilt in 2.17s, 9951 defs, 135906 edges) landed G3 and G4 on
-top of phase 1 through two new fragment facts: `receiverNullable` (a `T?` receiver's own
-annotation, preserved instead of stripped) and `lambdaArgArity` (a lambda-literal argument's own
-parameter count, one entry per invocation argument position). Both are new `FragRef` fields, so
-the fragment cache moves up one generation (`v20` on the rebased branch). G4
-(`src/resolve/receiver.rs`'s `nullable_unwrap_owns_member`, read from tier (e) in
-`src/resolve/members.rs`'s `typed_receiver_precise_target`): a nullable-annotated receiver whose
+**Phase 2** (graph rebuilt in 2.17s, 9951 defs, 135906 edges) landed the lambda-arity gate and the
+nullable-unwrap veto on top of phase 1 through two new fragment facts: `receiverNullable` (a `T?`
+receiver's own annotation, preserved instead of stripped) and `lambdaArgArity` (a lambda-literal
+argument's own parameter count, one entry per invocation argument position). Both are new `FragRef`
+fields, so the fragment cache moves up one generation (`v20` on the rebased branch). The
+nullable-unwrap veto (`src/resolve/receiver.rs`'s `nullable_unwrap_owns_member`, read from tier (e)
+in `src/resolve/members.rs`'s `typed_receiver_precise_target`): a nullable-annotated receiver whose
 member is `Value`/`HasValue`/`GetValueOrDefault` on a resolved struct or enum never binds that
 type's own same-named member, and `emitted` is forced so no lower tier guesses at the CLR's own
-unwrap either. G3 (a new `src/resolve/lambda_arity.rs`, `lambda_arity_admits`, read from
-`declares_here_for_ref` and from the in-graph base widen `typed_receiver_base_member` — both call
-sites, since the base widen has its own `declares_member` check and was found,
-mid-implementation, to bypass the gate exactly like tier (f)'s own instance-member veto in
+unwrap either. The lambda-arity gate (a new `src/resolve/lambda_arity.rs`, `lambda_arity_admits`,
+read from `declares_here_for_ref` and from the in-graph base widen `typed_receiver_base_member` —
+both call sites, since the base widen has its own `declares_member` check and was found, while phase
+2 was built, to bypass the gate exactly like tier (f)'s own instance-member veto in
 `inherited_member_declared` did until both were also gated): a call whose argument at a
 lambda-recorded position is a lambda literal never binds an overload whose delegate parameter list
 at that position is a different length.
 
-Phase 2 reached 4 of G3's 6 sites, not 6: two (`ServiceCollectionRiderConfigurator.cs:48,103`) pass
-a **named local function** (`CreateScopeProvider`), not a lambda literal, as the delegate argument.
-`lambdaArgArity` was recorded only for a `lambda_expression` node at the argument position, exactly
-as designed (section 2 of the design names "lambda-literal argument" specifically); a method-group
-argument carried no such fact, and the gate fails open for a position with no fact by the same rule
-`method_arity_admits` already follows for a missing arity entry. Precise `fp:external` therefore
-reached **2, not 0** after phase 2 — reported as a miss at the time, and closed by phase 3 below
-rather than by stretching phase 2's fact after the measurement.
+Phase 2 reached 4 of the lambda-arity gate's 6 sites, not 6: two
+(`ServiceCollectionRiderConfigurator.cs:48,103`) pass a **named local function**
+(`CreateScopeProvider`), not a lambda literal, as the delegate argument. `lambdaArgArity` was
+recorded only for a `lambda_expression` node at the argument position, exactly as specified (the
+rule names "lambda-literal argument" specifically); a method-group argument carried no such fact,
+and the gate fails open for a position with no fact by the same rule `method_arity_admits` already
+follows for a missing arity entry. Precise `fp:external` therefore reached **2, not 0** after phase
+2 — reported as a miss at the time, and closed by phase 3 below rather than by stretching phase 2's
+fact after the measurement.
 
 **Phase 3** (graph rebuilt in 2.07s, 9951 defs, 135901 edges) extends the same
 `lambdaArgArity` fact to method groups, restricted to local functions
@@ -1188,16 +1188,16 @@ ambiguous 137
 edges outside universe (not judged) 733
 ```
 
-Precise edges fell in phase 2 (31413 → 31239, tp 31110 → 31023, `fp:wrong` 250 → 170): the G3 gate
-is a general rule, not scoped to the nine named sites. Its true-positive cost is attributed in item
-6 below — 58 zero-parameter lambda literals refused against `Action`/`Func<TResult>`, 27
-one-parameter lambdas refused against a nested generic delegate type, and 2 `Value` sites on a
-`ProgressUpdate?` local that lose their edge under G4's veto. `ext` edges rose slightly (2536 →
-2543, tp 2514 → 2521): some demoted refs land on an in-tree extension instead of falling silent.
-`leaked` fell in every phase (979 → 935 → 933 → 931). `guess` is identical across phases 1-3 (8996 /
-5086 / 3910); phase 1 is the only phase that moves it (9033 → 8996, all 37 of them external-site
-false positives: guess `fp:external` 2101 → 2064). Phase 3 moves only the five precise edges named
-above (31239 → 31234, tp 31023 → 31020, `fp:external` 2 → 0).
+Precise edges fell in phase 2 (31413 → 31239, tp 31110 → 31023, `fp:wrong` 250 → 170): the
+lambda-arity gate is a general rule, not scoped to the nine named sites. Its true-positive cost is
+attributed in item 6 below — 58 zero-parameter lambda literals refused against
+`Action`/`Func<TResult>`, 27 one-parameter lambdas refused against a nested generic delegate type,
+and 2 `Value` sites on a `ProgressUpdate?` local that lose their edge under the nullable-unwrap
+veto. `ext` edges rose slightly (2536 → 2543, tp 2514 → 2521): some demoted refs land on an in-tree
+extension instead of falling silent. `leaked` fell in every phase (979 → 935 → 933 → 931). `guess`
+is identical across phases 1-3 (8996 / 5086 / 3910); phase 1 is the only phase that moves it (9033 →
+8996, all 37 of them external-site false positives: guess `fp:external` 2101 → 2064). Phase 3 moves
+only the five precise edges named above (31239 → 31234, tp 31023 → 31020, `fp:external` 2 → 0).
 
 ### Phase 1 — `--json` tier objects (verbatim)
 
@@ -1332,15 +1332,16 @@ Every figure is from the same wiped-state procedure; `before` is the rebased bra
 
 Figures that got worse, each with the phase and group responsible:
 
-- **precise tp 31090 → 31020** (−70): phase 1 (G1, G2, G5+G6) +20; phase 2 −87
-  (G3: 58 zero-parameter lambdas and 27 `ScheduleTokenId.UseTokenId<T>(x => ...)` calls; G4: 2
-  `Value` sites); phase 3 −3 (the method-group fact meeting the same zero-parameter blind spot).
-  `precise edges` falls further (31450 → 31234) because the removed false positives leave with
-  it.
-- **recall precise 0.529 → 0.528, recall precise+ext 0.572 → 0.571, recall all 0.660 → 0.659**:
-  each loss is phase 2's (G3, and G4's 2 sites; phase 1 had first raised precise+ext 0.572 →
-  0.573), and phase 3 moves none of the three at this precision. All three stay above the
-  registered floors (0.509, 0.552, 0.655).
+- **precise tp 31090 → 31020** (−70): phase 1 (global-qualifier refusal, exact-arity receiver,
+  Color-Color and property-name qualifier checks) +20; phase 2 −87 (lambda-arity gate: 58
+  zero-parameter lambdas and 27 `ScheduleTokenId.UseTokenId<T>(x => ...)` calls; nullable-unwrap
+  veto: 2 `Value` sites); phase 3 −3 (the method-group fact meeting the same zero-parameter blind
+  spot). `precise edges` falls further (31450 → 31234) because the removed false positives leave
+  with it.
+- **recall precise 0.529 → 0.528, recall precise+ext 0.572 → 0.571, recall all 0.660 → 0.659**: each
+  loss is phase 2's (the lambda-arity gate, and the nullable-unwrap veto's 2 sites; phase 1 had
+  first raised precise+ext 0.572 → 0.573), and phase 3 moves none of the three at this precision.
+  All three stay above the registered floors (0.509, 0.552, 0.655).
 
 Nothing else got worse: precise precision, every precise false-positive class, `leaked`, ext
 precision and guess precision each improved or held.
@@ -1387,9 +1388,9 @@ sites are both silent-correct now.
 ### Top-20 FP targets, by short name
 
 Phase 3's list is identical to phase 2's, and phase 1's to `before`'s except
-`BusRegistrationContext` (149 before, 148 after phase 1). Neither the seventeen G1 sites' old wrong
-targets nor G2's/G5's/G3's/G4's/the method-group sites' ever appear in this list, in any phase: they
-carry no edge now, not a demoted one.
+`BusRegistrationContext` (149 before, 148 after phase 1). Neither the seventeen global-qualifier
+sites' old wrong targets nor any other group's or the method-group sites' ever appear in this list,
+in any phase: they carry no edge now, not a demoted one.
 
 | Target | Phase 1 FP count | Phase 2 FP count | Phase 3 FP count |
 | --- | --- | --- | --- |
@@ -1443,13 +1444,13 @@ missed-target population at this granularity.
 | MassTransit.ConsumerExtensions | 158 |
 | MassTransit.Headers | 145 |
 
-The seventeen G1 sites' true targets are external to the graph, so those sites sit outside the
-recall denominator altogether: demoting them to silent-external removes false positives without
-appearing here, or anywhere in recall, as a gain.
+The seventeen global-qualifier sites' true targets are external to the graph, so those sites sit
+outside the recall denominator altogether: demoting them to silent-external removes false positives
+without appearing here, or anywhere in recall, as a gain.
 
 ### Phase 1 — predictions vs. actual
 
-Section 6 of the design registered five guard predictions against the post-0.4.0 baseline before
+Five guard predictions were registered against the post-0.4.0 baseline before
 this phase. Scored against what was actually measured:
 
 | Prediction | Actual | Verdict |
@@ -1461,14 +1462,15 @@ this phase. Scored against what was actually measured:
 | `leaked` ≤ 1029 | 935 | **HOLD** |
 | `fp:external` reaches exactly 9, `structural` reaches 0 | 9, 0 | **HOLD** |
 
-All six predictions hold. `recall precise` did not move relative to `before` (0.529 in both) — G1's
-seventeen demoted refs cost their tier nothing measurable at this denominator, well inside the
-~60x-target budget the design set. `fp:wrong` fell (288 → 250) rather than rose, and `tp` in the
-precise tier rose slightly (31090 → 31110): the two G6 sites land as `tp`, not `fp:wrong`.
+All six predictions hold. `recall precise` did not move relative to `before` (0.529 in both) — the
+global-qualifier refusal's seventeen demoted refs cost their tier nothing measurable at this
+denominator, well inside the ~60x-target budget registered with the predictions. `fp:wrong` fell
+(288 → 250) rather than rose, and `tp` in the precise tier rose slightly (31090 → 31110): the two
+property-name sites land as `tp`, not `fp:wrong`.
 
 ### Phase 2 — predictions vs. actual
 
-Section 6 of the design's guard, re-scored against phase 2's own measurement:
+The same guard, re-scored against phase 2's own measurement:
 
 | Prediction | Actual | Verdict |
 | --- | --- | --- |
@@ -1484,8 +1486,8 @@ This is reported as a miss, not rounded into the surrounding HOLDs; phase 3 is s
 
 ### Phase 3 — predictions vs. actual
 
-The same guard, scored against the final measurement and against `before`, with the zero bar the
-design sets for the whole branch:
+The same guard, scored against the final measurement and against `before`, with the zero bar
+registered for the whole branch:
 
 | Prediction | Actual | Verdict |
 | --- | --- | --- |
@@ -1505,29 +1507,29 @@ Reading the emitted graph (`graph.json` and the fragment cache) and the recorded
 against the corpus source, rather than inferring a mechanism from the C# shape alone, corrected the
 attribution's own guess for three of the six phase-1 groups before any fix landed:
 
-1. **G2** is not the ancestor-namespace step failing to check arity; it is the arity-blind
-   FALLBACK inside `resolve_ref_by_arity` discarding an arity the extractor demonstrably recorded
-   (`receiverArgs: ["byte","byte"]`), re-running the ladder blind and landing on the wrong
-   same-named sibling.
-2. **G5** is not sole-implementor substitution — no such rule exists in the tree. It is the
-   uses-member type-qualifier arm resolving the receiver's bare NAME as a type before tier (e) ever
-   reads the recorded `receiverType` fact — C#'s "Color color" shape.
-3. **G6** is not `resolve_ctor_param`/`build_implementor_index` — that path emits a distinct
-   `ctor-di` edge kind the audit never joins, and both sites carry plain `uses-member` edges. It is
-   the same type-qualifier-arm mechanism as G5, reached through an ordinary property instead of a
-   constructor parameter.
+1. **The exact-arity receiver group** is not the ancestor-namespace step failing to check arity; it
+   is the arity-blind FALLBACK inside `resolve_ref_by_arity` discarding an arity the extractor
+   demonstrably recorded (`receiverArgs: ["byte","byte"]`), re-running the ladder blind and landing
+   on the wrong same-named sibling.
+2. **The Color-Color qualifier group** is not sole-implementor substitution — no such rule exists in
+   the tree. It is the uses-member type-qualifier arm resolving the receiver's bare NAME as a type
+   before tier (e) ever reads the recorded `receiverType` fact — C#'s "Color color" shape.
+3. **The property-name qualifier group** is not `resolve_ctor_param`/`build_implementor_index` —
+   that path emits a distinct `ctor-di` edge kind the audit never joins, and both sites carry plain
+   `uses-member` edges. It is the same type-qualifier-arm mechanism as the Color-Color group,
+   reached through an ordinary property instead of a constructor parameter.
 
 Phase 2 found two more, both against its own first implementation rather than the attribution:
 
-4. **G3's own gate**, wired only into `declares_here_for_ref` (the direct match), left the
-   in-graph BASE-CLOSURE widen (`typed_receiver_base_member`) reading the plain, ungated
+4. **The lambda-arity gate itself**, wired only into `declares_here_for_ref` (the direct match),
+   left the in-graph BASE-CLOSURE widen (`typed_receiver_base_member`) reading the plain, ungated
    `declares_member` — exactly the gap tier (f)'s own instance-member veto
    (`inherited_member_declared`) had before it was gated too. `ServiceCollectionRiderConfigurator
    .cs:80` (a generic subclass overriding `TryAddScoped` and calling `this.TryAddScoped(provider =>
    ...)` from inside the override) reproduced it: the override's own direct match correctly refused,
    then the widen found the BASE class's same-named, same-wrong-arity method and bound it anyway.
    Both call sites gate on `r.lambda_arg_arity` now.
-5. **Two of G3's six named sites are not lambda-literal calls at all.**
+5. **Two of the lambda-arity gate's six named sites are not lambda-literal calls at all.**
    `ServiceCollectionRiderConfigurator.cs:48,103` pass `CreateScopeProvider`, a named local
    function, as the delegate argument — a method-group conversion, not a `lambda_expression` node.
    Confirmed against the real corpus source, not assumed from the attribution's site list, which
@@ -1544,14 +1546,14 @@ Phase 3 found one more, against phase 2's own account of its cost:
    ...)` calls whose parameter is the nested generic delegate
    `ScheduleTokenIdCache<T>.TokenIdSelector`, which the gate likewise does not read as a
    one-parameter delegate; and 2 `Value` sites on a `ProgressUpdate?` local where C# binds the
-   struct's own `Value` (`latestUpdate?.Value`, whose `?.` already unwraps, and the second
-   `.Value` of `latestUpdate.Value.Value`), which lose their precise edge under G4's veto. A
+   struct's own `Value` (`latestUpdate?.Value`, whose `?.` already unwraps, and the second `.Value`
+   of `latestUpdate.Value.Value`), which lose their precise edge under the nullable-unwrap veto. A
    variant that reads `Action` and `Func<TResult>` as zero-length delegate lists (measured, not
-   landed) raises precise tp by 61 —
-   the 58 plus phase 3's 3 — with precise fp unchanged at 214, and returns recall to 0.529 / 0.572
-   / 0.660. The gate's own doc comment had claimed it fails open on a parameter it cannot read; it
-   refuses there, and the comment now says so. None of the three shapes is a false positive this
-   branch set out to remove, so they are recorded here rather than folded into its fixes.
+   landed) raises precise tp by 61 — the 58 plus phase 3's 3 — with precise fp unchanged at 214, and
+   returns recall to 0.529 / 0.572 / 0.660. The gate's own doc comment had claimed it fails open on
+   a parameter it cannot read; it refuses there, and the comment now says so. None of the three
+   shapes is a false positive this branch set out to remove, so they are recorded here rather than
+   folded into its fixes.
 
 ## Decision on the enrichment layer (2026-09-03)
 
@@ -1584,7 +1586,7 @@ subtractive on wrong edges or additive on a call that previously fell through, a
 a unit test; none is reflected in the Run 4 figures above. The next corpus run (wiped state, as
 Run 3 and Run 4 were) measures them; its predictions are registered here before it runs.
 
-The 5%-false-positive stop condition registered for the lambda-parameter rule was not checked as
+The 5%-false-positive threshold registered for the lambda-parameter rule was not checked as
 its own `ident`-bucket attribution on Runs 3 or 4; the evidence on record is indirect — precise
 precision 0.972 on both runs against the 0.964 floor, and the guess-tier delta between Runs 2b and
 3 attributed entirely to chain tails — so the next run carries that attribution explicitly.

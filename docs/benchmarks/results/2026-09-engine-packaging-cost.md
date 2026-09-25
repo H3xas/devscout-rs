@@ -1,12 +1,12 @@
 # Results — Optional engine packaging and cost, 2026-09
 
 Six figures on pinned fixtures, each its own number, none netted together and none inferred from
-the earlier toy fixtures the design decisions for this ticket name explicitly: default-CLI
+earlier toy fixtures: default-CLI
 artifact size and startup; optional engine bytes under framework-dependent and self-contained
 packaging; engine cold and warm compiler-facts wall time; peak engine memory; artifact
 import/admission cost; and the CI time added to the existing dotnet job. Two reproducible runs per
 cell, both reported. This record makes no packaging-variant selection and sets no numeric
-accept/reject threshold — that is a release-candidate decision, not this ticket's.
+accept/reject threshold — that is a release decision, not this record's.
 
 ## Environment
 
@@ -75,13 +75,13 @@ Raw script output, run 1 and run 2, both from `sh bench/compiler-facts-cost.sh`:
 
 ## Reading the numbers against the predictions
 
-- **Default CLI size (12.34 MiB) and startup (~4.5ms warm)** land inside the predicted range and
-  are unaffected by this ticket by design: `Cargo.toml`'s `exclude` already keeps `tools/` out of
-  the published crate, and `tests/cargo_publish_excludes_engine.rs` asserts that mechanically.
-  Both committed runs, taken after the binary already existed on disk, show cold and warm within
-  noise of each other; a fresh-binary disk-cache miss immediately after `cargo build --release`
-  finishes linking can push one isolated cold measurement well above this, which is why the
-  script is always run against an already-built binary.
+- **Default CLI size (12.34 MiB) and startup (~4.5ms warm)** land inside the predicted range and are
+  unaffected by the optional engine by construction: `Cargo.toml`'s `exclude` already keeps `tools/`
+  out of the published crate, and `tests/cargo_publish_excludes_engine.rs` asserts that
+  mechanically. Both committed runs, taken after the binary already existed on disk, show cold and
+  warm within noise of each other; a fresh-binary disk-cache miss immediately after `cargo build
+  --release` finishes linking can push one isolated cold measurement well above this, which is why
+  the script is always run against an already-built binary.
 - **Framework-dependent (34.18 MiB) and self-contained (113.42 MiB) engine publishes** both land
   inside their predicted ranges. The self-contained variant adds almost exactly the runtime-bundle
   cost the prediction named (~83 MiB here). Neither variant is committed to by this record — no
@@ -90,7 +90,7 @@ Raw script output, run 1 and run 2, both from `sh bench/compiler-facts-cost.sh`:
 - **Cold and warm compiler-facts wall time land inside the predicted band, and the "no
   improvement over cold" prediction held**: warm repeats (1.88–1.95s) do not undercut cold
   (1.89–1.94s) by any consistent margin. This confirms the "no persistent compiler daemon"
-  decision has the wall-time consequence the Design's own non-goal already named: every
+  decision has the wall-time consequence it was expected to have: every
   invocation pays approximately the same `MSBuildLocator`/workspace-load cost.
 - **Peak memory (164.3–166.5 MiB)** lands inside the predicted range, essentially unchanged
   between runs — consistent with Roslyn/MSBuild's fixed workspace-loading cost dominating over
@@ -121,10 +121,10 @@ Raw script output, run 1 and run 2, both from `sh bench/compiler-facts-cost.sh`:
 
 ## What this does not measure
 
-No numeric accept/reject threshold is set here — that is a release-candidate decision, an operator
+No numeric accept/reject threshold is set here — that is a release decision, a maintainer
 call, not a conclusion this document draws. No packaging-variant selection is made. No
-claim is carried over from the earlier toy fixtures referenced in the Design's own decisions: every
-figure above is freshly measured against this ticket's own pinned fixture. The MassTransit corpus
+claim is carried over from earlier toy fixtures: every
+figure above is freshly measured against this record's own pinned fixture. The MassTransit corpus
 benchmark family in `2026-09-resolver-precision.md` is unrelated: it scores resolver precision, not
 packaging or engine-invocation cost, and this record does not touch it.
 
@@ -137,7 +137,7 @@ capability set). The figures above (September 21) measured an engine that had no
 capability and no real embedded context envelope at all; this section supersedes them rather than
 leaving them silently stale, and isolates what the occurrence walk itself costs on top of the
 context-envelope-widening cost every mode now pays (`Runner.Run`'s `wantContext` gate change,
-recorded as a non-blocking risk in the implementation plan).
+accepted as a known, non-blocking cost).
 
 ### Environment
 
@@ -195,7 +195,7 @@ existing September 21 baseline:
   process-startup, not JSON parse/write work, dominating this cell, the same reading the September
   21 record gave.
 - No numeric budget, threshold or packaging-variant selection is set by this section, matching the
-  standing Design decision.
+  rest of this record.
 
 ## 2026-09-22 — packaging and CI-proxy figures restated
 
@@ -278,7 +278,7 @@ ones, rather than presenting them as written blind.
   closer to a cold cost. As before, this measures a warm-NuGet-cache local sequence, not an actual
   GitHub Actions run, and is recorded as a proxy per the Deviations line above.
 - No numeric budget, threshold or packaging-variant selection is set by this section, matching the
-  standing Design decision.
+  rest of this record.
 
 ## Rerunning
 

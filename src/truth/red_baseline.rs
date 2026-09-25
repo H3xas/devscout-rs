@@ -25,7 +25,7 @@ pub struct NamedMismatch {
 }
 
 /// The five reproduced counterexamples this baseline records, attributed
-/// to their actual producers rather than to a resolver defect this ticket
+/// to their actual producers rather than to a resolver defect this module
 /// repairs.
 pub const RED_BASELINE: &[NamedMismatch] = &[
     NamedMismatch {

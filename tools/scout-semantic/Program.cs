@@ -593,7 +593,7 @@ internal static class Runner
             // null compilation for a project it did accept (verified against
             // a missing project reference, an unresolvable Sdk and malformed
             // project XML, none of which produced one) -- a vanished project
-            // is the one case this ticket has found that actually reaches
+            // is the one case found so far that actually reaches
             // the `failed` state, so it is checked for independently of
             // Roslyn's own solution object, from the same direct solution
             // parse ContextInventory's own document inventory already uses.
@@ -987,7 +987,7 @@ internal static class Runner
 /// compilation: the independent inventory diff, the generated-document
 /// account, raw diagnostics, the fingerprint and its reference graph. Kept
 /// out of <see cref="Runner"/> so that class stays focused on the oracle/
-/// facts walk this ticket must leave untouched.
+/// facts walk, whose output the envelope must leave untouched.
 /// </summary>
 internal static class ContextBuilder
 {
@@ -1261,7 +1261,7 @@ internal static class ContextBuilder
     /// error, and this account exists to make that visible too. Internal
     /// rather than private so <c>scout-semantic.Tests</c> can exercise the
     /// attribution rule directly against a hand-built compilation, via
-    /// <c>InternalsVisibleTo</c> -- no fixture generator this ticket carries
+    /// <c>InternalsVisibleTo</c> -- no committed fixture generator
     /// ever reports a diagnostic of its own to exercise this positively any
     /// other way.
     /// </summary>
@@ -1302,7 +1302,7 @@ internal static class ContextBuilder
     /// Post-order over the project-reference DAG: a referenced project's own
     /// fingerprint is computed (and cached) before the fingerprint that folds
     /// it. A cycle demotes to a stable placeholder instead of recursing
-    /// forever -- no fixture in this ticket exercises one, so this is a
+    /// forever -- no committed fixture has one, so this is a
     /// defensive guard rather than a proven path.
     /// </summary>
     private static string GetOrComputeFingerprint(

@@ -7,7 +7,7 @@ namespace ScoutSemanticTests;
 
 /// <summary>
 /// Drives the built CLI as a real subprocess, the way CI's own bash steps
-/// do, because this defect (round-2 review's B1) lives in the composition of
+/// do, because this defect lives in the composition of
 /// <c>Runner.Run</c>'s "zero projects loaded" guard and Loader's
 /// <c>--projects</c> filtering -- two pieces no existing unit test exercises
 /// together. Requires <c>fixtures/csharp-semantic</c> and
@@ -118,7 +118,7 @@ public sealed class CliProjectsFilterTests
         // fix that check always labelled it failed/project-not-loaded, even
         // when this same --projects filter would also have excluded it by
         // name; it must now read excluded/not-requested, the same as Clean
-        // and Broken (pre-existing, round-1 F7). No --strict here: Broken's
+        // and Broken. No --strict here: Broken's
         // own workspace diagnostic (a missing ProjectReference) comes from
         // MSBuildWorkspace's whole-solution load, which happens before
         // --projects' own filtering, so a --projects-scoped *.sln run still

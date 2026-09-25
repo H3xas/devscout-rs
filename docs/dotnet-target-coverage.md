@@ -171,7 +171,7 @@ Results land under `docs/benchmarks/results/` once the run has executed at least
   modern, measured 0.881), `csharp73-net8.0-sdkstyle` (net8.0, modern, measured 0.881) and
   `csharp73-netstandard2.0-sdkstyle` (netstandard2.0, netstandard, measured 0.860). Precision and
   recall meet their registered minimums for all three; only `unsupported_coverage` misses. No
-  Design stop condition addresses this metric, so the three rows stay published `passing` on
+  registered withholding rule addresses this metric, so the three rows stay published `passing` on
   their own recorded fixture evidence -- the miss is disclosed here, not a reason to withhold
   them. Closes when a fix raises the measured coverage to the registered floor, or the floor is
   revised.

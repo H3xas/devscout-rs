@@ -613,7 +613,7 @@ fn stage7_extension_unification_uses_the_matched_base_arguments() {
     assert_eq!(g.stats.heuristic_by_tier.ext, 1);
 }
 
-// --- Stage 8: declaring type along the base and interface direction ----
+// --- Declaring type along the base and interface direction -------------
 //
 // The compiler binds a member to the type that DECLARES it in the
 // receiver's static chain. Three shapes that used to fall short of that

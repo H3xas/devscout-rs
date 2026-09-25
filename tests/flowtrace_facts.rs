@@ -330,7 +330,7 @@ fn semantic_resolution_shows_where_regexes_stop() {
     assert_eq!(invoice["paramTypeFqn"], "Systematic.Billing.Invoice");
     // A call to a member on a constructor-injected field is a method_call,
     // naming the calling method and the called member -- the declared,
-    // previously unpopulated slot this ticket fills.
+    // previously unpopulated slot this producer now fills.
     let method_call = find("method_call", &|f| {
         f["class"] == "DeliveryScheduledConsumer" && f["field"] == "_repository"
     })

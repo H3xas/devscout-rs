@@ -383,8 +383,8 @@ fn generated_documents_are_accounted_separately_and_a_partial_sibling_does_not_p
         let entry = entry.as_object().unwrap();
         assert!(!entry["hintName"].as_str().unwrap().is_empty());
         // The Workspace API exposes no generator-identity property (verified
-        // against the restored 4.14.0 assemblies, recorded in the
-        // implementation journal): every entry is "unknown", not a guess.
+        // against the restored 4.14.0 assemblies, which carry none):
+        // every entry is "unknown", not a guess.
         assert_eq!(entry["generator"], "unknown");
     }
 
@@ -478,8 +478,8 @@ fn two_configurations_of_one_target_are_distinct_identities_with_distinct_finger
 /// envelope record is a pure function of the record: no engine runner,
 /// artifact admission, cache or resolver merge exists here or is implied by
 /// this test -- it exists only to prove the envelope's shape is sufficient
-/// for a consumer to decide without resolver knowledge, per this ticket's
-/// own boundary against its downstream consumers.
+/// for a consumer to decide without resolver knowledge, keeping the
+/// envelope's own boundary against its downstream consumers.
 fn decide(record: &Map<String, Value>, prior_fingerprint: Option<&str>) -> &'static str {
     let state = record["state"].as_str().unwrap();
     match state {
