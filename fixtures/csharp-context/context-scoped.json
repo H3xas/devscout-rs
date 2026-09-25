@@ -2142,13 +2142,13 @@
         "projectName": "Legacy",
         "requestedTfm": null,
         "effectiveTfm": "net472",
-        "configuration": null,
-        "platform": null,
+        "configuration": "Debug",
+        "platform": "AnyCPU",
         "declaredTfms": null
       },
       "state": "partial",
       "reason": "binding-error",
-      "fingerprint": "544a398c0b690e9db16806dadd40ae93a6f718a5",
+      "fingerprint": "3fa9702b5c89f44083730d3e976af601f7e5c66d",
       "versions": {
         "sdk": "9.0.305",
         "msbuild": "17.14.21.41108",
@@ -2217,13 +2217,27 @@
           "fingerprint": null
         }
       ],
-      "imports": [],
+      "imports": [
+        {
+          "identity": "external-file:Directory.Build.props",
+          "hash": "e430464dfd655dfdcc4d6a0cfc7b45696006d182"
+        },
+        {
+          "identity": "nuget:microsoft.netframework.referenceassemblies.net472/1.0.3/build/Microsoft.NETFramework.ReferenceAssemblies.net472.targets",
+          "hash": "3784b79a89e7627fbde239d27cc30c26bf0f1914"
+        }
+      ],
       "languageOptions": {
-        "allowUnsafeBlocks": null,
+        "allowUnsafeBlocks": "False",
         "languageVersion": "13.0",
-        "nullable": null
+        "nullable": "enable"
       },
-      "preprocessorSymbols": [],
+      "preprocessorSymbols": [
+        "DEBUG",
+        "NET472",
+        "NETFRAMEWORK",
+        "TRACE"
+      ],
       "documents": {
         "expected": [
           "src/Legacy/Program.cs"
@@ -2232,7 +2246,7 @@
           "src/Legacy/Program.cs"
         ],
         "dropped": [],
-        "inventoryAvailable": false
+        "inventoryAvailable": true
       },
       "generated": {
         "documents": [],

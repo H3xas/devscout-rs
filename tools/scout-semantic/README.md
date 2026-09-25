@@ -25,8 +25,9 @@ It is **not** part of the Rust crate build: `Cargo.toml` excludes `tools/`, and 
   is used for facts, the tool therefore checks every project the workspace opened (including a
   project reference that target selection left out) for its assets file, at the location MSBuild
   evaluates for it, so a custom intermediate path is honoured. A project the tool's in-process
-  MSBuild cannot evaluate (a `netstandard2.0` project, for one) is evaluated by the installed
-  SDK's own `dotnet msbuild -getProperty:ProjectAssetsFile` with the run's `-p:` properties.
+  MSBuild fails to evaluate for any reason, whether a project error or an MSBuild assembly that
+  cannot load in process, is evaluated by the installed SDK's own
+  `dotnet msbuild -getProperty:ProjectAssetsFile` with the run's `-p:` properties.
   Each project whose assets file is missing is restored alone, without its project-reference
   closure, from the local NuGet global packages folder only -- the folder NuGet resolves for the
   analysed root (`NUGET_PACKAGES`, a `globalPackagesFolder` setting, or the default
@@ -492,8 +493,8 @@ the solution file directly and re-evaluating each project through its own fresh
 project) the workspace silently drops is still reportable, and a document Roslyn's own walk
 tolerantly "loads" with empty content (a `Compile` item whose file was never created) is still
 named missing. See `tools/scout-semantic/ContextInventory.cs`. When that independent evaluation
-itself throws (observed for a `net472` target's evaluation on a non-Windows machine, where classic
-.NET Framework GAC/registry resolution has no equivalent), `documents.inventoryAvailable` reads
+itself throws (for example, when MSBuild cannot evaluate a project in process),
+`documents.inventoryAvailable` reads
 `false` and, unless a stronger reason (a compiler error, an unresolved reference, a dropped
 document) already demotes the record, its state is `partial`/`inventory-unavailable`.
 `inventoryAvailable` is written explicitly on every record, `true` or `false`, and stays `false`
@@ -587,8 +588,10 @@ CI-regenerated.
   assets file location neither the in-process MSBuild nor the SDK's `dotnet msbuild` can evaluate,
   or when the `dotnet` host cannot be found beside the registered MSBuild instance: guessing a
   location could re-restore a project whose real assets file lives elsewhere. Such a project keeps
-  whatever state its compilation produces. Evaluating a project out of process costs one
-  `dotnet msbuild` start (about a second) per project the in-process MSBuild cannot evaluate.
+  whatever state its compilation produces. Any failure of the in-process evaluation, not only a
+  project error, falls back to the SDK's `dotnet msbuild`; only running out of memory ends the run.
+  Evaluating a project out of process costs one `dotnet msbuild` start (about a second) per
+  project the in-process MSBuild cannot evaluate.
 
 ## Packages
 
@@ -601,15 +604,24 @@ Pinned in `packages.lock.json` and restored with `--locked-mode`:
 | `Microsoft.CodeAnalysis.Workspaces.MSBuild` | 4.14.0 |
 | `Microsoft.Build` | 17.7.2 (`ExcludeAssets="runtime"`) |
 | `Microsoft.Build.Framework` | 17.7.2 (`ExcludeAssets="runtime"`) |
+| `Microsoft.Build.Tasks.Core` | 17.7.2 (`ExcludeAssets="runtime"`) |
+| `Microsoft.Build.Utilities.Core` | 17.7.2 (`ExcludeAssets="runtime"`) |
+| `Microsoft.NET.StringTools` | 17.7.2 (`ExcludeAssets="runtime"`) |
 
 4.14.0 is the newest 4.14.x release and the Roslyn line that ships with the 9.0.3xx SDK.
 Bumping to a 5.x line requires a matching newer SDK and a lock-file refresh
 (`dotnet restore tools/scout-semantic --force-evaluate`).
 
-`Microsoft.Build`/`Microsoft.Build.Framework` are already transitive dependencies of
-`Microsoft.CodeAnalysis.Workspaces.MSBuild`; pinning them explicitly with `ExcludeAssets="runtime"`
-adds no new package and no version bump, but keeps their DLLs out of the build output so
-`ContextInventory`'s own in-process `ProjectCollection` resolves its assemblies through
-`MSBuildLocator`'s redirect to the installed SDK at run time, not a locally-copied NuGet build --
-without this, evaluating some projects throws on an MSBuild intrinsic function the older
-transitively-resolved assembly does not implement.
+The registered SDK supplies every MSBuild-family assembly: `Microsoft.Build`, each
+`Microsoft.Build.*` package except `Microsoft.Build.Locator`, and `Microsoft.NET.StringTools`. All
+five are already transitive dependencies of `Microsoft.CodeAnalysis.Workspaces.MSBuild` (StringTools
+also through `Microsoft.Build` itself); pinning them explicitly at the resolved version with
+`ExcludeAssets="runtime"` adds no new package and no version bump, but keeps their DLLs out of the
+build output and out of `scout-semantic.deps.json`. The in-process `ProjectCollection`s (the
+restore step's assets-file evaluation and `ContextInventory`) then resolve every one of them
+through `MSBuildLocator`'s redirect to the installed SDK at run time. The locator can redirect only
+an assembly the tool does not ship itself: an app-local older copy binds first, so a newer
+registered MSBuild fails on a member that copy lacks (a 10.0 SDK's evaluator on StringTools 17.7.2,
+for one), and an older `Microsoft.Build` throws on an intrinsic function the installed SDK's
+targets call. A test reads the tool's dependency manifest and names any MSBuild-family library that
+still carries a runtime asset.
