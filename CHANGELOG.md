@@ -7,6 +7,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-09-25
+
+A candidate-route release: a recognized publish or dispatch call gains `bus-hop` edges to the
+matching handlers anywhere in the indexed repository, which `refs`, `read`, `impact` and `tests`
+traverse and disclose as possible routes (`--no-bus` restores prior traversal), and `map` consumes
+an admitted compiler-facts artifact at resolve time, while `map --no-semantic` or no admitted
+artifact leaves the syntax-only graph exactly as before.
+
 ### Added
 
 - **The compiler-facts producer restores a missing `PackageReference` assembly offline, before

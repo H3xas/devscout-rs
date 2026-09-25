@@ -462,6 +462,14 @@ Release 0.7.0 also adds an
 precision for candidate edges and complete answers separately without changing production
 traversal. These measurements do not replace the task scorecard above.
 
+Release 0.8.0 changes resolver output by default: a recognized publish or dispatch call gains a
+`bus-hop` edge, a new edge kind, to each matching handler declaration in the indexed repository,
+and `refs`, `read`, `impact` and `tests` traverse those candidate routes unless `--no-bus` is
+given; a repository with no publish site gains no edges. The compiler-fact enrichment is opt-in:
+`map` consumes a compiler-facts artifact only after one has been admitted, and without one, or
+with `map --no-semantic`, the default graph is unchanged. The scorecard rows above were measured
+on 0.7.0.
+
 A separate scripted-lane run measured **tool calls issued per task**: the index arm used fewer
 calls in all four query kinds, largest on references (5.0 vs 11.8 per lane, ~2.4x) — single-run
 proxy, details under "Tool-call proxy" in

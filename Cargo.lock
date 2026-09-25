@@ -99,7 +99,7 @@ dependencies = [
 
 [[package]]
 name = "devscout-rs"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "lexopt",
  "rayon",
