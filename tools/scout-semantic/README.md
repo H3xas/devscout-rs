@@ -494,8 +494,8 @@ the solution file directly and re-evaluating each project through its own fresh
 project) the workspace silently drops is still reportable, and a document Roslyn's own walk
 tolerantly "loads" with empty content (a `Compile` item whose file was never created) is still
 named missing. See `tools/scout-semantic/ContextInventory.cs`. When that independent evaluation
-itself throws (observed for a `net472` target's evaluation on a non-Windows machine, where classic
-.NET Framework GAC/registry resolution has no equivalent), `documents.inventoryAvailable` reads
+itself throws (for example, when MSBuild cannot evaluate a project in process),
+`documents.inventoryAvailable` reads
 `false` and, unless a stronger reason (a compiler error, an unresolved reference, a dropped
 document) already demotes the record, its state is `partial`/`inventory-unavailable`.
 `inventoryAvailable` is written explicitly on every record, `true` or `false`, and stays `false`

@@ -152,7 +152,9 @@ artifact leaves the syntax-only graph exactly as before.
   and `--emit context` aborted with a `MissingMethodException`. The installed SDK now supplies
   every MSBuild assembly. The offline restore also falls back to the SDK's own `dotnet msbuild`
   whenever its in-process evaluation fails for any reason, not only on a project error, so a
-  binding failure there no longer ends the run.
+  binding failure there no longer ends the run. `--emit context` now also obtains the independent
+  document inventory of a .NET Framework target on non-Windows machines, where it used to report
+  that inventory unavailable.
 - **Compiler-discovered edges are emitted in a deterministic order.** The enriched lane's own
   discovered-site projection used to walk its site keys in the underlying `HashMap`'s own
   iteration order, so `graph.json` was not guaranteed byte-identical across two separate `map`
