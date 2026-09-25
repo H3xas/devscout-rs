@@ -133,7 +133,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           # Pinned to the exact patch the build-context fixture is snapshotted
           # against, not just its feature band: the envelope's own `versions`
@@ -144,7 +144,7 @@ jobs:
           # Installing it only makes it available; the pin step below selects it.
           dotnet-version: 9.0.305
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           # The qualification tree's own global.json pins one exact patch with
           # rollForward disabled, independent of the floating band above, so
@@ -361,7 +361,7 @@ jobs:
       # project. Installed only here, after every other .NET step; the earlier steps
       # resolve the parent-directory pin above either way, so this install cannot move
       # them or the snapshots they diff onto the 10.0 band.
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.302
 
