@@ -12,7 +12,8 @@
 pub mod audit;
 /// Command-line argument parsing and dispatch.
 pub mod cli;
-/// C# and TypeScript declaration and reference extraction.
+/// C#, TypeScript and Rust declaration extraction, and C# and TypeScript
+/// reference extraction.
 pub mod extract;
 /// Query-time index-freshness state for a programmatic (`--json`) consumer.
 pub mod freshness;
