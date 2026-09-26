@@ -67,3 +67,21 @@ fn the_same_publish_written_bare_binds_the_enclosing_namespace_type() {
             .contains(&"App.ContainerTests.StartCommand")
     );
 }
+
+#[test]
+fn a_global_qualified_publish_message_reaches_the_same_consumer() {
+    let spec = redelivery_spec("global::App.ContainerTests.Subjects.StartCommand");
+    let files = fragments_for(&[
+        COMMAND_IN_ENCLOSING_NAMESPACE,
+        ("ContainerTests/RedeliverySpec.cs", &spec),
+    ]);
+    let g = resolve_graph(&no_git_root(), &files);
+    assert_eq!(
+        hops_from(&g, "ContainerTests/RedeliverySpec.cs"),
+        vec![(
+            9,
+            "App.ContainerTests.Subjects.StartCommand",
+            "App.ContainerTests.Subjects.StartCommandConsumer"
+        )]
+    );
+}

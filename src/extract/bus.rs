@@ -357,10 +357,12 @@ fn implicit_array_message(node: Node, src: &[u8], type_params: &HashSet<String>)
 // the written qualifier kept in front when the type, under any nullable or
 // array wrapper, is a qualified name (`Ns.M`, `Ns.M[]`, `Outer.Inner`,
 // `Ns.Batch<M>`). The qualifier text is the same one the site's own type
-// reference records. `type_descriptor` drops it because method parameters
-// and consumer bases share that rendering; a publish message needs it,
-// because the bare name read from the call site's namespace can bind a
-// different type than the one the qualifier names.
+// reference records, except that whitespace around a dot is dropped: the
+// resolver splits a message at its last dot, and a name spelled `Ns . M`
+// would otherwise reach it as ` M`. `type_descriptor` drops the qualifier
+// because method parameters and consumer bases share that rendering; a
+// publish message needs it, because the bare name read from the call site's
+// namespace can bind a different type than the one the qualifier names.
 fn written_message(node: Option<Node>, src: &[u8], type_params: &HashSet<String>) -> String {
     let rendered = type_descriptor(node, src, type_params);
     let mut core = node;
@@ -369,9 +371,15 @@ fn written_message(node: Option<Node>, src: &[u8], type_params: &HashSet<String>
     }
     let qualifier = core.filter(|n| n.kind() == "qualified_name").and_then(|n| {
         let tail = n.child_by_field_name("name")?;
-        text(n, src)
-            .strip_suffix(text(tail, src).as_str())
-            .map(str::to_string)
+        let written = text(n, src);
+        let qualifier = written.strip_suffix(text(tail, src).as_str())?;
+        Some(
+            qualifier
+                .split('.')
+                .map(str::trim)
+                .collect::<Vec<_>>()
+                .join("."),
+        )
     });
     match qualifier {
         Some(qualifier) => format!("{qualifier}{rendered}"),

@@ -376,3 +376,33 @@ fn a_passed_over_type_with_a_graph_unique_name_still_binds_at_the_unique_name_st
         vec!["App.Feature.Gadget"]
     );
 }
+
+#[test]
+fn a_directive_whose_own_reading_is_passed_over_is_not_read_further_out() {
+    let files = fragments_for(&[
+        ("src/Far/T.cs", "namespace A.B.Sub { public class T { } }"),
+        ("src/Near/T.cs", "namespace Sub { public class T { } }"),
+        ("src/Near/Other/T.cs", "namespace Other { public class T { } }"),
+        (
+            "src/Site/Holder.cs",
+            "namespace A.B\n{\n    using Sub;\n\n    public class Holder\n    {\n        T _t;\n    }\n}\n",
+        ),
+    ]);
+    let site = "src/Site/Holder.cs";
+    let g = with_model(
+        &files,
+        vec![
+            unit("src/Site/Site.csproj", &["src/Near/Near.csproj"], false),
+            unit("src/Near/Near.csproj", &[], false),
+            unit("src/Far/Far.csproj", &[], false),
+        ],
+    );
+    assert!(
+        type_edge_targets_from(&g, site).is_empty(),
+        "{:?}",
+        type_edge_targets_from(&g, site)
+    );
+    let ambiguous = ambiguous_edges_from(&g, site);
+    assert_eq!(ambiguous.len(), 1, "{ambiguous:?}");
+    assert_eq!(ambiguous[0].2, vec!["Other.T", "Sub.T"]);
+}

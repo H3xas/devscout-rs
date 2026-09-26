@@ -123,6 +123,26 @@ fn the_qualifier_matches_the_one_the_type_reference_records() {
 }
 
 #[test]
+fn an_alias_qualified_message_keeps_the_text_the_type_reference_records() {
+    assert_eq!(
+        messages("  void A(IBus bus) { bus.Publish(new global::Ns.M(), default); }"),
+        vec!["global::Ns.M"]
+    );
+    assert_eq!(
+        messages("  void A(IBus bus) { bus.Publish(new global::M(), default); }"),
+        vec!["M"]
+    );
+}
+
+#[test]
+fn whitespace_around_the_qualifier_dots_is_not_part_of_the_message() {
+    assert_eq!(
+        messages("  void A(IBus bus) { bus.Publish(new Ns .\n    Sub . M(), default); }"),
+        vec!["Ns.Sub.M"]
+    );
+}
+
+#[test]
 fn a_bare_message_is_unchanged() {
     assert_eq!(
         messages("  void A(IBus bus) { bus.Publish(new M(), default); }"),
