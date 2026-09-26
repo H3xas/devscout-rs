@@ -78,6 +78,7 @@ fn dummy_stats() -> graph::Stats {
         ts: None,
         bus_vocabulary_derived: None,
         semantic: None,
+        lane: None,
     }
 }
 

@@ -11,6 +11,7 @@ use super::cache::{
     read_fragments_cache, write_fragments_cache, write_fragments_index, FragmentCacheEntry,
 };
 use super::fragment_types::{AnyFragment, Fragment};
+use super::lane::LaneStats;
 use super::ordered::OrderedMap;
 use super::paths::{
     atomic_write_json, graph_json_path, project_units_path, remove_superseded_caches,
@@ -38,6 +39,17 @@ pub enum RebuildOutcome {
     NotRebuilt,
     /// Represents `Rebuilt`.
     Rebuilt(Graph),
+}
+
+impl RebuildOutcome {
+    /// The rebuilt graph's `stats.lane` record; `None` when nothing was
+    /// rebuilt or the run owed no record.
+    pub fn lane(&self) -> Option<&LaneStats> {
+        match self {
+            RebuildOutcome::Rebuilt(graph) => graph.stats.lane.as_ref(),
+            RebuildOutcome::NotRebuilt => None,
+        }
+    }
 }
 
 /// Whether the graph.json already on disk was written at the CURRENT schema
@@ -93,14 +105,17 @@ fn write_project_units(
 /// declares none -- serialized into `graph.units` and mirrored into the
 /// `project_units_path` staleness sidecar. The caller is expected to have
 /// already folded `project::sidecar_differs` into `changed`; this function
-/// only writes the sidecar, it never decides on it.
+/// only writes the sidecar, it never decides on it. `lane`: this run's
+/// enriched-lane decision, which supplies the layer resolution may use and
+/// the `stats.lane` record written with the graph; the caller is expected to
+/// have folded its `forces_rebuild` into `changed` as well.
 pub fn rebuild_graph(
     root: &Path,
     graph_files: &[GraphFile],
     fresh_fragments: &HashMap<String, AnyFragment>,
     changed: bool,
     model: Option<&crate::project::ProjectModel>,
-    semantic_layer: Option<&crate::semantic::SemanticLayer>,
+    lane: Option<&crate::semantic::LaneDecision>,
 ) -> io::Result<RebuildOutcome> {
     if !changed && graph_json_path(root).exists() && graph_schema_is_current(root) {
         return Ok(RebuildOutcome::NotRebuilt);
@@ -134,13 +149,14 @@ pub fn rebuild_graph(
         );
     }
 
-    let graph = crate::resolve::resolve_graph_with_model(
+    let mut graph = crate::resolve::resolve_graph_with_model(
         root,
         &merged_cs,
         &merged_ts,
         model,
-        semantic_layer,
+        lane.and_then(crate::semantic::LaneDecision::layer),
     );
+    crate::semantic::record_lane(lane, &mut graph.stats);
     write_graph(root, &graph)?;
     write_project_units(root, model)?;
     write_fragments_cache(root, &new_cache)?;

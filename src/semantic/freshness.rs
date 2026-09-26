@@ -55,7 +55,27 @@ impl Freshness {
     pub fn is_fresh(&self) -> bool {
         matches!(self, Freshness::Fresh)
     }
+
+    /// The stale trigger token, or `None` when fresh.
+    pub fn stale_reason(&self) -> Option<&str> {
+        match self {
+            Freshness::Fresh => None,
+            Freshness::Stale { reason } => Some(reason),
+        }
+    }
+
+    /// Whether the stale trigger is a moved import rather than the
+    /// checkout's own git state. Decided here, beside `check_imports`, so a
+    /// new token cannot fall into the wrong class unnoticed.
+    pub fn is_import_trigger(&self) -> bool {
+        self.stale_reason().is_some_and(|reason| {
+            reason.starts_with(IMPORT_FILE_CHANGED) || reason.starts_with(IMPORT_FILE_MISSING)
+        })
+    }
 }
+
+const IMPORT_FILE_CHANGED: &str = "import-file-changed:";
+const IMPORT_FILE_MISSING: &str = "import-file-missing:";
 
 /// One `context.envelope.compilations[].imports[]` entry: an external file
 /// the producer consulted, and its content hash (lower-case hex SHA-1, the
@@ -93,12 +113,12 @@ fn check_imports(root: &Path, imports: &[ImportRef]) -> Option<String> {
             continue;
         };
         let Ok(bytes) = std::fs::read(root.join(rel)) else {
-            return Some(format!("import-file-missing:{}", import.identity));
+            return Some(format!("{IMPORT_FILE_MISSING}{}", import.identity));
         };
         let digest = Sha1::digest(&bytes);
         let current_hash: String = digest.iter().map(|b| format!("{b:02x}")).collect();
         if current_hash != import.hash {
-            return Some(format!("import-file-changed:{}", import.identity));
+            return Some(format!("{IMPORT_FILE_CHANGED}{}", import.identity));
         }
     }
     None
@@ -359,5 +379,62 @@ mod tests {
             evaluate(&dir, Some(&head), false, &imports),
             Freshness::Fresh
         );
+    }
+
+    #[test]
+    fn only_the_import_triggers_are_classed_as_moved_imports() {
+        for token in [
+            "source-snapshot-dirty-at-admission",
+            "source-snapshot-missing",
+            "working-tree-dirty",
+            "source-head-mismatch",
+            "source-head-unavailable",
+        ] {
+            let stale = Freshness::Stale {
+                reason: token.to_string(),
+            };
+            assert_eq!(stale.stale_reason(), Some(token));
+            assert!(!stale.is_import_trigger(), "{token}");
+        }
+        assert_eq!(Freshness::Fresh.stale_reason(), None);
+        assert!(!Freshness::Fresh.is_import_trigger());
+    }
+
+    #[test]
+    fn the_reasons_check_imports_mints_are_classed_as_moved_imports() {
+        let dir = scratch_repo("import-class");
+        let head = head_of(&dir);
+        let missing = evaluate(
+            &dir,
+            Some(&head),
+            false,
+            &[ImportRef {
+                identity: "external-file:../absent.props".to_string(),
+                hash: sha1_hex(b"x"),
+            }],
+        );
+        assert!(missing.is_import_trigger(), "{missing:?}");
+
+        std::fs::write(dir.join("tracked.props"), b"new").unwrap();
+        let run = |args: &[&str]| {
+            let status = Command::new("git")
+                .args(args)
+                .current_dir(&dir)
+                .status()
+                .unwrap();
+            assert!(status.success());
+        };
+        run(&["add", "."]);
+        run(&["commit", "-q", "-m", "props"]);
+        let changed = evaluate(
+            &dir,
+            Some(&head_of(&dir)),
+            false,
+            &[ImportRef {
+                identity: "external-file:tracked.props".to_string(),
+                hash: sha1_hex(b"old"),
+            }],
+        );
+        assert!(changed.is_import_trigger(), "{changed:?}");
     }
 }
