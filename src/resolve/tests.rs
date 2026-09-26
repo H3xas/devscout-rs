@@ -14,6 +14,7 @@ mod byte_identity;
 mod ctor_di;
 mod dispatch;
 mod dotted_suffix;
+mod explicit_implementations;
 mod extension_generics;
 mod extension_tier;
 mod graph_invariants;

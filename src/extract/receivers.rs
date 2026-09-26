@@ -9,7 +9,7 @@ use super::lambdas::{
 use super::refs::{
     base_type_identifier, generic_arg_descriptors, member_qualifier_info, type_parameter_names,
 };
-use super::text::{declared_name, named_children, text};
+use super::text::{declared_name, is_explicit_implementation, named_children, text};
 use super::types::Fact;
 
 // ---------------------------------------------------------------------------
@@ -174,7 +174,10 @@ pub(super) fn collect_type_facts(
 // flat siblings because the parser never built the type node that would have
 // wrapped them. A property's declared type vouches for its own name
 // exactly like a field's does: one table, one conflict rule, and an indexer is
-// a different grammar node so it is excluded by construction.
+// a different grammar node so it is excluded by construction. An explicit
+// interface implementation vouches for nothing: inside its type the bare name
+// never reaches it, so it must neither type that name nor conflict with the
+// ordinary property that does.
 fn collect_declared_member_facts(
     members: &[Node],
     src: &[u8],
@@ -183,6 +186,9 @@ fn collect_declared_member_facts(
 ) {
     for c in members {
         if c.kind() == "property_declaration" {
+            if is_explicit_implementation(*c) {
+                continue;
+            }
             let name = declared_name(*c, src);
             add_fact(
                 table,

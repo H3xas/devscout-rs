@@ -26,7 +26,7 @@ fn rebuild_graph_writes_the_v13_caches_and_deletes_every_superseded_generation()
     // receiverCallMember pair, so a v12 fragment read back carries none and
     // every property hop and every var-from-invocation receiver would
     // silently stay unresolved.
-    assert_eq!(SUPERSEDED_CACHE_FILES.len(), 44, "v1..v22 pairs");
+    assert_eq!(SUPERSEDED_CACHE_FILES.len(), 46, "v1..v23 pairs");
     for stale in SUPERSEDED_CACHE_FILES {
         fs::write(graph_dir(&dir).join(stale), b"{}").unwrap();
     }
@@ -75,11 +75,11 @@ fn rebuild_graph_writes_the_v13_caches_and_deletes_every_superseded_generation()
     rebuild_graph(&dir, &graph_files, &fresh, true, None, None).unwrap();
 
     assert!(
-        graph_dir(&dir).join("fragments-v23.json").exists(),
-        "the v23 payload cache is what gets written"
+        graph_dir(&dir).join("fragments-v24.json").exists(),
+        "the v24 payload cache is what gets written"
     );
     assert!(
-        graph_dir(&dir).join("fragments-index-v23.json").exists(),
+        graph_dir(&dir).join("fragments-index-v24.json").exists(),
         "and its mtime-only index alongside it"
     );
     for stale in SUPERSEDED_CACHE_FILES {
@@ -90,32 +90,32 @@ fn rebuild_graph_writes_the_v13_caches_and_deletes_every_superseded_generation()
     }
 }
 
-// --- The v23 cache generation --------------------------
+// --- The v24 cache generation --------------------------
 
 #[test]
-fn fragments_cache_v23_supersedes_v22() {
-    let dir = temp_dir("fragments-cache-v23-paths");
+fn fragments_cache_v24_supersedes_v23() {
+    let dir = temp_dir("fragments-cache-v24-paths");
     assert_eq!(
         fragments_cache_path(&dir),
-        graph_dir(&dir).join("fragments-v23.json")
+        graph_dir(&dir).join("fragments-v24.json")
     );
     assert_eq!(
         fragments_index_path(&dir),
-        graph_dir(&dir).join("fragments-index-v23.json")
+        graph_dir(&dir).join("fragments-index-v24.json")
     );
     assert!(
-        SUPERSEDED_CACHE_FILES.contains(&"fragments-v22.json"),
-        "v22 joined the superseded list when the v23 bump landed"
+        SUPERSEDED_CACHE_FILES.contains(&"fragments-v23.json"),
+        "v23 joined the superseded list when the v24 bump landed"
     );
     assert!(
-        SUPERSEDED_CACHE_FILES.contains(&"fragments-index-v22.json"),
+        SUPERSEDED_CACHE_FILES.contains(&"fragments-index-v23.json"),
         "its index pairs with it, same as every other generation"
     );
 
-    let dir = temp_dir("rebuild-v23");
+    let dir = temp_dir("rebuild-v24");
     fs::create_dir_all(graph_dir(&dir)).unwrap();
-    fs::write(graph_dir(&dir).join("fragments-v22.json"), b"{}").unwrap();
-    fs::write(graph_dir(&dir).join("fragments-index-v22.json"), b"{}").unwrap();
+    fs::write(graph_dir(&dir).join("fragments-v23.json"), b"{}").unwrap();
+    fs::write(graph_dir(&dir).join("fragments-index-v23.json"), b"{}").unwrap();
 
     let fragment = Fragment {
         defs: vec![],
@@ -134,11 +134,11 @@ fn fragments_cache_v23_supersedes_v22() {
     }];
     rebuild_graph(&dir, &graph_files, &fresh, true, None, None).unwrap();
 
-    assert!(graph_dir(&dir).join("fragments-v23.json").exists());
-    assert!(graph_dir(&dir).join("fragments-index-v23.json").exists());
+    assert!(graph_dir(&dir).join("fragments-v24.json").exists());
+    assert!(graph_dir(&dir).join("fragments-index-v24.json").exists());
     assert!(
-        !graph_dir(&dir).join("fragments-v22.json").exists(),
-        "the v22 pair is deleted -- rename IS the invalidation"
+        !graph_dir(&dir).join("fragments-v23.json").exists(),
+        "the v23 pair is deleted -- rename IS the invalidation"
     );
     assert!(!graph_dir(&dir).join("fragments-index-v16.json").exists());
 }
@@ -291,7 +291,7 @@ fn a_pre_bump_fragment_cache_cannot_leave_a_supported_hop_unfound() {
     // half fails the moment the rename is reverted.
     let reused = temp_dir("bus-hop-current-generation-cache");
     fs::create_dir_all(graph_dir(&reused)).unwrap();
-    plant_cache_pair(&reused, &stale, index, "-v23");
+    plant_cache_pair(&reused, &stale, index, "-v24");
     let g = rebuilt(&reused);
     assert_eq!(hop_count(&g), 0);
     assert_eq!(g.stats.edges_by_kind.bus_hop, None);
@@ -476,12 +476,12 @@ fn a_warm_v22_cache_is_rebuilt_rather_than_read_without_array_facts() {
     assert_eq!(
         array_handler_names(&g),
         vec!["ArrayHandler".to_string()],
-        "a fresh v23 extraction, never the warm v22 payload, is what decides the array \
+        "a fresh extraction, never the warm v22 payload, is what decides the array \
          consumer's own identity"
     );
     assert!(!graph_dir(&dir).join("fragments-v22.json").exists());
 
-    // The control: the SAME degraded entry, planted at the CURRENT v23
+    // The control: the SAME degraded entry, planted at the CURRENT
     // generation and reused on its matching mtime, loses the array bit --
     // both handlers then read as plain `Foo` consumers, so the `Foo[]`
     // publish's own identity (rank 1) matches NEITHER of them and the
@@ -489,7 +489,7 @@ fn a_warm_v22_cache_is_rebuilt_rather_than_read_without_array_facts() {
     // prevents, so this half fails the moment the rename is reverted.
     let reused = temp_dir("bus-array-current-generation-cache");
     fs::create_dir_all(graph_dir(&reused)).unwrap();
-    plant_cache_pair(&reused, &stale, index, "-v23");
+    plant_cache_pair(&reused, &stale, index, "-v24");
     let g = match rebuild_graph(
         &reused,
         &array_bus_files(),
