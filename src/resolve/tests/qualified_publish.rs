@@ -85,3 +85,28 @@ fn a_global_qualified_publish_message_reaches_the_same_consumer() {
         )]
     );
 }
+
+#[test]
+fn a_comment_inside_the_written_qualifier_keeps_the_hop() {
+    for written in [
+        "Subjects./*c*/StartCommand",
+        "Subjects/*c*/.StartCommand",
+        "Subjects. // c\n                StartCommand",
+    ] {
+        let spec = redelivery_spec(written);
+        let files = fragments_for(&[
+            COMMAND_IN_ENCLOSING_NAMESPACE,
+            ("ContainerTests/RedeliverySpec.cs", &spec),
+        ]);
+        let g = resolve_graph(&no_git_root(), &files);
+        assert_eq!(
+            hops_from(&g, "ContainerTests/RedeliverySpec.cs"),
+            vec![(
+                9,
+                "App.ContainerTests.Subjects.StartCommand",
+                "App.ContainerTests.Subjects.StartCommandConsumer"
+            )],
+            "{written:?}"
+        );
+    }
+}

@@ -356,34 +356,49 @@ fn implicit_array_message(node: Node, src: &[u8], type_params: &HashSet<String>)
 // A message type as the call writes it: `type_descriptor`'s rendering, with
 // the written qualifier kept in front when the type, under any nullable or
 // array wrapper, is a qualified name (`Ns.M`, `Ns.M[]`, `Outer.Inner`,
-// `Ns.Batch<M>`). The qualifier text is the same one the site's own type
-// reference records, except that whitespace around a dot is dropped: the
-// resolver splits a message at its last dot, and a name spelled `Ns . M`
-// would otherwise reach it as ` M`. `type_descriptor` drops the qualifier
-// because method parameters and consumer bases share that rendering; a
-// publish message needs it, because the bare name read from the call site's
-// namespace can bind a different type than the one the qualifier names.
+// `Ns.Batch<M>`). The qualifier is rebuilt from its own tokens with the
+// trivia between them left out -- whitespace, line breaks, comments and any
+// other extra node -- so every call shape that reaches here names the same
+// segments the same way: the resolver splits a message at its last dot, and
+// `Ns./*c*/M` or `Ns . M` would otherwise reach it as `/*c*/M` or ` M`.
+// `type_descriptor` drops the qualifier because method parameters and
+// consumer bases share that rendering; a publish message needs it, because
+// the bare name read from the call site's namespace can bind a different
+// type than the one the qualifier names.
 fn written_message(node: Option<Node>, src: &[u8], type_params: &HashSet<String>) -> String {
     let rendered = type_descriptor(node, src, type_params);
     let mut core = node;
     while let Some(n) = core.filter(|n| matches!(n.kind(), "nullable_type" | "array_type")) {
         core = n.child_by_field_name("type");
     }
-    let qualifier = core.filter(|n| n.kind() == "qualified_name").and_then(|n| {
-        let tail = n.child_by_field_name("name")?;
-        let written = text(n, src);
-        let qualifier = written.strip_suffix(text(tail, src).as_str())?;
-        Some(
-            qualifier
-                .split('.')
-                .map(str::trim)
-                .collect::<Vec<_>>()
-                .join("."),
-        )
-    });
+    let qualifier = core
+        .filter(|n| n.kind() == "qualified_name")
+        .and_then(|n| n.child_by_field_name("qualifier"))
+        .map(|q| {
+            let mut out = String::new();
+            push_tokens(q, src, &mut out);
+            out
+        });
     match qualifier {
-        Some(qualifier) => format!("{qualifier}{rendered}"),
+        Some(qualifier) => format!("{qualifier}.{rendered}"),
         None => rendered,
+    }
+}
+
+// Appends the source text of every token under `node`, in order, skipping
+// extra nodes (comments, preprocessor lines) and the whitespace between
+// tokens, which never belongs to a token.
+fn push_tokens(node: Node, src: &[u8], out: &mut String) {
+    if node.is_extra() {
+        return;
+    }
+    if node.child_count() == 0 {
+        out.push_str(&text(node, src));
+        return;
+    }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        push_tokens(child, src, out);
     }
 }
 

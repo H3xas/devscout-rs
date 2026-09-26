@@ -142,6 +142,117 @@ fn whitespace_around_the_qualifier_dots_is_not_part_of_the_message() {
     );
 }
 
+// Each spelling puts a comment between the same two segments, so every
+// one of them must read as `Ns.M`.
+const COMMENTED_QUALIFIERS: [&str; 3] = ["Ns./*c*/M", "Ns/*c*/.M", "Ns. // c\n    M"];
+
+#[test]
+fn a_comment_in_a_type_argument_qualifier_is_not_part_of_the_message() {
+    for written in COMMENTED_QUALIFIERS {
+        assert_eq!(
+            messages(&format!(
+                "  void A(IBus bus) {{ bus.Publish<{written}>(default); }}"
+            )),
+            vec!["Ns.M"],
+            "{written:?}"
+        );
+        assert_eq!(
+            messages(&format!(
+                "  void A(IBus bus) {{ bus.Publish<{written}?>(default); }}"
+            )),
+            vec!["Ns.M"],
+            "{written:?}"
+        );
+    }
+}
+
+#[test]
+fn a_comment_in_a_constructed_message_qualifier_is_not_part_of_the_message() {
+    for written in COMMENTED_QUALIFIERS {
+        assert_eq!(
+            messages(&format!(
+                "  void A(IBus bus) {{ bus.Publish(new {written}(), default); }}"
+            )),
+            vec!["Ns.M"],
+            "{written:?}"
+        );
+        assert_eq!(
+            message_of(
+                "PublishAsync",
+                &format!(
+                    "  void A(IBus bus) {{ bus.PublishAsync(context => context.Init(new {written}())); }}"
+                )
+            ),
+            "Ns.M",
+            "{written:?}"
+        );
+    }
+}
+
+#[test]
+fn a_comment_in_an_explicit_array_qualifier_is_not_part_of_the_message() {
+    for written in COMMENTED_QUALIFIERS {
+        assert_eq!(
+            messages(&format!(
+                "  void A(IBus bus) {{ bus.Publish(new {written}[2], default); }}"
+            )),
+            vec!["Ns.M[]"],
+            "{written:?}"
+        );
+        assert_eq!(
+            messages(&format!(
+                "  void A(IBus bus) {{ bus.Publish(new {written}[] {{ null }}, default); }}"
+            )),
+            vec!["Ns.M[]"],
+            "{written:?}"
+        );
+    }
+}
+
+#[test]
+fn a_comment_in_an_implicit_array_element_qualifier_is_not_part_of_the_message() {
+    for written in COMMENTED_QUALIFIERS {
+        assert_eq!(
+            message_of(
+                "Publish",
+                &format!(
+                    "  void A(IBus bus) {{ bus.Publish(new[] {{ new {written}(), new {written}() }}, default); }}"
+                )
+            ),
+            "Ns.M[]",
+            "{written:?}"
+        );
+        assert_eq!(
+            message_of(
+                "Publish",
+                &format!(
+                    "  void A(IBus bus) {{ bus.Publish(new[] {{ new {written}(), new Ns . M() }}, default); }}"
+                )
+            ),
+            "Ns.M[]",
+            "{written:?}"
+        );
+    }
+}
+
+#[test]
+fn a_comment_between_outer_qualifier_segments_is_not_part_of_the_message() {
+    assert_eq!(
+        messages(
+            "  void A(IBus bus) { bus.Publish(new A/*c*/.B. // c\n    Sub./*c*/M(), default); }"
+        ),
+        vec!["A.B.Sub.M"]
+    );
+    assert_eq!(
+        messages("  void A(IBus bus) { bus.Publish<Ns./*c*/Batch<M>>(default); }"),
+        vec!["Ns.Batch<M>"]
+    );
+    assert_eq!(
+        messages("  void A(IBus bus) { bus.Publish(new global::Ns/*c*/.M(), default); }"),
+        vec!["global::Ns.M"]
+    );
+}
+
 #[test]
 fn a_bare_message_is_unchanged() {
     assert_eq!(
