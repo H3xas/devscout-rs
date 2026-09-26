@@ -445,6 +445,7 @@ fn stage3_tier_f_a_partial_static_class_declaring_the_same_quadruple_twice_stays
                 vec![FragUsing::Plain {
                     text: "App.Ext".into(),
                     global: false,
+                    namespace: String::new(),
                 }],
                 // Distinct LINES: the two calls guess the same static class,
                 // and the heuristic-side dedup collapses byte-identical

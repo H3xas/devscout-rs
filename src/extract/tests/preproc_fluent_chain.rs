@@ -145,7 +145,7 @@ fn preproc_namespace_selection_indexes_only_the_active_arm() {
 
     assert_eq!(e.usings.len(), 1);
     match &e.usings[0] {
-        UsingRecord::Plain { text, global } => {
+        UsingRecord::Plain { text, global, .. } => {
             assert_eq!(text, "Fixtures.Preproc.Lattice.Expression");
             assert!(!global);
         }

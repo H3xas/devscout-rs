@@ -20,16 +20,19 @@ mod extension_tier;
 mod graph_invariants;
 mod ladder;
 mod lambda_parameters;
+mod level_walk_reach;
 mod member_hiding;
 mod member_qualifiers;
 mod nested_end_to_end;
 mod nested_step;
 mod project_admission;
 mod qualified_names;
+mod qualified_publish;
 mod receiver_hops;
 mod receiver_rule;
 mod receiver_tier;
 mod scored_tier;
+mod using_levels;
 
 /// Not a real git repo -- `resolve_graph`'s single I/O call (`git_head`)
 /// fails closed to `None` here, the same as a non-repo shell-out failure.

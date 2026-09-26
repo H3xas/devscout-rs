@@ -34,6 +34,20 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   binds `IInMemoryEndpointConfiguration.Topology` instead of the hidden
   `IEndpointConfiguration.Topology` that the first base reaches. Method calls and class receivers
   bind as before.
+- **A bare type name resolves in the namespace-level order C# uses.** A type declared in an
+  enclosing namespace now wins over a same-named type imported by a using directive declared
+  further out, including compilation-unit and `global using` directives: `TestInstance` inside
+  `namespace Tests { namespace ContainerTests { using TestFramework.Sagas; ... } }` binds the
+  `TestInstance` declared in `ContainerTests`, not the imported one. A using directive declared
+  inside a namespace still wins over a type in a shallower namespace, a using declared in an inner
+  namespace wins over one declared in an outer namespace instead of making the name ambiguous, and
+  a using declared in a namespace block that does not enclose the reference no longer applies to
+  it. With a `.csproj` project model, a type in an enclosing namespace, or one a using imports, that
+  is declared only in a project the reference's own project does not reference is passed over, so
+  the lookup moves on as C# does. A publish that names its message with a qualifier
+  (`Publish(new Subjects.StartCommand())`) now resolves the message through that qualifier instead
+  of the bare name. The fragment cache moves to `fragments-v25.json`, so an existing cache
+  re-extracts once.
 - **`map` says when the enriched lane was not applied, and why.** A stale or unreadable admitted
   compiler-facts artifact used to drop `map` to the syntax lane with nothing on screen to say so.
   Whenever an entry sits at the compiler-facts path or `--no-semantic` is given, `map` now prints a

@@ -1,9 +1,9 @@
 use super::arity::generic_args_unify;
 use super::index::{name_probe, DefIndex};
 use super::ladder::{capped_candidates, resolve_ref, Resolution};
-use super::scope::FileContext;
+use super::scope::{FileContext, FileUsings};
 use crate::graph::{Candidate, Def, Edge, FragRef, Fragment, GraphName, HeuristicTier};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 // ---------------------------------------------------------------------------
 // Constructor-parameter DI resolution.
@@ -90,7 +90,7 @@ impl CtorDiResolution {
 
 pub(super) fn resolve_ctor_param(
     ref_: &FragRef,
-    usings: &HashSet<String>,
+    usings: &FileUsings,
     ns: &str,
     index: &DefIndex,
     aliases: &HashMap<String, String>,

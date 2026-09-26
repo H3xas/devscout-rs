@@ -439,6 +439,10 @@ pub enum UsingRecord {
         text: String,
         /// Whether the directive is global.
         global: bool,
+        /// The namespace the directive is declared in: the enclosing
+        /// namespace declarations joined with `.`, or `""` at compilation-unit
+        /// level and for every `global using`.
+        namespace: String,
     },
 }
 

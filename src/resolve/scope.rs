@@ -1,5 +1,6 @@
 use crate::graph::{FragUsing, Fragment};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
+use std::sync::Arc;
 
 // The half of C#'s namespace visibility a `using` directive does NOT account
 // for: a type declared in an ENCLOSING namespace of the reference site is in
@@ -47,8 +48,69 @@ pub(super) fn score_candidate(
 
 /// One file's using/alias context.
 pub(super) struct FileContext {
-    pub(super) usings: HashSet<String>,
+    pub(super) usings: FileUsings,
     pub(super) aliases: HashMap<String, String>,
+}
+
+/// One file's plain using directives, kept two ways.
+///
+/// C# consults a using directive only while its bare-name lookup stands at
+/// the namespace level that declares it, after that level's own types, so the
+/// ladder reads the directives grouped by declaring namespace (`at_level`).
+/// Compilation-unit directives and every `global using` in scope sit at `""`.
+/// Every other reader asks only whether a namespace is imported anywhere in
+/// the file and keeps the flat set, which the type dereferences to.
+///
+/// The same lookup also needs to know which defs the file's project can
+/// name at all, since C# only finds a namespace member in a referenced
+/// assembly; that per-def answer rides here too (`reaches`), so every
+/// caller that hands the ladder a file's usings hands it that file's reach.
+#[derive(Default)]
+pub(super) struct FileUsings {
+    all: HashSet<String>,
+    by_level: HashMap<String, BTreeSet<String>>,
+    reach: Option<Arc<[bool]>>,
+}
+
+impl FileUsings {
+    pub(super) fn insert(&mut self, level: &str, text: &str) {
+        self.all.insert(text.to_string());
+        self.by_level
+            .entry(level.to_string())
+            .or_default()
+            .insert(text.to_string());
+    }
+
+    /// The directives declared at exactly `level`.
+    pub(super) fn at_level(&self, level: &str) -> impl Iterator<Item = &str> {
+        self.by_level
+            .get(level)
+            .into_iter()
+            .flatten()
+            .map(String::as_str)
+    }
+
+    /// `reach[i]` answers `reaches(i)`; shared by every file of one project.
+    pub(super) fn set_reach(&mut self, reach: Arc<[bool]>) {
+        self.reach = Some(reach);
+    }
+
+    /// Whether the file's project can name `def`. Always true with no
+    /// project model or for a file no project owns: an ownership answer the
+    /// resolver could not compute must never hide a def.
+    pub(super) fn reaches(&self, def: usize) -> bool {
+        self.reach
+            .as_ref()
+            .is_none_or(|reach| reach.get(def).copied().unwrap_or(true))
+    }
+}
+
+impl std::ops::Deref for FileUsings {
+    type Target = HashSet<String>;
+
+    fn deref(&self) -> &HashSet<String> {
+        &self.all
+    }
 }
 
 // Every file's own context (local ∪ every `global using` IN SCOPE for it, with
@@ -87,15 +149,20 @@ pub(super) fn build_file_contexts(
             },
             None => repo_wide,
         };
-        let mut usings = seed.0.clone();
+        let mut usings = FileUsings::default();
+        for text in &seed.0 {
+            usings.insert("", text);
+        }
         let mut aliases = seed.1.clone();
         for u in &frag.usings {
             match u {
                 FragUsing::Alias { alias, target, .. } => {
                     aliases.insert(alias.clone(), target.clone());
                 }
-                FragUsing::Plain { text, .. } => {
-                    usings.insert(text.clone());
+                FragUsing::Plain {
+                    text, namespace, ..
+                } => {
+                    usings.insert(namespace, text);
                 }
             }
         }
@@ -164,7 +231,7 @@ pub(super) fn collect_global_usings_by_unit(
                         }
                     }
                 }
-                FragUsing::Plain { text, global } => {
+                FragUsing::Plain { text, global, .. } => {
                     if *global {
                         repo_wide.0.insert(text.clone());
                         if let Some(idx) = unit {

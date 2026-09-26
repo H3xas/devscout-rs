@@ -3,7 +3,7 @@ use super::members::inheritance_walk_matches;
 use super::receiver::{
     extractor_vouches_instance, is_this_shaped_receiver, nested_candidate_visible_from_site,
 };
-use super::scope::FileContext;
+use super::scope::{FileContext, FileUsings};
 use crate::graph::{Candidate, FragRef};
 use std::collections::{HashMap, HashSet};
 
@@ -40,7 +40,10 @@ const AMBIGUOUS_CAP: usize = 5;
 /// Only the heuristic tiers consult it. The precise tiers resolve a type
 /// first and emit on a FACT, and the ctor-DI resolver picks an implementor
 /// from an interface the site demonstrably names -- neither is a guess the
-/// model is entitled to overrule.
+/// model is entitled to overrule. The ladder's namespace-level walk asks a
+/// narrower question of the model, reachability alone, through the site
+/// file's `FileUsings::reaches`, because the language itself never finds a
+/// namespace member in an assembly the site does not reference.
 pub(super) struct Admission<'m> {
     pub(super) model: Option<&'m crate::project::ProjectModel>,
     /// `unit_of_def[i]` is the unit owning `index.defs[i]`'s declaring file,
@@ -104,10 +107,12 @@ pub(super) enum Resolution {
 /// The project model's answer to an ambiguity the ladder could not settle:
 /// C# cannot name a type in an assembly this one does not reference, so such
 /// a candidate was never really a candidate. Applied at the ladder's THREE
-/// `Ambiguous` consumers rather than inside `resolve_ref`, because the ladder
-/// is a pure name-resolution function that knows nothing about projects and
-/// because two of its callers -- the base-closure probes and the ctor-DI
-/// resolver -- must keep seeing the unnarrowed answer.
+/// `Ambiguous` consumers rather than inside `resolve_ref`, because two of its
+/// callers -- the base-closure probes and the ctor-DI resolver -- must keep
+/// seeing the unnarrowed answer. The ladder's own namespace-level walk
+/// already passes over a candidate outside the site's reference closure
+/// (`FileUsings::reaches`) before it judges one-vs-many, but an ambiguity
+/// from the dotted-suffix or unique-name steps still reaches this narrowing.
 ///
 /// Every other resolution passes through untouched, and so does every
 /// candidate when there is no model (`Admission::admits` then says yes to
@@ -265,7 +270,7 @@ pub(super) fn type_candidate(index: &DefIndex, name: &str, arity: Option<usize>)
 )]
 pub(super) fn resolve_ref(
     ref_: &FragRef,
-    usings: &HashSet<String>,
+    usings: &FileUsings,
     ns: &str,
     index: &DefIndex,
     aliases: &HashMap<String, String>,
@@ -506,51 +511,33 @@ pub(super) fn resolve_ref(
         return Resolution::External;
     }
 
-    // Step 2: file's usings (already the union of local + global by the time
-    // this is called) + simple name, the using's OWN name walked over every
-    // enclosing-namespace prefix -- `using Configuration;` inside
-    // `namespace A.B.C` reaches `A.Configuration.T`. One directive contributes
-    // at most ONE candidate: its innermost reading wins, exactly like step 1's
-    // first-match-wins walk, and only then does the 1-vs-many rule run across
-    // directives. Dedup by def id -- two different using texts landing on the
-    // same def counts once.
-    let mut using_matches: Vec<usize> = Vec::new();
-    let mut seen_ids: HashSet<&str> = HashSet::new();
-    for u in usings {
-        for prefix in &prefixes {
-            let candidate = if prefix.is_empty() {
-                format!("{u}.{}", ref_.name)
-            } else {
-                format!("{prefix}.{u}.{}", ref_.name)
-            };
-            if let Some(idx) = type_candidate(index, &candidate, ref_.type_arg_count) {
-                let id = index.defs[idx].id.as_str();
-                if seen_ids.insert(id) {
-                    using_matches.push(idx);
-                }
-                break;
-            }
-        }
-    }
-    if using_matches.len() == 1 {
-        return Resolution::Resolved(using_matches[0], Via::Usings);
-    }
-    if using_matches.len() >= 2 {
-        return Resolution::Ambiguous(using_matches, Via::Usings);
-    }
-
-    // Step 3: the reference site's namespace AND every ancestor of it,
-    // innermost first -- the same walk step 1 runs (`T` inside `A.B.C`
-    // reaches `A.B.T` and `A.T`, not only `A.B.C.T`), which is C#'s
-    // ancestor-namespace rule.
+    // Steps 2 and 3, interleaved one namespace level at a time: the site's
+    // namespace, then each ancestor, innermost first, ending with the global
+    // namespace. At each level a type declared there answers first; only
+    // then are the using directives declared at exactly that level tried.
+    // Compilation-unit and `global using` directives sit at the global
+    // level, so they come after every enclosing namespace's own types, and a
+    // directive declared in a namespace block that does not enclose the site
+    // is never consulted for it. A candidate the site file's project cannot
+    // reference is passed over at its level, after each directive's own
+    // first-match reading, so the directive is never re-read further out.
     for prefix in &prefixes {
         let candidate = if prefix.is_empty() {
             ref_.name.clone()
         } else {
             format!("{prefix}.{}", ref_.name)
         };
-        if let Some(idx) = type_candidate(index, &candidate, ref_.type_arg_count) {
+        if let Some(idx) = type_candidate(index, &candidate, ref_.type_arg_count)
+            .filter(|&idx| usings.reaches(idx))
+        {
             return Resolution::Resolved(idx, Via::Namespace);
+        }
+        let mut using_matches = imported_at_level(usings.at_level(prefix), &prefixes, ref_, index);
+        using_matches.retain(|&idx| usings.reaches(idx));
+        match using_matches.as_slice() {
+            [idx] => return Resolution::Resolved(*idx, Via::Usings),
+            [_, _, ..] => return Resolution::Ambiguous(using_matches, Via::Usings),
+            [] => {}
         }
     }
 
@@ -578,6 +565,38 @@ pub(super) fn resolve_ref(
         [_, _, ..] => Resolution::Ambiguous(matches, Via::Global),
         _ => Resolution::External,
     }
+}
+
+// The candidates one level's using directives import for a bare name. Each
+// directive's OWN text is walked over every enclosing-namespace prefix of the
+// site -- `using Configuration;` inside `namespace A.B.C` reaches
+// `A.Configuration.T` -- and contributes at most one candidate, its innermost
+// reading, exactly like step 1's first-match-wins walk. Two directive texts
+// landing on the same def count once.
+fn imported_at_level<'u>(
+    directives: impl Iterator<Item = &'u str>,
+    prefixes: &[String],
+    ref_: &FragRef,
+    index: &DefIndex,
+) -> Vec<usize> {
+    let mut matches: Vec<usize> = Vec::new();
+    let mut seen_ids: HashSet<&str> = HashSet::new();
+    for u in directives {
+        for prefix in prefixes {
+            let candidate = if prefix.is_empty() {
+                format!("{u}.{}", ref_.name)
+            } else {
+                format!("{prefix}.{u}.{}", ref_.name)
+            };
+            if let Some(idx) = type_candidate(index, &candidate, ref_.type_arg_count) {
+                if seen_ids.insert(index.defs[idx].id.as_str()) {
+                    matches.push(idx);
+                }
+                break;
+            }
+        }
+    }
+    matches
 }
 
 // ---------------------------------------------------------------------------

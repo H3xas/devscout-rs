@@ -132,9 +132,14 @@ pub fn fragment_from_extraction(e: &extract::Extraction) -> Fragment {
                     target: target.clone(),
                     global: *global,
                 },
-                extract::UsingRecord::Plain { text, global } => FragUsing::Plain {
+                extract::UsingRecord::Plain {
+                    text,
+                    global,
+                    namespace,
+                } => FragUsing::Plain {
                     text: text.clone(),
                     global: *global,
+                    namespace: namespace.clone(),
                 },
             })
             .collect(),

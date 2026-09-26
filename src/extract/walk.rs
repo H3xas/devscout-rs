@@ -90,7 +90,7 @@ fn walk<'a>(
             walk_list(named_children(node), new_ns, type_stack, src, out, scope);
         }
         "using_directive" => {
-            record_using(node, src, &mut out.usings, &mut out.refs);
+            record_using(node, ns, src, &mut out.usings, &mut out.refs);
         }
         "class_declaration"
         | "interface_declaration"

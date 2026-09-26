@@ -415,6 +415,11 @@ pub enum FragUsing {
         text: String,
         /// Whether the directive is global.
         global: bool,
+        /// The namespace the directive is declared in; `""` (compilation-unit
+        /// level) when absent, which is also how a fragment cached before the
+        /// key existed reads.
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        namespace: String,
     },
 }
 
