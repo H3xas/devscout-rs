@@ -7,6 +7,19 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Rust definitions are indexed for `find` and `read`.** `map` now indexes every `.rs` file in
+  its scope, in every repository, and records each item: modules, structs, enums, unions, traits,
+  functions and methods (free, associated, trait and extern), constants, statics, type aliases and
+  associated types, and `macro_rules!` macros. `find` lists them, and `read` quotes an item's whole
+  span, doc comments and attributes included. An item is named by its name, by its id
+  (`<file>#<path>`, such as `src/shelf.rs#Widget::new`), or by a `::` path such as `Widget::new`;
+  when two items in a file share a path, the later ones take a `-1`, `-2` suffix. `init` reports
+  `.rs` files in a tier of their own, "definitions only: find and read". `refs`, `impact` and
+  `tests` give no Rust rows yet. The fragment cache moves to `fragments-v25.json`, so an existing
+  cache re-extracts once.
+
 ### Fixed
 
 - **Compiler-facts and context output list compiler diagnostics in one fixed order.** The

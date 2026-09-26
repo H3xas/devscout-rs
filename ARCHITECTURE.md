@@ -13,13 +13,15 @@ One `devscout map` run flows left to right; every query verb reads what it wrote
 walk ─► parse ─► extract ──┐
           │      markup ───┼─► resolve (C#) ─┐
           └── preproc      │   tsgraph (TS) ─┼─► graph ─► query ─► render ─► cli
+                           │   rsgraph (Rust)┘                             │
                            └───────────────► manifest ─────────────────────┘
 project ─► resolve        repo / initcmd / mapcmd / store / hookio / suggest / audit / offsets
 ```
 
 - **Indexing** (`map`): `walk` lists files, `parse` and `preproc` turn C# into a syntax tree,
   `extract` and `markup` turn the tree into per-file fragments, `resolve` / `tsgraph` turn
-  fragments into a graph, `graph` persists it, `manifest` persists the file-purpose index.
+  fragments into a graph, `rsgraph` appends Rust definitions (no edges) after the resolve,
+  `graph` persists it, `manifest` persists the file-purpose index.
 - **Querying** (`find`, `refs`, `read`, `impact`, `tests`): `query` builds an in-memory index
   over the persisted graph and answers; `render` formats; `cli` parses arguments and returns
   `(exit code, output)`.
@@ -290,6 +292,7 @@ breaking one is a behaviour change even when every test still passes.
 | --- | --- |
 | A C# construct the index should record | `src/extract/walk.rs` for the walker, `src/extract/members.rs` or `src/extract/type_defs.rs` for the member/def facts it carries, `src/graph/fragment_types.rs` for the fragment shape and `src/graph/paths.rs` for its cache version, a fixture under `fixtures/` with its README, the construct's row in `docs/csharp-coverage.md`. |
 | A resolution rule or tier for `uses-member` | `src/resolve/ladder.rs` for a type-resolution step, `src/resolve/receiver.rs` for receiver typing, `src/resolve/assembly.rs` for a heuristic tier, with the test file of the same topic under `src/resolve/tests/`; if the edge gains a tag, `src/graph/edge.rs` (`Edge`) and `src/graph/artifact.rs` (schema version), and `src/audit/score.rs` (tier scoring); then re-run the semantic audit on the fixture and record the numbers in `docs/benchmarks/`. |
+| A Rust construct the index should record | `src/extract/rs_fragment.rs` for the walker, kinds, identity and purpose, `src/extract/rs_fragment_types.rs` plus `src/graph/fragment_types.rs` for the fragment shape and `src/graph/paths.rs` for its cache generation, `src/rsgraph.rs` for the def and name rows, `fixtures/rust-definitions/` with its README, the construct's row in `docs/rust-coverage.md`. |
 | A TypeScript edge kind or alias rule | `src/extract/ts_fragment.rs` (and `src/extract/ts_purpose.rs` for a purpose-only change) and `src/tsgraph.rs`; fixture under `fixtures/ts-grammar/`; the Limitations list in `README.md`. |
 | A query verb | A model and builder in the matching `src/query/*.rs` (`find.rs`, `refs.rs`/`refs_tables.rs`, `read.rs`, `impact.rs`, `coverage.rs` for tests-reaching-a-symbol), the matching test topic under `src/query/tests/`, text and compact renderers in the matching `src/render/*.rs`, JSON rendering plus argument parsing and usage text in the matching `src/cli/*.rs` file, a `src/telemetry.rs` `record` call at the verb's own resolved-answer arm in that same file, the command table in `README.md`, an integration test under `tests/`. |
 | A CLI flag | The verb's argument loop and usage string in its own `src/cli/*.rs` file (`refs.rs`, `read.rs`, `impact.rs`, `coverage.rs`, `find.rs`), the matching option on the query model, `README.md`. |
