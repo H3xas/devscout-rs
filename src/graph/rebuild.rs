@@ -21,8 +21,9 @@ use super::paths::{
 // ---------------------------------------------------------------------------
 
 /// One file that contributes a graph fragment: C# (defs, refs, member names),
-/// markup (`x:Class`/`x:Name`, `.resw` keys -- names only) or TS/JS
-/// (imports, exported declarations, call/JSX/dispatch references).
+/// markup (`x:Class`/`x:Name`, `.resw` keys -- names only), TS/JS
+/// (imports, exported declarations, call/JSX/dispatch references) or Rust
+/// (items with spans).
 #[derive(Debug, Clone)]
 pub struct GraphFile {
     /// The rel value.
@@ -107,13 +108,15 @@ pub fn rebuild_graph(
     }
 
     let cache = read_fragments_cache(root);
-    // Split at the door: the two shapes share no field beyond
-    // `defs`, and letting one resolver see the other's names would resolve a
-    // C# type reference onto a same-named TypeScript const. Built as two vecs
-    // here rather than one mixed vec split later so no fragment is cloned a
-    // third time on the rebuild path.
+    // Split at the door: the shapes share no field beyond `defs`, and letting
+    // one resolver see another's names would resolve a C# type reference onto
+    // a same-named TypeScript const. Rust fragments reach no resolver at all;
+    // their items are projected after it. Built as separate vecs here rather
+    // than one mixed vec split later so no fragment is cloned a third time on
+    // the rebuild path.
     let mut merged_cs: Vec<(String, Fragment)> = Vec::new();
     let mut merged_ts: Vec<(String, extract::TsFragment)> = Vec::new();
+    let mut merged_rs: Vec<(String, extract::RsFragment)> = Vec::new();
     let mut new_cache: OrderedMap<FragmentCacheEntry> = OrderedMap::new();
     for f in graph_files {
         let fragment = match cache.get(&f.rel) {
@@ -124,8 +127,7 @@ pub fn rebuild_graph(
         match &fragment {
             AnyFragment::Cs(c) => merged_cs.push((f.rel.clone(), c.clone())),
             AnyFragment::Ts(t) => merged_ts.push((f.rel.clone(), t.clone())),
-            // Definitions only: no resolver reads a Rust fragment.
-            AnyFragment::Rs(_) => {}
+            AnyFragment::Rs(r) => merged_rs.push((f.rel.clone(), r.clone())),
         }
         new_cache.insert(
             f.rel.clone(),
@@ -136,13 +138,14 @@ pub fn rebuild_graph(
         );
     }
 
-    let graph = crate::resolve::resolve_graph_with_model(
+    let mut graph = crate::resolve::resolve_graph_with_model(
         root,
         &merged_cs,
         &merged_ts,
         model,
         semantic_layer,
     );
+    crate::rsgraph::append_rust(&mut graph, &merged_rs);
     write_graph(root, &graph)?;
     write_project_units(root, model)?;
     write_fragments_cache(root, &new_cache)?;

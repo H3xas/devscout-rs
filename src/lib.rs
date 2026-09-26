@@ -45,6 +45,8 @@ pub mod render;
 pub mod repo;
 /// Resolution of extracted C# fragments into a graph.
 pub mod resolve;
+/// Projection of Rust fragments into graph definitions and names.
+pub mod rsgraph;
 /// Resolve-time consumption of admitted compiler facts: same-context
 /// precedence, compiler-discovered-site projection, freshness, and
 /// uncertainty mapping.

@@ -22,15 +22,19 @@ fn is_csharp(rel: &str) -> bool {
 }
 
 // The files that contribute a graph fragment: C# (defs, refs, member names),
-// markup (`x:Class`/`x:Name`, `.resw` keys -- names only) and TS/JS (imports,
-// exported declarations, call/JSX/dispatch references). The TS/JS arm is
+// markup (`x:Class`/`x:Name`, `.resw` keys -- names only), TS/JS (imports,
+// exported declarations, call/JSX/dispatch references) and Rust (items with
+// spans, nothing else). The TS/JS arm is
 // `parse::ts_grammar_for`'s own extension gate rather than a second list -- a
 // file this predicate calls a graph source but the reparse dispatch below cannot
 // hand a grammar would be a rel `graph_files` names and `rebuild_graph` can never
 // find a fragment for, which `index_is_stale`'s length check turns into a
 // permanent rebuild.
 pub(super) fn is_graph_source(rel: &str) -> bool {
-    is_csharp(rel) || markup::is_markup(rel) || parse::ts_grammar_for(rel).is_some()
+    is_csharp(rel)
+        || markup::is_markup(rel)
+        || parse::ts_grammar_for(rel).is_some()
+        || parse::is_rust(rel)
 }
 
 // LOSSY UTF-8 decoding (invalid byte sequences become U+FFFD), never failing on
@@ -68,6 +72,9 @@ fn read_source_lossy(path: &Path) -> Option<String> {
 // completely untouched: it never produces "ast-none" (`fallback_source` below
 // only ever gives that source for a TS/JS rel), so its own branch is
 // unchanged.
+//
+// Rust follows the TS/JS rule: its AST worker answers `None` for a file with
+// neither a leading comment nor a file-level item, and that answer is final.
 // ---------------------------------------------------------------------------
 
 pub(super) fn carries_best_source(entry: &Value, rel: &str) -> bool {
@@ -78,7 +85,7 @@ pub(super) fn carries_best_source(entry: &Value, rel: &str) -> bool {
     if source == "agent" {
         return true;
     }
-    if parse::is_ts_js(rel) {
+    if parse::is_ts_js(rel) || parse::is_rust(rel) {
         return source == "ast" || source == "ast-none";
     }
     source == if is_csharp(rel) { "ast" } else { "heuristic" }
@@ -101,6 +108,10 @@ pub(super) enum ParsedFile {
     // A markup or resource file: a fragment carrying names and nothing else, and
     // no purpose (the heuristic one stands).
     Markup(String, Fragment),
+    // A Rust file: the purpose (`None` when the file has neither a leading
+    // comment nor a file-level item) and its item fragment, written either way
+    // for the same reason as the TS/JS branch.
+    Rust(String, Option<String>, extract::RsFragment),
 }
 
 // One non-reusable plan entry's reparse: each file is dispatched to the C#
@@ -118,6 +129,10 @@ pub(super) fn reparse(root: &Path, rel: &str) -> Option<ParsedFile> {
     // is dispatched from the same place.
     if markup::is_markup(rel) {
         return graph::markup_fragment(root, rel).map(|f| ParsedFile::Markup(rel.to_string(), f));
+    }
+    if parse::is_rust(rel) {
+        let rs = extract::extract_rs_file(&read_source_lossy(&root.join(rel))?);
+        return Some(ParsedFile::Rust(rel.to_string(), rs.purpose, rs.fragment));
     }
     let grammar = parse::ts_grammar_for(rel)?;
     // The leading-comment prefix rides inside `extract_ts_file` (not the
@@ -168,6 +183,12 @@ pub(super) fn fold(
                 // mismatch and rebuild on every run.
                 fresh_fragments.insert(rel, AnyFragment::Ts(fragment));
             }
+            ParsedFile::Rust(rel, purpose, fragment) => {
+                if let Some(p) = purpose {
+                    purposes.insert(rel.clone(), p);
+                }
+                fresh_fragments.insert(rel, AnyFragment::Rs(fragment));
+            }
         }
     }
     (purposes, fresh_fragments)
@@ -179,9 +200,9 @@ pub(super) fn fold(
 // result, but (unlike "heuristic") `carries_best_source` above recognises it
 // as best-obtainable for TS/JS, so an unchanged mtime is reused on the next
 // map instead of being resent for reparse. C# is untouched -- it still gets
-// "heuristic".
+// "heuristic". A Rust file follows the TS/JS rule.
 pub(super) fn fallback_source(rel: &str) -> &'static str {
-    if parse::is_ts_js(rel) {
+    if parse::is_ts_js(rel) || parse::is_rust(rel) {
         "ast-none"
     } else {
         "heuristic"
@@ -243,5 +264,27 @@ mod tests {
             "C# never produces ast-none; an entry claiming it must still be reparsed"
         );
         assert!(!carries_best_source(&e, "a.json"));
+    }
+
+    #[test]
+    fn a_rust_file_is_a_graph_source() {
+        assert!(is_graph_source("src/lib.rs"));
+        assert!(!is_graph_source("src/lib.rs.bak"));
+        assert!(!is_graph_source("Cargo.toml"));
+    }
+
+    #[test]
+    fn a_rust_file_expects_ast_or_ast_none_and_never_heuristic() {
+        for (source, best) in [
+            ("ast", true),
+            ("ast-none", true),
+            ("heuristic", false),
+            ("agent", true),
+        ] {
+            let e = Value::object(vec![("source", Value::string(source))]);
+            assert_eq!(carries_best_source(&e, "src/lib.rs"), best, "{source}");
+        }
+        assert_eq!(fallback_source("src/lib.rs"), "ast-none");
+        assert_eq!(fallback_source("src/A.cs"), "heuristic");
     }
 }
