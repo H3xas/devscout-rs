@@ -95,3 +95,9 @@ fn a_long_purpose_is_cut_at_the_shared_cap() {
     assert!(p.starts_with("Many functions. — fn function_number_0 | "));
     assert!(p.ends_with("..."));
 }
+
+#[test]
+fn items_of_an_extern_block_are_not_segments() {
+    let src = "extern \"C\" {\n    fn host_count() -> i32;\n}\nfn local() {}\n";
+    assert_eq!(purpose(src).as_deref(), Some("fn local"));
+}

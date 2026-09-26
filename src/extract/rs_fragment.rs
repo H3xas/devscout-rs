@@ -117,7 +117,7 @@ fn record_item(
         line: span_start_line(node),
         name_line: name_node.start_position().row + 1,
         end_line: end_line(node),
-        file_level: segments.is_empty(),
+        file_level: node.parent().is_some_and(|p| p.kind() == "source_file"),
     });
     if kind == "mod" || kind == "trait" {
         descend(node, name, src, segments, out);
