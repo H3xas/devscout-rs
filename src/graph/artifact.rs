@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use super::def::Def;
 use super::edge::{Edge, EdgesByKind, HeuristicByTier, SemanticStats};
+use super::lane::LaneStats;
 use super::ordered::Percent1;
 use super::paths::{atomic_write_json, graph_json_path};
 
@@ -75,6 +76,12 @@ pub struct Stats {
     /// did not load for this run -- see `SemanticStats`'s own doc comment.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub semantic: Option<SemanticStats>,
+    /// Whether this run applied the enriched lane and, when it did not, why.
+    /// Appended LAST, after `semantic`, and written only when a lane record
+    /// is due -- an entry at the compiler-facts path or `--no-semantic` -- so
+    /// a build with neither keeps its bytes unchanged. See `LaneStats`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lane: Option<LaneStats>,
 }
 
 /// One row of the full name index. Field order (`name`, `kind`,

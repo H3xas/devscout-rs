@@ -17,6 +17,7 @@ fn stats_appends_test_def_count_last_and_always_writes_it() {
         bus_vocabulary_derived: None,
         ts: None,
         semantic: None,
+        lane: None,
     };
     let json = serde_json::to_string(&stats).unwrap();
     assert!(
@@ -53,6 +54,7 @@ fn stats_keeps_heuristic_by_tier_last_even_when_a_ts_block_is_present() {
             unresolved_ref_count: 4,
         }),
         semantic: None,
+        lane: None,
     };
     let json = serde_json::to_string(&stats).unwrap();
     assert!(
@@ -81,6 +83,7 @@ fn empty_stats() -> Stats {
         bus_vocabulary_derived: None,
         ts: None,
         semantic: None,
+        lane: None,
     }
 }
 
@@ -169,4 +172,30 @@ fn graph_omits_units_when_empty_and_appends_them_after_names_otherwise() {
     assert!(reparsed.units.is_empty());
     let round_tripped: Graph = serde_json::from_str(&json).unwrap();
     assert_eq!(round_tripped.units, g.units);
+}
+
+// --- stats.lane: appended last, omitted when no lane record is due -----
+
+#[test]
+fn stats_omits_lane_when_absent_and_appends_it_last_otherwise() {
+    let mut stats = empty_stats();
+    let without = serde_json::to_string(&stats).unwrap();
+    assert!(
+        without.ends_with(r#""heuristic_by_tier":{"ext":0,"guess":0}}"#),
+        "no lane record keeps today's bytes: {without}"
+    );
+    assert!(!without.contains("lane"), "{without}");
+
+    stats.semantic = Some(SemanticStats::default());
+    stats.lane = Some(LaneStats::applied());
+    let with = serde_json::to_string(&stats).unwrap();
+    assert!(
+        with.ends_with(concat!(
+            r#""semantic":{"confirmed":0,"disagreements":0,"discovered":0},"#,
+            r#""lane":{"state":"applied"}}"#
+        )),
+        "lane follows semantic as the last key: {with}"
+    );
+    let reparsed: Stats = serde_json::from_str(&without).unwrap();
+    assert_eq!(reparsed.lane, None);
 }

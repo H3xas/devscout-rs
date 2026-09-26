@@ -84,6 +84,7 @@ mod edge;
 mod fragment;
 mod fragment_types;
 mod imports;
+mod lane;
 mod ordered;
 mod paths;
 mod rebuild;
@@ -114,6 +115,7 @@ pub use imports::{
     EdgeEnd, ImportRecord, ImportedEdges, Provenance, IMPORTED_EDGES_FORMAT,
     IMPORTED_EDGES_SCHEMA_VERSION, IMPORTED_EDGE_KINDS,
 };
+pub use lane::{LaneReason, LaneStats};
 pub use ordered::{OrderedMap, Percent1};
 pub use paths::{graph_json_path, project_units_path};
 pub use rebuild::{rebuild_graph, GraphFile, RebuildOutcome};

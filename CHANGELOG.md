@@ -48,6 +48,19 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (`Publish(new Subjects.StartCommand())`) now resolves the message through that qualifier instead
   of the bare name. The fragment cache moves to `fragments-v25.json`, so an existing cache
   re-extracts once.
+- **`map` says when the enriched lane was not applied, and why.** A stale or unreadable admitted
+  compiler-facts artifact used to drop `map` to the syntax lane with nothing on screen to say so.
+  Whenever an entry sits at the compiler-facts path or `--no-semantic` is given, `map` now prints a
+  second line, `lane: enriched` or `lane: syntax (enriched lane not applied: <reason>[: <detail>])`,
+  and writes the same record to `graph.json` as `stats.lane` (`state`, then `reason` and `detail`
+  when present). The reasons are `stale-artifact`, `imports-moved`, `artifact-unreadable` and
+  `no-semantic`, and `detail` carries the freshness token verbatim. With no artifact and no flag,
+  output and `graph.json` are unchanged.
+- **A stale or moved-import artifact no longer writes a zeroed `stats.semantic` block.** `audit`
+  read that block as the enriched lane; such a graph now reports `lane: syntax`, as the documented
+  omit-when-not-applied rule already promised. Edges are unchanged.
+- **`map --no-semantic` always rebuilds**, so its lane record describes the current run. With no
+  artifact on an unchanged tree it now prints `graph rebuilt` where it printed `graph unchanged`.
 
 ## [0.8.0] - 2026-09-25
 

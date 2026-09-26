@@ -1022,8 +1022,21 @@ fn an_artifact_admitted_dirty_at_capture_time_is_stale_and_never_confirms() {
         2,
         "an artifact captured against a dirty tree is stale from the start and never confirms: {edges:?}"
     );
-    let stats = &g["stats"]["semantic"];
-    assert_eq!(stats["confirmed"], 0, "{stats}");
+    assert!(
+        g["stats"].get("semantic").is_none(),
+        "a stale artifact writes no semantic counters: {}",
+        g["stats"]
+    );
+    assert_eq!(
+        g["stats"]["lane"],
+        json!({
+            "state": "not-applied",
+            "reason": "stale-artifact",
+            "detail": "source-snapshot-dirty-at-admission",
+        }),
+        "{}",
+        g["stats"]
+    );
 }
 
 // Dependency-change invalidation: the repository head moving on a file the
@@ -1432,8 +1445,18 @@ fn no_semantic_rolls_back_an_already_enriched_graph_on_an_unchanged_tree() {
          the syntax lane, not leave the already-enriched graph in place"
     );
     assert_eq!(
-        rollback_bytes, no_artifact_graph,
-        "--no-semantic must produce exactly the graph a build with no artifact admitted would"
+        rollback_graph["stats"]["lane"],
+        json!({"state": "not-applied", "reason": "no-semantic"}),
+        "{}",
+        rollback_graph["stats"]
+    );
+    let lane_key = r#","lane":{"state":"not-applied","reason":"no-semantic"}"#;
+    let rollback_text = String::from_utf8(rollback_bytes).expect("graph.json is utf-8");
+    assert_eq!(
+        rollback_text.replacen(lane_key, "", 1).into_bytes(),
+        no_artifact_graph,
+        "--no-semantic must produce exactly the graph a build with no artifact admitted would, \
+         apart from its lane record"
     );
 }
 

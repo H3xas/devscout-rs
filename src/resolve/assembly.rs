@@ -1297,6 +1297,7 @@ pub fn resolve_graph_with_model(
             ts: None,
             bus_vocabulary_derived,
             semantic: semantic_stats,
+            lane: None,
         },
         defs: index.defs,
         edges,

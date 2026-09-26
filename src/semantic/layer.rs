@@ -494,6 +494,11 @@ impl SemanticLayer {
         self.freshness.is_fresh()
     }
 
+    /// The whole-artifact freshness verdict `load` evaluated.
+    pub fn freshness(&self) -> &Freshness {
+        &self.freshness
+    }
+
     /// Every distinct `(file, name_line, member)` compatibility key this
     /// layer indexes -- `discovered.rs`'s own iteration surface, walked once
     /// per admitted artifact rather than once per extractor reference.

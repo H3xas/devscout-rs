@@ -14,7 +14,8 @@ use super::root::require_repo;
 // enrichment rollback flag `--no-semantic` before anything else runs; the
 // remaining tokens are the scope dirs, passed straight through to
 // `mapcmd::map_repo`. This function's only job is the CLI glue: `require_repo`,
-// flag stripping, and printing `MapReport::summary_line()`. `MapOptions::from_env()`
+// flag stripping, and printing `MapReport::summary_line()` plus, when the run
+// recorded one, the lane line (`LaneStats::line`). `MapOptions::from_env()`
 // decides the fragment-reuse mode (mapcmd.rs's own module header): content-hash
 // reuse is the default, `SCOUT_MTIME_REUSE=1` drops back to mtime keying.
 // `--no-semantic` is a flag, not an environment switch (mapcmd/options.rs's
@@ -36,7 +37,10 @@ pub(crate) fn cmd_map(cwd: &Path, args: &[String]) -> (i32, String) {
         ..mapcmd::MapOptions::from_env()
     };
     match mapcmd::map_repo(&root, &dirs, opts) {
-        Ok(report) => (0, report.summary_line()),
+        Ok(report) => match &report.lane {
+            Some(lane) => (0, format!("{}\n{}", report.summary_line(), lane.line())),
+            None => (0, report.summary_line()),
+        },
         Err(e) => (1, format!("error: {e}")),
     }
 }
