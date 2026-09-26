@@ -15,9 +15,11 @@ pub enum Resolution {
     NotFound,
 }
 
-/// "Never guess" resolution ladder: exact id, then unique exact name, then
-/// unique case-insensitive name; two-or-more candidates at any step is reported
-/// as ambiguous, not resolved further.
+/// "Never guess" resolution ladder over the graph's defs.
+///
+/// Exact id, then unique exact name, then unique case-insensitive name, then
+/// a dotted id tail, then a `::` path of a Rust item; two-or-more candidates
+/// at any step is reported as ambiguous, not resolved further.
 pub fn resolve_symbol(index: &GraphIndex, query: &str) -> Resolution {
     if index.by_id.contains_key(query) {
         return Resolution::Resolved(query.to_string());
@@ -72,5 +74,45 @@ pub fn resolve_symbol(index: &GraphIndex, query: &str) -> Resolution {
             return Resolution::Ambiguous(tail);
         }
     }
+    // A `::` path of a Rust item: `Type::item` or `module::Type::item`, a
+    // tail of the path after the id's last `#`, matched with or without the
+    // `-N` suffix a repeated path carries. Last on purpose: no C# or TS id
+    // contains `::`, so no query that resolved before resolves differently.
+    if query.contains("::") {
+        let tail = format!("::{query}");
+        let matches: Vec<String> = index
+            .graph
+            .defs
+            .iter()
+            .filter(|d| {
+                d.id.rfind('#').is_some_and(|hash| {
+                    let path = &d.id[hash + 1..];
+                    [path, strip_repeat_suffix(path)]
+                        .iter()
+                        .any(|p| *p == query || p.ends_with(&tail))
+                })
+            })
+            .map(|d| d.id.clone())
+            .collect();
+        if matches.len() == 1 {
+            return Resolution::Resolved(matches.into_iter().next().expect("one path match"));
+        }
+        if matches.len() > 1 {
+            return Resolution::Ambiguous(matches);
+        }
+    }
     Resolution::NotFound
+}
+
+// `Gadget::fmt-1` without its `-1`. A path segment is an identifier, which
+// never holds a `-`, so a trailing `-<digits>` can only be a repeat suffix.
+fn strip_repeat_suffix(path: &str) -> &str {
+    match path.rsplit_once('-') {
+        Some((head, digits))
+            if !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()) =>
+        {
+            head
+        }
+        _ => path,
+    }
 }
