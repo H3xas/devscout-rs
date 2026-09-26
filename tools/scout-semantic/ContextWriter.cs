@@ -244,7 +244,7 @@ internal static class ContextWriter
 
         writer.WriteEndArray();
         writer.WriteStartArray("compiler");
-        foreach (var compiler in record.Diagnostics.Compiler)
+        foreach (var compiler in CompilerDiagnosticOrder.Sorted(record.Diagnostics.Compiler))
         {
             writer.WriteStartObject();
             writer.WriteString("severity", compiler.Severity);

@@ -7,6 +7,17 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Compiler-facts and context output list compiler diagnostics in one fixed order.** The
+  compiler returns its diagnostics in an order that can change between identical runs. Each
+  context record's `diagnostics.compiler` array, also embedded in compiler-facts output, was
+  written in that order, and the compiler-facts `diagnostics` array kept it for entries sharing a
+  file, line and code, so two runs over the same inputs could write different bytes. Both
+  arrays are now ordered by file, line, diagnostic code, message and severity, with a missing
+  file or line first and every text compared ordinally, so repeated runs over the same inputs
+  write identical bytes.
+
 ## [0.8.0] - 2026-09-25
 
 A candidate-route release: a recognized publish or dispatch call gains `bus-hop` edges to the
