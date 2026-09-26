@@ -40,7 +40,10 @@ const AMBIGUOUS_CAP: usize = 5;
 /// Only the heuristic tiers consult it. The precise tiers resolve a type
 /// first and emit on a FACT, and the ctor-DI resolver picks an implementor
 /// from an interface the site demonstrably names -- neither is a guess the
-/// model is entitled to overrule.
+/// model is entitled to overrule. The ladder's namespace-level walk asks a
+/// narrower question of the model, reachability alone, through the site
+/// file's `FileUsings::reaches`, because the language itself never finds a
+/// namespace member in an assembly the site does not reference.
 pub(super) struct Admission<'m> {
     pub(super) model: Option<&'m crate::project::ProjectModel>,
     /// `unit_of_def[i]` is the unit owning `index.defs[i]`'s declaring file,
@@ -104,10 +107,12 @@ pub(super) enum Resolution {
 /// The project model's answer to an ambiguity the ladder could not settle:
 /// C# cannot name a type in an assembly this one does not reference, so such
 /// a candidate was never really a candidate. Applied at the ladder's THREE
-/// `Ambiguous` consumers rather than inside `resolve_ref`, because the ladder
-/// is a pure name-resolution function that knows nothing about projects and
-/// because two of its callers -- the base-closure probes and the ctor-DI
-/// resolver -- must keep seeing the unnarrowed answer.
+/// `Ambiguous` consumers rather than inside `resolve_ref`, because two of its
+/// callers -- the base-closure probes and the ctor-DI resolver -- must keep
+/// seeing the unnarrowed answer. The ladder's own namespace-level walk
+/// already passes over a candidate outside the site's reference closure
+/// (`FileUsings::reaches`) before it judges one-vs-many, but an ambiguity
+/// from the dotted-suffix or unique-name steps still reaches this narrowing.
 ///
 /// Every other resolution passes through untouched, and so does every
 /// candidate when there is no model (`Admission::admits` then says yes to
@@ -513,17 +518,22 @@ pub(super) fn resolve_ref(
     // Compilation-unit and `global using` directives sit at the global
     // level, so they come after every enclosing namespace's own types, and a
     // directive declared in a namespace block that does not enclose the site
-    // is never consulted for it.
+    // is never consulted for it. A candidate the site file's project cannot
+    // reference is passed over at its level, after each directive's own
+    // first-match reading, so the directive is never re-read further out.
     for prefix in &prefixes {
         let candidate = if prefix.is_empty() {
             ref_.name.clone()
         } else {
             format!("{prefix}.{}", ref_.name)
         };
-        if let Some(idx) = type_candidate(index, &candidate, ref_.type_arg_count) {
+        if let Some(idx) = type_candidate(index, &candidate, ref_.type_arg_count)
+            .filter(|&idx| usings.reaches(idx))
+        {
             return Resolution::Resolved(idx, Via::Namespace);
         }
-        let using_matches = imported_at_level(usings.at_level(prefix), &prefixes, ref_, index);
+        let mut using_matches = imported_at_level(usings.at_level(prefix), &prefixes, ref_, index);
+        using_matches.retain(|&idx| usings.reaches(idx));
         match using_matches.as_slice() {
             [idx] => return Resolution::Resolved(*idx, Via::Usings),
             [_, _, ..] => return Resolution::Ambiguous(using_matches, Via::Usings),

@@ -113,7 +113,11 @@ pub fn project_units_path(root: &Path) -> PathBuf {
 // fragment of an unchanged file carries no such key and reads every using as
 // declared at compilation-unit level, so a using written inside a namespace
 // block would lose to a type in a shallower namespace and one written in a
-// sibling block would still apply.
+// sibling block would still apply. The same generation keeps the written
+// qualifier on a publish `message` the call names itself (`new Ns.M()` is
+// `Ns.M`, no longer `M`), so the message resolves through that qualifier; a
+// cached v24 fragment of an unchanged file still carries the bare name, which
+// the call site's namespace can bind to a different same-named type.
 // The rename IS the invalidation mechanism:
 // pre-bump caches stop being found, every file reparses
 // once, no reader carries version-compat logic. Writers delete every

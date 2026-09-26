@@ -42,7 +42,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   inside a namespace still wins over a type in a shallower namespace, a using declared in an inner
   namespace wins over one declared in an outer namespace instead of making the name ambiguous, and
   a using declared in a namespace block that does not enclose the reference no longer applies to
-  it. The fragment cache moves to `fragments-v25.json`, so an existing cache re-extracts once.
+  it. With a `.csproj` project model, a type in an enclosing namespace, or one a using imports, that
+  is declared only in a project the reference's own project does not reference is passed over, so
+  the lookup moves on as C# does. A publish that names its message with a qualifier
+  (`Publish(new Subjects.StartCommand())`) now resolves the message through that qualifier instead
+  of the bare name. The fragment cache moves to `fragments-v25.json`, so an existing cache
+  re-extracts once.
 
 ## [0.8.0] - 2026-09-25
 

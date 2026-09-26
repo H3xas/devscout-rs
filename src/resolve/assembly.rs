@@ -15,6 +15,7 @@ use super::members::{
     typed_receiver_precise_target,
 };
 use super::provenance::{self, Step};
+use super::reach::attach_reach;
 use super::receiver::{
     bare_receiver_field_or_property_type, def_outer_types, extractor_vouches_instance,
     is_this_shaped_receiver, lambda_slot_receiver_type, receiver_admits_candidate,
@@ -105,11 +106,12 @@ pub fn resolve_graph_with_model(
     let admission = Admission { model, unit_of_def };
     let (repo_wide_globals, globals_by_unit) =
         collect_global_usings_by_unit(fragments_by_file, &unit_of_file);
-    let file_contexts = build_file_contexts(
+    let mut file_contexts = build_file_contexts(
         fragments_by_file,
         &repo_wide_globals,
         model.map(|_| (&unit_of_file, &globals_by_unit)),
     );
+    attach_reach(&mut file_contexts, model, &unit_of_file, &index);
     // Built once, not per-ref: every ctor-param ref's implementor lookup shares
     // this one reverse index.
     let implementors_by_base_name = build_implementor_index(&index);

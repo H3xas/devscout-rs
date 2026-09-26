@@ -31,7 +31,10 @@
 //      every enclosing-namespace prefix. Compilation-unit usings and every
 //      `global using` in scope belong to the global level, so they are tried
 //      last; a using declared in a namespace block that does not enclose the
-//      site is never tried.
+//      site is never tried. With a project model, a level's type or a
+//      using-imported candidate declared only in a project outside the site
+//      project's `ProjectReference` closure is passed over at its level (step
+//      4 may still answer with it).
 //   4. Globally unique simple name.
 //   A step that finds exactly one candidate resolves; two or more STOPS
 //   there as ambiguous, never falling through looking for a tiebreaker.
@@ -60,6 +63,7 @@ mod ladder;
 mod lambda_arity;
 mod members;
 mod provenance;
+mod reach;
 mod receiver;
 mod scope;
 pub use assembly::{resolve_graph, resolve_graph_with_model, resolve_graph_with_ts};

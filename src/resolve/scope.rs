@@ -1,5 +1,6 @@
 use crate::graph::{FragUsing, Fragment};
 use std::collections::{BTreeSet, HashMap, HashSet};
+use std::sync::Arc;
 
 // The half of C#'s namespace visibility a `using` directive does NOT account
 // for: a type declared in an ENCLOSING namespace of the reference site is in
@@ -59,10 +60,16 @@ pub(super) struct FileContext {
 /// Compilation-unit directives and every `global using` in scope sit at `""`.
 /// Every other reader asks only whether a namespace is imported anywhere in
 /// the file and keeps the flat set, which the type dereferences to.
+///
+/// The same lookup also needs to know which defs the file's project can
+/// name at all, since C# only finds a namespace member in a referenced
+/// assembly; that per-def answer rides here too (`reaches`), so every
+/// caller that hands the ladder a file's usings hands it that file's reach.
 #[derive(Default)]
 pub(super) struct FileUsings {
     all: HashSet<String>,
     by_level: HashMap<String, BTreeSet<String>>,
+    reach: Option<Arc<[bool]>>,
 }
 
 impl FileUsings {
@@ -81,6 +88,20 @@ impl FileUsings {
             .into_iter()
             .flatten()
             .map(String::as_str)
+    }
+
+    /// `reach[i]` answers `reaches(i)`; shared by every file of one project.
+    pub(super) fn set_reach(&mut self, reach: Arc<[bool]>) {
+        self.reach = Some(reach);
+    }
+
+    /// Whether the file's project can name `def`. Always true with no
+    /// project model or for a file no project owns: an ownership answer the
+    /// resolver could not compute must never hide a def.
+    pub(super) fn reaches(&self, def: usize) -> bool {
+        self.reach
+            .as_ref()
+            .is_none_or(|reach| reach.get(def).copied().unwrap_or(true))
     }
 }
 
