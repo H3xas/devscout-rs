@@ -193,8 +193,9 @@ Two stores live outside the repo:
 `devscout compiler-facts run|import|status` is entirely optional: `map` and every query verb
 answer from source-level extraction alone and never spawn a compiler or touch the network. When a
 compiler-derived artifact has been admitted, the resolver consumes it at the next `map`; `map
---no-semantic` skips an admitted artifact even when one is present, always producing the exact
-syntax-only graph a build with no artifact admitted would.
+--no-semantic` skips an admitted artifact even when one is present and always rebuilds, producing
+the exact syntax-only graph a build with no artifact admitted would, apart from its `stats.lane`
+record (see "The lane line" below).
 
 - `run` launches a one-shot engine located by `SCOUT_COMPILER_ENGINE` (no default, nothing
   downloaded), captures its output under a wall-clock timeout and a byte cap, and admits it.
@@ -231,6 +232,27 @@ no-ship gate on a public corpus; see
 [`docs/benchmarks/results/2026-09-resolver-precision.md`](docs/benchmarks/results/2026-09-resolver-precision.md)'s
 "Run 7" section for the measured result — the layer is additive and always available on request,
 but is not currently recommended enabled by default on the strength of that measurement.
+
+**The lane line.** Whenever an entry sits at the compiler-facts path or `--no-semantic` is given,
+`map` prints one more line after its summary and writes the same answer into `graph.json` as
+`stats.lane`, the last key of `stats`:
+
+| Line | `stats.lane` |
+| --- | --- |
+| `lane: enriched` | `{"state":"applied"}` |
+| `lane: syntax (enriched lane not applied: stale-artifact: <token>)` | `{"state":"not-applied","reason":"stale-artifact","detail":"<token>"}` |
+| `lane: syntax (enriched lane not applied: imports-moved: <token>)` | `{"state":"not-applied","reason":"imports-moved","detail":"<token>"}` |
+| `lane: syntax (enriched lane not applied: artifact-unreadable)` | `{"state":"not-applied","reason":"artifact-unreadable"}` |
+| `lane: syntax (enriched lane not applied: no-semantic)` | `{"state":"not-applied","reason":"no-semantic"}` |
+
+`detail` is the freshness token, verbatim. `stale-artifact` carries one of
+`source-snapshot-dirty-at-admission`, `source-snapshot-missing`, `working-tree-dirty`,
+`source-head-mismatch` or `source-head-unavailable`; `imports-moved` carries
+`import-file-changed:<identity>` or `import-file-missing:<identity>`, naming the import that moved.
+`artifact-unreadable` covers any entry at the artifact path that does not read as an admitted
+artifact, and `map` still exits 0 with the syntax graph. A stale or moved-import artifact writes no
+`stats.semantic`, so `audit --semantic` reports `lane: syntax` for that graph. With no artifact on
+disk and no `--no-semantic`, `map`'s output and `graph.json` carry no lane line or key at all.
 
 ## Reading a symbol
 

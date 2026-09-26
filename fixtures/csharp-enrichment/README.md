@@ -1,6 +1,7 @@
 # csharp-enrichment fixture
 
-Used by `tests/semantic_enrichment.rs`. A small, hand-authored C# tree that
+Used by `tests/semantic_enrichment.rs` and `tests/semantic_lane.rs`. A small,
+hand-authored C# tree that
 gives the compiler-fact enrichment consumer (`src/semantic/`) three distinct
 kinds of site to react to, all driven from a hand-built admitted-artifact
 JSON the test constructs itself -- no `dotnet` build, no oracle run, and no
@@ -99,3 +100,24 @@ Every occurrence fact the test admits is constructed by hand in
 `tests/semantic_enrichment.rs` itself (line numbers are read back from a
 syntax-only `map` run first, never hand-guessed), so a fixture's expected
 state is authored independently of any producer's output.
+
+`tests/semantic_lane.rs` (with its harness in `tests/support/`) reuses the
+same tree for the `map` lane line and `stats.lane`. Each way an admitted
+artifact can fail to apply gets its own copy of the tree:
+
+- a stale artifact: HEAD moved by committing `notes.txt` outside the mapped
+  `src` scope, or the same file left untracked so the tree is dirty;
+- moved imports: the candidate records `external-file:../home/Directory.Build.props`,
+  a file in the fixture's sibling `home` directory, which the test then
+  rewrites or deletes;
+- an unreadable artifact: valid JSON with a wrong `format`, the first half
+  of a candidate's bytes, or a directory, placed straight at the artifact
+  path;
+- `--no-semantic`, over an enriched graph, with no artifact, and over a
+  garbage artifact.
+
+Each stale and moved-import case also maps a second copy of the tree, given
+the same commit or untracked file but no artifact, and requires identical
+edges, so a stale layer is shown to change no edge. The unreadable cases
+compare against the same copy's own syntax-only map, taken before anything
+was placed at the artifact path.

@@ -169,8 +169,8 @@ mod options;
 pub use options::MapOptions;
 
 /// Counts + timing `devscout map`'s CLI line reports, plus the scoped-merge
-/// bookkeeping. Every field but `total_manifest_entries`/`merged_out_of_scope`
-/// corresponds to a term in the one-line summary; see `summary_line`.
+/// bookkeeping and the lane record. Every field but `total_manifest_entries`/
+/// `merged_out_of_scope`/`lane` is a term in the summary; see `summary_line`.
 #[derive(Debug, Clone)]
 pub struct MapReport {
     /// The scope value.
@@ -210,6 +210,9 @@ pub struct MapReport {
     pub graph_def_count: Option<usize>,
     /// The graph edge count value.
     pub graph_edge_count: Option<usize>,
+    /// The rebuilt graph's `stats.lane` record, printed after the summary
+    /// line; `None` when the graph was not rebuilt or owed no record.
+    pub lane: Option<graph::LaneStats>,
 }
 
 impl MapReport {
@@ -678,26 +681,19 @@ pub fn map_repo(root: &Path, scope_dirs: &[String], opts: MapOptions) -> io::Res
     // `None` when the repo declares no project, which keeps graph.json's
     // bytes exactly as they were.
     let project_model = project::discover(root, &scope)?;
-    // `--no-semantic` (`MapOptions::no_semantic`) is the rollback lever: with
-    // it set, an admitted compiler-facts artifact is never loaded, so this
-    // run's graph is exactly what a build with no artifact admitted would
-    // produce, regardless of what is actually sitting on disk.
-    let semantic_layer = if opts.no_semantic {
-        None
-    } else {
-        crate::semantic::SemanticLayer::load(root)
-    };
+    // The enriched-lane decision (`semantic::decide_lane`): the layer
+    // resolution may use, if any, and the `stats.lane` record this run owes.
+    let lane = crate::semantic::decide_lane(root, opts.no_semantic);
 
     // Graph rebuild triggers, OR-ed (a repo with none of the three answers
     // false at no cost): any indexed file's cache key changed
     // (`graph::index_is_stale`); the csproj model changed since the last
-    // rebuild (`project::sidecar_differs`); or an admitted compiler-facts
-    // artifact is present ON DISK at all -- checked independently of
-    // `semantic_layer` so `--no-semantic` still fires this trigger and
-    // rebuilds even though it forces `semantic_layer` to `None` itself.
+    // rebuild (`project::sidecar_differs`); or this run owes a lane record
+    // (an entry at the compiler-facts path, or `--no-semantic`), which must
+    // describe this run even over an unchanged tree.
     let changed = graph::index_is_stale(&graph_index, &graph_files)
         || project::sidecar_differs(root, project_model.as_ref())
-        || options::compiler_facts_artifact_present(root);
+        || lane.forces_rebuild();
 
     let graph_start = Instant::now();
     let outcome = graph::rebuild_graph(
@@ -706,7 +702,7 @@ pub fn map_repo(root: &Path, scope_dirs: &[String], opts: MapOptions) -> io::Res
         &fresh_fragments,
         changed,
         project_model.as_ref(),
-        semantic_layer.as_ref(),
+        Some(&lane),
     )?;
     let graph_seconds = graph_start.elapsed().as_secs_f64();
 
@@ -729,6 +725,7 @@ pub fn map_repo(root: &Path, scope_dirs: &[String], opts: MapOptions) -> io::Res
         graph_seconds,
         graph_def_count,
         graph_edge_count,
+        lane: outcome.lane().cloned(),
     })
 }
 

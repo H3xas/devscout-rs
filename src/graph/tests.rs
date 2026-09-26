@@ -16,6 +16,7 @@ mod def;
 mod edge;
 mod fragment_types;
 mod imports;
+mod lane;
 mod ordered;
 mod paths;
 mod rebuild;
