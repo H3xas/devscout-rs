@@ -34,3 +34,4 @@ mod test_methods_fact;
 mod ts_purpose;
 mod ts_ref_fragment;
 mod using_aliases;
+mod using_namespace_fact;

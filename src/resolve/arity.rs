@@ -1,8 +1,8 @@
 use super::index::DefIndex;
 use super::ladder::{resolve_ref, Resolution};
-use super::scope::FileContext;
+use super::scope::{FileContext, FileUsings};
 use crate::graph::FragRef;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 // Resolve a probe built from a type NAME the resolver derived itself (a
 // receiver's declared type, a base-list entry) when the number of type
@@ -28,7 +28,7 @@ use std::collections::{HashMap, HashSet};
 pub(super) fn resolve_ref_by_arity(
     mut probe: FragRef,
     arity: Option<usize>,
-    usings: &HashSet<String>,
+    usings: &FileUsings,
     ns: &str,
     index: &DefIndex,
     aliases: &HashMap<String, String>,
@@ -71,7 +71,7 @@ pub(super) fn resolve_ref_by_arity(
 pub(super) fn resolve_receiver_type(
     mut probe: FragRef,
     arity: Option<usize>,
-    usings: &HashSet<String>,
+    usings: &FileUsings,
     ns: &str,
     index: &DefIndex,
     aliases: &HashMap<String, String>,

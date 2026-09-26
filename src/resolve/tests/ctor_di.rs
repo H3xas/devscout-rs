@@ -144,6 +144,7 @@ fn ctor_di_a_ctor_param_type_absent_from_the_corpus_is_classified_infra_when_the
             vec![FragUsing::Plain {
                 text: "Microsoft.Extensions.Logging".into(),
                 global: false,
+                namespace: String::new(),
             }],
             vec![ctor_param_ref(
                 "ILogger",

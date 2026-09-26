@@ -24,7 +24,7 @@ fn using_alias_directive_captures_alias_and_target() {
 fn plain_using_directive_has_no_alias() {
     let e = extract_src("using System.Collections.Generic;\n");
     match &e.usings[0] {
-        UsingRecord::Plain { text, global } => {
+        UsingRecord::Plain { text, global, .. } => {
             assert_eq!(text, "System.Collections.Generic");
             assert!(!global);
         }
@@ -36,7 +36,7 @@ fn plain_using_directive_has_no_alias() {
 fn global_using_directive_sets_global_flag() {
     let e = extract_src("global using System;\n");
     match &e.usings[0] {
-        UsingRecord::Plain { text, global } => {
+        UsingRecord::Plain { text, global, .. } => {
             assert_eq!(text, "System");
             assert!(*global);
         }
@@ -50,7 +50,7 @@ fn static_using_directive_is_plain_form_not_flagged() {
     // 1-named-child directives.
     let e = extract_src("using static System.Math;\n");
     match &e.usings[0] {
-        UsingRecord::Plain { text, global } => {
+        UsingRecord::Plain { text, global, .. } => {
             assert_eq!(text, "System.Math");
             assert!(!global);
         }

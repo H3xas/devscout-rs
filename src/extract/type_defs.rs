@@ -232,6 +232,7 @@ pub(super) fn record_enum_members(
 
 pub(super) fn record_using(
     node: Node,
+    ns: &str,
     src: &[u8],
     usings: &mut Vec<UsingRecord>,
     refs: &mut Vec<RefRecord>,
@@ -263,9 +264,16 @@ pub(super) fn record_using(
             });
         }
     } else {
+        // A `global using` joins the compilation unit's level wherever it is
+        // written.
         usings.push(UsingRecord::Plain {
             text: text_val.clone(),
             global: is_global,
+            namespace: if is_global {
+                String::new()
+            } else {
+                ns.to_string()
+            },
         });
     }
     push_ref(

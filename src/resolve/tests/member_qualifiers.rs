@@ -54,6 +54,7 @@ fn uses_member_on_a_non_enum_qualifier_is_dropped_silently() {
                 vec![FragUsing::Plain {
                     text: "A".into(),
                     global: false,
+                    namespace: String::new(),
                 }],
                 vec![member_ref("Constants", None, "MaxRetries", "B")],
             ),
@@ -256,6 +257,7 @@ fn bare_qualifier_to_a_class_emits_only_when_the_member_is_a_recorded_method() {
                 vec![FragUsing::Plain {
                     text: "App.Other".into(),
                     global: false,
+                    namespace: String::new(),
                 }],
                 vec![
                     member_ref("MessageUrn", None, "ForType", "App.Consumers"),
@@ -305,6 +307,7 @@ fn generic_qualifier_emits_because_type_argument_syntax_cannot_be_a_local_or_pro
                 vec![FragUsing::Plain {
                     text: "App.Other".into(),
                     global: false,
+                    namespace: String::new(),
                 }],
                 vec![generic_ref],
             ),
@@ -389,6 +392,7 @@ fn bare_non_method_member_on_a_non_enum_qualifier_is_still_dropped_silently() {
                 vec![FragUsing::Plain {
                     text: "App.Other".into(),
                     global: false,
+                    namespace: String::new(),
                 }],
                 vec![member_ref("Widget", None, "Name", "App.Consumers")],
             ),
@@ -485,6 +489,7 @@ fn declaration_expression_type_ref_resolves_through_the_normal_uses_type_ladder(
                 vec![FragUsing::Plain {
                     text: "App.Enums".into(),
                     global: false,
+                    namespace: String::new(),
                 }],
                 vec![type_ref("uses-type", "PostType", None, "App.Consumers")],
             ),

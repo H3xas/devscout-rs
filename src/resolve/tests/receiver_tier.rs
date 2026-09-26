@@ -79,6 +79,7 @@ fn stage2_tier_a_const_field_access_on_a_bare_qualifier_emits() {
                 vec![FragUsing::Plain {
                     text: "App.Other".into(),
                     global: false,
+                    namespace: String::new(),
                 }],
                 vec![member_ref("Limits", None, "MaxRetries", "App.Consumers")],
             ),
@@ -135,6 +136,7 @@ fn stage2_tier_a_partial_class_contributes_its_own_properties_and_fields() {
                 vec![FragUsing::Plain {
                     text: "App.Other".into(),
                     global: false,
+                    namespace: String::new(),
                 }],
                 vec![
                     member_ref("Config", None, "Retries", "App.Consumers"),
@@ -184,6 +186,7 @@ fn stage2_tier_e_a_declared_local_receiver_resolves_through_the_ladder() {
                 vec![FragUsing::Plain {
                     text: "App.Other".into(),
                     global: false,
+                    namespace: String::new(),
                 }],
                 vec![receiver_ref(
                     "w",
@@ -241,6 +244,7 @@ fn stage2_tier_e_a_receiver_whose_member_lives_in_the_property_list_also_emits()
                 vec![FragUsing::Plain {
                     text: "App.Other".into(),
                     global: false,
+                    namespace: String::new(),
                 }],
                 vec![receiver_ref("w", "Name", "App.Consumers", "Widget", None)],
             ),
@@ -348,6 +352,7 @@ fn stage2_tier_e_a_receiver_whose_type_does_not_declare_the_member_earns_no_edge
                 vec![FragUsing::Plain {
                     text: "App.Other".into(),
                     global: false,
+                    namespace: String::new(),
                 }],
                 vec![receiver_ref(
                     "w",
@@ -502,6 +507,7 @@ fn stage2_tier_e_a_ref_with_no_fact_at_all_is_untouched_by_the_new_tier() {
                 vec![FragUsing::Plain {
                     text: "App.Other".into(),
                     global: false,
+                    namespace: String::new(),
                 }],
                 vec![member_ref("widget", None, "Render", "App.Consumers")],
             ),
@@ -569,6 +575,7 @@ fn stage2_tier_e_shadowing_is_settled_at_extraction_so_the_edge_follows_the_reco
                 vec![FragUsing::Plain {
                     text: "App.Other".into(),
                     global: false,
+                    namespace: String::new(),
                 }],
                 // The parameter shadows the same-named field, so the
                 // extractor recorded Gadget (see extract.rs's own test).
@@ -623,6 +630,7 @@ fn stage2_tier_e_never_adds_a_second_edge_for_a_ref_an_earlier_tier_already_clai
                 vec![FragUsing::Plain {
                     text: "App.Other".into(),
                     global: false,
+                    namespace: String::new(),
                 }],
                 vec![receiver_ref(
                     "Widget",
@@ -676,6 +684,7 @@ fn stage2_tier_e_never_fires_for_a_dotted_chain_tail_because_it_carries_no_fact(
                 vec![FragUsing::Plain {
                     text: "App.Other".into(),
                     global: false,
+                    namespace: String::new(),
                 }],
                 vec![
                     receiver_ref("w", "Inner", "App.Consumers", "Widget", None),

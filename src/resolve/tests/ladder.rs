@@ -170,10 +170,12 @@ fn ambiguous_via_using_step_stops_before_reaching_global_uniqueness() {
                     FragUsing::Plain {
                         text: "A".into(),
                         global: false,
+                        namespace: String::new(),
                     },
                     FragUsing::Plain {
                         text: "B".into(),
                         global: false,
+                        namespace: String::new(),
                     },
                 ],
                 vec![type_ref("uses-type", "Money", None, "C")],

@@ -316,10 +316,20 @@ fn using_to_json(u: &UsingRecord) -> Json {
             ("target", Json::Str(target.clone())),
             ("global", Json::Bool(*global)),
         ]),
-        UsingRecord::Plain { text, global } => Json::Obj(vec![
-            ("text", Json::Str(text.clone())),
-            ("global", Json::Bool(*global)),
-        ]),
+        UsingRecord::Plain {
+            text,
+            global,
+            namespace,
+        } => {
+            let mut fields = vec![
+                ("text", Json::Str(text.clone())),
+                ("global", Json::Bool(*global)),
+            ];
+            if !namespace.is_empty() {
+                fields.push(("namespace", Json::Str(namespace.clone())));
+            }
+            Json::Obj(fields)
+        }
     }
 }
 

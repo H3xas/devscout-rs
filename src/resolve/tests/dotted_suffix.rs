@@ -272,6 +272,7 @@ fn nested_type_named_through_a_derived_type_is_admitted_by_the_inheritance_closu
                     vec![FragUsing::Plain {
                         text: "App.Core".into(),
                         global: false,
+                        namespace: String::new(),
                     }],
                     refs,
                 ),
@@ -421,6 +422,7 @@ fn global_using_resolves_a_bare_name_from_an_unrelated_namespace() {
                 vec![FragUsing::Plain {
                     text: "Catalog".into(),
                     global: true,
+                    namespace: String::new(),
                 }],
                 vec![],
             ),

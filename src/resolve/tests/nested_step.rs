@@ -45,6 +45,7 @@ fn v8_nested_step_beats_the_namespace_and_usings_steps() {
                 vec![FragUsing::Plain {
                     text: "App.Other".into(),
                     global: false,
+                    namespace: String::new(),
                 }],
                 vec![
                     nested_ref("uses-type", "Alpha", "App.Core", &["Outer"]),
@@ -170,6 +171,7 @@ fn v8_an_outer_types_naming_no_nested_id_falls_through_unchanged() {
                 vec![FragUsing::Plain {
                     text: "App.Other".into(),
                     global: false,
+                    namespace: String::new(),
                 }],
                 vec![nested_ref("uses-type", "Marker", "App.Core", &["Outer"])],
             ),

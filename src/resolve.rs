@@ -23,10 +23,15 @@
 //      remaining segment. Skipped when the extractor vouches that the
 //      qualifier is an instance. A dotted reference this step cannot answer
 //      either finishes External rather than falling into steps 2-4.
-//   2. File's usings (local ∪ every `global using`) + simple name, each
-//      using name itself tried at every enclosing-namespace prefix.
-//   3. The reference site's namespace and every ancestor of it, innermost
-//      first (the ancestor-namespace rule -- a walk, like step 1).
+//   2-3. One namespace level at a time: the reference site's namespace and
+//      every ancestor of it, innermost first, ending with the global
+//      namespace. At each level a type declared there answers first, then
+//      the plain usings declared at exactly that level (one candidate
+//      resolves, two or more are ambiguous), each using name itself tried at
+//      every enclosing-namespace prefix. Compilation-unit usings and every
+//      `global using` in scope belong to the global level, so they are tried
+//      last; a using declared in a namespace block that does not enclose the
+//      site is never tried.
 //   4. Globally unique simple name.
 //   A step that finds exactly one candidate resolves; two or more STOPS
 //   there as ambiguous, never falling through looking for a tiebreaker.

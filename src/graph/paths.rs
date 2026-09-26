@@ -107,16 +107,23 @@ pub fn project_units_path(root: &Path) -> PathBuf {
 // fragment of an unchanged file still lists them, so `this.M()`, a property
 // hop and a bare name inside the implementing type would keep binding a
 // member C# lookup never finds there.
+// v25 adds `namespace` to a plain `usings` entry: the namespace the directive
+// is declared in, which bare type-name resolution reads to consult a using
+// only at its own namespace level, after that level's types. A cached v24
+// fragment of an unchanged file carries no such key and reads every using as
+// declared at compilation-unit level, so a using written inside a namespace
+// block would lose to a type in a shallower namespace and one written in a
+// sibling block would still apply.
 // The rename IS the invalidation mechanism:
 // pre-bump caches stop being found, every file reparses
 // once, no reader carries version-compat logic. Writers delete every
 // superseded generation (see `remove_superseded_caches`).
 pub(crate) fn fragments_cache_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-v24.json")
+    graph_dir(root).join("fragments-v25.json")
 }
 
 pub(crate) fn fragments_index_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-index-v24.json")
+    graph_dir(root).join("fragments-index-v25.json")
 }
 
 // Every generation below the current one, not just the immediately previous:
@@ -169,6 +176,8 @@ pub(crate) const SUPERSEDED_CACHE_FILES: &[&str] = &[
     "fragments-index-v22.json",
     "fragments-v23.json",
     "fragments-index-v23.json",
+    "fragments-v24.json",
+    "fragments-index-v24.json",
 ];
 
 pub(crate) fn remove_superseded_caches(root: &Path) {

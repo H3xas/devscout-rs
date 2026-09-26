@@ -30,6 +30,7 @@ mod receiver_hops;
 mod receiver_rule;
 mod receiver_tier;
 mod scored_tier;
+mod using_levels;
 
 /// Not a real git repo -- `resolve_graph`'s single I/O call (`git_head`)
 /// fails closed to `None` here, the same as a non-repo shell-out failure.

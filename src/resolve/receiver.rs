@@ -5,9 +5,9 @@ use super::members::{
     base_member_declared, declares_member, extension_closure_key, inheritance_walk_find,
     inheritance_walk_matches, MemberShape,
 };
-use super::scope::FileContext;
+use super::scope::{FileContext, FileUsings};
 use crate::graph::{Def, FragFact, FragLambdaSlot, FragRef};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 // `true` exactly for the `this.` shape (precision rule (a)): a `uses-member`
 // ref whose recorded receiver type IS the innermost `outer_types` entry --
@@ -130,7 +130,7 @@ pub(super) fn bare_receiver_field_or_property_type(
     index: &DefIndex,
     ns: &str,
     r: &FragRef,
-    usings: &HashSet<String>,
+    usings: &FileUsings,
     aliases: &HashMap<String, String>,
     file_contexts: &HashMap<String, FileContext>,
 ) -> Option<ReceiverFieldType> {
@@ -342,7 +342,7 @@ pub(super) fn lambda_slot_receiver_type(
     index: &DefIndex,
     file_contexts: &HashMap<String, FileContext>,
     ns: &str,
-    usings: &HashSet<String>,
+    usings: &FileUsings,
     aliases: &HashMap<String, String>,
     r: &FragRef,
     slot: &FragLambdaSlot,

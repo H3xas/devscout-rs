@@ -46,6 +46,7 @@ fn ds0012_property_hop_resolves_to_the_propertys_declared_type() {
                 vec![FragUsing::Plain {
                     text: "App.Other".to_string(),
                     global: false,
+                    namespace: String::new(),
                 }],
                 vec![property_hop_ref(
                     "Widget",
@@ -150,14 +151,17 @@ fn ds0012_property_hop_stops_on_an_unrecorded_property_a_missing_member_and_an_a
                     FragUsing::Plain {
                         text: "App.Other".to_string(),
                         global: false,
+                        namespace: String::new(),
                     },
                     FragUsing::Plain {
                         text: "App.Money.A".to_string(),
                         global: false,
+                        namespace: String::new(),
                     },
                     FragUsing::Plain {
                         text: "App.Money.B".to_string(),
                         global: false,
+                        namespace: String::new(),
                     },
                 ],
                 vec![
@@ -226,6 +230,7 @@ fn ds0010_var_from_invocation_resolves_through_the_callees_recorded_return_type(
                 vec![FragUsing::Plain {
                     text: "App.Other".to_string(),
                     global: false,
+                    namespace: String::new(),
                 }],
                 vec![call_receiver_ref(
                     "made",
@@ -329,14 +334,17 @@ fn ds0010_ambiguous_out_of_graph_and_return_less_callees_stay_taken_but_unknown(
                     FragUsing::Plain {
                         text: "App.Other".to_string(),
                         global: false,
+                        namespace: String::new(),
                     },
                     FragUsing::Plain {
                         text: "App.A".to_string(),
                         global: false,
+                        namespace: String::new(),
                     },
                     FragUsing::Plain {
                         text: "App.B".to_string(),
                         global: false,
+                        namespace: String::new(),
                     },
                 ],
                 vec![
