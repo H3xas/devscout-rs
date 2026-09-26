@@ -26,6 +26,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the `LogContext` type rather than an explicit property of that name. An explicit implementation is
   still found through the interface, by `find` and `read`, and by `implements` pairing. The
   fragment cache moves to `fragments-v24.json`, so an existing cache re-extracts once.
+- **A property read through an interface that inherits two declarations of it binds the one C#
+  binds.** When an interface reaches the same property along two base paths and one declaring
+  interface derives from the other, the more derived declaration hides the other, with or without
+  `new`, however deep either one sits. A read such as `cfg.Topology` on an
+  `IInMemoryBusConfiguration : IBusConfiguration, IInMemoryEndpointConfiguration` receiver now
+  binds `IInMemoryEndpointConfiguration.Topology` instead of the hidden
+  `IEndpointConfiguration.Topology` that the first base reaches. Method calls and class receivers
+  bind as before.
 
 ## [0.8.0] - 2026-09-25
 

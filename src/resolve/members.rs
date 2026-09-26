@@ -484,6 +484,18 @@ pub(super) fn base_member_declared(
 // arity, or whose overload's delegate parameter a call's own delegate
 // argument cannot fill, is skipped exactly like one that does not declare
 // it at all.
+//
+// An interface closure can reach the same member name along more than one
+// path, and the first declaration in walk order is not always the one C#
+// binds: for a READ, a declaration that sits in a base of another
+// declaring interface whose own property or field carries the name is
+// hidden (`IBusConfiguration : IEndpointConfiguration` reached before
+// `IInMemoryEndpointConfiguration`'s `new Topology`). So a read through an
+// interface receiver collects every admitted base and answers with the
+// first one `first_unhidden_declaration` keeps. A class or struct receiver
+// walks a single base-class chain, whose first declaring class is already
+// the nearest, and a CALL keeps the first declaring base because hiding
+// between overloads depends on argument types this walk cannot see.
 pub(super) fn typed_receiver_base_member(
     index: &DefIndex,
     file_contexts: &HashMap<String, FileContext>,
@@ -492,27 +504,75 @@ pub(super) fn typed_receiver_base_member(
     any_visibility: bool,
 ) -> Option<usize> {
     let skip_interfaces = index.defs[start].kind != "interface";
-    first_base_declaring(
-        index,
-        file_contexts,
-        start,
-        skip_interfaces,
-        |index, idx| {
-            let visible = if any_visibility {
-                declares_member_any_visibility(index, idx, r.member.as_deref(), r.arg_count)
-            } else {
-                declares_member(index, idx, r.member.as_deref(), r.arg_count)
-            };
-            visible
-                && lambda_arity_admits(
-                    index,
-                    file_contexts,
-                    idx,
-                    r.member.as_deref(),
-                    r.lambda_arg_arity.as_deref(),
-                )
-        },
-    )
+    let admits = |index: &DefIndex, idx: usize| {
+        let visible = if any_visibility {
+            declares_member_any_visibility(index, idx, r.member.as_deref(), r.arg_count)
+        } else {
+            declares_member(index, idx, r.member.as_deref(), r.arg_count)
+        };
+        visible
+            && lambda_arity_admits(
+                index,
+                file_contexts,
+                idx,
+                r.member.as_deref(),
+                r.lambda_arg_arity.as_deref(),
+            )
+    };
+    if skip_interfaces || r.arg_count.is_some() {
+        return first_base_declaring(index, file_contexts, start, skip_interfaces, admits);
+    }
+    let mut declaring: Vec<usize> = Vec::new();
+    first_base_declaring(index, file_contexts, start, false, |index, idx| {
+        if admits(index, idx) && !declaring.contains(&idx) {
+            declaring.push(idx);
+        }
+        false
+    });
+    first_unhidden_declaration(index, file_contexts, &declaring, r.member.as_deref())
+}
+
+// C# member lookup removes every member declared in a base of a type that
+// itself declares the name as a property or field, whatever its depth and
+// whether or not `new` is written. `declaring` is in walk order, so the first
+// survivor is the walk's own answer whenever nothing is hidden, and also
+// when two unrelated declarations both survive (an ambiguity the compiler
+// rejects, so no compiled code depends on either choice). A cyclic
+// hierarchy can make every declaration hide every other; the first one in
+// walk order then stands rather than no edge at all.
+fn first_unhidden_declaration(
+    index: &DefIndex,
+    file_contexts: &HashMap<String, FileContext>,
+    declaring: &[usize],
+    member: Option<&str>,
+) -> Option<usize> {
+    let first = *declaring.first()?;
+    let Some(member) = member else {
+        return Some(first);
+    };
+    if declaring.len() == 1 {
+        return Some(first);
+    }
+    let mut hidden: HashSet<usize> = HashSet::new();
+    for &hider in declaring {
+        let lists = &index.member_lists[hider];
+        let redeclares = lists.properties.iter().any(|p| p == member)
+            || lists.fields.iter().any(|f| f == member);
+        if !redeclares {
+            continue;
+        }
+        first_base_declaring(index, file_contexts, hider, false, |_, idx| {
+            if declaring.contains(&idx) {
+                hidden.insert(idx);
+            }
+            false
+        });
+    }
+    declaring
+        .iter()
+        .copied()
+        .find(|idx| !hidden.contains(idx))
+        .or(Some(first))
 }
 
 // The extension bucket key tier (f) tries when the exact

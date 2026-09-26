@@ -20,6 +20,7 @@ mod extension_tier;
 mod graph_invariants;
 mod ladder;
 mod lambda_parameters;
+mod member_hiding;
 mod member_qualifiers;
 mod nested_end_to_end;
 mod nested_step;
