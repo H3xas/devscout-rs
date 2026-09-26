@@ -659,13 +659,14 @@ pub struct Fragment {
     pub handler_registrations: Vec<FragHandlerRegistration>,
 }
 
-/// The two shapes a cached fragment can have. Each rel is keyed to whichever
-/// shape the file's grammar produced; the `ts: 1` tag is what tells them
-/// apart, on disk and at the
-/// resolver's door. Untagged, and TS FIRST: a C#/markup fragment carries no
-/// `ts` key (so the TS arm always fails on it) and a TS fragment carries no
-/// `usings` (so the C# arm always fails on it) -- the discrimination is total
-/// in both directions, never a first-match-wins guess.
+/// The three shapes a cached fragment can have. Each rel is keyed to
+/// whichever shape the file's grammar produced; a required key tells them
+/// apart, on disk and at the resolver's door. Untagged, TS first, Rust last:
+/// a TS fragment carries `ts`, a C#/markup fragment carries `usings` (and
+/// `defs`, `refs`), and a Rust fragment carries `rs` and neither of the
+/// others' required keys. Each arm fails on the other two shapes, so the
+/// discrimination is total in every direction, never a first-match-wins
+/// guess.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum AnyFragment {
@@ -673,6 +674,8 @@ pub enum AnyFragment {
     Ts(extract::TsFragment),
     /// Represents `Cs`.
     Cs(Fragment),
+    /// A Rust fragment: items with spans, no references.
+    Rs(extract::RsFragment),
 }
 
 impl From<Fragment> for AnyFragment {
@@ -684,5 +687,11 @@ impl From<Fragment> for AnyFragment {
 impl From<extract::TsFragment> for AnyFragment {
     fn from(f: extract::TsFragment) -> Self {
         AnyFragment::Ts(f)
+    }
+}
+
+impl From<extract::RsFragment> for AnyFragment {
+    fn from(f: extract::RsFragment) -> Self {
+        AnyFragment::Rs(f)
     }
 }

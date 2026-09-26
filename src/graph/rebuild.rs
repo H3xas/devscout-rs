@@ -124,6 +124,8 @@ pub fn rebuild_graph(
         match &fragment {
             AnyFragment::Cs(c) => merged_cs.push((f.rel.clone(), c.clone())),
             AnyFragment::Ts(t) => merged_ts.push((f.rel.clone(), t.clone())),
+            // Definitions only: no resolver reads a Rust fragment.
+            AnyFragment::Rs(_) => {}
         }
         new_cache.insert(
             f.rel.clone(),
