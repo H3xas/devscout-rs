@@ -8,10 +8,12 @@ use std::path::Path;
 use crate::walk;
 
 // C# gets the complete extraction path. TypeScript-family files are indexed
-// and resolved into the graph, but with narrower edge coverage. The remaining
+// and resolved into the graph, but with narrower edge coverage. Rust files
+// give definitions for `find` and `read` and no edges. The remaining
 // extensions enumerated by `walk::SOURCE_EXT` are counted but not indexed.
 const FULLY_SUPPORTED_EXT: &[&str] = &[".cs"];
 const INDEXED_AND_GRAPHED_EXT: &[&str] = &[".ts", ".tsx", ".js", ".jsx"];
+const DEFINITIONS_ONLY_EXT: &[&str] = &[".rs"];
 
 // ---------------------------------------------------------------------------
 // Language census. Rather than a second, independent recursive walker, this
@@ -46,9 +48,12 @@ pub(super) fn census_line(root: &Path) -> String {
     let (fully_supported, other): (Vec<_>, Vec<_>) = counts
         .into_iter()
         .partition(|(e, _)| FULLY_SUPPORTED_EXT.contains(&e.as_str()));
-    let (indexed_and_graphed, not_indexed): (Vec<_>, Vec<_>) = other
+    let (indexed_and_graphed, other): (Vec<_>, Vec<_>) = other
         .into_iter()
         .partition(|(e, _)| INDEXED_AND_GRAPHED_EXT.contains(&e.as_str()));
+    let (definitions_only, not_indexed): (Vec<_>, Vec<_>) = other
+        .into_iter()
+        .partition(|(e, _)| DEFINITIONS_ONLY_EXT.contains(&e.as_str()));
     let fmt_group = |g: &[(String, usize)]| {
         g.iter()
             .map(|(e, c)| format!("{c} {e}"))
@@ -64,6 +69,12 @@ pub(super) fn census_line(root: &Path) -> String {
         groups.push(format!(
             "{} (indexed and graphed, narrower edge coverage)",
             fmt_group(&indexed_and_graphed)
+        ));
+    }
+    if !definitions_only.is_empty() {
+        groups.push(format!(
+            "{} (definitions only: find and read)",
+            fmt_group(&definitions_only)
         ));
     }
     if !not_indexed.is_empty() {
@@ -135,5 +146,34 @@ mod tests {
     fn census_language_tiers_are_explicit() {
         assert_eq!(FULLY_SUPPORTED_EXT, &[".cs"]);
         assert_eq!(INDEXED_AND_GRAPHED_EXT, &[".ts", ".tsx", ".js", ".jsx"]);
+    }
+
+    #[test]
+    fn census_line_puts_rust_between_the_typescript_tier_and_the_unindexed_files() {
+        let dir = temp_dir("census-rust");
+        fs::write(dir.join("A.cs"), "namespace X { class A {} }").unwrap();
+        fs::write(dir.join("b.ts"), "export const x = 1;").unwrap();
+        fs::write(dir.join("c.rs"), "fn c() {}").unwrap();
+        fs::write(dir.join("d.rs"), "fn d() {}").unwrap();
+        fs::write(dir.join("e.md"), "# doc").unwrap();
+        assert_eq!(
+            census_line(&dir),
+            "languages: 1 .cs (fully supported); 1 .ts (indexed and graphed, narrower edge coverage); 2 .rs (definitions only: find and read); 1 .md (present, not indexed)"
+        );
+    }
+
+    #[test]
+    fn census_line_rust_only_prints_only_the_rust_tier() {
+        let dir = temp_dir("census-rust-only");
+        fs::write(dir.join("lib.rs"), "fn f() {}").unwrap();
+        assert_eq!(
+            census_line(&dir),
+            "languages: 1 .rs (definitions only: find and read)"
+        );
+    }
+
+    #[test]
+    fn census_rust_tier_is_explicit() {
+        assert_eq!(DEFINITIONS_ONLY_EXT, &[".rs"]);
     }
 }
