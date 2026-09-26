@@ -40,7 +40,7 @@ pub fn extract_rs_file(source: &str) -> RsFileExtraction {
     let src = parse::utf16_bytes(&units);
     let root = tree.root_node();
     let mut found = Vec::new();
-    walk_body(root, &src, &mut Vec::new(), &mut found);
+    walk_items(root, &src, &mut found);
     let purpose = compose_purpose(root, &src, &found);
     RsFileExtraction {
         purpose,
@@ -79,36 +79,59 @@ fn record_kind(node_kind: &str) -> Option<&'static str> {
     })
 }
 
-fn walk_body(body: Node, src: &[u8], segments: &mut Vec<String>, out: &mut Vec<Found>) {
-    let mut cursor = body.walk();
-    for child in body.named_children(&mut cursor) {
-        if let Some(kind) = record_kind(child.kind()) {
-            record_item(child, kind, src, segments, out);
-        } else if child.kind() == "impl_item" {
-            let head = self_type_head(child.child_by_field_name("type"), src);
-            descend(child, head, src, segments, out);
-        } else if child.kind() == "foreign_mod_item" {
-            if let Some(inner) = child.child_by_field_name("body") {
-                walk_body(inner, src, segments, out);
+// A pre-order walk over the walked contexts, kept on an explicit stack
+// rather than the call stack: module nesting is unbounded in hostile input,
+// and extraction runs on worker threads with small stacks. Children are
+// pushed in reverse so they pop in source order.
+fn walk_items(root: Node, src: &[u8], out: &mut Vec<Found>) {
+    let mut pending: Vec<(Node, Vec<String>)> = Vec::new();
+    push_children(root, &[], &mut pending);
+    while let Some((node, segments)) = pending.pop() {
+        let segment = if let Some(kind) = record_kind(node.kind()) {
+            match record_item(node, kind, src, &segments, out) {
+                Some(name) if kind == "mod" || kind == "trait" => Some(name),
+                _ => continue,
             }
+        } else if node.kind() == "impl_item" {
+            Some(self_type_head(node.child_by_field_name("type"), src))
+        } else if node.kind() == "foreign_mod_item" {
+            None
+        } else {
+            continue;
+        };
+        // A `mod x;` declaration has no body and adds nothing.
+        if let Some(body) = node.child_by_field_name("body") {
+            let mut inner = segments;
+            inner.extend(segment);
+            push_children(body, &inner, &mut pending);
         }
     }
 }
 
+fn push_children<'t>(
+    body: Node<'t>,
+    segments: &[String],
+    pending: &mut Vec<(Node<'t>, Vec<String>)>,
+) {
+    let mut cursor = body.walk();
+    let children: Vec<Node> = body.named_children(&mut cursor).collect();
+    for child in children.into_iter().rev() {
+        pending.push((child, segments.to_vec()));
+    }
+}
+
+// Records one item under `segments` and returns its name, or `None` when it
+// has no nameable identity.
 fn record_item(
     node: Node,
     kind: &'static str,
     src: &[u8],
-    segments: &mut Vec<String>,
+    segments: &[String],
     out: &mut Vec<Found>,
-) {
-    let Some(name_node) = node.child_by_field_name("name") else {
-        return;
-    };
-    let Some(name) = item_name(name_node, src) else {
-        return;
-    };
-    let mut path = segments.clone();
+) -> Option<String> {
+    let name_node = node.child_by_field_name("name")?;
+    let name = item_name(name_node, src)?;
+    let mut path = segments.to_vec();
     path.push(name.clone());
     out.push(Found {
         name: name.clone(),
@@ -119,25 +142,7 @@ fn record_item(
         end_line: end_line(node),
         file_level: node.parent().is_some_and(|p| p.kind() == "source_file"),
     });
-    if kind == "mod" || kind == "trait" {
-        descend(node, name, src, segments, out);
-    }
-}
-
-// Walks `node`'s `body` with `segment` pushed for the duration; a `mod x;`
-// declaration has no body and adds nothing.
-fn descend(
-    node: Node,
-    segment: String,
-    src: &[u8],
-    segments: &mut Vec<String>,
-    out: &mut Vec<Found>,
-) {
-    if let Some(body) = node.child_by_field_name("body") {
-        segments.push(segment);
-        walk_body(body, src, segments, out);
-        segments.pop();
-    }
+    Some(name)
 }
 
 // The name an item is recorded under, or `None` when it has no nameable
@@ -167,19 +172,22 @@ fn self_type_head(node: Option<Node>, src: &[u8]) -> String {
     }
 }
 
-fn type_head(node: Node, src: &[u8]) -> String {
-    let field = match node.kind() {
-        "type_identifier" | "identifier" | "primitive_type" => {
-            return strip_raw(&parse::node_text(node, src));
+fn type_head(mut node: Node, src: &[u8]) -> String {
+    loop {
+        let field = match node.kind() {
+            "type_identifier" | "identifier" | "primitive_type" => {
+                return strip_raw(&parse::node_text(node, src));
+            }
+            "generic_type" | "reference_type" | "pointer_type" => "type",
+            "scoped_type_identifier" | "scoped_identifier" => "name",
+            "dynamic_type" => "trait",
+            _ => return String::new(),
+        };
+        match node.child_by_field_name(field) {
+            Some(next) => node = next,
+            None => return String::new(),
         }
-        "generic_type" | "reference_type" | "pointer_type" => "type",
-        "scoped_type_identifier" | "scoped_identifier" => "name",
-        "dynamic_type" => "trait",
-        _ => return String::new(),
-    };
-    node.child_by_field_name(field)
-        .map(|n| type_head(n, src))
-        .unwrap_or_default()
+    }
 }
 
 // The first line of an item's span: the first outer doc comment or outer

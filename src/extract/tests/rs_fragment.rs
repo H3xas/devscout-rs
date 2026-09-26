@@ -422,3 +422,22 @@ mod r#async { impl super::Show for u8 { fn show(&self) {} } }
         );
     }
 }
+
+#[test]
+fn deep_nesting_does_not_exhaust_a_worker_stack() {
+    let depth = 2_000;
+    let mut src = "mod m {\n".repeat(depth);
+    src.push_str("impl &&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&Gear { fn turn() {} }\n");
+    src.push_str(&"}\n".repeat(depth));
+    let items = std::thread::Builder::new()
+        .stack_size(256 * 1024)
+        .spawn(move || extract_rs_file(&src).fragment.items)
+        .expect("spawn")
+        .join()
+        .expect("no stack overflow");
+    assert_eq!(items.len(), depth + 1);
+    let last = items.last().unwrap();
+    assert_eq!(last.name, "turn");
+    assert!(last.path.ends_with("m::m::Gear::turn"), "{}", last.path);
+    assert_eq!(last.path.matches("m::").count(), depth);
+}
