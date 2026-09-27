@@ -26,11 +26,11 @@ namespace ScoutSemanticTests;
 public sealed class OfflineRestoreCliTests
 {
     private static readonly string RepoRoot = FindRepoRoot();
-    private static readonly string CliDll = Path.Combine(AppContext.BaseDirectory, "scout-semantic.dll");
+    internal static readonly string CliDll = Path.Combine(AppContext.BaseDirectory, "scout-semantic.dll");
 
     private const string PackageId = "StubPkg";
     private const string PackageVersion = "1.0.0";
-    private const string Tfm = "net9.0";
+    internal const string Tfm = "net9.0";
 
     private static string FindRepoRoot()
     {
@@ -69,7 +69,7 @@ public sealed class OfflineRestoreCliTests
     /// exact expanded layout a NuGet global packages folder uses -- nuspec, a real <c>.nupkg</c>
     /// (an OPC-shaped zip is not required for the local V3 resource to read it), and its content
     /// hash -- so a <c>--source</c> pointed at this folder resolves the package with no network.</summary>
-    private static string WriteStubPackage(string gpfRoot, params string[] libTfms)
+    internal static string WriteStubPackage(string gpfRoot, params string[] libTfms)
     {
         if (libTfms.Length == 0)
         {
@@ -134,7 +134,7 @@ public sealed class OfflineRestoreCliTests
     /// touches the package. A
     /// plain class member, not a top-level statement, so the project stays an ordinary library
     /// and the compile's only possible error is the reference this file's tests are about.</summary>
-    private static string WriteConsumerProject(string root, string extraProperties = "")
+    internal static string WriteConsumerProject(string root, string extraProperties = "")
     {
         Directory.CreateDirectory(root);
         File.WriteAllText(Path.Combine(root, "Consumer.csproj"), $"""
@@ -235,7 +235,7 @@ public sealed class OfflineRestoreCliTests
             """);
     }
 
-    private static (int ExitCode, string Output) RunDotnetRestore(string project, string nugetPackages, string source)
+    internal static (int ExitCode, string Output) RunDotnetRestore(string project, string nugetPackages, string source)
     {
         var psi = new ProcessStartInfo("dotnet")
         {
@@ -257,7 +257,7 @@ public sealed class OfflineRestoreCliTests
         return (process.ExitCode, stdout + stderrTask.Result);
     }
 
-    private static (int ExitCode, string StdOut, string StdErr, TimeSpan Elapsed) RunCli(
+    internal static (int ExitCode, string StdOut, string StdErr, TimeSpan Elapsed) RunCli(
         string workingDirectory, string nugetPackages, params string[] args)
     {
         var psi = new ProcessStartInfo("dotnet")
@@ -289,13 +289,13 @@ public sealed class OfflineRestoreCliTests
         return (process.ExitCode, stdout, stderr, stopwatch.Elapsed);
     }
 
-    private static JsonElement SingleCompilation(string contextPath)
+    internal static JsonElement SingleCompilation(string contextPath)
     {
         using var document = JsonDocument.Parse(File.ReadAllText(contextPath));
         return document.RootElement.GetProperty("compilations").EnumerateArray().Single().Clone();
     }
 
-    private static List<string> WorkspaceMessages(JsonElement compilation) =>
+    internal static List<string> WorkspaceMessages(JsonElement compilation) =>
         compilation.GetProperty("diagnostics").GetProperty("workspace").EnumerateArray()
             .Select(d => d.GetProperty("message").GetString() ?? "")
             .ToList();
@@ -309,7 +309,7 @@ public sealed class OfflineRestoreCliTests
             : new List<string>();
     }
 
-    private static void DeleteAll(params string[] paths)
+    internal static void DeleteAll(params string[] paths)
     {
         foreach (var path in paths)
         {

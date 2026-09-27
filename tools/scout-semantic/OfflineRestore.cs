@@ -39,41 +39,7 @@ internal static class OfflineRestore
     {
         var result = new Result();
 
-        // One entry per distinct project file path -- a multi-targeting
-        // project's variants share one assets file, so restoring for one
-        // variant restores for all of them. Every project the WORKSPACE
-        // opened, not only the ones target selection kept in load.Projects:
-        // a selected project's own project reference to a variant target
-        // selection excluded (a declared target --tfm did not request, or a
-        // project a --projects filter left out) still needs to compile, and
-        // Roslyn opens that referenced project into the same Solution
-        // regardless of whether Loader kept it. The selected set is walked
-        // first so its own accurately-resolved requested/effective tfm wins
-        // over the name-parsed guess load.Solution.Projects alone can offer.
-        var distinct = new Dictionary<string, string?>(StringComparer.Ordinal);
-        foreach (var loaded in load.Projects)
-        {
-            var path = loaded.Project.FilePath;
-            if (string.IsNullOrEmpty(path))
-            {
-                continue;
-            }
-
-            distinct.TryAdd(path, loaded.RequestedTfm ?? loaded.Tfm);
-        }
-
-        foreach (var project in load.Solution.Projects)
-        {
-            var path = project.FilePath;
-            if (string.IsNullOrEmpty(path) || distinct.ContainsKey(path))
-            {
-                continue;
-            }
-
-            var (_, tfm) = Loader.SplitName(project.Name);
-            distinct[path] = tfm;
-        }
-
+        var distinct = OpenedProjects(load);
         if (distinct.Count == 0)
         {
             return result;
@@ -147,6 +113,48 @@ internal static class OfflineRestore
         return result;
     }
 
+    /// <summary>Every project file path the workspace opened, each with the target framework its
+    /// assets file is evaluated for.</summary>
+    internal static Dictionary<string, string?> OpenedProjects(LoadResult load)
+    {
+        // One entry per distinct project file path -- a multi-targeting
+        // project's variants share one assets file, so restoring for one
+        // variant restores for all of them. Every project the WORKSPACE
+        // opened, not only the ones target selection kept in load.Projects:
+        // a selected project's own project reference to a variant target
+        // selection excluded (a declared target --tfm did not request, or a
+        // project a --projects filter left out) still needs to compile, and
+        // Roslyn opens that referenced project into the same Solution
+        // regardless of whether Loader kept it. The selected set is walked
+        // first so its own accurately-resolved requested/effective tfm wins
+        // over the name-parsed guess load.Solution.Projects alone can offer.
+        var distinct = new Dictionary<string, string?>(StringComparer.Ordinal);
+        foreach (var loaded in load.Projects)
+        {
+            var path = loaded.Project.FilePath;
+            if (string.IsNullOrEmpty(path))
+            {
+                continue;
+            }
+
+            distinct.TryAdd(path, loaded.RequestedTfm ?? loaded.Tfm);
+        }
+
+        foreach (var project in load.Solution.Projects)
+        {
+            var path = project.FilePath;
+            if (string.IsNullOrEmpty(path) || distinct.ContainsKey(path))
+            {
+                continue;
+            }
+
+            var (_, tfm) = Loader.SplitName(project.Name);
+            distinct[path] = tfm;
+        }
+
+        return distinct;
+    }
+
     /// <summary>Every argument one restore invocation carries, in a fixed order -- a pure function
     /// kept separate from process launch so the exact source list and property forwarding stay
     /// independently checkable without spawning a process.</summary>
@@ -189,7 +197,7 @@ internal static class OfflineRestore
     /// intermediate path. Evaluated in process first; a project the in-process evaluator cannot
     /// evaluate for any reason is evaluated by the SDK's own MSBuild in a child process. Null when
     /// neither can evaluate it.</summary>
-    private static string? LocateAssetsFile(
+    internal static string? LocateAssetsFile(
         string? dotnetHost,
         string projectFullPath,
         IReadOnlyDictionary<string, string> baseGlobalProperties,
