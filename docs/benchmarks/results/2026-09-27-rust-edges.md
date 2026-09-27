@@ -11,7 +11,7 @@ references `rust-analyzer lsif` writes for this repository. The method is
 |---|---|
 | Corpus | this repository, exported with `git archive` |
 | Run 0 revision | `911fe479190906bc965635f96839592f8459d67e` (Rust definitions, no Rust edges), mapped by a release build of the same revision |
-| Head revision | `7ea1cb4` (Rust edges), mapped by a release build of the same revision |
+| Head revision | `e4d19d2` (Rust edges), mapped by a release build of the same revision |
 | Oracle | `rust-analyzer 1.97.1 (8bab26f4 2026-07-14)`, the toolchain component |
 | Toolchain | `rustc 1.97.1 (8bab26f4f 2026-07-14)`, `cargo 1.97.1 (c980f4866 2026-06-30)`, aarch64 macOS |
 | Network | none: every cargo and rust-analyzer step ran with `CARGO_NET_OFFLINE=true` and a scratch target directory |
@@ -29,9 +29,12 @@ python3 -B bench/rust_edges.py run --repo . --commit <rev> \
 
 Run 0 was rescored from its saved files once, after the site classifier learned the operator,
 literal, lifetime and whitespace positions rust-analyzer resolves; the oracle was not re-run.
-Two earlier head runs, on `6efa9bc` and `6f73c09`, met every threshold with no contradicted edge;
-the head published here is the last revision that changes code, and the ones before it differ
-only in the fixes and tests they preceded.
+Earlier head runs, on `52c2b52`, `8627012`, `543cec9` and `a476774`, met every threshold with no
+contradicted edge. The head published here is the last revision that changes code. Against
+`543cec9` it adds two rules: a name a macro's token trees may bind shadows the calls beside it,
+and a glob whose names cannot be listed stops a lookup. At `a476774` the first rule cost 18 calls,
+because struct field names inside macro arguments counted as bindings; at `e4d19d2` they no
+longer do, and the misses are the same 8 as at `543cec9`.
 
 ## Headline
 
@@ -39,18 +42,18 @@ Thresholds were registered before Run 0.
 
 | Metric | Threshold | Run 0 | Head |
 |---|---:|---:|---:|
-| Call-edge population (path calls to a recorded fn) | — | 8,367 | 8,694 |
-| … of which inside macro arguments | — | 2,445 | 2,571 |
-| Rust `uses-member` edges | — | 0 | 8,686 |
-| Call-edge recall | ≥ 0.85 | 0.0 | **0.9991** (8,686 / 8,694) |
-| Call-edge precision | ≥ 0.98 | undefined | **1.0** (8,686 / 8,686) |
-| Test pairs, oracle | — | 4,203 | 4,312 |
-| Test pairs, devscout | — | 0 | 4,307 |
-| Test-edge recall | ≥ 0.85 | 0.0 | **0.9988** (4,307 / 4,312) |
-| Test-edge precision | ≥ 0.98 | undefined | **1.0** (4,307 / 4,307) |
+| Call-edge population (path calls to a recorded fn) | — | 8,367 | 8,734 |
+| … of which inside macro arguments | — | 2,445 | 2,582 |
+| Rust `uses-member` edges | — | 0 | 8,726 |
+| Call-edge recall | ≥ 0.85 | 0.0 | **0.9991** (8,726 / 8,734) |
+| Call-edge precision | ≥ 0.98 | undefined | **1.0** (8,726 / 8,726) |
+| Test pairs, oracle | — | 4,203 | 4,323 |
+| Test pairs, devscout | — | 0 | 4,318 |
+| Test-edge recall | ≥ 0.85 | 0.0 | **0.9988** (4,318 / 4,323) |
+| Test-edge precision | ≥ 0.98 | undefined | **1.0** (4,318 / 4,318) |
 
-Every threshold is met at the head. No Rust edge of any kind is contradicted: all 8,686
-`uses-member` and 5,763 `uses-type` edges have an oracle reference at their file and line to
+Every threshold is met at the head. No Rust edge of any kind is contradicted: all 8,726
+`uses-member` and 5,775 `uses-type` edges have an oracle reference at their file and line to
 their target. The head carries one `ambiguous` edge, and the oracle's target is among its
 candidates.
 
@@ -65,18 +68,18 @@ candidates.
 
 | Check | Run 0 | Head |
 |---|---:|---:|
-| `#[test]` functions, the script's scan | 1,503 | 1,578 |
-| Tests the compiler lists (`cargo test --all-targets -- --list`), over all targets | 1,503 (58 targets) | 1,578 (59 targets) |
+| `#[test]` functions, the script's scan | 1,503 | 1,586 |
+| Tests the compiler lists (`cargo test --all-targets -- --list`), over all targets | 1,503 (58 targets) | 1,586 (59 targets) |
 | Targets where the compiler's list and the scan differ | 0 | 0 |
-| Tests devscout recognizes (`testMethods`) | 0 | 1,578 |
+| Tests devscout recognizes (`testMethods`) | 0 | 1,586 |
 | Differences between devscout's tests and the scan | 1,503 (none recognized yet) | 0 |
 
 ## Definitions
 
 | Check | Run 0 | Head |
 |---|---:|---:|
-| Item-shaped LSIF definitions in the universe | 3,925 | 4,174 |
-| … mapping to a devscout def by file, name and name line | 3,876 | 4,125 |
+| Item-shaped LSIF definitions in the universe | 3,925 | 4,202 |
+| … mapping to a devscout def by file, name and name line | 3,876 | 4,153 |
 | … not mapping | 49 | 49 |
 
 All 49 unmapped definitions are items declared inside function bodies (22 `fn`, 20 `const`, 2
@@ -88,32 +91,32 @@ The call population is the first two rows; every other row is an excluded class.
 
 | Class | Run 0 | Head |
 |---|---:|---:|
-| population: path call to a recorded fn, macro argument | 2445 | 2571 |
-| population: path call to a recorded fn, plain | 5922 | 6123 |
-| `use` tree | 3937 | 4165 |
-| attribute or derive | 2688 | 2889 |
-| macro name | 7500 | 7798 |
-| method call to a recorded fn | 1154 | 1250 |
-| method call to an external or unrecorded item | 17292 | 18496 |
-| operator, literal, lifetime or whitespace | 12501 | 13318 |
+| population: path call to a recorded fn, macro argument | 2445 | 2582 |
+| population: path call to a recorded fn, plain | 5922 | 6152 |
+| `use` tree | 3937 | 4184 |
+| attribute or derive | 2688 | 2899 |
+| macro name | 7500 | 7822 |
+| method call to a recorded fn | 1154 | 1251 |
+| method call to an external or unrecorded item | 17292 | 18608 |
+| operator, literal, lifetime or whitespace | 12501 | 13466 |
 | other reference to a recorded item (recorded fn) | 123 | 125 |
-| other reference to a recorded item (recorded other) | 837 | 858 |
-| other reference to a recorded item (recorded type) | 5847 | 6278 |
-| other reference to an external item | 13940 | 15047 |
-| other reference to an unrecorded item (local, field, variant) | 42197 | 45292 |
+| other reference to a recorded item (recorded other) | 837 | 860 |
+| other reference to a recorded item (recorded type) | 5847 | 6290 |
+| other reference to an external item | 13940 | 15136 |
+| other reference to an unrecorded item (local, field, variant) | 42197 | 45561 |
 | path call to a recorded type (tuple-struct constructor) | 104 | 104 |
-| path call to an external item | 5112 | 5456 |
-| path call to an unrecorded item (variant, local, function-body item) | 1141 | 1197 |
-| **all oracle references** | 122740 | 130967 |
+| path call to an external item | 5112 | 5475 |
+| path call to an unrecorded item (variant, local, function-body item) | 1141 | 1201 |
+| **all oracle references** | 122740 | 131716 |
 
 No reference falls inside a `macro_rules!` body: rust-analyzer resolves nothing there. Universe:
-304 files at Run 0 and 325 at the head (every `src/` and `tests/` file and
+304 files at Run 0 and 328 at the head (every `src/` and `tests/` file and
 `examples/extension_impact.rs`); `fixtures/` and `bench/` are reached by no target and excluded.
 
 ## Where peers win
 
 rust-analyzer resolves what this pass leaves out by design: method calls typed by their receiver
-(1,250 at the head reach a recorded function), trait dispatch, calls macro expansion creates, and
+(1,251 at the head reach a recorded function), trait dispatch, calls macro expansion creates, and
 the one `From::from` overload set above. An agent holding rust-analyzer gets those answers;
 devscout answers path calls, type uses and tests from a map built in under a second, with no
 build of the crate.

@@ -210,8 +210,9 @@ would outside a macro, qualifier segments included.
 - **Names bound inside a tree shadow.** A macro can bind any identifier it is handed, so every
   identifier a tree holds outside a call or path position may be a binding: a closure, `let`,
   `match`, `if let`, `while let` or `for` pattern, a parameter of a function written inside an
-  item-like macro, or a bare argument such as `bind!(f)`. A single-segment call in the same
-  invocation that shares a lowercase one gives no edge. Items, generic parameters and `use` names
+  item-like macro, or a bare argument such as `bind!(f)`. A struct field name before its `:`
+  (`Fact { identity: identity(1) }`) is not one. A single-segment call in the same invocation
+  that shares a lowercase one gives no edge. Items, generic parameters and `use` names
   declared inside the trees, and an uppercase name outside angle brackets and type positions,
   shadow a path's first segment, and an `impl` or trait inside them drops `Self` paths.
 - **Statement macros reach the rest of their block.** For an invocation that stands as a
