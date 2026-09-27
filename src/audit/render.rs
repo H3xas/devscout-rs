@@ -35,7 +35,7 @@ pub fn render_text(r: &AuditReport) -> String {
     let mut lines = Vec::new();
     lines.push(format!(
         "devscout audit --semantic  root {}  lane {}  oracle {} records / {} sites  units ok {} failed {}  method {}",
-        r.root, r.lane, r.oracle_records, r.oracle_sites, r.units_ok, r.units_failed, r.structural_method
+        r.root, r.lane.header(), r.oracle_records, r.oracle_sites, r.units_ok, r.units_failed, r.structural_method
     ));
 
     if !r.tiers.is_empty() {
@@ -192,10 +192,10 @@ pub fn render_json(r: &AuditReport) -> String {
         })
         .collect();
 
-    J::Obj(vec![
+    let mut fields = vec![
         ("status", J::Str("ok".to_string())),
         ("root", J::Str(r.root.clone())),
-        ("lane", J::Str(r.lane.to_string())),
+        ("lane", J::Str(r.lane.label().to_string())),
         (
             "oracle",
             J::Obj(vec![
@@ -304,6 +304,7 @@ pub fn render_json(r: &AuditReport) -> String {
             "edges_outside_universe",
             J::UInt(r.edges_outside_universe as u64),
         ),
-    ])
-    .to_json_string()
+    ];
+    fields.extend(r.lane.json_fields());
+    J::Obj(fields).to_json_string()
 }

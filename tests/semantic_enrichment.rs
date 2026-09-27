@@ -623,6 +623,20 @@ fn a_confirmed_compiler_fact_overrides_a_conflicting_guessed_edge_and_records_th
     );
 }
 
+/// A fresh artifact over complete compilations that confirmed and discovered
+/// nothing did not apply the lane: no counters, and a lane record saying why.
+fn assert_nothing_confirmed(g: &Value) {
+    assert!(g["stats"].get("semantic").is_none(), "{}", g["stats"]);
+    assert_eq!(
+        g["stats"]["lane"],
+        json!({
+            "state": "not-applied",
+            "reason": "nothing-confirmed",
+            "compilations": {"total": 1, "partial": 0},
+        })
+    );
+}
+
 // Explicit uncertainty: an ambiguous compiler fact is never treated as a
 // confirmation, so the guessed edges it names must survive untouched.
 
@@ -672,9 +686,7 @@ fn an_ambiguous_compiler_fact_never_overrides_and_the_guessed_edges_survive() {
         assert_eq!(e["tier"], "guess");
     }
 
-    let stats = &g["stats"]["semantic"];
-    assert_eq!(stats["confirmed"], 0, "{stats}");
-    assert_eq!(stats["disagreements"], 0, "{stats}");
+    assert_nothing_confirmed(&g);
 }
 
 // A miss the syntax ladder cannot reach at all still gets a compiler-vouched
@@ -1746,12 +1758,7 @@ fn an_equal_arity_overload_tie_at_an_extractor_emitted_site_never_overrides() {
     );
     assert_eq!(edges[0]["to"], "Fixtures.Enrichment.Tie");
 
-    let stats = &g["stats"]["semantic"];
-    assert_eq!(
-        stats["confirmed"], 0,
-        "neither tied candidate may register as a same-context confirmation: {stats}"
-    );
-    assert_eq!(stats["disagreements"], 0, "{stats}");
+    assert_nothing_confirmed(&g);
 }
 
 // `discovered.rs`'s own `project` used to iterate `SemanticLayer::

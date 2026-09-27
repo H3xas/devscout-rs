@@ -38,6 +38,7 @@
 mod assert_check;
 mod cmd;
 mod fp_sites;
+mod lane;
 mod load;
 mod model;
 mod render;

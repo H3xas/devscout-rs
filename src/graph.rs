@@ -93,11 +93,12 @@ pub use artifact::{read_graph, Graph, GraphName, GraphUnit, Stats, GRAPH_SCHEMA_
 pub use cache::{index_is_stale, read_fragments_index, FragmentCacheEntry};
 pub use compiler_facts::{
     admit, admit_and_publish, compiler_facts_json_path, expectations_for, locate_engine,
-    read_compiler_facts, run_engine, AdmissionExpectations, AdmittedFacts, Coverage,
-    IncompleteUnit, Profile, PublishError, RefusalReason, COMPILER_FACTS_ARTIFACT_SCHEMA_VERSION,
-    COMPILER_FACTS_CONTRACT_VERSION, COMPILER_FACTS_FORMAT, DEFAULT_OUTPUT_CAP, DEFAULT_TIMEOUT,
-    EXPECTED_CONTEXT_SCHEMA_VERSION, EXPECTED_DEPENDENCY_FINGERPRINT, EXPECTED_ENGINE_REVISION,
-    EXPECTED_PRODUCER_NAME, SCOUT_COMPILER_ENGINE,
+    read_compiler_facts, run_engine, AdmissionExpectations, AdmittedFacts, CompilationTally,
+    Coverage, IncompleteUnit, Profile, PublishError, RefusalReason,
+    COMPILER_FACTS_ARTIFACT_SCHEMA_VERSION, COMPILER_FACTS_CONTRACT_VERSION, COMPILER_FACTS_FORMAT,
+    DEFAULT_OUTPUT_CAP, DEFAULT_TIMEOUT, EXPECTED_CONTEXT_SCHEMA_VERSION,
+    EXPECTED_DEPENDENCY_FINGERPRINT, EXPECTED_ENGINE_REVISION, EXPECTED_PRODUCER_NAME,
+    SCOUT_COMPILER_ENGINE,
 };
 #[cfg(test)]
 pub(crate) use compiler_facts::{recompute_context_summary, CompilationRef};
@@ -115,7 +116,7 @@ pub use imports::{
     EdgeEnd, ImportRecord, ImportedEdges, Provenance, IMPORTED_EDGES_FORMAT,
     IMPORTED_EDGES_SCHEMA_VERSION, IMPORTED_EDGE_KINDS,
 };
-pub use lane::{LaneReason, LaneStats};
+pub use lane::{LaneCompilations, LaneReason, LaneStats};
 pub use ordered::{OrderedMap, Percent1};
 pub use paths::{graph_json_path, project_units_path};
 pub use rebuild::{rebuild_graph, GraphFile, RebuildOutcome};

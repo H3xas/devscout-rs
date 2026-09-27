@@ -8,6 +8,7 @@
 // module here preserves: fail open to the syntax ladder, one admitted
 // artifact, no second admission path, no second identity scheme.
 
+mod compilation_lane;
 mod discovered;
 mod freshness;
 mod lane;

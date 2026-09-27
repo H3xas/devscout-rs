@@ -51,9 +51,45 @@ fn copy_tree(src: &Path, dst: &Path) {
 // Mirrors the crate-private context summary fold so a hand-built candidate
 // passes admission's context-fingerprint check.
 fn context_fingerprint(identity: &Value, fingerprint: &str) -> String {
-    let canonical = serde_json::to_string(identity).expect("identity serializes");
-    let digest = Sha256::digest(format!("{canonical}\u{1f}{fingerprint}").as_bytes());
+    context_fingerprint_of(&[(identity.clone(), fingerprint)])
+}
+
+fn context_fingerprint_of(pairs: &[(Value, &str)]) -> String {
+    let preimage = pairs
+        .iter()
+        .map(|(identity, fingerprint)| {
+            let canonical = serde_json::to_string(identity).expect("identity serializes");
+            format!("{canonical}\u{1f}{fingerprint}")
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let digest = Sha256::digest(preimage.as_bytes());
     digest.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// `candidate` with its envelope replaced by one compilation per
+/// `(identity, state, reason)`, in order, and its context fingerprint folded
+/// again so admission still accepts it.
+pub fn with_compilations(mut candidate: Value, compilations: &[(Value, &str, &str)]) -> Value {
+    let entries: Vec<Value> = compilations
+        .iter()
+        .map(|(identity, state, reason)| {
+            json!({
+                "identity": identity,
+                "state": state,
+                "reason": reason,
+                "fingerprint": COMPILATION_FINGERPRINT,
+                "imports": [],
+            })
+        })
+        .collect();
+    let pairs: Vec<(Value, &str)> = compilations
+        .iter()
+        .map(|(identity, _, _)| (identity.clone(), COMPILATION_FINGERPRINT))
+        .collect();
+    candidate["context"]["envelope"]["compilations"] = Value::Array(entries);
+    candidate["context"]["contextFingerprint"] = Value::from(context_fingerprint_of(&pairs));
+    candidate
 }
 
 /// Lower-case hex SHA-1, the encoding the producer records for an import.
@@ -183,6 +219,15 @@ impl Fixture {
             path.to_str().expect("utf-8 path"),
         ]);
         assert!(out.status.success(), "compiler-facts import: {out:?}");
+    }
+
+    /// `audit --semantic <empty oracle>` with `extra` flags.
+    pub fn audit(&self, extra: &[&str]) -> Output {
+        let refs = self.home.join("empty-refs.jsonl");
+        fs::write(&refs, "").expect("write empty refs");
+        let mut args = vec!["audit", "--semantic", refs.to_str().expect("utf-8 path")];
+        args.extend_from_slice(extra);
+        self.run(&args)
     }
 
     /// `audit --semantic` over an empty oracle, returning the reported lane.

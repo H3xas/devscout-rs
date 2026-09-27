@@ -23,7 +23,7 @@ fn assert_thresholds_report_pass_fail_and_missing_path_distinctly() {
 fn json_output_key_order_is_pinned() {
     let report = AuditReport {
         root: "/repo".to_string(),
-        lane: "syntax",
+        lane: AuditLane::SYNTAX,
         oracle_records: 34,
         oracle_sites: 25,
         oracle_external_sites: 8,
@@ -117,7 +117,7 @@ fn json_output_key_order_is_pinned() {
 fn text_output_layout_is_pinned() {
     let report = AuditReport {
         root: "/repo".to_string(),
-        lane: "syntax",
+        lane: AuditLane::SYNTAX,
         oracle_records: 34,
         oracle_sites: 25,
         oracle_external_sites: 8,

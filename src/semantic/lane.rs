@@ -12,16 +12,21 @@
 
 use std::path::Path;
 
-use crate::graph::{LaneReason, LaneStats, Stats};
+use crate::graph::{CompilationTally, LaneReason, LaneStats, Stats};
 
+use super::compilation_lane;
 use super::freshness::Freshness;
 use super::layer::SemanticLayer;
 
 /// One run's lane decision: the layer resolution may use, if any, and the
 /// record this run owes, if any.
+///
+/// With a layer, the record is provisional until `record` settles it from
+/// what resolution did.
 pub struct LaneDecision {
     layer: Option<SemanticLayer>,
     record: Option<LaneStats>,
+    tally: Option<CompilationTally>,
 }
 
 impl LaneDecision {
@@ -49,24 +54,43 @@ pub fn decide(root: &Path, no_semantic: bool) -> LaneDecision {
         return LaneDecision {
             layer: None,
             record: Some(LaneStats::not_applied(LaneReason::NoSemantic, None)),
+            tally: None,
         };
     }
     if !compiler_facts_artifact_present(root) {
         return LaneDecision {
             layer: None,
             record: None,
+            tally: None,
         };
     }
     let Some(layer) = SemanticLayer::load(root) else {
         return LaneDecision {
             layer: None,
             record: Some(LaneStats::not_applied(LaneReason::ArtifactUnreadable, None)),
+            tally: None,
         };
     };
     let record = record_for(layer.freshness());
+    if !record.is_applied() {
+        return LaneDecision {
+            layer: None,
+            record: Some(record),
+            tally: None,
+        };
+    }
+    let tally = layer.compilation_tally().clone();
+    if let Some(not_applied) = compilation_lane::before_resolution(&tally) {
+        return LaneDecision {
+            layer: None,
+            record: Some(not_applied),
+            tally: None,
+        };
+    }
     LaneDecision {
-        layer: record.is_applied().then_some(layer),
+        layer: Some(layer),
         record: Some(record),
+        tally: Some(tally),
     }
 }
 
@@ -84,8 +108,19 @@ fn record_for(freshness: &Freshness) -> LaneStats {
 
 /// Writes the decision's record into the resolved graph's stats, after
 /// resolution and before the graph is written.
+///
+/// A layer that reached resolution is judged here by what it confirmed and
+/// by its compilations.
 pub fn record(decision: Option<&LaneDecision>, stats: &mut Stats) {
     stats.lane = decision.and_then(|d| d.record.clone());
+    if let Some(tally) = decision.and_then(|d| d.tally.as_ref()) {
+        let (lane, keep_semantic) =
+            compilation_lane::after_resolution(tally, stats.semantic.as_ref());
+        stats.lane = Some(lane);
+        if !keep_semantic {
+            stats.semantic = None;
+        }
+    }
 }
 
 /// Whether anything sits at the compiler-facts path, checked by presence

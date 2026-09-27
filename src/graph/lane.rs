@@ -1,7 +1,7 @@
 // `stats.lane`: whether a `map` run applied the enriched (compiler-facts)
-// lane and, when it did not, why. Without it a stale or unreadable artifact
-// degraded the run to the syntax lane with nothing on screen or in the graph
-// to say so.
+// lane, only partly (some compilations the facts came from were incomplete),
+// or not at all and why. Without it a stale, unreadable or partial artifact
+// degraded the run with nothing on screen or in the graph to say so.
 //
 // The persisted fields are strings, not enums, so a graph written by a newer
 // build carrying a state or reason this build does not know still reads. This
@@ -10,7 +10,9 @@
 use serde::{Deserialize, Serialize};
 
 const APPLIED: &str = "applied";
+const PARTIAL: &str = "partial";
 const NOT_APPLIED: &str = "not-applied";
+const COMPILATIONS_INCOMPLETE: &str = "compilations-incomplete";
 
 /// Why the enriched lane did not apply to a run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,6 +27,11 @@ pub enum LaneReason {
     ArtifactUnreadable,
     /// `map --no-semantic` was given.
     NoSemantic,
+    /// At least one compilation is counted and none of them is complete, so
+    /// no occurrence could confirm anything.
+    NoCompleteCompilation,
+    /// The artifact applied but confirmed and discovered nothing.
+    NothingConfirmed,
 }
 
 impl LaneReason {
@@ -35,11 +42,27 @@ impl LaneReason {
             LaneReason::ImportsMoved => "imports-moved",
             LaneReason::ArtifactUnreadable => "artifact-unreadable",
             LaneReason::NoSemantic => "no-semantic",
+            LaneReason::NoCompleteCompilation => "no-complete-compilation",
+            LaneReason::NothingConfirmed => "nothing-confirmed",
         }
     }
 }
 
-/// The run-level lane record, serialized as `{state, reason?, detail?}`.
+/// How many compilations the lane decision counted, and how many of them
+/// were not complete.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LaneCompilations {
+    /// Every counted compilation.
+    pub total: usize,
+    /// The counted compilations that are not complete.
+    pub partial: usize,
+}
+
+/// The run-level lane record, serialized as
+/// `{state, reason?, detail?, compilations?}`.
+///
+/// `compilations` is written whenever the decision read the artifact's
+/// compilations, and never for a reason decided before they were read.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LaneStats {
     state: String,
@@ -47,6 +70,8 @@ pub struct LaneStats {
     reason: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     detail: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    compilations: Option<LaneCompilations>,
 }
 
 impl LaneStats {
@@ -56,6 +81,18 @@ impl LaneStats {
             state: APPLIED.to_string(),
             reason: None,
             detail: None,
+            compilations: None,
+        }
+    }
+
+    /// The enriched lane applied, but some counted compilation was not
+    /// complete, so facts from it confirmed nothing.
+    pub fn partial(detail: String) -> Self {
+        LaneStats {
+            state: PARTIAL.to_string(),
+            reason: Some(COMPILATIONS_INCOMPLETE.to_string()),
+            detail: Some(detail),
+            compilations: None,
         }
     }
 
@@ -66,6 +103,15 @@ impl LaneStats {
             state: NOT_APPLIED.to_string(),
             reason: Some(reason.as_str().to_string()),
             detail,
+            compilations: None,
+        }
+    }
+
+    /// The same record carrying the compilation counts the decision read.
+    pub fn with_compilations(self, compilations: LaneCompilations) -> Self {
+        LaneStats {
+            compilations: Some(compilations),
+            ..self
         }
     }
 
@@ -84,6 +130,11 @@ impl LaneStats {
         self.detail.as_deref()
     }
 
+    /// The compilation counts, when the decision read them.
+    pub fn compilations(&self) -> Option<LaneCompilations> {
+        self.compilations
+    }
+
     /// Whether the enriched lane applied.
     pub fn is_applied(&self) -> bool {
         self.state == APPLIED
@@ -93,6 +144,11 @@ impl LaneStats {
     pub fn line(&self) -> String {
         if self.is_applied() {
             return "lane: enriched".to_string();
+        }
+        if self.state == PARTIAL {
+            if let Some(detail) = &self.detail {
+                return format!("lane: enriched, partial ({detail})");
+            }
         }
         match (&self.reason, &self.detail) {
             (Some(reason), Some(detail)) => {
