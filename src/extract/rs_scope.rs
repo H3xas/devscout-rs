@@ -45,7 +45,7 @@ pub(super) fn body_locals(node: Node, src: &[u8]) -> HashSet<String> {
     let mut stack = vec![node];
     while let Some(current) = stack.pop() {
         if current.kind() == "macro_invocation" && is_statement(current) {
-            names.extend(tree_names(current, src).values);
+            names.extend(tree_names(current, src).outward.values);
         }
         if let Some(field) = pattern_field(current.kind()) {
             if let Some(pattern) = current.child_by_field_name(field) {
@@ -116,9 +116,26 @@ pub(super) fn bindings(pattern: Node, src: &[u8], names: &mut HashSet<String>) {
 /// The names a block's own item declarations bind, including any item or
 /// import a statement macro of the block may expand to.
 pub(super) fn block_items(block: Node, src: &[u8]) -> Vec<String> {
-    let mut out = Vec::new();
+    let mut out = macro_items(block, src);
     let mut cursor = block.walk();
     for child in block.named_children(&mut cursor) {
+        if BLOCK_ITEM_KINDS.contains(&child.kind()) {
+            if let Some(name) = child.child_by_field_name("name") {
+                let text = parse::node_text(name, src);
+                out.push(text.strip_prefix("r#").unwrap_or(&text).to_string());
+            }
+        }
+    }
+    out
+}
+
+/// The items and imports the macro invocations standing directly in a block
+/// or a module body may expand to. A module's own recorded items are not
+/// among them: only what a token tree may declare.
+pub(super) fn macro_items(container: Node, src: &[u8]) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut cursor = container.walk();
+    for child in container.named_children(&mut cursor) {
         let invocation = match child.kind() {
             "macro_invocation" => Some(child),
             "expression_statement" => child
@@ -127,13 +144,7 @@ pub(super) fn block_items(block: Node, src: &[u8]) -> Vec<String> {
             _ => None,
         };
         if let Some(invocation) = invocation {
-            out.extend(tree_names(invocation, src).items);
-        }
-        if BLOCK_ITEM_KINDS.contains(&child.kind()) {
-            if let Some(name) = child.child_by_field_name("name") {
-                let text = parse::node_text(name, src);
-                out.push(text.strip_prefix("r#").unwrap_or(&text).to_string());
-            }
+            out.extend(tree_names(invocation, src).outward.items);
         }
     }
     out

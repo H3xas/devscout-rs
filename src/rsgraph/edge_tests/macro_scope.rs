@@ -51,10 +51,14 @@ pub fn u() -> i32 {
 }
 pub fn v() -> i32 { make!(let f = |x: i32| x;); f(3) }
 pub fn w() -> i32 { let n = vec![f]; f(4) + n.len() as i32 }
+pub fn x(v: Vec<fn(i32) -> i32>) -> i32 { assert!(v.iter().all(|f| f(1) > 0)); f(5) }
 ";
     assert_eq!(
         calls(src),
-        vec!["uses-member src/lib.rs:13 -> src/lib.rs#f"]
+        vec![
+            "uses-member src/lib.rs:13 -> src/lib.rs#f",
+            "uses-member src/lib.rs:14 -> src/lib.rs#f",
+        ]
     );
 }
 
@@ -80,4 +84,22 @@ pub fn ok() { assert!(max(1, 2) > 0); make! { fn h() { f(); } } }
             "uses-member src/lib.rs:12 -> src/lib.rs#f",
         ]
     );
+}
+
+#[test]
+fn an_item_a_module_level_macro_declares_shadows_the_library_name() {
+    let files = [
+        ("Cargo.toml", "[package]\nname = \"lamp-kit\"\n"),
+        ("src/lib.rs", "pub fn glow() {}\n"),
+        (
+            "tests/it.rs",
+            "macro_rules! make { ($($t:tt)*) => { $($t)* }; }\nmake! { mod lamp_kit { pub fn glow() {} } }\nfn t() { lamp_kit::glow(); }\n",
+        ),
+        ("tests/other.rs", "fn t() { lamp_kit::glow(); }\n"),
+    ];
+    let got: Vec<String> = edges_for(&files)
+        .into_iter()
+        .filter(|e| e.starts_with("uses-member"))
+        .collect();
+    assert_eq!(got, vec!["uses-member tests/other.rs:1 -> src/lib.rs#glow"]);
 }

@@ -18,17 +18,31 @@ use crate::parse;
 // Items, generic parameters and imports declared inside the trees shadow a
 // path's first segment the same way, and an `impl` or a trait inside them
 // makes `Self` name something other than the enclosing impl.
+//
+// Only the names written directly in the invocation's own tree, outside
+// every nested group, can reach past it: a statement macro's bindings and
+// items into the rest of its block, a module-level macro's items into its
+// module. Generic parameters never do.
 // ---------------------------------------------------------------------------
 
-/// What one invocation's token trees may bind.
+/// Names by what they may shadow.
 #[derive(Default)]
-pub(super) struct TreeNames {
+pub(super) struct Names {
     /// Lowercase names that may be local bindings, which shadow a
     /// single-segment value path.
     pub values: HashSet<String>,
     /// Names that may be items, generic parameters or imports, which shadow
     /// a path's first segment.
     pub items: HashSet<String>,
+}
+
+/// What one invocation's token trees may bind.
+#[derive(Default)]
+pub(super) struct TreeNames {
+    /// Everything the trees may bind, for the invocation's own calls.
+    pub inside: Names,
+    /// What the invocation's top level may bind for the code around it.
+    pub outward: Names,
     /// Whether the trees declare an `impl` or a trait.
     pub own_self: bool,
 }
@@ -37,8 +51,8 @@ impl TreeNames {
     /// The context the invocation's own call sites are read in.
     pub fn narrow(self, ctx: &Ctx) -> Ctx {
         let mut inner = ctx.clone();
-        inner.locals = union(&ctx.locals, self.values);
-        inner.shadow = union(&ctx.shadow, self.items);
+        inner.locals = union(&ctx.locals, self.inside.values);
+        inner.shadow = union(&ctx.shadow, self.inside.items);
         if self.own_self {
             inner.self_impl = None;
             inner.self_trait = None;
@@ -72,21 +86,38 @@ pub(super) fn is_statement(invocation: Node) -> bool {
 /// bind. The walk is on an explicit stack: token trees nest without bound.
 pub(super) fn tree_names(invocation: Node, src: &[u8]) -> TreeNames {
     let mut names = TreeNames::default();
-    let mut stack: Vec<Node> = Vec::new();
+    let mut stack: Vec<(Node, bool)> = Vec::new();
     let mut cursor = invocation.walk();
     for child in invocation.named_children(&mut cursor) {
         if child.kind() == "token_tree" {
-            stack.push(child);
+            stack.push((child, true));
         }
     }
-    while let Some(tree) = stack.pop() {
+    while let Some((tree, top)) = stack.pop() {
         let mut cursor = tree.walk();
         let tokens: Vec<Node> = tree.children(&mut cursor).collect();
-        let fields = struct_body(tree, src);
-        read_level(&tokens, fields, src, &mut names);
-        stack.extend(tokens.iter().filter(|t| t.kind() == "token_tree"));
+        let level = Level {
+            tokens: &tokens,
+            fields: struct_body(tree, src),
+            top,
+        };
+        level.read(src, &mut names);
+        stack.extend(
+            tokens
+                .iter()
+                .filter(|t| t.kind() == "token_tree")
+                .map(|t| (*t, false)),
+        );
     }
     names
+}
+
+// One tree level: its direct tokens, whether it is a struct body, and
+// whether it is the invocation's own tree.
+struct Level<'a, 't> {
+    tokens: &'a [Node<'t>],
+    fields: bool,
+    top: bool,
 }
 
 // Whether a tree is the braces of a struct literal or pattern: `{` right
@@ -108,37 +139,80 @@ fn text_of(node: Node, src: &[u8]) -> String {
     text.strip_prefix("r#").unwrap_or(&text).to_string()
 }
 
-// One tree level: its direct tokens, without descending. In a struct body a
-// name that opens a `field: value` entry names a field, not a binding,
-// unless an odd number of `|` before it puts it among closure parameters.
-fn read_level(tokens: &[Node], fields: bool, src: &[u8], names: &mut TreeNames) {
-    let generics = generic_params(tokens);
-    let mut angle: i64 = 0;
-    let mut odd_pipes = false;
-    for (i, token) in tokens.iter().enumerate() {
-        match token.kind() {
-            "impl" | "trait" => names.own_self = true,
-            "use" => import_names(tokens, i + 1, src, names),
-            "<" => angle += 1,
-            ">" => angle = (angle - 1).max(0),
-            ">>" => angle = (angle - 2).max(0),
-            "|" => odd_pipes = !odd_pipes,
-            _ => {}
+impl Level<'_, '_> {
+    // Reads the level's direct tokens, without descending. In a struct body
+    // a name that opens a `field: value` entry names a field, not a
+    // binding, unless an odd number of `|` before it puts it among closure
+    // parameters.
+    fn read(&self, src: &[u8], names: &mut TreeNames) {
+        let tokens = self.tokens;
+        let generics = generic_params(tokens);
+        let mut angle: i64 = 0;
+        let mut odd_pipes = false;
+        for (i, token) in tokens.iter().enumerate() {
+            match token.kind() {
+                "impl" | "trait" => names.own_self = true,
+                "use" => self.imports(i + 1, src, names),
+                "<" => angle += 1,
+                ">" => angle = (angle - 1).max(0),
+                ">>" => angle = (angle - 2).max(0),
+                "|" => odd_pipes = !odd_pipes,
+                _ => {}
+            }
+            if !is_name(token.kind()) {
+                continue;
+            }
+            if self.fields && !odd_pipes && opens_field(tokens, i) {
+                continue;
+            }
+            let text = text_of(*token, src);
+            if generics.contains(&i) {
+                names.inside.items.insert(text);
+            } else if declares_item(tokens, i) {
+                self.add(names, text, false);
+            } else if is_bare(tokens, i) && text != "Self" {
+                if text.starts_with(|c: char| c.is_lowercase() || c == '_') {
+                    self.add(names, text, true);
+                } else if angle == 0 && !in_type_position(tokens, i) {
+                    self.add(names, text, false);
+                }
+            }
         }
-        if !is_name(token.kind()) {
-            continue;
+    }
+
+    fn add(&self, names: &mut TreeNames, text: String, value: bool) {
+        let sets = |n: &mut Names| {
+            if value {
+                n.values.insert(text.clone());
+            } else {
+                n.items.insert(text.clone());
+            }
+        };
+        sets(&mut names.inside);
+        if self.top {
+            sets(&mut names.outward);
         }
-        if fields && !odd_pipes && opens_field(tokens, i) {
-            continue;
+    }
+
+    // Every name a `use` declaration mentions, up to its `;`, with its
+    // groups: each may be what it imports, in either namespace.
+    fn imports(&self, start: usize, src: &[u8], names: &mut TreeNames) {
+        let mut stack: Vec<Node> = Vec::new();
+        for token in self.tokens.iter().skip(start) {
+            if token.kind() == ";" {
+                break;
+            }
+            stack.push(*token);
         }
-        let text = text_of(*token, src);
-        if declares_item(tokens, i) || generics.contains(&i) {
-            names.items.insert(text);
-        } else if is_bare(tokens, i) && text != "Self" {
-            if text.starts_with(|c: char| c.is_lowercase() || c == '_') {
-                names.values.insert(text);
-            } else if angle == 0 && !in_type_position(tokens, i) {
-                names.items.insert(text);
+        while let Some(node) = stack.pop() {
+            if is_name(node.kind()) {
+                let text = text_of(node, src);
+                self.add(names, text.clone(), true);
+                self.add(names, text, false);
+            }
+            if node.kind() == "token_tree" {
+                let mut cursor = node.walk();
+                stack.extend(node.children(&mut cursor));
             }
         }
     }
@@ -221,27 +295,4 @@ fn generic_params(tokens: &[Node]) -> HashSet<usize> {
         }
     }
     out
-}
-
-// Every name a `use` declaration inside the trees mentions, up to its `;`,
-// with its groups: each may be what it imports, in either namespace.
-fn import_names(tokens: &[Node], start: usize, src: &[u8], names: &mut TreeNames) {
-    let mut stack: Vec<Node> = Vec::new();
-    for token in tokens.iter().skip(start) {
-        if token.kind() == ";" {
-            break;
-        }
-        stack.push(*token);
-    }
-    while let Some(node) = stack.pop() {
-        if is_name(node.kind()) {
-            let text = text_of(node, src);
-            names.values.insert(text.clone());
-            names.items.insert(text);
-        }
-        if node.kind() == "token_tree" {
-            let mut cursor = node.walk();
-            stack.extend(node.children(&mut cursor));
-        }
-    }
 }

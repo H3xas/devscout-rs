@@ -5,7 +5,7 @@ use tree_sitter::Node;
 
 use super::rs_facts_types::{RsRole, RsSite};
 use super::rs_paths::{join, path_segments, Segment};
-use super::rs_scope::{block_items, body_locals, generic_names};
+use super::rs_scope::{block_items, body_locals, generic_names, macro_items};
 use crate::parse;
 
 // ---------------------------------------------------------------------------
@@ -79,7 +79,11 @@ const PATH_KINDS: &[&str] = &[
 /// a call nested in a macro argument.
 pub(super) fn collect_sites(root: Node, src: &[u8], numbering: &Numbering) -> Vec<RsSite> {
     let mut out: Vec<(usize, RsSite)> = Vec::new();
-    let mut stack: Stack = vec![(root, None, "", Ctx::default())];
+    let root_ctx = Ctx {
+        shadow: Rc::new(macro_items(root, src).into_iter().collect()),
+        ..Ctx::default()
+    };
+    let mut stack: Stack = vec![(root, None, "", root_ctx)];
     while let Some((node, field, parent, ctx)) = stack.pop() {
         let kind = node.kind();
         if SKIPPED.contains(&kind) || node.is_missing() {
@@ -112,8 +116,15 @@ fn enter(node: Node, ctx: &Ctx, src: &[u8], numbering: &Numbering) -> Ctx {
                 .child_by_field_name("name")
                 .map(|n| strip_raw(&parse::node_text(n, src)))
                 .unwrap_or_default();
+            let body = node.child_by_field_name("body");
             inner = Ctx {
                 scope: Rc::from(scoped(&ctx.scope, &name)),
+                shadow: Rc::new(
+                    body.map(|b| macro_items(b, src))
+                        .unwrap_or_default()
+                        .into_iter()
+                        .collect(),
+                ),
                 ..Ctx::default()
             };
         }

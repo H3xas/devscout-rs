@@ -215,10 +215,13 @@ would outside a macro, qualifier segments included.
   that shares a lowercase one gives no edge. Items, generic parameters and `use` names
   declared inside the trees, and an uppercase name outside angle brackets and type positions,
   shadow a path's first segment, and an `impl` or trait inside them drops `Self` paths.
-- **Statement macros reach the rest of their block.** For an invocation that stands as a
-  statement, its possible lowercase bindings shadow single-segment calls anywhere in the enclosing
-  function body, and its possible items shadow paths anywhere in its block, as a local binding or
-  a block item would.
+- **Statement and module-level macros reach the code around them.** Only names written directly
+  in an invocation's own tree, outside every nested group, can: for an invocation that stands as
+  a statement, its possible lowercase bindings (`bind!(f)`, `m!(let f = ...)`) shadow
+  single-segment calls anywhere in the enclosing function body and its possible items shadow
+  paths anywhere in its block, as a local binding or a block item would; an invocation at module
+  level shadows the items it may declare across its module, the library name included. A binding
+  inside a nested group, such as a closure parameter inside `assert!(...)`, stays inside.
 - Known misses: calls that exist only after expansion; `$` fragments and method calls; type
   references and struct literals inside macro arguments; calls inside `macro_rules!` bodies; a
   call whose name the same invocation, or a statement macro in the same function, also holds
