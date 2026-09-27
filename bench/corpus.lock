@@ -25,7 +25,7 @@ sha = "1ce5e91f5ec13cf8812f3e67e1fae33079336876"
 license = "MIT"
 kind = "web"
 status = "registered"
-note = "Pinned at tag 22.5.4 (2026-08-25). Sized for the web kind; no lane has run against it yet."
+note = "Pinned at tag 22.5.4 (2026-08-25). Sized for the web kind; first measured by the TypeScript reference parity run (docs/benchmarks/results/2026-09-27-typescript-reference-parity.md)."
 
 [csharp-target-held-out]
 id = "csharp-target-held-out"

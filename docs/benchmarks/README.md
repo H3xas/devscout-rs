@@ -64,3 +64,8 @@ audit of that tree, in [`results/2026-09-25-release-0.7.0.md`](results/2026-09-2
 with predictions registered first. The 0.8.0 release tree has the same treatment in
 [`results/2026-09-25-release-0.8.0.md`](results/2026-09-25-release-0.8.0.md), which adds the reach
 of the `bus-hop` edges and the opt-in enriched lane.
+
+The first TypeScript run is in
+[`results/2026-09-27-typescript-reference-parity.md`](results/2026-09-27-typescript-reference-parity.md),
+on the pinned nx corpus against one TypeScript-capable peer. Its registered recall gate was
+missed, as its pre-registration predicted: imports written by package name stay unresolved.
