@@ -13,6 +13,7 @@ mod coverage;
 mod impact;
 mod markers;
 mod refs;
+mod ts_tables;
 
 fn table<R>(rows: Vec<R>, dropped: usize) -> Table<R> {
     Table {

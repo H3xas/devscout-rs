@@ -11,7 +11,7 @@ use super::occurrence::tag_inbound_rows;
 use super::refs_outbound::build_outbound_tables;
 use super::refs_tables::{
     ambiguous_row, build_table, cap_rows, edge_loc, loc_cmp, row_tier, AmbiguousTables, InboundRow,
-    InboundTables, OutboundTables, Table, SOURCE_MAX,
+    InboundTables, OutboundTables, Table, TsTables, SOURCE_MAX,
 };
 use super::symbol::{resolve_symbol, Resolution};
 use super::symbol_refs::symbol_refs;
@@ -369,6 +369,7 @@ fn member_group_model(
             },
             implements: dispatch::dispatch_table(implements_rows),
             overrides: dispatch::dispatch_table(overrides_rows),
+            ts: TsTables::default(),
         },
         outbound: None,
         ambiguous: AmbiguousTables {
@@ -517,7 +518,7 @@ pub(super) fn build_refs_model_inner(
     let refs = symbol_refs(index, &id);
     let edges = &index.graph.edges;
 
-    // The three inbound kinds share ONE cap and ONE ranking, so a widely used
+    // The inbound kinds share ONE cap and ONE ranking, so a widely used
     // type spends its whole budget on the most specific edges it has rather
     // than on whichever kind the walk reached first. Rank: precise before
     // heuristic, then the def's own project before every other, then file,
@@ -526,7 +527,7 @@ pub(super) fn build_refs_model_inner(
     // kinds at the same file:line keep their push order.
     let def_project = project_of(&def.file);
     let mut ranked: Vec<RankedInbound> = Vec::new();
-    let mut totals = [0usize; 5];
+    let mut totals = [0usize; 9];
     let is_self_inbound = |edge: usize| {
         let (file, line) = edge_loc(&edges[edge]);
         exclude_self_inbound
@@ -550,6 +551,10 @@ pub(super) fn build_refs_model_inner(
         ),
         (&refs.inbound_implements[..], EMPTY),
         (&refs.inbound_overrides[..], EMPTY),
+        (&refs.inbound_ts.call[..], EMPTY),
+        (&refs.inbound_ts.jsx_use[..], EMPTY),
+        (&refs.inbound_ts.dispatch[..], EMPTY),
+        (&refs.inbound_ts.import[..], EMPTY),
     ]
     .into_iter()
     .enumerate()
@@ -590,7 +595,7 @@ pub(super) fn build_refs_model_inner(
     let (shown_inbound, _) = cap_rows(ranked, if all_out { usize::MAX } else { inbound_cap });
 
     let mut source_cache: LineCache = HashMap::new();
-    let mut rows: [Vec<InboundRow>; 5] = Default::default();
+    let mut rows: [Vec<InboundRow>; 9] = Default::default();
     for r in shown_inbound {
         let (file, line) = edge_loc(&edges[r.edge]);
         let source = hit_source(&index.root, file, line, &mut source_cache);
@@ -606,19 +611,17 @@ pub(super) fn build_refs_model_inner(
             occurrence_index: None,
         });
     }
-    let [mut inherits_rows, mut uses_type_rows, mut uses_member_rows, mut implements_rows, mut overrides_rows] =
-        rows;
     // Tagged per kind, AFTER capping and BEFORE the `Table` wrapper is built:
     // an occurrence collision is scoped to one table of one answer, never
     // across kinds (a `uses-type` row and a `uses-member` row at the same
     // file:line are already distinct by kind and need no ordinal), and a row
     // dropped by the cap above is never assigned one, per the same
     // truncation-is-not-a-collapse rule `dropped` already states.
-    tag_inbound_rows(&mut inherits_rows);
-    tag_inbound_rows(&mut uses_type_rows);
-    tag_inbound_rows(&mut uses_member_rows);
-    tag_inbound_rows(&mut implements_rows);
-    tag_inbound_rows(&mut overrides_rows);
+    for kind_rows in &mut rows {
+        tag_inbound_rows(kind_rows);
+    }
+    let [inherits_rows, uses_type_rows, uses_member_rows, implements_rows, overrides_rows, call_rows, jsx_use_rows, dispatch_rows, import_rows] =
+        rows;
     let inbound_table = |total: usize, rows: Vec<InboundRow>| Table {
         total,
         dropped: total - rows.len(),
@@ -630,6 +633,12 @@ pub(super) fn build_refs_model_inner(
         uses_member: inbound_table(totals[2], uses_member_rows),
         implements: inbound_table(totals[3], implements_rows),
         overrides: inbound_table(totals[4], overrides_rows),
+        ts: TsTables {
+            call: inbound_table(totals[5], call_rows),
+            jsx_use: inbound_table(totals[6], jsx_use_rows),
+            dispatch: inbound_table(totals[7], dispatch_rows),
+            import: inbound_table(totals[8], import_rows),
+        },
     };
 
     let outbound = out.then(|| {

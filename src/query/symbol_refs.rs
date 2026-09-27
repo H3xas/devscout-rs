@@ -3,6 +3,7 @@
 // to keep that file under this crate's per-file line budget.
 
 use super::index::{def_files, GraphIndex, InboundEntry};
+use super::ts_edges::TsKinds;
 
 /// The immediate inbound/outbound edges of one resolved symbol, holding
 /// `graph.edges` indices rather than cloned edges (the same convention
@@ -53,6 +54,13 @@ pub struct SymbolRefs {
     pub ambiguous_inbound: Vec<usize>,
     /// The ambiguous outbound value.
     pub ambiguous_outbound: Vec<usize>,
+    /// The TS-family edges naming this symbol. Never heuristic, and a TS
+    /// symbol is never an enum, so neither the heuristic half nor the
+    /// enum-member union applies.
+    pub inbound_ts: TsKinds,
+    /// The TS-family edges originating in any of this symbol's own declaring
+    /// files.
+    pub outbound_ts: TsKinds,
 }
 
 /// Immediate (1-hop) inbound/outbound for one resolved symbol. Partial-class
@@ -70,6 +78,7 @@ pub fn symbol_refs(index: &GraphIndex, def_id: &str) -> SymbolRefs {
     // below, neither needs the enum-member union.
     let inbound_implements = base.implements.clone();
     let inbound_overrides = base.overrides.clone();
+    let inbound_ts = base.ts.clone();
 
     if let Some(&i) = index.by_id.get(def_id) {
         if index.graph.defs[i].kind == "enum" {
@@ -91,8 +100,10 @@ pub fn symbol_refs(index: &GraphIndex, def_id: &str) -> SymbolRefs {
     let mut outbound_implements = Vec::new();
     let mut outbound_overrides = Vec::new();
     let mut outbound_imports = Vec::new();
+    let mut outbound_ts = TsKinds::default();
     for file in def_files(index, def_id) {
         if let Some(o) = index.outbound_by_file.get(&file) {
+            outbound_ts.extend_from(&o.ts);
             outbound_inherits.extend(o.inherits.iter().copied());
             outbound_uses_type.extend(o.uses_type.iter().copied());
             outbound_uses_member.extend(o.uses_member.iter().copied());
@@ -163,5 +174,7 @@ pub fn symbol_refs(index: &GraphIndex, def_id: &str) -> SymbolRefs {
         heuristic_outbound_uses_member,
         ambiguous_inbound,
         ambiguous_outbound,
+        inbound_ts,
+        outbound_ts,
     }
 }

@@ -27,6 +27,7 @@ mod refs_bare_member;
 mod refs_enum;
 mod refs_tables;
 mod symbol;
+mod ts_edges;
 
 static COUNTER: AtomicU64 = AtomicU64::new(0);
 

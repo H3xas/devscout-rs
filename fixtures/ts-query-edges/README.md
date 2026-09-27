@@ -41,6 +41,8 @@ edges they produce. The names are invented; nothing here is meant to build.
   `import '../store/cartStore'`.
 - **JavaScript caller.** `src/legacy/cartLegacy.js` takes `loadCart` from a
   destructured `require` and calls it.
+- **Self-reference.** `src/tree/walk.ts` declares `walkTree`, which calls
+  itself inside its own body and is referenced from nowhere else.
 - **Many rows on one symbol.** `src/bulk/refill.ts` calls `loadCart()` twenty
   times and dispatches it twelve times, more rows than a default `refs` answer
   shows.

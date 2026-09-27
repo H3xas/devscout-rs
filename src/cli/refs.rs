@@ -26,18 +26,25 @@ const REFS_USAGE: &str =
 // The row count `refs`/`read` telemetry reports for a resolved answer: every
 // inbound row plus, under `--out`, every outbound row -- the same rows the
 // text/JSON renderers already walk, counted here once rather than re-parsed
-// out of the rendered answer.
+// out of the rendered answer. The TS tables count too, so a TypeScript answer
+// never reports zero rows beside a non-empty table.
 pub(crate) fn refs_model_row_count(model: &query::RefsModel) -> usize {
     let mut n = model.inbound.inherits.rows.len()
         + model.inbound.uses_type.rows.len()
-        + model.inbound.uses_member.rows.len();
+        + model.inbound.uses_member.rows.len()
+        + ts_row_count(&model.inbound.ts);
     if let Some(ob) = &model.outbound {
         n += ob.inherits.rows.len()
             + ob.uses_type.rows.len()
             + ob.uses_member.rows.len()
-            + ob.imports.rows.len();
+            + ob.imports.rows.len()
+            + ts_row_count(&ob.ts);
     }
     n
+}
+
+fn ts_row_count<R>(tables: &query::TsTables<R>) -> usize {
+    tables.named().iter().map(|(_, t)| t.rows.len()).sum()
 }
 
 // A bare member answers with one ordinary refs model per declaring type, so

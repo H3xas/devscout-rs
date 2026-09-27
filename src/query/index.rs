@@ -7,6 +7,7 @@ use crate::manifest;
 use super::bus;
 use super::dispatch;
 use super::seq::push_ordered_unique;
+use super::ts_edges::{self, TsKinds};
 
 // ============================================================================
 // GraphIndex -- the built query index.
@@ -29,6 +30,8 @@ pub struct InboundEntry {
     pub overrides: Vec<usize>,
     /// `bus-hop` edges naming this def as their handler (`to`).
     pub bus_hop: Vec<usize>,
+    /// The TS-family edges naming this def (see [`TsKinds`]).
+    pub ts: TsKinds,
 }
 
 /// The value shape of both `heuristic_inbound` and `heuristic_outbound_by_file`
@@ -54,6 +57,8 @@ pub struct OutboundEntry {
     pub bus_hop: Vec<usize>,
     /// The imports value.
     pub imports: Vec<usize>,
+    /// The TS-family edges originating in this file (see [`TsKinds`]).
+    pub ts: TsKinds,
 }
 
 /// The built query index over a `Graph`. `by_id`/`by_file`/`by_simple_name`/
@@ -517,13 +522,24 @@ pub fn load_graph_index_with<'g>(
                     ctor_di_by_to.entry(to.clone()).or_default().push(i);
                 }
             }
-            // The four TS/TSX edge kinds earn no entry here either, same
-            // stance as `ctor-di`. Listed rather than caught by a wildcard
-            // so a future edge kind still fails the exhaustiveness check.
+            // Listed rather than caught by a wildcard so a future edge kind
+            // still fails the exhaustiveness check.
             graph::Edge::Import { .. }
             | graph::Edge::Call { .. }
             | graph::Edge::JsxUse { .. }
-            | graph::Edge::Dispatch { .. } => {}
+            | graph::Edge::Dispatch { .. } => {
+                if let Some((from_file, to_file)) =
+                    ts_edges::record_ts_edge(e, i, &mut inbound, &mut outbound_by_file)
+                {
+                    dispatch::note_dispatch_files(
+                        &mut flagged_files,
+                        manifest_paths_ref,
+                        &mut hub_referrers_by_file,
+                        from_file,
+                        to_file,
+                    );
+                }
+            }
             // `bus-hop` joins the same way, keyed by the HANDLER (`to`)
             // inbound and the PUBLISH SITE's own file outbound.
             graph::Edge::BusHop {

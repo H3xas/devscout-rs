@@ -94,6 +94,7 @@ mod refs_tables;
 mod seq;
 mod symbol;
 mod symbol_refs;
+mod ts_edges;
 mod why;
 
 pub use bus::{BusDirection, BusHopRow};
@@ -120,11 +121,12 @@ pub use read::{build_read_model, ReadModel, ReadResult, ReadSpan};
 pub use refs::{build_refs_model, LineCache, MemberRefEntry, MemberRefs, RefsModel, RefsResult};
 pub use refs_tables::{
     AmbiguousRow, AmbiguousTables, ImportRow, InboundRow, InboundTables, OutboundRow,
-    OutboundTables, Table, DEFAULT_CAP, INBOUND_CAP, OUTBOUND_CAP, SOURCE_MAX,
+    OutboundTables, Table, TsTables, DEFAULT_CAP, INBOUND_CAP, OUTBOUND_CAP, SOURCE_MAX,
 };
 pub use seq::{SeqMap, SeqSet};
 pub use symbol::{resolve_symbol, Resolution};
 pub use symbol_refs::{symbol_refs, SymbolRefs};
+pub use ts_edges::TsKinds;
 pub use why::Why;
 
 #[cfg(test)]
