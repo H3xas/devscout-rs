@@ -80,6 +80,7 @@ fn site_edges(
         file,
         block: site.block,
         self_def: self_def(binder, file, site),
+        import: false,
     };
     let segs: Vec<&str> = site.path.split("::").collect();
     let lines = site.segment_lines();

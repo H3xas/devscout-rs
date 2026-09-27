@@ -142,6 +142,13 @@ so it never changes a C# or TypeScript answer.
   imports, then its globs); the module's own items and explicit imports; its globs, which bring in
   every name the target module declares or imports, its own globs included; and last the
   package's library name. std and external crates bind nothing.
+- **Globs that cannot be listed.** A glob of std, an external crate or an enum, or one that
+  reaches a crate module whose explicit import of the name resolved outside the crate, may provide
+  any name. A lookup that finds the name nowhere at such a level stops there with no edge: a call
+  inside `{ use std::cmp::*; max(1, 2) }` never binds a crate `max` outside the block, and a
+  module-level `use other_crate::*;` shadows the library name in expression paths. A `use` path
+  goes on past it: rustc rejects an import whose first segment a glob would shadow from an outer
+  scope.
 - **Shadowing.** An item declared inside an enclosing block, or a generic parameter, shadows a
   path's first segment. A local binding (a parameter or a `let`, closure, `match`, `if let`,
   `while let` or `for` pattern anywhere in the enclosing function body) shadows a single-segment

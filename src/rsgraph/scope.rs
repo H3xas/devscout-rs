@@ -9,6 +9,14 @@
 // included. An explicit import nothing resolves (an external path) still
 // shadows a glob of that name. Visibility is not modelled.
 //
+// A glob whose names cannot be listed (of std, an external crate or an
+// enum, or reaching an import that resolved outside the crate) is opaque:
+// any name may come from it. Outside an import, a lookup that finds the
+// name nowhere at a level with an opaque glob stops there instead of going
+// on to an enclosing block, the module or the extern prelude. An import
+// path goes on, because rustc rejects an import whose first segment a glob
+// could shadow from an outer scope.
+//
 // Module-level leaves depend on each other (a `pub use` chain, a glob of a
 // module that itself imports), so they are resolved by a worklist to a fixed
 // point: each resolution records the modules it consulted, and a leaf whose
@@ -97,6 +105,13 @@ impl Leaf {
     pub fn is_glob(&self) -> bool {
         self.name == "*"
     }
+}
+
+/// What a level's globs give a name: the targets found, and whether a glob
+/// that cannot be listed may also provide it.
+pub(super) struct Globbed {
+    pub found: Vec<Target>,
+    pub opaque: bool,
 }
 
 /// What an explicit lookup at one level found.
@@ -234,71 +249,80 @@ impl Tables {
         level(&mut found, leaves, &self.resolved, ns)
     }
 
-    /// The modules a module's globs import, as resolved so far.
-    fn glob_targets(&self, globs: &[usize]) -> Vec<usize> {
-        globs
-            .iter()
-            .flat_map(|&g| self.resolved[g].types.iter())
-            .filter_map(|t| match t {
+    /// The modules a set of globs import, as resolved so far, and whether
+    /// any of them reaches no crate module and so cannot be listed.
+    fn glob_targets(&self, globs: &[usize]) -> (Vec<usize>, bool) {
+        let mut modules = Vec::new();
+        let mut opaque = false;
+        for &g in globs {
+            let before = modules.len();
+            modules.extend(self.resolved[g].types.iter().filter_map(|t| match t {
                 Target::Module(m) => Some(*m),
                 Target::Def(_) => None,
-            })
-            .collect()
+            }));
+            opaque |= modules.len() == before;
+        }
+        (modules, opaque)
     }
 
     /// What `name` is through a set of globs: breadth first over glob
-    /// targets, stopping at each module where the name binds explicitly.
-    pub fn through_globs(
-        &self,
-        globs: &[usize],
-        name: &str,
-        ns: Ns,
-        probe: &mut Probe,
-    ) -> Vec<Target> {
+    /// targets, stopping at each module where the name binds explicitly. A
+    /// module whose explicit import of the name resolved outside the crate
+    /// makes the result opaque, as does any glob that cannot be listed.
+    pub fn through_globs(&self, globs: &[usize], name: &str, ns: Ns, probe: &mut Probe) -> Globbed {
         let mut out: Vec<Target> = Vec::new();
         let mut seen: HashSet<usize> = HashSet::new();
-        let mut queue: VecDeque<usize> = self.glob_targets(globs).into();
+        let (first, mut opaque) = self.glob_targets(globs);
+        let mut queue: VecDeque<usize> = first.into();
         while let Some(m) = queue.pop_front() {
             if !seen.insert(m) {
                 continue;
             }
             match self.explicit(m, name, ns, probe) {
                 Level::Found(v) => extend_unique(&mut out, v),
-                Level::Shadowed => {}
-                Level::Empty => queue.extend(self.glob_targets(&self.module_globs[m])),
+                Level::Shadowed => opaque = true,
+                Level::Empty => {
+                    let (more, unlisted) = self.glob_targets(&self.module_globs[m]);
+                    opaque |= unlisted;
+                    queue.extend(more);
+                }
             }
         }
-        out
+        Globbed { found: out, opaque }
     }
 
     /// `name` looked up inside a module: its own level, then its globs.
-    /// `None` when nothing binds or shadows the name there.
+    /// `None` when nothing binds or shadows the name there; outside an
+    /// import, a glob that cannot be listed shadows it.
     pub fn in_module(
         &self,
         module: usize,
         name: &str,
         ns: Ns,
+        import: bool,
         probe: &mut Probe,
     ) -> Option<Vec<Target>> {
         match self.explicit(module, name, ns, probe) {
             Level::Found(v) => Some(v),
             Level::Shadowed => Some(Vec::new()),
             Level::Empty => {
-                let v = self.through_globs(&self.module_globs[module], name, ns, probe);
-                (!v.is_empty()).then_some(v)
+                let g = self.through_globs(&self.module_globs[module], name, ns, probe);
+                globbed(g, import)
             }
         }
     }
 
     /// `name` in a recorded block and its enclosing blocks, innermost
     /// first: each block's explicit imports, then its globs. `None` when no
-    /// block binds or shadows the name.
+    /// block binds or shadows the name; outside an import, a block glob
+    /// that cannot be listed shadows it.
     pub fn in_blocks(
         &self,
         file: usize,
         block: Option<usize>,
         name: &str,
         ns: Ns,
+        import: bool,
         probe: &mut Probe,
     ) -> Option<Vec<Target>> {
         let mut current = block;
@@ -316,8 +340,8 @@ impl Tables {
                 Level::Empty => {}
             }
             if let Some(globs) = self.block_globs.get(&(file, b)) {
-                let v = self.through_globs(globs, name, ns, probe);
-                if !v.is_empty() {
+                let g = self.through_globs(globs, name, ns, probe);
+                if let Some(v) = globbed(g, import) {
                     return Some(v);
                 }
             }
@@ -327,6 +351,18 @@ impl Tables {
                 break;
             }
         }
+        None
+    }
+}
+
+// A level's glob result: its targets, an empty (shadowing) result for an
+// opaque level outside an import, or `None` to go on outward.
+fn globbed(g: Globbed, import: bool) -> Option<Vec<Target>> {
+    if !g.found.is_empty() {
+        Some(g.found)
+    } else if g.opaque && !import {
+        Some(Vec::new())
+    } else {
         None
     }
 }
