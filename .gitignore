@@ -42,6 +42,10 @@ scripts/preflight.sh
 # directory legitimately named `bin` or `obj` (a Rust `src/bin/` among them).
 fixtures/**/bin/
 fixtures/**/obj/
+# Cargo output when a Rust fixture package is checked in place rather than on a
+# copy; only the repository root's own target/ is covered above.
+fixtures/**/target/
+fixtures/**/Cargo.lock
 tools/**/bin/
 tools/**/obj/
 
