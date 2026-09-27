@@ -194,12 +194,13 @@ impl Level<'_, '_> {
         }
     }
 
-    // Every name a `use` declaration mentions, up to its `;`, with its
-    // groups: each may be what it imports, in either namespace.
+    // Every name a `use` declaration mentions, up to its `;` or the next
+    // `use`, with its groups: each may be what it imports, in either
+    // namespace.
     fn imports(&self, start: usize, src: &[u8], names: &mut TreeNames) {
         let mut stack: Vec<Node> = Vec::new();
         for token in self.tokens.iter().skip(start) {
-            if token.kind() == ";" {
+            if matches!(token.kind(), ";" | "use") {
                 break;
             }
             stack.push(*token);
@@ -262,37 +263,60 @@ fn is_bare(tokens: &[Node], i: usize) -> bool {
 }
 
 // The token indexes of the names a generic parameter list declares: the
-// list right after `impl`, or after an item keyword and its name.
+// list right after `impl`, or after an item keyword and its name. One pass
+// with a stack of open lists, so nested or unclosed lists cost no rescan.
 fn generic_params(tokens: &[Node]) -> HashSet<usize> {
     let mut out = HashSet::new();
-    for (open, token) in tokens.iter().enumerate() {
-        if token.kind() != "<" || open == 0 {
-            continue;
-        }
-        let before = tokens[open - 1].kind();
-        let after_item =
-            open >= 2 && is_name(before) && ITEM_KEYWORDS.contains(&tokens[open - 2].kind());
-        if before != "impl" && !after_item {
-            continue;
-        }
-        let mut depth: i64 = 0;
-        for (k, node) in tokens.iter().enumerate().skip(open) {
-            depth += match node.kind() {
-                "<" => 1,
-                ">" => -1,
-                ">>" => -2,
-                _ => 0,
-            };
-            if depth <= 0 {
-                break;
+    let mut open: Vec<bool> = Vec::new();
+    for (k, node) in tokens.iter().enumerate() {
+        match node.kind() {
+            "<" => {
+                let before = k.checked_sub(1).map(|p| tokens[p].kind());
+                let after_item = k >= 2
+                    && before.is_some_and(is_name)
+                    && ITEM_KEYWORDS.contains(&tokens[k - 2].kind());
+                open.push(before == Some("impl") || after_item);
             }
-            let declares = depth == 1
-                && is_name(node.kind())
-                && matches!(tokens[k - 1].kind(), "<" | "," | "const");
-            if declares {
-                out.insert(k);
+            ">" => {
+                open.pop();
             }
+            ">>" => {
+                open.pop();
+                open.pop();
+            }
+            kind if is_name(kind) => {
+                let declares = open.last() == Some(&true)
+                    && matches!(tokens[k - 1].kind(), "<" | "," | "const");
+                if declares {
+                    out.insert(k);
+                }
+            }
+            _ => {}
         }
     }
     out
+}
+
+/// The index of the `>` or `>>` that closes each `<` of one level, found in
+/// one pass: `>>` closes two.
+pub(super) fn angle_closes(tokens: &[Node]) -> Vec<Option<usize>> {
+    let mut closes = vec![None; tokens.len()];
+    let mut open: Vec<usize> = Vec::new();
+    for (k, node) in tokens.iter().enumerate() {
+        let shut = match node.kind() {
+            "<" => {
+                open.push(k);
+                0
+            }
+            ">" => 1,
+            ">>" => 2,
+            _ => 0,
+        };
+        for _ in 0..shut {
+            if let Some(o) = open.pop() {
+                closes[o] = Some(k);
+            }
+        }
+    }
+    closes
 }

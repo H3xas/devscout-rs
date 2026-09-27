@@ -1,6 +1,7 @@
 use tree_sitter::Node;
 
 use super::rs_facts_types::{RsRole, RsSite};
+use super::rs_macro_bind::angle_closes;
 use super::rs_paths::Segment;
 use super::rs_sites::{make_site, Ctx};
 use crate::parse;
@@ -70,15 +71,20 @@ fn starts_path(tokens: &[Node], i: usize) -> bool {
 fn scan_tree(tree: Node, src: &[u8], ctx: &Ctx, out: &mut Vec<(usize, RsSite)>) {
     let mut cursor = tree.walk();
     let tokens: Vec<Node> = tree.children(&mut cursor).collect();
+    let closes = angle_closes(&tokens);
+    let level = Tokens {
+        tokens: &tokens,
+        closes: &closes,
+    };
     let mut i = 0;
     while i < tokens.len() {
         if !starts_path(&tokens, i) {
             i += 1;
             continue;
         }
-        let (segments, end) = read_path(&tokens, i, src);
+        let (segments, end) = read_path(&level, i, src);
         if !excluded_before(&tokens, i) {
-            if let Some(site) = call_after(&tokens, end, &segments, ctx) {
+            if let Some(site) = call_after(&level, end, &segments, ctx) {
                 out.push((tokens[i].start_byte(), site));
             }
         }
@@ -86,10 +92,18 @@ fn scan_tree(tree: Node, src: &[u8], ctx: &Ctx, out: &mut Vec<(usize, RsSite)>) 
     }
 }
 
+// One level's tokens with the closer of each `<`, found in one pass so that
+// skipping a turbofish never rescans the level.
+struct Tokens<'a, 't> {
+    tokens: &'a [Node<'t>],
+    closes: &'a [Option<usize>],
+}
+
 // A path starting at `start`: segments joined by `::`, a leading `::` as an
 // empty first segment, a turbofish inside the path skipped. Returns the
 // segments and the index after the last segment.
-fn read_path(tokens: &[Node], start: usize, src: &[u8]) -> (Vec<Segment>, usize) {
+fn read_path(level: &Tokens, start: usize, src: &[u8]) -> (Vec<Segment>, usize) {
+    let tokens = level.tokens;
     let mut segments = Vec::new();
     let mut i = start;
     if tokens[i].kind() == "::" {
@@ -106,7 +120,7 @@ fn read_path(tokens: &[Node], start: usize, src: &[u8]) -> (Vec<Segment>, usize)
             line: tokens[i].start_position().row + 1,
         });
         i += 1;
-        let after = skip_turbofish(tokens, i);
+        let after = skip_turbofish(level, i);
         let continues = after + 1 < tokens.len()
             && tokens[after].kind() == "::"
             && is_segment(tokens[after + 1]);
@@ -123,32 +137,23 @@ fn excluded_before(tokens: &[Node], start: usize) -> bool {
 
 // A call site when the path is followed, past an optional turbofish, by a
 // parenthesized token tree; `None` after `!` or anything else.
-fn call_after(tokens: &[Node], end: usize, segments: &[Segment], ctx: &Ctx) -> Option<RsSite> {
-    let next = skip_turbofish(tokens, end);
-    let group = tokens.get(next)?;
+fn call_after(level: &Tokens, end: usize, segments: &[Segment], ctx: &Ctx) -> Option<RsSite> {
+    let next = skip_turbofish(level, end);
+    let group = level.tokens.get(next)?;
     if group.kind() != "token_tree" || group.child(0).map(|c| c.kind()) != Some("(") {
         return None;
     }
     make_site(RsRole::Call, segments, ctx, true)
 }
 
-fn skip_turbofish(tokens: &[Node], at: usize) -> usize {
+// The index after a turbofish starting at `at`, or `at` when none starts
+// there or it never closes.
+fn skip_turbofish(level: &Tokens, at: usize) -> usize {
+    let tokens = level.tokens;
     if !(tokens.get(at).is_some_and(|n| n.kind() == "::")
         && tokens.get(at + 1).is_some_and(|n| n.kind() == "<"))
     {
         return at;
     }
-    let mut depth: i64 = 0;
-    for (k, node) in tokens.iter().enumerate().skip(at + 1) {
-        depth += match node.kind() {
-            "<" => 1,
-            ">" => -1,
-            ">>" => -2,
-            _ => 0,
-        };
-        if depth <= 0 {
-            return k + 1;
-        }
-    }
-    at
+    level.closes[at + 1].map_or(at, |close| close + 1)
 }
