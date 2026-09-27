@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 static COUNTER: AtomicU64 = AtomicU64::new(0);
 
-const CENSUS_MIXED: &str = "languages: 1 .cs (fully supported); 1 .ts (indexed and graphed, narrower edge coverage); 2 .rs (definitions only: find and read); 1 .md (present, not indexed)";
+const CENSUS_MIXED: &str = "languages: 1 .cs (fully supported); 1 .ts (indexed and graphed, narrower edge coverage); 2 .rs (indexed and graphed, path-resolved edges); 1 .md (present, not indexed)";
 
 fn temp_dir(prefix: &str) -> PathBuf {
     let n = COUNTER.fetch_add(1, Ordering::SeqCst);
