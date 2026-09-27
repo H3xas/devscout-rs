@@ -11,7 +11,7 @@ references `rust-analyzer lsif` writes for this repository. The method is
 |---|---|
 | Corpus | this repository, exported with `git archive` |
 | Run 0 revision | `911fe479190906bc965635f96839592f8459d67e` (Rust definitions, no Rust edges), mapped by a release build of the same revision |
-| Head revision | `6f73c09` (Rust edges), mapped by a release build of the same revision |
+| Head revision | `7ea1cb4` (Rust edges), mapped by a release build of the same revision |
 | Oracle | `rust-analyzer 1.97.1 (8bab26f4 2026-07-14)`, the toolchain component |
 | Toolchain | `rustc 1.97.1 (8bab26f4f 2026-07-14)`, `cargo 1.97.1 (c980f4866 2026-06-30)`, aarch64 macOS |
 | Network | none: every cargo and rust-analyzer step ran with `CARGO_NET_OFFLINE=true` and a scratch target directory |
@@ -29,6 +29,9 @@ python3 -B bench/rust_edges.py run --repo . --commit <rev> \
 
 Run 0 was rescored from its saved files once, after the site classifier learned the operator,
 literal, lifetime and whitespace positions rust-analyzer resolves; the oracle was not re-run.
+Two earlier head runs, on `6efa9bc` and `6f73c09`, met every threshold with no contradicted edge;
+the head published here is the last revision that changes code, and the ones before it differ
+only in the fixes and tests they preceded.
 
 ## Headline
 
@@ -89,7 +92,7 @@ The call population is the first two rows; every other row is an excluded class.
 | population: path call to a recorded fn, plain | 5922 | 6123 |
 | `use` tree | 3937 | 4165 |
 | attribute or derive | 2688 | 2889 |
-| macro name | 7500 | 7795 |
+| macro name | 7500 | 7798 |
 | method call to a recorded fn | 1154 | 1250 |
 | method call to an external or unrecorded item | 17292 | 18496 |
 | operator, literal, lifetime or whitespace | 12501 | 13318 |
@@ -97,11 +100,11 @@ The call population is the first two rows; every other row is an excluded class.
 | other reference to a recorded item (recorded other) | 837 | 858 |
 | other reference to a recorded item (recorded type) | 5847 | 6278 |
 | other reference to an external item | 13940 | 15047 |
-| other reference to an unrecorded item (local, field, variant) | 42197 | 45291 |
+| other reference to an unrecorded item (local, field, variant) | 42197 | 45292 |
 | path call to a recorded type (tuple-struct constructor) | 104 | 104 |
 | path call to an external item | 5112 | 5456 |
 | path call to an unrecorded item (variant, local, function-body item) | 1141 | 1197 |
-| **all oracle references** | 122740 | 130963 |
+| **all oracle references** | 122740 | 130967 |
 
 No reference falls inside a `macro_rules!` body: rust-analyzer resolves nothing there. Universe:
 304 files at Run 0 and 325 at the head (every `src/` and `tests/` file and
