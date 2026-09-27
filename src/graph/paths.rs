@@ -122,20 +122,21 @@ pub fn rust_crates_path(root: &Path) -> PathBuf {
 // wrote changes shape; the bump exists so a build without that arm never
 // meets a Rust fragment, because one cache entry no arm accepts makes the
 // whole cache fail to parse and every file reparse on every run.
-// v26 appends the Rust resolution facts (`modFiles`, `ctors`, `tests`,
-// `impls`, `uses`, `blocks`, `sites`) -- a cached v25 Rust fragment carries
-// none, so every Rust call, type and impl edge of an unchanged file would
-// silently be missing.
+// v27 appends the Rust resolution facts (`modFiles`, `ctors`, `tests`,
+// `impls`, `uses`, `blocks`, `sites`) -- a cached Rust fragment of an
+// earlier generation carries none, so every Rust call, type and impl edge
+// of an unchanged file would silently be missing. It skips v26, which
+// another fragment change already uses for a different shape.
 // The rename IS the invalidation mechanism:
 // pre-bump caches stop being found, every file reparses
 // once, no reader carries version-compat logic. Writers delete every
 // superseded generation (see `remove_superseded_caches`).
 pub(crate) fn fragments_cache_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-v26.json")
+    graph_dir(root).join("fragments-v27.json")
 }
 
 pub(crate) fn fragments_index_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-index-v26.json")
+    graph_dir(root).join("fragments-index-v27.json")
 }
 
 // Every generation below the current one, not just the immediately previous:
@@ -192,6 +193,8 @@ pub(crate) const SUPERSEDED_CACHE_FILES: &[&str] = &[
     "fragments-index-v24.json",
     "fragments-v25.json",
     "fragments-index-v25.json",
+    "fragments-v26.json",
+    "fragments-index-v26.json",
 ];
 
 pub(crate) fn remove_superseded_caches(root: &Path) {
