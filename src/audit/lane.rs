@@ -54,8 +54,8 @@ impl AuditLane {
         let Some(record) = &self.record else {
             return self.label.to_string();
         };
-        let field = |key: &str| record.get(key).and_then(Value::as_str);
-        match (field("state"), field("reason"), field("detail")) {
+        let field = |key: &str| record.get(key).and_then(Value::as_str).map(one_line);
+        match (field("state").as_deref(), field("reason"), field("detail")) {
             (Some(PARTIAL), _, Some(detail)) => format!("{} ({detail})", self.label),
             (Some(NOT_APPLIED), Some(reason), Some(detail)) => {
                 format!(
@@ -82,6 +82,20 @@ impl AuditLane {
         }
         fields
     }
+}
+
+/// The header is one line, and the record's text can come from the artifact,
+/// so a control character is written as its escape.
+fn one_line(text: &str) -> String {
+    text.chars()
+        .map(|c| {
+            if c.is_control() {
+                c.escape_debug().to_string()
+            } else {
+                c.to_string()
+            }
+        })
+        .collect()
 }
 
 /// `J` has no variant for an arbitrary JSON value; `RawNum` writes its text

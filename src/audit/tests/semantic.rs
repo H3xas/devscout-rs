@@ -135,6 +135,22 @@ fn a_graph_without_a_lane_record_reads_as_before_and_gains_no_key() {
 }
 
 #[test]
+fn a_control_character_in_the_record_is_escaped_in_the_one_line_header() {
+    let stats = json!({"lane": {
+        "state": "not-applied",
+        "reason": "imports-moved",
+        "detail": "import-file-missing:external-file:../a\nb.props",
+    }});
+    let header = header(stats);
+    assert!(
+        header.contains(
+            "  lane syntax (enriched lane not applied: imports-moved: import-file-missing:external-file:../a\\nb.props)  "
+        ),
+        "{header}"
+    );
+}
+
+#[test]
 fn a_state_this_build_does_not_know_keeps_the_semantic_reading() {
     let stats =
         json!({"semantic": semantic(), "lane": {"state": "reconsidered", "reason": "future"}});
