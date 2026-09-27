@@ -5,7 +5,7 @@
 //! Fixture: `fixtures/ts-query-edges` (its README lists every reference form).
 //!
 //! Every test runs the compiled binary as a subprocess against a fresh copy of
-//! the fixture, with HOME/SCOUT_REGISTRY/SCOUT_CONTENT_DB pointed at a fresh temp
+//! the fixture, with `HOME`, `SCOUT_REGISTRY` and `SCOUT_CONTENT_DB` pointed at a fresh temp
 //! dir -- the same isolation rule and per-file helpers as the other `cli_*`
 //! tests, since each tests/*.rs file compiles as its own binary.
 
