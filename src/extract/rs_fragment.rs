@@ -42,13 +42,19 @@ pub fn extract_rs_file(source: &str) -> RsFileExtraction {
     let src = parse::utf16_bytes(&units);
     let root = tree.root_node();
     let mut found = Vec::new();
-    let mut impls = Vec::new();
+    let mut impls = Impls::default();
     walk_items(root, &src, &mut found, &mut impls);
     let purpose = compose_purpose(root, &src, &found);
     let uses = super::rs_uses::collect_uses(root, &src);
-    let mut fragment = assemble(found, impls);
+    let numbering = super::rs_sites::Numbering {
+        blocks: &uses.block_ids,
+        impls: &impls.ids,
+    };
+    let sites = super::rs_sites::collect_sites(root, &src, &numbering);
+    let mut fragment = assemble(found, impls.records);
     fragment.uses = uses.uses;
     fragment.blocks = uses.blocks;
+    fragment.sites = sites;
     RsFileExtraction { purpose, fragment }
 }
 
@@ -74,6 +80,13 @@ fn assemble(found: Vec<Found>, mut impls: Vec<RsImpl>) -> RsFragment {
     }
     fragment.impls = impls;
     fragment
+}
+
+// The `impl` records the item walk writes, and the node id of each.
+#[derive(Default)]
+struct Impls {
+    records: Vec<RsImpl>,
+    ids: HashMap<usize, usize>,
 }
 
 // One item as the walk finds it, before duplicate paths are suffixed.
@@ -124,7 +137,7 @@ fn record_kind(node_kind: &str) -> Option<&'static str> {
 // pushed in reverse so they pop in source order. Each pending node carries
 // its enclosing path and, inside an `impl` with a nameable self type, the
 // index of that impl's record.
-fn walk_items(root: Node, src: &[u8], out: &mut Vec<Found>, impls: &mut Vec<RsImpl>) {
+fn walk_items(root: Node, src: &[u8], out: &mut Vec<Found>, impls: &mut Impls) {
     let mut pending: Vec<(Node, Vec<String>, Option<usize>)> = Vec::new();
     push_children(root, &[], None, &mut pending);
     while let Some((node, segments, in_impl)) = pending.pop() {
@@ -136,7 +149,10 @@ fn walk_items(root: Node, src: &[u8], out: &mut Vec<Found>, impls: &mut Vec<RsIm
                 _ => continue,
             }
         } else if node.kind() == "impl_item" {
-            impl_index = record_impl(node, src, &segments, impls);
+            impl_index = record_impl(node, src, &segments, &mut impls.records);
+            if let Some(index) = impl_index {
+                impls.ids.insert(node.id(), index);
+            }
             Some(self_type_head(node.child_by_field_name("type"), src))
         } else if node.kind() == "foreign_mod_item" {
             None
