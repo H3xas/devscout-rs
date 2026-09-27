@@ -164,7 +164,8 @@ truth rule, adjudication, metrics, gate, arms, isolation rules and predictions a
 [`bench/truth/typescript/preregistration.md`](../../bench/truth/typescript/preregistration.md)
 before any arm runs, and `manifest.json` beside it hashes every input.
 
-Rerun, with `$BENCH` a scratch directory outside any checkout and outside your home directory:
+Rerun, with `$BENCH` the absolute path of a scratch directory outside any checkout and outside your
+home directory; the corpus copies, the arm state and the peer install all live under it:
 
 ```sh
 python3 -B -m unittest discover -s bench -p 'test_ts_parity.py'

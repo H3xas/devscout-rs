@@ -60,6 +60,10 @@ def real_home():
     return os.path.realpath(pwd.getpwuid(os.getuid()).pw_dir)
 
 
+def canonical(path):
+    return os.path.realpath(path)
+
+
 def inside(path, root):
     path, root = os.path.realpath(path), os.path.realpath(root)
     return path == root or path.startswith(root.rstrip(os.sep) + os.sep)
@@ -70,6 +74,8 @@ def env_problems(env, home_of_user):
     home = env.get("HOME", "")
     if not home:
         problems.append("HOME is unset")
+    elif not os.path.isabs(home):
+        problems.append(f"HOME is not an absolute path: {home}")
     elif inside(home, home_of_user):
         problems.append("HOME is the real home directory or inside it")
     for name in sorted(env):
@@ -153,31 +159,52 @@ def is_devscout_checkout(directory):
         return False
 
 
-def corpus_problems(corpus, pin, head):
+def enclosing_checkout(path):
+    path = Path(canonical(path))
+    for directory in [path, *path.parents]:
+        if is_devscout_checkout(directory):
+            return directory
+    return None
+
+
+def place_problems(label, path, home_of_user, scratch_root=None):
+    """A bench path must be absolute, outside the real home and every devscout-rs checkout,
+    and, when a scratch root is given, inside it."""
+    if not os.path.isabs(path):
+        return [f"{label} is not an absolute path: {path}"]
+    problems = []
+    if scratch_root is not None and not inside(path, scratch_root):
+        problems.append(f"{label} is outside the bench scratch root")
+    if inside(path, home_of_user):
+        problems.append(f"{label} is inside the real home directory")
+    checkout = enclosing_checkout(path)
+    if checkout is not None:
+        problems.append(f"{label} sits inside a devscout-rs checkout: {checkout}")
+    return problems
+
+
+def install_path_problems(cache_dir, venv, home_of_user):
+    return (place_problems("UV_CACHE_DIR", cache_dir, home_of_user)
+            + place_problems("the peer virtual environment", canonical(venv), home_of_user))
+
+
+def corpus_problems(corpus, pin, head, scratch_root, home_of_user):
     problems = []
     if head != pin:
         problems.append(f"corpus HEAD {head} is not the pin {pin}")
-    path = Path(os.path.realpath(corpus))
-    for directory in [path, *path.parents]:
-        if is_devscout_checkout(directory):
-            problems.append(f"corpus sits inside a devscout-rs checkout: {directory}")
-            break
-    return problems
+    return problems + place_problems("the corpus", canonical(corpus), home_of_user, scratch_root)
 
 
 def arm_env_problems(arm, env, scratch_root, home_of_user):
     problems = env_problems(env, home_of_user)
+    problems += place_problems("the bench scratch root", scratch_root, home_of_user)
     state_keys = ["HOME"] + (["CRG_DATA_DIR"] if arm == "crg" else ["SCOUT_REGISTRY", "SCOUT_CONTENT_DB"])
     for key in state_keys:
         value = env.get(key, "")
         if not value:
             problems.append(f"{key} is unset")
-        elif not inside(value, scratch_root):
-            problems.append(f"{key} is outside the bench scratch root")
-        elif inside(value, home_of_user):
-            problems.append(f"{key} is inside the real home directory")
-    if inside(scratch_root, home_of_user):
-        problems.append("the bench scratch root is inside the real home directory")
+        else:
+            problems += place_problems(key, value, home_of_user, scratch_root)
     return problems
 
 
@@ -583,6 +610,7 @@ def invocations(templates, arm, seeds, binary, corpus):
 
 
 def arm_env(arm, scratch):
+    scratch = canonical(scratch)
     env = {"PATH": "/usr/bin:/bin", "LANG": "en_US.UTF-8", "HOME": str(Path(scratch) / f"{arm}-home")}
     if arm == "crg":
         env["CRG_DATA_DIR"] = str(Path(scratch) / f"{arm}-data")
@@ -593,6 +621,9 @@ def arm_env(arm, scratch):
 
 
 def run_arm(arm, binary, corpus, scratch, out_dir, bench_dir):
+    # Resolved once: the child runs with the corpus as its working directory, so every path it
+    # receives must already be absolute and every guard must judge the path the child will use.
+    binary, corpus, scratch = canonical(binary), canonical(corpus), canonical(scratch)
     bench = Path(bench_dir)
     manifest = json.loads((bench / "manifest.json").read_text(encoding="utf-8"))
     templates_path = bench / "templates.tsv"
@@ -601,7 +632,7 @@ def run_arm(arm, binary, corpus, scratch, out_dir, bench_dir):
     env = arm_env(arm, scratch)
     head = subprocess.run(["git", "-C", corpus, "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
     problems = template_problems(templates, manifest["files"]["templates.tsv"], templates_path)
-    problems += corpus_problems(corpus, seeds["pin"], head)
+    problems += corpus_problems(corpus, seeds["pin"], head, scratch, real_home())
     problems += arm_env_problems(arm, env, scratch, real_home())
     if refuse(problems):
         return 1
@@ -629,9 +660,17 @@ def run_arm(arm, binary, corpus, scratch, out_dir, bench_dir):
 
 
 def relative(path, corpus_root):
-    if corpus_root and path.startswith(corpus_root.rstrip("/") + "/"):
-        return path[len(corpus_root.rstrip("/")) + 1:]
-    return path
+    """A peer's absolute answer path relative to the corpus root, however either is spelled."""
+    if not path or not os.path.isabs(path):
+        return path
+    root = canonical(corpus_root)
+    spelled = os.path.normpath(path)
+    resolved = os.path.join(canonical(os.path.dirname(spelled)), os.path.basename(spelled))
+    for candidate in (spelled, resolved):
+        for prefix in (os.path.normpath(corpus_root), root):
+            if candidate.startswith(prefix.rstrip(os.sep) + os.sep):
+                return candidate[len(prefix.rstrip(os.sep)) + 1:]
+    raise SystemExit(f"answer path outside the corpus root: {path}")
 
 
 def devscout_files(task, payload):
@@ -761,9 +800,13 @@ def read_json(path):
 
 
 def cmd_peer_preinstall(args):
-    requirements = Path(args[0]).read_text(encoding="utf-8")
+    requirements_path, venv = args
+    requirements = Path(requirements_path).read_text(encoding="utf-8")
+    cache_dir = os.environ.get("UV_CACHE_DIR", "")
     problems = env_problems(dict(os.environ), real_home())
-    problems += cache_problems(os.environ.get("UV_CACHE_DIR", ""))
+    problems += cache_problems(cache_dir)
+    if cache_dir:
+        problems += install_path_problems(cache_dir, venv, real_home())
     problems += requirement_problems(requirements)
     return refuse(problems)
 

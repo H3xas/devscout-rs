@@ -7,7 +7,9 @@
 #
 # A shared or reused package cache can hold a different build published under the same
 # name and version, so the cache must start empty, every requirement is hash-pinned, and
-# the only index is PyPI. No extras are installed: the embedding providers and the
+# the only index is PyPI. HOME and the cache are absolute paths, and neither they nor the
+# virtual environment may sit inside the real home directory or a checkout of this
+# repository. No extras are installed: the embedding providers and the
 # visualizer are the parts of the package that reach the network.
 
 set -eu
@@ -27,7 +29,7 @@ if [ -e "$venv" ]; then
 	exit 1
 fi
 
-python3 -B "$bench/ts_parity.py" peer-preinstall "$requirements"
+python3 -B "$bench/ts_parity.py" peer-preinstall "$requirements" "$venv"
 
 export UV_NO_CONFIG=1
 export UV_PYTHON_DOWNLOADS=never

@@ -7,9 +7,11 @@
 # The runner starts from an empty environment, so no credential, package index or state
 # directory of the calling shell reaches an arm. It refuses to run when a template differs
 # from the pre-registered manifest, a template uses a verb outside the arm's allowlist, the
-# corpus is not at the pin or sits inside a checkout of this repository, or a state
-# directory (HOME, CRG_DATA_DIR, SCOUT_REGISTRY, SCOUT_CONTENT_DB) is outside the scratch
-# root or inside the real home directory.
+# corpus is not at the pin, or the corpus or a state directory (HOME, CRG_DATA_DIR,
+# SCOUT_REGISTRY, SCOUT_CONTENT_DB) is outside the scratch root, inside the real home
+# directory or inside a checkout of this repository. Every path is resolved to its canonical
+# absolute form before it is checked, because the arm runs with the corpus as its working
+# directory.
 
 set -eu
 

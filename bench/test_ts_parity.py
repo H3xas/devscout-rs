@@ -262,15 +262,28 @@ class GuardTests(unittest.TestCase):
 
     def test_corpus(self):
         with tempfile.TemporaryDirectory() as root:
+            root = tp.canonical(root)
             clone = Path(root, "clone")
             clone.mkdir()
-            self.assertEqual(tp.corpus_problems(clone, PIN, PIN), [])
-            self.assertTrue(tp.corpus_problems(clone, PIN, "1" * 40))
+            self.assertEqual(tp.corpus_problems(clone, PIN, PIN, root, "/home/example"), [])
+            self.assertTrue(tp.corpus_problems(clone, PIN, "1" * 40, root, "/home/example"))
             Path(root, "Cargo.toml").write_text('[package]\nname = "devscout-rs"\n')
-            self.assertTrue(tp.corpus_problems(clone, PIN, PIN))
+            self.assertTrue(tp.corpus_problems(clone, PIN, PIN, root, "/home/example"))
+
+    def test_corpus_is_bound_to_the_scratch_root_and_kept_out_of_home(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = tp.canonical(root)
+            scratch, elsewhere = Path(root, "scratch"), Path(root, "elsewhere")
+            scratch.mkdir()
+            elsewhere.mkdir()
+            self.assertTrue(tp.corpus_problems(elsewhere, PIN, PIN, str(scratch), "/home/example"))
+            inside_home = scratch / "clone"
+            inside_home.mkdir()
+            self.assertTrue(tp.corpus_problems(inside_home, PIN, PIN, str(scratch), str(scratch)))
 
     def test_arm_env(self):
         with tempfile.TemporaryDirectory() as root:
+            root = tp.canonical(root)
             env = tp.arm_env("crg", root)
             self.assertEqual(tp.arm_env_problems("crg", env, root, "/home/example"), [])
             self.assertTrue(tp.arm_env_problems("crg", dict(env, CRG_DATA_DIR="/elsewhere"), root, "/home/example"))
@@ -280,6 +293,50 @@ class GuardTests(unittest.TestCase):
             dev = tp.arm_env("devscout-base", root)
             self.assertEqual(tp.arm_env_problems("devscout-base", dev, root, "/home/example"), [])
             self.assertNotIn("CRG_DATA_DIR", dev)
+
+    def test_relative_state_paths_are_refused(self):
+        # The child runs in the corpus, so a relative state path would resolve there, not here.
+        with tempfile.TemporaryDirectory() as root:
+            root = tp.canonical(root)
+            env = dict(tp.arm_env("crg", root), HOME="crg-home")
+            self.assertTrue(tp.arm_env_problems("crg", env, root, "/home/example"))
+            self.assertTrue(tp.arm_env_problems("crg", tp.arm_env("crg", root), "rel", "/home/example"))
+
+    def test_arm_env_is_absolute_for_a_relative_scratch_root(self):
+        env = tp.arm_env("crg", "rel")
+        for key in ("HOME", "CRG_DATA_DIR"):
+            self.assertTrue(os.path.isabs(env[key]), env[key])
+            self.assertEqual(env[key], tp.canonical(env[key]))
+
+    def test_scratch_root_inside_a_checkout_is_refused(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = tp.canonical(root)
+            Path(root, "Cargo.toml").write_text('[package]\nname = "devscout-rs"\n')
+            scratch = str(Path(root, "scratch"))
+            self.assertTrue(tp.arm_env_problems("crg", tp.arm_env("crg", scratch), scratch, "/home/example"))
+
+    def test_install_paths(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = tp.canonical(root)
+            cache, venv = str(Path(root, "cache")), str(Path(root, "venv"))
+            self.assertEqual(tp.install_path_problems(cache, venv, "/home/example"), [])
+            self.assertTrue(tp.install_path_problems("cache", venv, "/home/example"))
+            self.assertTrue(tp.install_path_problems(cache, venv, root))
+            Path(root, "Cargo.toml").write_text('[package]\nname = "devscout-rs"\n')
+            self.assertTrue(tp.install_path_problems(cache, venv, "/home/example"))
+
+    def test_answer_paths_match_the_corpus_root_however_it_is_spelled(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = tp.canonical(root)
+            corpus = Path(root, "corpus")
+            (corpus / "src").mkdir(parents=True)
+            alias = Path(root, "alias")
+            alias.symlink_to(corpus)
+            self.assertEqual(tp.relative(str(alias / "src" / "a.ts"), str(corpus)), "src/a.ts")
+            self.assertEqual(tp.relative(str(corpus / "src" / "a.ts"), str(alias)), "src/a.ts")
+            self.assertEqual(tp.relative("src/a.ts", str(corpus)), "src/a.ts")
+            with self.assertRaises(SystemExit):
+                tp.relative(str(Path(root, "other", "a.ts")), str(corpus))
 
     def test_templates(self):
         with tempfile.TemporaryDirectory() as root:
