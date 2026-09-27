@@ -114,7 +114,7 @@ fn text_of(node: Node, src: &[u8]) -> String {
 fn read_level(tokens: &[Node], fields: bool, src: &[u8], names: &mut TreeNames) {
     let generics = generic_params(tokens);
     let mut angle: i64 = 0;
-    let mut pipes = 0usize;
+    let mut odd_pipes = false;
     for (i, token) in tokens.iter().enumerate() {
         match token.kind() {
             "impl" | "trait" => names.own_self = true,
@@ -122,13 +122,13 @@ fn read_level(tokens: &[Node], fields: bool, src: &[u8], names: &mut TreeNames) 
             "<" => angle += 1,
             ">" => angle = (angle - 1).max(0),
             ">>" => angle = (angle - 2).max(0),
-            "|" => pipes += 1,
+            "|" => odd_pipes = !odd_pipes,
             _ => {}
         }
         if !is_name(token.kind()) {
             continue;
         }
-        if fields && pipes % 2 == 0 && opens_field(tokens, i) {
+        if fields && !odd_pipes && opens_field(tokens, i) {
             continue;
         }
         let text = text_of(*token, src);
