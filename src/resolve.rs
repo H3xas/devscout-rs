@@ -59,6 +59,7 @@ mod receiver;
 mod scope;
 pub use assembly::{resolve_graph, resolve_graph_with_model, resolve_graph_with_ts};
 pub use index::{DefIndex, ExtCandidate, MemberLists, MethodOverloadParams};
+pub(crate) use ladder::AMBIGUOUS_CAP;
 
 #[cfg(test)]
 mod tests;

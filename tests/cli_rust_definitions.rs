@@ -648,7 +648,7 @@ fn rust_files_index_in_a_tree_with_no_cargo_manifest() {
 }
 
 #[test]
-fn rust_rows_are_a_suffix_and_move_only_two_stats() {
+fn rust_rows_are_a_suffix_and_move_only_their_own_stats() {
     let with = mixed_root("suffix-with", true);
     let without = mixed_root("suffix-without", false);
     for fx in [&with, &without] {
@@ -659,6 +659,8 @@ fn rust_rows_are_a_suffix_and_move_only_two_stats() {
     let g_without = without.json("graph/graph.json");
 
     let is_rust = |r: &serde_json::Value| r["file"].as_str().unwrap().ends_with(".rs");
+    let is_rust_edge =
+        |e: &serde_json::Value| e["from_file"].as_str().unwrap_or("").ends_with(".rs");
     for key in ["defs", "names"] {
         let rows = g_with[key].as_array().unwrap();
         let first_rust = rows.iter().position(is_rust).expect("rust rows present");
@@ -667,6 +669,12 @@ fn rust_rows_are_a_suffix_and_move_only_two_stats() {
             "{key}: rust rows are a suffix"
         );
     }
+    let edges = g_with["edges"].as_array().unwrap();
+    let first_rust_edge = edges.iter().position(is_rust_edge).unwrap_or(edges.len());
+    assert!(
+        edges[first_rust_edge..].iter().all(is_rust_edge),
+        "edges: rust edges are a suffix"
+    );
     let rust_defs = g_with["defs"]
         .as_array()
         .unwrap()
@@ -684,6 +692,31 @@ fn rust_rows_are_a_suffix_and_move_only_two_stats() {
             .cloned()
             .collect();
         g_with[key] = serde_json::Value::Array(kept);
+    }
+    let rust_edges: Vec<serde_json::Value> = g_with["edges"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| is_rust_edge(e))
+        .cloned()
+        .collect();
+    let kept: Vec<serde_json::Value> = g_with["edges"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| !is_rust_edge(e))
+        .cloned()
+        .collect();
+    g_with["edges"] = serde_json::Value::Array(kept);
+    assert_eq!(
+        rust_edges.len(),
+        1,
+        "the `impl Ledger` self type: {rust_edges:?}"
+    );
+    for edge in &rust_edges {
+        let kind = edge["kind"].as_str().unwrap();
+        let count = &mut g_with["stats"]["edges_by_kind"][kind];
+        *count = serde_json::Value::from(count.as_u64().unwrap() - 1);
     }
     let stats_with = g_with["stats"].clone();
     assert_eq!(

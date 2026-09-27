@@ -3,6 +3,8 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use super::crates::{discover, RustCrates};
+use crate::extract::{extract_rs_file, RsFragment};
+use crate::graph::{Edge, Graph};
 
 static COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -34,4 +36,80 @@ fn crates_of(files: &[(&str, &str)]) -> Option<RustCrates> {
     out
 }
 
+/// The graph `files` project into: every `.rs` file extracted, the Cargo
+/// model discovered, and the Rust defs, names and edges appended to an
+/// empty graph.
+fn graph_for(files: &[(&str, &str)]) -> Graph {
+    let crates = crates_of(files);
+    let fragments: Vec<(String, RsFragment)> = files
+        .iter()
+        .filter(|(rel, _)| rel.ends_with(".rs"))
+        .map(|(rel, body)| (rel.to_string(), extract_rs_file(body).fragment))
+        .collect();
+    let root = std::env::temp_dir().join("scout-rsgraph-edges-no-root");
+    let mut graph = crate::resolve::resolve_graph_with_model(&root, &[], &[], None, None);
+    super::append_rust(&mut graph, &fragments);
+    super::append_rust_edges(&mut graph, &fragments, crates.as_ref());
+    graph
+}
+
+/// Every edge as `kind from_file:from_line -> to`, ambiguous edges as
+/// `ambiguous(origin) from_file:from_line raw [candidates]`.
+fn edges_for(files: &[(&str, &str)]) -> Vec<String> {
+    graph_for(files).edges.iter().map(brief).collect()
+}
+
+fn brief(edge: &Edge) -> String {
+    match edge {
+        Edge::UsesMember {
+            from_file,
+            from_line,
+            to,
+            ..
+        } => {
+            format!("uses-member {from_file}:{from_line} -> {to}")
+        }
+        Edge::UsesType {
+            from_file,
+            from_line,
+            to,
+            ..
+        } => {
+            format!("uses-type {from_file}:{from_line} -> {to}")
+        }
+        Edge::Implements {
+            from_file,
+            from_line,
+            to,
+            ..
+        } => {
+            format!("implements {from_file}:{from_line} -> {to}")
+        }
+        Edge::Ambiguous {
+            origin,
+            from_file,
+            from_line,
+            raw,
+            candidates,
+            ..
+        } => {
+            let ids: Vec<&str> = candidates.iter().map(|c| c.id.as_str()).collect();
+            format!("ambiguous({origin}) {from_file}:{from_line} {raw} {ids:?}")
+        }
+        other => format!("{other:?}"),
+    }
+}
+
+/// Only the edges that land on `to`.
+fn edges_to(files: &[(&str, &str)], to: &str) -> Vec<String> {
+    edges_for(files)
+        .into_iter()
+        .filter(|e| e.ends_with(&format!("-> {to}")))
+        .collect()
+}
+
+mod bind;
 mod crates;
+mod emit;
+mod modtree;
+mod scope;

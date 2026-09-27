@@ -186,6 +186,7 @@ pub fn rebuild_graph_with_crates(
         semantic_layer,
     );
     crate::rsgraph::append_rust(&mut graph, &merged_rs);
+    crate::rsgraph::append_rust_edges(&mut graph, &merged_rs, crates);
     write_graph(root, &graph)?;
     write_project_units(root, model)?;
     write_rust_crates(root, crates)?;

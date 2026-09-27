@@ -1,20 +1,24 @@
-// Projects Rust fragments into graph definitions and names.
+// Projects Rust fragments into the graph: definitions and names first, then
+// the edges the module tree and `use` scope resolve.
 //
-// A Rust fragment carries items with spans and nothing else, so there is
-// nothing to resolve: each item becomes one def (which `read` quotes by its
-// span) and one name row (which `find` prints). The rows are appended after
-// every C# and TypeScript row, so a tree without a `.rs` file serializes
-// exactly as it did before Rust was indexed.
+// Each item becomes one def (which `read` quotes by its span) and one name
+// row (which `find` prints); a function carrying `#[test]` carries its own
+// name in `testMethods`. The rows and the edges are appended after every C#
+// and TypeScript row, so a tree without a `.rs` file serializes exactly as it
+// did before Rust was indexed.
 //
 // An id is `<file>#<path>`, the repository-relative file and the item's
-// file-local path. A crate path would need the module tree (`mod`
-// declarations, `mod.rs`, the crate roots); the file path is exact per file
-// and matches how TypeScript ids are formed.
+// file-local path. The module tree maps a crate path to a file, and a file
+// plus a file-local path to that id, so no crate-path id is introduced.
 
 use crate::extract::RsFragment;
 use crate::graph::{Def, Graph, GraphName};
 
+mod bind;
 pub mod crates;
+mod emit;
+mod modtree;
+mod scope;
 
 #[cfg(test)]
 mod edge_tests;
@@ -68,6 +72,35 @@ pub fn append_rust(graph: &mut Graph, fragments: &[(String, RsFragment)]) {
     }
     graph.stats.def_count += added;
     graph.stats.file_count += fragments.len();
+}
+
+/// Appends the edges Rust reference sites bind to.
+///
+/// Every site resolves through the module tree and `use` scope; its edges
+/// follow every existing edge and are counted in `stats.edges_by_kind`. No
+/// fragment leaves `graph` untouched.
+pub fn append_rust_edges(
+    graph: &mut Graph,
+    fragments: &[(String, RsFragment)],
+    crates: Option<&crates::RustCrates>,
+) {
+    if fragments.is_empty() {
+        return;
+    }
+    let tree = modtree::build(fragments, crates);
+    let tables = scope::tables(fragments, &tree);
+    let mut binder = bind::Binder {
+        tree: &tree,
+        t: tables,
+    };
+    binder.resolve_leaves();
+    binder.index_associated(fragments);
+    let (edges, counts) = emit::edges(&binder, fragments);
+    graph.edges.extend(edges);
+    let by_kind = &mut graph.stats.edges_by_kind;
+    by_kind.uses_member += counts.uses_member;
+    by_kind.uses_type += counts.uses_type;
+    by_kind.implements += counts.implements;
 }
 
 #[cfg(test)]
