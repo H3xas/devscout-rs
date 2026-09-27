@@ -27,6 +27,21 @@ pub struct CompilationTally {
     incomplete_by_reason: BTreeMap<String, usize>,
 }
 
+/// The reason comes from the artifact, and the coverage and lane lines are
+/// one line each, so a control character is written as its escape.
+fn printable(reason: &str) -> String {
+    reason
+        .chars()
+        .map(|c| {
+            if c.is_control() {
+                c.escape_debug().to_string()
+            } else {
+                c.to_string()
+            }
+        })
+        .collect()
+}
+
 impl CompilationTally {
     /// Tallies the envelope compilations of a parsed artifact. An artifact
     /// with no envelope list tallies nothing.
@@ -54,14 +69,11 @@ impl CompilationTally {
                 "partial" | "failed" => {
                     tally.total += 1;
                     let reason = if reason.is_empty() {
-                        UNSPECIFIED
+                        UNSPECIFIED.to_string()
                     } else {
-                        reason
+                        printable(reason)
                     };
-                    *tally
-                        .incomplete_by_reason
-                        .entry(reason.to_string())
-                        .or_insert(0) += 1;
+                    *tally.incomplete_by_reason.entry(reason).or_insert(0) += 1;
                 }
                 _ => {}
             }
@@ -148,6 +160,13 @@ mod tests {
     fn an_empty_reason_tallies_as_unspecified() {
         let tally = CompilationTally::from_states([("partial", ""), ("failed", "binding-error")]);
         assert_eq!(tally.text(), "binding-error 1, unspecified 1");
+    }
+
+    #[test]
+    fn a_control_character_in_a_reason_is_escaped_so_the_report_stays_one_line() {
+        let tally = CompilationTally::from_states([("partial", "line one\nline two\t\u{1b}[0m")]);
+        assert_eq!(tally.text(), "line one\\nline two\\t\\u{1b}[0m 1");
+        assert!(!tally.detail().unwrap().contains(char::is_control));
     }
 
     #[test]
