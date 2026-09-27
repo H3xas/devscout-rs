@@ -1,0 +1,19 @@
+# arm	task	target	argv (tab-separated; argv is space-separated, {files} expands to the target's file list)
+devscout-base	setup	setup	{bin} init --no-hooks
+devscout-base	refs	seed	{bin} refs {seed} --all --json
+devscout-base	tests	seed	{bin} tests {seed} --json
+devscout-base	impact	file	{bin} impact {file} --hops 1 --json
+devscout-base	impact-default	file	{bin} impact {file} --json
+devscout-head	setup	setup	{bin} init --no-hooks
+devscout-head	refs	seed	{bin} refs {seed} --all --json
+devscout-head	tests	seed	{bin} tests {seed} --json
+devscout-head	impact	file	{bin} impact {file} --hops 1 --json
+devscout-head	impact-default	file	{bin} impact {file} --json
+crg	setup	setup	{bin} build --repo {corpus}
+crg	status	setup	{bin} status --repo {corpus} --json
+crg	refs	seed	{bin} query callers_of {seed} --repo {corpus}
+crg	refs	seed	{bin} query inheritors_of {seed} --repo {corpus}
+crg	refs-importers	seed	{bin} query importers_of {seed} --repo {corpus}
+crg	tests	seed	{bin} query tests_for {seed} --repo {corpus}
+crg	impact	files	{bin} impact --files {files} --depth 1 --repo {corpus}
+crg	impact-default	files	{bin} impact --files {files} --repo {corpus}

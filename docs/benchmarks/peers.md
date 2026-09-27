@@ -19,7 +19,15 @@ unrelated projects and the official MCP registry entry is not always the project
 | `repomap` | Aider-AI/aider (`aider.repomap.RepoMap`) | Apache-2.0 | token-budgeted, PageRank-ranked whole-repo summary from tree-sitter tags |
 | `astgrep` | ast-grep/ast-grep | MIT | syntactic AST pattern matcher |
 | `vector` | zilliztech/claude-context | MIT | semantic retrieval; fully local via a local embedding server and a self-hosted vector store |
+| `crg` | tirth8205/code-review-graph (PyPI `code-review-graph==2.3.7`) | MIT | Tree-sitter graph in SQLite: callers, importers, tests-for and inheritance queries, blast radius of changed files; CLI and MCP |
 | `devscout` | this tool | MIT OR Apache-2.0 | name-resolved graph: definitions, inbound edges by kind, transitive file reachability |
+
+`crg` joined for the [TypeScript reference parity](methodology.md#typescript-reference-parity)
+run. Selection-rule checks: MIT; installs from PyPI and answers locally with no account or key
+(its embedding providers are an optional extra, not installed); release 2.3.7 is dated
+2026-07-18; a CLI and an MCP server. The bench uses four of its verbs — `build`, `status`,
+`query` and `impact` — installed by [`bench/peers/code-review-graph/install.sh`](../../bench/peers/code-review-graph/install.sh)
+from a hash-pinned requirements file.
 
 ## Capability matrix
 
@@ -34,6 +42,7 @@ dated results document, against a pinned corpus.
 | `repomap` | ranked summary | ranked summary | ranked summary | ranked summary | no | no |
 | `astgrep` | not attempted | syntactic | not attempted | not attempted | rewrite only | no |
 | `vector` | yes | semantic | not attempted | yes | no | model + store |
+| `crg` | yes | call and import edges | yes | yes | rename preview | graph build |
 | `devscout` | yes | resolved | yes | yes | no | no |
 
 "Not attempted" is quoted from the tool's own documentation and is never counted as a failure:

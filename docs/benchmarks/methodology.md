@@ -154,3 +154,40 @@ whatever a later run happens to produce. **Run 1** runs after the resolver chang
 corpus pin and same fixture, and is reported beside Run 0 rather than overwriting it, so a
 regression in one tier alongside an improvement in another stays visible instead of netting
 out.
+
+## TypeScript reference parity
+
+A scripted run, no model in the loop, asking whether `refs`, `tests` and `impact` answer for
+TypeScript symbols, against the `[typescript]` corpus (nrwl/nx at the pin in
+[`bench/corpus.lock`](../../bench/corpus.lock)) and one TypeScript-capable peer. The seed rule,
+truth rule, adjudication, metrics, gate, arms, isolation rules and predictions are fixed in
+[`bench/truth/typescript/preregistration.md`](../../bench/truth/typescript/preregistration.md)
+before any arm runs, and `manifest.json` beside it hashes every input.
+
+Rerun, with `$BENCH` a scratch directory outside any checkout and outside your home directory:
+
+```sh
+python3 -m unittest discover -s bench -p 'test_ts_parity.py'
+
+bench/clone-corpus.sh typescript "$BENCH/nx-pristine"      # the one network fetch of the corpus
+for arm in devscout-base devscout-head crg; do cp -a "$BENCH/nx-pristine" "$BENCH/nx-$arm"; done
+
+# the peer, from PyPI only, into an empty cache and a scratch HOME
+mkdir -p "$BENCH/install-home"
+env -i PATH="$PATH" HOME="$BENCH/install-home" UV_CACHE_DIR="$BENCH/uv-cache" \
+  bench/peers/code-review-graph/install.sh "$BENCH/crg-venv"
+
+# each arm from an empty environment; the runner refuses on any guard
+bench/ts-parity.sh devscout-base <devscout built from the base commit> "$BENCH/nx-devscout-base" "$BENCH" "$BENCH/out-base"
+bench/ts-parity.sh devscout-head <devscout built from the head commit> "$BENCH/nx-devscout-head" "$BENCH" "$BENCH/out-head"
+bench/ts-parity.sh crg "$BENCH/crg-venv/bin/code-review-graph" "$BENCH/nx-crg" "$BENCH" "$BENCH/out-crg"
+
+python3 bench/ts_parity.py score bench/truth/typescript "$BENCH/nx-crg" "$BENCH/scores.json" \
+  devscout-base="$BENCH/out-base" devscout-head="$BENCH/out-head" crg="$BENCH/out-crg"
+```
+
+The truth files are regenerated, for audit only, with `ts_parity.py seeds`, `truth`, `flags`
+and `seal` against the pristine clone and ripgrep; a regenerated file that differs from the
+committed one is a finding, never a replacement. The dated results document reports every
+arm's stored commands and outputs, per-seed and pooled figures against the sealed and the raw
+truth, every miss and extra classified, and the generated where-peers-win section.

@@ -1,0 +1,1256 @@
+{
+ "Anything": {
+  "nx-dev/data-access-packages/src/lib/get-description-for-schema.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  }
+ },
+ "FinalConfigForProject": {
+  "packages/nx/src/command-line/release/version/test-utils.ts": {
+   "reason": "the flagged line is a type-only import specifier of the seed file export, not a declaration",
+   "remove": false
+  }
+ },
+ "Not": {
+  "e2e/next/src/next-webpack.test.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "e2e/nx/src/misc.test.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "e2e/utils/command-utils.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "nx-dev/nx-dev/app/courses/[courseId]/[lessonId]/page.tsx": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "nx-dev/ui-common/src/lib/youtube.component.tsx": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "nx-dev/util-ai/src/lib/chat-utils.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/angular-rspack/src/lib/config/config-utils/style-config-utils.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/angular/src/builders/dev-server/dev-server.impl.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/angular/src/builders/webpack-browser/webpack-browser.impl.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/angular/src/builders/webpack-server/webpack-server.impl.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/angular/src/generators/setup-mf/lib/add-cypress-workaround.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/cypress/src/utils/start-dev-server.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/jest/src/plugins/plugin.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/js/src/release/version-actions.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/js/src/utils/is-locally-linked-package-version.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/nx/bin/nx.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/nx/src/ai/set-up-ai-agents/get-agent-rules.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/nx/src/command-line/release/utils/release-graph.spec.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/nx/src/command-line/release/utils/remote-release-clients/gitlab.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/nx/src/command-line/release/version/resolve-current-version.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/nx/src/executors/run-commands/running-tasks.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/nx/src/project-graph/plugins/isolation/plugin-lifecycle-manager.spec.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/nx/src/project-graph/plugins/resolve-plugin.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/react-native/src/executors/run-android/run-android.impl.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/react-native/src/executors/run-ios/run-ios.impl.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/react/src/generators/host/lib/update-module-federation-tsconfig.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/rspack/src/generators/configuration/configuration.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/storybook/src/utils/utilities.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/workspace/src/generators/move/lib/extract-base-configs.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/workspace/src/generators/move/lib/move-project-files.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "scripts/copy-built-package/directory-picker.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "scripts/nx-release.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "scripts/release-docs.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "tools/eslint-rules/rules/valid-command-object.spec.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "tools/workspace-plugin/src/conformance-rules/no-ignored-tracked-files/index.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  }
+ },
+ "Nothing": {
+  "packages/angular/src/utils/nx-devkit/ast-utils.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/eslint/src/executors/lint/lint.impl.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/nx/release/changelog-renderer/index.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/nx/src/command-line/release/version/version-actions.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  }
+ },
+ "ReleaseGraph": {
+  "packages/nx/src/command-line/release/utils/release-graph.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  }
+ },
+ "Type": {
+  "astro-docs/src/pages/[...slug].md.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "astro-docs/src/pages/llms-full.txt.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "astro-docs/src/pages/llms.txt.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "astro-docs/src/pages/robots.txt.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "astro-docs/src/plugins/utils/cnw-generation.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "astro-docs/src/plugins/utils/generate-plugin-markdown.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "astro-docs/src/plugins/utils/nx-cli-generation.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "astro-docs/src/plugins/utils/plugin-stats.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "astro-docs/src/plugins/utils/typedoc/typedoc.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "e2e/esbuild/src/esbuild-basic-build-and-generate.test.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "e2e/js/src/js-esm-support.test.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "e2e/maven/src/utils/create-maven-project.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "e2e/nx/src/misc.test.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "e2e/release/src/conventional-commits-config.test.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "e2e/release/src/conventional-commits-config.workspaces.test.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "nx-dev/nx-dev/app/blog/atom.xml/route.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "nx-dev/nx-dev/app/blog/rss.xml/route.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "nx-dev/nx-dev/lib/rspack/content/rspack-plugin.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "nx-dev/ui-markdoc/src/lib/tags/graph.component.tsx": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "nx-dev/ui-markdoc/src/lib/tags/project-details.component.tsx": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/angular-rspack/src/lib/plugins/i18n-inline-plugin.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/nx/src/command-line/graph/graph.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/nx/src/command-line/init/implementation/dot-nx/nxw.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/nx/src/command-line/release/config/config.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/nx/src/config/project-graph.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/nx/src/config/workspace-json-project-json.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/nx/src/generators/tree.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/nx/src/native/index.d.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/nx/src/project-graph/plugins/isolation/messaging.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "scripts/documentation/utils.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  }
+ },
+ "checkFilesExist": {
+  "packages/plugin/src/utils/testing-utils/utils.ts": {
+   "reason": "the file declares its own symbol of the same name",
+   "remove": true
+  }
+ },
+ "createFile": {
+  "packages/eslint-plugin/src/rules/dependency-checks.spec.ts": {
+   "reason": "the file declares its own symbol of the same name",
+   "remove": true
+  },
+  "packages/eslint-plugin/src/rules/enforce-module-boundaries.spec.ts": {
+   "reason": "the file declares its own symbol of the same name",
+   "remove": true
+  },
+  "packages/nx/src/plugins/js/package-json/create-package-json.spec.ts": {
+   "reason": "the file declares its own symbol of the same name",
+   "remove": true
+  }
+ },
+ "directoryExists": {
+  "packages/nx/src/utils/fileutils.ts": {
+   "reason": "the file declares its own symbol of the same name",
+   "remove": true
+  }
+ },
+ "exists": {
+  "e2e/dotnet/src/dotnet-configurations.test.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "e2e/gradle/src/gradle.test.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "e2e/gradle/src/utils/create-gradle-project.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "e2e/js/src/js-executor-copy-workspace-modules.test.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "e2e/next/src/next-playwright-standalone-eslint.test.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "e2e/nx/src/cache.test.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "e2e/nx/src/configure-ai-agents.test.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "e2e/nx/src/misc.test.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "e2e/nx/src/nxw.test.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "e2e/react-native/src/react-native-legacy.test.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "e2e/react-native/src/react-native.test.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "e2e/react/src/module-federation/dynamic-federation.rspack.test.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "e2e/react/src/module-federation/dynamic-federation.webpack.test.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "e2e/release/src/circular-dependencies.test.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "e2e/release/src/private-js-packages.test.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "e2e/release/src/version-plans-filtered-release.test.ts": {
+   "reason": "the file declares its own symbol of the same name",
+   "remove": true
+  },
+  "e2e/utils/create-project-utils.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "e2e/utils/ensure-browser-installation.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "nx-dev/ui-pricing/src/lib/faq.tsx": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/angular-rspack-compiler/src/compilation/augments.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/angular-rspack/src/lib/config/i18n/create-i18n-options.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/angular-rspack/src/lib/models/normalize-options.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/angular-rspack/src/lib/utils/url.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/angular/src/executors/module-federation-dev-server/module-federation-dev-server.impl.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/angular/src/executors/module-federation-ssr-dev-server/module-federation-ssr-dev-server.impl.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/angular/src/generators/convert-to-with-mf/convert-to-with-mf.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/angular/src/generators/federate-module/lib/add-remote.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/angular/src/generators/init/init.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/angular/src/generators/ngrx-root-store/lib/validate-options.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/angular/src/generators/scam-directive/scam-directive.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/angular/src/generators/scam-pipe/scam-pipe.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/angular/src/generators/scam-to-standalone/lib/index.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/angular/src/generators/scam-to-standalone/lib/verify-is-inline-scam.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/angular/src/generators/scam-to-standalone/lib/verify-module-is-scam.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/angular/src/generators/scam/scam.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/angular/src/generators/setup-tailwind/setup-tailwind.application.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/angular/src/migrations/update-18-0-0/add-mf-env-var-to-target-defaults.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/angular/src/migrations/update-18-1-1/fix-target-defaults-inputs.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/angular/src/migrations/update-19-6-0/turn-off-dts-by-default.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/angular/src/migrations/update-19-6-0/turn-off-dts-by-default.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/angular/src/migrations/update-19-6-1/ensure-depends-on-for-mf.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/angular/src/migrations/update-21-5-0/set-tsconfig-option.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/create-nx-workspace/bin/create-nx-workspace.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/create-nx-workspace/src/utils/ai/ai-output.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/create-nx-workspace/src/utils/git/git.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/create-nx-workspace/src/utils/nx/ab-testing.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/create-nx-workspace/src/utils/template/clone-template.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/cypress/plugins/cypress-preset.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/cypress/src/generators/convert-to-inferred/lib/add-dev-server-target-to-config.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/cypress/src/generators/convert-to-inferred/lib/add-dev-server-target-to-config.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/cypress/src/generators/convert-to-inferred/lib/add-exclude-spec-pattern.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/cypress/src/generators/convert-to-inferred/lib/upsert-baseUrl.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/cypress/src/generators/convert-to-inferred/lib/upsert-baseUrl.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/cypress/src/utils/start-dev-server.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/devkit/src/generators/artifact-name-and-directory-utils.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/devkit/src/generators/artifact-name-and-directory-utils.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/devkit/src/generators/target-defaults-utils.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/devkit/src/utils/package-json.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/eslint-plugin/src/rules/dependency-checks.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/eslint-plugin/src/rules/nx-plugin-checks.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/eslint-plugin/src/utils/ast-utils.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/eslint-plugin/src/utils/runtime-lint-utils.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/eslint/src/executors/lint/lint.impl.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/eslint/src/generators/utils/eslint-file.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/eslint/src/generators/utils/flat-config/ast-utils.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/eslint/src/generators/workspace-rules-project/workspace-rules-project.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/eslint/src/utils/config-file.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/expo/src/executors/build/build.impl.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/expo/src/utils/add-linting.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/gradle/src/plugin/nodes.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/gradle/src/utils/version-catalog-ast-utils.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/jest/src/generators/init/init.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/js/src/executors/node/lib/esm-loader.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/js/src/executors/release-publish/release-publish.impl.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/js/src/generators/library/utils/add-release-config.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/js/src/generators/setup-verdaccio/generator.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/js/src/migrations/update-22-1-0/remove-redundant-ts-project-references.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/js/src/utils/find-npm-dependencies.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/js/src/utils/npm-config.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/js/src/utils/npm-config.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/js/src/utils/swc/compile-swc.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/js/src/utils/typescript/ast-utils.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/module-federation/src/plugins/nx-module-federation-plugin/angular/nx-module-federation-dev-server-plugin.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/module-federation/src/plugins/nx-module-federation-plugin/angular/nx-module-federation-ssr-dev-server-plugin.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/module-federation/src/plugins/nx-module-federation-plugin/rspack/nx-module-federation-dev-server-plugin.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/module-federation/src/plugins/nx-module-federation-plugin/rspack/nx-module-federation-ssr-dev-server-plugin.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/module-federation/src/utils/share.spec.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/nest/src/generators/utils/normalize-options.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/next/src/generators/application/lib/add-project.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/node/src/generators/application/lib/create-targets.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/nx/bin/nx.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/nx/release/changelog-renderer/index.spec.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/nx/src/ai/clone-ai-config-repo.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/nx/src/command-line/configure-ai-agents/configure-ai-agents.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/nx/src/command-line/import/import.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/nx/src/command-line/init/implementation/add-nx-to-nest.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/nx/src/command-line/init/implementation/react/write-vite-config.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/nx/src/command-line/migrate/command-object.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/nx/src/command-line/migrate/migrate.spec.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/nx/src/command-line/migrate/migrate.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/nx/src/command-line/nx-commands.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/nx/src/command-line/release/command-object.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/nx/src/command-line/release/release.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/nx/src/command-line/release/utils/git.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/nx/src/command-line/release/utils/release-graph.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/nx/src/command-line/release/version/resolve-current-version.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/nx/src/command-line/run/run-one.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/nx/src/command-line/run/run-one.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/nx/src/daemon/client/client.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/nx/src/daemon/server/sync-generators.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/nx/src/native/tests/workspace_files.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/nx/src/nx-cloud/update-manager.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/nx/src/plugins/js/lock-file/__fixtures__/auxiliary-packages/.modules.yaml.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/nx/src/plugins/js/lock-file/__fixtures__/auxiliary-packages/pnpm-lock.yaml.pruned.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/nx/src/plugins/js/lock-file/__fixtures__/auxiliary-packages/pnpm-lock.yaml.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/nx/src/plugins/js/lock-file/__fixtures__/auxiliary-packages/yarn-berry.lock.pruned.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/nx/src/plugins/js/lock-file/__fixtures__/auxiliary-packages/yarn-berry.lock.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/nx/src/plugins/js/lock-file/__fixtures__/auxiliary-packages/yarn.lock.pruned.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/nx/src/plugins/js/lock-file/__fixtures__/auxiliary-packages/yarn.lock.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/nx/src/plugins/js/lock-file/__fixtures__/bun/auxiliary-packages.bun.lock.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/nx/src/plugins/js/lock-file/__fixtures__/bun/large-project.bun.lock.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/nx/src/plugins/js/lock-file/__fixtures__/bun/nextjs-app.bun.lock.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/nx/src/plugins/js/lock-file/__fixtures__/duplicate-package/.modules.yaml.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/nx/src/plugins/js/lock-file/__fixtures__/duplicate-package/pnpm-lock.yaml.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/nx/src/plugins/js/lock-file/__fixtures__/duplicate-package/yarn.lock.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/nx/src/plugins/js/lock-file/__fixtures__/nextjs/.modules.yaml.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/nx/src/plugins/js/lock-file/__fixtures__/nextjs/app/pnpm-lock-v6.yaml.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/nx/src/plugins/js/lock-file/__fixtures__/nextjs/app/pnpm-lock.yaml.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/nx/src/plugins/js/lock-file/__fixtures__/nextjs/app/yarn.lock.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/nx/src/plugins/js/lock-file/__fixtures__/nextjs/pnpm-lock-v6.yaml.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/nx/src/plugins/js/lock-file/__fixtures__/nextjs/pnpm-lock.yaml.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/nx/src/plugins/js/lock-file/__fixtures__/nextjs/yarn.lock.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/nx/src/plugins/js/lock-file/__fixtures__/pnpm-regression/pnpm-lock.yaml.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/nx/src/plugins/js/lock-file/__fixtures__/pnpm-regression/pruned-pnpm-lock.yaml.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/nx/src/plugins/js/lock-file/__fixtures__/pnpm-semver-range-specifier/.modules.yaml.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/nx/src/plugins/js/lock-file/__fixtures__/pnpm-semver-range-specifier/pnpm-lock.yaml.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/nx/src/plugins/js/lock-file/__fixtures__/resolutions-and-patches/yarn.lock.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/nx/src/plugins/js/lock-file/lock-file.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/nx/src/plugins/js/lock-file/yarn-parser.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/nx/src/plugins/js/package-json/create-package-json.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/nx/src/plugins/js/project-graph/affected/npm-packages.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/nx/src/plugins/js/project-graph/build-dependencies/explicit-package-json-dependencies.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/nx/src/plugins/package-json/create-nodes.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/nx/src/project-graph/affected/locators/project-glob-changes.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/nx/src/project-graph/nx-deps-cache.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/nx/src/project-graph/plugins/isolation/isolated-plugin.spec.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/nx/src/project-graph/project-graph-builder.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/nx/src/tasks-runner/pseudo-ipc.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/nx/src/tasks-runner/pseudo-ipc.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/nx/src/utils/catalog/pnpm-manager.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/nx/src/utils/fileutils.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/nx/src/utils/package-manager.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/nx/src/utils/package-manager.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/nx/src/utils/project-graph-utils.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/plugin/src/utils/testing-utils/utils.ts": {
+   "reason": "the file declares its own symbol of the same name",
+   "remove": true
+  },
+  "packages/react-native/src/generators/web-configuration/lib/webpack-targets.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/react-native/src/utils/add-linting.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/react/src/executors/module-federation-dev-server/module-federation-dev-server.impl.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/react/src/executors/module-federation-ssr-dev-server/module-federation-ssr-dev-server.impl.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/react/src/executors/module-federation-static-server/module-federation-static-server.impl.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/react/src/migrations/update-18-0-0/add-mf-env-var-to-target-defaults.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/rollup/src/executors/rollup/lib/normalize.spec.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/rsbuild/src/generators/configuration/configuration.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/rsbuild/src/utils/add-build-plugin.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/rsbuild/src/utils/ast-utils.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/rspack/src/executors/module-federation-dev-server/module-federation-dev-server.impl.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/rspack/src/executors/module-federation-ssr-dev-server/module-federation-ssr-dev-server.impl.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/rspack/src/executors/module-federation-static-server/module-federation-static-server.impl.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/rspack/src/generators/convert-config-to-rspack-plugin/lib/extract-rspack-options.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/rspack/src/generators/convert-to-inferred/utils/build-post-target-transformer.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/rspack/src/generators/convert-to-inferred/utils/serve-post-target-transformer.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/rspack/src/plugins/utils/models.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/storybook/src/generators/init/init.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/storybook/src/migrations/update-21-1-0/update-sb-9.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/storybook/src/utils/utilities.ts": {
+   "reason": "the file declares its own symbol of the same name",
+   "remove": true
+  },
+  "packages/vite/src/executors/build/build.impl.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/vite/src/generators/convert-to-inferred/lib/build-post-target-transformer.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/vite/src/generators/setup-paths-plugin/setup-paths-plugin.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/vite/src/utils/vite-config-edit-utils.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/vitest/src/utils/vite-config-edit-utils.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/web/src/generators/static-serve/static-serve-configuration.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/webpack/src/generators/convert-config-to-webpack-plugin/lib/extract-webpack-options.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/webpack/src/generators/convert-to-inferred/utils/build-post-target-transformer.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/webpack/src/generators/convert-to-inferred/utils/serve-post-target-transformer.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/webpack/src/plugins/nx-webpack-plugin/nx-app-webpack-plugin-options.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/workspace/src/generators/ci-workflow/ci-workflow.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/workspace/src/generators/infer-targets/infer-targets.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/workspace/src/generators/move/lib/check-destination.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/workspace/src/generators/move/lib/update-jest-config.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/workspace/src/generators/new/generate-preset.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/workspace/src/generators/remove/lib/check-dependencies.spec.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/workspace/src/generators/utils/insert-import.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/workspace/src/utilities/fileutils.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "scripts/documentation/map-link-checker.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "tools/update-repos/src/setup-repos.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "tools/update-repos/src/update-repo.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "tools/workspace-plugin/src/conformance-rules/blog-cover-image/index.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "tools/workspace-plugin/src/conformance-rules/relative-image-imports/index.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "tools/workspace-plugin/src/executors/legacy-post-build/executor.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  }
+ },
+ "fileExists": {
+  "packages/angular-rspack/test-utils/nx-devkit-mock.ts": {
+   "reason": "the file declares its own symbol of the same name",
+   "remove": true
+  },
+  "packages/nx/src/utils/fileutils.ts": {
+   "reason": "the file declares its own symbol of the same name",
+   "remove": true
+  },
+  "packages/nx/src/utils/workspace-root.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  }
+ },
+ "getSize": {
+  "packages/plugin/src/utils/testing-utils/utils.ts": {
+   "reason": "the file declares its own symbol of the same name",
+   "remove": true
+  }
+ },
+ "listFiles": {
+  "packages/angular/src/generators/storybook-configuration/storybook-configuration.spec.ts": {
+   "reason": "the file declares its own symbol of the same name",
+   "remove": true
+  },
+  "packages/plugin/src/utils/testing-utils/utils.ts": {
+   "reason": "the file declares its own symbol of the same name",
+   "remove": true
+  },
+  "packages/vue/src/generators/application/application.spec.ts": {
+   "reason": "the file declares its own symbol of the same name",
+   "remove": true
+  }
+ },
+ "nxProjectGraph": {
+  "packages/gradle/src/plugin/utils/get-project-graph-from-gradle-plugin.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/gradle/src/plugin/utils/get-project-graph-lines.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/gradle/src/utils/version-catalog-ast-utils.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/gradle/src/utils/version-catalog-ast-utils.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  }
+ },
+ "readFile": {
+  "packages/angular-rspack-compiler/test-utils/fs-memfs.setup-file.ts": {
+   "reason": "the name appears only inside comments",
+   "remove": true
+  },
+  "packages/jest/src/migrations/update-22-2-0/convert-jest-config-to-cjs.spec.ts": {
+   "reason": "the name appears only inside string or template literal text",
+   "remove": true
+  },
+  "packages/js/src/plugins/typescript/plugin.ts": {
+   "reason": "the file declares its own symbol of the same name",
+   "remove": true
+  },
+  "packages/nx/src/executors/run-commands/run-commands.impl.spec.ts": {
+   "reason": "the file declares its own symbol of the same name",
+   "remove": true
+  },
+  "packages/plugin/src/utils/testing-utils/utils.ts": {
+   "reason": "the file declares its own symbol of the same name",
+   "remove": true
+  }
+ },
+ "readJson": {
+  "packages/nx/src/generators/utils/json.ts": {
+   "reason": "the file declares its own symbol of the same name",
+   "remove": true
+  },
+  "packages/nx/src/plugins/package-json/create-nodes.ts": {
+   "reason": "the file declares its own symbol of the same name",
+   "remove": true
+  },
+  "packages/plugin/src/utils/testing-utils/utils.ts": {
+   "reason": "the file declares its own symbol of the same name",
+   "remove": true
+  }
+ },
+ "removeFile": {
+  "packages/nx/src/command-line/init/implementation/add-nx-to-nest.ts": {
+   "reason": "the file declares its own symbol of the same name",
+   "remove": true
+  }
+ },
+ "renameFile": {
+  "packages/plugin/src/utils/testing-utils/utils.ts": {
+   "reason": "the file declares its own symbol of the same name",
+   "remove": true
+  }
+ },
+ "rmDist": {
+  "packages/plugin/src/utils/testing-utils/utils.ts": {
+   "reason": "the file declares its own symbol of the same name",
+   "remove": true
+  }
+ },
+ "tmpBackupProjPath": {
+  "packages/plugin/src/utils/testing-utils/paths.ts": {
+   "reason": "the file declares its own symbol of the same name",
+   "remove": true
+  }
+ },
+ "updateFile": {
+  "packages/plugin/src/utils/testing-utils/utils.ts": {
+   "reason": "the file declares its own symbol of the same name",
+   "remove": true
+  }
+ },
+ "updateJson": {
+  "packages/nx/src/generators/utils/json.ts": {
+   "reason": "the file declares its own symbol of the same name",
+   "remove": true
+  }
+ },
+ "writeCache": {
+  "packages/nx/plugins/package-json.ts": {
+   "reason": "the file declares its own symbol of the same name",
+   "remove": true
+  }
+ }
+}

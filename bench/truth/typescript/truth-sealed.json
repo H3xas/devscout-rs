@@ -1,0 +1,3735 @@
+{
+ "kept": [
+  {
+   "file": "packages/nx/src/command-line/release/version/test-utils.ts",
+   "flag": "other declaration",
+   "name": "FinalConfigForProject",
+   "reason": "the flagged line is a type-only import specifier of the seed file export, not a declaration"
+  }
+ ],
+ "names": {
+  "AllOf": {
+   "declaredIn": [
+    "nx-dev/feature-package-schema-viewer/src/lib/types/type.tsx"
+   ],
+   "files": []
+  },
+  "AnyOf": {
+   "declaredIn": [
+    "nx-dev/feature-package-schema-viewer/src/lib/types/type.tsx"
+   ],
+   "files": []
+  },
+  "Anything": {
+   "declaredIn": [
+    "nx-dev/feature-package-schema-viewer/src/lib/types/type.tsx"
+   ],
+   "files": []
+  },
+  "ArrayOf": {
+   "declaredIn": [
+    "nx-dev/feature-package-schema-viewer/src/lib/types/type.tsx"
+   ],
+   "files": []
+  },
+  "ArrayOfAnyOf": {
+   "declaredIn": [
+    "nx-dev/feature-package-schema-viewer/src/lib/types/type.tsx"
+   ],
+   "files": []
+  },
+  "ArrayOfAnything": {
+   "declaredIn": [
+    "nx-dev/feature-package-schema-viewer/src/lib/types/type.tsx"
+   ],
+   "files": []
+  },
+  "CachedFileData": {
+   "declaredIn": [
+    "packages/nx/src/project-graph/nx-deps-cache.ts"
+   ],
+   "files": [
+    "packages/nx/src/project-graph/build-project-graph.ts"
+   ]
+  },
+  "CreateReleaseGraphOptions": {
+   "declaredIn": [
+    "packages/nx/src/command-line/release/utils/release-graph.ts"
+   ],
+   "files": []
+  },
+  "FileMapCache": {
+   "declaredIn": [
+    "packages/nx/src/project-graph/nx-deps-cache.ts"
+   ],
+   "files": [
+    "packages/angular/src/migrations/update-21-0-0/change-data-persistence-operators-imports-to-ngrx-router-store-data-persistence.spec.ts",
+    "packages/nx/src/daemon/server/project-graph-incremental-recomputation.ts",
+    "packages/nx/src/project-graph/build-project-graph.ts",
+    "packages/nx/src/project-graph/nx-deps-cache.spec.ts"
+   ]
+  },
+  "FinalConfigForProject": {
+   "declaredIn": [
+    "packages/nx/src/command-line/release/utils/release-graph.ts"
+   ],
+   "files": [
+    "packages/docker/src/release/version-utils.ts",
+    "packages/nx/src/command-line/release/version/release-group-processor.ts",
+    "packages/nx/src/command-line/release/version/resolve-current-version.spec.ts",
+    "packages/nx/src/command-line/release/version/resolve-current-version.ts",
+    "packages/nx/src/command-line/release/version/test-utils.ts",
+    "packages/nx/src/command-line/release/version/version-actions.ts"
+   ]
+  },
+  "Not": {
+   "declaredIn": [
+    "nx-dev/feature-package-schema-viewer/src/lib/types/type.tsx"
+   ],
+   "files": []
+  },
+  "Nothing": {
+   "declaredIn": [
+    "nx-dev/feature-package-schema-viewer/src/lib/types/type.tsx"
+   ],
+   "files": [
+    "packages/eslint/src/executors/lint/lint.impl.spec.ts"
+   ]
+  },
+  "ObjectNamed": {
+   "declaredIn": [
+    "nx-dev/feature-package-schema-viewer/src/lib/types/type.tsx"
+   ],
+   "files": []
+  },
+  "OneOf": {
+   "declaredIn": [
+    "nx-dev/feature-package-schema-viewer/src/lib/types/type.tsx"
+   ],
+   "files": []
+  },
+  "Primitives": {
+   "declaredIn": [
+    "nx-dev/feature-package-schema-viewer/src/lib/types/type.tsx"
+   ],
+   "files": []
+  },
+  "ReleaseGraph": {
+   "declaredIn": [
+    "packages/nx/src/command-line/release/utils/release-graph.ts"
+   ],
+   "files": [
+    "packages/nx/src/command-line/release/changelog.ts",
+    "packages/nx/src/command-line/release/command-object.ts",
+    "packages/nx/src/command-line/release/utils/resolve-semver-specifier.ts",
+    "packages/nx/src/command-line/release/utils/shared.spec.ts",
+    "packages/nx/src/command-line/release/utils/shared.ts",
+    "packages/nx/src/command-line/release/version.ts",
+    "packages/nx/src/command-line/release/version/derive-specifier-from-conventional-commits.ts",
+    "packages/nx/src/command-line/release/version/release-group-processor.ts"
+   ]
+  },
+  "Type": {
+   "declaredIn": [
+    "nx-dev/feature-package-schema-viewer/src/lib/types/type.tsx"
+   ],
+   "files": [
+    "graph/ui-project-details/src/lib/project-details/project-details.tsx",
+    "nx-dev/feature-package-schema-viewer/src/lib/parameter-view.tsx",
+    "nx-dev/feature-package-schema-viewer/src/lib/schema-viewer.tsx",
+    "packages/angular-rspack/src/lib/plugins/loaders/hmr-accept.ts",
+    "packages/angular-rspack/src/lib/plugins/tools/render-worker.ts",
+    "packages/angular-rspack/src/lib/plugins/tools/routes-extractor-worker.ts"
+   ]
+  },
+  "checkFilesDoNotExist": {
+   "declaredIn": [
+    "e2e/utils/file-utils.ts"
+   ],
+   "files": [
+    "e2e/angular/src/cypress-component-tests-buildable.test.ts",
+    "e2e/angular/src/cypress-component-tests-implicit-dep.test.ts",
+    "e2e/angular/src/ng-add.test.ts",
+    "e2e/angular/src/projects-ssr.test.ts",
+    "e2e/esbuild/src/esbuild-basic-build-and-generate.test.ts",
+    "e2e/esbuild/src/esbuild-basic-non-bundle.test.ts",
+    "e2e/eslint/src/linter-legacy.test.ts",
+    "e2e/eslint/src/linter.test.ts",
+    "e2e/js/src/js-executor-tsc.test.ts",
+    "e2e/js/src/js-generators.ts",
+    "e2e/next/src/next-generation.test.ts",
+    "e2e/next/src/next-styles.test.ts",
+    "e2e/node/src/node-esbuild.test.ts",
+    "e2e/node/src/node-server.test.ts",
+    "e2e/node/src/node.test.ts",
+    "e2e/nx-init/src/nx-init-angular.test.ts",
+    "e2e/nx-init/src/nx-init-react.test.ts",
+    "e2e/nx/src/nxw.test.ts",
+    "e2e/react/src/module-federation/ts-solution-mf.test.ts",
+    "e2e/react/src/react-package-legacy.test.ts",
+    "e2e/react/src/react.test.ts",
+    "e2e/web/src/web-legacy.test.ts",
+    "e2e/web/src/web-vite.test.ts",
+    "e2e/web/src/web.test.ts",
+    "e2e/workspace-create/src/create-nx-workspace-angular.test.ts",
+    "e2e/workspace-create/src/create-nx-workspace-other-presets-basic.test.ts",
+    "e2e/workspace-create/src/create-nx-workspace-package-managers.test.ts",
+    "e2e/workspace-create/src/create-nx-workspace-react.test.ts"
+   ]
+  },
+  "checkFilesExist": {
+   "declaredIn": [
+    "e2e/utils/file-utils.ts"
+   ],
+   "files": [
+    "e2e/angular/src/config.test.ts",
+    "e2e/angular/src/cypress-component-tests-implicit-dep.test.ts",
+    "e2e/angular/src/cypress-component-tests-setup.ts",
+    "e2e/angular/src/misc.test.ts",
+    "e2e/angular/src/module-federation-host-remote.test.ts",
+    "e2e/angular/src/module-federation-ssr.test.ts",
+    "e2e/angular/src/module-federation.rspack.test.ts",
+    "e2e/angular/src/ng-add.test.ts",
+    "e2e/angular/src/plugin.test.ts",
+    "e2e/angular/src/projects-build-and-test.test.ts",
+    "e2e/angular/src/projects-publishable.test.ts",
+    "e2e/angular/src/projects-ssr.test.ts",
+    "e2e/cypress/src/cypress.test.ts",
+    "e2e/detox/src/detox-legacy.test.ts",
+    "e2e/docker/src/docker.test.ts",
+    "e2e/dotnet/src/dotnet-advanced-msbuild.test.ts",
+    "e2e/dotnet/src/dotnet-cache.test.ts",
+    "e2e/dotnet/src/dotnet-configurations.test.ts",
+    "e2e/dotnet/src/dotnet-dependency-graph.test.ts",
+    "e2e/dotnet/src/dotnet-multi-project.test.ts",
+    "e2e/dotnet/src/dotnet.test.ts",
+    "e2e/esbuild/src/esbuild-basic-additional-entry-points.test.ts",
+    "e2e/esbuild/src/esbuild-basic-build-and-generate.test.ts",
+    "e2e/esbuild/src/esbuild-basic-non-bundle.test.ts",
+    "e2e/esbuild/src/esbuild-declarations.test.ts",
+    "e2e/eslint/src/linter-legacy.test.ts",
+    "e2e/eslint/src/linter.test.ts",
+    "e2e/expo/src/expo-legacy.test.ts",
+    "e2e/expo/src/expo.test.ts",
+    "e2e/gradle/src/gradle-import.test.ts",
+    "e2e/gradle/src/gradle-plugin-v1.test.ts",
+    "e2e/gradle/src/gradle.test.ts",
+    "e2e/js/src/js-esm-support.test.ts",
+    "e2e/js/src/js-executor-copy-workspace-modules.test.ts",
+    "e2e/js/src/js-executor-prune-lockfile.test.ts",
+    "e2e/js/src/js-executor-swc.test.ts",
+    "e2e/js/src/js-executor-tsc.test.ts",
+    "e2e/js/src/js-generators.ts",
+    "e2e/js/src/js-strip-types.test.ts",
+    "e2e/maven/src/maven-batch-v4.test.ts",
+    "e2e/maven/src/maven-batch.test.ts",
+    "e2e/maven/src/maven.test.ts",
+    "e2e/next/src/next-appdir.test.ts",
+    "e2e/next/src/next-custom-server.test.ts",
+    "e2e/next/src/next-generation.test.ts",
+    "e2e/next/src/next-legacy.test.ts",
+    "e2e/next/src/next-storybook.test.ts",
+    "e2e/next/src/next-styles.test.ts",
+    "e2e/next/src/next-webpack.test.ts",
+    "e2e/next/src/utils.ts",
+    "e2e/node/src/node-esbuild.test.ts",
+    "e2e/node/src/node-esm-support.test.ts",
+    "e2e/node/src/node-server.test.ts",
+    "e2e/node/src/node-ts-solution.test.ts",
+    "e2e/node/src/node-webpack.test.ts",
+    "e2e/node/src/node.test.ts",
+    "e2e/nuxt/src/nuxt.test.ts",
+    "e2e/nx-init/src/nx-init-angular.test.ts",
+    "e2e/nx-init/src/nx-init-react.test.ts",
+    "e2e/nx/src/affected-graph.test.ts",
+    "e2e/nx/src/extras.test.ts",
+    "e2e/nx/src/graph-ts-solution.test.ts",
+    "e2e/nx/src/import.test.ts",
+    "e2e/nx/src/nxw.test.ts",
+    "e2e/nx/src/run.test.ts",
+    "e2e/nx/src/workspace-legacy.test.ts",
+    "e2e/nx/src/workspace.test.ts",
+    "e2e/plugin/src/nx-plugin-ts-solution.test.ts",
+    "e2e/plugin/src/nx-plugin.test.ts",
+    "e2e/react-native/src/react-native-legacy.test.ts",
+    "e2e/react-native/src/react-native.test.ts",
+    "e2e/react/src/cypress-component-tests.test.ts",
+    "e2e/react/src/module-federation/core-rspack-basic-host-remote-generation.test.ts",
+    "e2e/react/src/module-federation/core-rspack-basic-playwright.test.ts",
+    "e2e/react/src/module-federation/core-rspack-name-and-root.test.ts",
+    "e2e/react/src/module-federation/core-webpack-basic-host-remote-generation.test.ts",
+    "e2e/react/src/module-federation/core-webpack-basic-playwright.test.ts",
+    "e2e/react/src/module-federation/core-webpack-name-and-root.test.ts",
+    "e2e/react/src/module-federation/core-webpack-ssr.test.ts",
+    "e2e/react/src/module-federation/ssr.rspack.test.ts",
+    "e2e/react/src/module-federation/ts-solution-mf.test.ts",
+    "e2e/react/src/react-package-legacy.test.ts",
+    "e2e/react/src/react-package.test.ts",
+    "e2e/react/src/react-router-ts-paths.test.ts",
+    "e2e/react/src/react-router-ts-solution.test.ts",
+    "e2e/react/src/react-rsbuild.test.ts",
+    "e2e/react/src/react-rspack.test.ts",
+    "e2e/react/src/react-ts-solution.test.ts",
+    "e2e/react/src/react-vite.test.ts",
+    "e2e/react/src/react.test.ts",
+    "e2e/remix/src/nx-remix.test.ts",
+    "e2e/rollup/src/rollup-legacy.test.ts",
+    "e2e/rollup/src/rollup.test.ts",
+    "e2e/rspack/tests/rspack.spec.ts",
+    "e2e/storybook/src/storybook-angular.test.ts",
+    "e2e/storybook/src/storybook-nested.test.ts",
+    "e2e/storybook/src/storybook.test.ts",
+    "e2e/vite/src/vite-esm.test.ts",
+    "e2e/vite/src/vite-legacy.test.ts",
+    "e2e/vue/src/vue-storybook.test.ts",
+    "e2e/web/src/web-legacy.test.ts",
+    "e2e/web/src/web-vite.test.ts",
+    "e2e/web/src/web.test.ts",
+    "e2e/webpack/src/webpack.legacy.test.ts",
+    "e2e/webpack/src/webpack.test.ts",
+    "e2e/workspace-create/src/create-nx-plugin.test.ts",
+    "e2e/workspace-create/src/create-nx-workspace-angular.test.ts",
+    "e2e/workspace-create/src/create-nx-workspace-frameworks-next.test.ts",
+    "e2e/workspace-create/src/create-nx-workspace-frameworks-nuxt.test.ts",
+    "e2e/workspace-create/src/create-nx-workspace-frameworks-vue.test.ts",
+    "e2e/workspace-create/src/create-nx-workspace-npm.test.ts",
+    "e2e/workspace-create/src/create-nx-workspace-other-presets-basic.test.ts",
+    "e2e/workspace-create/src/create-nx-workspace-package-managers.test.ts",
+    "e2e/workspace-create/src/create-nx-workspace-react.test.ts"
+   ]
+  },
+  "checkFilesMatchingPatternExist": {
+   "declaredIn": [
+    "e2e/utils/file-utils.ts"
+   ],
+   "files": [
+    "e2e/dotnet/src/dotnet-advanced-msbuild.test.ts",
+    "e2e/dotnet/src/dotnet-cache.test.ts",
+    "e2e/dotnet/src/dotnet-configurations.test.ts",
+    "e2e/dotnet/src/dotnet-multi-project.test.ts",
+    "e2e/dotnet/src/dotnet.test.ts"
+   ]
+  },
+  "createFile": {
+   "declaredIn": [
+    "e2e/utils/file-utils.ts"
+   ],
+   "files": [
+    "e2e/angular/src/cypress-component-tests-setup.ts",
+    "e2e/cypress/src/cypress.test.ts",
+    "e2e/docker/src/docker.test.ts",
+    "e2e/esbuild/src/esbuild-declarations.test.ts",
+    "e2e/eslint/src/linter.test.ts",
+    "e2e/expo/src/expo.test.ts",
+    "e2e/gradle/src/gradle-import.test.ts",
+    "e2e/gradle/src/gradle-plugin-v1.test.ts",
+    "e2e/gradle/src/gradle.test.ts",
+    "e2e/js/src/js-executor-tsc.test.ts",
+    "e2e/js/src/js-packaging.test.ts",
+    "e2e/next/src/next-component-tests.test.ts",
+    "e2e/next/src/next-jest-config.test.ts",
+    "e2e/node/src/node.test.ts",
+    "e2e/nx-init/src/nx-init-react.test.ts",
+    "e2e/nx/src/graph-ts-solution.test.ts",
+    "e2e/plugin/src/nx-plugin-ts-solution.test.ts",
+    "e2e/plugin/src/nx-plugin.test.ts",
+    "e2e/react/src/cypress-component-tests.test.ts",
+    "e2e/react/src/react-webpack.test.ts",
+    "e2e/react/src/react.test.ts",
+    "e2e/release/src/custom-registries.test.ts",
+    "e2e/release/src/release.test.ts",
+    "e2e/release/src/utils.ts",
+    "e2e/rspack/tests/rspack.spec.ts",
+    "e2e/utils/create-project-utils.ts",
+    "e2e/vite/src/vite-legacy.test.ts",
+    "e2e/web/src/web-legacy.test.ts",
+    "e2e/web/src/web-vite.test.ts",
+    "e2e/web/src/web.test.ts",
+    "e2e/webpack/src/webpack.test.ts",
+    "packages/angular/src/plugins/plugin.spec.ts",
+    "packages/devkit/src/generators/target-defaults-utils.spec.ts",
+    "packages/devkit/src/utils/add-plugin.spec.ts",
+    "packages/devkit/src/utils/convert-nx-executor.spec.ts",
+    "packages/devkit/src/utils/find-plugin-for-config-file.spec.ts",
+    "packages/js/src/utils/npm-config.spec.ts",
+    "packages/nx/src/internal-testing-utils/temp-fs.ts",
+    "packages/nx/src/project-graph/utils/retrieve-workspace-files.spec.ts"
+   ]
+  },
+  "createProjectFileMapCache": {
+   "declaredIn": [
+    "packages/nx/src/project-graph/nx-deps-cache.ts"
+   ],
+   "files": [
+    "packages/nx/src/project-graph/build-project-graph.ts",
+    "packages/nx/src/project-graph/nx-deps-cache.spec.ts"
+   ]
+  },
+  "createReleaseGraph": {
+   "declaredIn": [
+    "packages/nx/src/command-line/release/utils/release-graph.ts"
+   ],
+   "files": [
+    "packages/nx/src/command-line/release/changelog.ts",
+    "packages/nx/src/command-line/release/publish.ts",
+    "packages/nx/src/command-line/release/utils/release-graph.spec.ts",
+    "packages/nx/src/command-line/release/version.ts",
+    "packages/nx/src/command-line/release/version/test-utils.ts"
+   ]
+  },
+  "directoryExists": {
+   "declaredIn": [
+    "e2e/utils/file-utils.ts"
+   ],
+   "files": [
+    "e2e/nx/src/cache.test.ts",
+    "e2e/utils/create-project-utils.ts",
+    "e2e/vite/src/vite-legacy.test.ts",
+    "packages/nx/src/command-line/init/implementation/utils.ts",
+    "packages/nx/src/command-line/init/init-v1.ts",
+    "packages/nx/src/project-graph/nx-deps-cache.ts",
+    "packages/plugin/src/utils/testing-utils/utils.ts",
+    "packages/remix/src/executors/build/build.impl.ts",
+    "packages/webpack/src/utils/fs.ts",
+    "packages/workspace/src/utilities/fileutils.ts"
+   ]
+  },
+  "ensureCacheDirectory": {
+   "declaredIn": [
+    "packages/nx/src/project-graph/nx-deps-cache.ts"
+   ],
+   "files": []
+  },
+  "exists": {
+   "declaredIn": [
+    "e2e/utils/file-utils.ts"
+   ],
+   "files": [
+    "e2e/js/src/js-packaging.test.ts",
+    "e2e/next/src/utils.ts",
+    "e2e/nx-init/src/nx-init-nest.test.ts",
+    "e2e/nx/src/workspace.test.ts",
+    "e2e/release/src/independent-projects.test.ts",
+    "e2e/release/src/independent-projects.workspaces.test.ts",
+    "e2e/release/src/release.test.ts",
+    "e2e/release/src/version-plans.test.ts",
+    "e2e/vite/src/vite-legacy.test.ts",
+    "packages/angular/src/generators/application/application.spec.ts",
+    "packages/angular/src/generators/application/lib/add-proxy-config.ts",
+    "packages/angular/src/generators/application/lib/enable-strict-type-checking.ts",
+    "packages/angular/src/generators/application/lib/update-tsconfig-files.ts",
+    "packages/angular/src/generators/component-story/component-story.spec.ts",
+    "packages/angular/src/generators/component-story/component-story.ts",
+    "packages/angular/src/generators/component-test/component-test.ts",
+    "packages/angular/src/generators/component/component.spec.ts",
+    "packages/angular/src/generators/convert-to-application-executor/convert-to-application-executor.ts",
+    "packages/angular/src/generators/convert-to-rspack/convert-to-rspack.ts",
+    "packages/angular/src/generators/convert-to-with-mf/lib/parse-ast-webpack-config.ts",
+    "packages/angular/src/generators/cypress-component-configuration/cypress-component-configuration.spec.ts",
+    "packages/angular/src/generators/directive/directive.spec.ts",
+    "packages/angular/src/generators/federate-module/federate-module.spec.ts",
+    "packages/angular/src/generators/federate-module/federate-module.ts",
+    "packages/angular/src/generators/federate-module/lib/add-path-to-exposes.ts",
+    "packages/angular/src/generators/federate-module/lib/check-remote-exists.ts",
+    "packages/angular/src/generators/host/host.spec.ts",
+    "packages/angular/src/generators/init/init.ts",
+    "packages/angular/src/generators/library-secondary-entry-point/lib/normalize-options.ts",
+    "packages/angular/src/generators/library-secondary-entry-point/lib/update-tsconfig-included-files.ts",
+    "packages/angular/src/generators/library-secondary-entry-point/library-secondary-entry-point.spec.ts",
+    "packages/angular/src/generators/library/lib/add-children.ts",
+    "packages/angular/src/generators/library/lib/add-load-children.ts",
+    "packages/angular/src/generators/library/library.spec.ts",
+    "packages/angular/src/generators/move/lib/update-module-name.ts",
+    "packages/angular/src/generators/move/lib/update-ng-package.ts",
+    "packages/angular/src/generators/move/lib/update-secondary-entry-points.ts",
+    "packages/angular/src/generators/move/move.spec.ts",
+    "packages/angular/src/generators/ng-add/migrate-from-angular-cli.spec.ts",
+    "packages/angular/src/generators/ng-add/migrate-from-angular-cli.ts",
+    "packages/angular/src/generators/ng-add/migrators/builders/angular-build-unit-test.migrator.ts",
+    "packages/angular/src/generators/ng-add/migrators/builders/angular-devkit-karma.migrator.ts",
+    "packages/angular/src/generators/ng-add/migrators/builders/angular-devkit-ng-packagr.migrator.ts",
+    "packages/angular/src/generators/ng-add/migrators/builders/angular-eslint-lint.migrator.ts",
+    "packages/angular/src/generators/ng-add/migrators/migrator.ts",
+    "packages/angular/src/generators/ng-add/migrators/projects/app.migrator.spec.ts",
+    "packages/angular/src/generators/ng-add/migrators/projects/app.migrator.ts",
+    "packages/angular/src/generators/ng-add/migrators/projects/e2e.migrator.spec.ts",
+    "packages/angular/src/generators/ng-add/migrators/projects/e2e.migrator.ts",
+    "packages/angular/src/generators/ng-add/migrators/projects/lib.migrator.spec.ts",
+    "packages/angular/src/generators/ng-add/migrators/projects/project.migrator.ts",
+    "packages/angular/src/generators/ng-add/utilities/workspace.ts",
+    "packages/angular/src/generators/ngrx-feature-store/lib/add-exports-barrel.ts",
+    "packages/angular/src/generators/ngrx-feature-store/lib/validate-options.ts",
+    "packages/angular/src/generators/ngrx-feature-store/ngrx-feature-store.spec.ts",
+    "packages/angular/src/generators/ngrx-root-store/lib/normalize-options.ts",
+    "packages/angular/src/generators/ngrx-root-store/ngrx-root-store.spec.ts",
+    "packages/angular/src/generators/ngrx/lib/add-exports-barrel.ts",
+    "packages/angular/src/generators/ngrx/lib/validate-options.ts",
+    "packages/angular/src/generators/ngrx/ngrx.spec.ts",
+    "packages/angular/src/generators/pipe/pipe.spec.ts",
+    "packages/angular/src/generators/remote/remote.spec.ts",
+    "packages/angular/src/generators/scam-directive/lib/convert-directive-to-scam.ts",
+    "packages/angular/src/generators/scam-pipe/lib/convert-pipe-to-scam.ts",
+    "packages/angular/src/generators/scam-to-standalone/lib/convert-scam-to-standalone.ts",
+    "packages/angular/src/generators/scam-to-standalone/scam-to-standalone.ts",
+    "packages/angular/src/generators/scam/lib/convert-component-to-scam.ts",
+    "packages/angular/src/generators/setup-mf/lib/add-cypress-workaround.ts",
+    "packages/angular/src/generators/setup-mf/lib/add-remote-to-host.ts",
+    "packages/angular/src/generators/setup-mf/lib/fix-bootstrap.ts",
+    "packages/angular/src/generators/setup-mf/lib/generate-config.ts",
+    "packages/angular/src/generators/setup-mf/lib/remove-dead-code-from-remote.ts",
+    "packages/angular/src/generators/setup-mf/lib/setup-host-if-dynamic.ts",
+    "packages/angular/src/generators/setup-mf/lib/update-host-app-routes.ts",
+    "packages/angular/src/generators/setup-mf/setup-mf.spec.ts",
+    "packages/angular/src/generators/setup-ssr/lib/add-hydration.ts",
+    "packages/angular/src/generators/setup-ssr/setup-ssr.spec.ts",
+    "packages/angular/src/generators/setup-tailwind/lib/add-tailwind-config.ts",
+    "packages/angular/src/generators/setup-tailwind/lib/update-application-styles.ts",
+    "packages/angular/src/generators/stories/stories-app.spec.ts",
+    "packages/angular/src/generators/stories/stories-lib.spec.ts",
+    "packages/angular/src/generators/storybook-configuration/storybook-configuration.spec.ts",
+    "packages/angular/src/generators/utils/add-jest.ts",
+    "packages/angular/src/generators/utils/add-vitest.ts",
+    "packages/angular/src/generators/utils/app-components-info.ts",
+    "packages/angular/src/generators/utils/entry-point.ts",
+    "packages/angular/src/generators/utils/find-module.ts",
+    "packages/angular/src/generators/utils/storybook-ast/component-info.ts",
+    "packages/angular/src/generators/utils/storybook-ast/entry-point.ts",
+    "packages/angular/src/generators/utils/tsconfig-utils.ts",
+    "packages/angular/src/generators/utils/update-app-editor-tsconfig-excluded-files.ts",
+    "packages/angular/src/generators/web-worker/lib/normalize-options.ts",
+    "packages/angular/src/generators/web-worker/web-worker.spec.ts",
+    "packages/angular/src/migrations/update-17-1-0/replace-nguniversal-engines.spec.ts",
+    "packages/angular/src/migrations/update-18-0-0/add-mf-env-var-to-target-defaults.ts",
+    "packages/angular/src/migrations/update-18-1-1/fix-target-defaults-inputs.ts",
+    "packages/angular/src/migrations/update-21-2-0/update-module-resolution.ts",
+    "packages/angular/src/migrations/update-21-5-0/remove-default-karma-configuration-files.spec.ts",
+    "packages/angular/src/migrations/update-21-5-0/remove-default-karma-configuration-files.ts",
+    "packages/angular/src/migrations/update-21-5-0/set-tsconfig-option.ts",
+    "packages/angular/src/migrations/update-22-3-0/set-isolated-modules.ts",
+    "packages/angular/src/migrations/update-22-3-0/update-module-resolution.ts",
+    "packages/angular/src/migrations/update-22-3-0/update-ssr-webpack-config.spec.ts",
+    "packages/angular/src/migrations/update-22-3-0/update-ssr-webpack-config.ts",
+    "packages/angular/src/migrations/update-22-3-0/update-typescript-lib.ts",
+    "packages/angular/src/utils/get-mf-projects.ts",
+    "packages/angular/src/utils/nx-devkit/ast-utils.ts",
+    "packages/angular/src/utils/nx-devkit/route-utils.ts",
+    "packages/cypress/src/generators/base-setup/base-setup.ts",
+    "packages/cypress/src/generators/component-configuration/component-configuration.spec.ts",
+    "packages/cypress/src/generators/component-configuration/component-configuration.ts",
+    "packages/cypress/src/generators/configuration/configuration.spec.ts",
+    "packages/cypress/src/generators/configuration/configuration.ts",
+    "packages/cypress/src/generators/convert-to-inferred/convert-to-inferred.spec.ts",
+    "packages/cypress/src/generators/migrate-to-cypress-11/conversion.util.ts",
+    "packages/cypress/src/generators/migrate-to-cypress-11/migrate-to-cypress-11.ts",
+    "packages/cypress/src/migrations/update-20-8-0/remove-experimental-fetch-polyfill.spec.ts",
+    "packages/cypress/src/migrations/update-20-8-0/remove-experimental-fetch-polyfill.ts",
+    "packages/cypress/src/migrations/update-20-8-0/replace-experimental-just-in-time-compile.spec.ts",
+    "packages/cypress/src/migrations/update-20-8-0/replace-experimental-just-in-time-compile.ts",
+    "packages/cypress/src/migrations/update-20-8-0/set-inject-document-domain.spec.ts",
+    "packages/cypress/src/migrations/update-20-8-0/set-inject-document-domain.ts",
+    "packages/cypress/src/migrations/update-20-8-0/update-component-testing-mount-imports.spec.ts",
+    "packages/cypress/src/migrations/update-20-8-0/update-component-testing-mount-imports.ts",
+    "packages/cypress/src/migrations/update-22-1-0/rename-cy-exec-code-property.ts",
+    "packages/cypress/src/migrations/update-22-1-0/update-angular-component-testing-support.ts",
+    "packages/cypress/src/migrations/update-22-1-0/update-selector-playground-api.ts",
+    "packages/detox/src/generators/application/application.spec.ts",
+    "packages/detox/src/generators/application/lib/add-git-ignore-entry.ts",
+    "packages/detox/src/generators/application/lib/add-linting.spec.ts",
+    "packages/detox/src/generators/application/lib/create-files.spec.ts",
+    "packages/detox/src/generators/convert-to-inferred/convert-to-inferred.spec.ts",
+    "packages/detox/src/migrations/update-22-0-0/remove-config-plugins-detox-for-expo-54.ts",
+    "packages/devkit/src/generators/format-files.ts",
+    "packages/devkit/src/generators/generate-files.spec.ts",
+    "packages/devkit/src/generators/generate-files.ts",
+    "packages/devkit/src/generators/project-name-and-root-utils.ts",
+    "packages/devkit/src/generators/to-js.spec.ts",
+    "packages/devkit/src/generators/update-ts-configs-to-js.ts",
+    "packages/devkit/src/utils/add-plugin.ts",
+    "packages/devkit/src/utils/catalog/index.ts",
+    "packages/devkit/src/utils/catalog/pnpm-manager.ts",
+    "packages/devkit/src/utils/get-workspace-layout.ts",
+    "packages/devkit/src/utils/invoke-nx-generator.ts",
+    "packages/devkit/src/utils/move-dir.ts",
+    "packages/devkit/src/utils/package-json.ts",
+    "packages/devkit/src/utils/replace-package.ts",
+    "packages/docker/src/generators/init/init.ts",
+    "packages/dotnet/src/generators/init/init.ts",
+    "packages/esbuild/src/generators/configuration/configuration.ts",
+    "packages/eslint/src/generators/convert-to-flat-config/converters/json-converter.ts",
+    "packages/eslint/src/generators/convert-to-flat-config/generator.spec.ts",
+    "packages/eslint/src/generators/convert-to-flat-config/generator.ts",
+    "packages/eslint/src/generators/convert-to-inferred/convert-to-inferred.spec.ts",
+    "packages/eslint/src/generators/init/init-migration.ts",
+    "packages/eslint/src/generators/init/init.spec.ts",
+    "packages/eslint/src/generators/init/init.ts",
+    "packages/eslint/src/generators/lint-project/lint-project.ts",
+    "packages/eslint/src/generators/lint-project/setup-root-eslint.ts",
+    "packages/eslint/src/generators/utils/eslint-file.ts",
+    "packages/eslint/src/generators/workspace-rules-project/workspace-rules-project.spec.ts",
+    "packages/eslint/src/migrations/update-20-3-0/add-file-extensions-to-overrides.ts",
+    "packages/eslint/src/utils/flat-config.ts",
+    "packages/expo/src/generators/application/application.spec.ts",
+    "packages/expo/src/generators/application/lib/add-eas-scripts.ts",
+    "packages/expo/src/generators/component/component.spec.ts",
+    "packages/expo/src/generators/component/component.ts",
+    "packages/expo/src/generators/convert-to-inferred/convert-to-inferred.spec.ts",
+    "packages/expo/src/generators/init/lib/add-git-ignore-entry.ts",
+    "packages/expo/src/generators/library/library.spec.ts",
+    "packages/expo/src/migrations/update-21-4-0/add-jest-resolver.spec.ts",
+    "packages/expo/src/migrations/update-21-4-0/add-jest-resolver.ts",
+    "packages/expo/src/migrations/update-21-4-0/remove-deprecated-deps.ts",
+    "packages/expo/src/migrations/update-21-4-0/update-splash-screen-config.spec.ts",
+    "packages/expo/src/migrations/update-21-4-0/update-splash-screen-config.ts",
+    "packages/expo/src/migrations/update-22-2-0/add-expo-system-ui.ts",
+    "packages/expo/src/migrations/update-22-2-0/update-jest-for-expo-54.spec.ts",
+    "packages/expo/src/migrations/update-22-2-0/update-jest-for-expo-54.ts",
+    "packages/expo/src/utils/add-linting.spec.ts",
+    "packages/expo/src/utils/expo-project-detection.spec.ts",
+    "packages/expo/src/utils/expo-project-detection.ts",
+    "packages/expo/src/utils/init-root-babel-config.ts",
+    "packages/expo/src/utils/update-tsconfig-files.ts",
+    "packages/express/src/generators/application/application.spec.ts",
+    "packages/gradle/src/generators/init/gradle-project-graph-plugin-utils.ts",
+    "packages/gradle/src/generators/init/init.ts",
+    "packages/gradle/src/utils/version-catalog-ast-utils.ts",
+    "packages/jest/src/generators/configuration/configuration.spec.ts",
+    "packages/jest/src/generators/configuration/configuration.ts",
+    "packages/jest/src/generators/configuration/lib/create-files.ts",
+    "packages/jest/src/generators/configuration/lib/create-jest-config.spec.ts",
+    "packages/jest/src/generators/configuration/lib/create-jest-config.ts",
+    "packages/jest/src/generators/configuration/lib/update-tsconfig.ts",
+    "packages/jest/src/generators/configuration/lib/update-vscode-recommended-extensions.ts",
+    "packages/jest/src/generators/convert-to-inferred/convert-to-inferred.spec.ts",
+    "packages/jest/src/generators/convert-to-inferred/convert-to-inferred.ts",
+    "packages/jest/src/generators/init/init.ts",
+    "packages/jest/src/migrations/update-22-2-0/convert-jest-config-to-cjs.ts",
+    "packages/jest/src/utils/config/config-file.ts",
+    "packages/jest/src/utils/config/update-config.ts",
+    "packages/js/src/generators/convert-to-swc/convert-to-swc.spec.ts",
+    "packages/js/src/generators/convert-to-swc/convert-to-swc.ts",
+    "packages/js/src/generators/init/init.spec.ts",
+    "packages/js/src/generators/library/library.spec.ts",
+    "packages/js/src/generators/library/library.ts",
+    "packages/js/src/generators/setup-build/generator.spec.ts",
+    "packages/js/src/generators/setup-build/generator.ts",
+    "packages/js/src/generators/setup-prettier/generator.spec.ts",
+    "packages/js/src/generators/setup-verdaccio/generator.ts",
+    "packages/js/src/generators/typescript-sync/typescript-sync.ts",
+    "packages/js/src/migrations/update-21-5-0/migrate-development-custom-condition.spec.ts",
+    "packages/js/src/migrations/update-21-5-0/migrate-development-custom-condition.ts",
+    "packages/js/src/utils/add-babel-inputs.ts",
+    "packages/js/src/utils/add-local-registry-scripts.spec.ts",
+    "packages/js/src/utils/add-local-registry-scripts.ts",
+    "packages/js/src/utils/package-json/get-npm-scope.ts",
+    "packages/js/src/utils/package-json/sort-fields.ts",
+    "packages/js/src/utils/package-manager-workspaces.ts",
+    "packages/js/src/utils/prettier.ts",
+    "packages/js/src/utils/swc/add-swc-config.ts",
+    "packages/js/src/utils/typescript/create-ts-config.ts",
+    "packages/js/src/utils/typescript/ts-config.ts",
+    "packages/js/src/utils/typescript/ts-solution-setup.ts",
+    "packages/maven/src/generators/init/generator.ts",
+    "packages/maven/src/utils/pom-xml-updater.ts",
+    "packages/nest/src/generators/application/application.spec.ts",
+    "packages/nest/src/generators/application/application.ts",
+    "packages/nest/src/generators/application/lib/update-tsconfig.ts",
+    "packages/nest/src/generators/library/library.spec.ts",
+    "packages/nest/src/generators/library/library.ts",
+    "packages/next/src/generators/application/application.spec.ts",
+    "packages/next/src/generators/application/application.ts",
+    "packages/next/src/generators/component/component.spec.ts",
+    "packages/next/src/generators/component/component.ts",
+    "packages/next/src/generators/convert-to-inferred/convert-to-inferred.spec.ts",
+    "packages/next/src/generators/convert-to-inferred/lib/utils.ts",
+    "packages/next/src/generators/custom-server/custom-server.spec.ts",
+    "packages/next/src/generators/cypress-component-configuration/cypress-component-configuration.spec.ts",
+    "packages/next/src/generators/cypress-component-configuration/cypress-component-configuration.ts",
+    "packages/next/src/generators/library/lib/update-vite-config.ts",
+    "packages/next/src/generators/library/library.spec.ts",
+    "packages/next/src/generators/library/library.ts",
+    "packages/next/src/generators/page/page.spec.ts",
+    "packages/next/src/generators/page/page.ts",
+    "packages/next/src/generators/setup-tailwind/lib/add-tailwind-style-imports.ts",
+    "packages/next/src/generators/setup-tailwind/setup-tailwind.spec.ts",
+    "packages/next/src/generators/setup-tailwind/setup-tailwind.ts",
+    "packages/next/src/migrations/update-22-0-0/add-svgr-to-next-config.ts",
+    "packages/next/src/utils/add-gitignore-entry.ts",
+    "packages/next/src/utils/add-swc-to-custom-server.ts",
+    "packages/next/src/utils/jest-config-util.ts",
+    "packages/node/src/generators/application/application.spec.ts",
+    "packages/node/src/generators/application/lib/add-proxy.ts",
+    "packages/node/src/generators/e2e-project/e2e-project.spec.ts",
+    "packages/node/src/generators/e2e-project/e2e-project.ts",
+    "packages/node/src/generators/library/library.spec.ts",
+    "packages/node/src/generators/library/library.ts",
+    "packages/node/src/generators/setup-docker/setup-docker.spec.ts",
+    "packages/node/src/utils/vscode-debug-config.ts",
+    "packages/nuxt/src/generators/application/application.spec.ts",
+    "packages/nuxt/src/generators/storybook-configuration/configuration.spec.ts",
+    "packages/nuxt/src/migrations/update-18-1-0/add-include-tsconfig.ts",
+    "packages/nx/src/adapter/ngcli-adapter.spec.ts",
+    "packages/nx/src/adapter/ngcli-adapter.ts",
+    "packages/nx/src/ai/set-up-ai-agents/set-up-ai-agents.spec.ts",
+    "packages/nx/src/ai/set-up-ai-agents/set-up-ai-agents.ts",
+    "packages/nx/src/command-line/init/implementation/dot-nx/add-nx-scripts.ts",
+    "packages/nx/src/command-line/release/changelog.ts",
+    "packages/nx/src/command-line/release/version/version-actions.ts",
+    "packages/nx/src/generators/tree.spec.ts",
+    "packages/nx/src/generators/tree.ts",
+    "packages/nx/src/generators/utils/generate-files.spec.ts",
+    "packages/nx/src/generators/utils/generate-files.ts",
+    "packages/nx/src/generators/utils/json.ts",
+    "packages/nx/src/generators/utils/nx-json.ts",
+    "packages/nx/src/generators/utils/project-configuration.spec.ts",
+    "packages/nx/src/generators/utils/project-configuration.ts",
+    "packages/nx/src/migrations/update-15-0-0/prefix-outputs.ts",
+    "packages/nx/src/migrations/update-16-2-0/remove-run-commands-output-path.ts",
+    "packages/nx/src/migrations/update-16-8-0/escape-dollar-sign-env-variables.ts",
+    "packages/nx/src/migrations/update-17-0-0/move-cache-directory.spec.ts",
+    "packages/nx/src/migrations/update-17-0-0/move-cache-directory.ts",
+    "packages/nx/src/migrations/update-17-0-0/rm-default-collection-npm-scope.ts",
+    "packages/nx/src/migrations/update-17-0-0/use-minimal-config-for-tasks-runner-options.spec.ts",
+    "packages/nx/src/migrations/update-17-0-0/use-minimal-config-for-tasks-runner-options.ts",
+    "packages/nx/src/migrations/update-19-2-0/move-workspace-data-directory.ts",
+    "packages/nx/src/migrations/update-19-2-4/set-project-name.spec.ts",
+    "packages/nx/src/migrations/update-19-2-4/set-project-name.ts",
+    "packages/nx/src/migrations/update-21-0-0/release-version-config-changes.ts",
+    "packages/nx/src/migrations/update-22-0-0/consolidate-release-tag-config.ts",
+    "packages/nx/src/migrations/update-22-0-0/release-version-config-changes.ts",
+    "packages/nx/src/migrations/update-22-7-0/add-polygraph-to-git-ignore.spec.ts",
+    "packages/nx/src/migrations/update-22-7-0/add-polygraph-to-git-ignore.ts",
+    "packages/nx/src/nx-cloud/generators/connect-to-nx-cloud/connect-to-nx-cloud.ts",
+    "packages/nx/src/plugins/package-json/create-nodes.ts",
+    "packages/nx/src/utils/catalog/index.ts",
+    "packages/nx/src/utils/catalog/pnpm-manager.ts",
+    "packages/nx/src/utils/ignore.ts",
+    "packages/nx/src/utils/is-using-prettier.ts",
+    "packages/nx/src/utils/package-json.ts",
+    "packages/nx/src/utils/update-nxw.ts",
+    "packages/playwright/src/generators/configuration/configuration.spec.ts",
+    "packages/playwright/src/generators/configuration/configuration.ts",
+    "packages/playwright/src/generators/convert-to-inferred/convert-to-inferred.spec.ts",
+    "packages/plugin/src/generators/create-package/create-package.spec.ts",
+    "packages/plugin/src/generators/e2e-project/e2e.spec.ts",
+    "packages/plugin/src/generators/executor/executor.spec.ts",
+    "packages/plugin/src/generators/executor/executor.ts",
+    "packages/plugin/src/generators/generator/generator.spec.ts",
+    "packages/plugin/src/generators/generator/generator.ts",
+    "packages/plugin/src/generators/lint-checks/generator.ts",
+    "packages/plugin/src/generators/migration/migration.spec.ts",
+    "packages/plugin/src/generators/migration/migration.ts",
+    "packages/plugin/src/generators/plugin/plugin.spec.ts",
+    "packages/react-native/src/generators/application/application.spec.ts",
+    "packages/react-native/src/generators/component/component.spec.ts",
+    "packages/react-native/src/generators/component/component.ts",
+    "packages/react-native/src/generators/convert-to-inferred/convert-to-inferred.spec.ts",
+    "packages/react-native/src/generators/init/lib/add-git-ignore-entry.ts",
+    "packages/react-native/src/generators/library/library.spec.ts",
+    "packages/react-native/src/generators/web-configuration/lib/webpack-targets.ts",
+    "packages/react-native/src/migrations/update-21-4-0/remove-deprecated-deps.ts",
+    "packages/react-native/src/migrations/update-21-4-0/upgrade-react-native-projects.spec.ts",
+    "packages/react-native/src/utils/add-linting.spec.ts",
+    "packages/react-native/src/utils/react-native-project-detection.spec.ts",
+    "packages/react-native/src/utils/react-native-project-detection.ts",
+    "packages/react/src/generators/application/application.legacy.spec.ts",
+    "packages/react/src/generators/application/application.spec.ts",
+    "packages/react/src/generators/application/lib/add-linting.ts",
+    "packages/react/src/generators/application/lib/bundlers/add-vite.ts",
+    "packages/react/src/generators/component-story/component-story.spec.ts",
+    "packages/react/src/generators/component-test/component-test.spec.ts",
+    "packages/react/src/generators/component-test/component-test.ts",
+    "packages/react/src/generators/component/component.spec.ts",
+    "packages/react/src/generators/component/component.ts",
+    "packages/react/src/generators/cypress-component-configuration/cypress-component-configuration.spec.ts",
+    "packages/react/src/generators/federate-module/federate-module.spec.ts",
+    "packages/react/src/generators/federate-module/federate-module.ts",
+    "packages/react/src/generators/federate-module/lib/utils.ts",
+    "packages/react/src/generators/hook/hook.spec.ts",
+    "packages/react/src/generators/hook/hook.ts",
+    "packages/react/src/generators/host/host.rspack.spec.ts",
+    "packages/react/src/generators/host/host.ts",
+    "packages/react/src/generators/host/host.webpack.spec.ts",
+    "packages/react/src/generators/host/lib/add-module-federation-files.ts",
+    "packages/react/src/generators/host/lib/update-module-federation-tsconfig.ts",
+    "packages/react/src/generators/library/lib/normalize-options.ts",
+    "packages/react/src/generators/library/lib/update-app-routes.ts",
+    "packages/react/src/generators/library/library.spec.ts",
+    "packages/react/src/generators/library/library.ts",
+    "packages/react/src/generators/redux/redux.spec.ts",
+    "packages/react/src/generators/redux/redux.ts",
+    "packages/react/src/generators/remote/lib/add-remote-to-dynamic-host.ts",
+    "packages/react/src/generators/remote/lib/setup-package-json-exports-for-remote.ts",
+    "packages/react/src/generators/remote/lib/update-host-with-remote.ts",
+    "packages/react/src/generators/remote/remote.rspack.spec.ts",
+    "packages/react/src/generators/remote/remote.ts",
+    "packages/react/src/generators/remote/remote.webpack.spec.ts",
+    "packages/react/src/generators/setup-ssr/setup-ssr.spec.ts",
+    "packages/react/src/generators/setup-ssr/setup-ssr.ts",
+    "packages/react/src/generators/setup-tailwind/lib/add-tailwind-style-imports.ts",
+    "packages/react/src/generators/setup-tailwind/setup-tailwind.spec.ts",
+    "packages/react/src/generators/setup-tailwind/setup-tailwind.ts",
+    "packages/react/src/generators/stories/stories.app.spec.ts",
+    "packages/react/src/generators/stories/stories.lib.spec.ts",
+    "packages/react/src/generators/stories/stories.nextjs.spec.ts",
+    "packages/react/src/generators/stories/stories.ts",
+    "packages/react/src/generators/storybook-configuration/configuration.spec.ts",
+    "packages/react/src/migrations/update-18-0-0/add-mf-env-var-to-target-defaults.ts",
+    "packages/react/src/migrations/update-22-0-0/add-svgr-to-webpack-config.ts",
+    "packages/react/src/rules/update-module-federation-project.ts",
+    "packages/react/src/utils/create-ts-config.ts",
+    "packages/react/src/utils/framework.ts",
+    "packages/react/src/utils/jest-utils.ts",
+    "packages/remix/src/generators/action/action.impl.ts",
+    "packages/remix/src/generators/application/application.impl.spec.ts",
+    "packages/remix/src/generators/application/application.impl.ts",
+    "packages/remix/src/generators/application/lib/ignore-vite-temp-files.ts",
+    "packages/remix/src/generators/convert-to-inferred/convert-to-inferred.spec.ts",
+    "packages/remix/src/generators/convert-to-inferred/lib/utils.ts",
+    "packages/remix/src/generators/cypress-component-configuration/cypress-component-configuration.impl.spec.ts",
+    "packages/remix/src/generators/error-boundary/lib/normalize-options.ts",
+    "packages/remix/src/generators/library/lib/add-unit-testing.ts",
+    "packages/remix/src/generators/library/library.impl.spec.ts",
+    "packages/remix/src/generators/loader/loader.impl.ts",
+    "packages/remix/src/generators/meta/lib/v2.impl.ts",
+    "packages/remix/src/generators/resource-route/resource-route.impl.spec.ts",
+    "packages/remix/src/generators/resource-route/resource-route.impl.ts",
+    "packages/remix/src/generators/route/route.impl.spec.ts",
+    "packages/remix/src/generators/route/route.impl.ts",
+    "packages/remix/src/generators/setup-tailwind/setup-tailwind.impl.spec.ts",
+    "packages/remix/src/generators/storybook-configuration/storybook-configuration.impl.ts",
+    "packages/remix/src/generators/style/style.impl.spec.ts",
+    "packages/remix/src/utils/insert-import.ts",
+    "packages/remix/src/utils/remix-config.ts",
+    "packages/rollup/src/generators/configuration/configuration.ts",
+    "packages/rollup/src/generators/convert-to-inferred/convert-to-inferred.spec.ts",
+    "packages/rollup/src/generators/convert-to-inferred/lib/extract-rollup-config-from-executor-options.spec.ts",
+    "packages/rsbuild/src/generators/configuration/configuration.spec.ts",
+    "packages/rsbuild/src/generators/configuration/lib/normalize-options.ts",
+    "packages/rspack/src/generators/convert-config-to-rspack-plugin/convert-config-to-rspack-plugin.spec.ts",
+    "packages/rspack/src/generators/convert-config-to-rspack-plugin/convert-config-to-rspack-plugin.ts",
+    "packages/rspack/src/generators/convert-config-to-rspack-plugin/lib/validate-project.ts",
+    "packages/rspack/src/generators/convert-to-inferred/convert-to-inferred.spec.ts",
+    "packages/rspack/src/generators/convert-webpack/convert-webpack.spec.ts",
+    "packages/rspack/src/generators/convert-webpack/convert-webpack.ts",
+    "packages/rspack/src/utils/generator-utils.ts",
+    "packages/storybook/src/generators/configuration/configuration-nested.spec.ts",
+    "packages/storybook/src/generators/configuration/configuration.spec.ts",
+    "packages/storybook/src/generators/configuration/lib/edit-root-tsconfig.ts",
+    "packages/storybook/src/generators/configuration/lib/util-functions.ts",
+    "packages/storybook/src/generators/convert-to-inferred/convert-to-inferred.spec.ts",
+    "packages/storybook/src/generators/convert-to-inferred/lib/utils.ts",
+    "packages/storybook/src/generators/init/lib/update-gitignore.ts",
+    "packages/storybook/src/generators/migrate-8/helper-functions.ts",
+    "packages/storybook/src/generators/migrate-9/helper-functions.ts",
+    "packages/vite/src/generators/configuration/configuration.spec.ts",
+    "packages/vite/src/generators/configuration/configuration.ts",
+    "packages/vite/src/generators/configuration/lib/convert-non-vite.ts",
+    "packages/vite/src/generators/convert-to-inferred/convert-to-inferred.spec.ts",
+    "packages/vite/src/generators/convert-to-inferred/lib/utils.ts",
+    "packages/vite/src/generators/vitest/vitest.spec.ts",
+    "packages/vite/src/migrations/update-20-0-4/add-vite-temp-files-to-git-ignore.ts",
+    "packages/vite/src/utils/find-vite-config.ts",
+    "packages/vite/src/utils/generator-utils.ts",
+    "packages/vite/src/utils/ignore-vite-temp-files.ts",
+    "packages/vitest/src/generators/configuration/configuration.ts",
+    "packages/vitest/src/migrations/update-20-3-0/add-vitest-temp-files-to-git-ignore.ts",
+    "packages/vitest/src/utils/generator-utils.ts",
+    "packages/vitest/src/utils/ignore-vitest-temp-files.ts",
+    "packages/vue/src/generators/application/application.spec.ts",
+    "packages/vue/src/generators/component/component.spec.ts",
+    "packages/vue/src/generators/library/library.spec.ts",
+    "packages/vue/src/generators/setup-tailwind/lib/add-tailwind-style-imports.ts",
+    "packages/vue/src/generators/stories/stories.app.spec.ts",
+    "packages/vue/src/generators/stories/stories.lib.spec.ts",
+    "packages/vue/src/generators/stories/stories.ts",
+    "packages/vue/src/generators/storybook-configuration/configuration.spec.ts",
+    "packages/vue/src/utils/create-ts-config.ts",
+    "packages/web/src/generators/application/application.spec.ts",
+    "packages/web/src/generators/application/application.ts",
+    "packages/webpack/src/generators/configuration/configuration.spec.ts",
+    "packages/webpack/src/generators/convert-config-to-webpack-plugin/convert-config-to-webpack-plugin.spec.ts",
+    "packages/webpack/src/generators/convert-config-to-webpack-plugin/convert-config-to-webpack-plugin.ts",
+    "packages/webpack/src/generators/convert-config-to-webpack-plugin/lib/validate-project.ts",
+    "packages/webpack/src/generators/convert-to-inferred/convert-to-inferred.spec.ts",
+    "packages/workspace/src/generators/convert-to-monorepo/convert-to-monorepo.from-nx-init.spec.ts",
+    "packages/workspace/src/generators/convert-to-monorepo/convert-to-monorepo.spec.ts",
+    "packages/workspace/src/generators/convert-to-monorepo/convert-to-monorepo.ts",
+    "packages/workspace/src/generators/convert-to-nx-project/convert-to-nx-project.ts",
+    "packages/workspace/src/generators/move/lib/move-project-files.spec.ts",
+    "packages/workspace/src/generators/move/lib/normalize-schema.ts",
+    "packages/workspace/src/generators/move/lib/update-cypress-config.ts",
+    "packages/workspace/src/generators/move/lib/update-eslint-config.ts",
+    "packages/workspace/src/generators/move/lib/update-imports.ts",
+    "packages/workspace/src/generators/move/lib/update-jest-config.ts",
+    "packages/workspace/src/generators/move/lib/update-package-json.ts",
+    "packages/workspace/src/generators/move/lib/update-readme.ts",
+    "packages/workspace/src/generators/move/move.spec.ts",
+    "packages/workspace/src/generators/new/generate-workspace-files.spec.ts",
+    "packages/workspace/src/generators/new/generate-workspace-files.ts",
+    "packages/workspace/src/generators/new/new.ts",
+    "packages/workspace/src/generators/npm-package/npm-package.ts",
+    "packages/workspace/src/generators/preset/preset.spec.ts",
+    "packages/workspace/src/generators/remove/lib/update-jest-config.ts",
+    "packages/workspace/src/generators/remove/lib/update-tsconfig.ts",
+    "packages/workspace/src/generators/utils/jest-config.ts",
+    "packages/workspace/src/generators/utils/project-config.ts",
+    "packages/workspace/src/utilities/get-import-path.ts",
+    "packages/workspace/src/utilities/package-manager-workspaces.ts",
+    "packages/workspace/src/utilities/ts-config.ts",
+    "packages/workspace/src/utilities/typescript/ts-solution-setup.ts",
+    "packages/workspace/src/utils/cli-config-utils.ts",
+    "packages/workspace/src/utils/ts-solution-setup.ts",
+    "tools/workspace-plugin/src/generators/remove-migrations/generator.spec.ts",
+    "tools/workspace-plugin/src/generators/remove-migrations/generator.ts"
+   ]
+  },
+  "extractCachedFileData": {
+   "declaredIn": [
+    "packages/nx/src/project-graph/nx-deps-cache.ts"
+   ],
+   "files": [
+    "packages/nx/src/project-graph/build-project-graph.ts",
+    "packages/nx/src/project-graph/nx-deps-cache.spec.ts"
+   ]
+  },
+  "fileExists": {
+   "declaredIn": [
+    "e2e/utils/file-utils.ts"
+   ],
+   "files": [
+    "e2e/gradle/src/gradle-plugin-v1.test.ts",
+    "e2e/next/src/next-playwright-standalone-eslint.test.ts",
+    "e2e/nx/src/affected-graph.test.ts",
+    "e2e/nx/src/cache.test.ts",
+    "e2e/nx/src/run.test.ts",
+    "e2e/react-native/src/react-native.test.ts",
+    "e2e/react/src/module-federation/dynamic-federation.rspack.test.ts",
+    "e2e/react/src/module-federation/dynamic-federation.webpack.test.ts",
+    "e2e/utils/command-utils.ts",
+    "e2e/utils/test-utils.ts",
+    "e2e/vite/src/vite-legacy.test.ts",
+    "e2e/webpack/src/webpack.test.ts",
+    "nx-dev/data-access-documents/src/lib/blog.api.ts",
+    "packages/angular/src/generators/utils/tsconfig-utils.ts",
+    "packages/jest/plugins/resolver.ts",
+    "packages/js/src/executors/node/node.impl.ts",
+    "packages/js/src/generators/setup-build/generator.ts",
+    "packages/js/src/generators/typescript-sync/typescript-sync.ts",
+    "packages/js/src/utils/buildable-libs-utils.ts",
+    "packages/js/src/utils/find-npm-dependencies.ts",
+    "packages/js/src/utils/package-json/update-package-json.ts",
+    "packages/js/src/utils/typescript/ast-utils.ts",
+    "packages/nx/bin/post-install.ts",
+    "packages/nx/src/command-line/format/format.ts",
+    "packages/nx/src/command-line/init/implementation/add-nx-to-nest.ts",
+    "packages/nx/src/command-line/init/implementation/angular/standalone-workspace.ts",
+    "packages/nx/src/command-line/init/implementation/react/index.ts",
+    "packages/nx/src/command-line/init/implementation/react/read-name-from-package-json.ts",
+    "packages/nx/src/command-line/init/implementation/react/rename-js-to-jsx.ts",
+    "packages/nx/src/command-line/init/implementation/react/tsconfig-setup.ts",
+    "packages/nx/src/command-line/init/implementation/utils.ts",
+    "packages/nx/src/command-line/init/init-v2.spec.ts",
+    "packages/nx/src/command-line/migrate/migrate.ts",
+    "packages/nx/src/daemon/server/project-graph-incremental-recomputation.ts",
+    "packages/nx/src/plugins/js/utils/config.ts",
+    "packages/nx/src/project-graph/nx-deps-cache.ts",
+    "packages/nx/src/project-graph/project-graph.ts",
+    "packages/nx/src/utils/workspace-root.ts",
+    "packages/plugin/src/utils/testing-utils/async-commands.ts",
+    "packages/plugin/src/utils/testing-utils/commands.ts",
+    "packages/plugin/src/utils/testing-utils/utils.ts",
+    "packages/rollup/src/generators/configuration/configuration.ts",
+    "packages/storybook/src/generators/migrate-8/helper-functions.ts",
+    "packages/storybook/src/generators/migrate-9/helper-functions.ts",
+    "packages/workspace/src/utilities/fileutils.ts",
+    "packages/workspace/src/utilities/typescript.ts"
+   ]
+  },
+  "getInstalledReactVersion": {
+   "declaredIn": [
+    "packages/react/src/utils/version-utils.ts"
+   ],
+   "files": [
+    "packages/react/src/utils/version-utils.spec.ts"
+   ]
+  },
+  "getInstalledReactVersionFromGraph": {
+   "declaredIn": [
+    "packages/react/src/utils/version-utils.ts"
+   ],
+   "files": []
+  },
+  "getReactDependenciesVersionsToInstall": {
+   "declaredIn": [
+    "packages/react/src/utils/version-utils.ts"
+   ],
+   "files": [
+    "packages/next/src/generators/application/application.ts",
+    "packages/next/src/generators/init/init.ts",
+    "packages/react/src/generators/application/lib/install-common-dependencies.ts",
+    "packages/react/src/generators/init/init.ts",
+    "packages/react/src/generators/library/lib/install-common-dependencies.ts",
+    "packages/react/src/utils/version-utils.spec.ts"
+   ]
+  },
+  "getSize": {
+   "declaredIn": [
+    "e2e/utils/file-utils.ts"
+   ],
+   "files": [
+    "e2e/angular/src/projects-build-and-test.test.ts",
+    "e2e/react/src/react-package-legacy.test.ts"
+   ]
+  },
+  "isLink": {
+   "declaredIn": [
+    "nx-dev/feature-package-schema-viewer/src/lib/types/type.tsx"
+   ],
+   "files": []
+  },
+  "isReact18": {
+   "declaredIn": [
+    "packages/react/src/utils/version-utils.ts"
+   ],
+   "files": [
+    "packages/next/src/generators/init/init.ts",
+    "packages/next/src/utils/version-utils.ts"
+   ]
+  },
+  "listFiles": {
+   "declaredIn": [
+    "e2e/utils/file-utils.ts"
+   ],
+   "files": [
+    "e2e/angular/src/tailwind.test.ts",
+    "e2e/nx/src/cache.test.ts",
+    "e2e/nx/src/configure-ai-agents.test.ts",
+    "e2e/react/src/react-webpack.test.ts",
+    "e2e/react/src/react.test.ts",
+    "e2e/storybook/src/storybook.test.ts",
+    "e2e/vite/src/vite-legacy.test.ts",
+    "e2e/vue/src/vue-tailwind.test.ts",
+    "e2e/web/src/web.test.ts",
+    "e2e/webpack/src/webpack.test.ts"
+   ]
+  },
+  "nxFileMap": {
+   "declaredIn": [
+    "packages/nx/src/project-graph/nx-deps-cache.ts"
+   ],
+   "files": []
+  },
+  "nxProjectGraph": {
+   "declaredIn": [
+    "packages/nx/src/project-graph/nx-deps-cache.ts"
+   ],
+   "files": [
+    "packages/gradle/src/generators/init/gradle-project-graph-plugin-utils.spec.ts",
+    "packages/nx/src/daemon/server/project-graph-incremental-recomputation.ts"
+   ]
+  },
+  "nxSourceMaps": {
+   "declaredIn": [
+    "packages/nx/src/project-graph/nx-deps-cache.ts"
+   ],
+   "files": []
+  },
+  "readFile": {
+   "declaredIn": [
+    "e2e/utils/file-utils.ts"
+   ],
+   "files": [
+    "astro-docs/src/plugins/utils/devkit-generation.ts",
+    "e2e/angular/src/misc.test.ts",
+    "e2e/angular/src/module-federation.rspack.test.ts",
+    "e2e/angular/src/projects-build-and-test.test.ts",
+    "e2e/angular/src/projects-buildable-libs.test.ts",
+    "e2e/angular/src/projects-esbuild.test.ts",
+    "e2e/angular/src/projects-linting.test.ts",
+    "e2e/angular/src/projects-setup.ts",
+    "e2e/angular/src/tailwind.test.ts",
+    "e2e/dotnet/src/dotnet-advanced-msbuild.test.ts",
+    "e2e/esbuild/src/esbuild-basic-build-and-generate.test.ts",
+    "e2e/eslint/src/linter-legacy.test.ts",
+    "e2e/eslint/src/linter.test.ts",
+    "e2e/gradle/src/gradle-dsl.test.ts",
+    "e2e/gradle/src/gradle-plugin-v1.test.ts",
+    "e2e/js/src/js-executor-prune-lockfile.test.ts",
+    "e2e/js/src/js-executor-tsc.test.ts",
+    "e2e/js/src/js-generators.ts",
+    "e2e/maven/src/utils/create-maven-project.ts",
+    "e2e/next/src/next-e2e-and-snapshots.test.ts",
+    "e2e/next/src/next-generation.test.ts",
+    "e2e/next/src/next-legacy.test.ts",
+    "e2e/next/src/next-styles.test.ts",
+    "e2e/next/src/next-ts-solutions.test.ts",
+    "e2e/node/src/node-esbuild.test.ts",
+    "e2e/node/src/node-server.test.ts",
+    "e2e/node/src/node-webpack.test.ts",
+    "e2e/node/src/node.test.ts",
+    "e2e/nx-init/src/nx-init-react.test.ts",
+    "e2e/nx/src/affected-graph.test.ts",
+    "e2e/nx/src/cache.test.ts",
+    "e2e/nx/src/configure-ai-agents.test.ts",
+    "e2e/nx/src/extras.test.ts",
+    "e2e/nx/src/import.test.ts",
+    "e2e/nx/src/misc.test.ts",
+    "e2e/nx/src/nxw.test.ts",
+    "e2e/nx/src/watch.test.ts",
+    "e2e/nx/src/workspace.test.ts",
+    "e2e/react/src/module-federation/ts-solution-mf.test.ts",
+    "e2e/react/src/react-package-legacy.test.ts",
+    "e2e/react/src/react-package.test.ts",
+    "e2e/react/src/react-router-ts-paths.test.ts",
+    "e2e/react/src/react-router-ts-solution.test.ts",
+    "e2e/react/src/react-rspack.test.ts",
+    "e2e/react/src/react-ts-solution.test.ts",
+    "e2e/react/src/react-vite.test.ts",
+    "e2e/react/src/react-webpack.test.ts",
+    "e2e/react/src/react.test.ts",
+    "e2e/release/src/conventional-commits-config.test.ts",
+    "e2e/release/src/conventional-commits-config.workspaces.test.ts",
+    "e2e/release/src/independent-projects.test.ts",
+    "e2e/release/src/independent-projects.workspaces.test.ts",
+    "e2e/release/src/release.test.ts",
+    "e2e/storybook/src/storybook.test.ts",
+    "e2e/utils/test-utils.ts",
+    "e2e/vite/src/vite-legacy.test.ts",
+    "e2e/vue/src/vue-tailwind.test.ts",
+    "e2e/web/src/web-legacy.test.ts",
+    "e2e/web/src/web.test.ts",
+    "e2e/webpack/src/webpack.legacy.test.ts",
+    "e2e/webpack/src/webpack.test.ts",
+    "nx-dev/data-access-courses/src/lib/courses.api.ts",
+    "nx-dev/data-access-documents/src/lib/blog.api.ts",
+    "packages/angular-rspack-compiler/src/compilation/augments.ts",
+    "packages/angular-rspack/src/lib/config/config-utils/dev-server-config-utils.ts",
+    "packages/angular-rspack/src/lib/plugins/index-html-plugin.ts",
+    "packages/angular-rspack/src/lib/plugins/prerender-plugin.ts",
+    "packages/angular-rspack/src/lib/plugins/tools/render-worker.ts",
+    "packages/angular-rspack/src/lib/plugins/tools/routes-extractor-worker.ts",
+    "packages/angular-rspack/src/lib/utils/index-file/add-event-dispatch-contract.ts",
+    "packages/angular-rspack/src/lib/utils/postcss-cli-resources.ts",
+    "packages/angular-rspack/src/lib/utils/postcss-configuration.ts",
+    "packages/angular/src/executors/ng-packagr-lite/ng-packagr-adjustments/ng-package/entry-point/write-bundles.transform.ts",
+    "packages/angular/src/generators/utils/tsconfig-utils.ts",
+    "packages/angular/src/migrations/update-21-5-0/utils/karma-config-comparer.ts",
+    "packages/angular/src/plugins/plugin.spec.ts",
+    "packages/jest/plugins/resolver.ts",
+    "packages/js/src/executors/tsc/lib/typescript-compilation.ts",
+    "packages/js/src/generators/setup-build/generator.ts",
+    "packages/js/src/generators/typescript-sync/typescript-sync.ts",
+    "packages/js/src/utils/typescript/ast-utils.ts",
+    "packages/js/src/utils/typescript/configuration.ts",
+    "packages/js/src/utils/typescript/ts-config.ts",
+    "packages/module-federation/src/utils/typescript.ts",
+    "packages/nx/src/adapter/compat.ts",
+    "packages/nx/src/command-line/release/utils/remote-release-clients/github.ts",
+    "packages/nx/src/internal-testing-utils/temp-fs.ts",
+    "packages/nx/src/native/tests/cache.spec.ts",
+    "packages/nx/src/plugins/js/utils/typescript.ts",
+    "packages/nx/src/project-graph/utils/retrieve-workspace-files.spec.ts",
+    "packages/nx/src/tasks-runner/cache.ts",
+    "packages/nx/src/tasks-runner/default-tasks-runner.ts",
+    "packages/rollup/src/generators/configuration/configuration.ts",
+    "packages/rollup/src/plugins/with-nx/with-nx.ts",
+    "packages/rspack/src/plugins/utils/plugins/postcss-cli-resources.ts",
+    "packages/rspack/src/plugins/utils/plugins/scripts-rspack-plugin.ts",
+    "packages/webpack/src/utils/webpack/plugins/postcss-cli-resources.ts",
+    "packages/webpack/src/utils/webpack/plugins/scripts-webpack-plugin.ts",
+    "packages/workspace/src/utilities/ts-config.ts",
+    "packages/workspace/src/utilities/typescript.ts"
+   ]
+  },
+  "readFileMapCache": {
+   "declaredIn": [
+    "packages/nx/src/project-graph/nx-deps-cache.ts"
+   ],
+   "files": [
+    "packages/angular/src/migrations/update-21-0-0/change-data-persistence-operators-imports-to-ngrx-router-store-data-persistence.spec.ts",
+    "packages/angular/src/migrations/update-21-0-0/change-data-persistence-operators-imports-to-ngrx-router-store-data-persistence.ts",
+    "packages/eslint-plugin/src/utils/project-graph-utils.ts",
+    "packages/js/src/utils/package-json/update-package-json.ts",
+    "packages/nx/src/command-line/graph/graph.ts",
+    "packages/nx/src/daemon/server/project-graph-incremental-recomputation.ts",
+    "packages/nx/src/plugins/js/package-json/create-package-json.ts",
+    "packages/nx/src/project-graph/project-graph.ts"
+   ]
+  },
+  "readJson": {
+   "declaredIn": [
+    "e2e/utils/file-utils.ts"
+   ],
+   "files": [
+    "e2e/angular/src/module-federation-ssr.test.ts",
+    "e2e/angular/src/ng-add.test.ts",
+    "e2e/angular/src/ngrx.test.ts",
+    "e2e/cypress/src/cypress.test.ts",
+    "e2e/detox/src/detox.test.ts",
+    "e2e/docker/src/docker.test.ts",
+    "e2e/dotnet/src/dotnet-advanced-msbuild.test.ts",
+    "e2e/dotnet/src/dotnet-cache.test.ts",
+    "e2e/dotnet/src/dotnet-configurations.test.ts",
+    "e2e/dotnet/src/dotnet-dependency-graph.test.ts",
+    "e2e/dotnet/src/dotnet-multi-project.test.ts",
+    "e2e/dotnet/src/dotnet.test.ts",
+    "e2e/esbuild/src/esbuild-bundling.test.ts",
+    "e2e/eslint/src/linter-legacy.test.ts",
+    "e2e/eslint/src/linter.test.ts",
+    "e2e/expo/src/expo-legacy.test.ts",
+    "e2e/expo/src/expo.test.ts",
+    "e2e/gradle/src/gradle-import.test.ts",
+    "e2e/js/src/js-executor-swc.test.ts",
+    "e2e/js/src/js-executor-tsc.test.ts",
+    "e2e/js/src/js-generators.ts",
+    "e2e/js/src/js-packaging.test.ts",
+    "e2e/js/src/js-ts-solution.test.ts",
+    "e2e/maven/src/maven-name-overrides.test.ts",
+    "e2e/maven/src/maven.test.ts",
+    "e2e/next/src/utils.ts",
+    "e2e/node/src/node-ts-solution.test.ts",
+    "e2e/nuxt/src/nuxt.test.ts",
+    "e2e/nx-init/src/nx-init-react.test.ts",
+    "e2e/nx/src/affected-graph.test.ts",
+    "e2e/nx/src/extras.test.ts",
+    "e2e/nx/src/graph-ts-solution.test.ts",
+    "e2e/nx/src/import.test.ts",
+    "e2e/nx/src/misc.test.ts",
+    "e2e/nx/src/nxw.test.ts",
+    "e2e/nx/src/run.test.ts",
+    "e2e/nx/src/workspace.test.ts",
+    "e2e/playwright/src/playwright.test.ts",
+    "e2e/plugin/src/nx-plugin-ts-solution.test.ts",
+    "e2e/plugin/src/nx-plugin.test.ts",
+    "e2e/react-native/src/react-native-legacy.test.ts",
+    "e2e/react-native/src/react-native.test.ts",
+    "e2e/react/src/module-federation/core-rspack-query-params.test.ts",
+    "e2e/react/src/module-federation/core-webpack-query-params.test.ts",
+    "e2e/react/src/module-federation/core-webpack-ssr.test.ts",
+    "e2e/react/src/module-federation/dynamic-federation.rspack.test.ts",
+    "e2e/react/src/module-federation/dynamic-federation.webpack.test.ts",
+    "e2e/react/src/module-federation/ts-solution-mf.test.ts",
+    "e2e/react/src/module-federation/utils.ts",
+    "e2e/react/src/react-package-legacy.test.ts",
+    "e2e/react/src/react-ts-solution.test.ts",
+    "e2e/release/src/preserve-local-dependency-protocols.test.ts",
+    "e2e/release/src/release.test.ts",
+    "e2e/release/src/version-plans-filtered-release.test.ts",
+    "e2e/remix/src/nx-remix.test.ts",
+    "e2e/remix/src/remix-ts-solution.test.ts",
+    "e2e/rollup/src/rollup-legacy.test.ts",
+    "e2e/rollup/src/rollup.test.ts",
+    "e2e/rspack/tests/rspack.spec.ts",
+    "e2e/storybook/src/storybook-nested.test.ts",
+    "e2e/utils/command-utils.ts",
+    "e2e/vite/src/vite-legacy.test.ts",
+    "e2e/vite/src/vite.test.ts",
+    "e2e/vue/src/vue-ts-solution.test.ts",
+    "e2e/workspace-create/src/create-nx-workspace-angular.test.ts",
+    "e2e/workspace-create/src/create-nx-workspace-base-templates.test.ts",
+    "e2e/workspace-create/src/create-nx-workspace-frameworks-next.test.ts",
+    "e2e/workspace-create/src/create-nx-workspace-frameworks-nuxt.test.ts",
+    "e2e/workspace-create/src/create-nx-workspace-frameworks-vue.test.ts",
+    "e2e/workspace-create/src/create-nx-workspace-npm.test.ts",
+    "e2e/workspace-create/src/create-nx-workspace-package-managers.test.ts",
+    "e2e/workspace-create/src/create-nx-workspace-react-template.test.ts",
+    "e2e/workspace-create/src/create-nx-workspace-react.test.ts",
+    "packages/angular/src/generators/add-linting/add-linting.spec.ts",
+    "packages/angular/src/generators/application/application.spec.ts",
+    "packages/angular/src/generators/application/lib/update-tsconfig-files.ts",
+    "packages/angular/src/generators/convert-to-application-executor/convert-to-application-executor.ts",
+    "packages/angular/src/generators/convert-to-rspack/convert-to-rspack.spec.ts",
+    "packages/angular/src/generators/convert-to-rspack/convert-to-rspack.ts",
+    "packages/angular/src/generators/convert-to-rspack/lib/update-tsconfig.ts",
+    "packages/angular/src/generators/cypress-component-configuration/cypress-component-configuration.spec.ts",
+    "packages/angular/src/generators/federate-module/lib/add-path-to-ts-config.ts",
+    "packages/angular/src/generators/host/host.spec.ts",
+    "packages/angular/src/generators/library-secondary-entry-point/lib/normalize-options.ts",
+    "packages/angular/src/generators/library-secondary-entry-point/library-secondary-entry-point.spec.ts",
+    "packages/angular/src/generators/library/lib/add-project.ts",
+    "packages/angular/src/generators/library/library.spec.ts",
+    "packages/angular/src/generators/move/move.spec.ts",
+    "packages/angular/src/generators/ng-add/migrate-from-angular-cli.spec.ts",
+    "packages/angular/src/generators/ng-add/migrate-from-angular-cli.ts",
+    "packages/angular/src/generators/ng-add/migrators/builders/angular-eslint-lint.migrator.ts",
+    "packages/angular/src/generators/ng-add/migrators/projects/app.migrator.spec.ts",
+    "packages/angular/src/generators/ng-add/migrators/projects/e2e.migrator.spec.ts",
+    "packages/angular/src/generators/ng-add/migrators/projects/lib.migrator.spec.ts",
+    "packages/angular/src/generators/ng-add/utilities/dependencies.ts",
+    "packages/angular/src/generators/ng-add/utilities/projects.ts",
+    "packages/angular/src/generators/ng-add/utilities/workspace.ts",
+    "packages/angular/src/generators/ngrx-feature-store/lib/normalize-options.ts",
+    "packages/angular/src/generators/ngrx-feature-store/ngrx-feature-store.spec.ts",
+    "packages/angular/src/generators/ngrx-root-store/ngrx-root-store.spec.ts",
+    "packages/angular/src/generators/ngrx/lib/normalize-options.ts",
+    "packages/angular/src/generators/ngrx/ngrx.spec.ts",
+    "packages/angular/src/generators/remote/remote.spec.ts",
+    "packages/angular/src/generators/setup-mf/lib/move-angular-plugin-to-dependencies.ts",
+    "packages/angular/src/generators/setup-mf/setup-mf.spec.ts",
+    "packages/angular/src/generators/setup-ssr/lib/generate-server-ts-config.ts",
+    "packages/angular/src/generators/setup-ssr/setup-ssr.spec.ts",
+    "packages/angular/src/generators/setup-tailwind/lib/detect-tailwind-installed-version.ts",
+    "packages/angular/src/generators/setup-tailwind/setup-tailwind.application.spec.ts",
+    "packages/angular/src/generators/setup-tailwind/setup-tailwind.library.spec.ts",
+    "packages/angular/src/generators/storybook-configuration/storybook-configuration.spec.ts",
+    "packages/angular/src/generators/utils/ensure-angular-dependencies.spec.ts",
+    "packages/angular/src/generators/utils/ensure-angular-dependencies.ts",
+    "packages/angular/src/generators/utils/entry-point.ts",
+    "packages/angular/src/generators/utils/storybook-ast/entry-point.ts",
+    "packages/angular/src/generators/utils/update-app-editor-tsconfig-excluded-files.ts",
+    "packages/angular/src/migrations/update-17-1-0/browser-target-to-build-target.spec.ts",
+    "packages/angular/src/migrations/update-17-1-0/replace-nguniversal-builders.spec.ts",
+    "packages/angular/src/migrations/update-17-1-0/replace-nguniversal-engines.spec.ts",
+    "packages/angular/src/migrations/update-17-1-0/replace-nguniversal-engines.ts",
+    "packages/angular/src/migrations/update-17-1-0/update-angular-cli.spec.ts",
+    "packages/angular/src/migrations/update-17-1-0/update-angular-cli.ts",
+    "packages/angular/src/migrations/update-17-2-0/rename-webpack-dev-server.spec.ts",
+    "packages/angular/src/migrations/update-17-3-0/add-autoprefixer-dependency.spec.ts",
+    "packages/angular/src/migrations/update-17-3-0/add-browser-sync-dependency.spec.ts",
+    "packages/angular/src/migrations/update-17-3-0/update-angular-cli.spec.ts",
+    "packages/angular/src/migrations/update-17-3-0/update-angular-cli.ts",
+    "packages/angular/src/migrations/update-18-1-0/update-angular-cli.spec.ts",
+    "packages/angular/src/migrations/update-18-1-0/update-angular-cli.ts",
+    "packages/angular/src/migrations/update-18-2-0/update-angular-cli.spec.ts",
+    "packages/angular/src/migrations/update-18-2-0/update-angular-cli.ts",
+    "packages/angular/src/migrations/update-19-1-0/update-angular-cli.spec.ts",
+    "packages/angular/src/migrations/update-19-1-0/update-angular-cli.ts",
+    "packages/angular/src/migrations/update-19-2-1/add-typescript-eslint-utils.spec.ts",
+    "packages/angular/src/migrations/update-19-5-0/update-angular-cli.spec.ts",
+    "packages/angular/src/migrations/update-19-5-0/update-angular-cli.ts",
+    "packages/angular/src/migrations/update-19-6-0/update-angular-cli.spec.ts",
+    "packages/angular/src/migrations/update-19-6-0/update-angular-cli.ts",
+    "packages/angular/src/migrations/update-20-2-0/remove-tailwind-config-from-ng-packagr-executors.spec.ts",
+    "packages/angular/src/migrations/update-20-2-0/update-angular-cli.spec.ts",
+    "packages/angular/src/migrations/update-20-2-0/update-angular-cli.ts",
+    "packages/angular/src/migrations/update-20-4-0/update-angular-cli.spec.ts",
+    "packages/angular/src/migrations/update-20-4-0/update-angular-cli.ts",
+    "packages/angular/src/migrations/update-20-5-0/update-angular-cli.spec.ts",
+    "packages/angular/src/migrations/update-20-5-0/update-angular-cli.ts",
+    "packages/angular/src/migrations/update-21-0-0/change-data-persistence-operators-imports-to-ngrx-router-store-data-persistence.ts",
+    "packages/angular/src/migrations/update-21-2-0/migrate-provide-server-rendering-import.spec.ts",
+    "packages/angular/src/migrations/update-21-2-0/update-angular-cli.spec.ts",
+    "packages/angular/src/migrations/update-21-2-0/update-angular-cli.ts",
+    "packages/angular/src/migrations/update-21-2-0/update-module-resolution.spec.ts",
+    "packages/angular/src/migrations/update-21-2-0/update-module-resolution.ts",
+    "packages/angular/src/migrations/update-21-3-0/update-angular-cli.spec.ts",
+    "packages/angular/src/migrations/update-21-3-0/update-angular-cli.ts",
+    "packages/angular/src/migrations/update-21-5-0/update-angular-cli.spec.ts",
+    "packages/angular/src/migrations/update-21-5-0/update-angular-cli.ts",
+    "packages/angular/src/migrations/update-21-6-1/update-angular-cli.spec.ts",
+    "packages/angular/src/migrations/update-21-6-1/update-angular-cli.ts",
+    "packages/angular/src/migrations/update-22-3-0/set-isolated-modules.spec.ts",
+    "packages/angular/src/migrations/update-22-3-0/update-module-resolution.spec.ts",
+    "packages/angular/src/migrations/update-22-3-0/update-ssr-webpack-config.spec.ts",
+    "packages/angular/src/migrations/update-22-3-0/update-typescript-lib.spec.ts",
+    "packages/cypress/src/generators/base-setup/base-setup.ts",
+    "packages/cypress/src/generators/component-configuration/component-configuration.spec.ts",
+    "packages/cypress/src/generators/component-configuration/component-configuration.ts",
+    "packages/cypress/src/generators/configuration/configuration.spec.ts",
+    "packages/cypress/src/generators/init/init.spec.ts",
+    "packages/cypress/src/generators/migrate-to-cypress-11/conversion.util.ts",
+    "packages/cypress/src/migrations/update-20-8-0/update-component-testing-mount-imports.spec.ts",
+    "packages/cypress/src/migrations/update-21-0-0/remove-tsconfig-and-copy-files-options-from-cypress-executor.spec.ts",
+    "packages/cypress/src/migrations/update-22-1-0/update-angular-component-testing-support.spec.ts",
+    "packages/detox/src/generators/application/application.spec.ts",
+    "packages/detox/src/generators/init/init.spec.ts",
+    "packages/detox/src/migrations/update-22-0-0/remove-config-plugins-detox-for-expo-54.spec.ts",
+    "packages/detox/src/migrations/update-22-0-0/remove-config-plugins-detox-for-expo-54.ts",
+    "packages/devkit/src/generators/format-files.ts",
+    "packages/devkit/src/generators/project-name-and-root-utils.ts",
+    "packages/devkit/src/utils/add-plugin.spec.ts",
+    "packages/devkit/src/utils/add-plugin.ts",
+    "packages/devkit/src/utils/catalog/index.ts",
+    "packages/devkit/src/utils/package-json.spec.ts",
+    "packages/devkit/src/utils/package-json.ts",
+    "packages/devkit/src/utils/replace-package.spec.ts",
+    "packages/esbuild/src/generators/configuration/configuration.ts",
+    "packages/esbuild/src/generators/init/init.spec.ts",
+    "packages/eslint/src/generators/convert-to-flat-config/converters/json-converter.spec.ts",
+    "packages/eslint/src/generators/convert-to-flat-config/generator.spec.ts",
+    "packages/eslint/src/generators/convert-to-flat-config/generator.ts",
+    "packages/eslint/src/generators/convert-to-inferred/convert-to-inferred.spec.ts",
+    "packages/eslint/src/generators/init/init.spec.ts",
+    "packages/eslint/src/generators/lint-project/lint-project-convert-monorepo.spec.ts",
+    "packages/eslint/src/generators/lint-project/lint-project.spec.ts",
+    "packages/eslint/src/generators/lint-project/lint-project.ts",
+    "packages/eslint/src/generators/utils/eslint-file.spec.ts",
+    "packages/eslint/src/generators/utils/eslint-file.ts",
+    "packages/eslint/src/generators/workspace-rules-project/workspace-rules-project.spec.ts",
+    "packages/eslint/src/migrations/update-20-2-0/update-typescript-eslint-v8-13-0.spec.ts",
+    "packages/expo/src/generators/application/application.spec.ts",
+    "packages/expo/src/generators/application/lib/add-project.ts",
+    "packages/expo/src/generators/init/init.spec.ts",
+    "packages/expo/src/generators/library/library.spec.ts",
+    "packages/expo/src/migrations/update-21-4-0/update-splash-screen-config.spec.ts",
+    "packages/expo/src/migrations/update-21-4-0/update-splash-screen-config.ts",
+    "packages/expo/src/migrations/update-22-2-0/add-expo-system-ui.ts",
+    "packages/expo/src/migrations/update-22-2-0/update-jest-for-expo-54.ts",
+    "packages/express/src/generators/application/application.spec.ts",
+    "packages/express/src/generators/init/init.spec.ts",
+    "packages/jest/src/generators/configuration/configuration.spec.ts",
+    "packages/jest/src/generators/configuration/lib/ensure-dependencies.spec.ts",
+    "packages/jest/src/generators/configuration/lib/update-vscode-recommended-extensions.spec.ts",
+    "packages/jest/src/generators/init/init.spec.ts",
+    "packages/jest/src/migrations/update-21-0-0/remove-tsconfig-option-from-jest-executor.spec.ts",
+    "packages/jest/src/migrations/update-21-3-0/rename-test-path-pattern.spec.ts",
+    "packages/jest/src/migrations/update-22-2-0/convert-jest-config-to-cjs.spec.ts",
+    "packages/jest/src/migrations/update-22-2-0/convert-jest-config-to-cjs.ts",
+    "packages/jest/src/utils/config/config-file.ts",
+    "packages/js/src/generators/convert-to-swc/convert-to-swc.spec.ts",
+    "packages/js/src/generators/convert-to-swc/convert-to-swc.ts",
+    "packages/js/src/generators/init/init.spec.ts",
+    "packages/js/src/generators/init/init.ts",
+    "packages/js/src/generators/library/library.spec.ts",
+    "packages/js/src/generators/library/utils/add-release-config.spec.ts",
+    "packages/js/src/generators/setup-build/generator.ts",
+    "packages/js/src/generators/setup-prettier/generator.spec.ts",
+    "packages/js/src/generators/setup-verdaccio/generator.spec.ts",
+    "packages/js/src/generators/setup-verdaccio/generator.ts",
+    "packages/js/src/generators/typescript-sync/typescript-sync.spec.ts",
+    "packages/js/src/migrations/update-21-5-0/migrate-development-custom-condition.spec.ts",
+    "packages/js/src/migrations/update-21-5-0/migrate-development-custom-condition.ts",
+    "packages/js/src/migrations/update-22-0-0/remove-external-options-from-js-executors.spec.ts",
+    "packages/js/src/migrations/update-22-1-0/remove-redundant-ts-project-references.spec.ts",
+    "packages/js/src/release/version-actions.ts",
+    "packages/js/src/utils/add-local-registry-scripts.ts",
+    "packages/js/src/utils/package-json/get-npm-scope.ts",
+    "packages/js/src/utils/package-manager-workspaces.ts",
+    "packages/js/src/utils/prettier.ts",
+    "packages/js/src/utils/typescript/create-ts-config.spec.ts",
+    "packages/js/src/utils/typescript/create-ts-config.ts",
+    "packages/js/src/utils/typescript/ts-solution-setup.ts",
+    "packages/nest/src/generators/application/application.spec.ts",
+    "packages/nest/src/generators/init/init.spec.ts",
+    "packages/nest/src/generators/library/library.spec.ts",
+    "packages/nest/src/generators/library/library.ts",
+    "packages/next/src/generators/application/application.spec.ts",
+    "packages/next/src/generators/application/lib/add-jest.ts",
+    "packages/next/src/generators/application/lib/add-linting.spec.ts",
+    "packages/next/src/generators/application/lib/create-application-files.ts",
+    "packages/next/src/generators/custom-server/custom-server.spec.ts",
+    "packages/next/src/generators/cypress-component-configuration/cypress-component-configuration.spec.ts",
+    "packages/next/src/generators/init/init.spec.ts",
+    "packages/next/src/generators/library/library.spec.ts",
+    "packages/next/src/generators/setup-tailwind/setup-tailwind.spec.ts",
+    "packages/next/src/utils/add-swc-to-custom-server.ts",
+    "packages/node/src/generators/application/application.spec.ts",
+    "packages/node/src/generators/e2e-project/e2e-project.spec.ts",
+    "packages/node/src/generators/init/init.spec.ts",
+    "packages/node/src/generators/library/library.spec.ts",
+    "packages/node/src/generators/library/library.ts",
+    "packages/nuxt/src/generators/application/application.spec.ts",
+    "packages/nuxt/src/generators/init/init.spec.ts",
+    "packages/nx/src/adapter/ngcli-adapter.ts",
+    "packages/nx/src/ai/set-up-ai-agents/set-up-ai-agents.spec.ts",
+    "packages/nx/src/ai/set-up-ai-agents/set-up-ai-agents.ts",
+    "packages/nx/src/command-line/release/version/release-group-processor.spec.ts",
+    "packages/nx/src/command-line/release/version/release-version.spec.ts",
+    "packages/nx/src/devkit-exports.ts",
+    "packages/nx/src/generators/utils/nx-json.ts",
+    "packages/nx/src/generators/utils/project-configuration.spec.ts",
+    "packages/nx/src/generators/utils/project-configuration.ts",
+    "packages/nx/src/migrations/update-15-0-0/prefix-outputs.spec.ts",
+    "packages/nx/src/migrations/update-16-2-0/remove-run-commands-output-path.spec.ts",
+    "packages/nx/src/migrations/update-17-0-0/rm-default-collection-npm-scope.spec.ts",
+    "packages/nx/src/migrations/update-17-0-0/rm-default-collection-npm-scope.ts",
+    "packages/nx/src/migrations/update-17-0-0/use-minimal-config-for-tasks-runner-options.spec.ts",
+    "packages/nx/src/migrations/update-17-3-0/nx-release-path.spec.ts",
+    "packages/nx/src/migrations/update-19-2-4/set-project-name.spec.ts",
+    "packages/nx/src/migrations/update-19-2-4/set-project-name.ts",
+    "packages/nx/src/migrations/update-21-0-0/release-version-config-changes.spec.ts",
+    "packages/nx/src/migrations/update-21-0-0/release-version-config-changes.ts",
+    "packages/nx/src/migrations/update-22-0-0/consolidate-release-tag-config.spec.ts",
+    "packages/nx/src/migrations/update-22-0-0/consolidate-release-tag-config.ts",
+    "packages/nx/src/migrations/update-22-0-0/release-version-config-changes.spec.ts",
+    "packages/nx/src/migrations/update-22-0-0/release-version-config-changes.ts",
+    "packages/nx/src/nx-cloud/generators/connect-to-nx-cloud/connect-to-nx-cloud.ts",
+    "packages/nx/src/utils/catalog/index.ts",
+    "packages/nx/src/utils/is-using-prettier.ts",
+    "packages/nx/src/utils/package-json.ts",
+    "packages/plugin/src/generators/create-package/create-package.spec.ts",
+    "packages/plugin/src/generators/create-package/create-package.ts",
+    "packages/plugin/src/generators/e2e-project/e2e.spec.ts",
+    "packages/plugin/src/generators/e2e-project/e2e.ts",
+    "packages/plugin/src/generators/executor/executor.spec.ts",
+    "packages/plugin/src/generators/executor/executor.ts",
+    "packages/plugin/src/generators/generator/generator.spec.ts",
+    "packages/plugin/src/generators/generator/generator.ts",
+    "packages/plugin/src/generators/lint-checks/generator.spec.ts",
+    "packages/plugin/src/generators/lint-checks/generator.ts",
+    "packages/plugin/src/generators/migration/migration.spec.ts",
+    "packages/plugin/src/generators/migration/migration.ts",
+    "packages/plugin/src/generators/plugin/plugin.spec.ts",
+    "packages/plugin/src/generators/preset/generator.spec.ts",
+    "packages/plugin/src/utils/has-generator.ts",
+    "packages/react-native/src/generators/application/application.spec.ts",
+    "packages/react-native/src/generators/application/application.ts",
+    "packages/react-native/src/generators/application/lib/add-project.ts",
+    "packages/react-native/src/generators/init/init.spec.ts",
+    "packages/react-native/src/generators/library/library.spec.ts",
+    "packages/react-native/src/generators/library/library.ts",
+    "packages/react/src/generators/application/application.spec.ts",
+    "packages/react/src/generators/application/lib/add-linting.ts",
+    "packages/react/src/generators/component/component.spec.ts",
+    "packages/react/src/generators/federate-module/federate-module.ts",
+    "packages/react/src/generators/host/host.rspack.spec.ts",
+    "packages/react/src/generators/host/host.ts",
+    "packages/react/src/generators/host/host.webpack.spec.ts",
+    "packages/react/src/generators/init/init.spec.ts",
+    "packages/react/src/generators/library/library.spec.ts",
+    "packages/react/src/generators/redux/redux.spec.ts",
+    "packages/react/src/generators/redux/redux.ts",
+    "packages/react/src/generators/remote/remote.rspack.spec.ts",
+    "packages/react/src/generators/remote/remote.ts",
+    "packages/react/src/generators/remote/remote.webpack.spec.ts",
+    "packages/react/src/generators/setup-ssr/setup-ssr.spec.ts",
+    "packages/react/src/generators/setup-tailwind/setup-tailwind.spec.ts",
+    "packages/remix/src/generators/application/application.impl.spec.ts",
+    "packages/remix/src/generators/application/application.impl.ts",
+    "packages/remix/src/generators/application/lib/ignore-vite-temp-files.ts",
+    "packages/remix/src/generators/init/init.spec.ts",
+    "packages/remix/src/generators/library/library.impl.spec.ts",
+    "packages/remix/src/generators/setup-tailwind/setup-tailwind.impl.spec.ts",
+    "packages/rollup/src/generators/configuration/configuration.legacy.spec.ts",
+    "packages/rollup/src/generators/configuration/configuration.spec.ts",
+    "packages/rollup/src/generators/configuration/configuration.ts",
+    "packages/rollup/src/generators/init/init.spec.ts",
+    "packages/rollup/src/utils/ensure-dependencies.spec.ts",
+    "packages/rspack/src/generators/convert-to-inferred/utils/serve-post-target-transformer.ts",
+    "packages/storybook/src/generators/configuration/configuration.spec.ts",
+    "packages/storybook/src/generators/configuration/lib/edit-root-tsconfig.ts",
+    "packages/storybook/src/generators/configuration/lib/ensure-dependencies.ts",
+    "packages/storybook/src/generators/configuration/lib/util-functions.ts",
+    "packages/storybook/src/generators/convert-to-inferred/lib/utils.ts",
+    "packages/storybook/src/generators/init/init.spec.ts",
+    "packages/storybook/src/generators/migrate-10/migrate-10.ts",
+    "packages/storybook/src/generators/migrate-8/helper-functions.ts",
+    "packages/storybook/src/generators/migrate-8/migrate-8.ts",
+    "packages/storybook/src/generators/migrate-9/helper-functions.ts",
+    "packages/storybook/src/generators/migrate-9/migrate-9.ts",
+    "packages/storybook/src/migrations/update-22-1-0/migrate-to-storybook-10.spec.ts",
+    "packages/vite/src/generators/configuration/configuration.spec.ts",
+    "packages/vite/src/generators/configuration/configuration.ts",
+    "packages/vite/src/generators/init/init.spec.ts",
+    "packages/vite/src/generators/vitest/vitest.spec.ts",
+    "packages/vite/src/migrations/update-20-5-0/install-jiti.spec.ts",
+    "packages/vite/src/migrations/update-22-2-0/migrate-vitest-to-vitest-package.spec.ts",
+    "packages/vite/src/migrations/update-22-2-0/migrate-vitest-to-vitest-package.ts",
+    "packages/vite/src/utils/ensure-dependencies.spec.ts",
+    "packages/vite/src/utils/generator-utils.ts",
+    "packages/vite/src/utils/ignore-vite-temp-files.ts",
+    "packages/vitest/src/utils/generator-utils.ts",
+    "packages/vitest/src/utils/ignore-vitest-temp-files.ts",
+    "packages/vue/src/generators/application/application.spec.ts",
+    "packages/vue/src/generators/init/init.spec.ts",
+    "packages/vue/src/generators/library/library.spec.ts",
+    "packages/vue/src/generators/library/library.ts",
+    "packages/vue/src/generators/setup-tailwind/setup-tailwind.spec.ts",
+    "packages/web/src/generators/application/application.spec.ts",
+    "packages/web/src/generators/init/init.spec.ts",
+    "packages/webpack/src/generators/convert-to-inferred/utils/serve-post-target-transformer.ts",
+    "packages/webpack/src/generators/init/init.legacy.spec.ts",
+    "packages/webpack/src/generators/init/init.spec.ts",
+    "packages/workspace/src/generators/ci-workflow/ci-workflow.spec.ts",
+    "packages/workspace/src/generators/ci-workflow/ci-workflow.ts",
+    "packages/workspace/src/generators/convert-to-monorepo/convert-to-monorepo.from-nx-init.spec.ts",
+    "packages/workspace/src/generators/convert-to-nx-project/convert-to-nx-project.ts",
+    "packages/workspace/src/generators/move/lib/update-cypress-config.spec.ts",
+    "packages/workspace/src/generators/move/lib/update-eslint-config.spec.ts",
+    "packages/workspace/src/generators/move/lib/update-imports.spec.ts",
+    "packages/workspace/src/generators/move/lib/update-imports.ts",
+    "packages/workspace/src/generators/move/lib/update-package-json.spec.ts",
+    "packages/workspace/src/generators/move/lib/update-package-json.ts",
+    "packages/workspace/src/generators/move/move.spec.ts",
+    "packages/workspace/src/generators/new/generate-workspace-files.spec.ts",
+    "packages/workspace/src/generators/new/new.spec.ts",
+    "packages/workspace/src/generators/npm-package/npm-package.spec.ts",
+    "packages/workspace/src/generators/remove/lib/update-tsconfig.spec.ts",
+    "packages/workspace/src/utilities/get-import-path.ts",
+    "packages/workspace/src/utilities/package-manager-workspaces.ts",
+    "packages/workspace/src/utilities/typescript/ts-solution-setup.ts",
+    "packages/workspace/src/utils/ts-solution-setup.ts",
+    "tools/workspace-plugin/src/executors/legacy-post-build/executor.ts",
+    "tools/workspace-plugin/src/generators/bump-maven-version/generator.spec.ts",
+    "tools/workspace-plugin/src/generators/bump-maven-version/generator.ts",
+    "tools/workspace-plugin/src/generators/remove-migrations/generator.ts"
+   ]
+  },
+  "readProjectGraphCache": {
+   "declaredIn": [
+    "packages/nx/src/project-graph/nx-deps-cache.ts"
+   ],
+   "files": [
+    "packages/nx/src/project-graph/project-graph.ts"
+   ]
+  },
+  "readSourceMapsCache": {
+   "declaredIn": [
+    "packages/nx/src/project-graph/nx-deps-cache.ts"
+   ],
+   "files": [
+    "packages/nx/src/project-graph/project-graph.ts"
+   ]
+  },
+  "removeFile": {
+   "declaredIn": [
+    "e2e/utils/file-utils.ts"
+   ],
+   "files": [
+    "e2e/angular/src/config.test.ts",
+    "e2e/angular/src/cypress-component-tests-setup.ts",
+    "e2e/angular/src/projects-linting.test.ts",
+    "e2e/angular/src/tailwind.test.ts",
+    "e2e/expo/src/expo.test.ts",
+    "e2e/nx/src/affected-graph.test.ts",
+    "e2e/nx/src/cache.test.ts",
+    "e2e/nx/src/configure-ai-agents.test.ts",
+    "e2e/nx/src/misc.test.ts",
+    "e2e/nx/src/run.test.ts",
+    "e2e/release/src/utils.ts",
+    "e2e/vite/src/vite-legacy.test.ts"
+   ]
+  },
+  "renameFile": {
+   "declaredIn": [
+    "e2e/utils/file-utils.ts"
+   ],
+   "files": [
+    "e2e/eslint/src/linter-legacy.test.ts",
+    "e2e/nx-init/src/nx-init-npm-repo.test.ts",
+    "e2e/plugin/src/nx-plugin-ts-solution.test.ts",
+    "packages/nx/src/internal-testing-utils/temp-fs.ts",
+    "packages/nx/src/native/tests/watcher.spec.ts",
+    "packages/nx/src/native/tests/workspace_files.spec.ts"
+   ]
+  },
+  "rmDist": {
+   "declaredIn": [
+    "e2e/utils/file-utils.ts"
+   ],
+   "files": [
+    "e2e/angular/src/projects-ssr.test.ts",
+    "e2e/js/src/js-executor-tsc.test.ts",
+    "e2e/js/src/js-generators.ts",
+    "e2e/next/src/next-webpack.test.ts",
+    "e2e/nx/src/cache.test.ts",
+    "e2e/react/src/react-package-legacy.test.ts",
+    "e2e/react/src/react-package.test.ts",
+    "e2e/rollup/src/rollup-legacy.test.ts",
+    "e2e/rollup/src/rollup.test.ts",
+    "e2e/vite/src/vite-legacy.test.ts",
+    "e2e/web/src/web-legacy.test.ts",
+    "e2e/webpack/src/webpack.test.ts"
+   ]
+  },
+  "shouldRecomputeWholeGraph": {
+   "declaredIn": [
+    "packages/nx/src/project-graph/nx-deps-cache.ts"
+   ],
+   "files": [
+    "packages/nx/src/project-graph/build-project-graph.ts",
+    "packages/nx/src/project-graph/nx-deps-cache.spec.ts"
+   ]
+  },
+  "tmpBackupNgCliProjPath": {
+   "declaredIn": [
+    "e2e/utils/file-utils.ts"
+   ],
+   "files": [
+    "e2e/utils/create-project-utils.ts"
+   ]
+  },
+  "tmpBackupProjPath": {
+   "declaredIn": [
+    "e2e/utils/file-utils.ts"
+   ],
+   "files": [
+    "e2e/utils/create-project-utils.ts"
+   ]
+  },
+  "updateFile": {
+   "declaredIn": [
+    "e2e/utils/file-utils.ts"
+   ],
+   "files": [
+    "e2e/angular/src/config.test.ts",
+    "e2e/angular/src/cypress-component-tests-buildable.test.ts",
+    "e2e/angular/src/cypress-component-tests-implicit-dep.test.ts",
+    "e2e/angular/src/cypress-component-tests-setup.ts",
+    "e2e/angular/src/misc.test.ts",
+    "e2e/angular/src/module-federation-host-remote.test.ts",
+    "e2e/angular/src/module-federation-lib.test.ts",
+    "e2e/angular/src/module-federation-ssr.test.ts",
+    "e2e/angular/src/module-federation.rspack.test.ts",
+    "e2e/angular/src/ng-add.test.ts",
+    "e2e/angular/src/plugin.test.ts",
+    "e2e/angular/src/projects-build-and-test.test.ts",
+    "e2e/angular/src/projects-buildable-libs.test.ts",
+    "e2e/angular/src/projects-esbuild.test.ts",
+    "e2e/angular/src/projects-linting.test.ts",
+    "e2e/angular/src/projects-publishable.test.ts",
+    "e2e/angular/src/projects-setup.ts",
+    "e2e/angular/src/tailwind.test.ts",
+    "e2e/cypress/src/cypress.test.ts",
+    "e2e/docker/src/docker.test.ts",
+    "e2e/dotnet/src/dotnet-advanced-msbuild.test.ts",
+    "e2e/esbuild/src/esbuild-basic-additional-entry-points.test.ts",
+    "e2e/esbuild/src/esbuild-basic-build-and-generate.test.ts",
+    "e2e/esbuild/src/esbuild-basic-env-variables.test.ts",
+    "e2e/esbuild/src/esbuild-basic-external-config.test.ts",
+    "e2e/esbuild/src/esbuild-basic-non-bundle.test.ts",
+    "e2e/esbuild/src/esbuild-bundling.test.ts",
+    "e2e/esbuild/src/esbuild-declarations.test.ts",
+    "e2e/eslint/src/linter-legacy.test.ts",
+    "e2e/eslint/src/linter.test.ts",
+    "e2e/expo/src/expo-legacy.test.ts",
+    "e2e/expo/src/expo.test.ts",
+    "e2e/gradle/src/gradle-dsl.test.ts",
+    "e2e/gradle/src/gradle-import.test.ts",
+    "e2e/gradle/src/gradle-plugin-v1.test.ts",
+    "e2e/gradle/src/gradle.test.ts",
+    "e2e/jest/src/jest-legacy.test.ts",
+    "e2e/jest/src/jest.test.ts",
+    "e2e/js/src/js-esm-support.test.ts",
+    "e2e/js/src/js-executor-copy-workspace-modules.test.ts",
+    "e2e/js/src/js-executor-node.test.ts",
+    "e2e/js/src/js-executor-swc.test.ts",
+    "e2e/js/src/js-executor-tsc.test.ts",
+    "e2e/js/src/js-generators.ts",
+    "e2e/js/src/js-packaging.test.ts",
+    "e2e/js/src/js-ts-solution.test.ts",
+    "e2e/maven/src/maven-batch-v4.test.ts",
+    "e2e/maven/src/maven-batch.test.ts",
+    "e2e/maven/src/utils/create-maven-project.ts",
+    "e2e/next/src/next-appdir.test.ts",
+    "e2e/next/src/next-component-tests.test.ts",
+    "e2e/next/src/next-generation.test.ts",
+    "e2e/next/src/next-legacy.test.ts",
+    "e2e/next/src/next-playwright.test.ts",
+    "e2e/next/src/next-ts-solutions.test.ts",
+    "e2e/next/src/next-webpack.test.ts",
+    "e2e/node/src/node-docker.test.ts",
+    "e2e/node/src/node-esbuild.test.ts",
+    "e2e/node/src/node-esm-support.test.ts",
+    "e2e/node/src/node-server.test.ts",
+    "e2e/node/src/node-ts-solution-esbuild.test.ts",
+    "e2e/node/src/node-ts-solution.test.ts",
+    "e2e/node/src/node-webpack.test.ts",
+    "e2e/node/src/node.test.ts",
+    "e2e/nx-init/src/nx-init-monorepo.test.ts",
+    "e2e/nx-init/src/nx-init-npm-repo.test.ts",
+    "e2e/nx-init/src/nx-init-react.test.ts",
+    "e2e/nx/src/affected-graph.test.ts",
+    "e2e/nx/src/cache.test.ts",
+    "e2e/nx/src/configure-ai-agents.test.ts",
+    "e2e/nx/src/extras.test.ts",
+    "e2e/nx/src/graph-ts-solution.test.ts",
+    "e2e/nx/src/import.test.ts",
+    "e2e/nx/src/invoke-runner.test.ts",
+    "e2e/nx/src/misc.test.ts",
+    "e2e/nx/src/nxw.test.ts",
+    "e2e/nx/src/run.test.ts",
+    "e2e/nx/src/workspace.test.ts",
+    "e2e/plugin/src/nx-plugin-ts-solution.test.ts",
+    "e2e/plugin/src/nx-plugin.test.ts",
+    "e2e/react-native/src/react-native-legacy.test.ts",
+    "e2e/react-native/src/react-native.test.ts",
+    "e2e/react/src/cypress-component-tests.test.ts",
+    "e2e/react/src/module-federation/core-rspack-basic-host-remote-generation.test.ts",
+    "e2e/react/src/module-federation/core-rspack-basic-playwright.test.ts",
+    "e2e/react/src/module-federation/core-rspack-query-params.test.ts",
+    "e2e/react/src/module-federation/core-webpack-basic-host-remote-generation.test.ts",
+    "e2e/react/src/module-federation/core-webpack-basic-playwright.test.ts",
+    "e2e/react/src/module-federation/core-webpack-query-params.test.ts",
+    "e2e/react/src/module-federation/core-webpack-ssr.test.ts",
+    "e2e/react/src/module-federation/dynamic-federation.rspack.test.ts",
+    "e2e/react/src/module-federation/dynamic-federation.webpack.test.ts",
+    "e2e/react/src/module-federation/federate-module.rspack.test.ts",
+    "e2e/react/src/module-federation/federate-module.webpack.test.ts",
+    "e2e/react/src/module-federation/independent-deployability.rspack.test.ts",
+    "e2e/react/src/module-federation/independent-deployability.webpack.test.ts",
+    "e2e/react/src/module-federation/misc-rspack-convert-to-rspack.test.ts",
+    "e2e/react/src/module-federation/misc-rspack-interoperability.test.ts",
+    "e2e/react/src/module-federation/ssr.rspack.test.ts",
+    "e2e/react/src/module-federation/ts-solution-mf.test.ts",
+    "e2e/react/src/playwright.test.ts",
+    "e2e/react/src/react-package-legacy.test.ts",
+    "e2e/react/src/react-package.test.ts",
+    "e2e/react/src/react-rspack.test.ts",
+    "e2e/react/src/react-ts-solution.test.ts",
+    "e2e/react/src/react-webpack.test.ts",
+    "e2e/react/src/react.test.ts",
+    "e2e/release/src/custom-registries.test.ts",
+    "e2e/release/src/lock-file-updates.test.ts",
+    "e2e/release/src/preserve-local-dependency-protocols.test.ts",
+    "e2e/remix/src/nx-remix.test.ts",
+    "e2e/rollup/src/rollup-legacy.test.ts",
+    "e2e/rollup/src/rollup.test.ts",
+    "e2e/rspack/tests/rspack.legacy.spec.ts",
+    "e2e/rspack/tests/rspack.spec.ts",
+    "e2e/storybook/src/storybook.test.ts",
+    "e2e/utils/create-project-utils.ts",
+    "e2e/utils/test-utils.ts",
+    "e2e/vite/src/vite-legacy.test.ts",
+    "e2e/vite/src/vite-ts-solution.test.ts",
+    "e2e/vite/src/vite.test.ts",
+    "e2e/vue/src/vue-tailwind.test.ts",
+    "e2e/vue/src/vue-ts-solution.test.ts",
+    "e2e/vue/src/vue.test.ts",
+    "e2e/web/src/file-server.test.ts",
+    "e2e/web/src/web-legacy.test.ts",
+    "e2e/web/src/web.test.ts",
+    "e2e/webpack/src/webpack.legacy.test.ts",
+    "e2e/webpack/src/webpack.test.ts"
+   ]
+  },
+  "updateJson": {
+   "declaredIn": [
+    "e2e/utils/file-utils.ts"
+   ],
+   "files": [
+    "e2e/angular/src/cypress-component-tests-setup.ts",
+    "e2e/angular/src/module-federation-host-remote.test.ts",
+    "e2e/angular/src/module-federation.rspack.test.ts",
+    "e2e/angular/src/plugin.test.ts",
+    "e2e/angular/src/projects-buildable-libs.test.ts",
+    "e2e/angular/src/projects-esbuild.test.ts",
+    "e2e/angular/src/tailwind.test.ts",
+    "e2e/detox/src/detox.test.ts",
+    "e2e/docker/src/docker.test.ts",
+    "e2e/dotnet/src/dotnet-configurations.test.ts",
+    "e2e/esbuild/src/esbuild-basic-additional-entry-points.test.ts",
+    "e2e/esbuild/src/esbuild-basic-build-and-generate.test.ts",
+    "e2e/esbuild/src/esbuild-basic-external-config.test.ts",
+    "e2e/eslint/src/linter.test.ts",
+    "e2e/expo/src/expo-legacy.test.ts",
+    "e2e/gradle/src/gradle-import.test.ts",
+    "e2e/gradle/src/gradle-plugin-v1.test.ts",
+    "e2e/gradle/src/gradle.test.ts",
+    "e2e/jest/src/jest.test.ts",
+    "e2e/js/src/js-esm-support.test.ts",
+    "e2e/js/src/js-executor-copy-workspace-modules.test.ts",
+    "e2e/js/src/js-executor-node.test.ts",
+    "e2e/js/src/js-executor-prune-lockfile.test.ts",
+    "e2e/js/src/js-executor-swc.test.ts",
+    "e2e/js/src/js-executor-tsc.test.ts",
+    "e2e/js/src/js-generators.ts",
+    "e2e/js/src/js-packaging.test.ts",
+    "e2e/js/src/js-ts-solution.test.ts",
+    "e2e/lerna-smoke-tests/src/lerna-smoke-tests.test.ts",
+    "e2e/maven/src/maven.test.ts",
+    "e2e/next/src/next-appdir.test.ts",
+    "e2e/next/src/next-legacy.test.ts",
+    "e2e/next/src/next-ts-solutions.test.ts",
+    "e2e/next/src/next-webpack.test.ts",
+    "e2e/node/src/node-docker.test.ts",
+    "e2e/node/src/node-esm-support.test.ts",
+    "e2e/node/src/node-server.test.ts",
+    "e2e/node/src/node-ts-solution-esbuild.test.ts",
+    "e2e/node/src/node-ts-solution.test.ts",
+    "e2e/node/src/node-webpack.test.ts",
+    "e2e/node/src/node.test.ts",
+    "e2e/nx-init/src/nx-init-react.test.ts",
+    "e2e/nx/src/cache.test.ts",
+    "e2e/nx/src/extras.test.ts",
+    "e2e/nx/src/graph-ts-solution.test.ts",
+    "e2e/nx/src/import.test.ts",
+    "e2e/nx/src/invoke-runner.test.ts",
+    "e2e/nx/src/misc.test.ts",
+    "e2e/nx/src/nxw.test.ts",
+    "e2e/nx/src/run.test.ts",
+    "e2e/nx/src/watch.test.ts",
+    "e2e/nx/src/workspace.test.ts",
+    "e2e/plugin/src/nx-plugin-ts-solution.test.ts",
+    "e2e/plugin/src/nx-plugin.test.ts",
+    "e2e/react-native/src/react-native-legacy.test.ts",
+    "e2e/react/src/cypress-component-tests.test.ts",
+    "e2e/react/src/module-federation/dynamic-federation.rspack.test.ts",
+    "e2e/react/src/module-federation/dynamic-federation.webpack.test.ts",
+    "e2e/react/src/module-federation/independent-deployability.rspack.test.ts",
+    "e2e/react/src/module-federation/independent-deployability.webpack.test.ts",
+    "e2e/react/src/react-package-legacy.test.ts",
+    "e2e/react/src/react-package.test.ts",
+    "e2e/react/src/react-ts-solution.test.ts",
+    "e2e/react/src/react.test.ts",
+    "e2e/release/src/circular-dependencies.test.ts",
+    "e2e/release/src/conventional-commits-config.test.ts",
+    "e2e/release/src/conventional-commits-config.workspaces.test.ts",
+    "e2e/release/src/create-github-release.test.ts",
+    "e2e/release/src/custom-registries.test.ts",
+    "e2e/release/src/first-release.test.ts",
+    "e2e/release/src/independent-projects.test.ts",
+    "e2e/release/src/independent-projects.workspaces.test.ts",
+    "e2e/release/src/lock-file-updates.test.ts",
+    "e2e/release/src/multiple-release-branches.test.ts",
+    "e2e/release/src/nx-release-git-operations.test.ts",
+    "e2e/release/src/pre-version-command.test.ts",
+    "e2e/release/src/preserve-local-dependency-protocols.test.ts",
+    "e2e/release/src/preserve-matching-dependency-ranges.test.ts",
+    "e2e/release/src/private-js-packages.test.ts",
+    "e2e/release/src/release-tag-pattern.test.ts",
+    "e2e/release/src/release.test.ts",
+    "e2e/release/src/source-tag-selection.test.ts",
+    "e2e/release/src/utils.ts",
+    "e2e/release/src/version-plans-check.test.ts",
+    "e2e/release/src/version-plans-filtered-release.test.ts",
+    "e2e/release/src/version-plans-only-touched.test.ts",
+    "e2e/release/src/version-plans.test.ts",
+    "e2e/rollup/src/rollup-legacy.test.ts",
+    "e2e/rollup/src/rollup.test.ts",
+    "e2e/rspack/tests/rspack.legacy.spec.ts",
+    "e2e/rspack/tests/rspack.spec.ts",
+    "e2e/utils/command-utils.ts",
+    "e2e/utils/create-project-utils.ts",
+    "e2e/vite/src/vite-esm.test.ts",
+    "e2e/vite/src/vite-legacy.test.ts",
+    "e2e/vite/src/vite-ts-solution.test.ts",
+    "e2e/vite/src/vite.test.ts",
+    "e2e/web/src/file-server.test.ts",
+    "e2e/web/src/web-legacy.test.ts",
+    "e2e/web/src/web.test.ts",
+    "e2e/webpack/src/webpack.test.ts",
+    "packages/angular/src/generators/add-linting/add-linting.spec.ts",
+    "packages/angular/src/generators/application/application.spec.ts",
+    "packages/angular/src/generators/application/lib/add-proxy-config.ts",
+    "packages/angular/src/generators/application/lib/enable-strict-type-checking.ts",
+    "packages/angular/src/generators/application/lib/update-tsconfig-files.ts",
+    "packages/angular/src/generators/component/component.spec.ts",
+    "packages/angular/src/generators/convert-to-application-executor/convert-to-application-executor.spec.ts",
+    "packages/angular/src/generators/convert-to-rspack/convert-to-rspack.spec.ts",
+    "packages/angular/src/generators/cypress-component-configuration/cypress-component-configuration.spec.ts",
+    "packages/angular/src/generators/directive/directive.spec.ts",
+    "packages/angular/src/generators/federate-module/lib/add-file-to-remote-tsconfig.ts",
+    "packages/angular/src/generators/host/host.spec.ts",
+    "packages/angular/src/generators/init/init.spec.ts",
+    "packages/angular/src/generators/library-secondary-entry-point/lib/add-path-mapping.ts",
+    "packages/angular/src/generators/library-secondary-entry-point/lib/update-tsconfig-included-files.ts",
+    "packages/angular/src/generators/library-secondary-entry-point/library-secondary-entry-point.spec.ts",
+    "packages/angular/src/generators/library/lib/update-lib-package-npm-scope.ts",
+    "packages/angular/src/generators/library/lib/update-tsconfig-files.ts",
+    "packages/angular/src/generators/library/library.spec.ts",
+    "packages/angular/src/generators/move/lib/update-ng-package.ts",
+    "packages/angular/src/generators/move/move.spec.ts",
+    "packages/angular/src/generators/ng-add/migrate-from-angular-cli.spec.ts",
+    "packages/angular/src/generators/ng-add/migrate-from-angular-cli.ts",
+    "packages/angular/src/generators/ng-add/migrators/builders/angular-devkit-ng-packagr.migrator.ts",
+    "packages/angular/src/generators/ng-add/migrators/builders/angular-eslint-lint.migrator.ts",
+    "packages/angular/src/generators/ng-add/migrators/migrator.ts",
+    "packages/angular/src/generators/ng-add/migrators/projects/app.migrator.ts",
+    "packages/angular/src/generators/ng-add/migrators/projects/e2e.migrator.ts",
+    "packages/angular/src/generators/ng-add/utilities/workspace.ts",
+    "packages/angular/src/generators/ngrx-feature-store/ngrx-feature-store.spec.ts",
+    "packages/angular/src/generators/ngrx/ngrx.spec.ts",
+    "packages/angular/src/generators/pipe/pipe.spec.ts",
+    "packages/angular/src/generators/remote/remote.spec.ts",
+    "packages/angular/src/generators/scam-directive/scam-directive.spec.ts",
+    "packages/angular/src/generators/scam-pipe/scam-pipe.spec.ts",
+    "packages/angular/src/generators/scam/scam.spec.ts",
+    "packages/angular/src/generators/setup-mf/lib/add-remote-to-host.ts",
+    "packages/angular/src/generators/setup-mf/lib/update-tsconfig.ts",
+    "packages/angular/src/generators/setup-mf/setup-mf.spec.ts",
+    "packages/angular/src/generators/setup-ssr/lib/generate-server-ts-config.ts",
+    "packages/angular/src/generators/setup-ssr/setup-ssr.spec.ts",
+    "packages/angular/src/generators/storybook-configuration/storybook-configuration.spec.ts",
+    "packages/angular/src/generators/utils/add-jest.ts",
+    "packages/angular/src/generators/utils/add-vitest.ts",
+    "packages/angular/src/generators/utils/ensure-angular-dependencies.spec.ts",
+    "packages/angular/src/generators/utils/update-app-editor-tsconfig-excluded-files.ts",
+    "packages/angular/src/generators/utils/update-project-root-tsconfig.ts",
+    "packages/angular/src/generators/utils/version-utils.spec.ts",
+    "packages/angular/src/migrations/update-17-1-0/browser-target-to-build-target.spec.ts",
+    "packages/angular/src/migrations/update-17-1-0/replace-nguniversal-builders.spec.ts",
+    "packages/angular/src/migrations/update-17-1-0/replace-nguniversal-engines.spec.ts",
+    "packages/angular/src/migrations/update-17-2-0/rename-webpack-dev-server.spec.ts",
+    "packages/angular/src/migrations/update-19-2-1/add-typescript-eslint-utils.spec.ts",
+    "packages/angular/src/migrations/update-20-2-0/remove-tailwind-config-from-ng-packagr-executors.spec.ts",
+    "packages/angular/src/migrations/update-21-2-0/update-module-resolution.ts",
+    "packages/angular/src/migrations/update-22-3-0/set-isolated-modules.ts",
+    "packages/angular/src/migrations/update-22-3-0/update-module-resolution.ts",
+    "packages/angular/src/migrations/update-22-3-0/update-ssr-webpack-config.ts",
+    "packages/angular/src/migrations/update-22-3-0/update-typescript-lib.ts",
+    "packages/angular/src/utils/nx-devkit/ast-utils.spec.ts",
+    "packages/angular/src/utils/nx-devkit/testing.ts",
+    "packages/cypress/src/generators/base-setup/base-setup.ts",
+    "packages/cypress/src/generators/component-configuration/component-configuration.spec.ts",
+    "packages/cypress/src/generators/component-configuration/component-configuration.ts",
+    "packages/cypress/src/generators/configuration/configuration.spec.ts",
+    "packages/cypress/src/generators/configuration/configuration.ts",
+    "packages/cypress/src/generators/init/init.spec.ts",
+    "packages/cypress/src/generators/migrate-to-cypress-11/conversion.util.ts",
+    "packages/cypress/src/generators/migrate-to-cypress-11/migrate-to-cypress-11.ts",
+    "packages/cypress/src/migrations/update-21-0-0/remove-tsconfig-and-copy-files-options-from-cypress-executor.spec.ts",
+    "packages/cypress/src/migrations/update-22-1-0/update-angular-component-testing-support.spec.ts",
+    "packages/detox/src/generators/application/application.spec.ts",
+    "packages/detox/src/migrations/update-22-0-0/remove-config-plugins-detox-for-expo-54.ts",
+    "packages/devkit/src/generators/project-name-and-root-utils.spec.ts",
+    "packages/devkit/src/generators/update-ts-configs-to-js.ts",
+    "packages/devkit/src/utils/package-json.ts",
+    "packages/devkit/src/utils/replace-package.ts",
+    "packages/eslint/src/generators/convert-to-flat-config/generator.spec.ts",
+    "packages/eslint/src/generators/convert-to-flat-config/generator.ts",
+    "packages/eslint/src/generators/init/init-migration.ts",
+    "packages/eslint/src/generators/init/init.spec.ts",
+    "packages/eslint/src/generators/init/init.ts",
+    "packages/eslint/src/generators/lint-project/lint-project.spec.ts",
+    "packages/eslint/src/generators/lint-project/lint-project.ts",
+    "packages/eslint/src/generators/utils/eslint-file.ts",
+    "packages/eslint/src/generators/workspace-rules-project/workspace-rules-project.spec.ts",
+    "packages/eslint/src/generators/workspace-rules-project/workspace-rules-project.ts",
+    "packages/expo/src/generators/application/application.spec.ts",
+    "packages/expo/src/generators/library/library.spec.ts",
+    "packages/expo/src/generators/library/library.ts",
+    "packages/expo/src/migrations/update-21-4-0/remove-deprecated-deps.ts",
+    "packages/expo/src/migrations/update-21-4-0/update-splash-screen-config.ts",
+    "packages/expo/src/migrations/update-22-2-0/add-expo-system-ui.ts",
+    "packages/expo/src/migrations/update-22-2-0/update-jest-for-expo-54.ts",
+    "packages/expo/src/utils/update-tsconfig-files.ts",
+    "packages/express/src/generators/application/application.spec.ts",
+    "packages/express/src/generators/application/application.ts",
+    "packages/jest/src/generators/configuration/configuration.spec.ts",
+    "packages/jest/src/generators/configuration/lib/update-tsconfig.ts",
+    "packages/jest/src/generators/configuration/lib/update-vscode-recommended-extensions.ts",
+    "packages/jest/src/generators/convert-to-inferred/convert-to-inferred.spec.ts",
+    "packages/jest/src/generators/init/init.spec.ts",
+    "packages/jest/src/migrations/update-21-0-0/remove-tsconfig-option-from-jest-executor.spec.ts",
+    "packages/jest/src/migrations/update-21-3-0/rename-test-path-pattern.spec.ts",
+    "packages/js/src/generators/init/init.spec.ts",
+    "packages/js/src/generators/library/library.spec.ts",
+    "packages/js/src/generators/library/library.ts",
+    "packages/js/src/generators/library/utils/add-release-config.spec.ts",
+    "packages/js/src/generators/setup-verdaccio/generator.spec.ts",
+    "packages/js/src/generators/setup-verdaccio/generator.ts",
+    "packages/js/src/generators/typescript-sync/typescript-sync.spec.ts",
+    "packages/js/src/migrations/update-21-5-0/migrate-development-custom-condition.ts",
+    "packages/js/src/migrations/update-22-0-0/remove-external-options-from-js-executors.spec.ts",
+    "packages/js/src/release/version-actions.ts",
+    "packages/js/src/utils/package-json/sort-fields.ts",
+    "packages/js/src/utils/prettier.ts",
+    "packages/js/src/utils/typescript/create-ts-config.ts",
+    "packages/js/src/utils/typescript/ts-config.ts",
+    "packages/js/src/utils/typescript/ts-solution-setup.ts",
+    "packages/nest/src/generators/application/application.spec.ts",
+    "packages/nest/src/generators/application/lib/update-tsconfig.ts",
+    "packages/nest/src/generators/library/lib/update-tsconfig.ts",
+    "packages/nest/src/generators/library/library.spec.ts",
+    "packages/next/src/generators/application/application.spec.ts",
+    "packages/next/src/generators/application/lib/add-jest.ts",
+    "packages/next/src/generators/application/lib/create-application-files.ts",
+    "packages/next/src/generators/application/lib/update-cypress-tsconfig.ts",
+    "packages/next/src/generators/custom-server/custom-server.ts",
+    "packages/next/src/generators/library/library.spec.ts",
+    "packages/next/src/generators/library/library.ts",
+    "packages/node/src/generators/application/application.spec.ts",
+    "packages/node/src/generators/application/application.ts",
+    "packages/node/src/generators/application/lib/add-dependencies.ts",
+    "packages/node/src/generators/e2e-project/e2e-project.spec.ts",
+    "packages/node/src/generators/e2e-project/e2e-project.ts",
+    "packages/node/src/generators/init/init.spec.ts",
+    "packages/node/src/generators/library/library.spec.ts",
+    "packages/node/src/utils/vscode-debug-config.ts",
+    "packages/nuxt/src/generators/application/application.spec.ts",
+    "packages/nuxt/src/generators/application/lib/add-vitest.ts",
+    "packages/nuxt/src/generators/storybook-configuration/configuration.ts",
+    "packages/nuxt/src/migrations/update-18-1-0/add-include-tsconfig.ts",
+    "packages/nuxt/src/utils/version-utils.spec.ts",
+    "packages/nx/src/ai/set-up-ai-agents/set-up-ai-agents.ts",
+    "packages/nx/src/command-line/release/version/release-group-processor.spec.ts",
+    "packages/nx/src/command-line/release/version/release-version.spec.ts",
+    "packages/nx/src/devkit-exports.ts",
+    "packages/nx/src/generators/utils/nx-json.ts",
+    "packages/nx/src/migrations/update-15-0-0/prefix-outputs.ts",
+    "packages/nx/src/migrations/update-16-0-0/remove-nrwl-cli.ts",
+    "packages/nx/src/migrations/update-16-0-0/update-depends-on-to-tokens.spec.ts",
+    "packages/nx/src/migrations/update-16-0-0/update-nx-cloud-runner.ts",
+    "packages/nx/src/migrations/update-16-2-0/remove-run-commands-output-path.ts",
+    "packages/nx/src/migrations/update-17-0-0/rm-default-collection-npm-scope.spec.ts",
+    "packages/nx/src/migrations/update-17-0-0/use-minimal-config-for-tasks-runner-options.ts",
+    "packages/nx/src/migrations/update-22-0-0/consolidate-release-tag-config.spec.ts",
+    "packages/nx/src/nx-cloud/generators/connect-to-nx-cloud/connect-to-nx-cloud.ts",
+    "packages/playwright/src/generators/configuration/configuration.spec.ts",
+    "packages/playwright/src/generators/configuration/configuration.ts",
+    "packages/plugin/src/generators/create-package/create-package.ts",
+    "packages/plugin/src/generators/e2e-project/e2e.spec.ts",
+    "packages/plugin/src/generators/e2e-project/e2e.ts",
+    "packages/plugin/src/generators/executor/executor.ts",
+    "packages/plugin/src/generators/generator/generator.ts",
+    "packages/plugin/src/generators/lint-checks/generator.spec.ts",
+    "packages/plugin/src/generators/lint-checks/generator.ts",
+    "packages/plugin/src/generators/migration/migration.ts",
+    "packages/plugin/src/generators/plugin/plugin.spec.ts",
+    "packages/plugin/src/generators/plugin/plugin.ts",
+    "packages/plugin/src/generators/preset/generator.ts",
+    "packages/react-native/src/generators/application/application.spec.ts",
+    "packages/react-native/src/generators/library/library.spec.ts",
+    "packages/react-native/src/generators/library/library.ts",
+    "packages/react-native/src/migrations/update-21-4-0/remove-deprecated-deps.ts",
+    "packages/react/src/generators/application/application.spec.ts",
+    "packages/react/src/generators/application/application.ts",
+    "packages/react/src/generators/application/lib/add-jest.ts",
+    "packages/react/src/generators/application/lib/add-project.ts",
+    "packages/react/src/generators/application/lib/create-application-files.ts",
+    "packages/react/src/generators/application/lib/update-jest-config.ts",
+    "packages/react/src/generators/host/host.rspack.spec.ts",
+    "packages/react/src/generators/host/host.ts",
+    "packages/react/src/generators/host/lib/update-module-federation-tsconfig.ts",
+    "packages/react/src/generators/library/library.spec.ts",
+    "packages/react/src/generators/remote/lib/setup-package-json-exports-for-remote.ts",
+    "packages/react/src/generators/remote/lib/update-host-with-remote.ts",
+    "packages/react/src/generators/remote/remote.ts",
+    "packages/react/src/migrations/update-21-0-0/update-babel-loose.ts",
+    "packages/react/src/utils/create-ts-config.ts",
+    "packages/remix/src/generators/application/application.impl.spec.ts",
+    "packages/remix/src/generators/application/application.impl.ts",
+    "packages/remix/src/generators/application/lib/update-unit-test-config.ts",
+    "packages/remix/src/generators/library/lib/add-tsconfig-entry-points.ts",
+    "packages/remix/src/generators/library/lib/update-buildable-config.ts",
+    "packages/remix/src/generators/library/library.impl.spec.ts",
+    "packages/remix/src/generators/setup/setup.impl.ts",
+    "packages/rollup/src/generators/configuration/configuration.ts",
+    "packages/rspack/src/migrations/update-22-0-0/remove-deprecated-options.ts",
+    "packages/storybook/src/generators/configuration/configuration-nested.spec.ts",
+    "packages/storybook/src/generators/configuration/configuration.spec.ts",
+    "packages/storybook/src/generators/configuration/lib/edit-root-tsconfig.ts",
+    "packages/storybook/src/generators/configuration/lib/util-functions.ts",
+    "packages/storybook/src/generators/init/init.ts",
+    "packages/vite/src/generators/configuration/configuration.spec.ts",
+    "packages/vite/src/generators/configuration/configuration.ts",
+    "packages/vite/src/generators/init/init.spec.ts",
+    "packages/vite/src/generators/init/lib/utils.ts",
+    "packages/vite/src/generators/vitest/vitest.spec.ts",
+    "packages/vite/src/utils/generator-utils.spec.ts",
+    "packages/vitest/src/generators/configuration/configuration.ts",
+    "packages/vue/src/generators/application/application.spec.ts",
+    "packages/vue/src/generators/library/library.spec.ts",
+    "packages/vue/src/utils/create-ts-config.ts",
+    "packages/web/src/generators/application/application.spec.ts",
+    "packages/web/src/generators/application/application.ts",
+    "packages/workspace/src/generators/ci-workflow/ci-workflow.spec.ts",
+    "packages/workspace/src/generators/convert-to-monorepo/convert-to-monorepo.from-nx-init.spec.ts",
+    "packages/workspace/src/generators/convert-to-monorepo/convert-to-monorepo.ts",
+    "packages/workspace/src/generators/move/lib/normalize-schema.spec.ts",
+    "packages/workspace/src/generators/move/lib/update-eslint-config.spec.ts",
+    "packages/workspace/src/generators/move/lib/update-imports.spec.ts",
+    "packages/workspace/src/generators/move/lib/update-project-root-files.ts",
+    "packages/workspace/src/generators/move/move.spec.ts",
+    "packages/workspace/src/generators/new/generate-workspace-files.ts",
+    "packages/workspace/src/generators/remove/lib/update-tsconfig.ts",
+    "tools/workspace-plugin/src/generators/bump-maven-version/generator.ts",
+    "tools/workspace-plugin/src/generators/create-nodes-plugin/generator.ts",
+    "tools/workspace-plugin/src/generators/remove-migrations/generator.ts"
+   ]
+  },
+  "validReleaseVersionPrefixes": {
+   "declaredIn": [
+    "packages/nx/src/command-line/release/utils/release-graph.ts"
+   ],
+   "files": [
+    "packages/nx/src/config/nx-json.ts"
+   ]
+  },
+  "writeCache": {
+   "declaredIn": [
+    "packages/nx/src/project-graph/nx-deps-cache.ts"
+   ],
+   "files": [
+    "packages/nx/src/daemon/server/project-graph-incremental-recomputation.ts",
+    "packages/nx/src/project-graph/project-graph.ts"
+   ]
+  },
+  "writeCacheIfStale": {
+   "declaredIn": [
+    "packages/nx/src/project-graph/nx-deps-cache.ts"
+   ],
+   "files": [
+    "packages/nx/src/daemon/server/project-graph-incremental-recomputation.ts"
+   ]
+  }
+ },
+ "pin": "1ce5e91f5ec13cf8812f3e67e1fae33079336876",
+ "removed": [
+  {
+   "file": "nx-dev/data-access-packages/src/lib/get-description-for-schema.ts",
+   "name": "Anything",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "e2e/next/src/next-webpack.test.ts",
+   "name": "Not",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "e2e/nx/src/misc.test.ts",
+   "name": "Not",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "e2e/utils/command-utils.ts",
+   "name": "Not",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "nx-dev/nx-dev/app/courses/[courseId]/[lessonId]/page.tsx",
+   "name": "Not",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "nx-dev/ui-common/src/lib/youtube.component.tsx",
+   "name": "Not",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "nx-dev/util-ai/src/lib/chat-utils.ts",
+   "name": "Not",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/angular-rspack/src/lib/config/config-utils/style-config-utils.ts",
+   "name": "Not",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/angular/src/builders/dev-server/dev-server.impl.ts",
+   "name": "Not",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/angular/src/builders/webpack-browser/webpack-browser.impl.ts",
+   "name": "Not",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/angular/src/builders/webpack-server/webpack-server.impl.ts",
+   "name": "Not",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/angular/src/generators/setup-mf/lib/add-cypress-workaround.ts",
+   "name": "Not",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/cypress/src/utils/start-dev-server.ts",
+   "name": "Not",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/jest/src/plugins/plugin.ts",
+   "name": "Not",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/js/src/release/version-actions.ts",
+   "name": "Not",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/js/src/utils/is-locally-linked-package-version.ts",
+   "name": "Not",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/nx/bin/nx.ts",
+   "name": "Not",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/nx/src/ai/set-up-ai-agents/get-agent-rules.ts",
+   "name": "Not",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/nx/src/command-line/release/utils/release-graph.spec.ts",
+   "name": "Not",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/nx/src/command-line/release/utils/remote-release-clients/gitlab.ts",
+   "name": "Not",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/nx/src/command-line/release/version/resolve-current-version.ts",
+   "name": "Not",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/nx/src/executors/run-commands/running-tasks.ts",
+   "name": "Not",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/nx/src/project-graph/plugins/isolation/plugin-lifecycle-manager.spec.ts",
+   "name": "Not",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/nx/src/project-graph/plugins/resolve-plugin.ts",
+   "name": "Not",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/react-native/src/executors/run-android/run-android.impl.ts",
+   "name": "Not",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/react-native/src/executors/run-ios/run-ios.impl.ts",
+   "name": "Not",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/react/src/generators/host/lib/update-module-federation-tsconfig.ts",
+   "name": "Not",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/rspack/src/generators/configuration/configuration.ts",
+   "name": "Not",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/storybook/src/utils/utilities.ts",
+   "name": "Not",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/workspace/src/generators/move/lib/extract-base-configs.ts",
+   "name": "Not",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/workspace/src/generators/move/lib/move-project-files.ts",
+   "name": "Not",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "scripts/copy-built-package/directory-picker.ts",
+   "name": "Not",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "scripts/nx-release.ts",
+   "name": "Not",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "scripts/release-docs.ts",
+   "name": "Not",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "tools/eslint-rules/rules/valid-command-object.spec.ts",
+   "name": "Not",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "tools/workspace-plugin/src/conformance-rules/no-ignored-tracked-files/index.ts",
+   "name": "Not",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/angular/src/utils/nx-devkit/ast-utils.ts",
+   "name": "Nothing",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/eslint/src/executors/lint/lint.impl.ts",
+   "name": "Nothing",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/nx/release/changelog-renderer/index.spec.ts",
+   "name": "Nothing",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/nx/src/command-line/release/version/version-actions.ts",
+   "name": "Nothing",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/nx/src/command-line/release/utils/release-graph.spec.ts",
+   "name": "ReleaseGraph",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "astro-docs/src/pages/[...slug].md.ts",
+   "name": "Type",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "astro-docs/src/pages/llms-full.txt.ts",
+   "name": "Type",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "astro-docs/src/pages/llms.txt.ts",
+   "name": "Type",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "astro-docs/src/pages/robots.txt.ts",
+   "name": "Type",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "astro-docs/src/plugins/utils/cnw-generation.ts",
+   "name": "Type",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "astro-docs/src/plugins/utils/generate-plugin-markdown.ts",
+   "name": "Type",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "astro-docs/src/plugins/utils/nx-cli-generation.ts",
+   "name": "Type",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "astro-docs/src/plugins/utils/plugin-stats.ts",
+   "name": "Type",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "astro-docs/src/plugins/utils/typedoc/typedoc.ts",
+   "name": "Type",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "e2e/esbuild/src/esbuild-basic-build-and-generate.test.ts",
+   "name": "Type",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "e2e/js/src/js-esm-support.test.ts",
+   "name": "Type",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "e2e/maven/src/utils/create-maven-project.ts",
+   "name": "Type",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "e2e/nx/src/misc.test.ts",
+   "name": "Type",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "e2e/release/src/conventional-commits-config.test.ts",
+   "name": "Type",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "e2e/release/src/conventional-commits-config.workspaces.test.ts",
+   "name": "Type",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "nx-dev/nx-dev/app/blog/atom.xml/route.ts",
+   "name": "Type",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "nx-dev/nx-dev/app/blog/rss.xml/route.ts",
+   "name": "Type",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "nx-dev/nx-dev/lib/rspack/content/rspack-plugin.ts",
+   "name": "Type",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "nx-dev/ui-markdoc/src/lib/tags/graph.component.tsx",
+   "name": "Type",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "nx-dev/ui-markdoc/src/lib/tags/project-details.component.tsx",
+   "name": "Type",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/angular-rspack/src/lib/plugins/i18n-inline-plugin.ts",
+   "name": "Type",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/nx/src/command-line/graph/graph.ts",
+   "name": "Type",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/nx/src/command-line/init/implementation/dot-nx/nxw.ts",
+   "name": "Type",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/nx/src/command-line/release/config/config.spec.ts",
+   "name": "Type",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/nx/src/config/project-graph.ts",
+   "name": "Type",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/nx/src/config/workspace-json-project-json.ts",
+   "name": "Type",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/nx/src/generators/tree.ts",
+   "name": "Type",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/nx/src/native/index.d.ts",
+   "name": "Type",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/nx/src/project-graph/plugins/isolation/messaging.ts",
+   "name": "Type",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "scripts/documentation/utils.ts",
+   "name": "Type",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/plugin/src/utils/testing-utils/utils.ts",
+   "name": "checkFilesExist",
+   "reason": "the file declares its own symbol of the same name"
+  },
+  {
+   "file": "packages/eslint-plugin/src/rules/dependency-checks.spec.ts",
+   "name": "createFile",
+   "reason": "the file declares its own symbol of the same name"
+  },
+  {
+   "file": "packages/eslint-plugin/src/rules/enforce-module-boundaries.spec.ts",
+   "name": "createFile",
+   "reason": "the file declares its own symbol of the same name"
+  },
+  {
+   "file": "packages/nx/src/plugins/js/package-json/create-package-json.spec.ts",
+   "name": "createFile",
+   "reason": "the file declares its own symbol of the same name"
+  },
+  {
+   "file": "packages/nx/src/utils/fileutils.ts",
+   "name": "directoryExists",
+   "reason": "the file declares its own symbol of the same name"
+  },
+  {
+   "file": "e2e/dotnet/src/dotnet-configurations.test.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "e2e/gradle/src/gradle.test.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "e2e/gradle/src/utils/create-gradle-project.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "e2e/js/src/js-executor-copy-workspace-modules.test.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "e2e/next/src/next-playwright-standalone-eslint.test.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "e2e/nx/src/cache.test.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "e2e/nx/src/configure-ai-agents.test.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "e2e/nx/src/misc.test.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "e2e/nx/src/nxw.test.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "e2e/react-native/src/react-native-legacy.test.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "e2e/react-native/src/react-native.test.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "e2e/react/src/module-federation/dynamic-federation.rspack.test.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "e2e/react/src/module-federation/dynamic-federation.webpack.test.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "e2e/release/src/circular-dependencies.test.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "e2e/release/src/private-js-packages.test.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "e2e/release/src/version-plans-filtered-release.test.ts",
+   "name": "exists",
+   "reason": "the file declares its own symbol of the same name"
+  },
+  {
+   "file": "e2e/utils/create-project-utils.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "e2e/utils/ensure-browser-installation.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "nx-dev/ui-pricing/src/lib/faq.tsx",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/angular-rspack-compiler/src/compilation/augments.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/angular-rspack/src/lib/config/i18n/create-i18n-options.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/angular-rspack/src/lib/models/normalize-options.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/angular-rspack/src/lib/utils/url.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/angular/src/executors/module-federation-dev-server/module-federation-dev-server.impl.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/angular/src/executors/module-federation-ssr-dev-server/module-federation-ssr-dev-server.impl.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/angular/src/generators/convert-to-with-mf/convert-to-with-mf.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/angular/src/generators/federate-module/lib/add-remote.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/angular/src/generators/init/init.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/angular/src/generators/ngrx-root-store/lib/validate-options.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/angular/src/generators/scam-directive/scam-directive.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/angular/src/generators/scam-pipe/scam-pipe.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/angular/src/generators/scam-to-standalone/lib/index.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/angular/src/generators/scam-to-standalone/lib/verify-is-inline-scam.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/angular/src/generators/scam-to-standalone/lib/verify-module-is-scam.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/angular/src/generators/scam/scam.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/angular/src/generators/setup-tailwind/setup-tailwind.application.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/angular/src/migrations/update-18-0-0/add-mf-env-var-to-target-defaults.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/angular/src/migrations/update-18-1-1/fix-target-defaults-inputs.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/angular/src/migrations/update-19-6-0/turn-off-dts-by-default.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/angular/src/migrations/update-19-6-0/turn-off-dts-by-default.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/angular/src/migrations/update-19-6-1/ensure-depends-on-for-mf.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/angular/src/migrations/update-21-5-0/set-tsconfig-option.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/create-nx-workspace/bin/create-nx-workspace.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/create-nx-workspace/src/utils/ai/ai-output.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/create-nx-workspace/src/utils/git/git.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/create-nx-workspace/src/utils/nx/ab-testing.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/create-nx-workspace/src/utils/template/clone-template.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/cypress/plugins/cypress-preset.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/cypress/src/generators/convert-to-inferred/lib/add-dev-server-target-to-config.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/cypress/src/generators/convert-to-inferred/lib/add-dev-server-target-to-config.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/cypress/src/generators/convert-to-inferred/lib/add-exclude-spec-pattern.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/cypress/src/generators/convert-to-inferred/lib/upsert-baseUrl.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/cypress/src/generators/convert-to-inferred/lib/upsert-baseUrl.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/cypress/src/utils/start-dev-server.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/devkit/src/generators/artifact-name-and-directory-utils.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/devkit/src/generators/artifact-name-and-directory-utils.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/devkit/src/generators/target-defaults-utils.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/devkit/src/utils/package-json.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/eslint-plugin/src/rules/dependency-checks.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/eslint-plugin/src/rules/nx-plugin-checks.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/eslint-plugin/src/utils/ast-utils.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/eslint-plugin/src/utils/runtime-lint-utils.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/eslint/src/executors/lint/lint.impl.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/eslint/src/generators/utils/eslint-file.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/eslint/src/generators/utils/flat-config/ast-utils.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/eslint/src/generators/workspace-rules-project/workspace-rules-project.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/eslint/src/utils/config-file.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/expo/src/executors/build/build.impl.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/expo/src/utils/add-linting.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/gradle/src/plugin/nodes.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/gradle/src/utils/version-catalog-ast-utils.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/jest/src/generators/init/init.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/js/src/executors/node/lib/esm-loader.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/js/src/executors/release-publish/release-publish.impl.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/js/src/generators/library/utils/add-release-config.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/js/src/generators/setup-verdaccio/generator.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/js/src/migrations/update-22-1-0/remove-redundant-ts-project-references.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/js/src/utils/find-npm-dependencies.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/js/src/utils/npm-config.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/js/src/utils/npm-config.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/js/src/utils/swc/compile-swc.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/js/src/utils/typescript/ast-utils.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/module-federation/src/plugins/nx-module-federation-plugin/angular/nx-module-federation-dev-server-plugin.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/module-federation/src/plugins/nx-module-federation-plugin/angular/nx-module-federation-ssr-dev-server-plugin.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/module-federation/src/plugins/nx-module-federation-plugin/rspack/nx-module-federation-dev-server-plugin.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/module-federation/src/plugins/nx-module-federation-plugin/rspack/nx-module-federation-ssr-dev-server-plugin.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/module-federation/src/utils/share.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/nest/src/generators/utils/normalize-options.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/next/src/generators/application/lib/add-project.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/node/src/generators/application/lib/create-targets.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/nx/bin/nx.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/nx/release/changelog-renderer/index.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/nx/src/ai/clone-ai-config-repo.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/nx/src/command-line/configure-ai-agents/configure-ai-agents.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/nx/src/command-line/import/import.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/nx/src/command-line/init/implementation/add-nx-to-nest.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/nx/src/command-line/init/implementation/react/write-vite-config.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/nx/src/command-line/migrate/command-object.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/nx/src/command-line/migrate/migrate.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/nx/src/command-line/migrate/migrate.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/nx/src/command-line/nx-commands.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/nx/src/command-line/release/command-object.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/nx/src/command-line/release/release.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/nx/src/command-line/release/utils/git.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/nx/src/command-line/release/utils/release-graph.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/nx/src/command-line/release/version/resolve-current-version.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/nx/src/command-line/run/run-one.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/nx/src/command-line/run/run-one.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/nx/src/daemon/client/client.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/nx/src/daemon/server/sync-generators.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/nx/src/native/tests/workspace_files.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/nx/src/nx-cloud/update-manager.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/nx/src/plugins/js/lock-file/__fixtures__/auxiliary-packages/.modules.yaml.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/nx/src/plugins/js/lock-file/__fixtures__/auxiliary-packages/pnpm-lock.yaml.pruned.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/nx/src/plugins/js/lock-file/__fixtures__/auxiliary-packages/pnpm-lock.yaml.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/nx/src/plugins/js/lock-file/__fixtures__/auxiliary-packages/yarn-berry.lock.pruned.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/nx/src/plugins/js/lock-file/__fixtures__/auxiliary-packages/yarn-berry.lock.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/nx/src/plugins/js/lock-file/__fixtures__/auxiliary-packages/yarn.lock.pruned.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/nx/src/plugins/js/lock-file/__fixtures__/auxiliary-packages/yarn.lock.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/nx/src/plugins/js/lock-file/__fixtures__/bun/auxiliary-packages.bun.lock.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/nx/src/plugins/js/lock-file/__fixtures__/bun/large-project.bun.lock.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/nx/src/plugins/js/lock-file/__fixtures__/bun/nextjs-app.bun.lock.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/nx/src/plugins/js/lock-file/__fixtures__/duplicate-package/.modules.yaml.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/nx/src/plugins/js/lock-file/__fixtures__/duplicate-package/pnpm-lock.yaml.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/nx/src/plugins/js/lock-file/__fixtures__/duplicate-package/yarn.lock.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/nx/src/plugins/js/lock-file/__fixtures__/nextjs/.modules.yaml.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/nx/src/plugins/js/lock-file/__fixtures__/nextjs/app/pnpm-lock-v6.yaml.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/nx/src/plugins/js/lock-file/__fixtures__/nextjs/app/pnpm-lock.yaml.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/nx/src/plugins/js/lock-file/__fixtures__/nextjs/app/yarn.lock.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/nx/src/plugins/js/lock-file/__fixtures__/nextjs/pnpm-lock-v6.yaml.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/nx/src/plugins/js/lock-file/__fixtures__/nextjs/pnpm-lock.yaml.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/nx/src/plugins/js/lock-file/__fixtures__/nextjs/yarn.lock.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/nx/src/plugins/js/lock-file/__fixtures__/pnpm-regression/pnpm-lock.yaml.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/nx/src/plugins/js/lock-file/__fixtures__/pnpm-regression/pruned-pnpm-lock.yaml.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/nx/src/plugins/js/lock-file/__fixtures__/pnpm-semver-range-specifier/.modules.yaml.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/nx/src/plugins/js/lock-file/__fixtures__/pnpm-semver-range-specifier/pnpm-lock.yaml.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/nx/src/plugins/js/lock-file/__fixtures__/resolutions-and-patches/yarn.lock.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/nx/src/plugins/js/lock-file/lock-file.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/nx/src/plugins/js/lock-file/yarn-parser.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/nx/src/plugins/js/package-json/create-package-json.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/nx/src/plugins/js/project-graph/affected/npm-packages.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/nx/src/plugins/js/project-graph/build-dependencies/explicit-package-json-dependencies.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/nx/src/plugins/package-json/create-nodes.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/nx/src/project-graph/affected/locators/project-glob-changes.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/nx/src/project-graph/nx-deps-cache.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/nx/src/project-graph/plugins/isolation/isolated-plugin.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/nx/src/project-graph/project-graph-builder.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/nx/src/tasks-runner/pseudo-ipc.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/nx/src/tasks-runner/pseudo-ipc.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/nx/src/utils/catalog/pnpm-manager.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/nx/src/utils/fileutils.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/nx/src/utils/package-manager.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/nx/src/utils/package-manager.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/nx/src/utils/project-graph-utils.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/plugin/src/utils/testing-utils/utils.ts",
+   "name": "exists",
+   "reason": "the file declares its own symbol of the same name"
+  },
+  {
+   "file": "packages/react-native/src/generators/web-configuration/lib/webpack-targets.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/react-native/src/utils/add-linting.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/react/src/executors/module-federation-dev-server/module-federation-dev-server.impl.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/react/src/executors/module-federation-ssr-dev-server/module-federation-ssr-dev-server.impl.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/react/src/executors/module-federation-static-server/module-federation-static-server.impl.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/react/src/migrations/update-18-0-0/add-mf-env-var-to-target-defaults.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/rollup/src/executors/rollup/lib/normalize.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/rsbuild/src/generators/configuration/configuration.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/rsbuild/src/utils/add-build-plugin.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/rsbuild/src/utils/ast-utils.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/rspack/src/executors/module-federation-dev-server/module-federation-dev-server.impl.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/rspack/src/executors/module-federation-ssr-dev-server/module-federation-ssr-dev-server.impl.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/rspack/src/executors/module-federation-static-server/module-federation-static-server.impl.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/rspack/src/generators/convert-config-to-rspack-plugin/lib/extract-rspack-options.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/rspack/src/generators/convert-to-inferred/utils/build-post-target-transformer.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/rspack/src/generators/convert-to-inferred/utils/serve-post-target-transformer.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/rspack/src/plugins/utils/models.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/storybook/src/generators/init/init.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/storybook/src/migrations/update-21-1-0/update-sb-9.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/storybook/src/utils/utilities.ts",
+   "name": "exists",
+   "reason": "the file declares its own symbol of the same name"
+  },
+  {
+   "file": "packages/vite/src/executors/build/build.impl.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/vite/src/generators/convert-to-inferred/lib/build-post-target-transformer.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/vite/src/generators/setup-paths-plugin/setup-paths-plugin.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/vite/src/utils/vite-config-edit-utils.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/vitest/src/utils/vite-config-edit-utils.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/web/src/generators/static-serve/static-serve-configuration.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/webpack/src/generators/convert-config-to-webpack-plugin/lib/extract-webpack-options.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/webpack/src/generators/convert-to-inferred/utils/build-post-target-transformer.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/webpack/src/generators/convert-to-inferred/utils/serve-post-target-transformer.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/webpack/src/plugins/nx-webpack-plugin/nx-app-webpack-plugin-options.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/workspace/src/generators/ci-workflow/ci-workflow.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/workspace/src/generators/infer-targets/infer-targets.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/workspace/src/generators/move/lib/check-destination.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/workspace/src/generators/move/lib/update-jest-config.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/workspace/src/generators/new/generate-preset.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/workspace/src/generators/remove/lib/check-dependencies.spec.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/workspace/src/generators/utils/insert-import.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/workspace/src/utilities/fileutils.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "scripts/documentation/map-link-checker.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "tools/update-repos/src/setup-repos.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "tools/update-repos/src/update-repo.ts",
+   "name": "exists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "tools/workspace-plugin/src/conformance-rules/blog-cover-image/index.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "tools/workspace-plugin/src/conformance-rules/relative-image-imports/index.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "tools/workspace-plugin/src/executors/legacy-post-build/executor.ts",
+   "name": "exists",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/angular-rspack/test-utils/nx-devkit-mock.ts",
+   "name": "fileExists",
+   "reason": "the file declares its own symbol of the same name"
+  },
+  {
+   "file": "packages/nx/src/utils/fileutils.ts",
+   "name": "fileExists",
+   "reason": "the file declares its own symbol of the same name"
+  },
+  {
+   "file": "packages/nx/src/utils/workspace-root.spec.ts",
+   "name": "fileExists",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/plugin/src/utils/testing-utils/utils.ts",
+   "name": "getSize",
+   "reason": "the file declares its own symbol of the same name"
+  },
+  {
+   "file": "packages/angular/src/generators/storybook-configuration/storybook-configuration.spec.ts",
+   "name": "listFiles",
+   "reason": "the file declares its own symbol of the same name"
+  },
+  {
+   "file": "packages/plugin/src/utils/testing-utils/utils.ts",
+   "name": "listFiles",
+   "reason": "the file declares its own symbol of the same name"
+  },
+  {
+   "file": "packages/vue/src/generators/application/application.spec.ts",
+   "name": "listFiles",
+   "reason": "the file declares its own symbol of the same name"
+  },
+  {
+   "file": "packages/gradle/src/plugin/utils/get-project-graph-from-gradle-plugin.ts",
+   "name": "nxProjectGraph",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/gradle/src/plugin/utils/get-project-graph-lines.ts",
+   "name": "nxProjectGraph",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/gradle/src/utils/version-catalog-ast-utils.spec.ts",
+   "name": "nxProjectGraph",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/gradle/src/utils/version-catalog-ast-utils.ts",
+   "name": "nxProjectGraph",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/angular-rspack-compiler/test-utils/fs-memfs.setup-file.ts",
+   "name": "readFile",
+   "reason": "the name appears only inside comments"
+  },
+  {
+   "file": "packages/jest/src/migrations/update-22-2-0/convert-jest-config-to-cjs.spec.ts",
+   "name": "readFile",
+   "reason": "the name appears only inside string or template literal text"
+  },
+  {
+   "file": "packages/js/src/plugins/typescript/plugin.ts",
+   "name": "readFile",
+   "reason": "the file declares its own symbol of the same name"
+  },
+  {
+   "file": "packages/nx/src/executors/run-commands/run-commands.impl.spec.ts",
+   "name": "readFile",
+   "reason": "the file declares its own symbol of the same name"
+  },
+  {
+   "file": "packages/plugin/src/utils/testing-utils/utils.ts",
+   "name": "readFile",
+   "reason": "the file declares its own symbol of the same name"
+  },
+  {
+   "file": "packages/nx/src/generators/utils/json.ts",
+   "name": "readJson",
+   "reason": "the file declares its own symbol of the same name"
+  },
+  {
+   "file": "packages/nx/src/plugins/package-json/create-nodes.ts",
+   "name": "readJson",
+   "reason": "the file declares its own symbol of the same name"
+  },
+  {
+   "file": "packages/plugin/src/utils/testing-utils/utils.ts",
+   "name": "readJson",
+   "reason": "the file declares its own symbol of the same name"
+  },
+  {
+   "file": "packages/nx/src/command-line/init/implementation/add-nx-to-nest.ts",
+   "name": "removeFile",
+   "reason": "the file declares its own symbol of the same name"
+  },
+  {
+   "file": "packages/plugin/src/utils/testing-utils/utils.ts",
+   "name": "renameFile",
+   "reason": "the file declares its own symbol of the same name"
+  },
+  {
+   "file": "packages/plugin/src/utils/testing-utils/utils.ts",
+   "name": "rmDist",
+   "reason": "the file declares its own symbol of the same name"
+  },
+  {
+   "file": "packages/plugin/src/utils/testing-utils/paths.ts",
+   "name": "tmpBackupProjPath",
+   "reason": "the file declares its own symbol of the same name"
+  },
+  {
+   "file": "packages/plugin/src/utils/testing-utils/utils.ts",
+   "name": "updateFile",
+   "reason": "the file declares its own symbol of the same name"
+  },
+  {
+   "file": "packages/nx/src/generators/utils/json.ts",
+   "name": "updateJson",
+   "reason": "the file declares its own symbol of the same name"
+  },
+  {
+   "file": "packages/nx/plugins/package-json.ts",
+   "name": "writeCache",
+   "reason": "the file declares its own symbol of the same name"
+  }
+ ],
+ "targets": {
+  "declaring:packages/nx/src/command-line/release/utils/release-graph.ts": {
+   "files": [
+    "packages/nx/src/command-line/release/utils/release-graph.ts"
+   ],
+   "names": [
+    "CreateReleaseGraphOptions",
+    "FinalConfigForProject",
+    "ReleaseGraph",
+    "createReleaseGraph",
+    "validReleaseVersionPrefixes"
+   ]
+  },
+  "declaring:packages/nx/src/project-graph/nx-deps-cache.ts": {
+   "files": [
+    "packages/nx/src/project-graph/nx-deps-cache.ts"
+   ],
+   "names": [
+    "CachedFileData",
+    "FileMapCache",
+    "createProjectFileMapCache",
+    "ensureCacheDirectory",
+    "extractCachedFileData",
+    "nxFileMap",
+    "nxProjectGraph",
+    "nxSourceMaps",
+    "readFileMapCache",
+    "readProjectGraphCache",
+    "readSourceMapsCache",
+    "shouldRecomputeWholeGraph",
+    "writeCache",
+    "writeCacheIfStale"
+   ]
+  },
+  "diff": {
+   "files": [
+    "e2e/utils/file-utils.ts",
+    "nx-dev/feature-package-schema-viewer/src/lib/types/type.tsx",
+    "packages/react/src/utils/version-utils.ts"
+   ],
+   "names": [
+    "AllOf",
+    "AnyOf",
+    "Anything",
+    "ArrayOf",
+    "ArrayOfAnyOf",
+    "ArrayOfAnything",
+    "Not",
+    "Nothing",
+    "ObjectNamed",
+    "OneOf",
+    "Primitives",
+    "Type",
+    "checkFilesDoNotExist",
+    "checkFilesExist",
+    "checkFilesMatchingPatternExist",
+    "createFile",
+    "directoryExists",
+    "exists",
+    "fileExists",
+    "getInstalledReactVersion",
+    "getInstalledReactVersionFromGraph",
+    "getReactDependenciesVersionsToInstall",
+    "getSize",
+    "isLink",
+    "isReact18",
+    "listFiles",
+    "readFile",
+    "readJson",
+    "removeFile",
+    "renameFile",
+    "rmDist",
+    "tmpBackupNgCliProjPath",
+    "tmpBackupProjPath",
+    "updateFile",
+    "updateJson"
+   ]
+  }
+ }
+}
