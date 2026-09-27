@@ -205,6 +205,27 @@ record (see "The lane line" below).
 - `status` is read-only and reports `coverage: syntax-only` when no artifact has ever been
   admitted, or the admitted artifact's own coverage state otherwise.
 
+`run`, `import` and `status` print the same coverage line. It reads `coverage: complete` only when
+the artifact lists no incomplete unit and every counted compilation in its build context is
+`complete`. Counted compilations are those whose state is `complete`, `partial` or `failed`
+(`unsupported` and `excluded` ones carry no facts by design). Otherwise the line names the
+incomplete ones with their reasons, in ascending order:
+
+```text
+admitted compiler facts (engine 2), coverage: partial (3 of 6 compilations: workspace-failure 3)
+admitted compiler facts (engine 2), coverage: incomplete (1 unit affected; 1 of 2 compilations: binding-error 1)
+```
+
+Admission and exit codes do not change: an artifact whose compilations are all partial is still
+admitted, and an occurrence from a compilation that is not complete still confirms nothing.
+
+A restore done offline with NuGet's vulnerability audit on logs an unreachable-feed warning
+(`NU1900`) for each project. Audit warnings no longer demote a compilation: the producer keeps
+them in the compilation's workspace diagnostics and still reads the compilation `complete` (the
+rule is in [`tools/scout-semantic/README.md`](tools/scout-semantic/README.md)). Artifacts produced
+before this change keep their `partial` states until they are produced again, and the coverage
+line and the lane report them as partial.
+
 Every check runs before a single byte is published: a mismatched engine revision, contract
 version, requested profile, dependency fingerprint, compilation-context version or fingerprint, or
 source-snapshot identity is refused with a stable reason and writes nothing; a killed, timed-out,
@@ -226,8 +247,9 @@ byte-identical. So does a changed MSBuild import (`Directory.Build.props`, `Dire
 a `.targets` file) the artifact's own compilation context named at capture time, re-checked offline
 against its recorded hash -- the case a git-only check misses when the import lives outside the
 mapped repository. `devscout audit --semantic` reports both an enriched graph's `semantic` and
-`semantic-discovered` tiers alongside the syntax tiers, and a `lane` key (`"syntax"` or
-`"enriched"`) naming which kind of graph was audited. This mechanism is registered against a ship/
+`semantic-discovered` tiers alongside the syntax tiers, and a `lane` key (`"syntax"`,
+`"enriched"` or `"enriched-partial"`) naming which kind of graph was audited (see "The lane line"
+below). This mechanism is registered against a ship/
 no-ship gate on a public corpus; see
 [`docs/benchmarks/results/2026-09-resolver-precision.md`](docs/benchmarks/results/2026-09-resolver-precision.md)'s
 "Run 7" section for the measured result — the layer is additive and always available on request,
@@ -239,7 +261,10 @@ but is not currently recommended enabled by default on the strength of that meas
 
 | Line | `stats.lane` |
 | --- | --- |
-| `lane: enriched` | `{"state":"applied"}` |
+| `lane: enriched` | `{"state":"applied","compilations":{"total":M,"partial":0}}` |
+| `lane: enriched, partial (K of M compilations partial: <tally>)` | `{"state":"partial","reason":"compilations-incomplete","detail":"K of M compilations partial: <tally>","compilations":{"total":M,"partial":K}}` |
+| `lane: syntax (enriched lane not applied: no-complete-compilation: <detail>)` | `{"state":"not-applied","reason":"no-complete-compilation","detail":"<detail>","compilations":{...}}` |
+| `lane: syntax (enriched lane not applied: nothing-confirmed[: <detail>])` | `{"state":"not-applied","reason":"nothing-confirmed","detail":"<detail>","compilations":{...}}`, `detail` only when a compilation is partial |
 | `lane: syntax (enriched lane not applied: stale-artifact: <token>)` | `{"state":"not-applied","reason":"stale-artifact","detail":"<token>"}` |
 | `lane: syntax (enriched lane not applied: imports-moved: <token>)` | `{"state":"not-applied","reason":"imports-moved","detail":"<token>"}` |
 | `lane: syntax (enriched lane not applied: artifact-unreadable)` | `{"state":"not-applied","reason":"artifact-unreadable"}` |
@@ -253,6 +278,31 @@ but is not currently recommended enabled by default on the strength of that meas
 artifact, and `map` still exits 0 with the syntax graph. A stale or moved-import artifact writes no
 `stats.semantic`, so `audit --semantic` reports `lane: syntax` for that graph. With no artifact on
 disk and no `--no-semantic`, `map`'s output and `graph.json` carry no lane line or key at all.
+
+A fresh artifact is then judged by its own compilations, counted as in the coverage line above.
+When none of them is complete (`no-complete-compilation`), the layer is dropped before resolution
+as a stale one is. When some are complete but the run confirmed and discovered nothing
+(`nothing-confirmed`), the lane did not apply either. Both write no `stats.semantic`, and the
+graph's edges equal the syntax-only graph's. When facts were used but some counted compilation is
+not complete, the lane is `partial`: its `stats.semantic` counters stand, and `detail` names the
+incomplete compilations by reason. Every record decided from the compilations carries
+`compilations` (`total`, the counted compilations, and `partial`, those not complete); the four
+reasons above are decided first and never carry it.
+
+`audit --semantic` reads the same record. Its `lane` is `enriched-partial` when `stats.lane.state`
+is `partial`, `enriched` when `stats.semantic` is present otherwise, and `syntax` otherwise, so a
+CI check for `"enriched"` fails on a partial run. The text header adds the reason and detail for a
+partial or not-applied record. The `--json` report appends `lane_detail` (the `stats.lane` record)
+and `compilations` (its counts) when the graph has a lane record, so `--assert` can pin
+`compilations.partial`, for example `{"compilations.partial": {"max": 0}}`. A graph written before
+the lane record existed audits as it did, and an assertion on `compilations.partial` reports it
+missing. Exit codes are unchanged.
+
+With `--json` anywhere in its arguments, `audit` writes every error (a bad argument, no
+repository, no or unreadable `graph.json`, an unreadable input, an `--fp-sites` file it cannot
+write, an `--assert` file it cannot read or parse) to stderr, exits 1 and prints nothing on
+stdout, so stdout only ever holds the one JSON report. `--assert` violations still go to stderr
+after the report. In text mode errors stay on stdout.
 
 ## Reading a symbol
 
@@ -503,7 +553,10 @@ in which 53 of the 54 loaded compilations are complete, reaches recall 0.920 pre
 precise+ext at 0.997 precision over its precise and semantic tiers together, scored against the
 same oracle it was produced from. Offline, the restore needed `-p:NuGetAudit=false` for that: with the package
 audit on, its unreachable-feed warning marked every compilation partial and the lane confirmed
-nothing.
+nothing. The producer no longer does this: a NuGet audit warning (`NU1900` to `NU1905`, matched
+against the project's own assets file) stays in the compilation's diagnostics but no longer
+demotes it, so an audit-on offline restore now gives complete compilations. The rule is in
+[`tools/scout-semantic/README.md`](tools/scout-semantic/README.md).
 
 A separate scripted-lane run measured **tool calls issued per task**: the index arm used fewer
 calls in all four query kinds, largest on references (5.0 vs 11.8 per lane, ~2.4x) — single-run

@@ -70,6 +70,37 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   class that declares `AddConsumer<T, TDefinition>` rather than one that declares only
   `AddConsumer<T>`. A call written without a list binds as before. The fragment cache moves to
   `fragments-v26.json`, so an existing cache re-extracts once.
+- **A NuGet vulnerability-audit warning no longer makes a compilation partial.** A restore done
+  offline with the audit on logs `NU1900` for each project, and the SDK replays it as a workspace
+  failure, so every such compilation read `partial`/`workspace-failure`, `--strict` exited 2, and
+  the enriched lane confirmed little or nothing. `scout-semantic` now keeps such a diagnostic in
+  the record's workspace diagnostics without demoting the compilation or failing `--strict`,
+  when the assets file of the project it names logs `NU1900` to `NU1905` at `Warning` level with
+  the same message. Any other code or level, and a missing or unreadable assets file, still
+  demote. Artifacts produced earlier keep their states until they are produced again.
+- **Compiler-facts coverage and the lane no longer claim complete or enriched over partial
+  compilations.** `compiler-facts import`, `run` and `status` printed `coverage: complete`
+  whenever no unit was listed incomplete, and `map` and `audit` said `enriched`, even when the
+  producer had marked compilations partial and their facts confirmed nothing. The coverage line
+  now reads `coverage: partial (K of M compilations: <tally>)`, and the incomplete-units wording
+  gains the same tally. See Changed for the new lane values.
+- **`audit --json` errors go to stderr.** A fatal error (a bad argument, no `graph.json`, an
+  unreadable `--assert` file) was printed on stdout, so a CI step that redirected stdout into the
+  report file showed no message. With `--json` anywhere in the arguments, every error now goes to
+  stderr with exit 1 and stdout stays empty. Text mode is unchanged.
+
+### Changed
+
+- **The lane record reads the admitted artifact's compilations.** `stats.lane` gains the state
+  `partial` (reason `compilations-incomplete`, printed `lane: enriched, partial (<detail>)`, with
+  `stats.semantic` kept) and the not-applied reasons `no-complete-compilation` and
+  `nothing-confirmed` (no `stats.semantic`, and the same edges as the syntax-only graph). Every
+  record decided from the compilations, `applied` included, carries
+  `compilations: {"total": M, "partial": K}`. `audit` reports lane `enriched-partial` for a
+  partial record, so a check for `"enriched"` now fails on such a run, adds the reason to its
+  text header, and appends `lane_detail` and `compilations` to its `--json` report, which
+  `--assert compilations.partial` reads. Exit codes are unchanged, and a graph without a lane
+  record audits as before.
 
 ## [0.8.0] - 2026-09-25
 

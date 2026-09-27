@@ -349,9 +349,11 @@ jobs:
       # against the same run's oracle output that must report the enriched
       # lane, the fixture's exact counts of confirmed facts and discovered
       # edges, and semantic precision 1.0
-      # (fixtures/csharp-semantic/expected-enriched.json). The lane label
-      # alone proves nothing: any admitted artifact sets it, even one whose
-      # facts all go unused.
+      # (fixtures/csharp-semantic/expected-enriched.json). The lane reads
+      # "enriched" only when facts were applied from complete compilations:
+      # a run over partial compilations reads "enriched-partial", and one
+      # that confirmed nothing reads "syntax". The counts still pin how many
+      # facts were consumed.
       #
       # A compiler fact joins the graph by its repository-relative path, so
       # the compiler-facts run, the judged oracle run and the rebuilt graph
