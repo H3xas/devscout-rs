@@ -41,8 +41,14 @@ pub(super) fn scan(invocation: Node, src: &[u8], ctx: &Ctx, out: &mut Vec<(usize
     }
 }
 
+// A path segment: an identifier, a path keyword, or a contextual keyword
+// the grammar tokenizes on its own inside a token tree (`default`,
+// `union`), which is an ordinary name in a path such as `T::default()`.
 fn is_segment(node: Node) -> bool {
-    matches!(node.kind(), "identifier" | "self" | "super" | "crate")
+    matches!(
+        node.kind(),
+        "identifier" | "self" | "super" | "crate" | "default" | "union" | "auto" | "raw"
+    )
 }
 
 // Whether a path starts at `i`: a segment not continuing a path, or a

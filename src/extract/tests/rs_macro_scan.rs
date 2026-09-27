@@ -35,6 +35,12 @@ fn calls_in_macro_arguments_are_call_sites() {
 }
 
 #[test]
+fn a_contextual_keyword_is_an_ordinary_path_segment() {
+    let src = "fn t() {\n    assert!(Shelf::default().is_empty());\n    x!(union::raw(1));\n}\n";
+    assert_eq!(hits(src), vec![h("Shelf::default", 2), h("union::raw", 3)]);
+}
+
+#[test]
 fn a_turbofish_inside_or_closing_a_path_is_passed_over() {
     let src = "fn t() {\n    x!(Vec::<Lamp>::new(), p::q::<Vec<u8>>(1), r::<u8, u16>(2));\n}\n";
     assert_eq!(hits(src), vec![h("Vec::new", 2), h("p::q", 2), h("r", 2)]);
