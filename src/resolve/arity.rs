@@ -126,10 +126,59 @@ pub(super) fn method_arity_admits(
     }
 }
 
-// The call's argument count against the entry's declared RANGE. `arity_max ==
-// -1` is the `params` sentinel: unbounded above.
-pub(super) fn arity_accepts(entry: &crate::graph::FragExtensionMethod, arg_count: usize) -> bool {
-    entry.arity_min <= arg_count && (entry.arity_max == -1 || (arg_count as i64) <= entry.arity_max)
+// A call's own shape: its value-argument count and, when the invoked member
+// was written with a type-argument list, that list's length. C# holds an
+// explicit list to the candidate's own type-parameter count; without one it
+// infers the arguments, so only the value count constrains the candidate.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct CallArity {
+    pub(super) values: usize,
+    pub(super) type_args: Option<usize>,
+}
+
+// `None` for a read, which carries no call shape at all.
+pub(super) fn call_arity(r: &FragRef) -> Option<CallArity> {
+    r.arg_count.map(|values| CallArity {
+        values,
+        type_args: r.method_type_arg_count,
+    })
+}
+
+// `method_arity_admits` with the written type-argument count held to the SAME
+// overload that admits the value count: `M<T>(a)` beside `M<T, U>()` admits
+// `M<A>(v)` and `M<A, B>()` but not `M<A, B>(v)`. A name whose overloads carry
+// no paired counts keeps the value-only rule, so a fact the extractor did not
+// record never narrows a binding.
+pub(super) fn method_call_admits(
+    index: &DefIndex,
+    idx: usize,
+    member: &str,
+    call: CallArity,
+) -> bool {
+    let lists = &index.member_lists[idx];
+    if let Some(written) = call.type_args {
+        let paired = !lists.unpaired_overload_names.iter().any(|n| n == member);
+        if let Some(overloads) = lists.overload_counts.get(member).filter(|_| paired) {
+            return overloads.iter().any(|&(min, max, count)| {
+                count == written && min <= call.values && (max == -1 || (call.values as i64) <= max)
+            });
+        }
+    }
+    method_arity_admits(index, idx, member, call.values)
+}
+
+// The call's argument count against the entry's declared RANGE, and a written
+// type-argument count against the method's own type-parameter count when both
+// are known. `arity_max == -1` is the `params` sentinel: unbounded above.
+pub(super) fn arity_accepts(entry: &crate::graph::FragExtensionMethod, call: CallArity) -> bool {
+    let values = call.values;
+    let in_range =
+        entry.arity_min <= values && (entry.arity_max == -1 || (values as i64) <= entry.arity_max);
+    in_range
+        && match (call.type_args, entry.type_param_count) {
+            (Some(written), Some(declared)) => written == declared,
+            _ => true,
+        }
 }
 
 // The this-parameter's top-level type arguments against the receiver's. Both

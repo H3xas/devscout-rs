@@ -9,6 +9,7 @@ use super::refs::{
 use super::text::{
     declared_name, is_explicit_implementation, is_override, is_public, named_children, text,
 };
+use super::type_arity_facts::own_type_parameter_count;
 use super::types::{ExtensionMethod, Fact};
 
 // Deliberately NOT public_method_names: that one strips a trailing "Async"
@@ -502,12 +503,13 @@ fn has_default_value(parameter: Node) -> bool {
 
 // Extension methods this type declares: every method whose FIRST
 // parameter carries the `this` modifier, as
-// {name, thisType, arityMin, arityMax, thisArgs?} in source order, deduped by
-// the (name, thisType, arityMin, arityMax) QUADRUPLE -- the key the resolver's
-// bucket lookup and range filter are built from. Overloads that differ only in
-// their later parameters ("Render(this Widget w)" /
-// "Render(this Widget w, int d)") are two entries with two ranges, and a call
-// binds to whichever one its argument count actually falls inside.
+// {name, thisType, arityMin, arityMax, thisArgs?, typeParamCount} in source
+// order, deduped by (name, thisType, arityMin, arityMax, typeParamCount) --
+// the key the resolver's bucket lookup and count filters are built from.
+// Overloads that differ only in their later parameters ("Render(this Widget
+// w)" / "Render(this Widget w, int d)") or only in their own type-parameter
+// count are separate entries, and a call binds to whichever one its counts
+// actually fall inside.
 //
 // `this_args` (the generic amendment) is present only when the this-parameter
 // type is generic, and records that type's TOP-LEVEL type arguments with this
@@ -571,7 +573,10 @@ pub(super) fn raw_extension_methods(node: Node, src: &[u8]) -> Vec<ExtensionMeth
             continue;
         }
         let (arity_min, arity_max) = extension_arity_range(parameters, src);
-        if !seen.insert(format!("{name} {this_type} {arity_min} {arity_max}")) {
+        let type_param_count = own_type_parameter_count(c);
+        if !seen.insert(format!(
+            "{name} {this_type} {arity_min} {arity_max} {type_param_count}"
+        )) {
             continue;
         }
         let mut type_params = class_type_params.clone();
@@ -583,6 +588,7 @@ pub(super) fn raw_extension_methods(node: Node, src: &[u8]) -> Vec<ExtensionMeth
             arity_min,
             arity_max,
             this_args,
+            type_param_count,
         });
     }
     entries

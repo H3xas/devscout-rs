@@ -50,6 +50,7 @@ fn frag_def_with_bases(
                 arity_min: *lo,
                 arity_max: *hi,
                 this_args: None,
+                type_param_count: None,
             })
             .collect(),
         bases: bases.iter().map(|s| s.to_string()).collect(),
@@ -60,6 +61,7 @@ fn frag_def_with_bases(
         method_return_args: OrderedMap::new(),
         non_public_methods: Vec::new(),
         method_arities: OrderedMap::new(),
+        method_type_arities: OrderedMap::new(),
         method_params: OrderedMap::new(),
         override_methods: Vec::new(),
         base_type_args: OrderedMap::new(),
@@ -312,6 +314,7 @@ fn frag_ref(generic: bool, receiver_type: Option<&str>, arg_count: Option<usize>
         receiver_lambda: None,
         receiver_nullable: false,
         lambda_arg_arity: None,
+        method_type_arg_count: None,
     }
 }
 

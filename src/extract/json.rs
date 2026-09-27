@@ -157,9 +157,9 @@ pub(super) fn def_to_json(d: &DefRecord) -> Json {
         ));
     }
     // Appended after the properties/fields/methodReturns trio, entry keys in
-    // the serialized order (name, thisType, arityMin, arityMax, thisArgs),
-    // omitted when empty. `thisArgs` is present only on a generic
-    // this-parameter.
+    // the serialized order (name, thisType, arityMin, arityMax, thisArgs,
+    // typeParamCount), omitted when empty. `thisArgs` is present only on a
+    // generic this-parameter.
     if !d.extension_methods.is_empty() {
         fields.push((
             "extensionMethods",
@@ -179,6 +179,7 @@ pub(super) fn def_to_json(d: &DefRecord) -> Json {
                                 Json::Arr(args.iter().map(|a| Json::Str(a.clone())).collect()),
                             ));
                         }
+                        kv.push(("typeParamCount", Json::Num(e.type_param_count)));
                         Json::Obj(kv)
                     })
                     .collect(),
@@ -402,6 +403,10 @@ fn ref_to_json(r: &RefRecord) -> Json {
     }
     if let Some(member) = &r.receiver_call_member {
         fields.push(("receiverCallMember", Json::Str(member.clone())));
+    }
+    // Appended LAST of all, and only when the member carried a written list.
+    if let Some(count) = r.method_type_arg_count {
+        fields.push(("methodTypeArgCount", Json::Num(count)));
     }
     Json::Obj(fields)
 }

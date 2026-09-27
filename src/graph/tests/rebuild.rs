@@ -74,6 +74,7 @@ fn rebuild_graph_reuses_a_cached_fragment_at_matching_mtime() {
             method_return_args: OrderedMap::new(),
             non_public_methods: vec![],
             method_arities: OrderedMap::new(),
+            method_type_arities: OrderedMap::new(),
             method_params: OrderedMap::new(),
             override_methods: vec![],
             base_type_args: OrderedMap::new(),

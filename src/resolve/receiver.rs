@@ -1,4 +1,6 @@
-use super::arity::{arity_accepts, base_arity, generic_args_unify, resolve_ref_by_arity};
+use super::arity::{
+    arity_accepts, base_arity, generic_args_unify, resolve_ref_by_arity, CallArity,
+};
 use super::index::{name_probe, DefIndex, MethodOverloadParams};
 use super::ladder::{resolve_ref, Resolution};
 use super::members::{
@@ -626,7 +628,7 @@ pub(super) fn receiver_admits_candidate(
     candidate: usize,
     member: &str,
     shape: MemberShape,
-    arg_count: Option<usize>,
+    call: Option<CallArity>,
     receiver_type: &str,
     receiver_args: Option<&Vec<String>>,
     args_known: bool,
@@ -656,7 +658,7 @@ pub(super) fn receiver_admits_candidate(
         .iter()
         .any(|c| {
             c.def_idx == candidate
-                && arg_count.is_none_or(|n| arity_accepts(&c.entry, n))
+                && call.is_none_or(|call| arity_accepts(&c.entry, call))
                 && generic_args_unify(c.entry.this_args.as_ref(), receiver_args)
         })
 }

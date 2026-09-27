@@ -118,16 +118,24 @@ pub fn project_units_path(root: &Path) -> PathBuf {
 // `Ns.M`, no longer `M`), so the message resolves through that qualifier; a
 // cached v24 fragment of an unchanged file still carries the bare name, which
 // the call site's namespace can bind to a different same-named type.
+// v26 adds ref `methodTypeArgCount` (the length of a type-argument list
+// written on the invoked member itself), def `methodTypeArities` (each
+// overload's own type-parameter count, aligned with `methodArities`) and
+// extension-entry `typeParamCount`, and keeps two extension overloads that
+// differ only in their type-parameter count as separate entries. A cached v25
+// fragment of an unchanged file carries none of them, so `x.M<A, B>()` would
+// keep binding an `M<T>` overload C# refuses, where a fresh fragment of the
+// same file binds only an overload with two type parameters.
 // The rename IS the invalidation mechanism:
 // pre-bump caches stop being found, every file reparses
 // once, no reader carries version-compat logic. Writers delete every
 // superseded generation (see `remove_superseded_caches`).
 pub(crate) fn fragments_cache_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-v25.json")
+    graph_dir(root).join("fragments-v26.json")
 }
 
 pub(crate) fn fragments_index_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-index-v25.json")
+    graph_dir(root).join("fragments-index-v26.json")
 }
 
 // Every generation below the current one, not just the immediately previous:
@@ -182,6 +190,8 @@ pub(crate) const SUPERSEDED_CACHE_FILES: &[&str] = &[
     "fragments-index-v23.json",
     "fragments-v24.json",
     "fragments-index-v24.json",
+    "fragments-v25.json",
+    "fragments-index-v25.json",
 ];
 
 pub(crate) fn remove_superseded_caches(root: &Path) {

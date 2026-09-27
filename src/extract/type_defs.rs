@@ -10,6 +10,7 @@ use super::members::{
 };
 use super::refs::{push_ref, type_parameter_names_ordered};
 use super::text::{declared_name, named_children, text};
+use super::type_arity_facts::raw_method_type_arities;
 use super::types::{DefRecord, NameRecord, RefRecord, UsingRecord};
 
 // A flat "namespace.name" id collides two ways a real C# id never does:
@@ -158,6 +159,7 @@ pub(super) fn record_type_def(
         method_return_args: raw_method_return_args(node, src, kind, type_params),
         non_public_methods: raw_non_public_method_names(node, src, kind),
         method_arities: raw_method_arities(node, src),
+        method_type_arities: raw_method_type_arities(node, src),
         method_params: raw_method_params(node, src, type_params),
         override_methods: raw_override_method_names(node, src),
         // Set by the walk's own class/interface/struct/record arm right
@@ -220,6 +222,7 @@ pub(super) fn record_enum_members(
             method_return_args: Vec::new(),
             non_public_methods: Vec::new(),
             method_arities: Vec::new(),
+            method_type_arities: Vec::new(),
             method_params: Vec::new(),
             override_methods: Vec::new(),
             base_type_args: Vec::new(),
