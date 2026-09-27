@@ -26,7 +26,7 @@ fn rebuild_graph_writes_the_v13_caches_and_deletes_every_superseded_generation()
     // receiverCallMember pair, so a v12 fragment read back carries none and
     // every property hop and every var-from-invocation receiver would
     // silently stay unresolved.
-    assert_eq!(SUPERSEDED_CACHE_FILES.len(), 52, "v1..v26 pairs");
+    assert_eq!(SUPERSEDED_CACHE_FILES.len(), 54, "v1..v27 pairs");
     for stale in SUPERSEDED_CACHE_FILES {
         fs::write(graph_dir(&dir).join(stale), b"{}").unwrap();
     }
@@ -78,11 +78,11 @@ fn rebuild_graph_writes_the_v13_caches_and_deletes_every_superseded_generation()
     rebuild_graph(&dir, &graph_files, &fresh, true, None, None).unwrap();
 
     assert!(
-        graph_dir(&dir).join("fragments-v27.json").exists(),
-        "the v27 payload cache is what gets written"
+        graph_dir(&dir).join("fragments-v28.json").exists(),
+        "the v28 payload cache is what gets written"
     );
     assert!(
-        graph_dir(&dir).join("fragments-index-v27.json").exists(),
+        graph_dir(&dir).join("fragments-index-v28.json").exists(),
         "and its mtime-only index alongside it"
     );
     for stale in SUPERSEDED_CACHE_FILES {
@@ -93,32 +93,32 @@ fn rebuild_graph_writes_the_v13_caches_and_deletes_every_superseded_generation()
     }
 }
 
-// --- The v27 cache generation --------------------------
+// --- The v28 cache generation --------------------------
 
 #[test]
-fn fragments_cache_v27_supersedes_v26() {
-    let dir = temp_dir("fragments-cache-v27-paths");
+fn fragments_cache_v28_supersedes_v27() {
+    let dir = temp_dir("fragments-cache-v28-paths");
     assert_eq!(
         fragments_cache_path(&dir),
-        graph_dir(&dir).join("fragments-v27.json")
+        graph_dir(&dir).join("fragments-v28.json")
     );
     assert_eq!(
         fragments_index_path(&dir),
-        graph_dir(&dir).join("fragments-index-v27.json")
+        graph_dir(&dir).join("fragments-index-v28.json")
     );
     assert!(
-        SUPERSEDED_CACHE_FILES.contains(&"fragments-v26.json"),
-        "v26 joined the superseded list when the v27 bump landed"
+        SUPERSEDED_CACHE_FILES.contains(&"fragments-v27.json"),
+        "v27 joined the superseded list when the v28 bump landed"
     );
     assert!(
-        SUPERSEDED_CACHE_FILES.contains(&"fragments-index-v26.json"),
+        SUPERSEDED_CACHE_FILES.contains(&"fragments-index-v27.json"),
         "its index pairs with it, same as every other generation"
     );
 
-    let dir = temp_dir("rebuild-v27");
+    let dir = temp_dir("rebuild-v28");
     fs::create_dir_all(graph_dir(&dir)).unwrap();
-    fs::write(graph_dir(&dir).join("fragments-v26.json"), b"{}").unwrap();
-    fs::write(graph_dir(&dir).join("fragments-index-v26.json"), b"{}").unwrap();
+    fs::write(graph_dir(&dir).join("fragments-v27.json"), b"{}").unwrap();
+    fs::write(graph_dir(&dir).join("fragments-index-v27.json"), b"{}").unwrap();
 
     let fragment = Fragment {
         defs: vec![],
@@ -137,13 +137,103 @@ fn fragments_cache_v27_supersedes_v26() {
     }];
     rebuild_graph(&dir, &graph_files, &fresh, true, None, None).unwrap();
 
-    assert!(graph_dir(&dir).join("fragments-v27.json").exists());
-    assert!(graph_dir(&dir).join("fragments-index-v27.json").exists());
+    assert!(graph_dir(&dir).join("fragments-v28.json").exists());
+    assert!(graph_dir(&dir).join("fragments-index-v28.json").exists());
     assert!(
-        !graph_dir(&dir).join("fragments-v26.json").exists(),
-        "the v26 pair is deleted -- rename IS the invalidation"
+        !graph_dir(&dir).join("fragments-v27.json").exists(),
+        "the v27 pair is deleted -- rename IS the invalidation"
     );
     assert!(!graph_dir(&dir).join("fragments-index-v16.json").exists());
+}
+
+fn planted_def_fragment() -> Fragment {
+    Fragment {
+        defs: vec![FragDef {
+            id: "App.Planted".into(),
+            name: "Planted".into(),
+            namespace: "App".into(),
+            kind: "class".into(),
+            line: 1,
+            methods: vec![],
+            properties: vec![],
+            fields: vec![],
+            method_returns: OrderedMap::new(),
+            extension_methods: vec![],
+            bases: vec![],
+            type_params: vec![],
+            base_generic_args: OrderedMap::new(),
+            test_methods: vec![],
+            property_types: OrderedMap::new(),
+            field_types: OrderedMap::new(),
+            method_return_args: OrderedMap::new(),
+            non_public_methods: vec![],
+            method_arities: OrderedMap::new(),
+            method_type_arities: OrderedMap::new(),
+            method_type_param_sites: OrderedMap::new(),
+            method_params: OrderedMap::new(),
+            override_methods: vec![],
+            base_type_args: OrderedMap::new(),
+            property_message_args: Vec::new(),
+            array_message_bases: Vec::new(),
+            delegate_signature: None,
+            end_line: 1,
+        }],
+        usings: vec![],
+        refs: vec![],
+        names: vec![],
+        registrations: vec![],
+        publishes: vec![],
+        handler_registrations: vec![],
+    }
+}
+
+fn rebuilt_over_a_planted_pair(label: &str, generation: &str) -> (std::path::PathBuf, Graph) {
+    let dir = temp_dir(label);
+    fs::create_dir_all(graph_dir(&dir)).unwrap();
+    let planted = serde_json::to_string(&serde_json::json!({
+        "src/A.cs": {"mtime": 5, "fragment": planted_def_fragment()},
+    }))
+    .unwrap();
+    plant_cache_pair(&dir, &planted, r#"{"src/A.cs":5}"#, generation);
+
+    let fresh_fragment = Fragment {
+        defs: vec![],
+        usings: vec![],
+        refs: vec![],
+        names: vec![],
+        registrations: vec![],
+        publishes: vec![],
+        handler_registrations: vec![],
+    };
+    let mut fresh = HashMap::new();
+    fresh.insert("src/A.cs".to_string(), AnyFragment::Cs(fresh_fragment));
+    let graph_files = vec![GraphFile {
+        rel: "src/A.cs".to_string(),
+        mtime: 5,
+    }];
+    let g = match rebuild_graph(&dir, &graph_files, &fresh, true, None, None).unwrap() {
+        RebuildOutcome::Rebuilt(g) => g,
+        RebuildOutcome::NotRebuilt => unreachable!("changed is true"),
+    };
+    (dir, g)
+}
+
+#[test]
+fn a_planted_v27_pair_is_never_read_and_is_removed() {
+    let (dir, g) = rebuilt_over_a_planted_pair("planted-v27-pair", "-v27");
+    assert!(
+        g.defs.iter().all(|d| d.id != "App.Planted"),
+        "the previous generation's entry is never reused, even at a matching mtime"
+    );
+    assert!(graph_dir(&dir).join("fragments-v28.json").exists());
+    assert!(graph_dir(&dir).join("fragments-index-v28.json").exists());
+    assert!(!graph_dir(&dir).join("fragments-v27.json").exists());
+    assert!(!graph_dir(&dir).join("fragments-index-v27.json").exists());
+
+    // The same entry at the current generation is reused on its matching
+    // mtime, so the rename, not the payload, is what keeps it out.
+    let (_, control) = rebuilt_over_a_planted_pair("planted-v28-pair", "-v28");
+    assert!(control.defs.iter().any(|d| d.id == "App.Planted"));
 }
 
 // --- The rename as the bus-hop invalidation ------------------------------
@@ -294,7 +384,7 @@ fn a_pre_bump_fragment_cache_cannot_leave_a_supported_hop_unfound() {
     // half fails the moment the rename is reverted.
     let reused = temp_dir("bus-hop-current-generation-cache");
     fs::create_dir_all(graph_dir(&reused)).unwrap();
-    plant_cache_pair(&reused, &stale, index, "-v27");
+    plant_cache_pair(&reused, &stale, index, "-v28");
     let g = rebuilt(&reused);
     assert_eq!(hop_count(&g), 0);
     assert_eq!(g.stats.edges_by_kind.bus_hop, None);
@@ -492,7 +582,7 @@ fn a_warm_v22_cache_is_rebuilt_rather_than_read_without_array_facts() {
     // prevents, so this half fails the moment the rename is reverted.
     let reused = temp_dir("bus-array-current-generation-cache");
     fs::create_dir_all(graph_dir(&reused)).unwrap();
-    plant_cache_pair(&reused, &stale, index, "-v27");
+    plant_cache_pair(&reused, &stale, index, "-v28");
     let g = match rebuild_graph(
         &reused,
         &array_bus_files(),

@@ -435,6 +435,76 @@ fn any_fragment_round_trips_both_shapes_and_never_reads_one_as_the_other() {
     );
 }
 
+const CS_BYTES: &str = r#"{"defs":[],"usings":[],"refs":[],"names":[]}"#;
+const TS_BYTES: &str = r#"{"ts":1,"defs":[{"name":"x","kind":"const","line":1,"endLine":1}],"imports":[],"reexports":[],"refs":[]}"#;
+
+#[test]
+fn a_rust_fragment_serializes_exactly_round_trips_and_reads_only_as_rs() {
+    let rs = AnyFragment::Rs(extract::RsFragment {
+        rs: 1,
+        items: vec![extract::RsItem {
+            name: "fmt".into(),
+            kind: "fn".into(),
+            path: "Gadget::fmt-1".into(),
+            line: 3,
+            name_line: 4,
+            end_line: 6,
+        }],
+    });
+    let rs_json = serde_json::to_string(&rs).unwrap();
+    assert_eq!(
+        rs_json,
+        r#"{"rs":1,"items":[{"name":"fmt","kind":"fn","path":"Gadget::fmt-1","line":3,"nameLine":4,"endLine":6}]}"#
+    );
+    assert_eq!(serde_json::from_str::<AnyFragment>(&rs_json).unwrap(), rs);
+    assert!(serde_json::from_str::<extract::TsFragment>(&rs_json).is_err());
+    assert!(serde_json::from_str::<Fragment>(&rs_json).is_err());
+
+    for other in [CS_BYTES, TS_BYTES] {
+        assert!(serde_json::from_str::<extract::RsFragment>(other).is_err());
+        assert!(!matches!(
+            serde_json::from_str::<AnyFragment>(other).unwrap(),
+            AnyFragment::Rs(_)
+        ));
+    }
+    assert!(matches!(
+        serde_json::from_str::<AnyFragment>(CS_BYTES).unwrap(),
+        AnyFragment::Cs(_)
+    ));
+    assert!(matches!(
+        serde_json::from_str::<AnyFragment>(TS_BYTES).unwrap(),
+        AnyFragment::Ts(_)
+    ));
+}
+
+#[test]
+fn an_empty_rust_fragment_is_the_tag_and_an_empty_list() {
+    let json = serde_json::to_string(&AnyFragment::from(extract::RsFragment::default())).unwrap();
+    assert_eq!(json, r#"{"rs":1,"items":[]}"#);
+    assert!(matches!(
+        serde_json::from_str::<AnyFragment>(&json).unwrap(),
+        AnyFragment::Rs(_)
+    ));
+}
+
+#[test]
+fn a_fragment_without_rs_never_reads_as_rs() {
+    let item = r#"{"name":"f","kind":"fn","path":"f","line":1,"nameLine":1,"endLine":1}"#;
+    for bytes in [
+        r#"{"items":[]}"#.to_string(),
+        format!(r#"{{"items":[{item}]}}"#),
+        format!(r#"{{"ts":1,"items":[{item}]}}"#),
+    ] {
+        assert!(
+            !matches!(
+                serde_json::from_str::<AnyFragment>(&bytes),
+                Ok(AnyFragment::Rs(_))
+            ),
+            "{bytes} must never read as a Rust fragment"
+        );
+    }
+}
+
 // --- v8: FragRef's outerTypes, appended last -----------------------------
 
 #[test]

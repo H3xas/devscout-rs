@@ -135,16 +135,20 @@ pub fn project_units_path(root: &Path) -> PathBuf {
 // `list.Any(m => true)` would keep binding an `Any(Action<F>)` or an
 // uninferable `Any<T>(FilterDelegate<IX<T>>)` overload C# refuses, where a
 // fresh fragment of the same file skips both.
+// v28 adds the Rust fragment arm (`rs: 1`). No fragment an earlier build
+// wrote changes shape; the bump exists so a build without that arm never
+// meets a Rust fragment, because one cache entry no arm accepts makes the
+// whole cache fail to parse and every file reparse on every run.
 // The rename IS the invalidation mechanism:
 // pre-bump caches stop being found, every file reparses
 // once, no reader carries version-compat logic. Writers delete every
 // superseded generation (see `remove_superseded_caches`).
 pub(crate) fn fragments_cache_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-v27.json")
+    graph_dir(root).join("fragments-v28.json")
 }
 
 pub(crate) fn fragments_index_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-index-v27.json")
+    graph_dir(root).join("fragments-index-v28.json")
 }
 
 // Every generation below the current one, not just the immediately previous:
@@ -203,6 +207,8 @@ pub(crate) const SUPERSEDED_CACHE_FILES: &[&str] = &[
     "fragments-index-v25.json",
     "fragments-v26.json",
     "fragments-index-v26.json",
+    "fragments-v27.json",
+    "fragments-index-v27.json",
 ];
 
 pub(crate) fn remove_superseded_caches(root: &Path) {

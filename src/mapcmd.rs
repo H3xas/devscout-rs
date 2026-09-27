@@ -83,52 +83,14 @@ use std::time::{Instant, UNIX_EPOCH};
 
 use rayon::prelude::*;
 
-use crate::extract;
-use crate::graph::{self, AnyFragment, Fragment, GraphFile};
+use crate::graph::{self, GraphFile};
 use crate::manifest::{self, Value};
-use crate::markup;
-use crate::parse;
 use crate::project;
 use crate::repo;
 use crate::walk;
 
 fn io_err<E: std::fmt::Display>(e: E) -> io::Error {
     io::Error::other(e.to_string())
-}
-
-// Whether `rel` is a C# source file (`.cs`).
-fn is_csharp(rel: &str) -> bool {
-    rel.ends_with(".cs")
-}
-
-// The files that contribute a graph fragment: C# (defs, refs, member names),
-// markup (`x:Class`/`x:Name`, `.resw` keys -- names only) and TS/JS (imports,
-// exported declarations, call/JSX/dispatch references). The TS/JS arm is
-// `parse::ts_grammar_for`'s own extension gate rather than a second list -- a
-// file this predicate calls a graph source but the reparse dispatch below cannot
-// hand a grammar would be a rel `graph_files` names and `rebuild_graph` can never
-// find a fragment for, which `index_is_stale`'s length check turns into a
-// permanent rebuild.
-fn is_graph_source(rel: &str) -> bool {
-    is_csharp(rel) || markup::is_markup(rel) || parse::ts_grammar_for(rel).is_some()
-}
-
-// LOSSY UTF-8 decoding (invalid byte sequences become U+FFFD), never failing on
-// bad encoding, only on a real I/O failure (missing file, permission). Both this
-// crate's extraction worker and `default_purpose` read this way;
-// `fs::read_to_string` is the wrong primitive here -- it is STRICT UTF-8 and
-// returns `Err` on the first invalid byte, silently dropping any file with even
-// one non-UTF-8 byte (e.g. a stray CP1252 em-dash inside a `//` comment: the
-// lossy read substitutes one U+FFFD and produces a normal signature, while
-// `fs::read_to_string` errors on it outright). Losing a file this way is not just
-// a missed purpose -- `graph::index_is_stale`'s `index.len() != graph_files.len()`
-// check makes the loss STICKY: a C# file the walk finds but the fragments cache
-// can never hold forces `changed == true` on every subsequent run forever,
-// defeating incremental reuse for the whole graph, not just this one file.
-fn read_source_lossy(path: &Path) -> Option<String> {
-    fs::read(path)
-        .ok()
-        .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
 }
 
 // ---------------------------------------------------------------------------
@@ -167,6 +129,10 @@ mod hashkey {
 // file's own header comment).
 mod options;
 pub use options::MapOptions;
+
+// The per-language reparse dispatch lives in its own sibling file,
+// `mapcmd/dispatch.rs`, for the same ceiling reason.
+mod dispatch;
 
 /// Counts + timing `devscout map`'s CLI line reports, plus the scoped-merge
 /// bookkeeping and the lane record. Every field but `total_manifest_entries`/
@@ -245,39 +211,6 @@ impl MapReport {
             self.parsed_ast,
         )
     }
-}
-
-// ---------------------------------------------------------------------------
-// `carries_best_source` -- an unchanged cache key alone doesn't justify reuse: a
-// C# or TS/JS entry written before its language had an AST path still carries a
-// heuristic purpose, and reusing it would freeze the manifest on the weaker
-// source forever. Reuse holds only when the stored source is already the best
-// this run could produce. The ast-capable predicate is `is_csharp(rel) ||
-// parse::is_ts_js(rel)`: both languages have an AST path, so both expect "ast" as
-// their best source; every other extension (docs, config, ...) expects
-// "heuristic".
-//
-// For TS/JS specifically, "ast-none" ALSO counts as best -- a
-// zero-export/parse-failure file already got the AST worker's final answer
-// (None), and re-tagging it "heuristic" would make this function treat it as
-// not-best forever, resending it to the AST worker on every map run. C# is
-// completely untouched: it never produces "ast-none" (this module's entries-build
-// below only ever writes that source for a TS/JS rel), so its own branch is
-// unchanged.
-// ---------------------------------------------------------------------------
-
-fn carries_best_source(entry: &Value, rel: &str) -> bool {
-    let source = entry
-        .get("source")
-        .and_then(Value::as_str)
-        .unwrap_or("heuristic");
-    if source == "agent" {
-        return true;
-    }
-    if parse::is_ts_js(rel) {
-        return source == "ast" || source == "ast-none";
-    }
-    source == if is_csharp(rel) { "ast" } else { "heuristic" }
 }
 
 // The `mtime` field read for the reuse comparison. Under content-hash reuse this
@@ -372,25 +305,6 @@ struct PlanEntry {
     reusable: bool,
 }
 
-// One reparsed file's result, tagged by which grammar produced it -- the C#
-// branch (purpose + graph fragment, via `extract::extract`) or the TS/JS branch
-// (purpose + TS reference fragment, via `extract::extract_ts_file`), from the
-// same parse. Kept as an enum rather than one widened struct so a TS/JS result
-// can never accidentally reach `graph::fragment_from_extraction` below, and vice
-// versa.
-enum ParsedFile {
-    CSharp(String, extract::Extraction),
-    // The purpose AND the reference fragment, off ONE parse. The purpose is
-    // `None` for a zero-export file (the heuristic text stands); the fragment is
-    // written either way, for the same reason the C# branch writes an empty
-    // fragment -- a rel absent from the cache makes `index_is_stale` see a
-    // permanent mismatch and rebuild on every run.
-    TsJs(String, Option<String>, extract::TsFragment),
-    // A markup or resource file: a fragment carrying names and nothing else, and
-    // no purpose (the heuristic one stands).
-    Markup(String, Fragment),
-}
-
 /// Runs `devscout map`, assembled from walk.rs (walk), extract.rs (extract),
 /// graph.rs (resolve + graph) and manifest.rs. `scope_dirs` is the CLI's
 /// positional dir arguments with `--refresh` already stripped (module header) --
@@ -434,14 +348,14 @@ pub fn map_repo(root: &Path, scope_dirs: &[String], opts: MapOptions) -> io::Res
         .iter()
         .map(|rel| {
             let cache_key = cache_key_for(root, rel, &opts);
-            let fragment_ok =
-                !is_graph_source(rel) || graph_index.get(rel.as_str()) == Some(&cache_key);
+            let fragment_ok = !dispatch::is_graph_source(rel)
+                || graph_index.get(rel.as_str()) == Some(&cache_key);
             let prior_entry = prior_index.get(rel.as_str()).cloned();
             let reusable = prior_entry
                 .as_ref()
                 .map(|e| {
                     entry_cache_key(e) == Some(cache_key)
-                        && carries_best_source(e, rel)
+                        && dispatch::carries_best_source(e, rel)
                         && fragment_ok
                 })
                 .unwrap_or(false);
@@ -459,76 +373,19 @@ pub fn map_repo(root: &Path, scope_dirs: &[String], opts: MapOptions) -> io::Res
     // `map` (not `filter`) over `plan.par_iter()` keeps this an
     // IndexedParallelIterator end to end, and the result is folded into
     // order-erasing HashMaps immediately below, before anything
-    // artifact-affecting reads it.
-    //
-    // A reparse candidate is C#, markup or TS/JS -- each file is dispatched to
-    // the C# branch (purpose + graph fragment) or the TS/JS branch (purpose + TS
-    // reference fragment) on the SAME parse. Both branches produce a fragment;
-    // which SHAPE it is decides which resolver sees it, and that routing is the
-    // `AnyFragment` tag, never this dispatch.
-    let per_file: Vec<Option<ParsedFile>> = plan
+    // artifact-affecting reads it. The per-file language dispatch lives in
+    // `mapcmd/dispatch.rs`.
+    let per_file: Vec<Option<dispatch::ParsedFile>> = plan
         .par_iter()
         .map(|p| {
             if p.reusable {
                 return None;
             }
-            if is_csharp(&p.rel) {
-                return read_source_lossy(&root.join(&p.rel))
-                    .map(|src| ParsedFile::CSharp(p.rel.clone(), extract::extract(&src)));
-            }
-            // Markup never reaches a grammar -- the scan is a line walk -- but it
-            // obeys the same reuse decision every other graph source obeys, so it
-            // is dispatched from the same place.
-            if markup::is_markup(&p.rel) {
-                return graph::markup_fragment(root, &p.rel)
-                    .map(|f| ParsedFile::Markup(p.rel.clone(), f));
-            }
-            let grammar = parse::ts_grammar_for(&p.rel)?;
-            // The leading-comment prefix rides inside `extract_ts_file` (not the
-            // pure `extract_ts_purpose`): for every TS/JS file that yields an AST
-            // purpose it re-checks `default_purpose_detailed` and prefixes the
-            // leading comment text when that heuristic match was comment-derived.
-            // The same call returns the reference fragment off that one parse, and
-            // a parse failure drops the file out of BOTH outputs.
-            let src = read_source_lossy(&root.join(&p.rel))?;
-            let ts = extract::extract_ts_file(root, &p.rel, &src, grammar)?;
-            Some(ParsedFile::TsJs(p.rel.clone(), ts.purpose, ts.fragment))
+            dispatch::reparse(root, &p.rel)
         })
         .collect();
 
-    let mut purposes: HashMap<String, String> = HashMap::new();
-    let mut fresh_fragments: HashMap<String, AnyFragment> = HashMap::new();
-    for parsed in per_file.into_iter().flatten() {
-        match parsed {
-            ParsedFile::CSharp(rel, extraction) => {
-                if let Some(p) = &extraction.purpose {
-                    purposes.insert(rel.clone(), p.clone());
-                }
-                // Cached even when the purpose is None (no namespace-level types):
-                // skipping empty fragments here would make `index_is_stale`'s "did
-                // the C# set change" check see a permanent mismatch for genuinely
-                // type-free files, forcing a rebuild on every run even when nothing
-                // changed.
-                fresh_fragments.insert(
-                    rel,
-                    AnyFragment::Cs(graph::fragment_from_extraction(&extraction)),
-                );
-            }
-            ParsedFile::Markup(rel, fragment) => {
-                fresh_fragments.insert(rel, AnyFragment::Cs(fragment));
-            }
-            ParsedFile::TsJs(rel, purpose, fragment) => {
-                if let Some(p) = purpose {
-                    purposes.insert(rel.clone(), p);
-                }
-                // Cached even when the file exports nothing, for the same reason
-                // the C# branch caches an empty fragment: a rel absent from
-                // `graph` makes the fragments-index reuse check see a permanent
-                // mismatch and rebuild on every run.
-                fresh_fragments.insert(rel, AnyFragment::Ts(fragment));
-            }
-        }
-    }
+    let (purposes, fresh_fragments) = dispatch::fold(per_file);
     // A plan entry with no `per_file` result (unreadable file, reusable, or not a
     // reparse candidate at all -- e.g. a `.md`/`.json` file) simply has no
     // `purposes`/`fresh_fragments` entry -- the loop below falls back to
@@ -571,19 +428,7 @@ pub fn map_repo(root: &Path, scope_dirs: &[String], opts: MapOptions) -> io::Res
                 ("source", Value::string("ast")),
             ]),
             None => {
-                // A TS/JS file whose AST pass yielded no purpose (zero-export or
-                // parse failure) is already the best this worker can produce this
-                // run -- "ast-none" carries the same heuristic purpose text as a
-                // plain heuristic result, but (unlike "heuristic")
-                // `carries_best_source` above recognises it as best-obtainable for
-                // TS/JS, so an unchanged mtime is reused on the next map instead of
-                // being resent for reparse. C# is untouched -- it still gets
-                // "heuristic".
-                let source = if parse::is_ts_js(&p.rel) {
-                    "ast-none"
-                } else {
-                    "heuristic"
-                };
+                let source = dispatch::fallback_source(&p.rel);
                 Value::object(vec![
                     (
                         "purpose",
@@ -668,7 +513,7 @@ pub fn map_repo(root: &Path, scope_dirs: &[String], opts: MapOptions) -> io::Res
 
     let graph_files: Vec<GraphFile> = plan
         .iter()
-        .filter(|p| is_graph_source(&p.rel))
+        .filter(|p| dispatch::is_graph_source(&p.rel))
         .map(|p| GraphFile {
             rel: p.rel.clone(),
             mtime: p.cache_key,
@@ -779,59 +624,6 @@ mod tests {
         assert!(is_within_scope("src/a.ts", &scope));
         assert!(is_within_scope("docs/readme.md", &scope));
         assert!(!is_within_scope("config/settings.json", &scope));
-    }
-
-    // -- carries_best_source ------------------------------------------------
-
-    #[test]
-    fn agent_source_always_carries() {
-        let e = Value::object(vec![("source", Value::string("agent"))]);
-        assert!(carries_best_source(&e, "a.cs"));
-        assert!(carries_best_source(&e, "a.ts"));
-    }
-
-    // `carries_best_source`'s "ast-capable" predicate is `is_csharp(rel) ||
-    // parse::is_ts_js(rel)` -- both languages have an AST path, so both expect
-    // "ast" as their best source. `a.json`/`a.md`/etc. (neither predicate) expect
-    // "heuristic".
-    #[test]
-    fn ast_source_carries_for_csharp_and_ts_js() {
-        let e = Value::object(vec![("source", Value::string("ast"))]);
-        assert!(carries_best_source(&e, "a.cs"));
-        assert!(carries_best_source(&e, "a.ts"));
-        assert!(!carries_best_source(&e, "a.json"));
-    }
-
-    #[test]
-    fn heuristic_source_carries_only_for_non_ast_capable_extensions() {
-        let e = Value::object(vec![("source", Value::string("heuristic"))]);
-        assert!(!carries_best_source(&e, "a.cs"));
-        assert!(!carries_best_source(&e, "a.ts"));
-        assert!(carries_best_source(&e, "a.json"));
-    }
-
-    #[test]
-    fn missing_source_defaults_to_heuristic() {
-        let e = Value::object(vec![("purpose", Value::string("x"))]);
-        assert!(carries_best_source(&e, "a.json"));
-        assert!(!carries_best_source(&e, "a.cs"));
-        assert!(!carries_best_source(&e, "a.ts"));
-    }
-
-    // "ast-none" carries the best source for TS/JS (no more forced resend on
-    // every rerun), but is NOT a valid best source for C# -- that path never
-    // produces it.
-    #[test]
-    fn ast_none_source_carries_for_ts_js_but_not_for_csharp_or_plain_files() {
-        let e = Value::object(vec![("source", Value::string("ast-none"))]);
-        assert!(carries_best_source(&e, "a.ts"));
-        assert!(carries_best_source(&e, "a.tsx"));
-        assert!(carries_best_source(&e, "a.js"));
-        assert!(
-            !carries_best_source(&e, "a.cs"),
-            "C# never produces ast-none; an entry claiming it must still be reparsed"
-        );
-        assert!(!carries_best_source(&e, "a.json"));
     }
 
     // -- with_ensured_source: source-field position semantics --------------

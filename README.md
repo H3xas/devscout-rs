@@ -3,7 +3,7 @@
 A fast code index for C# and TypeScript codebases — `map`, `find`, `refs`, `impact` from the CLI.
 
 `devscout` walks a repository once, parses it with [tree-sitter](https://tree-sitter.github.io/)
-(C#, TypeScript, TSX, JavaScript), and writes a small set of JSON artifacts next to the repo.
+(C#, TypeScript, TSX, JavaScript, Rust), and writes a small set of JSON artifacts next to the repo.
 Every later query is answered from those artifacts, so asking "who calls this?" or "what breaks
 if I touch this file?" costs a few milliseconds instead of a full-text sweep.
 
@@ -39,7 +39,11 @@ narrower set of edge kinds — see [Limitations](#limitations). Import specifier
 the `paths` and `baseUrl` of the nearest `tsconfig.json` above the file (its `extends` chain
 included; a nested config that declares neither falls back to the root chain), and through
 re-export barrels up to eight hops deep, with the barrel the source names kept as `via` on the
-edge.
+edge. Rust (`.rs`) is indexed for definitions only: every `.rs` file in the mapped scope, in every
+repository, gives one definition per item (modules, types, traits, functions and methods,
+constants, statics, type aliases, `macro_rules!`), which `find` lists and `read` quotes with its
+doc comments and attributes; `refs`, `impact` and `tests` give no Rust rows. See
+[docs/rust-coverage.md](docs/rust-coverage.md).
 
 ## Install
 
@@ -159,7 +163,7 @@ untracked files and are shared correctly by worktrees:
 <git-common-dir>/scout/manifest.json              file -> purpose + symbol index
 <git-common-dir>/scout/index-state.json           HEAD + timestamp the index was built at
 <git-common-dir>/scout/graph/graph.json           definitions, edges, and project units
-<git-common-dir>/scout/graph/fragments-v27.json   per-file extraction cache (incremental map)
+<git-common-dir>/scout/graph/fragments-v28.json   per-file extraction cache (incremental map)
 <git-common-dir>/scout/graph/project-units.json   csproj staleness sidecar (present only with a project model)
 <git-common-dir>/scout/graph/compiler-facts-v1.json  optional versioned compiler-fact artifact (see Compiler facts below); absent unless `compiler-facts run|import` has admitted one
 <git-common-dir>/scout/log/queries.jsonl          query-verb telemetry, one JSON line per answered invocation (opt-in; SCOUT_TELEMETRY=1)
@@ -312,7 +316,11 @@ type name or a member seed (see [Member seeds](#member-seeds) — a bare name,
 `Type.Member`, or `Namespace.Type.Member`); a member seed answers with its own
 declaration line and inbound references, carrying no span (nothing records an
 end line for a member on its own). Use `--compact` for a line-oriented summary
-or `--json` for structured output. References that originate inside the
+or `--json` for structured output. A Rust item is named by its name, by its
+id (`src/shelf.rs#Widget::new`), or by a `::` path such as `Widget::new` or
+`cabinet::Hinge::oil`; a path two items share within a file (two trait impls
+that both define `fmt`, say) is ambiguous, and the second one's id carries a
+`-1` suffix (`src/shelf.rs#Gadget::fmt-1`). References that originate inside the
 target declaration itself are excluded from inbound rows and counts, so
 recursive and other self-references do not look like external callers.
 
@@ -339,6 +347,15 @@ Known, rather than hidden:
   `call`, `jsx-use` and `dispatch` edges for TS/TSX files, but `refs` and `impact` read only the
   C#-shaped `uses-type`/`uses-member` index, so those verbs answer for TypeScript defs without the
   page-to-component and caller-to-callee rows that `graph.json` holds.
+- **Rust is definitions only.** `find` and `read` answer on Rust items; `refs`, `impact` and
+  `tests` give no Rust rows, because no module tree, `use`, call or `implements` fact is
+  recorded. `cfg` is not evaluated (every branch is recorded) and macros are not expanded (an
+  item a macro generates is invisible). Ids use the file path (`src/shelf.rs#Widget::new`), not
+  the crate path. Every `.rs` file in the mapped scope is indexed in every repository, `src/bin/`
+  excepted with every other `bin` directory; in a mixed repository a Rust item shares the
+  resolution ladder with C# and TypeScript definitions, so a bare name they share can become
+  ambiguous or resolve to the Rust item — narrow the scope with `map <dir>` or the `init` scope.
+  See [docs/rust-coverage.md](docs/rust-coverage.md).
 - **Generic-delegate `typeParams` divergence is under review.** Type-parameter handling for
   generic delegate declarations does not yet agree with the rest of the generic ladder; the
   affected shapes are under review rather than pinned.

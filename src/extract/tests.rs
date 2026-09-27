@@ -32,6 +32,8 @@ mod publish_message_qualifier;
 mod qualifier_capture;
 mod receiver_facts;
 mod registration_fact;
+mod rs_fragment;
+mod rs_purpose;
 mod stage4_receivers;
 mod test_methods_fact;
 mod ts_purpose;

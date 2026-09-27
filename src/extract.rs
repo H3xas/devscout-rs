@@ -39,7 +39,8 @@
 // `json` holds the hand-rolled JSON serialisation for both the C# and the
 // TS-family fragment shapes. `ts_purpose`, `ts_fragment_types` and
 // `ts_fragment` hold the TypeScript-family purpose and reference-fact
-// extraction.
+// extraction. `rs_fragment_types` and `rs_fragment` hold the Rust item
+// extraction: definitions with spans and a purpose, no references.
 mod bus;
 mod bus_vocab;
 mod delegate_args;
@@ -51,6 +52,8 @@ mod members;
 mod qualifiers;
 mod receivers;
 mod refs;
+mod rs_fragment;
+mod rs_fragment_types;
 mod text;
 mod ts_fragment;
 mod ts_fragment_types;
@@ -63,6 +66,8 @@ mod walk;
 
 pub use dump::run_extract_dump;
 pub use json::{extraction_to_json, ts_extraction_to_json};
+pub use rs_fragment::extract_rs_file;
+pub use rs_fragment_types::{RsFileExtraction, RsFragment, RsItem};
 pub use ts_fragment::{extract_ts_file, extract_ts_fragment, TsFileExtraction};
 pub use ts_fragment_types::{
     TsBinding, TsFragment, TsFragmentDef, TsImport, TsReexport, TsReexportName, TsRef,
