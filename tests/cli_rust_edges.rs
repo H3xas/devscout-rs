@@ -421,3 +421,16 @@ fn a_tree_without_a_manifest_writes_no_sidecar() {
     let answer = fx.json_out(&["refs", "dust", "--json"]);
     assert_eq!(json_rows(&answer, "uses-member"), vec!["src/lib.rs:3"]);
 }
+
+#[test]
+fn a_missing_sidecar_rebuilds_and_is_written_again() {
+    let fx = Fixture::with_package("sidecar-gone");
+    let sidecar = fx.scout("graph/rust-crates.json");
+    let bytes = fs::read(&sidecar).unwrap();
+    let graph = fs::read(fx.scout("graph/graph.json")).unwrap();
+    fs::remove_file(&sidecar).unwrap();
+    let map = fx.stdout(&["map", "."]);
+    assert!(map.contains("graph rebuilt"), "{map}");
+    assert_eq!(fs::read(&sidecar).unwrap(), bytes);
+    assert_eq!(fs::read(fx.scout("graph/graph.json")).unwrap(), graph);
+}

@@ -122,3 +122,12 @@ fn a_use_declaration_gives_no_edge() {
     let src = "mod shelf { pub struct Lamp; pub fn dust() {} }\nuse shelf::{Lamp, dust};\n";
     assert!(edges_for(&[("src/lib.rs", src)]).is_empty());
 }
+
+#[test]
+fn a_glob_cycle_ends_and_still_finds_a_name_one_side_declares() {
+    let src = "mod a {\n    pub use crate::b::*;\n    pub fn glow() {}\n}\nmod b {\n    pub use crate::a::*;\n}\nfn t() {\n    b::glow();\n    b::missing();\n}\n";
+    assert_eq!(
+        edges_for(&[("src/lib.rs", src)]),
+        vec!["uses-member src/lib.rs:9 -> src/lib.rs#a::glow"]
+    );
+}

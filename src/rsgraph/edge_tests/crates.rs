@@ -167,3 +167,21 @@ fn a_rebuild_writes_the_sidecar_and_removes_it_when_no_package_remains() {
     assert!(!path.exists());
     let _ = fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn a_manifest_that_is_not_utf8_is_read_lossily() {
+    let dir = scratch(&[("src/lib.rs", "")]);
+    fs::write(
+        dir.join("Cargo.toml"),
+        b"[package]\nname = \"lamp\"\ndescription = \"\xff\xfe\"\n",
+    )
+    .unwrap();
+    let got = discover(&dir, &[".".to_string()], &["src/lib.rs".to_string()])
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        (got[0].name.as_str(), got[0].lib.as_deref()),
+        ("lamp", Some("lamp"))
+    );
+    let _ = fs::remove_dir_all(&dir);
+}

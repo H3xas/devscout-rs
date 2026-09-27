@@ -125,3 +125,14 @@ fn a_file_with_no_facts_serializes_as_items_only() {
         r#"{"rs":1,"items":[{"name":"a","kind":"fn","path":"a","line":1,"nameLine":1,"endLine":1}]}"#
     );
 }
+
+#[test]
+fn a_deeply_nested_use_group_flattens_on_a_small_stack() {
+    let depth = 3000;
+    let src = format!("use {}leaf{};\n", "a::{".repeat(depth), "}".repeat(depth));
+    let handle = std::thread::Builder::new()
+        .stack_size(256 * 1024)
+        .spawn(move || fragment(&src).uses.len())
+        .unwrap();
+    assert_eq!(handle.join().unwrap(), 1);
+}
