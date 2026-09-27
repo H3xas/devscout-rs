@@ -102,3 +102,16 @@ fn a_name_the_tree_may_bind_shadows_its_calls_but_a_type_written_in_it_does_not(
         "an item a statement macro may declare shadows its whole block: {calls:?}"
     );
 }
+
+#[test]
+fn a_struct_field_name_is_no_binding_but_a_closure_parameter_beside_it_is() {
+    let src = "fn t() {\n    let v = vec![Fact { identity: identity(1), f: |a, b: u8| b(2) }];\n    assert_eq!(n, Counts { import: 1 });\n    import(3);\n}\n";
+    let calls: Vec<(String, usize)> = extract_rs_file(src)
+        .fragment
+        .sites
+        .into_iter()
+        .filter(|s| s.role == RsRole::Call)
+        .map(|s| (s.path, s.line))
+        .collect();
+    assert_eq!(calls, vec![h("identity", 2), h("import", 4)]);
+}

@@ -82,10 +82,21 @@ pub(super) fn tree_names(invocation: Node, src: &[u8]) -> TreeNames {
     while let Some(tree) = stack.pop() {
         let mut cursor = tree.walk();
         let tokens: Vec<Node> = tree.children(&mut cursor).collect();
-        read_level(&tokens, src, &mut names);
+        let fields = struct_body(tree, src);
+        read_level(&tokens, fields, src, &mut names);
         stack.extend(tokens.iter().filter(|t| t.kind() == "token_tree"));
     }
     names
+}
+
+// Whether a tree is the braces of a struct literal or pattern: `{` right
+// after an uppercase name (`Lamp { .. }`, `Kind::Wide { .. }`, `Self { .. }`).
+fn struct_body(tree: Node, src: &[u8]) -> bool {
+    let braced = tree.child(0).is_some_and(|c| c.kind() == "{");
+    braced
+        && tree.prev_sibling().is_some_and(|p| {
+            is_name(p.kind()) && text_of(p, src).starts_with(|c: char| c.is_uppercase())
+        })
 }
 
 fn is_name(kind: &str) -> bool {
@@ -97,10 +108,13 @@ fn text_of(node: Node, src: &[u8]) -> String {
     text.strip_prefix("r#").unwrap_or(&text).to_string()
 }
 
-// One tree level: its direct tokens, without descending.
-fn read_level(tokens: &[Node], src: &[u8], names: &mut TreeNames) {
+// One tree level: its direct tokens, without descending. In a struct body a
+// name that opens a `field: value` entry names a field, not a binding,
+// unless an odd number of `|` before it puts it among closure parameters.
+fn read_level(tokens: &[Node], fields: bool, src: &[u8], names: &mut TreeNames) {
     let generics = generic_params(tokens);
     let mut angle: i64 = 0;
+    let mut pipes = 0usize;
     for (i, token) in tokens.iter().enumerate() {
         match token.kind() {
             "impl" | "trait" => names.own_self = true,
@@ -108,9 +122,13 @@ fn read_level(tokens: &[Node], src: &[u8], names: &mut TreeNames) {
             "<" => angle += 1,
             ">" => angle = (angle - 1).max(0),
             ">>" => angle = (angle - 2).max(0),
+            "|" => pipes += 1,
             _ => {}
         }
         if !is_name(token.kind()) {
+            continue;
+        }
+        if fields && pipes % 2 == 0 && opens_field(tokens, i) {
             continue;
         }
         let text = text_of(*token, src);
@@ -137,6 +155,12 @@ fn in_type_position(tokens: &[Node], i: usize) -> bool {
             ":" | "->" | "as" | "&" | "dyn" | "impl" | "for" | "mutable_specifier"
         )
     })
+}
+
+// A name at the start of a struct body entry, before its `:`.
+fn opens_field(tokens: &[Node], i: usize) -> bool {
+    let after_start = i > 0 && matches!(tokens[i - 1].kind(), "{" | ",");
+    after_start && tokens.get(i + 1).is_some_and(|n| n.kind() == ":")
 }
 
 // A name right after an item keyword (`fn f`, `static mut S`).
