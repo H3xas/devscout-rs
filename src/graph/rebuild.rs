@@ -14,6 +14,7 @@ use super::fragment_types::{AnyFragment, Fragment};
 use super::ordered::OrderedMap;
 use super::paths::{
     atomic_write_json, graph_json_path, project_units_path, remove_superseded_caches,
+    rust_crates_path,
 };
 
 // ---------------------------------------------------------------------------
@@ -85,6 +86,22 @@ fn write_project_units(
     }
 }
 
+// Mirrors the Cargo package model into its staleness sidecar, the same
+// present-or-absent rule as `write_project_units`.
+fn write_rust_crates(
+    root: &Path,
+    crates: Option<&crate::rsgraph::crates::RustCrates>,
+) -> io::Result<()> {
+    match crates {
+        Some(c) => atomic_write_json(&rust_crates_path(root), c),
+        None => match fs::remove_file(rust_crates_path(root)) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(e),
+        },
+    }
+}
+
 /// `fresh_fragments`: fragments this run's extractor produced for files that
 /// needed reparsing (the same set that got a fresh purpose signature in the
 /// real `devscout map` flow -- `mapcmd::map_repo` assembles it). `changed`: from the
@@ -102,6 +119,29 @@ pub fn rebuild_graph(
     changed: bool,
     model: Option<&crate::project::ProjectModel>,
     semantic_layer: Option<&crate::semantic::SemanticLayer>,
+) -> io::Result<RebuildOutcome> {
+    rebuild_graph_with_crates(
+        root,
+        graph_files,
+        fresh_fragments,
+        changed,
+        model,
+        semantic_layer,
+        None,
+    )
+}
+
+/// `rebuild_graph` with the Cargo package model `map` discovered: Rust
+/// paths resolve against its crate roots, and it is mirrored into the
+/// `rust_crates_path` sidecar. `None` means no package is in scope.
+pub fn rebuild_graph_with_crates(
+    root: &Path,
+    graph_files: &[GraphFile],
+    fresh_fragments: &HashMap<String, AnyFragment>,
+    changed: bool,
+    model: Option<&crate::project::ProjectModel>,
+    semantic_layer: Option<&crate::semantic::SemanticLayer>,
+    crates: Option<&crate::rsgraph::crates::RustCrates>,
 ) -> io::Result<RebuildOutcome> {
     if !changed && graph_json_path(root).exists() && graph_schema_is_current(root) {
         return Ok(RebuildOutcome::NotRebuilt);
@@ -148,6 +188,7 @@ pub fn rebuild_graph(
     crate::rsgraph::append_rust(&mut graph, &merged_rs);
     write_graph(root, &graph)?;
     write_project_units(root, model)?;
+    write_rust_crates(root, crates)?;
     write_fragments_cache(root, &new_cache)?;
     write_fragments_index(root, &new_cache)?;
     remove_superseded_caches(root);

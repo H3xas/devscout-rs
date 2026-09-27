@@ -540,18 +540,26 @@ pub fn map_repo(root: &Path, scope_dirs: &[String], opts: MapOptions) -> io::Res
     // artifact is present ON DISK at all -- checked independently of
     // `semantic_layer` so `--no-semantic` still fires this trigger and
     // rebuilds even though it forces `semantic_layer` to `None` itself.
+    let rs_files: Vec<String> = graph_files
+        .iter()
+        .filter(|f| crate::parse::is_rust(&f.rel))
+        .map(|f| f.rel.clone())
+        .collect();
+    let crates = crate::rsgraph::crates::discover(root, &scope, &rs_files)?;
     let changed = graph::index_is_stale(&graph_index, &graph_files)
         || project::sidecar_differs(root, project_model.as_ref())
+        || crate::rsgraph::crates::sidecar_differs(root, crates.as_ref())
         || options::compiler_facts_artifact_present(root);
 
     let graph_start = Instant::now();
-    let outcome = graph::rebuild_graph(
+    let outcome = graph::rebuild_graph_with_crates(
         root,
         &graph_files,
         &fresh_fragments,
         changed,
         project_model.as_ref(),
         semantic_layer.as_ref(),
+        crates.as_ref(),
     )?;
     let graph_seconds = graph_start.elapsed().as_secs_f64();
 

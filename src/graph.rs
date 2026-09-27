@@ -115,8 +115,8 @@ pub use imports::{
     IMPORTED_EDGES_SCHEMA_VERSION, IMPORTED_EDGE_KINDS,
 };
 pub use ordered::{OrderedMap, Percent1};
-pub use paths::{graph_json_path, project_units_path};
-pub use rebuild::{rebuild_graph, GraphFile, RebuildOutcome};
+pub use paths::{graph_json_path, project_units_path, rust_crates_path};
+pub use rebuild::{rebuild_graph, rebuild_graph_with_crates, GraphFile, RebuildOutcome};
 
 #[cfg(test)]
 mod tests;

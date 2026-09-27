@@ -14,6 +14,11 @@
 use crate::extract::RsFragment;
 use crate::graph::{Def, Graph, GraphName};
 
+pub mod crates;
+
+#[cfg(test)]
+mod edge_tests;
+
 /// The graph id of a Rust item: `<file>#<path>`.
 pub fn rs_def_id(file: &str, path: &str) -> String {
     format!("{file}#{path}")

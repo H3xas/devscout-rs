@@ -40,6 +40,17 @@ pub fn project_units_path(root: &Path) -> PathBuf {
     graph_dir(root).join("project-units.json")
 }
 
+/// Path to the Rust crate-model sidecar for `root`.
+///
+/// Holds the serialized Cargo package model (`rsgraph::crates::RustCrates`)
+/// the last rebuild resolved Rust paths against. `map` compares it with a
+/// freshly discovered model to notice a `Cargo.toml` edit, which moves no
+/// walked mtime. Written only when a package is in scope and deleted
+/// otherwise, the same rule as `project_units_path`.
+pub fn rust_crates_path(root: &Path) -> PathBuf {
+    graph_dir(root).join("rust-crates.json")
+}
+
 // The version in both cache filenames is the fragment SCHEMA version, bumped
 // whenever the extractor starts recording something old cached fragments
 // lack -- v10 added def `type_params`/`base_generic_args` and the new
