@@ -18,7 +18,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   definitions its bindings resolve to, so an import row names the exact symbol. `tests` counts a
   `.ts`/`.tsx` file named `*.spec.ts(x)`, `*.test.ts(x)` or placed below `__tests__/` as a test file
   (`via: "path"`, `why: "test-path"`). JavaScript files answer through the same edges but are not
-  measured. The fragment cache moves to `fragments-v26.json`, so an existing cache re-extracts
+  measured. The fragment cache moves to `fragments-v28.json`, so an existing cache re-extracts
   once.
 
 ### Fixed
