@@ -63,6 +63,7 @@ mod index;
 mod ladder;
 mod lambda_arity;
 mod members;
+mod property_hop;
 mod provenance;
 mod reach;
 mod receiver;

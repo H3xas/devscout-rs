@@ -13,6 +13,7 @@ use super::members::{
     base_member_declared, declares_here_for_ref, extension_closure_key, inherited_member_declared,
     member_shape, member_vouched, typed_receiver_base_member, typed_receiver_precise_target,
 };
+use super::property_hop::property_hop_target;
 use super::provenance::{self, Step};
 use super::reach::attach_reach;
 use super::receiver::{
@@ -712,35 +713,20 @@ pub fn resolve_graph_with_model(
                 // DECLARATION, and a guess built on top of a second hop is a
                 // guess about a guess.
                 if !emitted {
-                    if let Some(owner) = &r.receiver_property_owner {
-                        let probe = name_probe(owner.clone(), ns, r.outer_types.clone());
-                        if let Resolution::Resolved(oidx, _) =
-                            resolve_ref(&probe, usings, ns, &index, aliases, &file_contexts)
-                        {
-                            if let Some(fact) = index.member_lists[oidx].property_types.get(&r.name)
-                            {
-                                let hop =
-                                    name_probe(fact.type_name.clone(), ns, r.outer_types.clone());
-                                if let Resolution::Resolved(hidx, _) =
-                                    resolve_ref(&hop, usings, ns, &index, aliases, &file_contexts)
-                                {
-                                    if declares_here_for_ref(&index, &file_contexts, hidx, r, false)
-                                    {
-                                        edges.push(Edge::uses_member(
-                                            file.clone(),
-                                            r.line,
-                                            index.defs[hidx].id.clone(),
-                                            index.defs[hidx].file.clone(),
-                                            r.member.clone(),
-                                            None,
-                                        ));
-                                        provenance::note(&edges, Step::PropertyHop);
-                                        edges_by_kind.uses_member += 1;
-                                        emitted = true;
-                                    }
-                                }
-                            }
-                        }
+                    if let Some(hidx) =
+                        property_hop_target(r, usings, ns, &index, aliases, &file_contexts)
+                    {
+                        edges.push(Edge::uses_member(
+                            file.clone(),
+                            r.line,
+                            index.defs[hidx].id.clone(),
+                            index.defs[hidx].file.clone(),
+                            r.member.clone(),
+                            None,
+                        ));
+                        provenance::note(&edges, Step::PropertyHop);
+                        edges_by_kind.uses_member += 1;
+                        emitted = true;
                     }
                 }
                 // Tier (f): extension methods, by C#'s own lookup rule.
