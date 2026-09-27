@@ -2,6 +2,7 @@ use std::collections::HashSet;
 
 use tree_sitter::Node;
 
+use super::rs_macro_bind::{is_statement, tree_names};
 use crate::parse;
 
 // ---------------------------------------------------------------------------
@@ -36,12 +37,16 @@ fn pattern_field(kind: &str) -> Option<&'static str> {
 }
 
 /// Every name the patterns of `node`'s subtree bind: parameters, `let`,
-/// closure parameters, `match` arms, `if let`, `while let` and `for`. A
-/// nested function item is its own body and is not entered.
+/// closure parameters, `match` arms, `if let`, `while let` and `for`, and
+/// any name a statement macro's token trees may bind. A nested function
+/// item is its own body and is not entered.
 pub(super) fn body_locals(node: Node, src: &[u8]) -> HashSet<String> {
     let mut names = HashSet::new();
     let mut stack = vec![node];
     while let Some(current) = stack.pop() {
+        if current.kind() == "macro_invocation" && is_statement(current) {
+            names.extend(tree_names(current, src).values);
+        }
         if let Some(field) = pattern_field(current.kind()) {
             if let Some(pattern) = current.child_by_field_name(field) {
                 bindings(pattern, src, &mut names);
@@ -108,11 +113,22 @@ pub(super) fn bindings(pattern: Node, src: &[u8], names: &mut HashSet<String>) {
     }
 }
 
-/// The names a block's own item declarations bind.
+/// The names a block's own item declarations bind, including any item or
+/// import a statement macro of the block may expand to.
 pub(super) fn block_items(block: Node, src: &[u8]) -> Vec<String> {
     let mut out = Vec::new();
     let mut cursor = block.walk();
     for child in block.named_children(&mut cursor) {
+        let invocation = match child.kind() {
+            "macro_invocation" => Some(child),
+            "expression_statement" => child
+                .named_child(0)
+                .filter(|c| c.kind() == "macro_invocation"),
+            _ => None,
+        };
+        if let Some(invocation) = invocation {
+            out.extend(tree_names(invocation, src).items);
+        }
         if BLOCK_ITEM_KINDS.contains(&child.kind()) {
             if let Some(name) = child.child_by_field_name("name") {
                 let text = parse::node_text(name, src);

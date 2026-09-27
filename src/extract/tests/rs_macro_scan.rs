@@ -85,3 +85,20 @@ fn a_deep_token_tree_is_scanned_without_exhausting_a_worker_stack() {
         .unwrap();
     assert_eq!(handle.join().unwrap(), 1);
 }
+
+#[test]
+fn a_name_the_tree_may_bind_shadows_its_calls_but_a_type_written_in_it_does_not() {
+    let src = "fn t() {\n    assert!(0 < v.iter().filter(|f| f(1) > 0).count());\n    x!(Vec::<Lamp>::new(), a as Lamp, Lamp::new());\n}\nfn u() {\n    Lamp::new();\n    y!(Lamp; Lamp::new());\n}\n";
+    assert_eq!(hits(src), vec![h("Vec::new", 3), h("Lamp::new", 3)]);
+    let calls: Vec<String> = extract_rs_file(src)
+        .fragment
+        .sites
+        .into_iter()
+        .filter(|s| s.line > 4)
+        .map(|s| s.path)
+        .collect();
+    assert!(
+        calls.is_empty(),
+        "an item a statement macro may declare shadows its whole block: {calls:?}"
+    );
+}

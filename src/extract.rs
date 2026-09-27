@@ -54,6 +54,7 @@ mod refs;
 mod rs_facts_types;
 mod rs_fragment;
 mod rs_fragment_types;
+mod rs_macro_bind;
 mod rs_macro_scan;
 mod rs_paths;
 mod rs_scope;

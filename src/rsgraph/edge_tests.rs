@@ -111,5 +111,6 @@ fn edges_to(files: &[(&str, &str)], to: &str) -> Vec<String> {
 mod bind;
 mod crates;
 mod emit;
+mod macro_scope;
 mod modtree;
 mod scope;

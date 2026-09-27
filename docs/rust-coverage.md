@@ -146,7 +146,9 @@ so it never changes a C# or TypeScript answer.
   path's first segment. A local binding (a parameter or a `let`, closure, `match`, `if let`,
   `while let` or `for` pattern anywhere in the enclosing function body) shadows a single-segment
   value path. Locals are flow-insensitive: a local that shares a function's name drops a call to
-  that function even before the local exists, but a closure call is never bound to an item. An
+  that function even before the local exists, but a closure call is never bound to an item. Names
+  a macro's token trees may bind shadow the same way (see
+  [Calls inside macro arguments](#calls-inside-macro-arguments)). An
   explicit import nothing resolves, such as `use std::fmt::Result;`, still shadows a glob of the
   same name.
 - **Paths.** `self`, repeated `super`, `crate`, a leading `::` (followed by the library name) and
@@ -198,9 +200,21 @@ would outside a macro, qualifier segments included.
   `auto`, `raw`) are ordinary path segments, so `Shelf::default()` is read.
 - Not scanned: string literals (so nothing inside a format string), `macro_rules!` bodies,
   attribute arguments and attribute-like macro inputs.
+- **Names bound inside a tree shadow.** A macro can bind any identifier it is handed, so every
+  identifier a tree holds outside a call or path position may be a binding: a closure, `let`,
+  `match`, `if let`, `while let` or `for` pattern, a parameter of a function written inside an
+  item-like macro, or a bare argument such as `bind!(f)`. A single-segment call in the same
+  invocation that shares a lowercase one gives no edge. Items, generic parameters and `use` names
+  declared inside the trees, and an uppercase name outside angle brackets and type positions,
+  shadow a path's first segment, and an `impl` or trait inside them drops `Self` paths.
+- **Statement macros reach the rest of their block.** For an invocation that stands as a
+  statement, its possible lowercase bindings shadow single-segment calls anywhere in the enclosing
+  function body, and its possible items shadow paths anywhere in its block, as a local binding or
+  a block item would.
 - Known misses: calls that exist only after expansion; `$` fragments and method calls; type
   references and struct literals inside macro arguments; calls inside `macro_rules!` bodies; a
-  closure parameter inside a macro argument that shares a function's name.
+  call whose name the same invocation, or a statement macro in the same function, also holds
+  outside a call position, since it may be a binding.
 
 ## Tests
 

@@ -16,13 +16,15 @@ use crate::parse;
 // definition) is no call, and neither is a nested macro's name (`inner!(`),
 // whose own token tree is scanned in turn. String literals are single
 // tokens, so nothing inside a format string is ever read. A hit is a `call`
-// site marked `mac`, shadowed exactly like a call outside a macro. The scan
-// is on an explicit stack: token trees nest without bound.
+// site marked `mac`, shadowed like a call outside a macro and also by every
+// name the invocation's own trees may bind. The scan is on an explicit
+// stack: token trees nest without bound.
 // ---------------------------------------------------------------------------
 
 /// Adds a call site, keyed by its start byte, for every call the
 /// invocation's token trees hold.
 pub(super) fn scan(invocation: Node, src: &[u8], ctx: &Ctx, out: &mut Vec<(usize, RsSite)>) {
+    let ctx = &super::rs_macro_bind::tree_names(invocation, src).narrow(ctx);
     let mut stack: Vec<Node> = Vec::new();
     let mut cursor = invocation.walk();
     for child in invocation.named_children(&mut cursor) {
