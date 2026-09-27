@@ -132,8 +132,9 @@ pub struct GraphIndex<'g> {
     /// and reference closure, neither of which is persisted.
     pub project: Option<crate::project::ProjectModel>,
     /// File -> the number of DISTINCT OTHER FILES that reference it through a
-    /// `direct` (inherits/uses-type/uses-member) or heuristic edge. The
-    /// file-level mirror of `ctor_di_fanin`, over the two edge kinds
+    /// `direct` (inherits/uses-type/uses-member) or heuristic edge, or any
+    /// other kind the walk crosses (dispatch, bus-hop and the admitted TS
+    /// kinds). The file-level mirror of `ctor_di_fanin`, over the edges
     /// responsible for the reach a fan-in brake cannot see. Distinct REFERRING
     /// FILES, not distinct edges: one neighbour naming a hub fifty times is
     /// still one neighbour. A file's references to ITSELF are excluded -- a

@@ -768,3 +768,120 @@ fn tests_text_marks_a_row_vouched_by_its_name() {
          lines: 1, 4"
     );
 }
+
+/// `(file, hop, why)` of every `impact` row, sorted by file.
+fn impact_rows(impact: &Value) -> Vec<(String, u64, String)> {
+    let mut out: Vec<(String, u64, String)> = impact["rows"]
+        .as_array()
+        .expect("rows array")
+        .iter()
+        .map(|r| {
+            (
+                r["file"].as_str().unwrap().to_string(),
+                r["hop"].as_u64().unwrap(),
+                r["why"].as_str().unwrap().to_string(),
+            )
+        })
+        .collect();
+    out.sort();
+    out
+}
+
+fn impact_json(fx: &Fixture, args: &[&str]) -> Value {
+    let out = fx.run(args);
+    let stdout = String::from_utf8(out.stdout).expect("stdout is utf-8");
+    serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|e| panic!("devscout {args:?} did not print JSON: {e}\n{stdout}"))
+}
+
+#[test]
+fn impact_at_one_hop_reaches_every_ts_referrer_but_no_namespace_or_side_effect_importer() {
+    let fx = Fixture::build("impact-hop1");
+    let impact = impact_json(&fx, &["impact", ACTIONS, "--hops", "1", "--json"]);
+    assert_eq!(
+        impact_rows(&impact),
+        vec![
+            (ACTIONS_TEST_JS.to_string(), 1, "import".to_string()),
+            (ACTIONS_TEST_TS.to_string(), 1, "import".to_string()),
+            (REFILL.to_string(), 1, "import".to_string()),
+            (LEGACY.to_string(), 1, "import".to_string()),
+            (PAGE.to_string(), 1, "import".to_string()),
+            (CHECKOUT.to_string(), 1, "call".to_string()),
+        ]
+        .into_iter()
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        impact["testsAffected"], 1,
+        "only the .ts test file is a test"
+    );
+    let checkout = impact["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["file"] == CHECKOUT)
+        .unwrap();
+    assert_eq!(checkout["fromLines"]["direct"], 5);
+
+    let store = impact_json(&fx, &["impact", STORE, "--hops", "1", "--json"]);
+    let files: Vec<String> = impact_rows(&store).into_iter().map(|r| r.0).collect();
+    assert!(files.contains(&PUBLIC.to_string()), "{files:?}");
+    assert!(!files.contains(&POLYFILLS.to_string()), "{files:?}");
+    assert!(!files.contains(&AUDIT.to_string()), "{files:?}");
+
+    let badge = impact_json(&fx, &["impact", BADGE, "--hops", "1", "--json"]);
+    let files: Vec<String> = impact_rows(&badge).into_iter().map(|r| r.0).collect();
+    assert_eq!(files, vec![BADGE_SPEC.to_string(), PAGE.to_string()]);
+}
+
+#[test]
+fn impact_at_two_hops_expands_through_a_ts_referrer() {
+    let fx = Fixture::build("impact-hop2");
+    let one = impact_json(&fx, &["impact", ACTIONS, "--hops", "1", "--json"]);
+    assert!(!impact_rows(&one).iter().any(|r| r.0 == APP));
+    let two = impact_json(&fx, &["impact", ACTIONS, "--hops", "2", "--json"]);
+    let app = impact_rows(&two).into_iter().find(|r| r.0 == APP);
+    assert_eq!(app, Some((APP.to_string(), 2, "import".to_string())));
+}
+
+#[test]
+fn no_dispatch_keeps_the_ts_dispatch_rows() {
+    let fx = Fixture::build("impact-no-dispatch");
+    let full = fx.run(&["impact", ACTIONS, "--json"]).stdout;
+    let narrowed = fx
+        .run(&["impact", ACTIONS, "--no-dispatch", "--json"])
+        .stdout;
+    assert_eq!(
+        String::from_utf8_lossy(&full),
+        String::from_utf8_lossy(&narrowed)
+    );
+    let refs = fx.json(&["refs", "loadCart", "--no-dispatch", "--json"]);
+    assert_eq!(refs["inbound"]["dispatch"]["total"], 13);
+}
+
+#[test]
+fn ts_referrers_count_toward_the_hub_brake() {
+    let fx = Fixture::build("impact-hub");
+    let braked = impact_json(
+        &fx,
+        &[
+            "impact",
+            ACTIONS,
+            "--hops",
+            "2",
+            "--hub-max-indegree",
+            "2",
+            "--json",
+        ],
+    );
+    assert!(!impact_rows(&braked).iter().any(|r| r.0 == APP));
+    let entry = braked["braked"]
+        .as_array()
+        .expect("a braked list")
+        .iter()
+        .find(|b| b["file"] == PAGE)
+        .cloned();
+    assert_eq!(entry.map(|b| b["indegree"].clone()), Some(Value::from(2)));
+}

@@ -50,10 +50,13 @@ pub(super) fn implemented_interfaces(index: &GraphIndex, def_id: &str) -> Vec<St
     seen.into_vec()
 }
 
-/// The six inbound edge-kind lists `impact`'s reverse walk crosses, in the
-/// order it crosses them -- spelled here so the dispatch pair and the
-/// bus-hop kind all join that walk in exactly one place.
-pub(super) fn inbound_walk_kinds(inb: &InboundEntry) -> [&Vec<usize>; 6] {
+/// The inbound edge-kind lists `impact`'s reverse walk crosses, in the order
+/// it crosses them -- spelled here so the dispatch pair, the bus-hop kind and
+/// the four TS kinds all join that walk in exactly one place. A TS edge is a
+/// precise reference, so it lands in the walk's resolved-reference slot like
+/// the C# kinds.
+pub(super) fn inbound_walk_kinds(inb: &InboundEntry) -> [&Vec<usize>; 10] {
+    let [call, jsx_use, dispatch, import] = inb.ts.lists();
     [
         &inb.inherits,
         &inb.uses_type,
@@ -61,6 +64,10 @@ pub(super) fn inbound_walk_kinds(inb: &InboundEntry) -> [&Vec<usize>; 6] {
         &inb.implements,
         &inb.overrides,
         &inb.bus_hop,
+        call,
+        jsx_use,
+        dispatch,
+        import,
     ]
 }
 
