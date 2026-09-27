@@ -53,6 +53,16 @@ It is **not** part of the Rust crate build: `Cargo.toml` excludes `tools/`, and 
   the project `unrestored` with the recorded error, and do not restore it again. Delete the
   project's assets file (or restore it by hand) once the package is available locally.
 
+  NuGet's vulnerability audit is not a restore failure. A restore with the audit on that cannot
+  reach its vulnerability feed (offline, say) logs `NU1900` into each project's assets file, and
+  the SDK replays that entry as a workspace `Failure` naming the project. Such a diagnostic is kept
+  in the record's `diagnostics.workspace` but demotes nothing and is not a `--strict` load failure
+  when the assets file of the project it names logs `NU1900` to `NU1905` at `Warning` level with a
+  message the diagnostic ends with, byte for byte. The same entry at `Error` level, any other code,
+  a missing or unreadable assets file, a match only in another project's file, and a diagnostic
+  naming no project still demote. The check runs with or without `--no-restore`, and it reads the
+  code, level and NuGet's own message only, so it does not depend on the SDK's language.
+
   A manual restore ahead of time still works exactly as before and is a no-op for this tool (its
   own check finds the assets file already there):
 
@@ -125,7 +135,7 @@ dotnet run --project tools/scout-semantic --no-build -c Release -- \
 |---|---|
 | 0 | success |
 | 1 | usage error, missing input, or an I/O failure writing the output |
-| 2 | `--strict` and at least one project failed to load, produced no compilation, left a fact site unresolved, or (with `--emit context`) the context artifact's rollup state is not `complete` |
+| 2 | `--strict` and at least one project failed to load (a NuGet audit warning is not a load failure; see Prerequisites), produced no compilation, left a fact site unresolved, or (with `--emit context`) the context artifact's rollup state is not `complete` |
 | 3 | zero projects loaded from the given solution or project, and (with `--emit context`) nothing to report even as an `unsupported` or `excluded` record |
 
 Without `--strict` the tool **fails open**: a project that cannot be loaded is reported on
@@ -475,7 +485,7 @@ always paired with a machine-readable reason:
 
 | State | Reason (examples) | Meaning |
 |---|---|---|
-| `complete` | `complete` | Every expected document loaded, no compiler error, no unresolved reference, and the independent inventory was available. |
+| `complete` | `complete` | Every expected document loaded, no compiler error, no unresolved reference, and the independent inventory was available. A NuGet audit warning (`NU1900` to `NU1905` at `Warning`, matched against the project's assets file; see Prerequisites) stays in `diagnostics.workspace` and does not demote. |
 | `partial` | `unrestored`, `binding-error`, `missing`, `linked-outside-root`, `skipped-directory`, `out-of-scope`, `workspace-failure`, `inventory-unavailable` | A non-null compilation whose inventory or diagnostics are incomplete. `unrestored`: the offline restore (see Prerequisites) failed for this project in this run, or its existing assets file records an earlier restore error -- named ahead of `binding-error` even though the same missing `PackageReference` types also produce compiler diagnostics, since the restore failure is the record's root cause. |
 | `unsupported` | `undeclared-target` | A requested `--tfm` the project does not declare; zero facts under this identity. |
 | `failed` | `project-not-loaded`, `workspace-failure` | A project the solution names but that never reached the workspace at all, or one Roslyn accepted but produced no compilation for. |

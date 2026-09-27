@@ -401,6 +401,7 @@ internal static class Runner
             }
         }
 
+        var auditWarnings = AuditWarningJoin.ForRun(load, options);
         var paths = new RepoPaths(options.Root, options.Scope);
         var assemblyToUnit = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var loaded in load.Projects)
@@ -524,7 +525,7 @@ internal static class Runner
             {
                 var record = ContextBuilder.BuildRecord(
                     loaded, compilation, paths, buildCollection!, options, files, load.Failures,
-                    fingerprintCache, contextVersions!, restoreOutcome);
+                    fingerprintCache, contextVersions!, restoreOutcome, auditWarnings);
                 contextRecords.Add(record);
 
                 // Every occurrence collected for this project's documents,
@@ -771,8 +772,7 @@ internal static class Runner
             }
         }
 
-        var hardFailure = failedUnits > 0
-            || load.Failures.Any(f => f.Kind == Microsoft.CodeAnalysis.WorkspaceDiagnosticKind.Failure);
+        var hardFailure = failedUnits > 0 || load.Failures.Any(auditWarnings.IsLoadFailure);
         if (options.Strict && hardFailure)
         {
             Console.Error.WriteLine("error: --strict and at least one project failed to load");
@@ -1045,7 +1045,8 @@ internal static class ContextBuilder
         List<WorkspaceDiagnostic> workspaceFailures,
         Dictionary<ProjectId, string> fingerprintCache,
         ContextVersions versions,
-        RestoreOutcome? restoreOutcome)
+        RestoreOutcome? restoreOutcome,
+        AuditWarningJoin auditWarnings)
     {
         var project = loaded.Project;
         var projectPathRel = paths.RelativeProjectPath(project.FilePath) ?? project.FilePath ?? loaded.Name;
@@ -1135,7 +1136,7 @@ internal static class ContextBuilder
         // record when more than one kind of drop occurs together.
         var droppedReasonPriority = new[] { "missing", "linked-outside-root", "skipped-directory", "out-of-scope" };
         var firstDroppedReason = droppedReasonPriority.FirstOrDefault(r => documents.Dropped.Any(d => d.Reason == r));
-        var hasUnresolvedReference = ownWorkspaceDiagnostics.Any(d => d.Kind == WorkspaceDiagnosticKind.Failure);
+        var hasUnresolvedReference = auditWarnings.DemotesRecord(ownWorkspaceDiagnostics, project.FilePath ?? "");
         var inventoryUnavailable = inventory is null;
 
         string state;

@@ -59,13 +59,16 @@ fn a_fresh_admitted_artifact_prints_the_enriched_lane_and_records_applied() {
     assert_eq!(stdout.lines().count(), 2, "{stdout}");
     assert!(!stdout.contains("not applied"), "{stdout}");
     let g = fx.graph();
-    assert_eq!(g["stats"]["lane"], json!({"state": "applied"}));
+    assert_eq!(
+        g["stats"]["lane"],
+        json!({"state": "applied", "compilations": {"total": 1, "partial": 0}})
+    );
     assert_eq!(g["stats"]["semantic"]["confirmed"], 1, "{}", g["stats"]);
     assert_eq!(g["stats"]["semantic"]["disagreements"], 1, "{}", g["stats"]);
     let text = String::from_utf8(fx.graph_bytes()).unwrap();
     let semantic_at = text.find(r#""semantic":{"#).expect("semantic key");
     let lane_at = text
-        .find(r#","lane":{"state":"applied"}},"#)
+        .find(r#","lane":{"state":"applied","compilations":{"total":1,"partial":0}}},"#)
         .expect("lane closes the stats object");
     assert!(semantic_at < lane_at, "lane is appended after semantic");
     assert_eq!(fx.audit_lane(), "enriched");

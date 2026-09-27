@@ -69,22 +69,31 @@ fn publish_outcome(result: Result<graph::AdmittedFacts, graph::PublishError>) ->
     }
 }
 
+/// The one-line admission and status report. It reads `coverage: complete`
+/// only when no unit is incomplete and every counted compilation is complete;
+/// otherwise it names the incomplete compilations by reason.
 fn coverage_line(facts: &graph::AdmittedFacts) -> String {
-    let base = match facts.coverage() {
-        graph::Coverage::Complete => {
-            format!(
-                "admitted compiler facts (engine {}), coverage: complete",
-                facts.header.engine_revision
-            )
+    let doc: Option<serde_json::Value> = serde_json::from_slice(&facts.bytes).ok();
+    let tally = doc
+        .as_ref()
+        .map(graph::CompilationTally::from_artifact)
+        .unwrap_or_default();
+    let engine = &facts.header.engine_revision;
+    let base = match (facts.coverage(), tally.summary()) {
+        (graph::Coverage::Complete, None) => {
+            format!("admitted compiler facts (engine {engine}), coverage: complete")
         }
-        graph::Coverage::Incomplete { units } => format!(
-            "admitted compiler facts (engine {}), coverage: incomplete ({} unit{} affected)",
-            facts.header.engine_revision,
+        (graph::Coverage::Complete, Some(summary)) => {
+            format!("admitted compiler facts (engine {engine}), coverage: partial ({summary})")
+        }
+        (graph::Coverage::Incomplete { units }, summary) => format!(
+            "admitted compiler facts (engine {engine}), coverage: incomplete ({} unit{} affected{})",
             units.len(),
-            if units.len() == 1 { "" } else { "s" }
+            if units.len() == 1 { "" } else { "s" },
+            summary.map(|s| format!("; {s}")).unwrap_or_default()
         ),
     };
-    match occurrence_coverage_line(facts) {
+    match doc.as_ref().and_then(occurrence_coverage_line) {
         Some(occurrences) => format!("{base}, {occurrences}"),
         None => base,
     }
@@ -100,8 +109,7 @@ fn coverage_line(facts: &graph::AdmittedFacts) -> String {
 /// `fingerprint`. `None` when the capability was neither requested nor
 /// provided -- the ordinary non-occurrence case, where the base coverage
 /// line already says everything this status line has to say.
-fn occurrence_coverage_line(facts: &graph::AdmittedFacts) -> Option<String> {
-    let doc: serde_json::Value = serde_json::from_slice(&facts.bytes).ok()?;
+fn occurrence_coverage_line(doc: &serde_json::Value) -> Option<String> {
     let names = |key: &str| -> Vec<String> {
         doc["capabilities"][key]
             .as_array()

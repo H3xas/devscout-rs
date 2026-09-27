@@ -6,6 +6,8 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
+use super::lane::AuditLane;
+
 /// A `uses-member` edge's resolver tier. `Heuristic` is the legacy shape: a
 /// `heuristic: true` edge with no `tier` string at all, which is how every
 /// non-precise edge was written before the `tier` key and the `Ext`/`Guess`
@@ -170,13 +172,10 @@ pub struct Inputs {
     /// file graph.json mentions), minus the files of any unit whose
     /// `status` is not `"ok"`.
     pub universe: HashSet<String>,
-    /// `"enriched"` when graph.json's own `stats.semantic` block is present
-    /// (an admitted compiler-facts artifact loaded for the run that produced
-    /// this graph), else `"syntax"`. Read directly off the graph, never
-    /// inferred from whether any edge happens to carry a `Semantic`/
-    /// `SemanticDiscovered` tier -- a run that admitted an artifact but found
-    /// nothing to confirm is still an enriched-lane run, not a syntax one.
-    pub lane: &'static str,
+    /// The graph's lane, read directly off its `stats.lane` and
+    /// `stats.semantic` (see `lane.rs`), never inferred from whether any edge
+    /// happens to carry a `Semantic`/`SemanticDiscovered` tier.
+    pub lane: AuditLane,
     /// The admitted compiler-facts artifact's own per-occurrence `shape`
     /// (`"access"`, `"conditional"`, `"invocation"` or `"identifier"` --
     /// `tools/scout-semantic/CompilerOccurrences.cs`'s own vocabulary, not

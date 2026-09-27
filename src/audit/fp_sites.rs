@@ -128,7 +128,7 @@ mod tests {
             records,
             units: Vec::new(),
             universe: ["F.cs".to_string()].into_iter().collect(),
-            lane: "syntax",
+            lane: crate::audit::lane::AuditLane::SYNTAX,
             discovered_shapes: HashMap::new(),
             collect_fp_sites: true,
         }
