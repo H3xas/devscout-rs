@@ -103,6 +103,41 @@ for the metric definitions, the join rule, and the two-run protocol.
 **`refs.jsonl` for a private or unpublishable corpus is never committed** — the same rule as
 every other corpus artifact in this directory.
 
+## Rust edges (rust-analyzer oracle)
+
+A third harness scores devscout's Rust `uses-member`, `uses-type` and `implements` edges, and
+the test-to-function pairs they imply, against the references `rust-analyzer lsif` writes for
+this repository itself. `rust_edges.py` and `rust_sites.py` are standard-library Python;
+`rust-edges-sample/` holds a hand-written LSIF sample over two invented files, which the unit
+tests read.
+
+**Prerequisites**: the `rust-analyzer` component of the pinned toolchain (`rustup component
+add rust-analyzer`, which also needs `rust-src` so std macros expand), every dependency already
+in the local cargo cache, and a devscout release binary built from the commit being scored.
+
+```sh
+python3 -B -m unittest discover -s bench -p test_rust_edges.py
+
+git archive <commit> | tar -x -C /tmp/build-<commit>
+cargo build --release --offline --locked --manifest-path /tmp/build-<commit>/Cargo.toml
+
+python3 -B bench/rust_edges.py run --repo . --commit <commit> \
+  --devscout /tmp/build-<commit>/target/release/devscout \
+  --rust-analyzer "$(rustup which rust-analyzer)" \
+  --label <label> --scratch /tmp/rust-edges-<label>
+```
+
+`run` refuses a scratch directory inside a git work tree, because devscout climbs to the
+nearest `.git` and would map the enclosing repository instead of the export. Every cargo and
+rust-analyzer step runs with `CARGO_NET_OFFLINE=true` and a scratch `CARGO_TARGET_DIR`. The LSIF
+dump, the compiler's `cargo test -- --list` output, the mapped `graph.json`, the logs and the
+scored `report.json`, `edges.jsonl` (one verdict per Rust edge) and `references.jsonl` land in
+`bench/out/rust-edges/<label>/`, which is ignored. `score --out <dir> --source <export>`
+rescores saved files, and `confirm --out <dir> --source <export> <answer.json>...` checks each
+row of a saved `refs --json` or `tests --json` answer against the LSIF references. See
+[`docs/benchmarks/methodology.md`](../docs/benchmarks/methodology.md#rust-edges) for the
+universe, the site classes and the thresholds.
+
 ## Rules the harness holds to
 
 - One clone per arm. This tool writes artifacts into the git common directory, so worktrees of
