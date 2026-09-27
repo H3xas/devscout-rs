@@ -27,6 +27,12 @@ DEVSCOUT_VERBS = ("init", "refs", "tests", "impact")
 ARM_VERBS = {"devscout-base": DEVSCOUT_VERBS, "devscout-head": DEVSCOUT_VERBS, "crg": PEER_VERBS}
 # Pre-registered files each step reads; the step re-checks them against the manifest itself.
 RUN_INPUTS = ("templates.tsv", "seeds.json")
+# Exit codes each arm answers with: devscout exits 3 for a resolved seed with an empty
+# answer (docs/answer-contract.md); any other code is a failed run that answers nothing.
+ANSWER_EXITS = {"devscout-base": (0, 3), "devscout-head": (0, 3), "crg": (0,)}
+# The peer exits 0 on its own errors, so its payload status decides; not_found is its answer
+# for a name it holds no node for.
+ANSWER_STATUSES = {"crg": ("ok", "not_found")}
 SCORE_INPUTS = ("seeds.json", "truth-sealed.json", "truth-raw.json")
 
 PROVIDER_KEY_RE = re.compile(
@@ -743,11 +749,20 @@ def crg_files(task, payload, corpus_root):
     return sorted({relative(row.get("file_path") or row.get("file") or "", corpus_root) for row in rows} - {""})
 
 
+def answered(arm, run, payload):
+    if run.get("exit") not in ANSWER_EXITS.get(arm, (0,)) or not isinstance(payload, dict):
+        return False
+    statuses = ANSWER_STATUSES.get(arm)
+    return statuses is None or payload.get("status") in statuses
+
+
 def load_answers(run_dir, corpus_root=None):
-    """{(task, target): files} for one arm's stored run; a failed or unparsable run answers nothing."""
+    """{(task, target): files} for one arm's stored run. A failed or unparsable run answers
+    nothing: its target maps to None, even when other runs of the same target answered."""
     data = json.loads((Path(run_dir) / "runs.json").read_text(encoding="utf-8"))
     arm = data["arm"]
     answers = defaultdict(set)
+    failed = set()
     for run in data["runs"]:
         if run["target"] == "setup":
             continue
@@ -755,15 +770,20 @@ def load_answers(run_dir, corpus_root=None):
         try:
             payload = json.loads(raw)
         except ValueError:
-            payload = {}
+            payload = None
         task = run["task"]
-        key = run["target"].split("|", 1)[0]
+        key = (task, run["target"].split("|", 1)[0])
+        if not answered(arm, run, payload):
+            failed.add(key)
+            continue
         if arm == "crg":
             files = crg_files(task.split("-", 1)[0], payload, corpus_root)
         else:
             files = devscout_files(task.split("-", 1)[0], payload)
-        answers[(task, key)] |= set(files)
-    return {key: sorted(value) for key, value in answers.items()}
+        answers[key] |= set(files)
+    result = {key: sorted(value) for key, value in answers.items()}
+    result.update({key: None for key in failed})
+    return result
 
 
 def ratio(numerator, denominator):
@@ -771,12 +791,17 @@ def ratio(numerator, denominator):
 
 
 def recall_block(answers, task, truth_sets):
+    """Recall over the registered seeds; a seed whose answer is missing or failed counts every
+    truth file as missed and is marked failed."""
     per_seed, hits, total = {}, 0, 0
     for name, truth in truth_sets.items():
-        answer = set(answers.get((task, name), []))
+        stored = answers.get((task, name))
+        answer = set(stored or [])
         found = answer & set(truth)
         per_seed[name] = {"truth": len(truth), "found": len(found), "recall": ratio(len(found), len(truth)),
                           "missed": sorted(set(truth) - answer), "extra": sorted(answer - set(truth))}
+        if stored is None:
+            per_seed[name]["failed"] = True
         hits += len(found)
         total += len(truth)
     return {"pooled": ratio(hits, total), "found": hits, "truth": total, "perSeed": per_seed}
@@ -801,24 +826,40 @@ def score(sealed, seeds, answers):
         widened = {(task, name): files for (task, name), files in answers.items() if task == "refs"}
         for (task, name), files in answers.items():
             if task == "refs-importers":
-                widened[("refs", name)] = sorted(set(widened.get(("refs", name), [])) | set(files))
+                merged = None if files is None or widened.get(("refs", name), []) is None else \
+                    sorted(set(widened.get(("refs", name), [])) | set(files))
+                widened[("refs", name)] = merged
         result["refsWithFileImporters"] = recall_block(widened, "refs", refs_truth)
     for key, files in target_lists(seeds).items():
         truth = impact_truth(sealed, key)
         for task in ("impact", "impact-default"):
-            if (task, key) in answers:
-                result["impact"].setdefault(task, {})[key] = precision_block(answers[(task, key)], truth, files)
+            # The gated task is scored on every registered target, answered or not.
+            if (task, key) in answers or task == "impact":
+                stored = answers.get((task, key))
+                block = precision_block(stored or [], truth, files)
+                if stored is None:
+                    block["failed"] = True
+                result["impact"].setdefault(task, {})[key] = block
     return result
 
 
-def gate(scores):
+def gate(scores, seeds):
+    """The registered gate, one check per registered metric and target. A check whose answer is
+    missing or failed fails; it is never dropped."""
+    def recall_met(block):
+        failed = any(seed.get("failed") for seed in block["perSeed"].values())
+        return not failed and (block["pooled"] or 0) >= 0.9
+
     impact = scores["impact"].get("impact", {})
     checks = {
-        "refs recall >= 0.9": (scores["refs"]["pooled"] or 0) >= 0.9,
-        "tests recall >= 0.9": (scores["tests"]["pooled"] or 0) >= 0.9,
+        "refs recall >= 0.9": recall_met(scores["refs"]),
+        "tests recall >= 0.9": recall_met(scores["tests"]),
     }
-    for key, block in sorted(impact.items()):
-        checks[f"impact precision >= 0.5 on {key}"] = block["precision"] is not None and block["precision"] >= 0.5
+    for key in sorted(target_lists(seeds)):
+        block = impact.get(key)
+        checks[f"impact precision >= 0.5 on {key}"] = (block is not None and not block.get("failed")
+                                                       and block["precision"] is not None
+                                                       and block["precision"] >= 0.5)
     return checks
 
 
@@ -953,7 +994,7 @@ def cmd_score(args):
         arm, run_dir = spec.split("=", 1)
         answers = load_answers(run_dir, corpus_root)
         scores = score(sealed, seeds, answers)
-        result[arm] = {"sealed": scores, "raw": score(raw_as_sealed, seeds, answers), "gate": gate(scores)}
+        result[arm] = {"sealed": scores, "raw": score(raw_as_sealed, seeds, answers), "gate": gate(scores, seeds)}
     cells = peers_win({arm: block["sealed"] for arm, block in result.items()})
     result["wherePeersWin"] = [{"metric": label, "leaders": leaders, "values": values}
                                for label, leaders, values in cells]

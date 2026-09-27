@@ -193,13 +193,15 @@ class ScoringTests(unittest.TestCase):
         block = result["impact"]["impact"]["declaring:d/a.ts"]
         self.assertEqual((block["rows"], block["correct"], block["precision"]), (2, 1, 0.5))
         self.assertEqual(block["outsideUniverse"], ["k.js"])
-        self.assertNotIn("declaring:d/b.ts", result["impact"]["impact"])
+        self.assertTrue(result["impact"]["impact"]["declaring:d/b.ts"]["failed"])
+        self.assertNotIn("failed", block)
 
     def test_no_rows_is_not_a_precision(self):
         answers = {("impact", "declaring:d/a.ts"): []}
         block = tp.score(self.sealed, self.seeds, answers)["impact"]["impact"]["declaring:d/a.ts"]
         self.assertIsNone(block["precision"])
-        self.assertFalse(tp.gate(tp.score(self.sealed, self.seeds, answers))["impact precision >= 0.5 on declaring:d/a.ts"])
+        self.assertFalse(tp.gate(tp.score(self.sealed, self.seeds, answers), self.seeds)[
+            "impact precision >= 0.5 on declaring:d/a.ts"])
 
     def test_importer_widening_is_reported_apart(self):
         answers = {("refs", "a"): ["x.ts"], ("refs-importers", "a"): ["y.spec.ts"]}
@@ -370,13 +372,88 @@ class GuardTests(unittest.TestCase):
             Path(root, "0.out").write_text(json.dumps({"rows": [{"file": "x.ts"}]}))
             Path(root, "1.out").write_text(json.dumps({"rows": [{"file": "y.ts"}]}))
             Path(root, "2.out").write_text("not json")
-            runs = [{"task": "impact", "target": "diff|a.ts", "stdout": "0.out"},
-                    {"task": "impact", "target": "diff|b.ts", "stdout": "1.out"},
-                    {"task": "refs", "target": "s", "stdout": "2.out"}]
+            runs = [{"task": "impact", "target": "diff|a.ts", "exit": 0, "stdout": "0.out"},
+                    {"task": "impact", "target": "diff|b.ts", "exit": 0, "stdout": "1.out"},
+                    {"task": "refs", "target": "s", "exit": 0, "stdout": "2.out"}]
             Path(root, "runs.json").write_text(json.dumps({"arm": "devscout-head", "runs": runs}))
             answers = tp.load_answers(root)
             self.assertEqual(answers[("impact", "diff")], ["x.ts", "y.ts"])
-            self.assertEqual(answers[("refs", "s")], [])
+            self.assertIsNone(answers[("refs", "s")])
+
+
+def stored_run(root, arm, runs):
+    """Write one arm's runs.json and stdout files; each run is (task, target, exit, stdout)."""
+    log = []
+    for number, (task, target, code, stdout) in enumerate(runs):
+        Path(root, f"{number}.out").write_text(stdout if isinstance(stdout, str) else json.dumps(stdout))
+        log.append({"task": task, "target": target, "exit": code, "stdout": f"{number}.out"})
+    Path(root, "runs.json").write_text(json.dumps({"arm": arm, "runs": log}))
+
+
+class RegisteredTargetTests(unittest.TestCase):
+    seeds = ScoringTests.seeds
+    sealed = ScoringTests.sealed
+    gated = ["impact precision >= 0.5 on declaring:d/a.ts", "impact precision >= 0.5 on declaring:d/b.ts",
+             "impact precision >= 0.5 on diff"]
+
+    def test_a_missing_impact_answer_fails_its_check(self):
+        answers = {("refs", "a"): ["x.ts", "y.spec.ts"], ("refs", "b"): ["z.ts"], ("tests", "a"): ["y.spec.ts"],
+                   ("impact", "declaring:d/a.ts"): ["x.ts"]}
+        checks = tp.gate(tp.score(self.sealed, self.seeds, answers), self.seeds)
+        for label in self.gated:
+            self.assertIn(label, checks)
+        self.assertTrue(checks["impact precision >= 0.5 on declaring:d/a.ts"])
+        self.assertFalse(checks["impact precision >= 0.5 on declaring:d/b.ts"])
+        self.assertFalse(checks["impact precision >= 0.5 on diff"])
+
+    def test_a_failed_run_answers_nothing_and_fails_its_target(self):
+        with tempfile.TemporaryDirectory() as root:
+            ok = {"rows": [{"file": "x.ts"}]}
+            stored_run(root, "devscout-head", [
+                ("impact", "diff|a.ts", 0, ok),
+                ("impact", "diff|b.ts", 1, ok),
+                ("impact", "declaring:d/a.ts|d/a.ts", 3, {"rows": []}),
+                ("refs", "a", 0, "not json"),
+                ("refs", "b", 2, {"inbound": {"call": {"rows": [{"file": "z.ts"}]}}}),
+            ])
+            answers = tp.load_answers(root)
+        self.assertIsNone(answers[("impact", "diff")])
+        self.assertEqual(answers[("impact", "declaring:d/a.ts")], [])
+        self.assertIsNone(answers[("refs", "a")])
+        self.assertIsNone(answers[("refs", "b")])
+        result = tp.score(self.sealed, self.seeds, answers)
+        self.assertTrue(result["impact"]["impact"]["diff"]["failed"])
+        self.assertTrue(result["refs"]["perSeed"]["b"]["failed"])
+        self.assertEqual(result["refs"]["perSeed"]["b"]["found"], 0)
+        self.assertFalse(tp.gate(result, self.seeds)["impact precision >= 0.5 on diff"])
+
+    def test_the_peer_answers_only_with_exit_zero_and_a_known_status(self):
+        with tempfile.TemporaryDirectory() as root:
+            row = {"status": "ok", "results": [{"file_path": "z.ts"}]}
+            stored_run(root, "crg", [
+                ("refs", "a", 3, row),
+                ("refs", "b", 0, {"status": "error", "results": [{"file_path": "z.ts"}]}),
+                ("tests", "a", 0, {"status": "not_found", "summary": "No node"}),
+                ("tests", "b", 0, row),
+            ])
+            answers = tp.load_answers(root, root)
+        self.assertIsNone(answers[("refs", "a")])
+        self.assertIsNone(answers[("refs", "b")])
+        self.assertEqual(answers[("tests", "a")], [])
+        self.assertEqual(answers[("tests", "b")], ["z.ts"])
+
+    def test_a_failed_seed_fails_the_recall_check_whatever_the_pool(self):
+        sealed = {"names": {"a": {"files": ["x.ts"]}, "b": {"files": [f"f{i}.ts" for i in range(9)]}},
+                  "targets": self.sealed["targets"]}
+        answers = {("refs", "a"): None, ("refs", "b"): [f"f{i}.ts" for i in range(9)] + ["x.ts"]}
+        result = tp.score(sealed, self.seeds, answers)
+        self.assertEqual(result["refs"]["pooled"], 0.9)
+        self.assertFalse(tp.gate(result, self.seeds)["refs recall >= 0.9"])
+
+    def test_a_registered_seed_without_an_answer_is_failed(self):
+        result = tp.score(self.sealed, self.seeds, {("refs", "a"): ["x.ts", "y.spec.ts"]})
+        self.assertTrue(result["refs"]["perSeed"]["b"]["failed"])
+        self.assertNotIn("failed", result["refs"]["perSeed"]["a"])
 
 
 def fake_peer(root, version=tp.PEER_VERSION, identity=True, interpreter=None):
