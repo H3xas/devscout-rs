@@ -11,12 +11,12 @@ use super::dispatch::{
     outbound_foreign, push_ranked, RankedOutbound, K_IMPLEMENTS, K_IMPORTS, K_INHERITS,
     K_OVERRIDES, K_USES_MEMBER, K_USES_TYPE,
 };
-use super::index::SymbolRefs;
 use super::occurrence::tag_outbound_rows;
 use super::refs::{hit_source, LineCache};
 use super::refs_tables::{
     cap_rows, edge_loc, loc_cmp, row_tier, ImportRow, OutboundRow, OutboundTables, Table,
 };
+use super::symbol_refs::SymbolRefs;
 
 // The six outbound kinds share ONE cap and ONE ranking under `--out`,
 // mirroring `build_refs_model`'s own inbound block in `refs.rs`: resolved before

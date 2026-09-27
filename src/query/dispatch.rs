@@ -10,10 +10,11 @@
 
 use crate::graph;
 
-use super::index::{def_files, note_file, GraphIndex, InboundEntry, OutboundEntry, SymbolRefs};
+use super::index::{def_files, note_file, GraphIndex, InboundEntry, OutboundEntry};
 use super::refs::project_of;
 use super::refs_tables::{loc_cmp, InboundRow, Table};
 use super::seq::SeqSet;
+use super::symbol_refs::SymbolRefs;
 use std::collections::{HashMap, HashSet};
 
 // The interface def id(s) a class def's OWN file(s) declare an `inherits` OR

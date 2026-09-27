@@ -3,10 +3,11 @@ use std::collections::HashMap;
 use crate::graph;
 
 use super::bus::{self, BusDirection, BusHopRow};
-use super::index::{def_files, symbol_refs, GraphIndex};
+use super::index::{def_files, GraphIndex};
 use super::member::{self, MemberCandidate, MemberSeedResolution};
 use super::refs_tables::{cap_rows, edge_loc, row_tier, Table, DEFAULT_CAP};
 use super::symbol::{resolve_symbol, Resolution};
+use super::symbol_refs::symbol_refs;
 
 // ============================================================================
 // build_tests_model -- test coverage.

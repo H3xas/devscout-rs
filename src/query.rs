@@ -49,7 +49,8 @@
 //
 // Split by verb, plus the shared substrate the verbs sit on: `seq` (the
 // order-preserving scratch structures), `index` (`GraphIndex` and its
-// loading, plus `def_files`/`def_sites`/`symbol_refs`), `symbol`
+// loading, plus `def_files`/`def_sites`), `symbol_refs` (one symbol's
+// immediate inbound/outbound edges), `symbol`
 // (`resolve_symbol`'s ladder), and `rank` (personalized PageRank). The verbs
 // themselves: `find`, `refs`/`refs_tables` (the row/table shaping `read`
 // reuses), `read`, `coverage` (test coverage for a symbol -- named to avoid
@@ -92,6 +93,7 @@ mod refs_outbound;
 mod refs_tables;
 mod seq;
 mod symbol;
+mod symbol_refs;
 mod why;
 
 pub use bus::{BusDirection, BusHopRow};
@@ -104,8 +106,8 @@ pub use impact::{
 };
 pub use imported::{build_imported_section, ImportedRow, ImportedSection};
 pub use index::{
-    def_files, def_sites, load_graph_index, load_graph_index_with, symbol_refs, DefSite,
-    GraphIndex, HeuristicEntry, InboundEntry, IndexOptions, OutboundEntry, SymbolRefs,
+    def_files, def_sites, load_graph_index, load_graph_index_with, DefSite, GraphIndex,
+    HeuristicEntry, InboundEntry, IndexOptions, OutboundEntry,
 };
 pub use infra::{is_infra_file, DEFAULT_HUB_MAX_INDEGREE};
 pub use member::{
@@ -122,6 +124,7 @@ pub use refs_tables::{
 };
 pub use seq::{SeqMap, SeqSet};
 pub use symbol::{resolve_symbol, Resolution};
+pub use symbol_refs::{symbol_refs, SymbolRefs};
 pub use why::Why;
 
 #[cfg(test)]

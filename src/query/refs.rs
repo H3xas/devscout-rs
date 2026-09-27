@@ -5,7 +5,7 @@ use crate::graph;
 
 use super::bus::{self, BusHopRow};
 use super::dispatch;
-use super::index::{def_sites, symbol_refs, DefSite, GraphIndex};
+use super::index::{def_sites, DefSite, GraphIndex};
 use super::member::{self, MemberCandidate};
 use super::occurrence::tag_inbound_rows;
 use super::refs_outbound::build_outbound_tables;
@@ -14,6 +14,7 @@ use super::refs_tables::{
     InboundTables, OutboundTables, Table, SOURCE_MAX,
 };
 use super::symbol::{resolve_symbol, Resolution};
+use super::symbol_refs::symbol_refs;
 
 /// One enum member that carries at least one inbound reference.
 #[derive(Debug, Clone, PartialEq)]
