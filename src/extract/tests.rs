@@ -29,6 +29,7 @@ mod property_types_fact;
 mod qualifier_capture;
 mod receiver_facts;
 mod registration_fact;
+mod rs_facts;
 mod rs_fragment;
 mod rs_purpose;
 mod stage4_receivers;

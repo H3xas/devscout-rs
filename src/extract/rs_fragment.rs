@@ -2,7 +2,9 @@ use std::collections::HashMap;
 
 use tree_sitter::Node;
 
+use super::rs_facts_types::RsImpl;
 use super::rs_fragment_types::{RsFileExtraction, RsFragment, RsItem};
+use super::rs_paths::{join, path_segments, type_path_node};
 use super::text::truncate;
 use crate::parse;
 
@@ -40,15 +42,38 @@ pub fn extract_rs_file(source: &str) -> RsFileExtraction {
     let src = parse::utf16_bytes(&units);
     let root = tree.root_node();
     let mut found = Vec::new();
-    walk_items(root, &src, &mut found);
+    let mut impls = Vec::new();
+    walk_items(root, &src, &mut found, &mut impls);
     let purpose = compose_purpose(root, &src, &found);
-    RsFileExtraction {
-        purpose,
-        fragment: RsFragment {
-            rs: 1,
-            items: dedupe(found),
-        },
+    let uses = super::rs_uses::collect_uses(root, &src);
+    let mut fragment = assemble(found, impls);
+    fragment.uses = uses.uses;
+    fragment.blocks = uses.blocks;
+    RsFileExtraction { purpose, fragment }
+}
+
+// The fragment's items and the declaration facts marked on them, once
+// duplicate paths are suffixed.
+fn assemble(found: Vec<Found>, mut impls: Vec<RsImpl>) -> RsFragment {
+    let marks: Vec<(Mark, Option<usize>)> = found.iter().map(|f| (f.mark, f.impl_index)).collect();
+    let items = dedupe(found);
+    let mut fragment = RsFragment {
+        items,
+        ..RsFragment::default()
+    };
+    for (item, (mark, impl_index)) in fragment.items.iter().zip(marks) {
+        match mark {
+            Mark::ModFile => fragment.mod_files.push(item.path.clone()),
+            Mark::Ctor => fragment.ctors.push(item.path.clone()),
+            Mark::Test => fragment.tests.push(item.path.clone()),
+            Mark::None => {}
+        }
+        if let Some(i) = impl_index {
+            impls[i].items.push(item.path.clone());
+        }
     }
+    fragment.impls = impls;
+    fragment
 }
 
 // One item as the walk finds it, before duplicate paths are suffixed.
@@ -60,6 +85,20 @@ struct Found {
     name_line: usize,
     end_line: usize,
     file_level: bool,
+    mark: Mark,
+    impl_index: Option<usize>,
+}
+
+// A declaration fact the resolver needs beyond the item itself.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Mark {
+    None,
+    // A `mod x;` declaration, whose body is another file.
+    ModFile,
+    // A tuple or unit struct, which is also a value.
+    Ctor,
+    // A function carrying `#[test]`.
+    Test,
 }
 
 // The recorded kind for a node kind, as the Rust keyword that declares it.
@@ -82,17 +121,22 @@ fn record_kind(node_kind: &str) -> Option<&'static str> {
 // A pre-order walk over the walked contexts, kept on an explicit stack
 // rather than the call stack: module nesting is unbounded in hostile input,
 // and extraction runs on worker threads with small stacks. Children are
-// pushed in reverse so they pop in source order.
-fn walk_items(root: Node, src: &[u8], out: &mut Vec<Found>) {
-    let mut pending: Vec<(Node, Vec<String>)> = Vec::new();
-    push_children(root, &[], &mut pending);
-    while let Some((node, segments)) = pending.pop() {
+// pushed in reverse so they pop in source order. Each pending node carries
+// its enclosing path and, inside an `impl` with a nameable self type, the
+// index of that impl's record.
+fn walk_items(root: Node, src: &[u8], out: &mut Vec<Found>, impls: &mut Vec<RsImpl>) {
+    let mut pending: Vec<(Node, Vec<String>, Option<usize>)> = Vec::new();
+    push_children(root, &[], None, &mut pending);
+    while let Some((node, segments, in_impl)) = pending.pop() {
+        let mut impl_index = None;
         let segment = if let Some(kind) = record_kind(node.kind()) {
-            match record_item(node, kind, src, &segments, out) {
+            let recorded = record_item(node, kind, src, &segments, in_impl, out);
+            match recorded {
                 Some(name) if kind == "mod" || kind == "trait" => Some(name),
                 _ => continue,
             }
         } else if node.kind() == "impl_item" {
+            impl_index = record_impl(node, src, &segments, impls);
             Some(self_type_head(node.child_by_field_name("type"), src))
         } else if node.kind() == "foreign_mod_item" {
             None
@@ -103,7 +147,7 @@ fn walk_items(root: Node, src: &[u8], out: &mut Vec<Found>) {
         if let Some(body) = node.child_by_field_name("body") {
             let mut inner = segments;
             inner.extend(segment);
-            push_children(body, &inner, &mut pending);
+            push_children(body, &inner, impl_index, &mut pending);
         }
     }
 }
@@ -111,13 +155,37 @@ fn walk_items(root: Node, src: &[u8], out: &mut Vec<Found>) {
 fn push_children<'t>(
     body: Node<'t>,
     segments: &[String],
-    pending: &mut Vec<(Node<'t>, Vec<String>)>,
+    in_impl: Option<usize>,
+    pending: &mut Vec<(Node<'t>, Vec<String>, Option<usize>)>,
 ) {
     let mut cursor = body.walk();
     let children: Vec<Node> = body.named_children(&mut cursor).collect();
     for child in children.into_iter().rev() {
-        pending.push((child, segments.to_vec()));
+        pending.push((child, segments.to_vec(), in_impl));
     }
+}
+
+// Records an `impl` block whose self type has a path; `None` otherwise.
+fn record_impl(
+    node: Node,
+    src: &[u8],
+    segments: &[String],
+    impls: &mut Vec<RsImpl>,
+) -> Option<usize> {
+    let ty = type_path_node(node.child_by_field_name("type")?)?;
+    let path = path_segments(ty, src)?;
+    impls.push(RsImpl {
+        scope: module_scope(segments),
+        self_type: join(&path),
+        items: Vec::new(),
+    });
+    Some(impls.len() - 1)
+}
+
+// The enclosing path is the scope itself for module-level items: an impl or
+// trait never encloses another impl.
+fn module_scope(segments: &[String]) -> String {
+    segments.join("::")
 }
 
 // Records one item under `segments` and returns its name, or `None` when it
@@ -127,6 +195,7 @@ fn record_item(
     kind: &'static str,
     src: &[u8],
     segments: &[String],
+    in_impl: Option<usize>,
     out: &mut Vec<Found>,
 ) -> Option<String> {
     let name_node = node.child_by_field_name("name")?;
@@ -141,8 +210,47 @@ fn record_item(
         name_line: name_node.start_position().row + 1,
         end_line: end_line(node),
         file_level: node.parent().is_some_and(|p| p.kind() == "source_file"),
+        mark: mark_of(node, kind, src),
+        impl_index: in_impl,
     });
     Some(name)
+}
+
+fn mark_of(node: Node, kind: &str, src: &[u8]) -> Mark {
+    match kind {
+        "mod" if node.child_by_field_name("body").is_none() => Mark::ModFile,
+        "struct" => match node.child_by_field_name("body") {
+            None => Mark::Ctor,
+            Some(body) if body.kind() == "ordered_field_declaration_list" => Mark::Ctor,
+            Some(_) => Mark::None,
+        },
+        "fn" if has_test_attribute(node, src) => Mark::Test,
+        _ => Mark::None,
+    }
+}
+
+// Whether an outer attribute directly above the item is `#[test]` or a path
+// ending in `::test` (`#[tokio::test]`), with or without arguments.
+fn has_test_attribute(node: Node, src: &[u8]) -> bool {
+    let mut current = node.prev_sibling();
+    while let Some(prev) = current {
+        match prev.kind() {
+            "attribute_item" => {
+                if prev
+                    .named_child(0)
+                    .and_then(|attr| attr.named_child(0))
+                    .and_then(|path| path_segments(path, src))
+                    .is_some_and(|segs| segs.last().is_some_and(|s| s.text == "test"))
+                {
+                    return true;
+                }
+            }
+            "line_comment" | "block_comment" => {}
+            _ => return false,
+        }
+        current = prev.prev_sibling();
+    }
+    false
 }
 
 // The name an item is recorded under, or `None` when it has no nameable

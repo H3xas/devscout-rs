@@ -94,7 +94,11 @@ mod tests {
     }
 
     fn fragment(items: Vec<RsItem>) -> RsFragment {
-        RsFragment { rs: 1, items }
+        RsFragment {
+            rs: 1,
+            items,
+            ..RsFragment::default()
+        }
     }
 
     #[test]
