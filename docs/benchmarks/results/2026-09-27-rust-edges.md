@@ -11,7 +11,7 @@ references `rust-analyzer lsif` writes for this repository. The method is
 |---|---|
 | Corpus | this repository, exported with `git archive` |
 | Run 0 revision | `911fe479190906bc965635f96839592f8459d67e` (Rust definitions, no Rust edges), mapped by a release build of the same revision |
-| Head revision | `e4d19d2` (Rust edges), mapped by a release build of the same revision |
+| Head revision | `dc61009` (Rust edges), mapped by a release build of the same revision |
 | Oracle | `rust-analyzer 1.97.1 (8bab26f4 2026-07-14)`, the toolchain component |
 | Toolchain | `rustc 1.97.1 (8bab26f4f 2026-07-14)`, `cargo 1.97.1 (c980f4866 2026-06-30)`, aarch64 macOS |
 | Network | none: every cargo and rust-analyzer step ran with `CARGO_NET_OFFLINE=true` and a scratch target directory |
@@ -29,12 +29,12 @@ python3 -B bench/rust_edges.py run --repo . --commit <rev> \
 
 Run 0 was rescored from its saved files once, after the site classifier learned the operator,
 literal, lifetime and whitespace positions rust-analyzer resolves; the oracle was not re-run.
-Earlier head runs, on `52c2b52`, `8627012`, `543cec9` and `a476774`, met every threshold with no
+Earlier head runs, on `52c2b52`, `8627012`, `543cec9`, `a476774` and `e4d19d2`, met every threshold with no
 contradicted edge. The head published here is the last revision that changes code. Against
 `543cec9` it adds two rules: a name a macro's token trees may bind shadows the calls beside it,
 and a glob whose names cannot be listed stops a lookup. At `a476774` the first rule cost 18 calls,
-because struct field names inside macro arguments counted as bindings; at `e4d19d2` they no
-longer do, and the misses are the same 8 as at `543cec9`.
+because struct field names inside macro arguments counted as bindings; from `e4d19d2` on they
+no longer do, and the misses are the same 8 as at `543cec9`.
 
 ## Headline
 
@@ -98,16 +98,16 @@ The call population is the first two rows; every other row is an excluded class.
 | macro name | 7500 | 7822 |
 | method call to a recorded fn | 1154 | 1251 |
 | method call to an external or unrecorded item | 17292 | 18608 |
-| operator, literal, lifetime or whitespace | 12501 | 13466 |
+| operator, literal, lifetime or whitespace | 12501 | 13459 |
 | other reference to a recorded item (recorded fn) | 123 | 125 |
 | other reference to a recorded item (recorded other) | 837 | 860 |
 | other reference to a recorded item (recorded type) | 5847 | 6290 |
 | other reference to an external item | 13940 | 15136 |
-| other reference to an unrecorded item (local, field, variant) | 42197 | 45561 |
+| other reference to an unrecorded item (local, field, variant) | 42197 | 45562 |
 | path call to a recorded type (tuple-struct constructor) | 104 | 104 |
 | path call to an external item | 5112 | 5475 |
 | path call to an unrecorded item (variant, local, function-body item) | 1141 | 1201 |
-| **all oracle references** | 122740 | 131716 |
+| **all oracle references** | 122740 | 131710 |
 
 No reference falls inside a `macro_rules!` body: rust-analyzer resolves nothing there. Universe:
 304 files at Run 0 and 328 at the head (every `src/` and `tests/` file and
