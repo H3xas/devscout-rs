@@ -160,6 +160,7 @@ pub(super) fn file_imports(
             target: imp.spec.clone(),
             to_file: to.clone(),
             via: None,
+            bound_defs: Vec::new(),
         });
         // First binding of a local name wins, the same first-occurrence
         // rule the def map uses: a file that binds one name twice is
@@ -178,7 +179,10 @@ pub(super) fn file_imports(
         // source literally says); this one carries `via` so a reader can
         // tell the two apart, and one line contributes at most one edge per
         // distinct declaring file however many names it pulls through.
-        let mut followed: HashSet<String> = HashSet::new();
+        // Each bound definition rides the edge whose `to_file` declares it,
+        // so a name the barrel only routes never lands on the barrel's edge.
+        let statement = out.edges.len() - 1;
+        let mut via_edge: HashMap<String, usize> = HashMap::new();
         for b in &imp.bindings {
             if b.imported == "*" {
                 continue;
@@ -187,17 +191,23 @@ pub(super) fn file_imports(
                 continue;
             };
             let target_file = defs[target].file.clone();
-            if target_file == to || followed.contains(&target_file) {
-                continue;
-            }
-            followed.insert(target_file.clone());
-            out.edges.push(Edge::Import {
-                from_file: file.to_string(),
-                from_line: imp.line,
-                target: imp.spec.clone(),
-                to_file: target_file,
-                via: Some(to.clone()),
-            });
+            let slot = if target_file == to {
+                statement
+            } else if let Some(&slot) = via_edge.get(&target_file) {
+                slot
+            } else {
+                via_edge.insert(target_file.clone(), out.edges.len());
+                out.edges.push(Edge::Import {
+                    from_file: file.to_string(),
+                    from_line: imp.line,
+                    target: imp.spec.clone(),
+                    to_file: target_file,
+                    via: Some(to.clone()),
+                    bound_defs: Vec::new(),
+                });
+                out.edges.len() - 1
+            };
+            bind(&mut out.edges[slot], &defs[target].id);
         }
     }
     for rx in exports
@@ -209,15 +219,43 @@ pub(super) fn file_imports(
         match &rx.to {
             None => out.external += 1,
             Some(to) => {
-                out.edges.push(Edge::Import {
+                // A named re-export names the symbol it hands on, so it binds
+                // like an import -- but only a name `to` itself declares: one
+                // `to` merely re-exports again stays unbound rather than
+                // adding an edge the statement never wrote.
+                let mut edge = Edge::Import {
                     from_file: file.to_string(),
                     from_line: rx.line,
                     target: rx.spec.clone(),
                     to_file: to.clone(),
                     via: None,
-                });
+                    bound_defs: Vec::new(),
+                };
+                if !rx.star {
+                    for (_, imported) in &rx.names {
+                        if let Some(target) = exports.lookup(to, imported) {
+                            if defs[target].file == *to {
+                                bind(&mut edge, &defs[target].id);
+                            }
+                        }
+                    }
+                }
+                out.edges.push(edge);
             }
         }
     }
     out
 }
+
+// Append `id` to an import edge's bound definitions unless it is already
+// there: two bindings of one export (`import { A, A as B }`) bind it once.
+fn bind(edge: &mut Edge, id: &str) {
+    if let Edge::Import { bound_defs, .. } = edge {
+        if !bound_defs.iter().any(|d| d == id) {
+            bound_defs.push(id.to_string());
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests;

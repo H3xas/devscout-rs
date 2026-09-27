@@ -205,9 +205,20 @@ pub enum Edge {
     /// A TS/TSX module import. Distinct from `imports` (C#'s
     /// `using` directive, which names a NAMESPACE and resolves to no file):
     /// `target` is the specifier as written and `to_file` the file it
-    /// resolved to. `via` is appended LAST and present only on a
-    /// barrel-followed edge, naming the module the source literally imported
-    /// so a reader can tell the routing table apart from the dependency.
+    /// resolved to. `via` is present only on a barrel-followed edge, naming
+    /// the module the source literally imported so a reader can tell the
+    /// routing table apart from the dependency.
+    ///
+    /// `bound_defs` is appended after `via` and present only when non-empty:
+    /// the ids of the definitions the statement's named, default or
+    /// type-only bindings (or a named re-export's names) resolve to, in
+    /// binding order with duplicates dropped. Each id is declared in THIS
+    /// edge's `to_file` -- a name reached through a barrel sits on the `via`
+    /// edge to its declaring file, never on the edge to the barrel -- so an
+    /// edge lists only what it actually delivers. A namespace, whole-module
+    /// `require`, side-effect or `export *` statement binds no name and
+    /// carries none; a graph written before the field existed reads as
+    /// binding none.
     #[serde(rename = "import")]
     Import {
         /// The value value.
@@ -221,6 +232,9 @@ pub enum Edge {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         /// The value value.
         via: Option<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        /// The definitions this edge's bindings resolve to (see above).
+        bound_defs: Vec<String>,
     },
     /// A call or `new` naming an imported or locally-exported
     /// declaration.

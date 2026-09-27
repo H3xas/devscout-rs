@@ -197,3 +197,173 @@ fn the_fixture_writes_every_ts_edge_kind_on_its_expected_lines() {
         "stats.ts: {ts:#?}"
     );
 }
+
+/// The `bound_defs` of the one `import` edge at `from:line -> to`; an edge
+/// without the key binds nothing. Panics when no such edge exists.
+fn bound_defs(graph: &Value, from: &str, line: u64, to: &str) -> Vec<String> {
+    let edge = graph["edges"]
+        .as_array()
+        .expect("edges array")
+        .iter()
+        .find(|e| {
+            e["kind"] == "import"
+                && e["from_file"] == from
+                && e["from_line"] == line
+                && e["to_file"] == to
+        })
+        .unwrap_or_else(|| panic!("no import edge {from}:{line} -> {to}"));
+    edge.get("bound_defs")
+        .and_then(Value::as_array)
+        .map(|defs| {
+            defs.iter()
+                .map(|d| d.as_str().expect("bound def is a string").to_string())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn id(file: &str, name: &str) -> String {
+    format!("{file}#{name}")
+}
+
+#[test]
+fn named_default_aliased_type_only_and_required_imports_bind_their_definitions() {
+    let fx = Fixture::build("bound-named");
+    let graph = fx.graph();
+    let cases: Vec<(&str, u64, &str, Vec<String>)> = vec![
+        (PAGE, 1, BADGE, vec![id(BADGE, "CartBadge")]),
+        (PAGE, 2, ACTIONS, vec![id(ACTIONS, "loadCart")]),
+        (PAGE, 3, CART, vec![id(CART, "emptyCart")]),
+        (
+            PAGE,
+            4,
+            CART,
+            vec![id(CART, "CartId"), id(CART, "CartItem")],
+        ),
+        (USE_CART, 1, STORE, vec![id(STORE, "CartStore")]),
+        (CHECKOUT, 2, STORE, vec![id(STORE, "CartStore")]),
+        (LEGACY, 1, ACTIONS, vec![id(ACTIONS, "loadCart")]),
+        (APP, 1, PAGE, vec![id(PAGE, "CartPage")]),
+    ];
+    for (from, line, to, expected) in cases {
+        assert_eq!(
+            bound_defs(&graph, from, line, to),
+            expected,
+            "bound_defs of {from}:{line} -> {to}"
+        );
+    }
+}
+
+#[test]
+fn a_barrel_import_binds_its_definition_on_the_edge_to_the_declaring_file() {
+    let fx = Fixture::build("bound-barrel");
+    let graph = fx.graph();
+    assert_eq!(
+        bound_defs(&graph, USE_CART, 2, CART),
+        vec![id(CART, "CartItem")]
+    );
+    assert!(bound_defs(&graph, USE_CART, 2, MODEL_BARREL).is_empty());
+}
+
+#[test]
+fn a_named_re_export_binds_only_when_it_names_the_declaring_file() {
+    let fx = Fixture::build("bound-reexport");
+    let graph = fx.graph();
+    assert_eq!(
+        bound_defs(&graph, PUBLIC, 1, STORE),
+        vec![id(STORE, "CartStore")]
+    );
+    assert!(bound_defs(&graph, PUBLIC, 2, MODEL_BARREL).is_empty());
+    assert!(bound_defs(&graph, MODEL_BARREL, 1, CART).is_empty());
+}
+
+#[test]
+fn namespace_and_side_effect_imports_bind_no_definition() {
+    let fx = Fixture::build("bound-none");
+    let graph = fx.graph();
+    for (from, line, to) in [
+        (CHECKOUT, 1, ACTIONS),
+        (AUDIT, 1, ACTIONS),
+        (POLYFILLS, 1, STORE),
+    ] {
+        assert!(
+            bound_defs(&graph, from, line, to).is_empty(),
+            "{from}:{line} -> {to} binds something"
+        );
+    }
+    let text = fs::read_to_string(fx.graph_path()).expect("read graph.json");
+    assert!(
+        !text.contains("\"bound_defs\":[]"),
+        "an empty list is written"
+    );
+}
+
+#[test]
+fn every_bound_definition_is_declared_in_its_edges_to_file_once() {
+    let fx = Fixture::build("bound-property");
+    let graph = fx.graph();
+    let def_file: std::collections::HashMap<&str, &str> = graph["defs"]
+        .as_array()
+        .expect("defs array")
+        .iter()
+        .map(|d| (d["id"].as_str().unwrap(), d["file"].as_str().unwrap()))
+        .collect();
+    let mut bound = 0;
+    for e in graph["edges"].as_array().expect("edges array") {
+        let Some(defs) = e.get("bound_defs").and_then(Value::as_array) else {
+            continue;
+        };
+        assert!(!defs.is_empty(), "an empty bound_defs is written: {e}");
+        let mut seen = std::collections::HashSet::new();
+        for d in defs {
+            let d = d.as_str().expect("bound def is a string");
+            assert_eq!(def_file.get(d), e["to_file"].as_str().as_ref(), "{e}");
+            assert!(seen.insert(d), "{d} listed twice on {e}");
+            bound += 1;
+        }
+    }
+    assert!(bound > 0, "no edge binds a definition");
+}
+
+#[test]
+fn a_previous_generation_cache_is_rebuilt_with_bound_definitions() {
+    let fx = Fixture::build("bound-rebuild");
+    let graph_dir = fx.repo.join(".scout/graph");
+    let current = fs::read_dir(&graph_dir)
+        .expect("read graph dir")
+        .filter_map(|e| e.ok()?.file_name().into_string().ok())
+        .find_map(|name| {
+            name.strip_prefix("fragments-v")?
+                .strip_suffix(".json")?
+                .parse::<u32>()
+                .ok()
+        })
+        .expect("a fragments-vN.json cache");
+    let previous = current - 1;
+    for stem in ["fragments", "fragments-index"] {
+        fs::rename(
+            graph_dir.join(format!("{stem}-v{current}.json")),
+            graph_dir.join(format!("{stem}-v{previous}.json")),
+        )
+        .expect("plant the previous generation");
+    }
+    let mut stale = fx.graph();
+    for e in stale["edges"].as_array_mut().expect("edges array") {
+        e.as_object_mut().expect("edge object").remove("bound_defs");
+    }
+    fs::write(fx.graph_path(), serde_json::to_vec(&stale).unwrap()).expect("write stale graph");
+
+    fx.expect_ok(&["map", "."]);
+
+    let rebuilt = fx.graph();
+    assert_eq!(
+        bound_defs(&rebuilt, PAGE, 2, ACTIONS),
+        vec![id(ACTIONS, "loadCart")]
+    );
+    assert!(graph_dir
+        .join(format!("fragments-v{current}.json"))
+        .exists());
+    assert!(!graph_dir
+        .join(format!("fragments-v{previous}.json"))
+        .exists());
+}

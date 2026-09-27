@@ -118,16 +118,21 @@ pub fn project_units_path(root: &Path) -> PathBuf {
 // `Ns.M`, no longer `M`), so the message resolves through that qualifier; a
 // cached v24 fragment of an unchanged file still carries the bare name, which
 // the call site's namespace can bind to a different same-named type.
+// v26 adds `bound_defs` to a TS `import` edge: the definitions its named,
+// default and type-only bindings resolve to. The fragments themselves are
+// unchanged, but a v25 cache pair of an unchanged repository would let `map`
+// skip the rebuild and keep a `graph.json` whose import edges bind nothing,
+// so every TS import row would stay missing until some file changed.
 // The rename IS the invalidation mechanism:
 // pre-bump caches stop being found, every file reparses
 // once, no reader carries version-compat logic. Writers delete every
 // superseded generation (see `remove_superseded_caches`).
 pub(crate) fn fragments_cache_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-v25.json")
+    graph_dir(root).join("fragments-v26.json")
 }
 
 pub(crate) fn fragments_index_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-index-v25.json")
+    graph_dir(root).join("fragments-index-v26.json")
 }
 
 // Every generation below the current one, not just the immediately previous:
@@ -182,6 +187,8 @@ pub(crate) const SUPERSEDED_CACHE_FILES: &[&str] = &[
     "fragments-index-v23.json",
     "fragments-v24.json",
     "fragments-index-v24.json",
+    "fragments-v25.json",
+    "fragments-index-v25.json",
 ];
 
 pub(crate) fn remove_superseded_caches(root: &Path) {
