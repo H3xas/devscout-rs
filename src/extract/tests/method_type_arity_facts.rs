@@ -220,3 +220,33 @@ public static class RegistrarExtensions
     assert!(json.contains("\"typeParamCount\": 2"), "{json}");
     assert!(json.contains("\"methodTypeArgCount\": 2"), "{json}");
 }
+
+#[test]
+fn tuple_arguments_and_comments_inside_the_list_do_not_change_the_count() {
+    let e = extract_src(
+        r#"
+namespace App.Consumers;
+
+public class Runner
+{
+  public void Run(IRegistrar x)
+  {
+    x.Add<(int, string), Beta>();
+    x.Add</* first */ Alpha, /* second, still one */ Beta>();
+    var group = x.Add<Alpha>;
+    var less = x.Count < limit;
+  }
+}
+"#,
+    );
+    assert_eq!(
+        member_type_arg_counts(&e),
+        vec![
+            ("Add".to_string(), Some(0), Some(2)),
+            ("Add".to_string(), Some(0), Some(2)),
+            ("Add".to_string(), None, Some(1)),
+            ("Count".to_string(), None, None),
+        ],
+        "a method group keeps its written list but carries no call shape, and a comparison is no list"
+    );
+}

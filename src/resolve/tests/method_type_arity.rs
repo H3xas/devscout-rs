@@ -214,3 +214,54 @@ fn receiver_visibility_admits_only_the_extension_of_the_written_count() {
         "the namespace is not imported, so only the scored tier's receiver rule can name a class"
     );
 }
+
+#[test]
+fn a_params_overload_admits_any_value_count_at_its_own_type_parameter_count() {
+    let owner = (
+        "Contracts/I.cs",
+        "namespace App.Contracts { public class I { public void M<T>(params int[] xs) { } } }",
+    );
+    let admitted = graph_for(&[owner], "x.M<A>(1, 2, 3)");
+    assert_eq!(
+        member_edges_from(&admitted, "Consumers/Runner.cs"),
+        vec![("App.Contracts.I", 9)]
+    );
+    let refused = graph_for(&[owner], "x.M<A, B>(1, 2, 3)");
+    assert!(member_edges_from(&refused, "Consumers/Runner.cs").is_empty());
+}
+
+#[test]
+fn a_method_group_written_with_a_list_is_read_shaped_and_never_narrowed() {
+    let owner = (
+        "Contracts/I.cs",
+        "namespace App.Contracts { public class I { public static void M<T>() { } } }",
+    );
+    let files = fragments_for(&[
+        owner,
+        (
+            "Consumers/Runner.cs",
+            "\nusing System;\nusing App.Contracts;\n\nnamespace App.Consumers;\n\npublic class Runner\n{\n  public Action Run() => I.M<A, B>;\n}\n",
+        ),
+    ]);
+    let g = resolve_graph(&no_git_root(), &files);
+    assert_eq!(
+        member_edges_from(&g, "Consumers/Runner.cs"),
+        vec![("App.Contracts.I", 9)],
+        "a read never consults the counts, exactly as it never consults the value ranges"
+    );
+}
+
+#[test]
+fn a_static_call_through_a_type_qualifier_checks_the_count_too() {
+    let owner = (
+        "Contracts/I.cs",
+        "namespace App.Contracts { public class I { public static void M<T>() { } } }",
+    );
+    let refused = graph_for(&[owner], "I.M<A, B>()");
+    assert!(member_edges_from(&refused, "Consumers/Runner.cs").is_empty());
+    let admitted = graph_for(&[owner], "I.M<A>()");
+    assert_eq!(
+        member_edges_from(&admitted, "Consumers/Runner.cs"),
+        vec![("App.Contracts.I", 9)]
+    );
+}
