@@ -39,15 +39,27 @@ fn rs_namespace(file: &str, path: &str) -> String {
 }
 
 /// Appends one def and one name row per item, in fragment order and then
-/// item order, and counts them in `stats`. No fragment leaves `graph`
-/// untouched.
+/// item order, and counts them in `stats`.
+///
+/// A function the fragment marks as a test carries its own name in
+/// `testMethods` and counts in `stats.test_def_count`, which is how `tests`
+/// and `impact` recognize a test file. No fragment leaves `graph` untouched.
 pub fn append_rust(graph: &mut Graph, fragments: &[(String, RsFragment)]) {
     if fragments.is_empty() {
         return;
     }
     let mut added = 0;
+    let mut tests = 0;
     for (file, fragment) in fragments {
+        let marked: std::collections::HashSet<&str> =
+            fragment.tests.iter().map(String::as_str).collect();
         for item in &fragment.items {
+            let test_methods = if marked.contains(item.path.as_str()) {
+                tests += 1;
+                vec![item.name.clone()]
+            } else {
+                Vec::new()
+            };
             graph.defs.push(Def {
                 id: rs_def_id(file, &item.path),
                 name: item.name.clone(),
@@ -56,7 +68,7 @@ pub fn append_rust(graph: &mut Graph, fragments: &[(String, RsFragment)]) {
                 file: file.clone(),
                 line: item.line,
                 methods: Vec::new(),
-                test_methods: Vec::new(),
+                test_methods,
                 also_in: Vec::new(),
                 end_line: item.end_line,
             });
@@ -72,6 +84,7 @@ pub fn append_rust(graph: &mut Graph, fragments: &[(String, RsFragment)]) {
     }
     graph.stats.def_count += added;
     graph.stats.file_count += fragments.len();
+    graph.stats.test_def_count += tests;
 }
 
 /// Appends the edges Rust reference sites bind to.

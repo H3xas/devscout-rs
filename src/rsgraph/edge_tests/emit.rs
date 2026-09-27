@@ -131,3 +131,40 @@ fn rust_edges_follow_every_existing_edge_and_no_fragment_changes_nothing() {
     assert_eq!(kinds[1], "uses-member src/lib.rs:2 -> src/lib.rs#f");
     assert!(kinds[0].starts_with("UsesType") || kinds[0].starts_with("uses-type src/A.cs"));
 }
+
+#[test]
+fn each_test_function_carries_its_own_name_and_a_helper_file_carries_none() {
+    let files = [
+        ("Cargo.toml", "[package]\nname = \"p\"\n"),
+        (
+            "src/lib.rs",
+            "pub fn glow() {}\n#[cfg(test)]\nmod tests {\n    #[test]\n    fn lit() { super::glow(); }\n}\n#[cfg(test)]\nmod more;\n",
+        ),
+        ("src/more.rs", "#[test]\nfn dim() {}\nfn helper() {}\n"),
+        ("tests/it.rs", "mod common;\n#[test]\nfn from_outside() { common::setup(); p::glow(); }\n"),
+        ("tests/common/mod.rs", "pub fn setup() {}\n"),
+    ];
+    let graph = graph_for(&files);
+    let carriers: Vec<(&str, &[String])> = graph
+        .defs
+        .iter()
+        .filter(|d| !d.test_methods.is_empty())
+        .map(|d| (d.id.as_str(), d.test_methods.as_slice()))
+        .collect();
+    assert_eq!(
+        carriers,
+        vec![
+            ("src/lib.rs#tests::lit", &["lit".to_string()][..]),
+            ("src/more.rs#dim", &["dim".to_string()][..]),
+            (
+                "tests/it.rs#from_outside",
+                &["from_outside".to_string()][..]
+            ),
+        ]
+    );
+    assert_eq!(graph.stats.test_def_count, 3);
+    assert_eq!(
+        serde_json::to_string(graph.defs.iter().find(|d| d.name == "dim").unwrap()).unwrap(),
+        r#"{"id":"src/more.rs#dim","name":"dim","namespace":"src/more.rs","kind":"fn","file":"src/more.rs","line":1,"methods":[],"testMethods":["dim"],"endLine":2}"#
+    );
+}
