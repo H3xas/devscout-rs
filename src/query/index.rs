@@ -7,6 +7,7 @@ use crate::manifest;
 use super::bus;
 use super::dispatch;
 use super::seq::push_ordered_unique;
+use super::test_path;
 use super::ts_edges::{self, TsKinds};
 
 // ============================================================================
@@ -148,24 +149,17 @@ impl<'g> GraphIndex<'g> {
         self.by_id.get(id).map(|&i| &self.graph.defs[i])
     }
 
-    /// Whether `file` counts as a TEST file for `tests`/`impact`: either an
-    /// attribute-vouched def is declared in it (`test_defs_by_file`), or the
-    /// project model places it inside a unit marked `test`. The second vouch
+    /// Whether `file` counts as a TEST file for `tests`/`impact`: an
+    /// attribute-vouched def is declared in it (`test_defs_by_file`), the
+    /// project model places it inside a unit marked `test`, or it is a
+    /// TypeScript file named as a test (see `test_path`). The project vouch
     /// fires even for a file that declares no attributed test method at all --
     /// a harness or fixture file living in a test project is still part of
-    /// what a symbol's tests touch. Fails open exactly like the rest of the
-    /// project model: with no model at all, or a file no discovered project
-    /// owns, this half answers `false` and the attribute vouch alone decides.
+    /// what a symbol's tests touch -- and fails open exactly like the rest of
+    /// the project model: with no model at all, or a file no discovered
+    /// project owns, that half answers `false`.
     pub fn is_test_file(&self, file: &str) -> bool {
-        if self.test_defs_by_file.contains_key(file) {
-            return true;
-        }
-        let Some(project) = &self.project else {
-            return false;
-        };
-        project
-            .unit_of_file(file)
-            .is_some_and(|u| project.units[u].test)
+        test_path::test_via(self, file).is_some()
     }
 }
 

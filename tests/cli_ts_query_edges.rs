@@ -676,3 +676,95 @@ fn a_graph_written_without_bound_defs_answers_with_no_import_table() {
     );
     assert_eq!(counts(&refs["inbound"]["call"]), (2, 0, 2));
 }
+
+/// `(file, lines, via, why)` of every `tests` row.
+fn test_rows(tests: &Value) -> Vec<(String, Vec<u64>, String, String)> {
+    tests["rows"]
+        .as_array()
+        .expect("rows array")
+        .iter()
+        .map(|r| {
+            (
+                r["file"].as_str().unwrap().to_string(),
+                r["lines"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|l| l.as_u64().unwrap())
+                    .collect(),
+                r["via"].as_str().unwrap_or_default().to_string(),
+                r["why"].as_str().unwrap().to_string(),
+            )
+        })
+        .collect()
+}
+
+fn path_row(file: &str) -> (String, Vec<u64>, String, String) {
+    (
+        file.to_string(),
+        vec![1, 4],
+        "path".to_string(),
+        "test-path".to_string(),
+    )
+}
+
+#[test]
+fn tests_counts_each_typescript_test_file_suffix_by_its_name() {
+    let fx = Fixture::build("tests-suffixes");
+    for (seed, file) in [
+        ("useCart", USE_CART_SPEC),
+        ("CartBadge", BADGE_SPEC),
+        ("loadCart", ACTIONS_TEST_TS),
+        ("CartPage", "src/pages/CartPage.test.tsx"),
+    ] {
+        let tests = fx.json(&["tests", seed, "--json"]);
+        assert_eq!(test_rows(&tests), vec![path_row(file)], "tests {seed}");
+        assert_eq!(tests["testFileCount"], 1, "tests {seed}");
+        assert_eq!(tests["refCount"], 2, "tests {seed}");
+    }
+}
+
+#[test]
+fn tests_counts_a_file_below_a_nested_tests_directory_and_nothing_else_named_close_to_it() {
+    let fx = Fixture::build("tests-segment");
+    let tests = fx.json(&["tests", "CartStore", "--json"]);
+    assert_eq!(
+        test_rows(&tests),
+        vec![path_row("src/store/__tests__/deep/total.ts")]
+    );
+    let refs = fx.json(&["refs", "CartStore", "--all", "--json"]);
+    let referrers: Vec<String> = rows(&refs["inbound"]["call"])
+        .into_iter()
+        .map(|(file, _, _)| file)
+        .collect();
+    for not_a_test in ["tests/cartStore.ts", "src/store/cartStore__tests__.ts"] {
+        assert!(
+            referrers.contains(&not_a_test.to_string()),
+            "{not_a_test} must still answer refs: {referrers:?}"
+        );
+    }
+}
+
+#[test]
+fn a_javascript_test_file_is_not_counted_by_name() {
+    let fx = Fixture::build("tests-js");
+    let tests = fx.json(&["tests", "loadCart", "--json"]);
+    let files: Vec<String> = test_rows(&tests).into_iter().map(|r| r.0).collect();
+    assert_eq!(files, vec![ACTIONS_TEST_TS.to_string()]);
+    let refs = fx.json(&["refs", "loadCart", "--all", "--json"]);
+    assert!(rows(&refs["inbound"]["call"]).contains(&row(ACTIONS_TEST_JS, 4, "call")));
+}
+
+#[test]
+fn tests_text_marks_a_row_vouched_by_its_name() {
+    let fx = Fixture::build("tests-text");
+    let text = fx.expect_ok(&["tests", "useCart"]);
+    assert_eq!(
+        text.trim_end(),
+        "tests for src/hooks/useCart.ts#useCart\n\
+         covered by 1 test file(s), 2 reference(s)\n\
+         \n\
+         src/hooks/useCart.spec.ts (test path)\n  \
+         lines: 1, 4"
+    );
+}

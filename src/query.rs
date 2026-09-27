@@ -94,6 +94,7 @@ mod refs_tables;
 mod seq;
 mod symbol;
 mod symbol_refs;
+mod test_path;
 mod ts_edges;
 mod why;
 
