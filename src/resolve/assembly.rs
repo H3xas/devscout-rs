@@ -1,4 +1,4 @@
-use super::arity::{arity_accepts, generic_args_unify, resolve_receiver_type};
+use super::arity::{arity_accepts, call_arity, generic_args_unify, resolve_receiver_type};
 use super::bus::append_bus_edges;
 use super::dispatch::append_dispatch_edges;
 use super::edges::{
@@ -231,7 +231,7 @@ pub fn resolve_graph_with_model(
                             &file_contexts,
                             *start,
                             r.member.as_deref(),
-                            r.arg_count,
+                            call_arity(r),
                         ) {
                             edges.push(Edge::uses_member(
                                 file.clone(),
@@ -729,7 +729,7 @@ pub fn resolve_graph_with_model(
                                         &index,
                                         hidx,
                                         r.member.as_deref(),
-                                        r.arg_count,
+                                        call_arity(r),
                                     ) {
                                         edges.push(Edge::uses_member(
                                             file.clone(),
@@ -849,7 +849,7 @@ pub fn resolve_graph_with_model(
                 //     possible there.
                 if !emitted {
                     if let (Some(receiver_type), Some(member), Some(arg_count)) =
-                        (&receiver_type_name, r.member.as_deref(), r.arg_count)
+                        (&receiver_type_name, r.member.as_deref(), call_arity(r))
                     {
                         let exact_key = format!("{member} {receiver_type}");
                         // The exact key misses for an extension whose
@@ -1084,7 +1084,7 @@ pub fn resolve_graph_with_model(
                                             d,
                                             member,
                                             shape,
-                                            r.arg_count,
+                                            call_arity(r),
                                             receiver_type,
                                             r.receiver_args.as_ref(),
                                             r.receiver_type.is_some(),

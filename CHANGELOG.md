@@ -61,6 +61,15 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   omit-when-not-applied rule already promised. Edges are unchanged.
 - **`map --no-semantic` always rebuilds**, so its lane record describes the current run. With no
   artifact on an unchanged tree it now prints `graph rebuilt` where it printed `graph unchanged`.
+- **A call written with an explicit type-argument list binds only an overload with that many type
+  parameters.** `configurator.AddConsumer<TConsumer, TDefinition>()` used to bind a same-named
+  `AddConsumer<T>` the receiver's interface declares, because only the value arguments were
+  counted. C# refuses that overload, and now so does the precise member check: a written list
+  binds only a method whose own overload declares that many type parameters and also accepts the
+  value arguments. Extension methods are filtered the same way, so the call binds the extension
+  class that declares `AddConsumer<T, TDefinition>` rather than one that declares only
+  `AddConsumer<T>`. A call written without a list binds as before. The fragment cache moves to
+  `fragments-v26.json`, so an existing cache re-extracts once.
 
 ## [0.8.0] - 2026-09-25
 

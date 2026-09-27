@@ -16,6 +16,7 @@ use super::text::{
     declared_name, format_segments, named_children, namespace_level_types, new_parser, text,
     type_kind_label, type_segment_parts, SegmentParts,
 };
+use super::type_arity_facts::stamp_written_type_args;
 use super::type_defs::{record_enum_members, record_type_def, record_using};
 use super::types::{Extraction, Fact};
 
@@ -409,6 +410,7 @@ fn walk<'a>(
                         invocation_lambda_arg_arity(node, src),
                         q.arity,
                     );
+                    stamp_written_type_args(&mut out.refs, node.child_by_field_name("name"));
                 }
             } else if let (Some(qn), Some(m)) = (expr_field, &member) {
                 // Unit C, chain tail: `resolve_member_qualifier` structurally
@@ -463,6 +465,7 @@ fn walk<'a>(
                             // type-argument list could sit on.
                             None,
                         );
+                        stamp_written_type_args(&mut out.refs, node.child_by_field_name("name"));
                     }
                 }
             }
@@ -516,6 +519,7 @@ fn walk<'a>(
                             invocation_lambda_arg_arity(node, src),
                             q.arity,
                         );
+                        stamp_written_type_args(&mut out.refs, binding.child_by_field_name("name"));
                     }
                 }
             }

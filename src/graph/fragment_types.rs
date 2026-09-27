@@ -164,6 +164,18 @@ pub struct FragDef {
         skip_serializing_if = "OrderedMap::is_empty"
     )]
     pub method_arities: OrderedMap<Vec<(usize, i64)>>,
+    /// Method name -> each overload's own type-parameter count, aligned
+    /// position for position with that name's `methodArities` entry (see
+    /// `extract::DefRecord::method_type_arities`), omitted when empty.
+    /// Joined the schema with the v26 cache bump. A name with no entry, or
+    /// one whose length disagrees with `methodArities`, leaves a call
+    /// written with a type-argument list on the value-only rule.
+    #[serde(
+        default,
+        rename = "methodTypeArities",
+        skip_serializing_if = "OrderedMap::is_empty"
+    )]
+    pub method_type_arities: OrderedMap<Vec<usize>>,
     /// Method name -> per-overload parameter type descriptors, one
     /// `Vec<String>` per overload in declaration order -- covers every
     /// method, public and non-public alike, same method set as
@@ -372,6 +384,15 @@ pub struct FragExtensionMethod {
     /// key otherwise), so a non-generic entry keeps four fields exactly.
     #[serde(default, rename = "thisArgs", skip_serializing_if = "Option::is_none")]
     pub this_args: Option<Vec<String>>,
+    /// The method's own type-parameter count, appended after `thisArgs`.
+    /// Joined the schema with the v26 cache bump; an absent key reads back
+    /// as unknown, which filters nothing.
+    #[serde(
+        default,
+        rename = "typeParamCount",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub type_param_count: Option<usize>,
 }
 
 /// One untyped lambda parameter's callee slot (see extract.rs's `LambdaSlot`).
@@ -595,6 +616,19 @@ pub struct FragRef {
         skip_serializing_if = "Option::is_none"
     )]
     pub lambda_arg_arity: Option<Vec<Option<usize>>>,
+    /// The length of the type-argument list written on the invoked member
+    /// itself (see extract.rs's `RefRecord`), as opposed to `typeArgCount`,
+    /// the qualifier's. Appended LAST of all, after `lambdaArgArity`,
+    /// omitted when absent. Joined the schema with the v26 cache bump: a
+    /// v25 fragment read back carries none, so a call written with a
+    /// type-argument list would keep binding an overload of another
+    /// type-parameter count.
+    #[serde(
+        default,
+        rename = "methodTypeArgCount",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub method_type_arg_count: Option<usize>,
 }
 
 pub(crate) fn is_false(b: &bool) -> bool {

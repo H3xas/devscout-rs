@@ -46,6 +46,7 @@ pub fn fragment_from_extraction(e: &extract::Extraction) -> Fragment {
                         arity_min: e.arity_min,
                         arity_max: e.arity_max,
                         this_args: e.this_args.clone(),
+                        type_param_count: Some(e.type_param_count),
                     })
                     .collect(),
                 bases: d.bases.clone(),
@@ -96,6 +97,13 @@ pub fn fragment_from_extraction(e: &extract::Extraction) -> Fragment {
                     let mut m = OrderedMap::new();
                     for (name, ranges) in &d.method_arities {
                         m.insert(name.clone(), ranges.clone());
+                    }
+                    m
+                },
+                method_type_arities: {
+                    let mut m = OrderedMap::new();
+                    for (name, counts) in &d.method_type_arities {
+                        m.insert(name.clone(), counts.clone());
                     }
                     m
                 },
@@ -176,6 +184,7 @@ pub fn fragment_from_extraction(e: &extract::Extraction) -> Fragment {
                 }),
                 receiver_nullable: r.receiver_nullable,
                 lambda_arg_arity: r.lambda_arg_arity.clone(),
+                method_type_arg_count: r.method_type_arg_count,
             })
             .collect(),
         names: e
@@ -264,6 +273,7 @@ pub fn markup_fragment(root: &Path, rel: &str) -> Option<Fragment> {
                 method_return_args: OrderedMap::new(),
                 non_public_methods: Vec::new(),
                 method_arities: OrderedMap::new(),
+                method_type_arities: OrderedMap::new(),
                 method_params: OrderedMap::new(),
                 override_methods: Vec::new(),
                 base_type_args: OrderedMap::new(),
@@ -302,6 +312,7 @@ pub fn markup_fragment(root: &Path, rel: &str) -> Option<Fragment> {
                 receiver_lambda: None,
                 receiver_nullable: false,
                 lambda_arg_arity: None,
+                method_type_arg_count: None,
             })
             .collect(),
         names: facts

@@ -149,6 +149,12 @@ pub struct DefRecord {
     /// extension tier. A read (no `argCount`) never consults this table.
     /// Appended LAST of all, after `non_public_methods`.
     pub method_arities: Vec<(String, Vec<(usize, i64)>)>,
+    /// Method name -> each overload's own type-parameter count, one entry
+    /// per overload in the same order and with the same length as that
+    /// name's `method_arities` entry, so position k of both lists describes
+    /// the same overload. The enclosing type's own type parameters never
+    /// count.
+    pub method_type_arities: Vec<(String, Vec<usize>)>,
     /// Method name -> per-overload parameter type descriptors (see
     /// `type_descriptor`), one `Vec<String>` per overload in declaration
     /// order -- covers EVERY `method_declaration`, public and non-public
@@ -280,6 +286,9 @@ pub struct ExtensionMethod {
     /// A position naming one of the method's or the enclosing class's own type
     /// parameters is recorded as "*" (wildcard).
     pub this_args: Option<Vec<String>>,
+    /// The method's own type-parameter count (`M<T, U>(this I x)` is 2);
+    /// the enclosing class's never count.
+    pub type_param_count: usize,
 }
 
 /// Represents `RefRecord`.
@@ -420,6 +429,12 @@ pub struct RefRecord {
     /// lets the resolver judge, rather than assume). Appended LAST of all,
     /// after `receiver_nullable`.
     pub lambda_arg_arity: Option<Vec<Option<usize>>>,
+    /// The length of the type-argument list written on the invoked member
+    /// itself (`x.M<A, B>()` records 2), as opposed to `type_arg_count`,
+    /// which belongs to the qualifier. `None` when the member carries no
+    /// list, including every read: C# infers type arguments there, so the
+    /// resolver has no count to hold a candidate to.
+    pub method_type_arg_count: Option<usize>,
 }
 
 /// Represents `UsingRecord`.

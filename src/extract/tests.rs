@@ -20,6 +20,7 @@ mod fqn;
 mod generic_arity;
 mod lambda_slot_fact;
 mod method_params_fact;
+mod method_type_arity_facts;
 mod misc_ref_edge_cases;
 mod names_list;
 mod outer_types_stack;

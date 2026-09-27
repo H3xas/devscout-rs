@@ -1,4 +1,4 @@
-use super::arity::{base_arity, method_arity_admits, resolve_ref_by_arity};
+use super::arity::{base_arity, call_arity, method_call_admits, resolve_ref_by_arity, CallArity};
 use super::index::{name_probe, DefIndex};
 use super::ladder::Resolution;
 use super::lambda_arity::lambda_arity_admits;
@@ -8,17 +8,18 @@ use crate::graph::FragRef;
 use std::collections::{HashMap, HashSet};
 
 // The def's member lists, unioned: methods ∪ properties ∪ fields for a READ
-// (`arg_count == None`), which is what lets a static PROPERTY access
+// (`call == None`), which is what lets a static PROPERTY access
 // (MessageUrn.Prefix) and a const/static FIELD access earn an edge on the
 // same evidence a static method call already did.
 //
-// A CALL (`arg_count == Some(n)`) is narrower on both axes: properties and
+// A CALL (`call == Some(..)`) is narrower on both axes: properties and
 // fields never satisfy a call (the rule `member_vouched`'s own
 // Call/Read split already enforces for the scored tier; this is where the
 // PRECISE tier gains it too), and `methods` alone is not enough either -- the
-// name must ALSO have an overload whose own arity range admits `n`
-// (`method_arity_admits`), or this answers `false` exactly as it would for a
-// name this def never declares at all. That is what lets tier (f)/the scored
+// name must ALSO have an overload whose own arity range admits the value
+// count, and whose own type-parameter count matches a written type-argument
+// list (`method_call_admits`), or this answers `false` exactly as it would
+// for a name this def never declares at all. That is what lets tier (f)/the scored
 // tier run when a same-named instance member exists but at the WRONG
 // signature: the precise tier's own callers read `false` here as "nothing
 // declared", never mark the ref `emitted`, and every later tier proceeds
@@ -27,13 +28,13 @@ pub(super) fn declares_member(
     index: &DefIndex,
     idx: usize,
     member: Option<&str>,
-    arg_count: Option<usize>,
+    call: Option<CallArity>,
 ) -> bool {
     let Some(member) = member else { return false };
-    match arg_count {
-        Some(n) => {
+    match call {
+        Some(call) => {
             index.defs[idx].methods.iter().any(|m| m == member)
-                && method_arity_admits(index, idx, member, n)
+                && method_call_admits(index, idx, member, call)
         }
         None => {
             index.defs[idx].methods.iter().any(|m| m == member)
@@ -50,7 +51,7 @@ pub(super) fn declares_member(
 // already carry every accessibility with no filter of their own (see
 // `DefRecord::properties`), so `methods` is the only list this widens, and
 // the SAME arity gate applies to a non-public method: a
-// call whose `arg_count` no non-public overload admits is exactly as
+// call whose shape no non-public overload admits is exactly as
 // undeclared as one whose PUBLIC overloads all decline. Read ONLY where the
 // SITE is inside the hierarchy the member lookup is walking:
 // `base_member_declared` (a `base.` qualifier never considers anything but
@@ -65,9 +66,9 @@ pub(super) fn declares_member_any_visibility(
     index: &DefIndex,
     idx: usize,
     member: Option<&str>,
-    arg_count: Option<usize>,
+    call: Option<CallArity>,
 ) -> bool {
-    if declares_member(index, idx, member, arg_count) {
+    if declares_member(index, idx, member, call) {
         return true;
     }
     let Some(member) = member else { return false };
@@ -78,8 +79,8 @@ pub(super) fn declares_member_any_visibility(
     {
         return false;
     }
-    match arg_count {
-        Some(n) => method_arity_admits(index, idx, member, n),
+    match call {
+        Some(call) => method_call_admits(index, idx, member, call),
         None => true,
     }
 }
@@ -98,9 +99,9 @@ pub(super) fn declares_here_for_ref(
     this_shaped: bool,
 ) -> bool {
     let visible = if this_shaped {
-        declares_member_any_visibility(index, idx, r.member.as_deref(), r.arg_count)
+        declares_member_any_visibility(index, idx, r.member.as_deref(), call_arity(r))
     } else {
-        declares_member(index, idx, r.member.as_deref(), r.arg_count)
+        declares_member(index, idx, r.member.as_deref(), call_arity(r))
     };
     visible
         && lambda_arity_admits(
@@ -275,7 +276,7 @@ pub(super) fn inherited_member_declared(
     r: &FragRef,
 ) -> bool {
     inheritance_walk_matches(index, file_contexts, start, |idx| {
-        declares_member(index, idx, r.member.as_deref(), r.arg_count)
+        declares_member(index, idx, r.member.as_deref(), call_arity(r))
             && lambda_arity_admits(
                 index,
                 file_contexts,
@@ -439,7 +440,7 @@ pub(super) fn first_base_declaring(
 // depth) and `declares_member_any_visibility` (a `base.` site is, by
 // construction, lexically inside the hierarchy it is walking, so a protected
 // or internal member is exactly as reachable as a public one), arity-gated
-// by the ref's own `arg_count` exactly like the
+// by the ref's own call shape exactly like the
 // typed-receiver walk below. `None` is the ordinary external-receiver
 // answer to the caller, never a candidate for a scored guess.
 pub(super) fn base_member_declared(
@@ -447,10 +448,10 @@ pub(super) fn base_member_declared(
     file_contexts: &HashMap<String, FileContext>,
     start: usize,
     member: Option<&str>,
-    arg_count: Option<usize>,
+    call: Option<CallArity>,
 ) -> Option<usize> {
     first_base_declaring(index, file_contexts, start, true, |index, idx| {
-        declares_member_any_visibility(index, idx, member, arg_count)
+        declares_member_any_visibility(index, idx, member, call)
     })
 }
 
@@ -478,7 +479,7 @@ pub(super) fn base_member_declared(
 // `declares_member_any_visibility`, `false` keeps the public-only
 // `declares_member`, so a receiver typed by anything OTHER than the
 // enclosing type can only ever bind to a member C# would let it see from
-// outside. `r`'s own call-shape facts (`arg_count` and `lambda_arg_arity`)
+// outside. `r`'s own call-shape facts (`call_arity` and `lambda_arg_arity`)
 // gate every base the walk visits, exactly like they gate `start` itself in
 // `declares_here_for_ref`: a base that declares the name at the wrong
 // arity, or whose overload's delegate parameter a call's own delegate
@@ -506,9 +507,9 @@ pub(super) fn typed_receiver_base_member(
     let skip_interfaces = index.defs[start].kind != "interface";
     let admits = |index: &DefIndex, idx: usize| {
         let visible = if any_visibility {
-            declares_member_any_visibility(index, idx, r.member.as_deref(), r.arg_count)
+            declares_member_any_visibility(index, idx, r.member.as_deref(), call_arity(r))
         } else {
-            declares_member(index, idx, r.member.as_deref(), r.arg_count)
+            declares_member(index, idx, r.member.as_deref(), call_arity(r))
         };
         visible
             && lambda_arity_admits(

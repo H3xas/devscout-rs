@@ -23,6 +23,7 @@ mod lambda_parameters;
 mod level_walk_reach;
 mod member_hiding;
 mod member_qualifiers;
+mod method_type_arity;
 mod nested_end_to_end;
 mod nested_step;
 mod project_admission;
@@ -61,6 +62,7 @@ fn def(id: &str, name: &str, ns: &str, kind: &str) -> FragDef {
         method_return_args: crate::graph::OrderedMap::new(),
         non_public_methods: vec![],
         method_arities: crate::graph::OrderedMap::new(),
+        method_type_arities: OrderedMap::new(),
         method_params: crate::graph::OrderedMap::new(),
         override_methods: vec![],
         base_type_args: crate::graph::OrderedMap::new(),
@@ -83,6 +85,7 @@ fn ext_def(id: &str, name: &str, ns: &str, extensions: &[(&str, &str, usize, i64
                 arity_min: *lo,
                 arity_max: *hi,
                 this_args: None,
+                type_param_count: None,
             })
             .collect(),
         ..def(id, name, ns, "class")
@@ -133,6 +136,7 @@ fn type_ref(kind: &str, name: &str, qualified: Option<&str>, ns: &str) -> FragRe
         receiver_lambda: None,
         receiver_nullable: false,
         lambda_arg_arity: None,
+        method_type_arg_count: None,
     }
 }
 
@@ -160,6 +164,7 @@ fn member_ref(name: &str, qualified: Option<&str>, member: &str, ns: &str) -> Fr
         receiver_lambda: None,
         receiver_nullable: false,
         lambda_arg_arity: None,
+        method_type_arg_count: None,
     }
 }
 

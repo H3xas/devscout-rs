@@ -54,6 +54,7 @@ mod text;
 mod ts_fragment;
 mod ts_fragment_types;
 mod ts_purpose;
+mod type_arity_facts;
 mod type_defs;
 mod types;
 mod walk;
