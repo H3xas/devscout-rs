@@ -483,6 +483,7 @@ fn imports_edge_is_recorded_regardless_of_whether_the_target_is_known() {
                 receiver_nullable: false,
                 lambda_arg_arity: None,
                 method_type_arg_count: None,
+                lambda_arg_shape: None,
             }],
         ),
     )];
@@ -538,6 +539,7 @@ fn ambiguous_pct_only_counts_type_ref_attempts_not_uses_member_or_imports() {
                         receiver_nullable: false,
                         lambda_arg_arity: None,
                         method_type_arg_count: None,
+                        lambda_arg_shape: None,
                     },
                 ],
             ),

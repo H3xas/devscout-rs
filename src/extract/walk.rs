@@ -4,6 +4,7 @@ use tree_sitter::Node;
 
 use super::bus::{array_message_bases, nested_base_type_args, publish_fact};
 use super::bus_vocab::{handler_registration_fact, property_message_args};
+use super::lambda_shape::stamp_lambda_arg_shape;
 use super::qualifiers::{
     member_name_text, resolve_call_chain_tail, resolve_member_qualifier, Scope, MEMBER_SCOPE_NODES,
 };
@@ -411,6 +412,7 @@ fn walk<'a>(
                         q.arity,
                     );
                     stamp_written_type_args(&mut out.refs, node.child_by_field_name("name"));
+                    stamp_lambda_arg_shape(&mut out.refs, node);
                 }
             } else if let (Some(qn), Some(m)) = (expr_field, &member) {
                 // Unit C, chain tail: `resolve_member_qualifier` structurally
@@ -466,6 +468,7 @@ fn walk<'a>(
                             None,
                         );
                         stamp_written_type_args(&mut out.refs, node.child_by_field_name("name"));
+                        stamp_lambda_arg_shape(&mut out.refs, node);
                     }
                 }
             }
@@ -520,6 +523,7 @@ fn walk<'a>(
                             q.arity,
                         );
                         stamp_written_type_args(&mut out.refs, binding.child_by_field_name("name"));
+                        stamp_lambda_arg_shape(&mut out.refs, node);
                     }
                 }
             }

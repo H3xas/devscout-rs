@@ -45,6 +45,7 @@ mod bus_vocab;
 mod delegate_args;
 mod dump;
 mod json;
+mod lambda_shape;
 mod lambdas;
 mod members;
 mod qualifiers;
@@ -56,6 +57,7 @@ mod ts_fragment_types;
 mod ts_purpose;
 mod type_arity_facts;
 mod type_defs;
+mod type_param_sites;
 mod types;
 mod walk;
 
@@ -69,8 +71,9 @@ pub use ts_purpose::{
     compose_hybrid_ts_purpose, extract_ts_purpose, extract_ts_purpose_with_heuristic,
 };
 pub use types::{
-    DefRecord, EnclosingCallFact, ExtensionMethod, Extraction, Fact, HandlerRegistrationRecord,
-    LambdaSlot, NameRecord, PublishRecord, RefRecord, RegistrationRecord, UsingRecord,
+    DefRecord, DelegateSignature, EnclosingCallFact, ExtensionMethod, Extraction, Fact,
+    HandlerRegistrationRecord, LambdaShape, LambdaSlot, NameRecord, OverloadTypeParamSites,
+    PublishRecord, RefRecord, RegistrationRecord, UsingRecord,
 };
 pub use walk::extract;
 

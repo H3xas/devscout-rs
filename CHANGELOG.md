@@ -70,6 +70,19 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   class that declares `AddConsumer<T, TDefinition>` rather than one that declares only
   `AddConsumer<T>`. A call written without a list binds as before. The fragment cache moves to
   `fragments-v26.json`, so an existing cache re-extracts once.
+- **A lambda argument binds only an overload it can convert to.** `list.Any(m => m switch { ... })`
+  used to bind a same-named `Any(Action<Filter> apply)` or `Any<T>(FilterDelegate<IX<T>> filter)`
+  overload, because only the lambda's parameter count was compared with the delegate's. C# refuses
+  both, and now so does the precise member check: a lambda whose body can only produce a value
+  skips an overload whose delegate returns `void`, and a generic overload is skipped when the call
+  writes no type-argument list and one of its type parameters occurs only in the parameter types
+  of delegates that implicitly typed lambdas fill, since nothing can infer it. Every lambda
+  argument must fit the same overload. The call then binds the base type's overload that accepts
+  the lambda, and a call through a property (`harness.Sent.SelectAsync(_ => true)`) no longer binds
+  an overload the lambda cannot convert to. A statement-bodied lambda, an explicitly typed one, a
+  call with a written type-argument list, and a type parameter another argument or the delegate's
+  return can fix bind as before. The fragment cache moves to `fragments-v27.json`, so an existing
+  cache re-extracts once.
 
 ## [0.8.0] - 2026-09-25
 

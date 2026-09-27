@@ -1,6 +1,7 @@
 use super::arity::{
     arity_accepts, base_arity, generic_args_unify, resolve_ref_by_arity, CallArity,
 };
+use super::delegate_shape::delegate_shape;
 use super::index::{name_probe, DefIndex, MethodOverloadParams};
 use super::ladder::{resolve_ref, Resolution};
 use super::members::{
@@ -190,7 +191,7 @@ pub(super) fn bare_receiver_field_or_property_type(
 // a descriptor that names something this resolver can look up.
 // `Func<Options,bool>` is `Func`, `Options[]` is `Options`; the descriptor
 // for an unknown shape is `?`, whose head is empty.
-fn descriptor_head(text: &str) -> &str {
+pub(super) fn descriptor_head(text: &str) -> &str {
     let end = text.find(['<', '[', '?']).unwrap_or(text.len());
     &text[..end]
 }
@@ -200,7 +201,7 @@ fn descriptor_head(text: &str) -> &str {
 // rather than three. Empty when the descriptor carries no argument list at
 // all; the descriptors this reads are written without spaces (see
 // `FragDef::method_params`), so no trimming is needed.
-fn descriptor_args(text: &str) -> Vec<String> {
+pub(super) fn descriptor_args(text: &str) -> Vec<String> {
     let Some(open) = text.find('<') else {
         return Vec::new();
     };
@@ -227,18 +228,8 @@ fn descriptor_args(text: &str) -> Vec<String> {
 }
 
 // The PARAMETER LIST of the delegate a parameter descriptor names, which is
-// where an untyped lambda's own parameter types are written down. The three
-// BCL delegate shapes are read structurally -- `Action<A,B>` takes its
-// arguments as they stand, `Func<A,B,R>` drops the return type, `Predicate<A>`
-// takes its single argument -- because no in-graph def declares them. Any
-// other head is a name: resolved under the DECLARING file's context (the
-// descriptor is a bare identifier, and only that file's usings, aliases and
-// nesting say what it meant) and answered only when it lands on a `delegate`
-// def, whose own list this reader keeps under `Invoke`.
-//
-// An ARRAY of delegates is not a delegate (`Action<Options>[]` takes a
-// collection, never a lambda), so a descriptor that ends in brackets answers
-// nothing at all.
+// where an untyped lambda's own parameter types are written down (see
+// `delegate_shape` for the shapes it reads).
 pub(super) fn delegate_parameters(
     text: &str,
     index: &DefIndex,
@@ -246,77 +237,7 @@ pub(super) fn delegate_parameters(
     declaring_def: usize,
     declaring_file: &str,
 ) -> Option<Vec<String>> {
-    if text.ends_with(']') {
-        return None;
-    }
-    // `Expression<Func<Options,bool>>` is the expression-tree wrapper the LINQ
-    // shapes are written with; the delegate inside it is what the lambda binds
-    // to. Unwrapped exactly ONCE -- a doubly-wrapped expression is not a shape
-    // C# accepts a lambda for, and unwrapping again would invent a binding.
-    let args = descriptor_args(text);
-    if descriptor_head(text) == "Expression" && args.len() == 1 {
-        return delegate_invoke_parameters(
-            &args[0],
-            index,
-            file_contexts,
-            declaring_def,
-            declaring_file,
-        );
-    }
-    delegate_invoke_parameters(text, index, file_contexts, declaring_def, declaring_file)
-}
-
-// `delegate_parameters` minus the expression-tree unwrap -- split out so the
-// unwrap can never run twice.
-fn delegate_invoke_parameters(
-    text: &str,
-    index: &DefIndex,
-    file_contexts: &HashMap<String, FileContext>,
-    declaring_def: usize,
-    declaring_file: &str,
-) -> Option<Vec<String>> {
-    if text.ends_with(']') {
-        return None;
-    }
-    let head = descriptor_head(text);
-    let args = descriptor_args(text);
-    match head {
-        "Action" if !args.is_empty() => Some(args),
-        "Func" if args.len() >= 2 => {
-            let mut params = args;
-            params.pop();
-            Some(params)
-        }
-        "Predicate" if args.len() == 1 => Some(args),
-        "Action" | "Func" | "Predicate" | "" => None,
-        _ => {
-            let ctx = file_contexts.get(declaring_file)?;
-            let def = &index.defs[declaring_def];
-            let probe = name_probe(
-                head.to_string(),
-                def.namespace.as_str(),
-                def_outer_types(def),
-            );
-            let Resolution::Resolved(didx, _) = resolve_ref(
-                &probe,
-                &ctx.usings,
-                def.namespace.as_str(),
-                index,
-                &ctx.aliases,
-                file_contexts,
-            ) else {
-                return None;
-            };
-            if index.defs[didx].kind != "delegate" {
-                return None;
-            }
-            index.member_lists[didx]
-                .method_params
-                .get("Invoke")
-                .and_then(|overloads| overloads.first())
-                .map(|o| o.params.clone())
-        }
-    }
+    delegate_shape(text, index, file_contexts, declaring_def, declaring_file).map(|s| s.params)
 }
 
 // One untyped lambda parameter's type, read off the CALLEE's own declared

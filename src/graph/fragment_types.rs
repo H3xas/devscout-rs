@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::extract;
 
+use super::call_shape_types::{FragDelegateSignature, FragLambdaShape, FragOverloadSites};
 use super::ordered::OrderedMap;
 
 // ---------------------------------------------------------------------------
@@ -176,6 +177,17 @@ pub struct FragDef {
         skip_serializing_if = "OrderedMap::is_empty"
     )]
     pub method_type_arities: OrderedMap<Vec<usize>>,
+    /// Method name -> per overload, per parameter, the `[k, position]` sites
+    /// of the method's own type parameters (see
+    /// `extract::DefRecord::method_type_param_sites`), aligned with
+    /// `methodParams` and `methodTypeArities`, omitted when empty. Joined
+    /// the schema with the v27 cache bump.
+    #[serde(
+        default,
+        rename = "methodTypeParamSites",
+        skip_serializing_if = "OrderedMap::is_empty"
+    )]
+    pub method_type_param_sites: OrderedMap<Vec<FragOverloadSites>>,
     /// Method name -> per-overload parameter type descriptors, one
     /// `Vec<String>` per overload in declaration order -- covers every
     /// method, public and non-public alike, same method set as
@@ -248,6 +260,14 @@ pub struct FragDef {
         skip_serializing_if = "Vec::is_empty"
     )]
     pub array_message_bases: Vec<String>,
+    /// A `delegate` def's return and type-parameter occurrences, omitted on
+    /// every other def. Joined the schema with the v27 cache bump.
+    #[serde(
+        default,
+        rename = "delegateSignature",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub delegate_signature: Option<FragDelegateSignature>,
     #[serde(default, rename = "endLine", skip_serializing_if = "is_zero")]
     /// The end line value.
     pub end_line: usize,
@@ -629,6 +649,16 @@ pub struct FragRef {
         skip_serializing_if = "Option::is_none"
     )]
     pub method_type_arg_count: Option<usize>,
+    /// Per argument position of the same invocation, a positional lambda
+    /// literal's shape (see extract.rs's `RefRecord`). Appended LAST of
+    /// all, after `methodTypeArgCount`, omitted when absent. Joined the
+    /// schema with the v27 cache bump.
+    #[serde(
+        default,
+        rename = "lambdaArgShape",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub lambda_arg_shape: Option<Vec<Option<FragLambdaShape>>>,
 }
 
 pub(crate) fn is_false(b: &bool) -> bool {

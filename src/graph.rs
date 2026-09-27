@@ -3,7 +3,7 @@
 // a mismatch makes reuse break silently.
 //
 // This module owns every serde struct for graph.json + the fragments-cache
-// pair (fragments-v26.json, fragments-index-v26.json), plus their path resolution,
+// pair (fragments-v27.json, fragments-index-v27.json), plus their path resolution,
 // atomic I/O, and the cache-then-resolve-then-write orchestration
 // (`rebuild_graph`). The pure resolution ladder that
 // turns fragments into `defs`/`edges` lives in `resolve.rs` and returns the
@@ -78,6 +78,7 @@
 
 mod artifact;
 mod cache;
+mod call_shape_types;
 mod compiler_facts;
 mod def;
 mod edge;
@@ -91,6 +92,7 @@ mod rebuild;
 
 pub use artifact::{read_graph, Graph, GraphName, GraphUnit, Stats, GRAPH_SCHEMA_VERSION};
 pub use cache::{index_is_stale, read_fragments_index, FragmentCacheEntry};
+pub use call_shape_types::{FragDelegateSignature, FragLambdaShape};
 pub use compiler_facts::{
     admit, admit_and_publish, compiler_facts_json_path, expectations_for, locate_engine,
     read_compiler_facts, run_engine, AdmissionExpectations, AdmittedFacts, Coverage,

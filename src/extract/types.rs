@@ -155,6 +155,17 @@ pub struct DefRecord {
     /// the same overload. The enclosing type's own type parameters never
     /// count.
     pub method_type_arities: Vec<(String, Vec<usize>)>,
+    /// Method name -> per overload, per parameter, where the method's OWN
+    /// type parameters occur in that parameter's type: `(k, position)` for
+    /// the k-th own type parameter, `position` being the top-level
+    /// type-argument index it sits inside, or -1 when it sits outside every
+    /// type argument (`T seed`, `T[] items`). One `Expression<...>` wrapper
+    /// is looked through first, as the resolver reads a delegate. Aligned
+    /// with `method_params` and `method_type_arities` overload for overload
+    /// and parameter for parameter; the `*` wildcard `method_params` writes
+    /// cannot tell a method's own type parameter from its type's, and this
+    /// can.
+    pub method_type_param_sites: Vec<(String, Vec<OverloadTypeParamSites>)>,
     /// Method name -> per-overload parameter type descriptors (see
     /// `type_descriptor`), one `Vec<String>` per overload in declaration
     /// order -- covers EVERY `method_declaration`, public and non-public
@@ -207,8 +218,36 @@ pub struct DefRecord {
     /// structural, off the rendered descriptor, and never loses the
     /// bracket. Appended LAST of all, after `property_message_args`.
     pub array_message_bases: Vec<String>,
+    /// A `delegate` def's own signature beyond its parameter list; `None`
+    /// for every other kind.
+    pub delegate_signature: Option<DelegateSignature>,
     /// 1-based last line of the complete declaration node.
     pub end_line: usize,
+}
+
+/// One overload's own-type-parameter sites, one list per parameter.
+pub type OverloadTypeParamSites = Vec<Vec<(usize, i64)>>;
+
+/// A delegate's return descriptor (`void` written out) and, per own type
+/// parameter in declaration order, where it occurs: `params`, `return`,
+/// `both` or `none`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DelegateSignature {
+    /// The `Invoke` return type, rendered like a parameter descriptor.
+    pub returns: String,
+    /// Per own type parameter: `params`, `return`, `both` or `none`.
+    pub type_params: Vec<String>,
+}
+
+/// What the syntax settles about one lambda-literal argument.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LambdaShape {
+    /// The body can only produce a value, so C# never converts the lambda
+    /// to a delegate returning `void`.
+    pub value_only: bool,
+    /// No parameter carries a written type, so type inference learns
+    /// nothing from the parameters.
+    pub implicitly_typed: bool,
 }
 
 /// One message-bus publish-site fact: an invocation handing a message
@@ -435,6 +474,11 @@ pub struct RefRecord {
     /// list, including every read: C# infers type arguments there, so the
     /// resolver has no count to hold a candidate to.
     pub method_type_arg_count: Option<usize>,
+    /// Per argument position of the same invocation `lambda_arg_arity`
+    /// reads, the shape of a positional lambda literal there (`None` at
+    /// every other position), or `None` entirely when no position holds
+    /// one.
+    pub lambda_arg_shape: Option<Vec<Option<LambdaShape>>>,
 }
 
 /// Represents `UsingRecord`.

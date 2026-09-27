@@ -10,9 +10,8 @@ use super::ladder::{
     type_qualifier_arm_admits, Admission, Narrowed, Resolution, Via,
 };
 use super::members::{
-    base_member_declared, declares_here_for_ref, declares_member, extension_closure_key,
-    inherited_member_declared, member_shape, member_vouched, typed_receiver_base_member,
-    typed_receiver_precise_target,
+    base_member_declared, declares_here_for_ref, extension_closure_key, inherited_member_declared,
+    member_shape, member_vouched, typed_receiver_base_member, typed_receiver_precise_target,
 };
 use super::provenance::{self, Step};
 use super::reach::attach_reach;
@@ -725,12 +724,8 @@ pub fn resolve_graph_with_model(
                                 if let Resolution::Resolved(hidx, _) =
                                     resolve_ref(&hop, usings, ns, &index, aliases, &file_contexts)
                                 {
-                                    if declares_member(
-                                        &index,
-                                        hidx,
-                                        r.member.as_deref(),
-                                        call_arity(r),
-                                    ) {
+                                    if declares_here_for_ref(&index, &file_contexts, hidx, r, false)
+                                    {
                                         edges.push(Edge::uses_member(
                                             file.clone(),
                                             r.line,
