@@ -19,6 +19,7 @@ mod extension_generics;
 mod extension_tier;
 mod graph_invariants;
 mod ladder;
+mod lambda_applicability;
 mod lambda_parameters;
 mod level_walk_reach;
 mod member_hiding;
@@ -63,11 +64,13 @@ fn def(id: &str, name: &str, ns: &str, kind: &str) -> FragDef {
         non_public_methods: vec![],
         method_arities: crate::graph::OrderedMap::new(),
         method_type_arities: OrderedMap::new(),
+        method_type_param_sites: OrderedMap::new(),
         method_params: crate::graph::OrderedMap::new(),
         override_methods: vec![],
         base_type_args: crate::graph::OrderedMap::new(),
         property_message_args: Vec::new(),
         array_message_bases: Vec::new(),
+        delegate_signature: None,
         end_line: 0,
     }
 }
@@ -137,6 +140,7 @@ fn type_ref(kind: &str, name: &str, qualified: Option<&str>, ns: &str) -> FragRe
         receiver_nullable: false,
         lambda_arg_arity: None,
         method_type_arg_count: None,
+        lambda_arg_shape: None,
     }
 }
 
@@ -165,6 +169,7 @@ fn member_ref(name: &str, qualified: Option<&str>, member: &str, ns: &str) -> Fr
         receiver_nullable: false,
         lambda_arg_arity: None,
         method_type_arg_count: None,
+        lambda_arg_shape: None,
     }
 }
 

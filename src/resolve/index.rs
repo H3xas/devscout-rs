@@ -1,5 +1,6 @@
 use crate::graph::{
-    AlsoIn, Def, FragDef, FragExtensionMethod, FragFact, FragRef, Fragment, OrderedMap,
+    AlsoIn, Def, FragDef, FragDelegateSignature, FragExtensionMethod, FragFact, FragRef, Fragment,
+    OrderedMap,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -173,6 +174,9 @@ pub struct MemberLists {
     /// resolver's member-level `overrides` pass, itself run only for a type
     /// already known to be a registered DI implementation.
     pub override_methods: Vec<String>,
+    /// A `delegate` def's return and type-parameter occurrences (see
+    /// `FragDef.delegate_signature`), from its one declaration.
+    pub delegate_signature: Option<FragDelegateSignature>,
 }
 
 /// One method overload's parameter-descriptor list plus its declaring file.
@@ -185,6 +189,58 @@ pub struct MethodOverloadParams {
     pub params: Vec<String>,
     /// The fragment-relative file path that declared this overload.
     pub file: String,
+    /// The overload's own type parameters, when its fragment recorded both
+    /// their count and their sites aligned with `params`.
+    pub type_params: Option<OwnTypeParams>,
+}
+
+/// One overload's own type parameters: its count from
+/// `FragDef.method_type_arities`, and per parameter the `(k, position)` sites
+/// from `FragDef.method_type_param_sites`, every `k` below `count`.
+#[derive(Clone, PartialEq, Eq)]
+pub struct OwnTypeParams {
+    /// The overload's own type-parameter count.
+    pub count: usize,
+    /// Per parameter, where each own type parameter occurs.
+    pub sites: Vec<Vec<(usize, i64)>>,
+}
+
+// One declaring part's overloads for every method name, each paired with its
+// own type-parameter facts at the same position. A name whose counts or sites
+// are missing, or of another length than its descriptors, pairs nothing, so a
+// fact the extractor did not record never narrows a binding.
+fn overloads_of(d: &FragDef, file: &str) -> Vec<(String, Vec<MethodOverloadParams>)> {
+    d.method_params
+        .iter()
+        .map(|(name, overloads)| {
+            let counts = d
+                .method_type_arities
+                .get(name)
+                .filter(|c| c.len() == overloads.len());
+            let sites = d
+                .method_type_param_sites
+                .get(name)
+                .filter(|s| s.len() == overloads.len());
+            let entries = overloads
+                .iter()
+                .enumerate()
+                .map(|(k, params)| MethodOverloadParams {
+                    params: params.clone(),
+                    file: file.to_string(),
+                    type_params: counts.zip(sites).and_then(|(counts, sites)| {
+                        let (count, sites) = (counts[k], &sites[k]);
+                        (sites.len() == params.len()
+                            && sites.iter().flatten().all(|&(tp, _)| tp < count))
+                        .then(|| OwnTypeParams {
+                            count,
+                            sites: sites.clone(),
+                        })
+                    }),
+                })
+                .collect();
+            (name.clone(), entries)
+        })
+        .collect()
 }
 
 #[allow(
@@ -298,23 +354,9 @@ pub(super) fn build_def_index(fragments_by_file: &[(String, Fragment)]) -> DefIn
                         method_arities: d.method_arities.clone(),
                         overload_counts: OrderedMap::new(),
                         unpaired_overload_names: Vec::new(),
-                        method_params: {
-                            let mut m: HashMap<String, Vec<MethodOverloadParams>> = HashMap::new();
-                            for (name, overloads) in d.method_params.iter() {
-                                m.insert(
-                                    name.clone(),
-                                    overloads
-                                        .iter()
-                                        .map(|params| MethodOverloadParams {
-                                            params: params.clone(),
-                                            file: file.clone(),
-                                        })
-                                        .collect(),
-                                );
-                            }
-                            m
-                        },
+                        method_params: overloads_of(d, file).into_iter().collect(),
                         override_methods: d.override_methods.clone(),
+                        delegate_signature: d.delegate_signature.clone(),
                     });
                     pair_overload_counts(&mut member_lists[idx], d);
                     for e in &d.extension_methods {
@@ -453,19 +495,16 @@ pub(super) fn build_def_index(fragments_by_file: &[(String, Fragment)]) -> DefIn
                     pair_overload_counts(&mut member_lists[idx], d);
                     // A UNION per NAME, same as `method_arities` just above:
                     // every declaring part's overloads are admitted, an
-                    // overload whose `params` list a merged entry already
-                    // holds skipped -- first file wins for that duplicate.
-                    for (name, overloads) in d.method_params.iter() {
-                        let merged = member_lists[idx]
-                            .method_params
-                            .entry(name.clone())
-                            .or_default();
-                        for params in overloads {
-                            if !merged.iter().any(|o| &o.params == params) {
-                                merged.push(MethodOverloadParams {
-                                    params: params.clone(),
-                                    file: file.clone(),
-                                });
+                    // overload whose `params` list and own type-parameter
+                    // facts a merged entry already holds skipped -- first
+                    // file wins for that duplicate.
+                    for (name, overloads) in overloads_of(d, file) {
+                        let merged = member_lists[idx].method_params.entry(name).or_default();
+                        for overload in overloads {
+                            if !merged.iter().any(|o| {
+                                o.params == overload.params && o.type_params == overload.type_params
+                            }) {
+                                merged.push(overload);
                             }
                         }
                     }
@@ -576,5 +615,6 @@ pub(super) fn name_probe(name: String, namespace: &str, outer_types: Vec<String>
         receiver_nullable: false,
         lambda_arg_arity: None,
         method_type_arg_count: None,
+        lambda_arg_shape: None,
     }
 }

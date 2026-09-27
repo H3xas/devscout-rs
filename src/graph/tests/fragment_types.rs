@@ -62,11 +62,13 @@ fn frag_def_with_bases(
         non_public_methods: Vec::new(),
         method_arities: OrderedMap::new(),
         method_type_arities: OrderedMap::new(),
+        method_type_param_sites: OrderedMap::new(),
         method_params: OrderedMap::new(),
         override_methods: Vec::new(),
         base_type_args: OrderedMap::new(),
         property_message_args: Vec::new(),
         array_message_bases: Vec::new(),
+        delegate_signature: None,
         test_methods: Vec::new(),
         end_line: 0,
     }
@@ -315,6 +317,7 @@ fn frag_ref(generic: bool, receiver_type: Option<&str>, arg_count: Option<usize>
         receiver_nullable: false,
         lambda_arg_arity: None,
         method_type_arg_count: None,
+        lambda_arg_shape: None,
     }
 }
 

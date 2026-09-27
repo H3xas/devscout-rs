@@ -103,14 +103,7 @@ pub(super) fn declares_here_for_ref(
     } else {
         declares_member(index, idx, r.member.as_deref(), call_arity(r))
     };
-    visible
-        && lambda_arity_admits(
-            index,
-            file_contexts,
-            idx,
-            r.member.as_deref(),
-            r.lambda_arg_arity.as_deref(),
-        )
+    visible && lambda_arity_admits(index, file_contexts, idx, r.member.as_deref(), r)
 }
 
 // Tier (e)'s own resolved-receiver-to-target step: the `Nullable<T>` veto,
@@ -277,13 +270,7 @@ pub(super) fn inherited_member_declared(
 ) -> bool {
     inheritance_walk_matches(index, file_contexts, start, |idx| {
         declares_member(index, idx, r.member.as_deref(), call_arity(r))
-            && lambda_arity_admits(
-                index,
-                file_contexts,
-                idx,
-                r.member.as_deref(),
-                r.lambda_arg_arity.as_deref(),
-            )
+            && lambda_arity_admits(index, file_contexts, idx, r.member.as_deref(), r)
     })
 }
 
@@ -479,12 +466,12 @@ pub(super) fn base_member_declared(
 // `declares_member_any_visibility`, `false` keeps the public-only
 // `declares_member`, so a receiver typed by anything OTHER than the
 // enclosing type can only ever bind to a member C# would let it see from
-// outside. `r`'s own call-shape facts (`call_arity` and `lambda_arg_arity`)
-// gate every base the walk visits, exactly like they gate `start` itself in
-// `declares_here_for_ref`: a base that declares the name at the wrong
-// arity, or whose overload's delegate parameter a call's own delegate
-// argument cannot fill, is skipped exactly like one that does not declare
-// it at all.
+// outside. `r`'s own call-shape facts (`call_arity` and the lambda facts
+// `lambda_arity_admits` reads) gate every base the walk visits, exactly like
+// they gate `start` itself in `declares_here_for_ref`: a base that declares
+// the name at the wrong arity, or with no overload a call's own lambda
+// arguments can convert to, is skipped exactly like one that does not
+// declare it at all.
 //
 // An interface closure can reach the same member name along more than one
 // path, and the first declaration in walk order is not always the one C#
@@ -511,14 +498,7 @@ pub(super) fn typed_receiver_base_member(
         } else {
             declares_member(index, idx, r.member.as_deref(), call_arity(r))
         };
-        visible
-            && lambda_arity_admits(
-                index,
-                file_contexts,
-                idx,
-                r.member.as_deref(),
-                r.lambda_arg_arity.as_deref(),
-            )
+        visible && lambda_arity_admits(index, file_contexts, idx, r.member.as_deref(), r)
     };
     if skip_interfaces || r.arg_count.is_some() {
         return first_base_declaring(index, file_contexts, start, skip_interfaces, admits);

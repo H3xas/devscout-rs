@@ -289,6 +289,24 @@ pub(super) fn def_to_json(d: &DefRecord) -> Json {
             ),
         ));
     }
+    // Appended LAST of all, after methodReturnArgs, on a delegate only.
+    if let Some(sig) = &d.delegate_signature {
+        fields.push((
+            "delegateSignature",
+            Json::Obj(vec![
+                ("returns", Json::Str(sig.returns.clone())),
+                (
+                    "typeParams",
+                    Json::Arr(
+                        sig.type_params
+                            .iter()
+                            .map(|u| Json::Str(u.clone()))
+                            .collect(),
+                    ),
+                ),
+            ]),
+        ));
+    }
     Json::Obj(fields)
 }
 
@@ -407,6 +425,21 @@ fn ref_to_json(r: &RefRecord) -> Json {
     // Appended LAST of all, and only when the member carried a written list.
     if let Some(count) = r.method_type_arg_count {
         fields.push(("methodTypeArgCount", Json::Num(count)));
+    }
+    // Appended LAST of all, after methodTypeArgCount: one entry per argument
+    // position, null where no positional lambda literal sits.
+    if let Some(shapes) = &r.lambda_arg_shape {
+        let entries = shapes
+            .iter()
+            .map(|shape| match shape {
+                Some(s) => Json::Obj(vec![
+                    ("valueOnly", Json::Bool(s.value_only)),
+                    ("implicit", Json::Bool(s.implicitly_typed)),
+                ]),
+                None => Json::Null,
+            })
+            .collect();
+        fields.push(("lambdaArgShape", Json::Arr(entries)));
     }
     Json::Obj(fields)
 }

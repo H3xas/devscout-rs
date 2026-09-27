@@ -56,6 +56,7 @@ mod arity;
 mod assembly;
 mod bus;
 mod bus_vocab;
+mod delegate_shape;
 mod dispatch;
 mod edges;
 mod index;

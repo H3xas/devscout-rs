@@ -126,16 +126,25 @@ pub fn project_units_path(root: &Path) -> PathBuf {
 // fragment of an unchanged file carries none of them, so `x.M<A, B>()` would
 // keep binding an `M<T>` overload C# refuses, where a fresh fragment of the
 // same file binds only an overload with two type parameters.
+// v27 adds ref `lambdaArgShape` (whether each positional lambda literal's body
+// can only produce a value, and whether its parameters are implicitly typed),
+// def `methodTypeParamSites` (where each overload's own type parameters occur
+// in its parameter types, aligned with `methodParams`) and def
+// `delegateSignature` (a delegate's return and where its type parameters
+// occur). A cached v26 fragment of an unchanged file carries none of them, so
+// `list.Any(m => true)` would keep binding an `Any(Action<F>)` or an
+// uninferable `Any<T>(FilterDelegate<IX<T>>)` overload C# refuses, where a
+// fresh fragment of the same file skips both.
 // The rename IS the invalidation mechanism:
 // pre-bump caches stop being found, every file reparses
 // once, no reader carries version-compat logic. Writers delete every
 // superseded generation (see `remove_superseded_caches`).
 pub(crate) fn fragments_cache_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-v26.json")
+    graph_dir(root).join("fragments-v27.json")
 }
 
 pub(crate) fn fragments_index_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-index-v26.json")
+    graph_dir(root).join("fragments-index-v27.json")
 }
 
 // Every generation below the current one, not just the immediately previous:
@@ -192,6 +201,8 @@ pub(crate) const SUPERSEDED_CACHE_FILES: &[&str] = &[
     "fragments-index-v24.json",
     "fragments-v25.json",
     "fragments-index-v25.json",
+    "fragments-v26.json",
+    "fragments-index-v26.json",
 ];
 
 pub(crate) fn remove_superseded_caches(root: &Path) {

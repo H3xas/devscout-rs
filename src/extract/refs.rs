@@ -363,7 +363,7 @@ pub(super) fn member_qualifier_info(
 // check `invocation_arg_count` and `invocation_lambda_arg_arity` both need,
 // kept in one place so a chain window answers only for its OWN call, never
 // the one wrapping it, in exactly one way.
-fn invocation_arguments(node: Node) -> Option<Vec<Node>> {
+pub(super) fn invocation_arguments(node: Node) -> Option<Vec<Node>> {
     let parent = node.parent()?;
     if parent.kind() != "invocation_expression" {
         return None;
@@ -433,6 +433,7 @@ pub(super) fn push_ref(
         receiver_nullable: false,
         lambda_arg_arity: None,
         method_type_arg_count: None,
+        lambda_arg_shape: None,
     });
 }
 
@@ -472,6 +473,7 @@ pub(super) fn push_ctor_param_ref(
         receiver_nullable: false,
         lambda_arg_arity: None,
         method_type_arg_count: None,
+        lambda_arg_shape: None,
     });
 }
 
@@ -615,6 +617,7 @@ pub(super) fn push_member_ref(
             receiver_nullable,
             lambda_arg_arity: lambda_arg_arity.clone(),
             method_type_arg_count: None,
+            lambda_arg_shape: None,
         }),
         None => refs.push(RefRecord {
             kind: "uses-member".to_string(),
@@ -640,6 +643,7 @@ pub(super) fn push_member_ref(
             receiver_nullable,
             lambda_arg_arity,
             method_type_arg_count: None,
+            lambda_arg_shape: None,
         }),
     }
 }
