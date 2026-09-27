@@ -12,6 +12,7 @@ in exchange for that room.
 | [agentic.md](agentic.md) | The model-in-the-loop protocol: lanes, effort, arms, disclosure |
 | [results/](results/) | Dated result documents. One file per run. Never edited in place. |
 | [methodology.md § Resolver precision](methodology.md#resolver-precision) | Per-edge precision/recall for `uses-member` edges against a compiler oracle ([`tools/scout-semantic`](../../tools/scout-semantic/README.md)), scored by `devscout audit --semantic` and run via [`bench/semantic.sh`](../../bench/semantic.sh) |
+| [methodology.md § Rust edges](methodology.md#rust-edges) | Precision and recall of Rust call edges and test pairs against `rust-analyzer lsif` on this repository, run via [`bench/rust_edges.py`](../../bench/rust_edges.py) |
 
 The harness itself is in [`bench/`](../../bench/README.md).
 

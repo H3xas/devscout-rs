@@ -39,10 +39,13 @@ narrower set of edge kinds — see [Limitations](#limitations). Import specifier
 the `paths` and `baseUrl` of the nearest `tsconfig.json` above the file (its `extends` chain
 included; a nested config that declares neither falls back to the root chain), and through
 re-export barrels up to eight hops deep, with the barrel the source names kept as `via` on the
-edge. Rust (`.rs`) is indexed for definitions only: every `.rs` file in the mapped scope, in every
+edge. Rust (`.rs`) is indexed and graphed: every `.rs` file in the mapped scope, in every
 repository, gives one definition per item (modules, types, traits, functions and methods,
 constants, statics, type aliases, `macro_rules!`), which `find` lists and `read` quotes with its
-doc comments and attributes; `refs`, `impact` and `tests` give no Rust rows. See
+doc comments and attributes, and `refs`, `impact` and `tests` answer on Rust through path
+resolution: the module tree from `mod` declarations and `Cargo.toml` crate roots, `use` scope and
+`pub use` re-exports, calls (including those inside macro arguments), type uses, `impl Trait for
+T`, and `#[test]` functions — with no method-call typing. See
 [docs/rust-coverage.md](docs/rust-coverage.md).
 
 ## Install
@@ -165,6 +168,7 @@ untracked files and are shared correctly by worktrees:
 <git-common-dir>/scout/graph/graph.json           definitions, edges, and project units
 <git-common-dir>/scout/graph/fragments-v26.json   per-file extraction cache (incremental map)
 <git-common-dir>/scout/graph/project-units.json   csproj staleness sidecar (present only with a project model)
+<git-common-dir>/scout/graph/rust-crates.json     Cargo crate-model staleness sidecar (present only with a Cargo package in scope)
 <git-common-dir>/scout/graph/compiler-facts-v1.json  optional versioned compiler-fact artifact (see Compiler facts below); absent unless `compiler-facts run|import` has admitted one
 <git-common-dir>/scout/log/queries.jsonl          query-verb telemetry, one JSON line per answered invocation (opt-in; SCOUT_TELEMETRY=1)
 ```
@@ -275,15 +279,18 @@ Known, rather than hidden:
   `call`, `jsx-use` and `dispatch` edges for TS/TSX files, but `refs` and `impact` read only the
   C#-shaped `uses-type`/`uses-member` index, so those verbs answer for TypeScript defs without the
   page-to-component and caller-to-callee rows that `graph.json` holds.
-- **Rust is definitions only.** `find` and `read` answer on Rust items; `refs`, `impact` and
-  `tests` give no Rust rows, because no module tree, `use`, call or `implements` fact is
-  recorded. `cfg` is not evaluated (every branch is recorded) and macros are not expanded (an
-  item a macro generates is invisible). Ids use the file path (`src/shelf.rs#Widget::new`), not
-  the crate path. Every `.rs` file in the mapped scope is indexed in every repository, `src/bin/`
-  excepted with every other `bin` directory; in a mixed repository a Rust item shares the
-  resolution ladder with C# and TypeScript definitions, so a bare name they share can become
-  ambiguous or resolve to the Rust item — narrow the scope with `map <dir>` or the `init` scope.
-  See [docs/rust-coverage.md](docs/rust-coverage.md).
+- **Rust edges come from path resolution only.** `refs`, `impact` and `tests` answer on Rust
+  through the module tree and `use` scope, but a method call is never typed by its receiver, so
+  `x.f()` gives no edge; trait dispatch, generics, macro expansion, `cfg` evaluation (every branch
+  is recorded and resolved), `#[path]` and build-script `include!` are not followed; a path two
+  imports both provide stays ambiguous rather than guessed. Ids use the file path
+  (`src/shelf.rs#Widget::new`), not the crate path. A file with an inline `#[cfg(test)]` module is
+  a test file for `tests` and `impact`, and a helper file with no `#[test]` function is not. Every
+  `.rs` file in the mapped scope is indexed in every repository, `src/bin/` excepted with every
+  other `bin` directory; in a mixed repository a Rust item shares the symbol lookup with C# and
+  TypeScript definitions, so a bare name they share can become ambiguous or resolve to the Rust
+  item — narrow the scope with `map <dir>` or the `init` scope. See
+  [docs/rust-coverage.md](docs/rust-coverage.md).
 - **Generic-delegate `typeParams` divergence is under review.** Type-parameter handling for
   generic delegate declarations does not yet agree with the rest of the generic ladder; the
   affected shapes are under review rather than pinned.

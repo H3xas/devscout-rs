@@ -19,6 +19,20 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `.rs` files in a tier of their own, "definitions only: find and read". `refs`, `impact` and
   `tests` give no Rust rows yet. The fragment cache moves to `fragments-v25.json`, so an existing
   cache re-extracts once.
+- **`refs`, `impact` and `tests` answer on Rust code.** `map` now resolves Rust paths through the
+  module tree (`mod` declarations, `mod.rs` and `foo.rs` with `foo/` layouts, inline modules, and
+  crate roots read from each `Cargo.toml` in scope, or `lib.rs` and `main.rs` without one) and
+  through `use` scope (groups, globs, renames, `self`, `super`, `crate`, the package's library name,
+  and `pub use` re-exports followed to the defining item). A call bound to one function becomes a
+  `uses-member` edge to it, a type use, struct literal or constructor a `uses-type` edge, and
+  `impl Trait for T` an `implements` edge; calls written inside macro arguments such as
+  `assert_eq!` and `vec!` count too. A name two imports both provide gives an `ambiguous` edge
+  instead of a guess, and a method call is never typed by its receiver. Functions carrying
+  `#[test]` are recognized as tests, so `tests <fn>` and `impact` reach them. `init` reports `.rs`
+  files as "indexed and graphed, path-resolved edges". A Cargo package model is kept beside the
+  graph in `rust-crates.json`, so editing a `Cargo.toml` rebuilds the graph. Measured against
+  rust-analyzer's own references on this repository, call edges scored precision 1.0 and recall
+  0.999. The fragment cache moves to `fragments-v26.json`, so an existing cache re-extracts once.
 
 ### Fixed
 
