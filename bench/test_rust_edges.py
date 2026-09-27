@@ -141,6 +141,10 @@ class SiteTests(unittest.TestCase):
         self.assertEqual(self.cls(src, "Lamp", 2)[1], "path qualifier")
         self.assertEqual(self.cls(src, "new")[1], "path call")
         self.assertEqual(self.cls(src, "Z")[1], "other value reference")
+        refs = "fn h(s: &str) { k(&rel, *count); }\n"
+        self.assertEqual(self.cls(refs, "str")[1], "type position")
+        self.assertEqual(self.cls(refs, "rel")[1], "other value reference")
+        self.assertEqual(self.cls(refs, "count")[1], "other value reference")
 
     def test_lexer_skips_literals_and_nested_comments(self):
         src = ('let s = r#"{ f( }"#; let c = \'{\'; fn l<\'a>(x: &\'a str) {}\n'
@@ -151,6 +155,16 @@ class SiteTests(unittest.TestCase):
         self.assertIn("h", names)
         idx = rust_sites.Index(src)
         self.assertEqual([t.text for t in idx.tokens if t.kind == "lifetime"], ["'a", "'a"])
+
+    def test_operators_are_their_own_shape(self):
+        idx = rust_sites.Index("fn g() { if a == b[0] { h()?; } }\n")
+        eq = [t for t in idx.tokens if t.text == "=="][0]
+        self.assertEqual(idx.site(eq.line, eq.col), ("==", "plain", "operator"))
+        q = [t for t in idx.tokens if t.text == "?"][0]
+        self.assertEqual(idx.site(q.line, q.col)[2], "operator")
+        zero = [t for t in idx.tokens if t.text == "0"][0]
+        self.assertEqual(idx.site(zero.line, zero.col)[2], "literal")
+        self.assertEqual(idx.site(eq.line, eq.col - 1), ("", "plain", "whitespace"))
 
     def test_columns_count_utf16_units(self):
         idx = rust_sites.Index('let s = "\U0001F600é"; f();\n')

@@ -216,6 +216,8 @@ def definition_mapping(definitions, keys, sources):
         if not idx or not site:
             continue
         k = idx.by_pos.get((line, col))
+        if k is None:
+            continue
         prev = idx.tokens[k - 1].text if k else ""
         before = idx.tokens[k - 2].text if k and k > 1 else ""
         if prev not in item_words and not (prev == "!" and before == "macro_rules"):

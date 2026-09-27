@@ -3,6 +3,7 @@
 Positions follow LSIF: 0-based lines and 0-based UTF-16 columns.
 """
 
+import bisect
 from collections import namedtuple
 
 Token = namedtuple("Token", "kind text line col end_line end_col")
@@ -18,12 +19,16 @@ _NOT_LITERAL_BEFORE = frozenset(
     ["impl", "for", "struct", "enum", "union", "trait", "mod", "fn", "match", "if", "while",
      "in", "where", "->", "type", "else", "loop", "unsafe", "dyn", "=>"]
 )
+PRIMITIVES = frozenset(
+    "bool char str u8 u16 u32 u64 u128 usize i8 i16 i32 i64 i128 isize f32 f64".split()
+)
 _TYPE_BEFORE = frozenset([":", "->", "impl", "dyn", "as", "&", "+", "where", "<", "*"])
 _PUNCT2 = ("::", "->", "=>", "..", "==", "!=", "<=", ">=", "&&", "||")
 
 CONTEXTS = ("plain", "macro argument", "macro_rules body", "attribute", "use tree")
 SHAPES = ("path call", "method call", "path qualifier", "struct literal", "type position",
-          "macro name", "other value reference")
+          "macro name", "other value reference", "operator", "literal", "lifetime", "whitespace")
+_OTHER_SHAPES = {"punct": "operator", "lit": "literal", "lifetime": "lifetime"}
 
 
 def _utf16_len(text):
@@ -298,6 +303,8 @@ def shape(tokens, i):
         return "path qualifier"
     if raw_next == "{" and prev not in _NOT_LITERAL_BEFORE and name[:1].isupper():
         return "struct literal"
+    if name[:1].islower() and name not in PRIMITIVES:
+        return "other value reference"
     if prev in _TYPE_BEFORE or raw_next == "<":
         return "type position"
     if name[:1].isupper() and not name.isupper():
@@ -313,13 +320,26 @@ class Index:
         self.tokens = tokenize(source)
         self.contexts = contexts(self.tokens)
         self.by_pos = {(t.line, t.col): k for k, t in enumerate(self.tokens)}
+        self.positions = [(t.line, t.col) for t in self.tokens]
 
     def site(self, line, col):
-        """`(name, context, shape)` for the token starting at the position, or None."""
+        """`(name, context, shape)` for the reference starting at the position, or None.
+
+        An operator token (`==`, `-`, `[`, `?`, ...) resolves to a trait method in the oracle
+        and gets the shape `operator`; a literal resolves to its primitive type (`literal`); a
+        lifetime to its parameter (`lifetime`). A position between tokens is `whitespace`,
+        with the context of the token after it.
+        """
         k = self.by_pos.get((line, col))
-        if k is None or self.tokens[k].kind != "ident":
-            return None
-        return self.tokens[k].text, self.contexts[k], shape(self.tokens, k)
+        if k is None:
+            k = bisect.bisect_left(self.positions, (line, col))
+            if k >= len(self.tokens):
+                return None
+            return "", self.contexts[k], "whitespace"
+        token = self.tokens[k]
+        if token.kind == "ident":
+            return token.text, self.contexts[k], shape(self.tokens, k)
+        return token.text, self.contexts[k], _OTHER_SHAPES[token.kind]
 
 
 def _matching(tokens, open_index):
