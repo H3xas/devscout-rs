@@ -11,7 +11,7 @@ references `rust-analyzer lsif` writes for this repository. The method is
 |---|---|
 | Corpus | this repository, exported with `git archive` |
 | Run 0 revision | `911fe479190906bc965635f96839592f8459d67e` (Rust definitions, no Rust edges), mapped by a release build of the same revision |
-| Head revision | `d8ccf17` (Rust edges), mapped by a release build of the same revision |
+| Head revision | `2c3441c` (Rust edges), mapped by a release build of the same revision |
 | Oracle | `rust-analyzer 1.97.1 (8bab26f4 2026-07-14)`, the toolchain component |
 | Toolchain | `rustc 1.97.1 (8bab26f4f 2026-07-14)`, `cargo 1.97.1 (c980f4866 2026-06-30)`, aarch64 macOS |
 | Network | none: every cargo and rust-analyzer step ran with `CARGO_NET_OFFLINE=true` and a scratch target directory |
@@ -29,13 +29,13 @@ python3 -B bench/rust_edges.py run --repo . --commit <rev> \
 
 Run 0 was rescored from its saved files once, after the site classifier learned the operator,
 literal, lifetime and whitespace positions rust-analyzer resolves; the oracle was not re-run.
-Earlier head runs, on `52c2b52`, `8627012`, `543cec9`, `a476774`, `e4d19d2` and `dc61009`, met
-every threshold with no contradicted edge. The head published here is the last revision that
-changes code. Against `543cec9` it adds two rules: a name a macro's token trees may bind shadows
-the calls beside it (and, written at a statement or module-level macro's own level, the code
-around it), and a glob whose names cannot be listed stops a lookup. At `a476774` the first rule
-cost 18 calls, because struct field names inside macro arguments counted as bindings; from
-`e4d19d2` on they no longer do, and the misses are the same 8 as at `543cec9`.
+Earlier head runs, on `52c2b52`, `8627012`, `543cec9`, `a476774`, `e4d19d2`, `dc61009` and
+`d8ccf17`, met every threshold with no contradicted edge. The head published here is the last
+revision that changes code. Against `543cec9` it adds two rules: a name a macro's token trees may
+bind shadows the calls beside it (and, written at a statement or module-level macro's own level,
+the code around it), and a glob whose names cannot be listed stops a lookup. At `a476774` the
+first rule cost 18 calls, because struct field names inside macro arguments counted as bindings;
+from `e4d19d2` on they no longer do, and the misses are the same 8 as at `543cec9`.
 
 ## Headline
 
@@ -54,7 +54,7 @@ Thresholds were registered before Run 0.
 | Test-edge precision | ≥ 0.98 | undefined | **1.0** (4,319 / 4,319) |
 
 Every threshold is met at the head. No Rust edge of any kind is contradicted: all 8,728
-`uses-member` and 5,782 `uses-type` edges have an oracle reference at their file and line to
+`uses-member` and 5,786 `uses-type` edges have an oracle reference at their file and line to
 their target. The head carries one `ambiguous` edge, and the oracle's target is among its
 candidates.
 
@@ -79,8 +79,8 @@ candidates.
 
 | Check | Run 0 | Head |
 |---|---:|---:|
-| Item-shaped LSIF definitions in the universe | 3,925 | 4,207 |
-| … mapping to a devscout def by file, name and name line | 3,876 | 4,158 |
+| Item-shaped LSIF definitions in the universe | 3,925 | 4,209 |
+| … mapping to a devscout def by file, name and name line | 3,876 | 4,160 |
 | … not mapping | 49 | 49 |
 
 All 49 unmapped definitions are items declared inside function bodies (22 `fn`, 20 `const`, 2
@@ -94,21 +94,21 @@ The call population is the first two rows; every other row is an excluded class.
 |---|---:|---:|
 | population: path call to a recorded fn, macro argument | 2445 | 2582 |
 | population: path call to a recorded fn, plain | 5922 | 6154 |
-| `use` tree | 3937 | 4185 |
+| `use` tree | 3937 | 4188 |
 | attribute or derive | 2688 | 2902 |
-| macro name | 7500 | 7824 |
+| macro name | 7500 | 7826 |
 | method call to a recorded fn | 1154 | 1258 |
-| method call to an external or unrecorded item | 17292 | 18622 |
-| operator, literal, lifetime or whitespace | 12501 | 13462 |
-| other reference to a recorded item (recorded fn) | 123 | 125 |
+| method call to an external or unrecorded item | 17292 | 18628 |
+| operator, literal, lifetime or whitespace | 12501 | 13441 |
+| other reference to a recorded item (recorded fn) | 123 | 126 |
 | other reference to a recorded item (recorded other) | 837 | 860 |
-| other reference to a recorded item (recorded type) | 5847 | 6297 |
-| other reference to an external item | 13940 | 15147 |
-| other reference to an unrecorded item (local, field, variant) | 42197 | 45612 |
+| other reference to a recorded item (recorded type) | 5847 | 6301 |
+| other reference to an external item | 13940 | 15156 |
+| other reference to an unrecorded item (local, field, variant) | 42197 | 45631 |
 | path call to a recorded type (tuple-struct constructor) | 104 | 104 |
-| path call to an external item | 5112 | 5477 |
+| path call to an external item | 5112 | 5483 |
 | path call to an unrecorded item (variant, local, function-body item) | 1141 | 1203 |
-| **all oracle references** | 122740 | 131814 |
+| **all oracle references** | 122740 | 131843 |
 
 No reference falls inside a `macro_rules!` body: rust-analyzer resolves nothing there. Universe:
 304 files at Run 0 and 328 at the head (every `src/` and `tests/` file and
