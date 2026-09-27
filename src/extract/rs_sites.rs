@@ -142,7 +142,9 @@ fn enter(node: Node, ctx: &Ctx, src: &[u8], numbering: &Numbering) -> Ctx {
                 .map(|n| strip_raw(&parse::node_text(n, src)))
                 .unwrap_or_default();
             inner.generics = extended(&ctx.generics, generic_names(node, src));
-            inner.self_trait = Some(Rc::from(scoped(&ctx.scope, &name)));
+            // A trait declared inside a function body is not recorded, and its
+            // path would name the module-level trait of the same name.
+            inner.self_trait = (!ctx.in_body).then(|| Rc::from(scoped(&ctx.scope, &name)));
             inner.self_impl = None;
         }
         "struct_item" | "enum_item" | "union_item" | "type_item" => {

@@ -161,3 +161,14 @@ fn deep_nesting_is_walked_without_exhausting_a_worker_stack() {
         .unwrap();
     assert_eq!(handle.join().unwrap(), 1);
 }
+
+#[test]
+fn a_trait_inside_a_function_body_gives_its_self_paths_no_owner() {
+    let src = "trait Shine {\n    fn d();\n}\nfn outer() {\n    trait Shine {\n        fn c() { Self::d(); }\n        fn d();\n    }\n}\n";
+    assert!(
+        sites(src)
+            .iter()
+            .all(|s| s.self_trait.is_none() && s.path != "Self::d"),
+        "a body-local trait is not the module-level trait of the same path"
+    );
+}
