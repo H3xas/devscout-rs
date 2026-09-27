@@ -197,9 +197,8 @@ fn a_jsx_tag_bound_through_a_barrel_becomes_a_jsx_use_edge() {
         jsx_uses
     );
 
-    // The query surface folds only the C#-shaped edge kinds (README,
-    // Limitations), so `refs` is checked here for the definition it resolves
-    // the name to, not for the JSX site the graph edge above already pins.
+    // `refs` is checked here for the definition it resolves the name to; the
+    // JSX row it lists for that site is pinned with the other TS query rows.
     let refs = fx.json(&["refs", "PrimaryButton", "--json"]);
     assert_eq!(
         refs["id"],

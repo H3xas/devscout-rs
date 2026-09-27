@@ -885,3 +885,19 @@ fn ts_referrers_count_toward_the_hub_brake() {
         .cloned();
     assert_eq!(entry.map(|b| b["indegree"].clone()), Some(Value::from(2)));
 }
+
+#[test]
+fn the_answer_contract_documents_the_ts_words_tables_and_bound_defs() {
+    let contract =
+        fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/answer-contract.md"))
+            .expect("read the answer contract");
+    for word in ["call", "jsx-use", "dispatch", "import", "test-path"] {
+        assert!(
+            contract.contains(&format!("| `{word}` |")),
+            "the why table must document {word}"
+        );
+    }
+    assert!(contract.contains("`bound_defs`"));
+    assert!(contract.contains("via: \"path\""));
+    assert!(!contract.contains("never reach `why`"));
+}

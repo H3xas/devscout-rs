@@ -34,8 +34,11 @@ the agent-hook integration. `devscout --help` lists everything.
 
 **Languages.** C# (`.cs`) is the complete story: declarations, inheritance, type and member
 usage, and preprocessor-aware extraction. TypeScript / TSX / JavaScript (`.ts`, `.tsx`, `.js`,
-`.jsx`) are indexed for `find` and file purposes, and are resolved into the graph with a
-narrower set of edge kinds — see [Limitations](#limitations). Import specifiers resolve through
+`.jsx`) are indexed for `find` and file purposes, and are resolved into `import`, `call`,
+`jsx-use` and `dispatch` edges, which `refs`, `read`, `impact` and `tests` read as their own
+tables; `tests` also counts a `.ts`/`.tsx` file named `*.spec.*`, `*.test.*` or placed below
+`__tests__/` as a test file. JavaScript files answer through the same edges but that surface is
+not measured — see [Limitations](#limitations). Import specifiers resolve through
 the `paths` and `baseUrl` of the nearest `tsconfig.json` above the file (its `extends` chain
 included; a nested config that declares neither falls back to the root chain), and through
 re-export barrels up to eight hops deep, with the barrel the source names kept as `via` on the
@@ -285,10 +288,13 @@ failure there never fails `init`.
 
 Known, rather than hidden:
 
-- **TypeScript reference queries fold none of the TS edge kinds.** The graph carries `import`,
-  `call`, `jsx-use` and `dispatch` edges for TS/TSX files, but `refs` and `impact` read only the
-  C#-shaped `uses-type`/`uses-member` index, so those verbs answer for TypeScript defs without the
-  page-to-component and caller-to-callee rows that `graph.json` holds.
+- **TypeScript references cover imports, calls, JSX tags and dispatches only.** A type
+  annotation, an `extends`/`implements` clause, a value passed as an argument, a member reached
+  through a chain or a local (`store.total()`), and a dynamic `import()` record no edge. A named
+  re-export of a name its target module only re-exports again binds no definition. A package
+  imported by name resolves only through the repository's own `tsconfig` `paths`/`baseUrl`, so a
+  monorepo importing its own packages by package name leaves those imports external. JavaScript
+  answers are read but not measured.
 - **Generic-delegate `typeParams` divergence is under review.** Type-parameter handling for
   generic delegate declarations does not yet agree with the rest of the generic ladder; the
   affected shapes are under review rather than pinned.

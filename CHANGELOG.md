@@ -7,6 +7,20 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`refs`, `read`, `impact` and `tests` answer for TypeScript.** The `import`, `call`, `jsx-use`
+  and `dispatch` edges the graph already held are now read: `refs` and `read` list each kind in a
+  table of its own, under the shared inbound cap, and `refs --out` mirrors them outbound; a table
+  appears only when it has rows, so C# answers keep their bytes. Rows carry the new `why` words
+  `call`, `jsx-use`, `dispatch` and `import`. `impact` walks the four kinds at every hop, and they
+  count toward the hub brake. A TS `import` edge in `graph.json` gains `bound_defs`, the
+  definitions its bindings resolve to, so an import row names the exact symbol. `tests` counts a
+  `.ts`/`.tsx` file named `*.spec.ts(x)`, `*.test.ts(x)` or placed below `__tests__/` as a test file
+  (`via: "path"`, `why: "test-path"`). JavaScript files answer through the same edges but are not
+  measured. The fragment cache moves to `fragments-v26.json`, so an existing cache re-extracts
+  once.
+
 ### Fixed
 
 - **Compiler-facts and context output list compiler diagnostics in one fixed order.** The
