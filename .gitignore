@@ -45,5 +45,7 @@ fixtures/**/obj/
 tools/**/bin/
 tools/**/obj/
 
-# Python bytecode cache from running tools/qualify-dotnet-targets.py.
-tools/__pycache__/
+# Python bytecode from running any script in the repo (the bench scorers, the
+# tools). It embeds the absolute path of the source it was compiled from.
+__pycache__/
+*.py[cod]
