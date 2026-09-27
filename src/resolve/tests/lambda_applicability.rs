@@ -196,3 +196,48 @@ fn the_property_hop_refuses_an_overload_the_lambda_cannot_convert_to() {
     );
     assert_eq!(precise_sel(&g), vec!["App.Other.Pt"]);
 }
+
+#[test]
+fn an_expression_tree_wrapper_is_looked_through_once() {
+    let other = (
+        "Other/W.cs",
+        "using App.Lists;\n\nnamespace App.Other\n{\n  public class W { public void Where<T>(Expression<Func<IX<T>, bool>> e) { } }\n}\n",
+    );
+    let refused = graph_for(&[other], "W w", "w.Where(x => true)");
+    assert!(precise(&refused).is_empty());
+    let written = graph_for(&[other], "W w", "w.Where<E>(x => true)");
+    assert_eq!(precise(&written), vec![("App.Other.W", 9)]);
+}
+
+#[test]
+fn a_partial_types_same_descriptors_with_other_type_parameters_stay_two_overloads() {
+    let generic_first = (
+        "Other/P1.cs",
+        "namespace App.Other\n{\n  public partial class P<U> { public void M<T>(Action<T> a) { } }\n}\n",
+    );
+    let plain_second = (
+        "Other/P2.cs",
+        "namespace App.Other\n{\n  public partial class P<U> { public void M(Action<U> a) { } }\n}\n",
+    );
+    let g = graph_for(
+        &[generic_first, plain_second],
+        "P<E> p",
+        "p.M(x => x.Run())",
+    );
+    assert_eq!(
+        precise(&g),
+        vec![("App.Other.P", 9)],
+        "the non-generic overload in the second part still admits the call"
+    );
+}
+
+#[test]
+fn missing_type_parameter_sites_leave_the_generic_overload_admitted() {
+    let source = consumer("S s", "s.Any(m => m switch { E e => true, _ => false })");
+    let mut fragments = fragments_for(&[DELEGATES, LISTS, ("Consumers/Runner.cs", &source)]);
+    for def in &mut fragments[1].1.defs {
+        def.method_type_param_sites = crate::graph::OrderedMap::new();
+    }
+    let g = resolve_graph(&no_git_root(), &fragments);
+    assert_eq!(precise(&g), vec![("App.Lists.S", 9)]);
+}
