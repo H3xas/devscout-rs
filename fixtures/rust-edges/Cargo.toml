@@ -1,0 +1,9 @@
+[package]
+name = "rust-edges"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[test]]
+name = "rim"
+path = "checks/rim.rs"
