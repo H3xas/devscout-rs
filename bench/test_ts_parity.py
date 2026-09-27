@@ -320,5 +320,40 @@ class GuardTests(unittest.TestCase):
             self.assertEqual(answers[("refs", "s")], [])
 
 
+REPO = Path(__file__).resolve().parents[1]
+BENCH_COMMAND_FILES = ("docs/benchmarks/methodology.md", "bench/ts-parity.sh",
+                       "bench/peers/code-review-graph/install.sh")
+
+
+def python_commands(text):
+    """(line, options) for every python3 line that runs a script or a module."""
+    found = []
+    for line in text.splitlines():
+        tokens = line.replace('"', " ").split()
+        if "python3" not in tokens:
+            continue
+        options = []
+        for token in tokens[tokens.index("python3") + 1:]:
+            if not token.startswith("-"):
+                if token.endswith(".py"):
+                    found.append((line, options))
+                break
+            options.append(token)
+            if token == "-m":
+                found.append((line, options))
+                break
+    return found
+
+
+class BytecodeTests(unittest.TestCase):
+    def test_documented_bench_commands_write_no_bytecode(self):
+        commands = []
+        for name in BENCH_COMMAND_FILES:
+            commands.extend(python_commands((REPO / name).read_text(encoding="utf-8")))
+        self.assertGreaterEqual(len(commands), 5)
+        for line, options in commands:
+            self.assertIn("-B", options, line)
+
+
 if __name__ == "__main__":
     unittest.main()

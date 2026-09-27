@@ -21,4 +21,4 @@ fi
 here="$(cd "$(dirname "$0")" && pwd)"
 
 exec env -i PATH=/usr/bin:/bin:/opt/homebrew/bin:/usr/local/bin LANG=en_US.UTF-8 HOME="$4/runner-home" \
-	python3 "$here/ts_parity.py" run "$1" "$2" "$3" "$4" "$5" "$here/truth/typescript"
+	python3 -B "$here/ts_parity.py" run "$1" "$2" "$3" "$4" "$5" "$here/truth/typescript"

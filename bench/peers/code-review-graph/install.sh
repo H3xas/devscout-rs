@@ -27,7 +27,7 @@ if [ -e "$venv" ]; then
 	exit 1
 fi
 
-python3 "$bench/ts_parity.py" peer-preinstall "$requirements"
+python3 -B "$bench/ts_parity.py" peer-preinstall "$requirements"
 
 export UV_NO_CONFIG=1
 export UV_PYTHON_DOWNLOADS=never
@@ -36,4 +36,4 @@ uv venv --python "$python" "$venv"
 uv pip install --python "$venv/bin/python" --require-hashes --no-build \
 	--index-url https://pypi.org/simple -r "$requirements"
 
-python3 "$bench/ts_parity.py" peer-identity "$venv"
+python3 -B "$bench/ts_parity.py" peer-identity "$venv"

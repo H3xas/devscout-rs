@@ -167,7 +167,7 @@ before any arm runs, and `manifest.json` beside it hashes every input.
 Rerun, with `$BENCH` a scratch directory outside any checkout and outside your home directory:
 
 ```sh
-python3 -m unittest discover -s bench -p 'test_ts_parity.py'
+python3 -B -m unittest discover -s bench -p 'test_ts_parity.py'
 
 bench/clone-corpus.sh typescript "$BENCH/nx-pristine"      # the one network fetch of the corpus
 for arm in devscout-base devscout-head crg; do cp -a "$BENCH/nx-pristine" "$BENCH/nx-$arm"; done
@@ -182,7 +182,7 @@ bench/ts-parity.sh devscout-base <devscout built from the base commit> "$BENCH/n
 bench/ts-parity.sh devscout-head <devscout built from the head commit> "$BENCH/nx-devscout-head" "$BENCH" "$BENCH/out-head"
 bench/ts-parity.sh crg "$BENCH/crg-venv/bin/code-review-graph" "$BENCH/nx-crg" "$BENCH" "$BENCH/out-crg"
 
-python3 bench/ts_parity.py score bench/truth/typescript "$BENCH/nx-crg" "$BENCH/scores.json" \
+python3 -B bench/ts_parity.py score bench/truth/typescript "$BENCH/nx-crg" "$BENCH/scores.json" \
   devscout-base="$BENCH/out-base" devscout-head="$BENCH/out-head" crg="$BENCH/out-crg"
 ```
 
