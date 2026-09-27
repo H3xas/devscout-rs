@@ -25,6 +25,9 @@ PEER_IDENTITY_DIRS = ("eval",)
 PEER_VERBS = ("build", "status", "query", "impact")
 DEVSCOUT_VERBS = ("init", "refs", "tests", "impact")
 ARM_VERBS = {"devscout-base": DEVSCOUT_VERBS, "devscout-head": DEVSCOUT_VERBS, "crg": PEER_VERBS}
+# Pre-registered files each step reads; the step re-checks them against the manifest itself.
+RUN_INPUTS = ("templates.tsv", "seeds.json")
+SCORE_INPUTS = ("seeds.json", "truth-sealed.json", "truth-raw.json")
 
 PROVIDER_KEY_RE = re.compile(
     r"(API_?KEY|TOKEN|SECRET|PASSWORD|OPENAI|GEMINI|GOOGLE|MINIMAX|ANTHROPIC|VOYAGE|COHERE|MISTRAL)",
@@ -148,6 +151,49 @@ def identity_problems(package_dir, version):
             problems.append(f"installed package lacks {name}/")
     if version != PEER_VERSION:
         problems.append(f"installed version is {version}, expected {PEER_VERSION}")
+    return problems
+
+
+def peer_binary_problems(binary):
+    """The binary an arm run is given must be the entry script of a virtual environment whose
+    installed peer passes the identity check, whatever the install step reported."""
+    path = Path(binary)
+    venv = path.parent.parent
+    python = venv / "bin" / "python"
+    if path.name != PEER_PACKAGE or path.parent.name != "bin" or not (venv / "pyvenv.cfg").is_file():
+        return [f"{binary} is not the {PEER_PACKAGE} entry script of a virtual environment"]
+    try:
+        head = path.read_bytes()[:1024].decode("utf-8", "replace")
+    except OSError as error:
+        return [f"cannot read {binary}: {error}"]
+    interpreters = {str(python), os.path.join(canonical(str(python.parent)), "python")}
+    if not any(f"#!{interpreter}\n" in head or f"'{interpreter}'" in head for interpreter in interpreters):
+        return [f"{binary} does not run the interpreter of its own virtual environment"]
+    try:
+        package_dir, version = installed_peer(venv)
+    except (OSError, ValueError, subprocess.CalledProcessError) as error:
+        return [f"cannot read the installed {PEER_PACKAGE}: {error}"]
+    return identity_problems(package_dir, version)
+
+
+def manifest_problems(bench_dir, names):
+    bench = Path(bench_dir)
+    try:
+        recorded = json.loads((bench / "manifest.json").read_text(encoding="utf-8"))["files"]
+    except (OSError, ValueError, KeyError) as error:
+        return [f"cannot read the manifest: {error}"]
+    problems = []
+    for name in names:
+        if name not in recorded:
+            problems.append(f"{name} has no manifest entry")
+            continue
+        try:
+            actual = sha256_file(bench / name)
+        except OSError as error:
+            problems.append(f"cannot read {name}: {error}")
+            continue
+        if actual != recorded[name]:
+            problems.append(f"{name} hash {actual} differs from the manifest {recorded[name]}")
     return problems
 
 
@@ -620,22 +666,33 @@ def arm_env(arm, scratch):
     return env
 
 
+def arm_problems(arm, binary, corpus, scratch, bench_dir, head, home_of_user):
+    """Every guard an arm run must pass, judged on the paths and files the run will use."""
+    bench = Path(bench_dir)
+    problems = manifest_problems(bench, RUN_INPUTS)
+    if problems:
+        return problems
+    manifest = read_json(bench / "manifest.json")
+    templates_path = bench / "templates.tsv"
+    problems = template_problems(read_templates(templates_path), manifest["files"]["templates.tsv"], templates_path)
+    problems += corpus_problems(corpus, read_json(bench / "seeds.json")["pin"], head, scratch, home_of_user)
+    problems += arm_env_problems(arm, arm_env(arm, scratch), scratch, home_of_user)
+    if arm == "crg":
+        problems += peer_binary_problems(binary)
+    return problems
+
+
 def run_arm(arm, binary, corpus, scratch, out_dir, bench_dir):
     # Resolved once: the child runs with the corpus as its working directory, so every path it
     # receives must already be absolute and every guard must judge the path the child will use.
     binary, corpus, scratch = canonical(binary), canonical(corpus), canonical(scratch)
     bench = Path(bench_dir)
-    manifest = json.loads((bench / "manifest.json").read_text(encoding="utf-8"))
-    templates_path = bench / "templates.tsv"
-    templates = read_templates(templates_path)
-    seeds = json.loads((bench / "seeds.json").read_text(encoding="utf-8"))
-    env = arm_env(arm, scratch)
     head = subprocess.run(["git", "-C", corpus, "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
-    problems = template_problems(templates, manifest["files"]["templates.tsv"], templates_path)
-    problems += corpus_problems(corpus, seeds["pin"], head, scratch, real_home())
-    problems += arm_env_problems(arm, env, scratch, real_home())
-    if refuse(problems):
+    if refuse(arm_problems(arm, binary, corpus, scratch, bench, head, real_home())):
         return 1
+    templates = read_templates(bench / "templates.tsv")
+    seeds = read_json(bench / "seeds.json")
+    env = arm_env(arm, scratch)
     for key in ("HOME", "CRG_DATA_DIR"):
         if key in env:
             Path(env[key]).mkdir(parents=True, exist_ok=True)
@@ -884,6 +941,8 @@ def cmd_run(args):
 def cmd_score(args):
     bench_dir, corpus_root, out, *runs = args
     bench = Path(bench_dir)
+    if refuse(manifest_problems(bench, SCORE_INPUTS)):
+        raise SystemExit(1)
     seeds = read_json(bench / "seeds.json")
     sealed = read_json(bench / "truth-sealed.json")
     raw = read_json(bench / "truth-raw.json")

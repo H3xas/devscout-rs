@@ -1,5 +1,7 @@
 import json
 import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -375,6 +377,98 @@ class GuardTests(unittest.TestCase):
             answers = tp.load_answers(root)
             self.assertEqual(answers[("impact", "diff")], ["x.ts", "y.ts"])
             self.assertEqual(answers[("refs", "s")], [])
+
+
+def fake_peer(root, version=tp.PEER_VERSION, identity=True, interpreter=None):
+    """A virtual environment holding a stand-in distribution of the peer and its entry script."""
+    venv = Path(root, "venv")
+    subprocess.run([sys.executable, "-m", "venv", "--without-pip", str(venv)], check=True)
+    site = next(venv.glob("lib/python*/site-packages"))
+    package = site / tp.PEER_MODULE
+    package.mkdir()
+    if identity:
+        for name in tp.PEER_IDENTITY_FILES:
+            (package / name).write_text("")
+        for name in tp.PEER_IDENTITY_DIRS:
+            (package / name).mkdir()
+    info = site / f"{tp.PEER_MODULE}-{version}.dist-info"
+    info.mkdir()
+    (info / "METADATA").write_text(f"Metadata-Version: 2.1\nName: {tp.PEER_PACKAGE}\nVersion: {version}\n")
+    binary = venv / "bin" / tp.PEER_PACKAGE
+    binary.write_text(f"#!{interpreter or venv / 'bin' / 'python'}\nfrom code_review_graph.cli import main\n")
+    binary.chmod(0o755)
+    return str(binary)
+
+
+def bench_dir(root, seeds):
+    bench = Path(root, "bench")
+    bench.mkdir()
+    (bench / "templates.tsv").write_text("crg\tsetup\tsetup\t{bin} build --repo {corpus}\n"
+                                        "devscout-base\tsetup\tsetup\t{bin} init --no-hooks\n")
+    for name, value in (("seeds.json", seeds), ("truth-sealed.json", {"names": {}}), ("truth-raw.json", {"names": {}})):
+        (bench / name).write_text(json.dumps(value))
+    names = ("templates.tsv", "seeds.json", "truth-sealed.json", "truth-raw.json")
+    (bench / "manifest.json").write_text(json.dumps({"files": {n: tp.sha256_file(bench / n) for n in names}}))
+    return bench
+
+
+class ConsumedGuardTests(unittest.TestCase):
+    seeds = {"pin": PIN, "seeds": [], "declaringFiles": [], "diffFiles": []}
+
+    def test_an_upstream_peer_install_passes(self):
+        with tempfile.TemporaryDirectory() as root:
+            self.assertEqual(tp.peer_binary_problems(fake_peer(tp.canonical(root))), [])
+
+    def test_a_peer_without_the_upstream_files_is_refused_at_run_time(self):
+        with tempfile.TemporaryDirectory() as root:
+            self.assertTrue(tp.peer_binary_problems(fake_peer(tp.canonical(root), identity=False)))
+
+    def test_another_peer_version_is_refused_at_run_time(self):
+        with tempfile.TemporaryDirectory() as root:
+            self.assertTrue(tp.peer_binary_problems(fake_peer(tp.canonical(root), version="2.3.8")))
+
+    def test_a_binary_outside_the_checked_environment_is_refused(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = tp.canonical(root)
+            fake_peer(root)
+            loose = Path(root, tp.PEER_PACKAGE)
+            loose.write_text("#!/bin/sh\n")
+            self.assertTrue(tp.peer_binary_problems(str(loose)))
+            self.assertTrue(tp.peer_binary_problems(str(Path(root, "venv", "bin", "python"))))
+
+    def test_an_entry_script_bound_to_another_interpreter_is_refused(self):
+        with tempfile.TemporaryDirectory() as root:
+            self.assertTrue(tp.peer_binary_problems(fake_peer(tp.canonical(root), interpreter="/usr/bin/python3")))
+
+    def test_the_runner_rechecks_the_peer_and_the_seeds(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = tp.canonical(root)
+            bench = bench_dir(root, self.seeds)
+            scratch = Path(root, "scratch")
+            corpus = scratch / "corpus"
+            corpus.mkdir(parents=True)
+            good = fake_peer(root)
+
+            def problems(arm, binary):
+                return tp.arm_problems(arm, binary, str(corpus), str(scratch), bench, PIN, "/home/example")
+
+            self.assertEqual(problems("crg", good), [])
+            self.assertEqual(problems("devscout-base", "/usr/bin/true"), [])
+            self.assertTrue(problems("crg", "/usr/bin/true"))
+            (bench / "seeds.json").write_text(json.dumps(dict(self.seeds, diffFiles=["x.ts"])))
+            self.assertTrue(problems("devscout-base", "/usr/bin/true"))
+
+    def test_the_scorer_rechecks_seeds_and_truth(self):
+        with tempfile.TemporaryDirectory() as root:
+            bench = bench_dir(tp.canonical(root), self.seeds)
+            self.assertEqual(tp.manifest_problems(bench, tp.SCORE_INPUTS), [])
+            for name in tp.SCORE_INPUTS:
+                original = (bench / name).read_text()
+                (bench / name).write_text(original + " ")
+                self.assertTrue(tp.manifest_problems(bench, tp.SCORE_INPUTS), name)
+                with self.assertRaises(SystemExit):
+                    tp.cmd_score([str(bench), root, str(Path(root, "scores.json"))])
+                (bench / name).write_text(original)
 
 
 REPO = Path(__file__).resolve().parents[1]

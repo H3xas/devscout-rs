@@ -5,8 +5,10 @@
 #          <scratch root> <output dir>
 #
 # The runner starts from an empty environment, so no credential, package index or state
-# directory of the calling shell reaches an arm. It refuses to run when a template differs
-# from the pre-registered manifest, a template uses a verb outside the arm's allowlist, the
+# directory of the calling shell reaches an arm. It refuses to run when the templates or the
+# seeds differ from the pre-registered manifest, a template uses a verb outside the arm's
+# allowlist, the peer binary is not the entry script of a virtual environment whose installed
+# package passes the upstream identity check (checked again here, not only at install), the
 # corpus is not at the pin, or the corpus or a state directory (HOME, CRG_DATA_DIR,
 # SCOUT_REGISTRY, SCOUT_CONTENT_DB) is outside the scratch root, inside the real home
 # directory or inside a checkout of this repository. Every path is resolved to its canonical
