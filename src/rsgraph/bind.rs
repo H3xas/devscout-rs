@@ -229,6 +229,7 @@ impl Binder<'_> {
             }
             if result != self.t.resolved[l] {
                 self.t.resolved[l] = result;
+                self.t.invalidate_glob_cache();
                 let module = self.t.leaves[l].module;
                 let mut next: Vec<usize> = dependents
                     .get(&module)
@@ -256,6 +257,7 @@ impl Binder<'_> {
                 let result = self.resolve_leaf(&self.t.leaves[l], &mut Vec::new());
                 if result != self.t.resolved[l] {
                     self.t.resolved[l] = result;
+                    self.t.invalidate_glob_cache();
                     changed = true;
                 }
             }

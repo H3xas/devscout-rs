@@ -75,6 +75,18 @@ fn a_name_nothing_provides_gives_no_edge() {
 }
 
 #[test]
+fn a_changed_glob_requeues_every_import_that_shared_the_cached_probe() {
+    let src = "mod consumer {\n    pub use crate::relay::hit as first;\n    pub use crate::relay::hit as second;\n}\nmod relay { pub use crate::sources::*; }\nmod sources { pub fn hit() {} }\nfn call() { consumer::first(); consumer::second(); }\n";
+    assert_eq!(
+        edges_for(&[("src/lib.rs", src)]),
+        vec![
+            "uses-member src/lib.rs:7 -> src/lib.rs#sources::hit",
+            "uses-member src/lib.rs:7 -> src/lib.rs#sources::hit",
+        ]
+    );
+}
+
+#[test]
 fn a_long_pub_use_chain_and_deep_module_nesting_resolve_without_recursion() {
     let depth = 400;
     let mut chain = String::new();

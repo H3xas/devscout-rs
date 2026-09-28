@@ -18,6 +18,38 @@ fn paths(src: &str) -> Vec<String> {
         .collect()
 }
 
+#[test]
+fn carried_file_context_preserves_nested_paths_marks_spans_and_impl_owner() {
+    let src = "/// Root item.\npub struct Root;\npub mod m {\n    pub struct Nested;\n    impl Nested { pub fn act(&self) {} }\n    pub trait Job { fn perform(&self); }\n    extern \"C\" { fn ffi() -> i32; }\n}\n";
+    let extracted = extract_rs_file(src);
+    assert_eq!(extracted.purpose.as_deref(), Some("struct Root | mod m"));
+    assert_eq!(
+        extracted
+            .fragment
+            .items
+            .iter()
+            .map(|item| item.path.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "Root",
+            "m",
+            "m::Nested",
+            "m::Nested::act",
+            "m::Job",
+            "m::Job::perform",
+            "m::ffi"
+        ]
+    );
+    assert_eq!(extracted.fragment.items[0].line, 1);
+    assert_eq!(extracted.fragment.items[0].name_line, 2);
+    assert_eq!(extracted.fragment.items[1].end_line, 8);
+    assert_eq!(extracted.fragment.ctors, ["Root", "m::Nested"]);
+    assert_eq!(extracted.fragment.impls.len(), 1);
+    assert_eq!(extracted.fragment.impls[0].scope, "m");
+    assert_eq!(extracted.fragment.impls[0].self_type, "Nested");
+    assert_eq!(extracted.fragment.impls[0].items, ["m::Nested::act"]);
+}
+
 fn row(
     kind: &str,
     path: &str,

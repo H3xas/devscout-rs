@@ -166,12 +166,12 @@ fn record_kind(node_kind: &str) -> Option<&'static str> {
 // its enclosing path and, inside an `impl` with a nameable self type, the
 // index of that impl's record.
 fn walk_items(root: Node, src: &[u8], out: &mut Vec<Found>, impls: &mut Impls) {
-    let mut pending: Vec<(Node, Vec<String>, Option<usize>)> = Vec::new();
-    push_children(root, &[], None, &mut pending);
-    while let Some((node, segments, in_impl)) = pending.pop() {
+    let mut pending: Vec<(Node, Vec<String>, Option<usize>, bool)> = Vec::new();
+    push_children(root, &[], None, true, &mut pending);
+    while let Some((node, segments, in_impl, file_level)) = pending.pop() {
         let mut impl_index = None;
         let segment = if let Some(kind) = record_kind(node.kind()) {
-            let recorded = record_item(node, kind, src, &segments, in_impl, out);
+            let recorded = record_item(node, kind, src, &segments, in_impl, file_level, out);
             match recorded {
                 Some(name) if kind == "mod" || kind == "trait" => Some(name),
                 _ => continue,
@@ -191,7 +191,7 @@ fn walk_items(root: Node, src: &[u8], out: &mut Vec<Found>, impls: &mut Impls) {
         if let Some(body) = node.child_by_field_name("body") {
             let mut inner = segments;
             inner.extend(segment);
-            push_children(body, &inner, impl_index, &mut pending);
+            push_children(body, &inner, impl_index, false, &mut pending);
         }
     }
 }
@@ -200,12 +200,13 @@ fn push_children<'t>(
     body: Node<'t>,
     segments: &[String],
     in_impl: Option<usize>,
-    pending: &mut Vec<(Node<'t>, Vec<String>, Option<usize>)>,
+    file_level: bool,
+    pending: &mut Vec<(Node<'t>, Vec<String>, Option<usize>, bool)>,
 ) {
     let mut cursor = body.walk();
     let children: Vec<Node> = body.named_children(&mut cursor).collect();
     for child in children.into_iter().rev() {
-        pending.push((child, segments.to_vec(), in_impl));
+        pending.push((child, segments.to_vec(), in_impl, file_level));
     }
 }
 
@@ -240,6 +241,7 @@ fn record_item(
     src: &[u8],
     segments: &[String],
     in_impl: Option<usize>,
+    file_level: bool,
     out: &mut Vec<Found>,
 ) -> Option<String> {
     let name_node = node.child_by_field_name("name")?;
@@ -251,13 +253,7 @@ fn record_item(
     ITEM_COST.with(|cost| {
         let mut value = cost.get();
         value.items += 1;
-        value.parent_calls += 1;
         value.path_bytes += path.len();
-        let mut ancestor = Some(node);
-        while let Some(current) = ancestor {
-            value.ancestry_work += 1;
-            ancestor = current.parent();
-        }
         cost.set(value);
     });
     out.push(Found {
@@ -267,7 +263,7 @@ fn record_item(
         line: span_start_line(node),
         name_line: name_node.start_position().row + 1,
         end_line: end_line(node),
-        file_level: node.parent().is_some_and(|p| p.kind() == "source_file"),
+        file_level,
         mark: mark_of(node, kind, src),
         impl_index: in_impl,
     });

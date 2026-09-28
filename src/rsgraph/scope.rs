@@ -23,6 +23,7 @@
 // result changes requeues every leaf that consulted its module. Nothing
 // recurses, so a cycle resolves to nothing and a long chain costs no stack.
 
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, VecDeque};
 
 #[cfg(test)]
@@ -39,7 +40,7 @@ pub(super) enum Target {
 }
 
 /// The two namespaces a path segment is looked up in.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(super) enum Ns {
     Type,
     Value,
@@ -117,6 +118,18 @@ pub(super) struct Globbed {
     pub opaque: bool,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub(super) enum GlobRoot {
+    Module(usize),
+    Block(usize, usize),
+}
+
+pub(super) struct CachedGlob {
+    found: Vec<Target>,
+    opaque: bool,
+    probes: Probe,
+}
+
 /// What an explicit lookup at one level found.
 pub(super) enum Level {
     Found(Vec<Target>),
@@ -139,6 +152,7 @@ pub(super) struct Tables {
     pub assoc: HashMap<usize, HashMap<String, Vec<usize>>>,
     pub impl_self: HashMap<(usize, usize), usize>,
     pub opaque_modules: Vec<bool>,
+    pub glob_cache: RefCell<HashMap<(GlobRoot, Ns), HashMap<String, CachedGlob>>>,
 }
 
 /// Builds the item and leaf tables over the module tree; leaves start
@@ -161,6 +175,7 @@ pub(super) fn tables(fragments: &[(String, RsFragment)], tree: &ModTree) -> Tabl
         assoc: HashMap::new(),
         impl_self: HashMap::new(),
         opaque_modules: vec![false; tree.nodes.len()],
+        glob_cache: RefCell::new(HashMap::new()),
     };
     for (file, (rel, fragment)) in fragments.iter().enumerate() {
         add_items(&mut t, tree, file, rel, fragment);
@@ -270,8 +285,32 @@ pub(super) fn glob_cost() -> GlobCost {
 }
 
 impl Tables {
+    pub fn invalidate_glob_cache(&self) {
+        self.glob_cache.borrow_mut().clear();
+    }
+
     #[cfg(test)]
-    pub fn invalidate_glob_cache(&self) {}
+    pub fn glob_cache_stats(&self) -> (usize, usize) {
+        let cache = self.glob_cache.borrow();
+        let entries = cache.values().map(HashMap::len).sum();
+        let bytes = cache
+            .iter()
+            .map(|(_, names)| {
+                std::mem::size_of::<(GlobRoot, Ns)>()
+                    + names
+                        .iter()
+                        .map(|(name, value)| {
+                            std::mem::size_of::<String>()
+                                + std::mem::size_of::<CachedGlob>()
+                                + name.capacity()
+                                + value.found.capacity() * std::mem::size_of::<Target>()
+                                + value.probes.capacity() * std::mem::size_of::<usize>()
+                        })
+                        .sum::<usize>()
+            })
+            .sum();
+        (entries, bytes)
+    }
 
     /// Items and explicit imports of `name` in a module.
     pub fn explicit(&self, module: usize, name: &str, ns: Ns, probe: &mut Probe) -> Level {
@@ -312,8 +351,31 @@ impl Tables {
     /// targets, stopping at each module where the name binds explicitly. A
     /// module whose name is unlisted because of a macro or an external
     /// import makes the result opaque, as does any unlistable glob.
-    pub fn through_globs(&self, globs: &[usize], name: &str, ns: Ns, probe: &mut Probe) -> Globbed {
-        #[cfg(test)]
+    fn through_globs(
+        &self,
+        root: GlobRoot,
+        globs: &[usize],
+        name: &str,
+        ns: Ns,
+        probe: &mut Probe,
+    ) -> Globbed {
+        let key = (root, ns);
+        let cache = self.glob_cache.borrow();
+        if let Some(cached) = cache.get(&key).and_then(|names| names.get(name)) {
+            probe.extend_from_slice(&cached.probes);
+            #[cfg(test)]
+            GLOB_COST.with(|cost| {
+                let mut value = cost.get();
+                value.probes += cached.probes.len();
+                value.candidates += cached.found.len();
+                cost.set(value);
+            });
+            return Globbed {
+                found: cached.found.clone(),
+                opaque: cached.opaque,
+            };
+        }
+        drop(cache);
         let probe_start = probe.len();
         let mut out: Vec<Target> = Vec::new();
         let mut seen: HashSet<usize> = HashSet::new();
@@ -347,6 +409,14 @@ impl Tables {
             value.candidates += out.len();
             cost.set(value);
         });
+        self.glob_cache.borrow_mut().entry(key).or_default().insert(
+            name.to_string(),
+            CachedGlob {
+                found: out.clone(),
+                opaque,
+                probes: probe[probe_start..].to_vec(),
+            },
+        );
         Globbed { found: out, opaque }
     }
 
@@ -368,7 +438,13 @@ impl Tables {
                 if self.opaque_modules[module] {
                     return if import { None } else { Some(Vec::new()) };
                 }
-                let g = self.through_globs(&self.module_globs[module], name, ns, probe);
+                let g = self.through_globs(
+                    GlobRoot::Module(module),
+                    &self.module_globs[module],
+                    name,
+                    ns,
+                    probe,
+                );
                 globbed(g, import)
             }
         }
@@ -402,7 +478,7 @@ impl Tables {
                 Level::Empty => {}
             }
             if let Some(globs) = self.block_globs.get(&(file, b)) {
-                let g = self.through_globs(globs, name, ns, probe);
+                let g = self.through_globs(GlobRoot::Block(file, b), globs, name, ns, probe);
                 if let Some(v) = globbed(g, import) {
                     return Some(v);
                 }

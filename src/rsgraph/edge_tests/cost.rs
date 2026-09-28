@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
 
 use super::super::scope::{glob_cost, reset_glob_cost, Bound, Ns, Tables, Target};
@@ -26,6 +27,7 @@ fn tables(topology: &str, size: usize, outcome: &str, name: &str, ns: Ns) -> Tab
         assoc: HashMap::new(),
         impl_self: HashMap::new(),
         opaque_modules: vec![false; size + 2],
+        glob_cache: RefCell::new(HashMap::new()),
     };
     match topology {
         "chain" => {
@@ -92,6 +94,28 @@ fn lookup(t: &Tables, location: &str, name: &str, ns: Ns) -> (Vec<Target>, Vec<u
 fn change_first_glob(t: &mut Tables, size: usize) {
     t.resolved[0].types = vec![Target::Module(size + 1)];
     t.invalidate_glob_cache();
+}
+
+#[test]
+fn cached_globs_replay_ordered_probes_and_invalidate_after_a_leaf_change() {
+    for location in ["module", "block"] {
+        for ns in [Ns::Type, Ns::Value] {
+            for outcome in ["found", "absent", "ambiguous", "opaque"] {
+                let mut t = tables("diamond", 32, outcome, "needle", ns);
+                reset_glob_cost();
+                let first = lookup(&t, location, "needle", ns);
+                let cold = glob_cost();
+                let second = lookup(&t, location, "needle", ns);
+                let warm = glob_cost();
+                assert_eq!(first, second, "{location} {outcome}");
+                assert_eq!(warm.visits, cold.visits, "warm lookup traversed again");
+                assert_eq!(warm.arcs, cold.arcs, "warm lookup examined arcs again");
+                change_first_glob(&mut t, 32);
+                let changed = lookup(&t, location, "needle", ns);
+                assert_ne!(first.1, changed.1, "changed glob must replay new probes");
+            }
+        }
+    }
 }
 
 #[test]
@@ -170,6 +194,7 @@ fn generated_glob_cost_row() {
         );
     }
     let cost = glob_cost();
+    let (cache_entries, cache_payload_bytes) = t.glob_cache_stats();
     let row = serde_json::json!({
         "family": "glob", "topology": topology, "size": size, "queries": queries,
         "outcome": outcome, "namespace": parts[4], "location": location, "shape": shape,
@@ -177,6 +202,7 @@ fn generated_glob_cost_row() {
         "vwork": cost.visits, "ework": cost.arcs, "vref": ref_visits, "eref": ref_arcs,
         "probes": probe_entries, "candidates": cost.candidates,
         "copied_entries": cost.probes + cost.candidates, "result_bytes": result_bytes,
+        "cache_entries": cache_entries, "cache_payload_bytes": cache_payload_bytes,
     });
     println!("COST_ROW={row}");
 }
