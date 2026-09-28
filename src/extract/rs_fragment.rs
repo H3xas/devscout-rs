@@ -1,5 +1,8 @@
 use std::collections::HashMap;
 
+#[cfg(test)]
+use std::cell::Cell;
+
 use tree_sitter::Node;
 
 use super::rs_facts_types::RsImpl;
@@ -101,6 +104,30 @@ struct Found {
     file_level: bool,
     mark: Mark,
     impl_index: Option<usize>,
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, Default)]
+pub(super) struct ItemCost {
+    pub items: usize,
+    pub ancestry_work: usize,
+    pub parent_calls: usize,
+    pub path_bytes: usize,
+}
+
+#[cfg(test)]
+thread_local! {
+    static ITEM_COST: Cell<ItemCost> = Cell::new(ItemCost::default());
+}
+
+#[cfg(test)]
+pub(super) fn reset_item_cost() {
+    ITEM_COST.with(|cost| cost.set(ItemCost::default()));
+}
+
+#[cfg(test)]
+pub(super) fn item_cost() -> ItemCost {
+    ITEM_COST.with(Cell::get)
 }
 
 // A declaration fact the resolver needs beyond the item itself.
@@ -219,10 +246,24 @@ fn record_item(
     let name = item_name(name_node, src)?;
     let mut path = segments.to_vec();
     path.push(name.clone());
+    let path = path.join("::");
+    #[cfg(test)]
+    ITEM_COST.with(|cost| {
+        let mut value = cost.get();
+        value.items += 1;
+        value.parent_calls += 1;
+        value.path_bytes += path.len();
+        let mut ancestor = Some(node);
+        while let Some(current) = ancestor {
+            value.ancestry_work += 1;
+            ancestor = current.parent();
+        }
+        cost.set(value);
+    });
     out.push(Found {
         name: name.clone(),
         kind,
-        path: path.join("::"),
+        path,
         line: span_start_line(node),
         name_line: name_node.start_position().row + 1,
         end_line: end_line(node),

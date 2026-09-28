@@ -34,6 +34,7 @@ mod receiver_facts;
 mod registration_fact;
 mod rs_facts;
 mod rs_fragment;
+mod rs_fragment_cost;
 mod rs_macro_scan;
 mod rs_purpose;
 mod rs_sites;

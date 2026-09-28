@@ -25,6 +25,9 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
+#[cfg(test)]
+use std::cell::Cell;
+
 use super::modtree::{split_last, ModTree};
 use crate::extract::RsFragment;
 
@@ -242,7 +245,34 @@ fn add_leaves(t: &mut Tables, tree: &ModTree, file: usize, fragment: &RsFragment
 /// The modules a lookup consulted, which the fixed point tracks.
 pub(super) type Probe = Vec<usize>;
 
+#[cfg(test)]
+#[derive(Clone, Copy, Default)]
+pub(super) struct GlobCost {
+    pub visits: usize,
+    pub arcs: usize,
+    pub probes: usize,
+    pub candidates: usize,
+}
+
+#[cfg(test)]
+thread_local! {
+    static GLOB_COST: Cell<GlobCost> = Cell::new(GlobCost::default());
+}
+
+#[cfg(test)]
+pub(super) fn reset_glob_cost() {
+    GLOB_COST.with(|cost| cost.set(GlobCost::default()));
+}
+
+#[cfg(test)]
+pub(super) fn glob_cost() -> GlobCost {
+    GLOB_COST.with(Cell::get)
+}
+
 impl Tables {
+    #[cfg(test)]
+    pub fn invalidate_glob_cache(&self) {}
+
     /// Items and explicit imports of `name` in a module.
     pub fn explicit(&self, module: usize, name: &str, ns: Ns, probe: &mut Probe) -> Level {
         probe.push(module);
@@ -269,6 +299,12 @@ impl Tables {
             }));
             opaque |= modules.len() == before;
         }
+        #[cfg(test)]
+        GLOB_COST.with(|cost| {
+            let mut value = cost.get();
+            value.arcs += modules.len();
+            cost.set(value);
+        });
         (modules, opaque)
     }
 
@@ -277,6 +313,8 @@ impl Tables {
     /// module whose name is unlisted because of a macro or an external
     /// import makes the result opaque, as does any unlistable glob.
     pub fn through_globs(&self, globs: &[usize], name: &str, ns: Ns, probe: &mut Probe) -> Globbed {
+        #[cfg(test)]
+        let probe_start = probe.len();
         let mut out: Vec<Target> = Vec::new();
         let mut seen: HashSet<usize> = HashSet::new();
         let (first, mut opaque) = self.glob_targets(globs);
@@ -285,6 +323,12 @@ impl Tables {
             if !seen.insert(m) {
                 continue;
             }
+            #[cfg(test)]
+            GLOB_COST.with(|cost| {
+                let mut value = cost.get();
+                value.visits += 1;
+                cost.set(value);
+            });
             match self.explicit(m, name, ns, probe) {
                 Level::Found(v) => extend_unique(&mut out, v),
                 Level::Shadowed => opaque = true,
@@ -296,6 +340,13 @@ impl Tables {
                 }
             }
         }
+        #[cfg(test)]
+        GLOB_COST.with(|cost| {
+            let mut value = cost.get();
+            value.probes += probe.len() - probe_start;
+            value.candidates += out.len();
+            cost.set(value);
+        });
         Globbed { found: out, opaque }
     }
 
