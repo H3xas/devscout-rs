@@ -26,6 +26,14 @@ class GeneratorTests(unittest.TestCase):
         self.assertFalse(cost.complete(specs, observed + observed[:1]))
         self.assertFalse(cost.complete(specs, observed + [{"row_id": "unexpected"}]))
 
+    def test_map_scratch_is_outside_the_source_export_checkout(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "manifest.json").write_text("frozen\n")
+            scratch = cost.map_scratch_path(root)
+            self.assertFalse(scratch.is_relative_to(cost.REPO))
+            self.assertFalse(scratch.is_relative_to(root))
+
 
 class BoundTests(unittest.TestCase):
     def test_numeric_limits_and_missing_counters(self):

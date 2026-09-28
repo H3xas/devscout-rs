@@ -276,9 +276,18 @@ def artifact_inventory(root, destination):
     return {"files": found, "complete": required.issubset(found)}
 
 
+def map_scratch_path(inputs):
+    scratch = Path(tempfile.gettempdir()).resolve() / (
+        "devscout-rust-cost-" + digest(inputs / "manifest.json")[:16])
+    for parent in (scratch, *scratch.parents):
+        if (parent / ".git").exists() or (parent / ".scout").exists():
+            raise ValueError(f"map scratch has a repository ancestor: {parent}")
+    return scratch
+
+
 def map_corpus(cli, inputs, out, corpus):
     source = inputs / "corpus" / corpus
-    scratch = out.parent / "map-scratch"
+    scratch = map_scratch_path(inputs)
     observations = []
     for repetition in range(REPETITIONS):
         if scratch.exists():
