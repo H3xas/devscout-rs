@@ -11,7 +11,7 @@ references `rust-analyzer lsif` writes for this repository. The method is
 |---|---|
 | Corpus | this repository, exported with `git archive` |
 | Run 0 revision | `911fe479190906bc965635f96839592f8459d67e` (Rust definitions, no Rust edges), mapped by a release build of the same revision |
-| Head revision | `859be4384a38dc674f88159ccac2ea1843ed1cfe` (Rust edges), mapped by a release build of the same revision |
+| Head revision | `381e13b59d221a485ba98ddc1ed4ceab22068b99` (Rust edges), mapped by a release build of the same revision |
 | Oracle | `rust-analyzer 1.97.1 (8bab26f4 2026-07-14)`, the toolchain component |
 | Toolchain | `rustc 1.97.1 (8bab26f4f 2026-07-14)`, `cargo 1.97.1 (c980f4866 2026-06-30)`, aarch64 macOS |
 | Network | none: every cargo and rust-analyzer step ran with `CARGO_NET_OFFLINE=true` and a scratch target directory |
@@ -35,7 +35,7 @@ revision that changes code. Against `543cec9` it adds two rules: a name a macro'
 bind shadows the calls beside it (and, written at a statement or module-level macro's own level,
 the code around it), and a glob whose names cannot be listed stops a lookup. At `a476774` the
 first rule cost 18 calls, because struct field names inside macro arguments counted as bindings;
-from `e4d19d2` on they no longer do. At `859be43`, possible bindings in nested macro groups
+from `e4d19d2` on they no longer do. At `381e13b`, possible bindings in nested macro groups
 shadow surrounding code, and a glob reaching a module extended by an item macro or `include!`
 stops a lookup when the name cannot be listed. The misses remain the same 8 as at `543cec9`.
 
