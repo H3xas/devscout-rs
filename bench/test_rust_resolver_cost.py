@@ -34,6 +34,15 @@ class GeneratorTests(unittest.TestCase):
             self.assertFalse(scratch.is_relative_to(cost.REPO))
             self.assertFalse(scratch.is_relative_to(root))
 
+    def test_map_scratch_rejects_concurrent_writer(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "manifest.json").write_text("frozen\n")
+            with cost.map_scratch_lock(root):
+                with self.assertRaises(BlockingIOError):
+                    with cost.map_scratch_lock(root):
+                        self.fail("second writer acquired map scratch")
+
 
 class BoundTests(unittest.TestCase):
     def test_numeric_limits_and_missing_counters(self):

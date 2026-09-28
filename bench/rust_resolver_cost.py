@@ -5,6 +5,8 @@ revision. The JSONL output includes failed and timed-out attempts.
 """
 
 import argparse
+from contextlib import contextmanager
+import fcntl
 import hashlib
 import json
 import os
@@ -285,6 +287,20 @@ def map_scratch_path(inputs):
     return scratch
 
 
+@contextmanager
+def map_scratch_lock(inputs):
+    lock_path = Path(str(map_scratch_path(inputs)) + ".lock")
+    with lock_path.open("a+") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise BlockingIOError(f"map scratch already in use: {lock_path}") from error
+        try:
+            yield
+        finally:
+            fcntl.flock(lock, fcntl.LOCK_UN)
+
+
 def map_corpus(cli, inputs, out, corpus):
     source = inputs / "corpus" / corpus
     scratch = map_scratch_path(inputs)
@@ -358,7 +374,7 @@ def run(revision, inputs, out):
                 stream.write(json.dumps(result, sort_keys=True) + "\n")
                 stream.flush()
     maps = []
-    with (out / "maps.jsonl").open("w") as stream:
+    with map_scratch_lock(inputs), (out / "maps.jsonl").open("w") as stream:
         for source in sorted((inputs / "corpus").iterdir()):
             if not source.is_dir():
                 continue
