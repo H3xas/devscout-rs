@@ -18,7 +18,7 @@ use super::reach::attach_reach;
 use super::receiver::{
     bare_receiver_field_or_property_type, def_outer_types, extractor_vouches_instance,
     is_this_shaped_receiver, lambda_slot_receiver_type, receiver_admits_candidate,
-    receiver_type_and_nullable, AssignabilityCache, ReceiverFieldType,
+    receiver_type_and_nullable, AssignabilityCache, BareMemberLookup, ReceiverFieldType,
 };
 use super::scope::{
     build_file_contexts, collect_global_usings_by_unit, namespace_encloses, score_candidate,
@@ -167,8 +167,7 @@ pub fn resolve_graph_with_model(
                 // (the member def is the target when it exists). Non-enum types
                 // emit on a recorded member, a generic type path, or an
                 // exact dotted type path. A bare name first checks the
-                // enclosing type's own and inherited fields/properties,
-                // which can shadow a visible type of the same name.
+                // enclosing type's own/inherited field/property before a type.
                 // Everything else (ambiguous, external, or a non-enum
                 // resolution with no certainty signal) is dropped silently
                 // and deliberately NOT counted in ambiguous_count/
@@ -252,8 +251,8 @@ pub fn resolve_graph_with_model(
                             usings,
                             aliases,
                             &file_contexts,
-                        )
-                        .filter(|field| index.defs[field.declaring_def].kind != "interface");
+                            BareMemberLookup::TypePriority,
+                        );
                     }
                     if receiver_field.is_none()
                         && type_qualifier_arm_admits(via, &index.defs[idx].id, r)
@@ -550,6 +549,7 @@ pub fn resolve_graph_with_model(
                             usings,
                             aliases,
                             &file_contexts,
+                            BareMemberLookup::ReceiverFallback,
                         );
                         receiver_type_name = receiver_field.as_ref().map(|f| f.type_name.clone());
                     }

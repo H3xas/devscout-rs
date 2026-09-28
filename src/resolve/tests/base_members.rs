@@ -29,6 +29,56 @@ fn inherited_property_named_like_an_imported_type_takes_the_bare_qualifier() {
 }
 
 #[test]
+fn interface_inherited_property_named_like_an_imported_type_takes_the_bare_qualifier() {
+    let files = fragments_for(&[
+        (
+            "Contracts/RoutingSlip.cs",
+            "namespace App.Contracts; public class RoutingSlip { public static int Read() => 1; }",
+        ),
+        (
+            "App/SanitizedRoutingSlip.cs",
+            "namespace App; public class SanitizedRoutingSlip { public string Read() => \"member\"; }",
+        ),
+        (
+            "App/IBase.cs",
+            "namespace App; public interface IBase { SanitizedRoutingSlip RoutingSlip { get; } }",
+        ),
+        (
+            "App/IDerived.cs",
+            "using App.Contracts; namespace App; public interface IDerived : IBase { string Read() => RoutingSlip.Read(); }",
+        ),
+    ]);
+    let graph = resolve_graph(&no_git_root(), &files);
+    assert_eq!(
+        member_edges_from(&graph, "App/IDerived.cs"),
+        vec![("App.SanitizedRoutingSlip", 1)]
+    );
+}
+
+#[test]
+fn interface_own_property_named_like_an_imported_type_takes_the_bare_qualifier() {
+    let files = fragments_for(&[
+        (
+            "Contracts/RoutingSlip.cs",
+            "namespace App.Contracts; public class RoutingSlip { public static int Read() => 1; }",
+        ),
+        (
+            "App/SanitizedRoutingSlip.cs",
+            "namespace App; public class SanitizedRoutingSlip { public string Read() => \"member\"; }",
+        ),
+        (
+            "App/IDerived.cs",
+            "using App.Contracts; namespace App; public interface IDerived { SanitizedRoutingSlip RoutingSlip { get; } string Read() => RoutingSlip.Read(); }",
+        ),
+    ]);
+    let graph = resolve_graph(&no_git_root(), &files);
+    assert_eq!(
+        member_edges_from(&graph, "App/IDerived.cs"),
+        vec![("App.SanitizedRoutingSlip", 1)]
+    );
+}
+
+#[test]
 fn inherited_property_named_like_the_enclosing_type_takes_the_bare_qualifier() {
     let files = fragments_for(&[
         (
