@@ -94,6 +94,11 @@ pub(super) struct ReceiverFieldType {
     pub(super) declaring_file: String,
 }
 
+pub(super) enum BareMemberLookup {
+    TypePriority,
+    ReceiverFallback,
+}
+
 // The enclosing-type chain a ref written INSIDE `def`'s own body carries
 // (`FragRef::outer_types`): every nesting level from the outermost in,
 // ending with the def itself. A def id spells nesting exactly that way --
@@ -113,7 +118,7 @@ pub(super) fn def_outer_types(def: &Def) -> Vec<String> {
 }
 
 // The bare-identifier receiver lookup a ref with NO in-file fact at all
-// falls back to: the innermost `outer_types` def's OWN merged field_types,
+// checks the innermost `outer_types` def's OWN merged field_types,
 // then property_types (a partial class's sibling-file field/property, the
 // current file cannot see for itself), then the same two tables on each
 // in-graph base of that def, in DECLARATION order, each followed by its own
@@ -123,7 +128,10 @@ pub(super) fn def_outer_types(def: &Def) -> Vec<String> {
 // `None` when `outer_types` is empty (no enclosing type, so no field/
 // property table to consult), when the innermost entry does not resolve
 // in-graph, or when neither table on `start` nor on any in-graph base
-// answers for the name.
+// answers for the name. At type priority, an implementing class does not
+// inherit interface members into its bare-name scope; an interface does
+// inherit its base interfaces' members. The receiver fallback retains its
+// prior fact walk.
 //
 // The answer names the def and the file the fact came FROM, not the site
 // that read it: the type name is a bare identifier, and the caller has to
@@ -136,6 +144,7 @@ pub(super) fn bare_receiver_field_or_property_type(
     usings: &FileUsings,
     aliases: &HashMap<String, String>,
     file_contexts: &HashMap<String, FileContext>,
+    use_kind: BareMemberLookup,
 ) -> Option<ReceiverFieldType> {
     let innermost = r.outer_types.last()?;
     let probe = name_probe(innermost.clone(), ns, r.outer_types.clone());
@@ -144,6 +153,10 @@ pub(super) fn bare_receiver_field_or_property_type(
     else {
         return None;
     };
+    // Implemented interfaces do not put their properties in a class's bare
+    // name scope; an interface's own base interfaces do put theirs in scope.
+    let skip_interfaces =
+        matches!(use_kind, BareMemberLookup::TypePriority) && index.defs[start].kind != "interface";
     if let Some((fact, declaring_file)) = declared_field_or_property_type(index, start, &r.name) {
         return Some(ReceiverFieldType {
             type_name: fact.type_name.clone(),
@@ -166,6 +179,9 @@ pub(super) fn bare_receiver_field_or_property_type(
         ) {
             let mut found: Option<ReceiverFieldType> = None;
             inheritance_walk_find(index, file_contexts, bidx, |idx| {
+                if skip_interfaces && index.defs[idx].kind == "interface" {
+                    return false;
+                }
                 match declared_field_or_property_type(index, idx, &r.name) {
                     Some((fact, declaring_file)) => {
                         found = Some(ReceiverFieldType {

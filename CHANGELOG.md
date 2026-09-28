@@ -22,6 +22,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **An inherited field or property wins over a same-named type in a bare member access.**
+  `RoutingSlip.Itinerary` inside a derived courier context now binds through its inherited
+  `RoutingSlip` property instead of an imported `RoutingSlip` type. Explicit type paths, generic
+  qualifiers and local receivers keep their existing lookup rules.
 - **Compiler-facts and context output list compiler diagnostics in one fixed order.** The
   compiler returns its diagnostics in an order that can change between identical runs. Each
   context record's `diagnostics.compiler` array, also embedded in compiler-facts output, was

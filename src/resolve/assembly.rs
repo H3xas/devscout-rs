@@ -19,7 +19,7 @@ use super::reach::attach_reach;
 use super::receiver::{
     bare_receiver_field_or_property_type, def_outer_types, extractor_vouches_instance,
     is_this_shaped_receiver, lambda_slot_receiver_type, receiver_admits_candidate,
-    receiver_type_and_nullable, AssignabilityCache, ReceiverFieldType,
+    receiver_type_and_nullable, AssignabilityCache, BareMemberLookup, ReceiverFieldType,
 };
 use super::scope::{
     build_file_contexts, collect_global_usings_by_unit, namespace_encloses, score_candidate,
@@ -166,19 +166,9 @@ pub fn resolve_graph_with_model(
                 // ref, then only act when it lands on exactly one candidate
                 // that clears an emission tier. Enums emit unconditionally
                 // (the member def is the target when it exists). Non-enum types
-                // emit only on syntactic type-certainty, because a bare
-                // qualifier that resolves to a type can still be an instance
-                // property or local sharing the type's name:
-                //   (a) the member is in the def's recorded member lists --
-                //       methods, properties and fields
-                //       (`MessageUrn.ForType(...)`, `MessageUrn.Prefix` -- an
-                //       instance property named MessageUrn would not carry
-                //       either), or
-                //   (b) the qualifier carried a type-argument list (syntax no
-                //       local/field/property can carry), or
-                //   (c) the qualifier was dotted AND answered at the
-                //       exact-qualified ladder step, or by step 1.5's
-                //       segment-by-segment walk through nested types.
+                // emit on a recorded member, a generic type path, or an
+                // exact dotted type path. A bare name first checks the
+                // enclosing type's own/inherited field/property before a type.
                 // Everything else (ambiguous, external, or a non-enum
                 // resolution with no certainty signal) is dropped silently
                 // and deliberately NOT counted in ambiguous_count/
@@ -201,6 +191,7 @@ pub fn resolve_graph_with_model(
                     &admission,
                 );
                 let mut emitted = false;
+                let mut receiver_field: Option<ReceiverFieldType> = None;
                 // `base.M`: a receiver_base ref's `result` names the
                 // ENCLOSING type (the same resolution a plain `this.M` ref
                 // gets, from the same `receiver_type`/`name`), and this rule
@@ -248,7 +239,25 @@ pub fn resolve_graph_with_model(
                     emitted = true;
                 } else if let Resolution::Resolved(idx, via) = &result {
                     let (idx, via) = (*idx, *via);
-                    if type_qualifier_arm_admits(via, &index.defs[idx].id, r) {
+                    if r.qualified.is_none()
+                        && !r.generic
+                        && !extractor_vouches_instance(r)
+                        && r.receiver_lambda.is_none()
+                        && type_qualifier_arm_admits(via, &index.defs[idx].id, r)
+                    {
+                        receiver_field = bare_receiver_field_or_property_type(
+                            &index,
+                            ns,
+                            r,
+                            usings,
+                            aliases,
+                            &file_contexts,
+                            BareMemberLookup::TypePriority,
+                        );
+                    }
+                    if receiver_field.is_none()
+                        && type_qualifier_arm_admits(via, &index.defs[idx].id, r)
+                    {
                         if index.defs[idx].kind == "enum" {
                             let member_key = format!(
                                 "{}.{}",
@@ -406,13 +415,15 @@ pub fn resolve_graph_with_model(
                 // taken-but-unknown, which is the answer the extractor already
                 // gave.
                 let (mut receiver_type_name, receiver_nullable) = receiver_type_and_nullable(r);
-                // Set only by the bare-identifier field/property fallback
-                // below, and only so the resolution of the name it produced
+                if receiver_type_name.is_none() {
+                    receiver_type_name = receiver_field.as_ref().map(|f| f.type_name.clone());
+                }
+                // Set only by the bare-identifier field/property lookup,
+                // and only so the resolution of the name it produced
                 // can happen in the DECLARING file's context rather than
                 // this one's. Every other way `receiver_type_name` is
                 // filled reads a name off this file's own ref, so it stays
                 // `None` and the site's own context is used.
-                let mut receiver_field: Option<ReceiverFieldType> = None;
                 if receiver_type_name.is_none() {
                     if let (Some(owner), Some(member)) =
                         (&r.receiver_call_owner, &r.receiver_call_member)
@@ -539,6 +550,7 @@ pub fn resolve_graph_with_model(
                             usings,
                             aliases,
                             &file_contexts,
+                            BareMemberLookup::ReceiverFallback,
                         );
                         receiver_type_name = receiver_field.as_ref().map(|f| f.type_name.clone());
                     }
