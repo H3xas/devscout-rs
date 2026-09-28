@@ -10,7 +10,7 @@
 // shadows a glob of that name. Visibility is not modelled.
 //
 // A glob whose names cannot be listed (of std, an external crate or an
-// enum, or reaching an import that resolved outside the crate) is opaque:
+// enum, a macro-extended crate module, or an external import) is opaque:
 // any name may come from it. Outside an import, a lookup that finds the
 // name nowhere at a level with an opaque glob stops there instead of going
 // on to an enclosing block, the module or the extern prelude. An import
@@ -274,8 +274,8 @@ impl Tables {
 
     /// What `name` is through a set of globs: breadth first over glob
     /// targets, stopping at each module where the name binds explicitly. A
-    /// module whose explicit import of the name resolved outside the crate
-    /// makes the result opaque, as does any glob that cannot be listed.
+    /// module whose name is unlisted because of a macro or an external
+    /// import makes the result opaque, as does any unlistable glob.
     pub fn through_globs(&self, globs: &[usize], name: &str, ns: Ns, probe: &mut Probe) -> Globbed {
         let mut out: Vec<Target> = Vec::new();
         let mut seen: HashSet<usize> = HashSet::new();
