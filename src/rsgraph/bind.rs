@@ -5,7 +5,7 @@
 // module's own items and explicit imports, its globs, and last the extern
 // prelude, where only the package's library name binds (std and external
 // crates bind nothing). A level with a glob that cannot be listed stops a
-// lookup that finds nothing there, except for an import path. `self`, repeated `super`, `crate` and a leading `::`
+// lookup that finds nothing there, except for an import path's first segment. `self`, repeated `super`, `crate` and a leading `::`
 // name modules directly. `Type::f` finds `f` among the items of every `impl`
 // whose self type resolves to `Type`, or among a trait's own items; a type
 // alias, a generic parameter and a qualified path bind nothing. One
@@ -33,7 +33,7 @@ pub(super) struct From {
     pub file: usize,
     pub block: Option<usize>,
     pub self_def: Option<usize>,
-    /// Whether the path is a `use` path, which an opaque glob never stops.
+    /// Whether this is a `use` path; only its first segment may pass an opaque glob.
     pub import: bool,
 }
 
@@ -111,7 +111,7 @@ impl Binder<'_> {
             (None, _) => self.in_scope(from, name, ns, probe),
             (Some(Target::Module(m)), _) => self
                 .t
-                .in_module(m, name, ns, from.import, probe)
+                .in_module(m, name, ns, false, probe)
                 .unwrap_or_default(),
             (Some(Target::Def(d)), _) => self.associated(d, name, ns),
         }

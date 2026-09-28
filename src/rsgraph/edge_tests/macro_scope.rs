@@ -124,3 +124,16 @@ fn a_statement_macro_may_declare_a_module_from_a_lowercase_name() {
         vec!["uses-member src/lib.rs:4 -> src/lib.rs#m::f"]
     );
 }
+
+#[test]
+fn a_nested_item_macro_inside_an_expression_shadows_a_qualified_call() {
+    let src = "pub mod original { pub fn value() -> i32 { 1 } }\nmacro_rules! make_module { ($n:ident) => { mod $n { pub fn value() -> i32 { 2 } } }; }\nmacro_rules! wrap { ($($t:tt)*) => {{ $($t)* }}; }\npub fn expression_macro() -> i32 { let answer = wrap!(make_module!(original); original::value()); answer }\npub fn plain() -> i32 { original::value() }\n#[test] fn runtime() { assert_eq!(expression_macro(), 2); assert_eq!(plain(), 1); }\n";
+    assert_eq!(
+        calls(src),
+        vec![
+            "uses-member src/lib.rs:5 -> src/lib.rs#original::value",
+            "uses-member src/lib.rs:6 -> src/lib.rs#expression_macro",
+            "uses-member src/lib.rs:6 -> src/lib.rs#plain",
+        ]
+    );
+}

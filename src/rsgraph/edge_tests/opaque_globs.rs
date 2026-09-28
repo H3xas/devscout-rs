@@ -117,3 +117,31 @@ fn an_unlisted_glob_can_conflict_with_a_name_another_glob_lists() {
         vec!["uses-member src/lib.rs:4 -> src/lib.rs#known::max"]
     );
 }
+
+#[test]
+fn macro_extended_module_items_precede_its_fallback_glob_on_every_route() {
+    let src = "pub mod fallback { pub fn max() -> i32 { 1 } pub struct Lamp; impl Lamp { pub fn on() -> i32 { 1 } } }\nmacro_rules! generate { () => { pub fn max() -> i32 { 2 } pub struct Lamp; impl Lamp { pub fn on() -> i32 { 2 } } }; }\npub mod generated { pub use crate::fallback::*; generate!(); pub fn inside() -> i32 { max() + Lamp::on() } pub fn known() -> i32 { 7 } }\npub fn qualified() -> i32 { generated::max() + generated::Lamp::on() }\npub fn imported() -> i32 { use crate::generated::{max as chosen, Lamp as Chosen}; chosen() + Chosen::on() }\npub fn globbed() -> i32 { use crate::generated::*; max() + Lamp::on() }\npub fn listed() -> i32 { fallback::max() + fallback::Lamp::on() + generated::known() }\npub mod chain { pub use crate::generated::{max as pick, Lamp as Light, known}; }\npub fn through_chain() -> i32 { chain::pick() + chain::Light::on() + chain::known() }\n#[test] fn runtime() { assert_eq!(generated::inside(), 4); assert_eq!(qualified(), 4); assert_eq!(imported(), 4); assert_eq!(globbed(), 4); assert_eq!(listed(), 9); assert_eq!(through_chain(), 11); }\n";
+    let got = edges_for(&[("src/lib.rs", src)]);
+    for line in [3, 4, 5, 6, 9] {
+        assert!(
+            !got.iter()
+                .any(|edge| edge.contains(&format!("src/lib.rs:{line} -> src/lib.rs#fallback::"))),
+            "line {line}: {got:?}"
+        );
+    }
+    assert!(got
+        .iter()
+        .any(|edge| edge == "uses-member src/lib.rs:7 -> src/lib.rs#fallback::max"));
+    assert!(got
+        .iter()
+        .any(|edge| edge == "uses-type src/lib.rs:7 -> src/lib.rs#fallback::Lamp"));
+    assert!(got
+        .iter()
+        .any(|edge| edge == "uses-member src/lib.rs:7 -> src/lib.rs#fallback::Lamp::on"));
+    assert!(got
+        .iter()
+        .any(|edge| edge == "uses-member src/lib.rs:7 -> src/lib.rs#generated::known"));
+    assert!(got
+        .iter()
+        .any(|edge| edge == "uses-member src/lib.rs:9 -> src/lib.rs#generated::known"));
+}

@@ -161,14 +161,10 @@ impl Level<'_, '_> {
     }
 
     fn add(&self, names: &mut TreeNames, text: String, value: bool) {
-        let sets = |n: &mut Names| {
-            if value {
-                n.values.insert(text.clone());
-            } else {
-                n.items.insert(text.clone());
-            }
-        };
-        sets(&mut names.inside);
+        if value {
+            names.inside.values.insert(text.clone());
+        }
+        names.inside.items.insert(text.clone());
         // The same token may expand to an item or a local. A nested group
         // can be spliced into either surrounding scope by the macro.
         names.outward.items.insert(text.clone());

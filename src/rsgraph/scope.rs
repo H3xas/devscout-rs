@@ -13,9 +13,9 @@
 // enum, a macro-extended crate module, or an external import) is opaque:
 // any name may come from it. Outside an import, a lookup that finds the
 // name nowhere at a level with an opaque glob stops there instead of going
-// on to an enclosing block, the module or the extern prelude. An import
-// path goes on, because rustc rejects an import whose first segment a glob
-// could shadow from an outer scope.
+// on to an enclosing block, the module or the extern prelude. Only an
+// import's first segment may continue past an unlistable glob: a later
+// segment inside a known opaque module cannot use its fallback glob.
 //
 // Module-level leaves depend on each other (a `pub use` chain, a glob of a
 // module that itself imports), so they are resolved by a worklist to a fixed
@@ -300,8 +300,8 @@ impl Tables {
     }
 
     /// `name` looked up inside a module: its own level, then its globs.
-    /// `None` when nothing binds or shadows the name there; outside an
-    /// import, a glob that cannot be listed shadows it.
+    /// Unlisted macro output in this module shadows its fallback globs.
+    /// `import` applies only to an import path's first segment.
     pub fn in_module(
         &self,
         module: usize,
@@ -314,6 +314,9 @@ impl Tables {
             Level::Found(v) => Some(v),
             Level::Shadowed => Some(Vec::new()),
             Level::Empty => {
+                if self.opaque_modules[module] {
+                    return if import { None } else { Some(Vec::new()) };
+                }
                 let g = self.through_globs(&self.module_globs[module], name, ns, probe);
                 globbed(g, import)
             }
@@ -364,10 +367,14 @@ impl Tables {
 }
 
 // A level's glob result: its targets, an empty (shadowing) result for an
-// opaque level outside an import, or `None` to go on outward.
+// opaque level, or `None` when an import's first segment may continue.
 fn globbed(g: Globbed, import: bool) -> Option<Vec<Target>> {
-    if g.opaque && !import {
-        Some(Vec::new())
+    if g.opaque {
+        if import && g.found.is_empty() {
+            None
+        } else {
+            Some(Vec::new())
+        }
     } else if !g.found.is_empty() {
         Some(g.found)
     } else {

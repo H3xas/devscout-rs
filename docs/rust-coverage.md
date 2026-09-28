@@ -148,9 +148,11 @@ so it never changes a C# or TypeScript answer.
   This applies through glob chains. A lookup that finds the name nowhere at such a level stops
   there with no edge: a call
   inside `{ use std::cmp::*; max(1, 2) }` never binds a crate `max` outside the block, and a
-  module-level `use other_crate::*;` shadows the library name in expression paths. A `use` path
-  goes on past it: rustc rejects an import whose first segment a glob would shadow from an outer
-  scope.
+  module-level `use other_crate::*;` shadows the library name in expression paths. The first
+  segment of a `use` path may go on past an unlistable glob: rustc rejects an import whose first
+  segment that glob would shadow from an outer scope. Once a path names a macro-extended module,
+  its unlisted items take precedence over its fallback globs; a direct or imported call into it
+  has no edge unless an explicit recorded item supplies the name.
 - **Shadowing.** An item declared inside an enclosing block, or a generic parameter, shadows a
   path's first segment. A local binding (a parameter or a `let`, closure, `match`, `if let`,
   `while let` or `for` pattern anywhere in the enclosing function body) shadows a single-segment
@@ -214,7 +216,8 @@ would outside a macro, qualifier segments included.
   `match`, `if let`, `while let` or `for` pattern, a parameter of a function written inside an
   item-like macro, or a bare argument such as `bind!(f)`. A struct field name before its `:`
   (`Fact { identity: identity(1) }`) is not one. A single-segment call in the same invocation
-  that shares a lowercase one gives no edge. Items, generic parameters and `use` names
+  that shares a lowercase one gives no edge. A lowercase name may also declare an item, so a
+  qualified path beginning with it has no edge. Items, generic parameters and `use` names
   declared inside the trees, and an uppercase name outside angle brackets and type positions,
   shadow a path's first segment, and an `impl` or trait inside them drops `Self` paths.
 - **Statement and module-level macros reach the code around them.** A possible binding from any
