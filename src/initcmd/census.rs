@@ -9,11 +9,12 @@ use crate::walk;
 
 // C# gets the complete extraction path. TypeScript-family files are indexed
 // and resolved into the graph, but with narrower edge coverage. Rust files
-// give definitions for `find` and `read` and no edges. The remaining
+// are indexed and graphed through path resolution: edges a path names,
+// never a method call typed by its receiver. The remaining
 // extensions enumerated by `walk::SOURCE_EXT` are counted but not indexed.
 const FULLY_SUPPORTED_EXT: &[&str] = &[".cs"];
 const INDEXED_AND_GRAPHED_EXT: &[&str] = &[".ts", ".tsx", ".js", ".jsx"];
-const DEFINITIONS_ONLY_EXT: &[&str] = &[".rs"];
+const PATH_RESOLVED_EXT: &[&str] = &[".rs"];
 
 // ---------------------------------------------------------------------------
 // Language census. Rather than a second, independent recursive walker, this
@@ -51,9 +52,9 @@ pub(super) fn census_line(root: &Path) -> String {
     let (indexed_and_graphed, other): (Vec<_>, Vec<_>) = other
         .into_iter()
         .partition(|(e, _)| INDEXED_AND_GRAPHED_EXT.contains(&e.as_str()));
-    let (definitions_only, not_indexed): (Vec<_>, Vec<_>) = other
+    let (path_resolved, not_indexed): (Vec<_>, Vec<_>) = other
         .into_iter()
-        .partition(|(e, _)| DEFINITIONS_ONLY_EXT.contains(&e.as_str()));
+        .partition(|(e, _)| PATH_RESOLVED_EXT.contains(&e.as_str()));
     let fmt_group = |g: &[(String, usize)]| {
         g.iter()
             .map(|(e, c)| format!("{c} {e}"))
@@ -71,10 +72,10 @@ pub(super) fn census_line(root: &Path) -> String {
             fmt_group(&indexed_and_graphed)
         ));
     }
-    if !definitions_only.is_empty() {
+    if !path_resolved.is_empty() {
         groups.push(format!(
-            "{} (definitions only: find and read)",
-            fmt_group(&definitions_only)
+            "{} (indexed and graphed, path-resolved edges)",
+            fmt_group(&path_resolved)
         ));
     }
     if !not_indexed.is_empty() {
@@ -158,7 +159,7 @@ mod tests {
         fs::write(dir.join("e.md"), "# doc").unwrap();
         assert_eq!(
             census_line(&dir),
-            "languages: 1 .cs (fully supported); 1 .ts (indexed and graphed, narrower edge coverage); 2 .rs (definitions only: find and read); 1 .md (present, not indexed)"
+            "languages: 1 .cs (fully supported); 1 .ts (indexed and graphed, narrower edge coverage); 2 .rs (indexed and graphed, path-resolved edges); 1 .md (present, not indexed)"
         );
     }
 
@@ -168,12 +169,12 @@ mod tests {
         fs::write(dir.join("lib.rs"), "fn f() {}").unwrap();
         assert_eq!(
             census_line(&dir),
-            "languages: 1 .rs (definitions only: find and read)"
+            "languages: 1 .rs (indexed and graphed, path-resolved edges)"
         );
     }
 
     #[test]
     fn census_rust_tier_is_explicit() {
-        assert_eq!(DEFINITIONS_ONLY_EXT, &[".rs"]);
+        assert_eq!(PATH_RESOLVED_EXT, &[".rs"]);
     }
 }

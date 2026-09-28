@@ -450,6 +450,7 @@ fn a_rust_fragment_serializes_exactly_round_trips_and_reads_only_as_rs() {
             name_line: 4,
             end_line: 6,
         }],
+        ..extract::RsFragment::default()
     });
     let rs_json = serde_json::to_string(&rs).unwrap();
     assert_eq!(
@@ -475,6 +476,70 @@ fn a_rust_fragment_serializes_exactly_round_trips_and_reads_only_as_rs() {
         serde_json::from_str::<AnyFragment>(TS_BYTES).unwrap(),
         AnyFragment::Ts(_)
     ));
+}
+
+#[test]
+fn every_rust_fact_key_serializes_in_order_and_reads_only_as_rs() {
+    let rs = AnyFragment::Rs(extract::RsFragment {
+        rs: 1,
+        items: vec![extract::RsItem {
+            name: "glow".into(),
+            kind: "fn".into(),
+            path: "Lamp::glow".into(),
+            line: 2,
+            name_line: 2,
+            end_line: 2,
+        }],
+        mod_files: vec!["shelf".into()],
+        ctors: vec!["Lamp".into()],
+        tests: vec!["tests::lit".into()],
+        impls: vec![extract::RsImpl {
+            scope: "inner".into(),
+            self_type: "crate::Lamp".into(),
+            items: vec!["Lamp::glow".into()],
+        }],
+        uses: vec![extract::RsUse {
+            scope: "tests".into(),
+            block: Some(0),
+            path: "super::shelf::dust".into(),
+            name: "dust".into(),
+            line: 9,
+        }],
+        blocks: vec![
+            extract::RsBlock { parent: None },
+            extract::RsBlock { parent: Some(0) },
+        ],
+        sites: vec![extract::RsSite {
+            role: extract::RsRole::Call,
+            path: "Self::glow".into(),
+            line: 5,
+            lines: vec![4, 5],
+            scope: "inner".into(),
+            block: Some(1),
+            self_impl: Some(0),
+            self_trait: Some("Shine".into()),
+            mac: true,
+        }],
+        opaque_scopes: vec!["inner".into()],
+    });
+    let json = serde_json::to_string(&rs).unwrap();
+    assert_eq!(
+        json,
+        concat!(
+            r#"{"rs":1,"items":[{"name":"glow","kind":"fn","path":"Lamp::glow","line":2,"nameLine":2,"endLine":2}],"#,
+            r#""modFiles":["shelf"],"ctors":["Lamp"],"tests":["tests::lit"],"#,
+            r#""impls":[{"scope":"inner","selfType":"crate::Lamp","items":["Lamp::glow"]}],"#,
+            r#""uses":[{"scope":"tests","block":0,"path":"super::shelf::dust","name":"dust","line":9}],"#,
+            r#""blocks":[{},{"parent":0}],"#,
+            r#""sites":[{"role":"call","path":"Self::glow","line":5,"lines":[4,5],"scope":"inner","block":1,"selfImpl":0,"selfTrait":"Shine","mac":true}],"opaqueScopes":["inner"]}"#
+        )
+    );
+    assert_eq!(serde_json::from_str::<AnyFragment>(&json).unwrap(), rs);
+    assert!(serde_json::from_str::<extract::TsFragment>(&json).is_err());
+    assert!(serde_json::from_str::<Fragment>(&json).is_err());
+    for other in [CS_BYTES, TS_BYTES] {
+        assert!(serde_json::from_str::<extract::RsFragment>(other).is_err());
+    }
 }
 
 #[test]

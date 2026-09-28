@@ -40,6 +40,17 @@ pub fn project_units_path(root: &Path) -> PathBuf {
     graph_dir(root).join("project-units.json")
 }
 
+/// Path to the Rust crate-model sidecar for `root`.
+///
+/// Holds the serialized Cargo package model (`rsgraph::crates::RustCrates`)
+/// the last rebuild resolved Rust paths against. `map` compares it with a
+/// freshly discovered model to notice a `Cargo.toml` edit, which moves no
+/// walked mtime. Written only when a package is in scope and deleted
+/// otherwise, the same rule as `project_units_path`.
+pub fn rust_crates_path(root: &Path) -> PathBuf {
+    graph_dir(root).join("rust-crates.json")
+}
+
 // The version in both cache filenames is the fragment SCHEMA version, bumped
 // whenever the extractor starts recording something old cached fragments
 // lack -- v10 added def `type_params`/`base_generic_args` and the new
@@ -139,16 +150,21 @@ pub fn project_units_path(root: &Path) -> PathBuf {
 // wrote changes shape; the bump exists so a build without that arm never
 // meets a Rust fragment, because one cache entry no arm accepts makes the
 // whole cache fail to parse and every file reparse on every run.
+// v29 adds Rust resolution facts (`modFiles`, `ctors`, `tests`, `impls`,
+// `uses`, `blocks`, `sites`) and module scopes extended by item macros.
+// A cached v28 Rust fragment lacks these facts, so edges of an unchanged
+// file would be missing and globs reaching an item-macro module could be
+// resolved incorrectly.
 // The rename IS the invalidation mechanism:
 // pre-bump caches stop being found, every file reparses
 // once, no reader carries version-compat logic. Writers delete every
 // superseded generation (see `remove_superseded_caches`).
 pub(crate) fn fragments_cache_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-v28.json")
+    graph_dir(root).join("fragments-v29.json")
 }
 
 pub(crate) fn fragments_index_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-index-v28.json")
+    graph_dir(root).join("fragments-index-v29.json")
 }
 
 // Every generation below the current one, not just the immediately previous:
@@ -209,6 +225,8 @@ pub(crate) const SUPERSEDED_CACHE_FILES: &[&str] = &[
     "fragments-index-v26.json",
     "fragments-v27.json",
     "fragments-index-v27.json",
+    "fragments-v28.json",
+    "fragments-index-v28.json",
 ];
 
 pub(crate) fn remove_superseded_caches(root: &Path) {

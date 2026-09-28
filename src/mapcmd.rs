@@ -530,24 +530,30 @@ pub fn map_repo(root: &Path, scope_dirs: &[String], opts: MapOptions) -> io::Res
     // resolution may use, if any, and the `stats.lane` record this run owes.
     let lane = crate::semantic::decide_lane(root, opts.no_semantic);
 
-    // Graph rebuild triggers, OR-ed (a repo with none of the three answers
-    // false at no cost): any indexed file's cache key changed
-    // (`graph::index_is_stale`); the csproj model changed since the last
-    // rebuild (`project::sidecar_differs`); or this run owes a lane record
-    // (an entry at the compiler-facts path, or `--no-semantic`), which must
-    // describe this run even over an unchanged tree.
+    // Discover the Cargo model on every run so a manifest edit can rebuild
+    // the graph even when no indexed source file changed.
+    let rs_files: Vec<String> = graph_files
+        .iter()
+        .filter(|f| crate::parse::is_rust(&f.rel))
+        .map(|f| f.rel.clone())
+        .collect();
+    let crates = crate::rsgraph::crates::discover(root, &scope, &rs_files)?;
+    // Rebuild for a changed source index, a changed project or Cargo model,
+    // or when this run owes an enriched-lane record.
     let changed = graph::index_is_stale(&graph_index, &graph_files)
         || project::sidecar_differs(root, project_model.as_ref())
+        || crate::rsgraph::crates::sidecar_differs(root, crates.as_ref())
         || lane.forces_rebuild();
 
     let graph_start = Instant::now();
-    let outcome = graph::rebuild_graph(
+    let outcome = graph::rebuild_graph_with_crates(
         root,
         &graph_files,
         &fresh_fragments,
         changed,
         project_model.as_ref(),
         Some(&lane),
+        crates.as_ref(),
     )?;
     let graph_seconds = graph_start.elapsed().as_secs_f64();
 

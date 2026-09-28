@@ -154,3 +154,72 @@ whatever a later run happens to produce. **Run 1** runs after the resolver chang
 corpus pin and same fixture, and is reported beside Run 0 rather than overwriting it, so a
 regression in one tier alongside an improvement in another stays visible instead of netting
 out.
+
+## Rust edges
+
+A third benchmark family scores devscout's Rust edges against the references
+[`rust-analyzer lsif`](https://rust-analyzer.github.io/) writes for this repository itself.
+[`bench/rust_edges.py`](../../bench/rust_edges.py) runs it (see
+[`bench/README.md`](../../bench/README.md#rust-edges-rust-analyzer-oracle)); it is standard-library
+Python with unit tests on a hand-written LSIF sample.
+
+### Oracle and universe
+
+- A pinned commit is exported with `git archive` into a scratch directory outside every git work
+  tree. `rust-analyzer lsif`, `cargo test --offline --all-targets -- --list` and `devscout init
+  --no-hooks` all run on that export, offline (`CARGO_NET_OFFLINE=true`) with a scratch
+  `CARGO_TARGET_DIR`, and the devscout binary is a release build of the same commit.
+- The scored universe is the files of the cargo package's targets: the LSIF documents under the
+  export root. `fixtures/`, `bench/` and every other file no target reaches are excluded on both
+  sides.
+- An LSIF reference is a range whose definition result names ranges other than itself. Its
+  target maps to the devscout def with the same file, name and name line (through `graph.names`,
+  then the def of that file and name whose span holds the line). A target in no export file is
+  external; a target with no such def (a local, a field, a variant, an item inside a function
+  body) is "not a recorded item".
+
+### Site classes
+
+Every oracle reference gets a context and a shape from the script's own lexer (string,
+raw-string, char and nested-comment aware), read off the source at the reference's position:
+
+- **Context:** plain, macro argument, `macro_rules!` body, attribute or derive, `use` tree.
+- **Shape:** path call (a name followed, past an optional turbofish, by `(` and not preceded by
+  `.`), method call, path qualifier (followed by `::`), struct literal, type position, macro name,
+  other value reference, and the positions rust-analyzer resolves without a name: operator,
+  literal, lifetime and whitespace inside an expression.
+- **Target:** recorded fn, recorded type, recorded other item, not a recorded item, external.
+
+The split between type positions and value references is lexical and approximate (a unit enum
+variant counts as a type position); it never touches the call population.
+
+### Metrics
+
+- **Call edges.** Population: oracle references of shape path call in a plain or macro-argument
+  context whose target is a recorded `fn`. Recall: the share of the population that devscout's
+  `uses-member` edges match on file, line and target, as multisets. Precision: over every Rust
+  `uses-member` edge in the universe, the share with an oracle reference at its file and line
+  to its target.
+- **Test edges.** Pairs of a test function and a recorded `fn` called at a population site
+  inside the test's span. Oracle-side tests come from the script's own `#[test]` scan; devscout's
+  are the defs carrying `testMethods`. Precision and recall over the two pair sets.
+- **Verdicts.** Every Rust edge of any kind is `match`, `wrong-target` (the oracle resolves the
+  same name on that line to something else) or `unconfirmed` (no oracle reference of that name
+  there); every non-match is listed and classified. `ambiguous` edges are reported with whether
+  the oracle's target is among the candidates.
+- **Test sets.** The script's `#[test]` scan is checked per target against the compiler's
+  `--list`, by qualified name derived from the module tree, and devscout's recognized tests
+  against the scan; every difference is classified.
+- **Definition mapping.** The share of item-shaped LSIF definitions (a name after `fn`, `struct`,
+  `enum`, `union`, `trait`, `mod`, `const`, `static`, `type` or `macro_rules!`) that map to a
+  devscout def, with every miss listed.
+
+### Thresholds and protocol
+
+Thresholds were registered before the first measurement: call-edge precision ≥ 0.98 and recall
+≥ 0.85; test-edge precision ≥ 0.98 and recall ≥ 0.85. **Run 0** scores the base, mapped by the
+base build, before any Rust edge exists: its population is the denominator every later run is
+read against, and its site classes check that the oracle sees calls inside macro arguments and
+that its definitions map to devscout ids. A **head run** scores a commit carrying the edges; a
+defect it exposes is fixed inside the resolver's model and the head run repeats on the new
+commit. Both runs are published side by side in `results/`.

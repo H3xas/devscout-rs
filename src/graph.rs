@@ -3,7 +3,7 @@
 // a mismatch makes reuse break silently.
 //
 // This module owns every serde struct for graph.json + the fragments-cache
-// pair (fragments-v28.json, fragments-index-v28.json), plus their path resolution,
+// pair (fragments-v29.json, fragments-index-v29.json), plus their path resolution,
 // atomic I/O, and the cache-then-resolve-then-write orchestration
 // (`rebuild_graph`). The pure resolution ladder that
 // turns fragments into `defs`/`edges` lives in `resolve.rs` and returns the
@@ -120,8 +120,8 @@ pub use imports::{
 };
 pub use lane::{LaneCompilations, LaneReason, LaneStats};
 pub use ordered::{OrderedMap, Percent1};
-pub use paths::{graph_json_path, project_units_path};
-pub use rebuild::{rebuild_graph, GraphFile, RebuildOutcome};
+pub use paths::{graph_json_path, project_units_path, rust_crates_path};
+pub use rebuild::{rebuild_graph, rebuild_graph_with_crates, GraphFile, RebuildOutcome};
 
 #[cfg(test)]
 mod tests;

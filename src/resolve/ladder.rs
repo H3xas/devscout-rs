@@ -7,7 +7,7 @@ use super::scope::{FileContext, FileUsings};
 use crate::graph::{Candidate, FragRef};
 use std::collections::{HashMap, HashSet};
 
-const AMBIGUOUS_CAP: usize = 5;
+pub(crate) const AMBIGUOUS_CAP: usize = 5;
 
 // ---------------------------------------------------------------------------
 // Admission: the project model's veto over the two HEURISTIC tiers.

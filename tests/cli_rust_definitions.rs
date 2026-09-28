@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 static COUNTER: AtomicU64 = AtomicU64::new(0);
 
-const CENSUS_MIXED: &str = "languages: 1 .cs (fully supported); 1 .ts (indexed and graphed, narrower edge coverage); 2 .rs (definitions only: find and read); 1 .md (present, not indexed)";
+const CENSUS_MIXED: &str = "languages: 1 .cs (fully supported); 1 .ts (indexed and graphed, narrower edge coverage); 2 .rs (indexed and graphed, path-resolved edges); 1 .md (present, not indexed)";
 
 fn temp_dir(prefix: &str) -> PathBuf {
     let n = COUNTER.fetch_add(1, Ordering::SeqCst);
@@ -549,8 +549,8 @@ fn unchanged_remap_reuses_everything_and_one_edit_moves_only_its_rows() {
     let artifacts = [
         "graph/graph.json",
         "manifest.json",
-        "graph/fragments-v28.json",
-        "graph/fragments-index-v28.json",
+        "graph/fragments-v29.json",
+        "graph/fragments-index-v29.json",
     ];
     let before: Vec<Vec<u8>> = artifacts
         .iter()
@@ -648,7 +648,7 @@ fn rust_files_index_in_a_tree_with_no_cargo_manifest() {
 }
 
 #[test]
-fn rust_rows_are_a_suffix_and_move_only_two_stats() {
+fn rust_rows_are_a_suffix_and_move_only_their_own_stats() {
     let with = mixed_root("suffix-with", true);
     let without = mixed_root("suffix-without", false);
     for fx in [&with, &without] {
@@ -659,6 +659,8 @@ fn rust_rows_are_a_suffix_and_move_only_two_stats() {
     let g_without = without.json("graph/graph.json");
 
     let is_rust = |r: &serde_json::Value| r["file"].as_str().unwrap().ends_with(".rs");
+    let is_rust_edge =
+        |e: &serde_json::Value| e["from_file"].as_str().unwrap_or("").ends_with(".rs");
     for key in ["defs", "names"] {
         let rows = g_with[key].as_array().unwrap();
         let first_rust = rows.iter().position(is_rust).expect("rust rows present");
@@ -667,6 +669,12 @@ fn rust_rows_are_a_suffix_and_move_only_two_stats() {
             "{key}: rust rows are a suffix"
         );
     }
+    let edges = g_with["edges"].as_array().unwrap();
+    let first_rust_edge = edges.iter().position(is_rust_edge).unwrap_or(edges.len());
+    assert!(
+        edges[first_rust_edge..].iter().all(is_rust_edge),
+        "edges: rust edges are a suffix"
+    );
     let rust_defs = g_with["defs"]
         .as_array()
         .unwrap()
@@ -684,6 +692,31 @@ fn rust_rows_are_a_suffix_and_move_only_two_stats() {
             .cloned()
             .collect();
         g_with[key] = serde_json::Value::Array(kept);
+    }
+    let rust_edges: Vec<serde_json::Value> = g_with["edges"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| is_rust_edge(e))
+        .cloned()
+        .collect();
+    let kept: Vec<serde_json::Value> = g_with["edges"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| !is_rust_edge(e))
+        .cloned()
+        .collect();
+    g_with["edges"] = serde_json::Value::Array(kept);
+    assert_eq!(
+        rust_edges.len(),
+        1,
+        "the `impl Ledger` self type: {rust_edges:?}"
+    );
+    for edge in &rust_edges {
+        let kind = edge["kind"].as_str().unwrap();
+        let count = &mut g_with["stats"]["edges_by_kind"][kind];
+        *count = serde_json::Value::from(count.as_u64().unwrap() - 1);
     }
     let stats_with = g_with["stats"].clone();
     assert_eq!(

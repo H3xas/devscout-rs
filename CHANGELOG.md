@@ -15,10 +15,24 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   associated types, and `macro_rules!` macros. `find` lists them, and `read` quotes an item's whole
   span, doc comments and attributes included. An item is named by its name, by its id
   (`<file>#<path>`, such as `src/shelf.rs#Widget::new`), or by a `::` path such as `Widget::new`;
-  when two items in a file share a path, the later ones take a `-1`, `-2` suffix. `init` reports
-  `.rs` files in a tier of their own, "definitions only: find and read". `refs`, `impact` and
-  `tests` give no Rust rows yet. The fragment cache moves to `fragments-v28.json`, so an existing
-  cache re-extracts once.
+  when two items in a file share a path, the later ones take a `-1`, `-2` suffix. This is the
+  definition layer used by the Rust references and tests described below. That first slice
+  used the `fragments-v28.json` cache generation, superseded by v29 in this release.
+- **`refs`, `impact` and `tests` answer on Rust code.** `map` now resolves Rust paths through the
+  module tree (`mod` declarations, `mod.rs` and `foo.rs` with `foo/` layouts, inline modules, and
+  crate roots read from each `Cargo.toml` in scope, or `lib.rs` and `main.rs` without one) and
+  through `use` scope (groups, globs, renames, `self`, `super`, `crate`, the package's library name,
+  and `pub use` re-exports followed to the defining item). A call bound to one function becomes a
+  `uses-member` edge to it, a type use, struct literal or constructor a `uses-type` edge, and
+  `impl Trait for T` an `implements` edge; calls written inside macro arguments such as
+  `assert_eq!` and `vec!` count too. A name two imports both provide gives an `ambiguous` edge
+  instead of a guess, and a method call is never typed by its receiver. Functions carrying
+  `#[test]` are recognized as tests, so `tests <fn>` and `impact` reach them. `init` reports `.rs`
+  files as "indexed and graphed, path-resolved edges". A Cargo package model is kept beside the
+  graph in `rust-crates.json`, so editing a `Cargo.toml` rebuilds the graph. Measured against
+  rust-analyzer's own references on this repository, call edges scored precision 1.0 and recall
+  0.999. The fragment cache moves from the Rust-definition generation to
+  `fragments-v29.json`, so existing cache files re-extract once.
 
 ### Fixed
 
