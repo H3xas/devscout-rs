@@ -13,6 +13,10 @@ fn arc(t: &mut Tables, from: usize, to: usize) {
 }
 
 fn tables(topology: &str, size: usize, outcome: &str, name: &str, ns: Ns) -> Tables {
+    tables_for_names(topology, size, outcome, &[name], ns)
+}
+
+fn tables_for_names(topology: &str, size: usize, outcome: &str, names: &[&str], ns: Ns) -> Tables {
     let mut t = Tables {
         defs: Vec::new(),
         def_by_path: HashMap::new(),
@@ -59,19 +63,23 @@ fn tables(topology: &str, size: usize, outcome: &str, name: &str, ns: Ns) -> Tab
         }
         _ => panic!("unknown topology: {topology}"),
     }
-    if outcome == "found" || outcome == "ambiguous" {
-        let entry = t.items[size].entry(name.to_string()).or_default();
-        match ns {
-            Ns::Type => entry.types.push(Target::Def(0)),
-            Ns::Value => entry.values.push(Target::Def(0)),
+    for name in names {
+        if outcome == "found" || outcome == "ambiguous" {
+            let entry = t.items[size].entry((*name).to_string()).or_default();
+            match ns {
+                Ns::Type => entry.types.push(Target::Def(0)),
+                Ns::Value => entry.values.push(Target::Def(0)),
+            }
         }
     }
     if outcome == "ambiguous" {
         arc(&mut t, 0, size);
-        let entry = t.items[1].entry(name.to_string()).or_default();
-        match ns {
-            Ns::Type => entry.types.push(Target::Def(1)),
-            Ns::Value => entry.values.push(Target::Def(1)),
+        for name in names {
+            let entry = t.items[1].entry((*name).to_string()).or_default();
+            match ns {
+                Ns::Type => entry.types.push(Target::Def(1)),
+                Ns::Value => entry.values.push(Target::Def(1)),
+            }
         }
     }
     if outcome == "opaque" {
@@ -119,6 +127,55 @@ fn cached_globs_replay_ordered_probes_and_invalidate_after_a_leaf_change() {
 }
 
 #[test]
+fn distinct_query_bindings_match_declared_outcomes_across_axes() {
+    for topology in ["chain", "wide", "diamond", "cycle"] {
+        for location in ["module", "block"] {
+            for ns in [Ns::Type, Ns::Value] {
+                for outcome in ["found", "absent", "ambiguous", "opaque"] {
+                    let names = ["needle0", "needle1", "needle2"];
+                    let t = tables_for_names(topology, 32, outcome, &names, ns);
+                    for name in names {
+                        let (found, _) = lookup(&t, location, name, ns);
+                        let expected = match outcome {
+                            "found" => 1,
+                            "ambiguous" => 2,
+                            _ => 0,
+                        };
+                        assert_eq!(
+                            found.len(),
+                            expected,
+                            "{topology} {location} {outcome} {name}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn cache_copy_work_counts_storage_replay_and_invalidation() {
+    let mut t = tables("chain", 32, "found", "needle", Ns::Type);
+    reset_glob_cost();
+    lookup(&t, "module", "needle", Ns::Type);
+    let cold = glob_cost();
+    assert_eq!(cold.copied_entries, 2 * (cold.probes + cold.candidates));
+    lookup(&t, "module", "needle", Ns::Type);
+    let warm = glob_cost();
+    assert_eq!(
+        warm.copied_entries - cold.copied_entries,
+        warm.probes + warm.candidates - cold.probes - cold.candidates
+    );
+    change_first_glob(&mut t, 32);
+    lookup(&t, "module", "needle", Ns::Type);
+    let changed = glob_cost();
+    assert_eq!(
+        changed.copied_entries - warm.copied_entries,
+        2 * (changed.probes + changed.candidates - warm.probes - warm.candidates)
+    );
+}
+
+#[test]
 fn generated_glob_cost_row() {
     let Ok(spec) = std::env::var("RESOLVER_COST_GLOB") else {
         return;
@@ -136,7 +193,6 @@ fn generated_glob_cost_row() {
     };
     let location = parts[5];
     let shape = parts[6];
-    let mut t = tables(topology, size, outcome, "needle", ns);
     let names: Vec<String> = (0..queries)
         .map(|i| {
             if shape != "distinct" {
@@ -151,10 +207,11 @@ fn generated_glob_cost_row() {
     } else {
         names.iter().map(String::as_str).collect()
     };
+    let mut t = tables_for_names(topology, size, outcome, &distinct, ns);
     let mut ref_visits = 0;
     let mut ref_arcs = 0;
     for name in distinct {
-        let reference = tables(topology, size, outcome, "needle", ns);
+        let reference = tables(topology, size, outcome, name, ns);
         reset_glob_cost();
         lookup(&reference, location, name, ns);
         let cost = glob_cost();
@@ -180,6 +237,21 @@ fn generated_glob_cost_row() {
             change_first_glob(&mut t, size);
         }
         let (found, probe) = lookup(&t, location, name, ns);
+        let mutated = shape == "mutate" && index >= queries / 2;
+        assert_eq!(
+            found.len(),
+            match outcome {
+                "found" => usize::from(!mutated),
+                "ambiguous" =>
+                    if mutated {
+                        1
+                    } else {
+                        2
+                    },
+                _ => 0,
+            },
+            "declared outcome mismatch: {topology} {location} {shape} {name}"
+        );
         if index == 0 {
             first_found = Some(found.clone());
         }
@@ -201,7 +273,7 @@ fn generated_glob_cost_row() {
         "vertices": size + 2, "arcs": t.resolved.len(), "distinct_keys": if shape == "distinct" {queries} else if shape == "mutate" {2} else {1},
         "vwork": cost.visits, "ework": cost.arcs, "vref": ref_visits, "eref": ref_arcs,
         "probes": probe_entries, "candidates": cost.candidates,
-        "copied_entries": cost.probes + cost.candidates, "result_bytes": result_bytes,
+        "copied_entries": cost.copied_entries, "result_bytes": result_bytes,
         "cache_entries": cache_entries, "cache_payload_bytes": cache_payload_bytes,
     });
     println!("COST_ROW={row}");

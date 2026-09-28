@@ -1,9 +1,74 @@
 import json
 from pathlib import Path
+import sys
 import tempfile
+import time
 import unittest
 
 import rust_resolver_cost as cost
+
+
+def evidence_folders(root):
+    inputs = root / "inputs"
+    corpora = {f"glob-{topology}-{size}" for topology in cost.TOPOLOGIES for size in cost.SIZES}
+    corpora.update(f"item-{shape}-{size}" for shape in ("nested", "wide") for size in cost.SIZES)
+    corpora.update(("fixtures", "source-snapshot"))
+    for corpus in corpora:
+        source = inputs / "corpus" / corpus / "src" / "lib.rs"
+        source.parent.mkdir(parents=True)
+        source.write_text("pub struct Demo;\n")
+    manifest = {"schema": 1, "source_revision": "a" * 40,
+                "rows": list(cost.rows()), "files": cost.inventory(inputs)}
+    (inputs / "manifest.json").write_text(json.dumps(manifest))
+    metadata = cost.protocol_metadata(inputs, manifest) | {
+        "revision": "b" * 40, "rustc": "rustc test", "cargo": "cargo test",
+        "python": "python test", "platform": "test platform"}
+    folders = []
+    for name in ("baseline", "head"):
+        folder = root / name
+        folder.mkdir()
+        for binary in ("cost-tests", "devscout"):
+            (folder / binary).write_bytes(binary.encode())
+        data = metadata | {"test_binary_sha256": cost.digest(folder / "cost-tests"),
+                           "cli_binary_sha256": cost.digest(folder / "devscout")}
+        (folder / "metadata.json").write_text(json.dumps(data))
+        folders.append(folder)
+    return inputs, *folders
+
+
+def passing_cost(spec):
+    if spec["family"] == "item":
+        return {"family": "item", "source": Path(spec["source"]).name,
+                "input_bytes": 1, "items": 1, "parent_calls": 0,
+                "awork": 0, "path_bytes": 1, "fragment_bytes": 1}
+    return {**spec, "vertices": 1, "arcs": 0, "distinct_keys": 1,
+            "vwork": 0, "ework": 0, "vref": 0, "eref": 0,
+            "probes": 0, "candidates": 0, "copied_entries": 0,
+            "result_bytes": 0, "cache_entries": 0, "cache_payload_bytes": 0}
+
+
+def passing_rows():
+    return [{"row_id": cost.row_id(spec), "repetition": rep,
+             "status": "ok", "exit": 0, "peak_rss_bytes": 1024,
+             "seconds": 0.01, "bound": True, "cost": passing_cost(spec)}
+            for spec in cost.rows() for rep in range(cost.REPETITIONS)]
+
+
+def write_passing_maps(folder, corpora):
+    rows = []
+    for corpus in corpora:
+        for repetition in range(cost.REPETITIONS):
+            for mode in ("cold", "warm"):
+                artifacts = folder / "artifacts" / corpus / str(repetition) / mode
+                graph = artifacts / "graph" / "graph.json"
+                graph.parent.mkdir(parents=True)
+                graph.write_bytes(b"{}\n")
+                (artifacts / "manifest.json").write_bytes(b"{}\n")
+                rows.append({"corpus": corpus, "repetition": repetition, "mode": mode,
+                             "status": "ok", "init_status": "ok", "exit": 0,
+                             "seconds": 0.01, "peak_rss_bytes": 1024,
+                             "artifact": {"files": cost.inventory(artifacts), "complete": True}})
+    (folder / "maps.jsonl").write_text("\n".join(map(json.dumps, rows)))
 
 
 class GeneratorTests(unittest.TestCase):
@@ -19,12 +84,15 @@ class GeneratorTests(unittest.TestCase):
 
     def test_missing_and_duplicate_rows_fail_closed(self):
         specs = list(cost.rows())
-        observed = [{"row_id": cost.row_id(spec)} for spec in specs
-                    for _ in range(cost.REPETITIONS)]
+        observed = [{"row_id": cost.row_id(spec), "repetition": rep} for spec in specs
+                    for rep in range(cost.REPETITIONS)]
         self.assertTrue(cost.complete(specs, observed))
         self.assertFalse(cost.complete(specs, observed[:-1]))
         self.assertFalse(cost.complete(specs, observed + observed[:1]))
         self.assertFalse(cost.complete(specs, observed + [{"row_id": "unexpected"}]))
+        replacement = observed.copy()
+        replacement[1] = replacement[0]
+        self.assertFalse(cost.complete(specs, replacement))
 
     def test_map_scratch_is_outside_the_source_export_checkout(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -60,19 +128,107 @@ class BoundTests(unittest.TestCase):
 
     def test_timeout_and_failure_cannot_pass(self):
         with tempfile.TemporaryDirectory() as temp:
-            base = Path(temp) / "baseline"
-            head = Path(temp) / "head"
-            for folder in (base, head):
-                folder.mkdir()
-                folder.joinpath("metadata.json").write_text(json.dumps({"export_manifest_sha256": "same"}))
-            rows = [{"row_id": cost.row_id(spec), "repetition": rep,
-                     "status": "ok", "bound": True} for spec in cost.rows()
-                    for rep in range(cost.REPETITIONS)]
+            inputs, base, head = evidence_folders(Path(temp))
+            rows = passing_rows()
             base.joinpath("cost.jsonl").write_text("\n".join(map(json.dumps, rows)))
             rows[0]["status"] = "timeout"
             head.joinpath("cost.jsonl").write_text("\n".join(map(json.dumps, rows)))
             with self.assertRaises(SystemExit):
-                cost.compare(base, head)
+                cost.compare(base, head, inputs)
+
+    def test_missing_cost_counters_and_stale_pass_flags_fail_closed(self):
+        with tempfile.TemporaryDirectory() as temp:
+            inputs, base, head = evidence_folders(Path(temp))
+            rows = passing_rows()
+            base.joinpath("cost.jsonl").write_text("\n".join(map(json.dumps, rows)))
+            rows[0]["cost"] = None
+            head.joinpath("cost.jsonl").write_text("\n".join(map(json.dumps, rows)))
+            with self.assertRaises(ValueError):
+                cost.compare(base, head, inputs)
+            rows[0]["cost"] = passing_cost(list(cost.rows())[0])
+            rows[0]["cost"]["vwork"] = 100_000
+            head.joinpath("cost.jsonl").write_text("\n".join(map(json.dumps, rows)))
+            with self.assertRaises(ValueError):
+                cost.compare(base, head, inputs)
+
+    def test_empty_artifact_inventories_do_not_pass(self):
+        with tempfile.TemporaryDirectory() as temp:
+            inputs, base, head = evidence_folders(Path(temp))
+            for folder in (base, head):
+                folder.joinpath("maps.jsonl").write_text("")
+            with self.assertRaises(ValueError):
+                cost.compare_artifacts(base, head, inputs)
+
+    def test_missing_family_and_replacement_duplicate_cannot_pass(self):
+        with tempfile.TemporaryDirectory() as temp:
+            _, base, _ = evidence_folders(Path(temp))
+            specs = list(cost.rows())
+            rows = passing_rows()
+            base.joinpath("cost.jsonl").write_text("\n".join(map(json.dumps, [
+                row for row in rows if not row["row_id"].startswith("item:")])))
+            with self.assertRaises(ValueError):
+                cost.cost_rows(base, specs)
+            rows[1] = rows[0]
+            base.joinpath("cost.jsonl").write_text("\n".join(map(json.dumps, rows)))
+            with self.assertRaises(ValueError):
+                cost.cost_rows(base, specs)
+
+    def test_missing_corpus_and_replacement_duplicate_cannot_pass(self):
+        with tempfile.TemporaryDirectory() as temp:
+            _, base, _ = evidence_folders(Path(temp))
+            rows = [{"corpus": "demo", "repetition": rep, "mode": mode}
+                    for rep in range(cost.REPETITIONS) for mode in ("cold", "warm")]
+            base.joinpath("maps.jsonl").write_text("\n".join(map(json.dumps, rows)))
+            with self.assertRaises(ValueError):
+                cost.map_rows(base, ["demo", "another"])
+            rows[1] = rows[0]
+            base.joinpath("maps.jsonl").write_text("\n".join(map(json.dumps, rows)))
+            with self.assertRaises(ValueError):
+                cost.map_rows(base, ["demo"])
+
+    def test_protocol_metadata_and_resource_evidence_are_required(self):
+        with tempfile.TemporaryDirectory() as temp:
+            inputs, base, head = evidence_folders(Path(temp))
+            rows = passing_rows()
+            for folder in (base, head):
+                folder.joinpath("cost.jsonl").write_text("\n".join(map(json.dumps, rows)))
+            metadata = json.loads((head / "metadata.json").read_text())
+            metadata["timeout_seconds"] += 1
+            (head / "metadata.json").write_text(json.dumps(metadata))
+            with self.assertRaises(ValueError):
+                cost.compare(base, head, inputs)
+            metadata["timeout_seconds"] -= 1
+            (head / "metadata.json").write_text(json.dumps(metadata))
+            rows[0]["peak_rss_bytes"] = None
+            head.joinpath("cost.jsonl").write_text("\n".join(map(json.dumps, rows)))
+            with self.assertRaises(ValueError):
+                cost.compare(base, head, inputs)
+
+    def test_complete_cost_and_artifact_comparisons_use_saved_bytes(self):
+        with tempfile.TemporaryDirectory() as temp:
+            inputs, base, head = evidence_folders(Path(temp))
+            rows = passing_rows()
+            corpora = cost.registered_corpora(cost.read_export(inputs)[1])
+            for folder in (base, head):
+                folder.joinpath("cost.jsonl").write_text("\n".join(map(json.dumps, rows)))
+                write_passing_maps(folder, corpora)
+            cost.compare(base, head, inputs)
+            cost.compare_artifacts(base, head, inputs)
+            changed = head / "artifacts" / corpora[0] / "0" / "cold" / "graph" / "graph.json"
+            changed.write_bytes(b"{\"changed\":true}\n")
+            with self.assertRaises(ValueError):
+                cost.compare_artifacts(base, head, inputs)
+
+    def test_timeout_reaps_metered_descendant_before_return(self):
+        with tempfile.TemporaryDirectory() as temp:
+            marker = Path(temp) / "late-write"
+            script = ("import pathlib,time; time.sleep(0.25); "
+                      "pathlib.Path(__import__('sys').argv[1]).write_text('escaped')")
+            result = cost.command(["/usr/bin/time", "-l", sys.executable, "-c", script,
+                                   str(marker)], timeout=0.05)
+            self.assertEqual(result["status"], "timeout")
+            time.sleep(0.35)
+            self.assertFalse(marker.exists(), "timed-out descendant wrote after return")
 
 
 if __name__ == "__main__":

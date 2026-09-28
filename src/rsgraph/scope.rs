@@ -267,6 +267,7 @@ pub(super) struct GlobCost {
     pub arcs: usize,
     pub probes: usize,
     pub candidates: usize,
+    pub copied_entries: usize,
 }
 
 #[cfg(test)]
@@ -368,6 +369,7 @@ impl Tables {
                 let mut value = cost.get();
                 value.probes += cached.probes.len();
                 value.candidates += cached.found.len();
+                value.copied_entries += cached.probes.len() + cached.found.len();
                 cost.set(value);
             });
             return Globbed {
@@ -407,16 +409,25 @@ impl Tables {
             let mut value = cost.get();
             value.probes += probe.len() - probe_start;
             value.candidates += out.len();
+            value.copied_entries += probe.len() - probe_start + out.len();
             cost.set(value);
         });
-        self.glob_cache.borrow_mut().entry(key).or_default().insert(
-            name.to_string(),
-            CachedGlob {
-                found: out.clone(),
-                opaque,
-                probes: probe[probe_start..].to_vec(),
-            },
-        );
+        let cached = CachedGlob {
+            found: out.clone(),
+            opaque,
+            probes: probe[probe_start..].to_vec(),
+        };
+        #[cfg(test)]
+        GLOB_COST.with(|cost| {
+            let mut value = cost.get();
+            value.copied_entries += cached.found.len() + cached.probes.len();
+            cost.set(value);
+        });
+        self.glob_cache
+            .borrow_mut()
+            .entry(key)
+            .or_default()
+            .insert(name.to_string(), cached);
         Globbed { found: out, opaque }
     }
 
