@@ -31,6 +31,8 @@ pub(super) struct Ctx {
     pub block: Option<usize>,
     pub locals: Rc<HashSet<String>>,
     pub shadow: Rc<HashSet<String>>,
+    pub invocation_locals: Rc<HashSet<String>>,
+    pub invocation_shadow: Rc<HashSet<String>>,
     pub generics: Rc<HashSet<String>>,
     pub self_impl: Option<usize>,
     pub self_trait: Option<Rc<str>>,
@@ -332,11 +334,14 @@ pub(super) fn make_site(
     if segments.len() == 1 && (first == "Self" || first.is_empty()) {
         return None;
     }
-    if ctx.shadow.contains(first) || ctx.generics.contains(first) {
+    if ctx.shadow.contains(first)
+        || ctx.invocation_shadow.contains(first)
+        || ctx.generics.contains(first)
+    {
         return None;
     }
     let single_value = segments.len() == 1 && matches!(role, RsRole::Call | RsRole::Value);
-    if single_value && ctx.locals.contains(first) {
+    if single_value && (ctx.locals.contains(first) || ctx.invocation_locals.contains(first)) {
         return None;
     }
     let (self_impl, self_trait) = if first == "Self" {

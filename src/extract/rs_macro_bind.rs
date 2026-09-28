@@ -19,17 +19,14 @@ use crate::parse;
 // path's first segment the same way, and an `impl` or a trait inside them
 // makes `Self` name something other than the enclosing impl.
 //
-// Only the names written directly in the invocation's own tree, outside
-// every nested group, can reach past it: a statement macro's bindings and
-// items into the rest of its block, a module-level macro's items into its
-// module. Generic parameters never do.
+// A statement or item macro may carry a binding from any nested group into
+// its surrounding block or module. Generic parameters never do.
 // ---------------------------------------------------------------------------
 
 /// Names by what they may shadow.
 #[derive(Default)]
 pub(super) struct Names {
-    /// Lowercase names that may be local bindings, which shadow a
-    /// single-segment value path.
+    /// Names that may be local bindings, which shadow a single-segment value path.
     pub values: HashSet<String>,
     /// Names that may be items, generic parameters or imports, which shadow
     /// a path's first segment.
@@ -41,7 +38,7 @@ pub(super) struct Names {
 pub(super) struct TreeNames {
     /// Everything the trees may bind, for the invocation's own calls.
     pub inside: Names,
-    /// What the invocation's top level may bind for the code around it.
+    /// What any group in a statement or item invocation may bind around it.
     pub outward: Names,
     /// Whether the trees declare an `impl` or a trait.
     pub own_self: bool,
@@ -51,23 +48,14 @@ impl TreeNames {
     /// The context the invocation's own call sites are read in.
     pub fn narrow(self, ctx: &Ctx) -> Ctx {
         let mut inner = ctx.clone();
-        inner.locals = union(&ctx.locals, self.inside.values);
-        inner.shadow = union(&ctx.shadow, self.inside.items);
+        inner.invocation_locals = Rc::new(self.inside.values);
+        inner.invocation_shadow = Rc::new(self.inside.items);
         if self.own_self {
             inner.self_impl = None;
             inner.self_trait = None;
         }
         inner
     }
-}
-
-fn union(base: &Rc<HashSet<String>>, more: HashSet<String>) -> Rc<HashSet<String>> {
-    if more.iter().all(|n| base.contains(n)) {
-        return Rc::clone(base);
-    }
-    let mut set = (**base).clone();
-    set.extend(more);
-    Rc::new(set)
 }
 
 const ITEM_KEYWORDS: &[&str] = &[
@@ -86,38 +74,30 @@ pub(super) fn is_statement(invocation: Node) -> bool {
 /// bind. The walk is on an explicit stack: token trees nest without bound.
 pub(super) fn tree_names(invocation: Node, src: &[u8]) -> TreeNames {
     let mut names = TreeNames::default();
-    let mut stack: Vec<(Node, bool)> = Vec::new();
+    let mut stack: Vec<Node> = Vec::new();
     let mut cursor = invocation.walk();
     for child in invocation.named_children(&mut cursor) {
         if child.kind() == "token_tree" {
-            stack.push((child, true));
+            stack.push(child);
         }
     }
-    while let Some((tree, top)) = stack.pop() {
+    while let Some(tree) = stack.pop() {
         let mut cursor = tree.walk();
         let tokens: Vec<Node> = tree.children(&mut cursor).collect();
         let level = Level {
             tokens: &tokens,
             fields: struct_body(tree, src),
-            top,
         };
         level.read(src, &mut names);
-        stack.extend(
-            tokens
-                .iter()
-                .filter(|t| t.kind() == "token_tree")
-                .map(|t| (*t, false)),
-        );
+        stack.extend(tokens.iter().filter(|t| t.kind() == "token_tree").copied());
     }
     names
 }
 
-// One tree level: its direct tokens, whether it is a struct body, and
-// whether it is the invocation's own tree.
+// One tree level: its direct tokens and whether it is a struct body.
 struct Level<'a, 't> {
     tokens: &'a [Node<'t>],
     fields: bool,
-    top: bool,
 }
 
 // Whether a tree is the braces of a struct literal or pattern: `{` right
@@ -189,9 +169,10 @@ impl Level<'_, '_> {
             }
         };
         sets(&mut names.inside);
-        if self.top {
-            sets(&mut names.outward);
-        }
+        // The same token may expand to an item or a local. A nested group
+        // can be spliced into either surrounding scope by the macro.
+        names.outward.items.insert(text.clone());
+        names.outward.values.insert(text);
     }
 
     // Every name a `use` declaration mentions, up to its `;` or the next

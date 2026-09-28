@@ -135,6 +135,7 @@ pub(super) struct Tables {
     pub resolved: Vec<Bound>,
     pub assoc: HashMap<usize, HashMap<String, Vec<usize>>>,
     pub impl_self: HashMap<(usize, usize), usize>,
+    pub opaque_modules: Vec<bool>,
 }
 
 /// Builds the item and leaf tables over the module tree; leaves start
@@ -156,10 +157,16 @@ pub(super) fn tables(fragments: &[(String, RsFragment)], tree: &ModTree) -> Tabl
         resolved: Vec::new(),
         assoc: HashMap::new(),
         impl_self: HashMap::new(),
+        opaque_modules: vec![false; tree.nodes.len()],
     };
     for (file, (rel, fragment)) in fragments.iter().enumerate() {
         add_items(&mut t, tree, file, rel, fragment);
         add_leaves(&mut t, tree, file, fragment);
+        for scope in &fragment.opaque_scopes {
+            if let Some(module) = tree.node_of(file, scope) {
+                t.opaque_modules[module] = true;
+            }
+        }
     }
     t.resolved = vec![Bound::default(); t.leaves.len()];
     t
@@ -282,6 +289,7 @@ impl Tables {
                 Level::Found(v) => extend_unique(&mut out, v),
                 Level::Shadowed => opaque = true,
                 Level::Empty => {
+                    opaque |= self.opaque_modules[m];
                     let (more, unlisted) = self.glob_targets(&self.module_globs[m]);
                     opaque |= unlisted;
                     queue.extend(more);
@@ -358,10 +366,10 @@ impl Tables {
 // A level's glob result: its targets, an empty (shadowing) result for an
 // opaque level outside an import, or `None` to go on outward.
 fn globbed(g: Globbed, import: bool) -> Option<Vec<Target>> {
-    if !g.found.is_empty() {
-        Some(g.found)
-    } else if g.opaque && !import {
+    if g.opaque && !import {
         Some(Vec::new())
+    } else if !g.found.is_empty() {
+        Some(g.found)
     } else {
         None
     }

@@ -68,6 +68,13 @@ pub struct RsFragment {
     /// Every reference site, in source order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sites: Vec<RsSite>,
+    /// Inline module scopes with an item macro whose names are unenumerable.
+    #[serde(
+        rename = "opaqueScopes",
+        default,
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub opaque_scopes: Vec<String>,
 }
 
 impl Default for RsFragment {
@@ -82,6 +89,7 @@ impl Default for RsFragment {
             uses: Vec::new(),
             blocks: Vec::new(),
             sites: Vec::new(),
+            opaque_scopes: Vec::new(),
         }
     }
 }

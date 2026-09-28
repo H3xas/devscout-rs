@@ -144,9 +144,53 @@ pub(super) fn macro_items(container: Node, src: &[u8]) -> Vec<String> {
             _ => None,
         };
         if let Some(invocation) = invocation {
-            out.extend(tree_names(invocation, src).outward.items);
+            let names = tree_names(invocation, src).outward;
+            out.extend(names.items);
+            out.extend(names.values);
         }
     }
+    out
+}
+
+/// Inline module scopes whose contents a macro invocation may extend.
+/// The empty scope names this file's root module. An `include!` invocation
+/// has no identifier argument but can still declare any item.
+pub(super) fn macro_scopes(root: Node, src: &[u8]) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut stack = vec![(root, String::new())];
+    while let Some((container, scope)) = stack.pop() {
+        let mut opaque = false;
+        let mut cursor = container.walk();
+        for child in container.named_children(&mut cursor) {
+            let invocation = match child.kind() {
+                "macro_invocation" => Some(child),
+                "expression_statement" => child
+                    .named_child(0)
+                    .filter(|c| c.kind() == "macro_invocation"),
+                _ => None,
+            };
+            opaque |= invocation.is_some();
+            if child.kind() == "mod_item" {
+                if let (Some(name), Some(body)) = (
+                    child.child_by_field_name("name"),
+                    child.child_by_field_name("body"),
+                ) {
+                    let text = parse::node_text(name, src);
+                    let text = text.strip_prefix("r#").unwrap_or(&text);
+                    let nested = if scope.is_empty() {
+                        text.to_string()
+                    } else {
+                        format!("{scope}::{text}")
+                    };
+                    stack.push((body, nested));
+                }
+            }
+        }
+        if opaque {
+            out.push(scope);
+        }
+    }
+    out.sort();
     out
 }
 

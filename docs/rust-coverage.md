@@ -142,9 +142,11 @@ so it never changes a C# or TypeScript answer.
   imports, then its globs); the module's own items and explicit imports; its globs, which bring in
   every name the target module declares or imports, its own globs included; and last the
   package's library name. std and external crates bind nothing.
-- **Globs that cannot be listed.** A glob of std, an external crate or an enum, or one that
-  reaches a crate module whose explicit import of the name resolved outside the crate, may provide
-  any name. A lookup that finds the name nowhere at such a level stops there with no edge: a call
+- **Globs that cannot be listed.** A glob of std, an external crate or an enum, one that
+  reaches a crate module extended by an item macro or `include!`, or one that reaches a crate
+  module whose explicit import of the name resolved outside the crate, may provide any name.
+  This applies through glob chains. A lookup that finds the name nowhere at such a level stops
+  there with no edge: a call
   inside `{ use std::cmp::*; max(1, 2) }` never binds a crate `max` outside the block, and a
   module-level `use other_crate::*;` shadows the library name in expression paths. A `use` path
   goes on past it: rustc rejects an import whose first segment a glob would shadow from an outer
@@ -215,13 +217,13 @@ would outside a macro, qualifier segments included.
   that shares a lowercase one gives no edge. Items, generic parameters and `use` names
   declared inside the trees, and an uppercase name outside angle brackets and type positions,
   shadow a path's first segment, and an `impl` or trait inside them drops `Self` paths.
-- **Statement and module-level macros reach the code around them.** Only names written directly
-  in an invocation's own tree, outside every nested group, can: for an invocation that stands as
-  a statement, its possible lowercase bindings (`bind!(f)`, `m!(let f = ...)`) shadow
-  single-segment calls anywhere in the enclosing function body and its possible items shadow
-  paths anywhere in its block, as a local binding or a block item would; an invocation at module
-  level shadows the items it may declare across its module, the library name included. A binding
-  inside a nested group, such as a closure parameter inside `assert!(...)`, stays inside.
+- **Statement and module-level macros reach the code around them.** A possible binding from any
+  group of an invocation that stands as a statement may shadow a single-segment call anywhere in
+  its enclosing function body, and a possible item may shadow a path anywhere in its block. At
+  module level, possible items shadow paths across that module, the library name included.
+  Lowercase names may declare items, and names inside nested groups may bind in the surrounding
+  scope. The scan is conservative, so it can omit a call when a macro does not actually export
+  that name.
 - Known misses: calls that exist only after expansion; `$` fragments and method calls; type
   references and struct literals inside macro arguments; calls inside `macro_rules!` bodies; a
   call whose name the same invocation, or a statement macro in the same function, also holds

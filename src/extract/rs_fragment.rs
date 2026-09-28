@@ -55,6 +55,7 @@ pub fn extract_rs_file(source: &str) -> RsFileExtraction {
     fragment.uses = uses.uses;
     fragment.blocks = uses.blocks;
     fragment.sites = sites;
+    fragment.opaque_scopes = super::rs_scope::macro_scopes(root, &src);
     RsFileExtraction { purpose, fragment }
 }
 

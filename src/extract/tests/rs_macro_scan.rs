@@ -115,3 +115,25 @@ fn a_struct_field_name_is_no_binding_but_a_closure_parameter_beside_it_is() {
         .collect();
     assert_eq!(calls, vec![h("identity", 2), h("import", 4)]);
 }
+
+#[test]
+#[ignore = "manual scale probe for many macro invocations in one function"]
+fn many_invocations_do_not_copy_function_wide_names() {
+    use std::fmt::Write;
+    use std::time::Instant;
+
+    for n in [5_000, 20_000] {
+        let mut src = String::from("fn f(x: i32) -> i32 { x }\nfn t() {\n");
+        for i in 0..n {
+            writeln!(src, "let a{i} = 0;").unwrap();
+        }
+        for i in 0..n {
+            writeln!(src, "assert!(f(b{i}) > a{i});").unwrap();
+        }
+        src.push_str("}\n");
+        let start = Instant::now();
+        let sites = extract_rs_file(&src).fragment.sites;
+        eprintln!("{n} macro invocations: {:?}", start.elapsed());
+        assert_eq!(sites.iter().filter(|s| s.path == "f").count(), n);
+    }
+}

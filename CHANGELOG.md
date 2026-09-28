@@ -32,7 +32,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   files as "indexed and graphed, path-resolved edges". A Cargo package model is kept beside the
   graph in `rust-crates.json`, so editing a `Cargo.toml` rebuilds the graph. Measured against
   rust-analyzer's own references on this repository, call edges scored precision 1.0 and recall
-  0.999. The fragment cache moves to `fragments-v27.json`, so an existing cache re-extracts once.
+  0.999. The fragment cache moves to `fragments-v29.json`, so an existing cache re-extracts once.
 
 ### Fixed
 

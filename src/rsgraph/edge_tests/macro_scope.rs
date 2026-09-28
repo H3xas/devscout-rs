@@ -28,11 +28,7 @@ pub fn plain() { assert!(f(1) > g(2)); }
 ";
     assert_eq!(
         calls(src),
-        vec![
-            "uses-member src/lib.rs:14 -> src/lib.rs#f",
-            "uses-member src/lib.rs:16 -> src/lib.rs#f",
-            "uses-member src/lib.rs:16 -> src/lib.rs#g",
-        ]
+        vec!["uses-member src/lib.rs:16 -> src/lib.rs#g"]
     );
 }
 
@@ -55,10 +51,7 @@ pub fn x(v: Vec<fn(i32) -> i32>) -> i32 { assert!(v.iter().all(|f| f(1) > 0)); f
 ";
     assert_eq!(
         calls(src),
-        vec![
-            "uses-member src/lib.rs:13 -> src/lib.rs#f",
-            "uses-member src/lib.rs:14 -> src/lib.rs#f",
-        ]
+        vec!["uses-member src/lib.rs:13 -> src/lib.rs#f"]
     );
 }
 
@@ -79,10 +72,7 @@ pub fn ok() { assert!(max(1, 2) > 0); make! { fn h() { f(); } } }
 ";
     assert_eq!(
         calls(src),
-        vec![
-            "uses-member src/lib.rs:12 -> src/lib.rs#max",
-            "uses-member src/lib.rs:12 -> src/lib.rs#f",
-        ]
+        vec!["uses-member src/lib.rs:12 -> src/lib.rs#f"]
     );
 }
 
@@ -102,4 +92,35 @@ fn an_item_a_module_level_macro_declares_shadows_the_library_name() {
         .filter(|e| e.starts_with("uses-member"))
         .collect();
     assert_eq!(got, vec!["uses-member tests/other.rs:1 -> src/lib.rs#glow"]);
+}
+
+#[test]
+fn names_in_nested_macro_groups_shadow_calls_after_statement_macros() {
+    let src = "pub fn f(x: i32) -> i32 { x }\npub fn g(x: i32) -> i32 { x }\nmacro_rules! bind2 { (($a:ident, $b:ident)) => { let $a = |x| x; let $b = |x| x; }; }\nmacro_rules! let_some { (Some($n:ident) = $v:expr) => { let Some($n) = $v else { return 0 }; }; }\npub fn pair() -> i32 { bind2!((f, g)); f(1) + g(2) }\npub fn option(o: Option<fn(i32) -> i32>) -> i32 { let_some!(Some(f) = o); f(1) }\npub fn plain() -> i32 { f(3) + g(4) }\n";
+    assert_eq!(
+        calls(src),
+        vec![
+            "uses-member src/lib.rs:7 -> src/lib.rs#f",
+            "uses-member src/lib.rs:7 -> src/lib.rs#g",
+        ]
+    );
+}
+
+#[test]
+fn module_macros_shadow_lowercase_items_and_nested_group_type_names() {
+    let src = "pub mod other { pub fn alpha() {} pub fn beta() {} pub struct Shade; }\nmacro_rules! fns { ([$n:ident]) => { fn $n() {} }; }\nmacro_rules! one_fn { ($n:ident) => { fn $n() {} }; }\nmacro_rules! units { ([$n:ident]) => { struct $n; }; }\nmod inner { use crate::other::*; fns!([alpha]); one_fn!(beta); units!([Shade]); fn call() { alpha(); beta(); let _: Shade = Shade; } }\nmod clear { use crate::other::*; fn call() { alpha(); beta(); let _: Shade = Shade; } }\n";
+    let got = edges_for(&[("src/lib.rs", src)]);
+    assert!(!got.iter().any(|edge| edge.contains("src/lib.rs:5 ->")));
+    assert!(got
+        .iter()
+        .any(|edge| edge == "uses-member src/lib.rs:6 -> src/lib.rs#other::alpha"));
+}
+
+#[test]
+fn a_statement_macro_may_declare_a_module_from_a_lowercase_name() {
+    let src = "mod m { pub fn f() {} }\nmacro_rules! one_mod { ($n:ident) => { mod $n { pub fn f() {} } }; }\nfn t() { one_mod!(m); m::f(); }\nfn clear() { m::f(); }\n";
+    assert_eq!(
+        calls(src),
+        vec!["uses-member src/lib.rs:4 -> src/lib.rs#m::f"]
+    );
 }
