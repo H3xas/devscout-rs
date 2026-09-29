@@ -4,6 +4,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 import rust_resolver_cost as cost
 
@@ -67,6 +68,10 @@ def write_passing_maps(folder, corpora):
                 rows.append({"corpus": corpus, "repetition": repetition, "mode": mode,
                              "status": "ok", "init_status": "ok", "exit": 0,
                              "seconds": 0.01, "peak_rss_bytes": 1024,
+                             "stdout": "graph rebuilt" if mode == "cold" else "graph unchanged",
+                             "pre_cold": {"source_files": 1, "manifest_exists": False,
+                                          "graph_exists": False, "index_state_exists": False,
+                                          "content_db_exists": False},
                              "artifact": {"files": cost.inventory(artifacts), "complete": True}})
     (folder / "maps.jsonl").write_text("\n".join(map(json.dumps, rows)))
 
@@ -110,6 +115,101 @@ class GeneratorTests(unittest.TestCase):
                 with self.assertRaises(BlockingIOError):
                     with cost.map_scratch_lock(root):
                         self.fail("second writer acquired map scratch")
+
+    def test_real_cli_map_corpus_measures_first_build_then_reuse(self):
+        build = cost.command(["cargo", "build", "--locked", "--bin", "devscout"],
+                             timeout=cost.TIMEOUT)
+        self.assertEqual(build["status"], "ok", build["stderr"])
+        cli = cost.REPO / "target" / "debug" / "devscout"
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            inputs = root / "inputs"
+            source = inputs / "corpus" / "tiny" / "src" / "lib.rs"
+            source.parent.mkdir(parents=True)
+            source.write_text("pub struct Present;\n", encoding="utf-8")
+            (inputs / "manifest.json").write_text("tiny frozen corpus\n")
+            out = root / "out"
+            out.mkdir()
+            original = cost.metered_command
+            checked = []
+            map_calls = 0
+
+            def observed(argv, *, cwd, env):
+                nonlocal map_calls
+                if argv[1:3] == ["map", "."]:
+                    if map_calls % 2 == 0:
+                        checked.append(cwd)
+                        self.assertTrue((cwd / "src" / "lib.rs").stat().st_size)
+                        self.assertFalse((cwd / ".scout" / "manifest.json").exists())
+                        self.assertFalse((cwd / ".scout" / "graph").exists())
+                        self.assertFalse((cwd / ".scout" / "index-state.json").exists())
+                        self.assertFalse(Path(env["SCOUT_CONTENT_DB"]).exists())
+                    map_calls += 1
+                return original(argv, cwd=cwd, env=env)
+
+            with cost.map_scratch_lock(inputs), mock.patch.object(
+                    cost, "metered_command", side_effect=observed):
+                rows = list(cost.map_corpus(cli, inputs, out, "tiny"))
+            self.assertEqual(len(checked), cost.REPETITIONS)
+            self.assertEqual(len(rows), cost.REPETITIONS * 2)
+            for row in rows:
+                self.assertEqual(row["status"], "ok", row["stderr"])
+                self.assertTrue(row["artifact"]["complete"])
+                self.assertIn("graph rebuilt" if row["mode"] == "cold" else
+                              "graph unchanged", row["stdout"])
+
+    def test_failed_init_is_retained_and_does_not_invoke_map(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            inputs = root / "inputs"
+            source = inputs / "corpus" / "tiny" / "src" / "lib.rs"
+            source.parent.mkdir(parents=True)
+            source.write_text("pub struct Present;\n")
+            (inputs / "manifest.json").write_text("failed setup corpus\n")
+            out = root / "out"
+            out.mkdir()
+            failure = {"status": "failed", "exit": 9, "seconds": 0.25,
+                       "peak_rss_bytes": 2048, "stdout": "partial setup",
+                       "stderr": "setup failed"}
+            with cost.map_scratch_lock(inputs), mock.patch.object(
+                    cost, "metered_command", return_value=failure) as invoked:
+                rows = list(cost.map_corpus(Path("/unused-cli"), inputs, out, "tiny"))
+            self.assertEqual(invoked.call_count, cost.REPETITIONS)
+            self.assertEqual(len(rows), cost.REPETITIONS * 2)
+            for row in rows:
+                self.assertEqual(row["status"], "skipped-after-init-failure")
+                self.assertEqual(row["init_status"], "failed")
+                self.assertEqual(row["init_exit"], 9)
+                self.assertEqual(row["init_stderr"], "setup failed")
+                self.assertEqual(row["init_stdout"], "partial setup")
+
+    def test_setup_that_populates_graph_cannot_be_measured_as_cold(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            inputs = root / "inputs"
+            source = inputs / "corpus" / "tiny" / "src" / "lib.rs"
+            source.parent.mkdir(parents=True)
+            source.write_text("pub struct Present;\n")
+            (inputs / "manifest.json").write_text("contaminated setup corpus\n")
+            out = root / "out"
+            out.mkdir()
+
+            def contaminated(argv, *, cwd, env):
+                self.assertEqual(argv[1], "init", "map must not run after contaminated init")
+                graph = cwd / ".scout" / "graph"
+                graph.mkdir(parents=True)
+                (graph / "graph.json").write_text("{}\n")
+                return {"status": "ok", "exit": 0, "seconds": 0.25,
+                        "peak_rss_bytes": 2048, "stdout": "graph rebuilt", "stderr": ""}
+
+            with cost.map_scratch_lock(inputs), mock.patch.object(
+                    cost, "metered_command", side_effect=contaminated) as invoked:
+                rows = list(cost.map_corpus(Path("/unused-cli"), inputs, out, "tiny"))
+            self.assertEqual(invoked.call_count, cost.REPETITIONS)
+            self.assertEqual(len(rows), cost.REPETITIONS * 2)
+            for row in rows:
+                self.assertEqual(row["status"], "skipped-after-setup-contamination")
+                self.assertTrue(row["pre_cold"]["graph_exists"])
 
 
 class BoundTests(unittest.TestCase):
@@ -158,6 +258,17 @@ class BoundTests(unittest.TestCase):
                 folder.joinpath("maps.jsonl").write_text("")
             with self.assertRaises(ValueError):
                 cost.compare_artifacts(base, head, inputs)
+
+    def test_warm_only_row_cannot_claim_cold_artifact(self):
+        with tempfile.TemporaryDirectory() as temp:
+            inputs, base, _ = evidence_folders(Path(temp))
+            corpora = cost.registered_corpora(cost.read_export(inputs)[1])
+            write_passing_maps(base, corpora)
+            rows = [json.loads(line) for line in (base / "maps.jsonl").read_text().splitlines()]
+            rows[0]["stdout"] = "graph unchanged"
+            (base / "maps.jsonl").write_text("\n".join(map(json.dumps, rows)))
+            with self.assertRaisesRegex(ValueError, "contradicts cold/warm"):
+                cost.map_rows(base, corpora)
 
     def test_missing_family_and_replacement_duplicate_cannot_pass(self):
         with tempfile.TemporaryDirectory() as temp:

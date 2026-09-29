@@ -433,18 +433,37 @@ def map_corpus(cli, inputs, out, corpus):
         env = os.environ.copy()
         env.update({"HOME": str(home), "SCOUT_REGISTRY": str(home / "repos.json"),
                     "SCOUT_CONTENT_DB": str(home / "content.db")})
-        init = metered_command([str(cli), "init", "--no-hooks"], cwd=root, env=env)
+        init = metered_command([str(cli), "init", "--no-hooks", "--no-map"],
+                               cwd=root, env=env)
+        pre_cold = {"source_files": sum(path.is_file() for path in root.rglob("*")
+                                        if ".scout" not in path.parts),
+                    "manifest_exists": (root / ".scout" / "manifest.json").exists(),
+                    "graph_exists": (root / ".scout" / "graph").exists(),
+                    "index_state_exists": (root / ".scout" / "index-state.json").exists(),
+                    "content_db_exists": Path(env["SCOUT_CONTENT_DB"]).exists()}
+        clean_setup = pre_cold["source_files"] > 0 and not any(
+            value for key, value in pre_cold.items() if key != "source_files")
         for mode in ("cold", "warm"):
-            result = (metered_command([str(cli), "map", "."], cwd=root, env=env)
-                      if init["status"] == "ok" else
-                      {"status": "skipped-after-init-failure", "exit": None, "seconds": 0,
-                       "peak_rss_bytes": None, "stdout": "", "stderr": init["stderr"]})
+            if init["status"] != "ok":
+                result = {"status": "skipped-after-init-failure", "exit": None,
+                          "seconds": 0, "peak_rss_bytes": None, "stdout": "",
+                          "stderr": init["stderr"]}
+            elif not clean_setup:
+                result = {"status": "skipped-after-setup-contamination", "exit": None,
+                          "seconds": 0, "peak_rss_bytes": None, "stdout": "",
+                          "stderr": "init left map state before cold observation"}
+            else:
+                result = metered_command([str(cli), "map", "."], cwd=root, env=env)
             destination = out / "artifacts" / corpus / str(repetition) / mode
             artifact = artifact_inventory(root, destination) if result["status"] == "ok" else \
                 {"files": {}, "complete": False}
             result.update({"corpus": corpus, "repetition": repetition, "mode": mode,
                            "copy_seconds": copy_seconds, "init_status": init["status"],
-                           "artifact": artifact})
+                           "init_exit": init["exit"], "init_seconds": init["seconds"],
+                           "init_peak_rss_bytes": init["peak_rss_bytes"],
+                           "init_stdout": init["stdout"][-2048:],
+                           "init_stderr": init["stderr"][-2048:],
+                           "pre_cold": pre_cold, "artifact": artifact})
             result["stdout"] = result["stdout"][-2048:]
             result["stderr"] = result["stderr"][-2048:]
             yield result
@@ -537,6 +556,16 @@ def map_rows(folder, corpora):
         validate_resource(row, str(key(row)))
         if row.get("init_status") != "ok" and row["status"] == "ok":
             raise ValueError(f"{key(row)}: successful map after failed init")
+        pre_cold = row.get("pre_cold")
+        if not isinstance(pre_cold, dict) or pre_cold.get("source_files", 0) <= 0 or any(
+                pre_cold.get(field) is not False for field in (
+                    "manifest_exists", "graph_exists", "index_state_exists",
+                    "content_db_exists")):
+            raise ValueError(f"{key(row)}: cold setup state missing or contaminated")
+        if row["status"] == "ok" and (
+                (row["mode"] == "cold" and "graph rebuilt" not in row.get("stdout", "")) or
+                (row["mode"] == "warm" and "graph unchanged" not in row.get("stdout", ""))):
+            raise ValueError(f"{key(row)}: map output contradicts cold/warm mode")
         artifact = row.get("artifact")
         if not isinstance(artifact, dict) or not isinstance(artifact.get("files"), dict):
             raise ValueError(f"{key(row)}: missing artifact inventory")
