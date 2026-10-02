@@ -30,8 +30,9 @@ fn a_test_attribute_carried_by_cfg_attr_marks_a_test() {
         "#[cfg_attr(test, test, ignore)]\nfn e() {}\n",
         "#[cfg_attr(test, ignore, ::tokio::test(flavor = \"x\"),)]\nasync fn f() {}\n",
         "#[allow(dead_code)]\n// a note between\n#[cfg_attr(unix, test)]\nfn g() {}\n",
+        "#[cfg_attr(test, test[x])]\nfn h() {}\n",
     );
-    assert_eq!(tests_of(src), vec!["a", "b", "c", "d", "e", "f", "g"]);
+    assert_eq!(tests_of(src), vec!["a", "b", "c", "d", "e", "f", "g", "h"]);
 }
 
 #[test]

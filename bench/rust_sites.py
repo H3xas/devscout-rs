@@ -425,7 +425,7 @@ def _is_test_leaf(tokens, start, end):
     path, k = _attr_path(tokens, start, end)
     if not path or path[-1] != "test":
         return False
-    return k == end or (tokens[k].text == "(" and _matching(tokens, k) == end - 1)
+    return k == end or (tokens[k].text in _OPEN and _matching(tokens, k) == end - 1)
 
 
 def _is_test_attr(tokens, start, end):

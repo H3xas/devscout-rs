@@ -217,3 +217,25 @@ fn a_path_naming_its_own_file_or_an_ancestor_ends() {
         "{got:?}"
     );
 }
+
+#[test]
+fn a_path_with_spaces_non_ascii_or_a_leading_dash_reaches_exactly_that_file() {
+    for literal in ["dir ü/x y.rs", "-dash.rs", "./ü.rs"] {
+        let lib = format!("#[path = \"{literal}\"]\nmod m;\nfn t() {{ m::spin(); }}\n");
+        let target = match literal {
+            "./ü.rs" => "src/ü.rs".to_string(),
+            other => format!("src/{other}"),
+        };
+        let files = [
+            ("src/lib.rs", lib.as_str()),
+            (target.as_str(), SPIN),
+            ("src/m.rs", SPIN),
+        ];
+        assert_eq!(
+            edges_into(&files, &target),
+            vec![format!("uses-member src/lib.rs:3 -> {target}#spin")],
+            "{literal}"
+        );
+        assert!(edges_into(&files, "src/m.rs").is_empty(), "{literal}");
+    }
+}

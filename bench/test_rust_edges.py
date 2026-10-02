@@ -268,8 +268,9 @@ class CfgAttrTestScanTests(unittest.TestCase):
                "#[cfg_attr(test, tokio::test)]\nasync fn c() {}\n"
                "#[cfg_attr(test, cfg_attr(all(), test))]\nfn d() {}\n"
                "#[cfg_attr(test, test, ignore)]\nfn e() {}\n"
-               "#[cfg_attr(test, ignore, test(x),)]\nfn f() {}\n")
-        self.assertEqual(test_names(src), ["a", "b", "c", "d", "e", "f"])
+               "#[cfg_attr(test, ignore, test(x),)]\nfn f() {}\n"
+               "#[cfg_attr(test, test[x])]\nfn g() {}\n")
+        self.assertEqual(test_names(src), ["a", "b", "c", "d", "e", "f", "g"])
 
     def test_other_cfg_attr_forms_mark_no_test(self):
         src = ("#[cfg_attr(test, derive(Debug))]\nfn a() {}\n"
