@@ -41,6 +41,8 @@
 // `ts_fragment` hold the TypeScript-family purpose and reference-fact
 // extraction. `rs_fragment_types` and `rs_fragment` hold the Rust item
 // extraction: definitions with spans and a purpose, no references.
+// `rs_attrs` reads a Rust item's outer attributes, `cfg_attr` included: the
+// test mark and a module declaration's `path`.
 mod bus;
 mod bus_vocab;
 mod delegate_args;
@@ -52,6 +54,7 @@ mod members;
 mod qualifiers;
 mod receivers;
 mod refs;
+mod rs_attrs;
 mod rs_facts_types;
 mod rs_fragment;
 mod rs_fragment_types;
@@ -73,7 +76,7 @@ mod walk;
 
 pub use dump::run_extract_dump;
 pub use json::{extraction_to_json, ts_extraction_to_json};
-pub use rs_facts_types::{RsBlock, RsImpl, RsRole, RsSite, RsUse};
+pub use rs_facts_types::{RsBlock, RsImpl, RsModPath, RsRole, RsSite, RsUse};
 pub use rs_fragment::extract_rs_file;
 pub use rs_fragment_types::{RsFileExtraction, RsFragment, RsItem};
 pub use ts_fragment::{extract_ts_file, extract_ts_fragment, TsFileExtraction};

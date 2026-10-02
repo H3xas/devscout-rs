@@ -36,6 +36,17 @@ pub struct RsImpl {
     pub items: Vec<String>,
 }
 
+/// One `mod x;` declaration whose file a `path` attribute decides.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RsModPath {
+    /// The declaration's item path, as listed in `modFiles`.
+    pub item: String,
+    /// The literal of its first `#[path = "..."]`; absent when the file
+    /// cannot be told, and then the declaration reaches nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+}
+
 /// One flattened `use` leaf.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RsUse {

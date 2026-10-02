@@ -549,8 +549,8 @@ fn unchanged_remap_reuses_everything_and_one_edit_moves_only_its_rows() {
     let artifacts = [
         "graph/graph.json",
         "manifest.json",
-        "graph/fragments-v29.json",
-        "graph/fragments-index-v29.json",
+        "graph/fragments-v30.json",
+        "graph/fragments-index-v30.json",
     ];
     let before: Vec<Vec<u8>> = artifacts
         .iter()

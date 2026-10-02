@@ -521,6 +521,16 @@ fn every_rust_fact_key_serializes_in_order_and_reads_only_as_rs() {
             mac: true,
         }],
         opaque_scopes: vec!["inner".into()],
+        mod_paths: vec![
+            extract::RsModPath {
+                item: "shelf".into(),
+                path: Some("real.rs".into()),
+            },
+            extract::RsModPath {
+                item: "inner::gen".into(),
+                path: None,
+            },
+        ],
     });
     let json = serde_json::to_string(&rs).unwrap();
     assert_eq!(
@@ -531,7 +541,8 @@ fn every_rust_fact_key_serializes_in_order_and_reads_only_as_rs() {
             r#""impls":[{"scope":"inner","selfType":"crate::Lamp","items":["Lamp::glow"]}],"#,
             r#""uses":[{"scope":"tests","block":0,"path":"super::shelf::dust","name":"dust","line":9}],"#,
             r#""blocks":[{},{"parent":0}],"#,
-            r#""sites":[{"role":"call","path":"Self::glow","line":5,"lines":[4,5],"scope":"inner","block":1,"selfImpl":0,"selfTrait":"Shine","mac":true}],"opaqueScopes":["inner"]}"#
+            r#""sites":[{"role":"call","path":"Self::glow","line":5,"lines":[4,5],"scope":"inner","block":1,"selfImpl":0,"selfTrait":"Shine","mac":true}],"opaqueScopes":["inner"],"#,
+            r#""modPaths":[{"item":"shelf","path":"real.rs"},{"item":"inner::gen"}]}"#
         )
     );
     assert_eq!(serde_json::from_str::<AnyFragment>(&json).unwrap(), rs);

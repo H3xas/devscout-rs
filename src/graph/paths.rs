@@ -155,16 +155,21 @@ pub fn rust_crates_path(root: &Path) -> PathBuf {
 // A cached v28 Rust fragment lacks these facts, so edges of an unchanged
 // file would be missing and globs reaching an item-macro module could be
 // resolved incorrectly.
+// v30 appends Rust `modPaths` (the file a `#[path]` attribute names for a
+// `mod x;` declaration) and lists in `tests` the functions a `cfg_attr`
+// marks as tests. A cached v29 Rust fragment of an unchanged file carries
+// neither, so its `#[path]` modules would keep reaching the default file
+// rustc does not compile, and its `cfg_attr` tests would stay unmarked.
 // The rename IS the invalidation mechanism:
 // pre-bump caches stop being found, every file reparses
 // once, no reader carries version-compat logic. Writers delete every
 // superseded generation (see `remove_superseded_caches`).
 pub(crate) fn fragments_cache_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-v29.json")
+    graph_dir(root).join("fragments-v30.json")
 }
 
 pub(crate) fn fragments_index_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-index-v29.json")
+    graph_dir(root).join("fragments-index-v30.json")
 }
 
 // Every generation below the current one, not just the immediately previous:
@@ -227,6 +232,8 @@ pub(crate) const SUPERSEDED_CACHE_FILES: &[&str] = &[
     "fragments-index-v27.json",
     "fragments-v28.json",
     "fragments-index-v28.json",
+    "fragments-v29.json",
+    "fragments-index-v29.json",
 ];
 
 pub(crate) fn remove_superseded_caches(root: &Path) {
