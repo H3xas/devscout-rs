@@ -11,7 +11,9 @@ use serde::{Deserialize, Serialize};
 // A `Cargo.toml` is read by a line scan of section headers and `name` and
 // `path` keys, with no TOML dependency. Roots follow cargo's conventions: the
 // `path` of each `[lib]`, `[[bin]]`, `[[test]]`, `[[example]]` and
-// `[[bench]]` entry, plus the default target files the walk listed. A root
+// `[[bench]]` entry, plus the default target files the walk listed:
+// `src/lib.rs`, `src/main.rs`, `build.rs`, and each `tests`, `examples` and
+// `benches` folder's `<name>.rs` and `<name>/main.rs` files. A root
 // is only ever a file the walk already listed inside the package, so a
 // manifest can never point the map outside the mapped root. A
 // `[workspace]`-only manifest names no root.
@@ -194,15 +196,15 @@ fn package_of(dir: &str, text: &str, walked: &HashSet<&str>) -> Option<RustPacka
         ("benches", RootKind::Bench),
     ] {
         let prefix = join(dir, folder).map(|p| p + "/").unwrap_or_default();
-        let mut direct: Vec<&&str> = walked
+        let mut found: Vec<&&str> = walked
             .iter()
             .filter(|f| {
                 f.strip_prefix(prefix.as_str())
-                    .is_some_and(|rest| !rest.contains('/') && rest.ends_with(".rs"))
+                    .is_some_and(is_default_target)
             })
             .collect();
-        direct.sort();
-        for file in direct {
+        found.sort();
+        for file in found {
             add(kind, Some((*file).to_string()));
         }
     }
@@ -218,9 +220,18 @@ fn package_of(dir: &str, text: &str, walked: &HashSet<&str>) -> Option<RustPacka
     })
 }
 
+// Cargo's two auto-discovered layouts below a target folder: a direct
+// `<name>.rs`, or `<name>/main.rs` exactly one directory down.
+fn is_default_target(rest: &str) -> bool {
+    match rest.split_once('/') {
+        None => rest.ends_with(".rs"),
+        Some((name, file)) => !name.is_empty() && file == "main.rs",
+    }
+}
+
 // `dir/path` with `.` and `..` resolved lexically; `None` when the path
 // leaves the package directory or is absolute.
-fn join(dir: &str, path: &str) -> Option<String> {
+pub(super) fn join(dir: &str, path: &str) -> Option<String> {
     if path.starts_with('/') {
         return None;
     }
