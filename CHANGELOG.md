@@ -33,6 +33,17 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   rust-analyzer's own references on this repository, call edges scored precision 1.0 and recall
   0.999. The fragment cache moves from the Rust-definition generation to
   `fragments-v29.json`, so existing cache files re-extract once.
+- **Rust edges reach cargo's nested targets, `cfg_attr` tests and `#[path]` modules.** Cargo's
+  nested target files `tests/<name>/main.rs`, `examples/<name>/main.rs` and
+  `benches/<name>/main.rs` are crate roots, so their calls through the library's crate name bind
+  like those from `tests/*.rs`. A function marked by `#[cfg_attr(<predicate>, test)]`, with any
+  predicate and nested `cfg_attr` included, is a test for `tests` and `impact`. A `mod x;`
+  carrying `#[path = "..."]` reaches the file the attribute names, as rustc loads it, and never the
+  default `x.rs` beside it that rustc does not compile; a `path` carried by `cfg_attr` reaches
+  nothing. Measured against rust-analyzer on a fixture package holding all three shapes, every
+  call through them is recalled with no contradicted edge, and this repository's own scores are
+  unchanged. The fragment cache moves to `fragments-v30.json`, so an existing cache re-extracts
+  once.
 
 ### Fixed
 

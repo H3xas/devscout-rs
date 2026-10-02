@@ -108,7 +108,12 @@ so it never changes a C# or TypeScript answer.
 - **Crate roots.** Every `Cargo.toml` in the mapped scope with a `[package]` section names its
   roots: the `path` of each `[lib]`, `[[bin]]`, `[[test]]`, `[[example]]` and `[[bench]]` entry,
   plus cargo's default target files that the walk listed (`src/lib.rs`, `src/main.rs`,
-  `tests/*.rs`, `examples/*.rs`, `benches/*.rs`, `build.rs`). A `path` that leaves the package
+  `tests/*.rs`, `examples/*.rs`, `benches/*.rs`, `build.rs`, and the nested targets
+  `tests/<name>/main.rs`, `examples/<name>/main.rs` and `benches/<name>/main.rs`, exactly one
+  directory down). Any other file in a target folder, such as `tests/common/mod.rs`, a sibling
+  `tests/<name>/part.rs` or `tests/a/b/main.rs`, is reached only through `mod` from a root and is
+  never a root itself. A file both an explicit target `path` and a default is listed once, with
+  the explicit entry's kind. A `path` that leaves the package
   directory or names no walked file adds nothing. A `[workspace]`-only manifest names no root. The
   manifest is read by a line scan of section headers and `name` and `path` keys.
 - **Library name.** `[lib] name`, else `[package] name` with `-` read as `_`, present only when a
@@ -123,6 +128,16 @@ so it never changes a C# or TypeScript answer.
   `f/x.rs` or `f/x/mod.rs` from any other file `f.rs`. Inside an inline `mod m { }` it resolves
   one directory deeper per enclosing module. A declaration whose file is missing, or whose two
   candidate files both exist, reaches nothing.
+- **`#[path = "p"] mod x;`** reaches the file `p` names, as rustc loads it. At file level `p` is
+  relative to the declaring file's directory (for `src/reel.rs`, `src/`, not `src/reel/`); inside
+  inline modules it is relative to the folder the default rule uses there (`src/bay/` inside
+  `mod bay { }` of `src/lib.rs`, `src/reel/spool/` inside `mod spool { }` of `src/reel.rs`). `.`
+  and `..` resolve lexically. The file reached owns its directory like a `mod.rs` file: its own
+  `mod y;` resolves to `y.rs` or `y/mod.rs` beside it. The first `#[path]` on a declaration wins.
+  A path that is absolute, climbs above the mapped root or names no walked `.rs` file reaches
+  nothing, and never falls back to the default `x.rs` or `x/mod.rs`, so no edge goes into a file
+  rustc does not compile. A default file no declaration reaches stays an orphan root. Only a plain
+  string literal (without escapes) or a raw string literal is read.
 - **First position wins.** Roots are walked in package-directory order, then library, binaries,
   tests, examples, benches and the build script, each breadth first; the first position to reach
   a file places it, and a later declaration still resolves paths into that file.
@@ -235,7 +250,12 @@ would outside a macro, qualifier segments included.
 ## Tests
 
 A function with a `#[test]` attribute, or an attribute whose path ends in `::test`
-(`#[tokio::test]`), is a test: its own def carries `testMethods: ["<its name>"]`. `tests` and
+(`#[tokio::test]`), is a test: its own def carries `testMethods: ["<its name>"]`. The same
+attribute carried by `cfg_attr` counts too: `#[cfg_attr(test, test)]`,
+`#[cfg_attr(any(test, doc), test)]`, `#[cfg_attr(test, tokio::test)]`,
+`#[cfg_attr(test, test, ignore)]` and a nested `cfg_attr`. The predicate is never evaluated, as
+with every other `cfg`, so any predicate counts. A `cfg_attr` that carries no test attribute
+(`derive(...)`, `allow(...)`, `test_case`) or is malformed is not a test. `tests` and
 `impact` then reach Rust tests through the existing rule that a file declaring a test def is a
 test file. So a production file with an inline `#[cfg(test)]` module is a test file for `tests`
 and counts in `impact`'s `tests=N`, and a `tests` row lists every test function of its file as a
@@ -255,9 +275,12 @@ and `test_def_count` counts the Rust tests. `ambiguous_count`, `ambiguous_pct`,
   generates is invisible.
 - **No `cfg` evaluation.** Every `cfg` branch is recorded (with `-N` suffixes where paths
   repeat) and resolved, and a path inside a `cfg`-disabled region binds like any other.
-- **`#[path]` is not read** (a module declared with one reaches the default file or nothing), and
-  **`src/bin/` is skipped** with every other `bin` directory (see [Which files](#which-files)), so
-  its binaries are neither indexed nor roots.
+- **Two `#[path]` forms are not honored** and reach nothing: a `path` carried by `cfg_attr`
+  (`#[cfg_attr(unix, path = "u.rs")]`), whose file depends on the unevaluated predicate, and an
+  out-of-line `mod x;` inside an inline module that itself carries `#[path]`. A `path` whose value
+  is not a plain or raw string literal reaches nothing too.
+- **`src/bin/` is skipped** with every other `bin` directory (see [Which files](#which-files)), so
+  its binaries (`src/bin/*.rs` and `src/bin/<name>/main.rs`) are neither indexed nor roots.
 - **Cross-package paths.** A path into another package of the same workspace through a
   dependency's crate name binds nothing; only a package's own library name binds.
 - **Helper files are not test files**, and pattern paths give only their qualifiers.

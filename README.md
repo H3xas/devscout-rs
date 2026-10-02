@@ -354,8 +354,9 @@ Known, rather than hidden:
 - **Rust edges come from path resolution only.** `refs`, `impact` and `tests` answer on Rust
   through the module tree and `use` scope, but a method call is never typed by its receiver, so
   `x.f()` gives no edge; trait dispatch, generics, macro expansion, `cfg` evaluation (every branch
-  is recorded and resolved), `#[path]` and build-script `include!` are not followed; a path two
-  imports both provide stays ambiguous rather than guessed. Ids use the file path
+  is recorded and resolved) and build-script `include!` are not followed; a `#[path]` carried by
+  `cfg_attr`, or on a `mod x;` inside an inline module that itself carries `#[path]`, reaches
+  nothing; a path two imports both provide stays ambiguous rather than guessed. Ids use the file path
   (`src/shelf.rs#Widget::new`), not the crate path. A file with an inline `#[cfg(test)]` module is
   a test file for `tests` and `impact`, and a helper file with no `#[test]` function is not. Every
   `.rs` file in the mapped scope is indexed in every repository, `src/bin/` excepted with every
