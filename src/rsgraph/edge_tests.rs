@@ -115,4 +115,5 @@ mod emit;
 mod macro_scope;
 mod modtree;
 mod opaque_globs;
+mod path_modules;
 mod scope;

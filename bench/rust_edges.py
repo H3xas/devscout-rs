@@ -411,7 +411,7 @@ def module_paths(roots, mods_by_file, exists):
 
 def _path_target(folder, literal):
     """`folder/literal` with `.` and `..` resolved, or None when absolute or above the root."""
-    if literal.startswith("/"):
+    if literal.startswith("/") or literal.rsplit("/", 1)[-1] in ("", ".", ".."):
         return None
     target = posixpath.normpath(posixpath.join(folder, literal))
     if target == ".." or target.startswith("../") or target == ".":

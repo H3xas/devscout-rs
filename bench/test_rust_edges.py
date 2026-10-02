@@ -353,7 +353,8 @@ class PathPlacementTests(unittest.TestCase):
 
     def test_unread_absolute_and_root_leaving_paths_reach_nothing(self):
         files = {"lib.rs": ('#[path = "/abs.rs"]\nmod a;\n#[path = "../up.rs"]\nmod b;\n'
-                            '#[path = "gone.rs"]\nmod c;\n#[cfg_attr(unix, path = "d.rs")]\nmod d;\n'),
+                            '#[path = "gone.rs"]\nmod c;\n#[cfg_attr(unix, path = "d.rs")]\nmod d;\n'
+                            '#[path = "a.rs/"]\nmod e;\n#[path = "b.rs/."]\nmod f;\n'),
                  "a.rs": "", "b.rs": "", "c.rs": "", "d.rs": ""}
         self.assertEqual(sorted(place(files, ["lib.rs"])), ["lib.rs"])
 
