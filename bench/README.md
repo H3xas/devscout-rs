@@ -134,7 +134,13 @@ dump, the compiler's `cargo test -- --list` output, the mapped `graph.json`, the
 scored `report.json`, `edges.jsonl` (one verdict per Rust edge) and `references.jsonl` land in
 `bench/out/rust-edges/<label>/`, which is ignored. `score --out <dir> --source <export>`
 rescores saved files, and `confirm --out <dir> --source <export> <answer.json>...` checks each
-row of a saved `refs --json` or `tests --json` answer against the LSIF references. See
+row of a saved `refs --json` or `tests --json` answer against the LSIF references.
+`report.json` lists under `calls.missed` every `[file, line, target]` population reference
+that devscout's `uses-member` edges do not fully recall.
+
+`--commit` takes any tree-ish `git archive` accepts, so a fixture package is judged on its own
+by naming its directory: `--commit <commit>:fixtures/rust-targets` exports only that package,
+and rust-analyzer, `cargo test -- --list` and devscout all run on it as a root of its own. See
 [`docs/benchmarks/methodology.md`](../docs/benchmarks/methodology.md#rust-edges) for the
 universe, the site classes and the thresholds.
 

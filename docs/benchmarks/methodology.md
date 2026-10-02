@@ -209,7 +209,9 @@ variant counts as a type position); it never touches the call population.
   the oracle's target is among the candidates.
 - **Test sets.** The script's `#[test]` scan is checked per target against the compiler's
   `--list`, by qualified name derived from the module tree, and devscout's recognized tests
-  against the scan; every difference is classified.
+  against the scan; every difference is classified. The scan also counts a `test` carried by
+  `cfg_attr`, with the predicate unevaluated, and the module tree follows a plain
+  `#[path = "..."]` on a `mod x;` declaration to the file it names.
 - **Definition mapping.** The share of item-shaped LSIF definitions (a name after `fn`, `struct`,
   `enum`, `union`, `trait`, `mod`, `const`, `static`, `type` or `macro_rules!`) that map to a
   devscout def, with every miss listed.

@@ -14,6 +14,7 @@ against the LSIF references.
 import argparse
 import json
 import os
+import posixpath
 import re
 import shutil
 import subprocess
@@ -291,8 +292,10 @@ def call_scores(refs, edges):
     recalled = sum(min(n, calls[k]) for k, n in population.items())
     matched = sum(min(n, oracle[k]) for k, n in calls.items())
     pop_n, edge_n = sum(population.values()), sum(calls.values())
+    missed = sorted(list(k) for k, n in population.items() if calls[k] < n)
     return {"population": pop_n, "edges": edge_n, "recalled": recalled, "matched": matched,
-            "recall": ratio(recalled, pop_n), "precision": ratio(matched, edge_n)}
+            "recall": ratio(recalled, pop_n), "precision": ratio(matched, edge_n),
+            "missed": missed}
 
 
 def ratio(num, den):
@@ -367,28 +370,53 @@ def parse_test_list(text):
 
 
 def module_paths(roots, mods_by_file, exists):
-    """File -> (target root, module path) by `mod` declarations, first position wins."""
+    """File -> (target root, module path) by `mod` declarations, first position wins.
+
+    A declaration with a `path` reaches the file it names: from a declaration at file level,
+    relative to the declaring file's directory; inside inline modules, relative to the folder
+    the default rule uses there. That file owns its directory like a `mod.rs` file. A `path`
+    never falls back to the default files, and an unread one reaches nothing.
+    """
     placed = {}
+    owned = set()
     for root in roots:
-        queue = [(root, [])]
+        queue = [(root, [], False)]
         while queue:
-            rel, path = queue.pop(0)
+            rel, path, by_path = queue.pop(0)
             if rel in placed:
                 continue
             placed[rel] = (root, path)
-            base = os.path.dirname(rel)
-            stem = os.path.splitext(os.path.basename(rel))[0]
-            owns_dir = rel == root or stem == "mod"
+            if by_path:
+                owned.add(rel)
+            base = posixpath.dirname(rel)
+            stem = posixpath.splitext(posixpath.basename(rel))[0]
+            owns_dir = rel == root or stem == "mod" or rel in owned
             for m in mods_by_file.get(rel, []):
-                if m["inline"]:
+                if m["inline"] or m.get("unread"):
                     continue
                 parts = ([] if owns_dir else [stem]) + m["modPath"]
-                d = os.path.join(base, *parts) if parts else base
-                cands = [c for c in (os.path.join(d, m["name"] + ".rs"),
-                                     os.path.join(d, m["name"], "mod.rs")) if exists(c)]
+                d = posixpath.join(base, *parts) if parts else base
+                child = path + m["modPath"] + [m["name"]]
+                if m.get("path") is not None:
+                    target = _path_target(base if not m["modPath"] else d, m["path"])
+                    if target is not None and exists(target):
+                        queue.append((target, child, True))
+                    continue
+                cands = [c for c in (posixpath.join(d, m["name"] + ".rs"),
+                                     posixpath.join(d, m["name"], "mod.rs")) if exists(c)]
                 if len(cands) == 1:
-                    queue.append((cands[0], path + m["modPath"] + [m["name"]]))
+                    queue.append((cands[0], child, False))
     return placed
+
+
+def _path_target(folder, literal):
+    """`folder/literal` with `.` and `..` resolved, or None when absolute or above the root."""
+    if literal.startswith("/"):
+        return None
+    target = posixpath.normpath(posixpath.join(folder, literal))
+    if target == ".." or target.startswith("../") or target == ".":
+        return None
+    return target
 
 
 def compare_test_lists(listed, o_tests, mods_by_file, exists):
