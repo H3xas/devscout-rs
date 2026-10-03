@@ -875,17 +875,40 @@ fn no_support_sentence_names_a_target_ahead_of_its_row() {
 
 /// The part of a publication page that advertises the coming release. A dated changelog section
 /// records what an earlier release qualified and is never rewritten, so only `[Unreleased]` counts
-/// there; every other page counts whole.
+/// there; every other page counts whole. Only a line that starts with the heading opens or closes
+/// the section, so prose quoting the heading cannot shift the slice away from the real entries.
 fn advertising_part<'a>(name: &str, text: &'a str) -> &'a str {
     if name != "CHANGELOG.md" {
         return text;
     }
-    let (_, unreleased) = text
-        .split_once("## [Unreleased]")
-        .expect("CHANGELOG.md has an [Unreleased] section");
-    unreleased
-        .split_once("\n## [")
-        .map_or(unreleased, |(section, _)| section)
+    let mut offset = 0;
+    let mut start = None;
+    for line in text.split_inclusive('\n') {
+        match start {
+            None if line.starts_with("## [Unreleased]") => start = Some(offset + line.len()),
+            Some(from) if line.starts_with("## [") => return &text[from..offset],
+            _ => {}
+        }
+        offset += line.len();
+    }
+    &text[start.expect("CHANGELOG.md has an [Unreleased] section")..]
+}
+
+#[test]
+fn the_unreleased_slice_starts_at_the_heading_line_not_at_a_mention_of_it() {
+    let changelog = "# Changelog\n\nNew entries go under `## [Unreleased]`.\n\n\
+                     ## [Unreleased]\n\n- coming entry\n\n\
+                     ## [1.0.0] - 2026-01-01\n\n- dated entry\n";
+    let part = advertising_part("CHANGELOG.md", changelog);
+    assert!(part.contains("coming entry"), "slice: {part:?}");
+    assert!(!part.contains("dated entry"), "slice: {part:?}");
+}
+
+#[test]
+#[should_panic(expected = "CHANGELOG.md has an [Unreleased] section")]
+fn a_changelog_without_an_unreleased_heading_fails_the_held_out_sweep() {
+    let changelog = "# Changelog\n\n### [Unreleased]\n\n## [1.0.0] - 2026-01-01\n\n- dated entry\n";
+    advertising_part("CHANGELOG.md", changelog);
 }
 
 #[test]
