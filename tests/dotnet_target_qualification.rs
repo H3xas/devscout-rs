@@ -14,9 +14,11 @@
 //! 3. Substitution controls: both prior-art controls are recorded from their own independently
 //!    inspected evidence, never from the oracle's own status line -- one control's fixed defect
 //!    now reads `passing` from a positively observed refusal, the other still reads `failing`.
-//! 4. Publication: no support sentence in the document, `README.md` or `CHANGELOG.md` names a
-//!    target whose row is not `passing`, `README.md` names no target without a held-out row, and
-//!    the document states its own scope in its own words.
+//! 4. Publication: no support sentence in the document or in a publication page names a target
+//!    whose row is not `passing`, no publication page names a target without a held-out row (of
+//!    the changelog, only `[Unreleased]` counts there), and the document states its own scope in
+//!    its own words. The publication pages are `README.md`, `CHANGELOG.md` and every prose page
+//!    that carries README content (`publication_pages`).
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -40,8 +42,49 @@ fn readme_path() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("README.md")
 }
 
-fn changelog_path() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("CHANGELOG.md")
+/// The pages a support claim can be published on: `README.md`, `CHANGELOG.md`, and every prose
+/// page that carries README content, as `(repository-relative path, text)`. A missing fixed page
+/// or an empty page directory fails here, so the publication sweeps can never pass by reading
+/// nothing.
+fn publication_pages() -> Vec<(String, String)> {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut paths: Vec<PathBuf> = [
+        "README.md",
+        "CHANGELOG.md",
+        "docs/README.md",
+        "docs/concepts.md",
+        "docs/limitations.md",
+        "docs/install.md",
+    ]
+    .iter()
+    .map(|page| root.join(page))
+    .collect();
+    for dir in ["docs/guides", "docs/explanation"] {
+        let mut pages: Vec<PathBuf> = fs::read_dir(root.join(dir))
+            .unwrap_or_else(|e| panic!("{dir} must exist: {e}"))
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| path.extension().is_some_and(|ext| ext == "md"))
+            .collect();
+        assert!(
+            !pages.is_empty(),
+            "{dir} holds no page, so the publication sweep would read nothing there"
+        );
+        pages.sort();
+        paths.extend(pages);
+    }
+    paths
+        .into_iter()
+        .map(|path| {
+            let name = path
+                .strip_prefix(root)
+                .unwrap()
+                .to_string_lossy()
+                .into_owned();
+            let text =
+                fs::read_to_string(&path).unwrap_or_else(|e| panic!("{name} must exist: {e}"));
+            (name, text)
+        })
+        .collect()
 }
 
 /// Every committed row, keyed by its `profile_id`, sorted for a deterministic iteration order.
@@ -669,8 +712,7 @@ fn framework_adapter_evidence_requires_full_identity_not_name_alone() {
 #[test]
 fn no_document_or_readme_emits_an_aggregate_dotnet_supported_flag() {
     let doc = fs::read_to_string(doc_path()).unwrap();
-    let readme = fs::read_to_string(readme_path()).unwrap();
-    let changelog = fs::read_to_string(changelog_path()).unwrap();
+    let pages = publication_pages();
     for banned in [
         ".NET supported",
         "fully .NET supported",
@@ -680,14 +722,12 @@ fn no_document_or_readme_emits_an_aggregate_dotnet_supported_flag() {
             !doc.contains(banned),
             "coverage document names a banned aggregate flag: {banned}"
         );
-        assert!(
-            !readme.contains(banned),
-            "README.md names a banned aggregate flag: {banned}"
-        );
-        assert!(
-            !changelog.contains(banned),
-            "CHANGELOG.md names a banned aggregate flag: {banned}"
-        );
+        for (name, text) in &pages {
+            assert!(
+                !text.contains(banned),
+                "{name} names a banned aggregate flag: {banned}"
+            );
+        }
     }
 }
 
@@ -815,8 +855,7 @@ fn the_sweep_covers_every_target_that_is_not_passing() {
 #[test]
 fn no_support_sentence_names_a_target_ahead_of_its_row() {
     let doc = fs::read_to_string(doc_path()).unwrap();
-    let readme = fs::read_to_string(readme_path()).unwrap();
-    let changelog = fs::read_to_string(changelog_path()).unwrap();
+    let pages = publication_pages();
     let (before_wave2, _) = doc
         .split_once("## Wave 2")
         .expect("the document has a Wave 2 section boundary");
@@ -825,28 +864,43 @@ fn no_support_sentence_names_a_target_ahead_of_its_row() {
             !names_target(before_wave2, target),
             "{target} is not a passing row and must not appear before the Wave 2 heading"
         );
-        assert!(
-            !names_target(&readme, target),
-            "{target} is not a passing row and must not appear in README.md"
-        );
-        assert!(
-            !names_target(&changelog, target),
-            "{target} is not a passing row and must not appear in CHANGELOG.md"
-        );
+        for (name, text) in &pages {
+            assert!(
+                !names_target(text, target),
+                "{target} is not a passing row and must not appear in {name}"
+            );
+        }
     }
+}
+
+/// The part of a publication page that advertises the coming release. A dated changelog section
+/// records what an earlier release qualified and is never rewritten, so only `[Unreleased]` counts
+/// there; every other page counts whole.
+fn advertising_part<'a>(name: &str, text: &'a str) -> &'a str {
+    if name != "CHANGELOG.md" {
+        return text;
+    }
+    let (_, unreleased) = text
+        .split_once("## [Unreleased]")
+        .expect("CHANGELOG.md has an [Unreleased] section");
+    unreleased
+        .split_once("\n## [")
+        .map_or(unreleased, |(section, _)| section)
 }
 
 #[test]
 fn readme_advertises_no_target_without_a_held_out_row() {
-    let readme = fs::read_to_string(readme_path()).unwrap();
+    let pages = publication_pages();
     for tfm in passing_profile_tfms() {
         if HELD_OUT_MEASURED_TFMS.contains(&tfm.as_str()) {
             continue;
         }
-        assert!(
-            !names_target(&readme, &tfm),
-            "{tfm} has no held-out row and must not be advertised in README.md"
-        );
+        for (name, text) in &pages {
+            assert!(
+                !names_target(advertising_part(name, text), &tfm),
+                "{tfm} has no held-out row and must not be advertised in {name}"
+            );
+        }
     }
 }
 
