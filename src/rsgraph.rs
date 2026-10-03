@@ -2,8 +2,8 @@
 // the edges the module tree and `use` scope resolve.
 //
 // Each item becomes one def (which `read` quotes by its span) and one name
-// row (which `find` prints); a function carrying `#[test]` carries its own
-// name in `testMethods`. The rows and the edges are appended after every C#
+// row (which `find` prints); a function carrying `#[test]`, plainly or
+// through `cfg_attr`, carries its own name in `testMethods`. The rows and the edges are appended after every C#
 // and TypeScript row, so a tree without a `.rs` file serializes exactly as it
 // did before Rust was indexed.
 //

@@ -359,12 +359,123 @@ def _matching(tokens, open_index):
     return len(tokens) - 1
 
 
+def _split_top(tokens, start, end):
+    """`tokens[start:end]` split at the commas outside every nested group, as index ranges."""
+    parts, depth, begin = [], 0, start
+    for k in range(start, end):
+        token = tokens[k]
+        if token.kind != "punct":
+            continue
+        if token.text in _OPEN:
+            depth += 1
+        elif token.text in (")", "]", "}"):
+            depth -= 1
+        elif token.text == "," and depth == 0:
+            parts.append((begin, k))
+            begin = k + 1
+    parts.append((begin, end))
+    return parts
+
+
+def _attributes(tokens, start, end):
+    """The attributes the body `tokens[start:end]` stands for, as `(start, end, carried)`.
+
+    A `cfg_attr(<predicate>, <attr>, ...)` stands for its attributes, read again the same way
+    and marked carried; its predicate is never evaluated. A malformed `cfg_attr` stands for
+    nothing. Nesting is unwound on an explicit stack.
+    """
+    out = []
+    stack = [(start, end, False)]
+    while stack:
+        lo, hi, carried = stack.pop()
+        texts = [t.text for t in tokens[lo:hi]]
+        if not texts or texts[0] != "cfg_attr":
+            out.append((lo, hi, carried))
+            continue
+        if len(texts) < 3 or texts[1] != "(" or _matching(tokens, lo + 1) != hi - 1:
+            continue
+        parts = _split_top(tokens, lo + 2, hi - 1)
+        if parts and parts[-1][0] == parts[-1][1] and len(parts) > 1:
+            parts.pop()
+        if len(parts) < 2 or any(a == b for a, b in parts):
+            continue
+        for a, b in reversed(parts[1:]):
+            stack.append((a, b, True))
+    out.sort()
+    return out
+
+
+def _attr_path(tokens, start, end):
+    """The path of the attribute `tokens[start:end]` and the index after it."""
+    path = []
+    k = start
+    if k < end and tokens[k].text == "::":
+        k += 1
+    while k < end and tokens[k].kind == "ident":
+        path.append(tokens[k].text)
+        if k + 1 < end and tokens[k + 1].text == "::":
+            k += 2
+        else:
+            k += 1
+            break
+    return path, k
+
+
+def _is_test_leaf(tokens, start, end):
+    path, k = _attr_path(tokens, start, end)
+    if not path or path[-1] != "test":
+        return False
+    return k == end or (tokens[k].text in _OPEN and _matching(tokens, k) == end - 1)
+
+
 def _is_test_attr(tokens, start, end):
-    """Whether the attribute body `tokens[start:end]` is `test` or a path ending `::test`."""
+    """Whether the attribute body `tokens[start:end]` marks a test.
+
+    A plain attribute marks one when it is `test` or a path ending `::test`; a `cfg_attr`
+    marks one when one of its attributes does.
+    """
     body = [t.text for t in tokens[start:end]]
-    if "(" in body:
-        body = body[:body.index("(")]
-    return body == ["test"] or (len(body) >= 3 and body[-2:] == ["::", "test"])
+    if body[:1] != ["cfg_attr"]:
+        if "(" in body:
+            body = body[:body.index("(")]
+        return body == ["test"] or (len(body) >= 3 and body[-2:] == ["::", "test"])
+    return any(carried and _is_test_leaf(tokens, a, b)
+               for a, b, carried in _attributes(tokens, start, end))
+
+
+def _literal(text):
+    """The value of a plain `"..."` with no escape or a raw `r"..."` string token, else None."""
+    if text.startswith('"') and text.endswith('"') and len(text) >= 2 and "\\" not in text:
+        return text[1:-1]
+    if text.startswith("r"):
+        body = text[1:]
+        hashes = len(body) - len(body.lstrip("#"))
+        body = body[hashes:]
+        close = '"' + "#" * hashes
+        if body.startswith('"') and body.endswith(close) and len(body) >= 1 + len(close):
+            return body[1:len(body) - len(close)]
+    return None
+
+
+def _path_attr(tokens, start, end):
+    """What the attribute body `tokens[start:end]` says of a module's file.
+
+    `None` when it names no `path`; `("path", literal)` for a plain `path = "..."`; and
+    `("unread", None)` for a `path` whose value is not a plain string literal or that comes
+    through `cfg_attr`.
+    """
+    for a, b, carried in _attributes(tokens, start, end):
+        path, k = _attr_path(tokens, a, b)
+        if path != ["path"]:
+            continue
+        if carried:
+            return ("unread", None)
+        if k + 2 == b and tokens[k].text == "=" and tokens[k + 1].kind == "lit":
+            value = _literal(tokens[k + 1].text)
+            if value is not None:
+                return ("path", value)
+        return ("unread", None)
+    return None
 
 
 def scan_items(source):
@@ -372,14 +483,18 @@ def scan_items(source):
 
     Returns `(tests, mods)`: each test is a dict with `name`, `nameLine`, `startLine`, `endLine`
     (1-based) and `modPath` (the enclosing inline modules); each mod is a dict with `name`,
-    `modPath` and `inline` (whether it has a body).
+    `modPath`, `inline` (whether it has a body), `path` (the literal of the first `#[path]` on
+    a declaration without a body, else None) and `unread` (whether its file cannot be told: a
+    `path` that is not a plain literal or comes through `cfg_attr`, or an enclosing inline
+    module that carries one).
     """
     idx = Index(source)
     tokens = idx.tokens
     ctx = idx.contexts
     tests, mods = [], []
-    mod_stack = []  # (closing token index, name)
+    mod_stack = []  # (closing token index, name, carries a path attribute)
     pending_test = None
+    pending_path = None
     k = 0
     n = len(tokens)
     while k < n:
@@ -393,19 +508,27 @@ def scan_items(source):
             close = _matching(tokens, k + 1)
             if _is_test_attr(tokens, k + 2, close):
                 pending_test = pending_test or t.line + 1
+            pending_path = pending_path or _path_attr(tokens, k + 2, close)
             k = close + 1
             continue
         if t.kind == "ident" and t.text == "mod" and k + 1 < n and tokens[k + 1].kind == "ident":
             name = tokens[k + 1].text
-            path = [m for _, m in mod_stack]
+            path = [m for _, m, _ in mod_stack]
+            under_path = any(p for _, _, p in mod_stack)
             if k + 2 < n and tokens[k + 2].text == "{":
-                mods.append({"name": name, "modPath": path, "inline": True})
-                mod_stack.append((_matching(tokens, k + 2), name))
+                mods.append({"name": name, "modPath": path, "inline": True, "path": None,
+                             "unread": False})
+                mod_stack.append((_matching(tokens, k + 2), name,
+                                  under_path or pending_path is not None))
                 k += 3
             else:
-                mods.append({"name": name, "modPath": path, "inline": False})
+                literal = pending_path[1] if pending_path and not under_path else None
+                unread = under_path or (pending_path is not None and literal is None)
+                mods.append({"name": name, "modPath": path, "inline": False, "path": literal,
+                             "unread": unread})
                 k += 2
             pending_test = None
+            pending_path = None
             continue
         if t.kind == "ident" and t.text == "fn" and k + 1 < n and tokens[k + 1].kind == "ident":
             body = k + 2
@@ -418,12 +541,14 @@ def scan_items(source):
                     "nameLine": tokens[k + 1].line + 1,
                     "startLine": pending_test,
                     "endLine": tokens[min(end, n - 1)].end_line + 1,
-                    "modPath": [m for _, m in mod_stack],
+                    "modPath": [m for _, m, _ in mod_stack],
                 })
             pending_test = None
+            pending_path = None
             k = end + 1
             continue
         if t.kind == "punct" and t.text in (";", "{", "}"):
             pending_test = None
+            pending_path = None
         k += 1
     return tests, mods

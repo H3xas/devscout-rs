@@ -14,10 +14,22 @@
 // inline module it resolves one directory deeper per enclosing module. A
 // declaration whose file is missing, or whose two candidate files both
 // exist, reaches nothing.
+//
+// A declaration carrying `#[path = "p"]` reaches the file `p` names instead,
+// as rustc loads it: at file level `p` is relative to the declaring file's
+// directory, and inside inline modules to the folder the default rule uses
+// there. `.` and `..` resolve lexically. A file first reached this way owns
+// its directory like a `mod.rs` file. A path that is absolute, climbs above
+// the mapped root or names no walked `.rs` file reaches nothing and never
+// falls back to the default files, because an edge into a file rustc does
+// not compile is worse than no edge. A `path` carried by `cfg_attr`, one
+// whose value is not a plain literal, and every out-of-line declaration
+// inside an inline module that carries a `path` reach nothing as well. Only
+// the walk's file index is consulted, never the filesystem.
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
 
-use super::crates::{RootKind, RustCrates};
+use super::crates::{join, RootKind, RustCrates};
 use crate::extract::RsFragment;
 
 /// One module: a file's root or an inline module inside it.
@@ -59,6 +71,9 @@ struct Builder<'a> {
     file_index: HashMap<&'a str, usize>,
     tree: ModTree,
     file_node: Vec<Option<usize>>,
+    // Whether each file was first reached through a `path` attribute, which
+    // makes it own its directory.
+    path_owned: Vec<bool>,
 }
 
 /// Builds the module tree over `fragments` from the package model.
@@ -76,6 +91,7 @@ pub(super) fn build(fragments: &[(String, RsFragment)], crates: Option<&RustCrat
             extern_lib: HashMap::new(),
         },
         file_node: vec![None; fragments.len()],
+        path_owned: vec![false; fragments.len()],
     };
     for (file, lib) in declared_roots(fragments, crates, &b.file_index) {
         if b.file_node[file].is_some() {
@@ -179,13 +195,23 @@ impl Builder<'_> {
         let fragment = &self.fragments[file].1;
         let decls: std::collections::HashSet<&str> =
             fragment.mod_files.iter().map(String::as_str).collect();
+        let paths: HashMap<&str, Option<&str>> = fragment
+            .mod_paths
+            .iter()
+            .map(|m| (m.item.as_str(), m.path.as_deref()))
+            .collect();
         for item in fragment.items.iter().filter(|i| i.kind == "mod") {
             let (parent_prefix, _) = split_last(&item.path);
             let Some(&parent) = self.tree.by_scope.get(&(file, parent_prefix.to_string())) else {
                 continue;
             };
             let child = if decls.contains(item.path.as_str()) {
-                self.declared_file(file, parent_prefix, &item.name, parent, root, queue)
+                let decl = Decl {
+                    prefix: parent_prefix,
+                    name: &item.name,
+                    path: paths.get(item.path.as_str()).copied(),
+                };
+                self.declared_file(file, &decl, parent, root, queue)
             } else {
                 Some(self.new_node(file, item.path.clone(), Some(parent), Some(root)))
             };
@@ -201,30 +227,36 @@ impl Builder<'_> {
     fn declared_file(
         &mut self,
         file: usize,
-        prefix: &str,
-        name: &str,
+        decl: &Decl,
         parent: usize,
         root: usize,
         queue: &mut VecDeque<usize>,
     ) -> Option<usize> {
-        let target = self.module_file(file, prefix, name, root)?;
+        let target = match decl.path {
+            Some(literal) => self.attribute_file(file, decl.prefix, literal?, root)?,
+            None => self.module_file(file, decl.prefix, decl.name, root)?,
+        };
         if let Some(existing) = self.file_node[target] {
             return Some(existing);
         }
         let node = self.new_node(target, String::new(), Some(parent), Some(root));
         self.file_node[target] = Some(node);
+        self.path_owned[target] = decl.path.is_some();
         queue.push_back(node);
         Some(node)
     }
 
-    // The file a `mod name;` in `file` under inline `prefix` names.
-    fn module_file(&self, file: usize, prefix: &str, name: &str, root: usize) -> Option<usize> {
+    // The folder the default rule resolves a declaration under inline
+    // `prefix` of `file` in: the file's directory, then its stem unless it
+    // owns its directory, then one directory per enclosing inline module.
+    fn default_folder(&self, file: usize, prefix: &str, root: usize) -> String {
         let path = self.fragments[file].0.as_str();
         let (dir, base) = match path.rfind('/') {
             Some(i) => (&path[..i], &path[i + 1..]),
             None => ("", path),
         };
-        let owns_dir = base == "mod.rs" || self.file_node[file] == Some(root);
+        let owns_dir =
+            base == "mod.rs" || self.file_node[file] == Some(root) || self.path_owned[file];
         let mut parts: Vec<&str> = Vec::new();
         if !dir.is_empty() {
             parts.push(dir);
@@ -234,7 +266,12 @@ impl Builder<'_> {
             parts.push(stem);
         }
         parts.extend(prefix.split("::").filter(|p| !p.is_empty()));
-        let folder = parts.join("/");
+        parts.join("/")
+    }
+
+    // The file a `mod name;` in `file` under inline `prefix` names.
+    fn module_file(&self, file: usize, prefix: &str, name: &str, root: usize) -> Option<usize> {
+        let folder = self.default_folder(file, prefix, root);
         let join = |tail: &str| {
             if folder.is_empty() {
                 tail.to_string()
@@ -256,6 +293,34 @@ impl Builder<'_> {
         }
     }
 
+    // The walked file `#[path = "literal"]` names for a declaration under
+    // inline `prefix` of `file`, if any.
+    fn attribute_file(
+        &self,
+        file: usize,
+        prefix: &str,
+        literal: &str,
+        root: usize,
+    ) -> Option<usize> {
+        let last = literal.rsplit('/').next().unwrap_or("");
+        if literal.starts_with('/') || matches!(last, "" | "." | "..") {
+            return None;
+        }
+        let folder = if prefix.is_empty() {
+            let path = self.fragments[file].0.as_str();
+            path.rfind('/').map_or("", |i| &path[..i]).to_string()
+        } else {
+            self.default_folder(file, prefix, root)
+        };
+        let joined = if folder.is_empty() {
+            literal.to_string()
+        } else {
+            format!("{folder}/{literal}")
+        };
+        let target = join("", &joined)?;
+        self.file_index.get(target.as_str()).copied()
+    }
+
     fn pending_extern(&mut self, root: usize, lib: (String, usize)) {
         self.tree.extern_lib.insert(root, lib);
     }
@@ -271,6 +336,14 @@ impl Builder<'_> {
             }
         }
     }
+}
+
+// One `mod x;` declaration: the inline prefix it sits under, its name, and
+// its path fact (`None` without one, `Some(None)` when unread).
+struct Decl<'d> {
+    prefix: &'d str,
+    name: &'d str,
+    path: Option<Option<&'d str>>,
 }
 
 /// `(parent path, last segment)` of an item path.

@@ -247,6 +247,136 @@ class ScoreTests(unittest.TestCase):
                          [True])
 
 
+def test_names(source):
+    return [t["name"] for t in rust_sites.scan_items(source)[0]]
+
+
+def mod_facts(source):
+    return [(m["name"], m["modPath"], m["inline"], m["path"], m["unread"])
+            for m in rust_sites.scan_items(source)[1]]
+
+
+def place(files, roots):
+    mods = {rel: rust_sites.scan_items(src)[1] for rel, src in files.items()}
+    return rust_edges.module_paths(roots, mods, lambda p: p in files)
+
+
+class CfgAttrTestScanTests(unittest.TestCase):
+    def test_a_test_attribute_carried_by_cfg_attr_marks_a_test(self):
+        src = ("#[cfg_attr(test, test)]\nfn a() {}\n"
+               "#[cfg_attr(any(test, doc), test)]\nfn b() {}\n"
+               "#[cfg_attr(test, tokio::test)]\nasync fn c() {}\n"
+               "#[cfg_attr(test, cfg_attr(all(), test))]\nfn d() {}\n"
+               "#[cfg_attr(test, test, ignore)]\nfn e() {}\n"
+               "#[cfg_attr(test, ignore, test(x),)]\nfn f() {}\n"
+               "#[cfg_attr(test, test[x])]\nfn g() {}\n")
+        self.assertEqual(test_names(src), ["a", "b", "c", "d", "e", "f", "g"])
+
+    def test_other_cfg_attr_forms_mark_no_test(self):
+        src = ("#[cfg_attr(test, derive(Debug))]\nfn a() {}\n"
+               "#[cfg_attr(test, allow(dead_code))]\nfn b() {}\n"
+               "#[cfg_attr(test, test_case)]\nfn c() {}\n"
+               "#[cfg_attr]\nfn d() {}\n#[cfg_attr(test)]\nfn e() {}\n"
+               "#[cfg_attr(test, )]\nfn f() {}\n#[cfg_attr = \"x\"]\nfn g() {}\n"
+               "#[cfg_attr(test test)]\nfn h() {}\n#[cfg_attr(test, test test)]\nfn i() {}\n"
+               "#[cfg_attr(test, test = \"x\")]\nfn j() {}\n#[cfg_attr(test,, test)]\nfn k() {}\n"
+               "#[test]\nfn plain() {}\n")
+        self.assertEqual(test_names(src), ["plain"])
+
+
+class PathAttributeScanTests(unittest.TestCase):
+    def test_the_first_path_attribute_of_a_declaration_is_recorded(self):
+        src = ('#[path = "x/real.rs"]\nmod a;\n#[path = r"raw.rs"]\npub mod b;\n'
+               '#[path = r#"hash.rs"#]\nmod c;\n#[path = "one.rs"]\n#[path = "two.rs"]\nmod d;\n'
+               "#[allow(dead_code)]\nmod e;\n")
+        self.assertEqual(mod_facts(src), [
+            ("a", [], False, "x/real.rs", False), ("b", [], False, "raw.rs", False),
+            ("c", [], False, "hash.rs", False), ("d", [], False, "one.rs", False),
+            ("e", [], False, None, False)])
+
+    def test_a_value_that_is_not_a_plain_literal_or_comes_through_cfg_attr_is_unread(self):
+        src = ('#[path = "a\\\\b.rs"]\nmod a;\n#[path = b"b.rs"]\nmod b;\n'
+               '#[path = concat!("c", ".rs")]\nmod c;\n'
+               '#[cfg_attr(unix, path = "u.rs")]\n#[path = "d.rs"]\nmod d;\n'
+               '#[path = "e.rs"]\n#[cfg_attr(unix, path = "u.rs")]\nmod e;\n')
+        self.assertEqual([(m[0], m[3], m[4]) for m in mod_facts(src)], [
+            ("a", None, True), ("b", None, True), ("c", None, True), ("d", None, True),
+            ("e", "e.rs", False)])
+
+    def test_children_of_an_inline_module_with_a_path_attribute_are_unread(self):
+        src = ('#[path = "elsewhere"]\nmod outer {\n    mod inner {\n        mod deep;\n    }\n'
+               '    #[path = "x.rs"]\n    mod near;\n}\n'
+               '#[cfg_attr(unix, path = "p")]\nmod other {\n    mod c;\n}\n'
+               "mod plain {\n    mod kid;\n}\n")
+        self.assertEqual(mod_facts(src), [
+            ("outer", [], True, None, False), ("inner", ["outer"], True, None, False),
+            ("deep", ["outer", "inner"], False, None, True),
+            ("near", ["outer"], False, None, True),
+            ("other", [], True, None, False), ("c", ["other"], False, None, True),
+            ("plain", [], True, None, False), ("kid", ["plain"], False, None, False)])
+
+
+class PathPlacementTests(unittest.TestCase):
+    def test_a_file_level_path_skips_the_default_file(self):
+        files = {"src/lib.rs": '#[path = "real.rs"]\nmod alias;\n',
+                 "src/real.rs": "", "src/alias.rs": ""}
+        placed = place(files, ["src/lib.rs"])
+        self.assertEqual(placed["src/real.rs"], ("src/lib.rs", ["alias"]))
+        self.assertNotIn("src/alias.rs", placed)
+
+    def test_dot_dot_reaches_a_sibling_directory_and_a_non_mod_rs_file_uses_its_directory(self):
+        files = {"src/lib.rs": "mod shelf;\n",
+                 "src/shelf.rs": '#[path = "../gear/cog.rs"]\nmod cog;\n',
+                 "gear/cog.rs": "", "src/shelf/cog.rs": "", "src/gear/cog.rs": ""}
+        placed = place(files, ["src/lib.rs"])
+        self.assertEqual(placed["gear/cog.rs"], ("src/lib.rs", ["shelf", "cog"]))
+        self.assertNotIn("src/shelf/cog.rs", placed)
+        self.assertNotIn("src/gear/cog.rs", placed)
+
+    def test_inside_inline_modules_the_default_folder_is_the_base(self):
+        files = {"src/lib.rs": 'mod bay {\n    #[path = "in.rs"]\n    mod a;\n}\nmod side;\n',
+                 "src/bay/in.rs": "", "src/in.rs": "",
+                 "src/side.rs": 'mod bay {\n    #[path = "in.rs"]\n    mod b;\n}\n',
+                 "src/side/bay/in.rs": "", "src/bay/b.rs": ""}
+        placed = place(files, ["src/lib.rs"])
+        self.assertEqual(placed["src/bay/in.rs"], ("src/lib.rs", ["bay", "a"]))
+        self.assertEqual(placed["src/side/bay/in.rs"], ("src/lib.rs", ["side", "bay", "b"]))
+        self.assertNotIn("src/in.rs", placed)
+
+    def test_a_file_reached_by_path_owns_its_directory_and_the_first_attribute_wins(self):
+        files = {"src/lib.rs": '#[path = "deep/hub.rs"]\n#[path = "x.rs"]\nmod hub;\n',
+                 "src/deep/hub.rs": "mod spoke;\n", "src/deep/spoke.rs": "",
+                 "src/deep/hub/spoke.rs": "", "src/x.rs": ""}
+        placed = place(files, ["src/lib.rs"])
+        self.assertEqual(placed["src/deep/spoke.rs"], ("src/lib.rs", ["hub", "spoke"]))
+        self.assertNotIn("src/deep/hub/spoke.rs", placed)
+        self.assertNotIn("src/x.rs", placed)
+
+    def test_unread_absolute_and_root_leaving_paths_reach_nothing(self):
+        files = {"lib.rs": ('#[path = "/abs.rs"]\nmod a;\n#[path = "../up.rs"]\nmod b;\n'
+                            '#[path = "gone.rs"]\nmod c;\n#[cfg_attr(unix, path = "d.rs")]\nmod d;\n'
+                            '#[path = "a.rs/"]\nmod e;\n#[path = "b.rs/."]\nmod f;\n'),
+                 "a.rs": "", "b.rs": "", "c.rs": "", "d.rs": ""}
+        self.assertEqual(sorted(place(files, ["lib.rs"])), ["lib.rs"])
+
+    def test_a_nested_target_root_places_its_sibling(self):
+        files = {"tests/flow/main.rs": "mod part;\n", "tests/flow/part.rs": "",
+                 "tests/part.rs": ""}
+        placed = place(files, ["tests/flow/main.rs"])
+        self.assertEqual(placed["tests/flow/part.rs"], ("tests/flow/main.rs", ["part"]))
+        self.assertNotIn("tests/part.rs", placed)
+
+
+class MissedCallTests(unittest.TestCase):
+    def test_every_population_reference_not_fully_recalled_is_listed(self):
+        edges = GOOD + WRONG
+        refs, _, _, _, _ = load_sample(sample_graph(edges))
+        self.assertEqual(rust_edges.call_scores(refs, edges)["missed"],
+                         [[LIB, 13, "src/lib.rs#tests::dust_twice"]])
+        recalled = GOOD + [call(LIB, 13, "src/lib.rs#tests::dust_twice", "dust_twice")]
+        self.assertEqual(rust_edges.call_scores(refs, recalled)["missed"], [])
+
+
 class RunGuardTests(unittest.TestCase):
     def test_scratch_inside_a_git_tree_is_refused(self):
         base = tempfile.mkdtemp()

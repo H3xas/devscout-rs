@@ -166,7 +166,7 @@ untracked files and are shared correctly by worktrees:
 <git-common-dir>/scout/manifest.json              file -> purpose + symbol index
 <git-common-dir>/scout/index-state.json           HEAD + timestamp the index was built at
 <git-common-dir>/scout/graph/graph.json           definitions, edges, and project units
-<git-common-dir>/scout/graph/fragments-v29.json   per-file extraction cache (incremental map)
+<git-common-dir>/scout/graph/fragments-v30.json   per-file extraction cache (incremental map)
 <git-common-dir>/scout/graph/project-units.json   csproj staleness sidecar (present only with a project model)
 <git-common-dir>/scout/graph/rust-crates.json     Cargo crate-model staleness sidecar (present only with a Cargo package in scope)
 <git-common-dir>/scout/graph/compiler-facts-v1.json  optional versioned compiler-fact artifact (see Compiler facts below); absent unless `compiler-facts run|import` has admitted one
@@ -354,8 +354,9 @@ Known, rather than hidden:
 - **Rust edges come from path resolution only.** `refs`, `impact` and `tests` answer on Rust
   through the module tree and `use` scope, but a method call is never typed by its receiver, so
   `x.f()` gives no edge; trait dispatch, generics, macro expansion, `cfg` evaluation (every branch
-  is recorded and resolved), `#[path]` and build-script `include!` are not followed; a path two
-  imports both provide stays ambiguous rather than guessed. Ids use the file path
+  is recorded and resolved) and build-script `include!` are not followed; a `#[path]` carried by
+  `cfg_attr`, or on a `mod x;` inside an inline module that itself carries `#[path]`, reaches
+  nothing; a path two imports both provide stays ambiguous rather than guessed. Ids use the file path
   (`src/shelf.rs#Widget::new`), not the crate path. A file with an inline `#[cfg(test)]` module is
   a test file for `tests` and `impact`, and a helper file with no `#[test]` function is not. Every
   `.rs` file in the mapped scope is indexed in every repository, `src/bin/` excepted with every

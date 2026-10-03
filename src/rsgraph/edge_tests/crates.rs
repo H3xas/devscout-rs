@@ -185,3 +185,109 @@ fn a_manifest_that_is_not_utf8_is_read_lossily() {
     );
     let _ = fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn a_main_rs_one_directory_below_a_target_folder_is_a_root_of_that_kind() {
+    let got = crates_of(&[
+        ("Cargo.toml", "[package]\nname = \"kite\"\n"),
+        ("src/lib.rs", ""),
+        ("tests/flight/main.rs", ""),
+        ("tests/flight/part.rs", ""),
+        ("tests/common/mod.rs", ""),
+        ("tests/a/b/main.rs", ""),
+        ("tests/zeta.rs", ""),
+        ("tests/alpha.rs", ""),
+        ("examples/glide/main.rs", ""),
+        ("benches/lift/main.rs", ""),
+        ("benches/lift/other.rs", ""),
+    ])
+    .unwrap();
+    assert_eq!(
+        roots(&got[0]),
+        vec![
+            (RootKind::Lib, "src/lib.rs"),
+            (RootKind::Test, "tests/alpha.rs"),
+            (RootKind::Test, "tests/flight/main.rs"),
+            (RootKind::Test, "tests/zeta.rs"),
+            (RootKind::Example, "examples/glide/main.rs"),
+            (RootKind::Bench, "benches/lift/main.rs"),
+        ],
+        "a sibling, a mod.rs helper and a main.rs two levels down are no roots"
+    );
+}
+
+#[test]
+fn a_nested_main_rs_also_named_by_an_explicit_target_is_listed_once() {
+    let manifest =
+        "[package]\nname = \"kite\"\n[[test]]\nname = \"flight\"\npath = \"tests/flight/main.rs\"\n[[bench]]\nname = \"lift\"\npath = \"examples/glide/main.rs\"\n";
+    let got = crates_of(&[
+        ("Cargo.toml", manifest),
+        ("tests/flight/main.rs", ""),
+        ("examples/glide/main.rs", ""),
+    ])
+    .unwrap();
+    assert_eq!(
+        roots(&got[0]),
+        vec![
+            (RootKind::Test, "tests/flight/main.rs"),
+            (RootKind::Bench, "examples/glide/main.rs"),
+        ],
+        "the explicit entry keeps its kind and the default scan adds no second entry"
+    );
+}
+
+#[test]
+fn a_nested_package_lists_its_own_nested_targets() {
+    let got = crates_of(&[
+        ("pkg/Cargo.toml", "[package]\nname = \"kite\"\n"),
+        ("pkg/tests/flight/main.rs", ""),
+        ("tests/flight/main.rs", ""),
+    ])
+    .unwrap();
+    assert_eq!(
+        roots(&got[0]),
+        vec![(RootKind::Test, "pkg/tests/flight/main.rs")]
+    );
+}
+
+const FLY: &str =
+    "pub struct Kite;\nimpl Kite {\n    pub fn new() -> Kite { Kite }\n}\npub fn fly() {}\n";
+
+#[test]
+fn nested_targets_reach_the_library_by_name_and_their_siblings_resolve() {
+    let main = "mod part;\nfn helper() {}\nfn t() {\n    kite::fly();\n    kite::Kite::new();\n    part::check();\n}\n";
+    let part = "pub fn check() {\n    crate::helper();\n    kite::fly();\n}\n";
+    let files = [
+        ("Cargo.toml", "[package]\nname = \"kite\"\n"),
+        ("src/lib.rs", FLY),
+        ("tests/flight/main.rs", main),
+        ("tests/flight/part.rs", part),
+        ("examples/glide/main.rs", main),
+        ("examples/glide/part.rs", part),
+        ("benches/lift/main.rs", main),
+        ("benches/lift/part.rs", part),
+    ];
+    let got = edges_for(&files);
+    for target in ["tests/flight", "examples/glide", "benches/lift"] {
+        for want in [
+            format!("uses-member {target}/main.rs:4 -> src/lib.rs#fly"),
+            format!("uses-type {target}/main.rs:5 -> src/lib.rs#Kite"),
+            format!("uses-member {target}/main.rs:5 -> src/lib.rs#Kite::new"),
+            format!("uses-member {target}/main.rs:6 -> {target}/part.rs#check"),
+            format!("uses-member {target}/part.rs:2 -> {target}/main.rs#helper"),
+            format!("uses-member {target}/part.rs:3 -> src/lib.rs#fly"),
+        ] {
+            assert!(got.contains(&want), "{want} missing from {got:?}");
+        }
+    }
+}
+
+#[test]
+fn a_main_rs_two_levels_down_does_not_reach_the_library_by_name() {
+    let files = [
+        ("Cargo.toml", "[package]\nname = \"kite\"\n"),
+        ("src/lib.rs", FLY),
+        ("tests/a/b/main.rs", "fn t() {\n    kite::fly();\n}\n"),
+    ];
+    assert!(edges_to(&files, "src/lib.rs#fly").is_empty());
+}

@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use super::rs_facts_types::{RsBlock, RsImpl, RsSite, RsUse};
+use super::rs_facts_types::{RsBlock, RsImpl, RsModPath, RsSite, RsUse};
 
 // ---------------------------------------------------------------------------
 // The Rust fragment data model: one record per item with its span, then the
@@ -53,7 +53,8 @@ pub struct RsFragment {
     /// live in the value namespace.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ctors: Vec<String>,
-    /// The item path of each function carrying a `#[test]` attribute.
+    /// The item path of each function carrying a `#[test]` attribute,
+    /// plainly or through `cfg_attr`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tests: Vec<String>,
     /// Every `impl` block whose self type has a path.
@@ -75,6 +76,10 @@ pub struct RsFragment {
         skip_serializing_if = "Vec::is_empty"
     )]
     pub opaque_scopes: Vec<String>,
+    /// Each `mod x;` declaration carrying a `path` attribute, or sitting
+    /// inside an inline module that carries one.
+    #[serde(rename = "modPaths", default, skip_serializing_if = "Vec::is_empty")]
+    pub mod_paths: Vec<RsModPath>,
 }
 
 impl Default for RsFragment {
@@ -90,6 +95,7 @@ impl Default for RsFragment {
             blocks: Vec::new(),
             sites: Vec::new(),
             opaque_scopes: Vec::new(),
+            mod_paths: Vec::new(),
         }
     }
 }

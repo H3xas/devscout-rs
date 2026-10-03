@@ -32,6 +32,7 @@ mod publish_message_qualifier;
 mod qualifier_capture;
 mod receiver_facts;
 mod registration_fact;
+mod rs_attrs;
 mod rs_facts;
 mod rs_fragment;
 mod rs_fragment_cost;

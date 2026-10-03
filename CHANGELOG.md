@@ -17,7 +17,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (`<file>#<path>`, such as `src/shelf.rs#Widget::new`), or by a `::` path such as `Widget::new`;
   when two items in a file share a path, the later ones take a `-1`, `-2` suffix. This is the
   definition layer used by the Rust references and tests described below. That first slice
-  used the `fragments-v28.json` cache generation, superseded by v29 in this release.
+  used the `fragments-v28.json` cache generation, superseded by v30 in this release.
 - **`refs`, `impact` and `tests` answer on Rust code.** `map` now resolves Rust paths through the
   module tree (`mod` declarations, `mod.rs` and `foo.rs` with `foo/` layouts, inline modules, and
   crate roots read from each `Cargo.toml` in scope, or `lib.rs` and `main.rs` without one) and
@@ -31,8 +31,19 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   files as "indexed and graphed, path-resolved edges". A Cargo package model is kept beside the
   graph in `rust-crates.json`, so editing a `Cargo.toml` rebuilds the graph. Measured against
   rust-analyzer's own references on this repository, call edges scored precision 1.0 and recall
-  0.999. The fragment cache moves from the Rust-definition generation to
-  `fragments-v29.json`, so existing cache files re-extract once.
+  0.999. This slice used the `fragments-v29.json` cache generation, superseded by v30 in this
+  release.
+- **Rust edges reach cargo's nested targets, `cfg_attr` tests and `#[path]` modules.** Cargo's
+  nested target files `tests/<name>/main.rs`, `examples/<name>/main.rs` and
+  `benches/<name>/main.rs` are crate roots, so their calls through the library's crate name bind
+  like those from `tests/*.rs`. A function marked by `#[cfg_attr(<predicate>, test)]`, with any
+  predicate and nested `cfg_attr` included, is a test for `tests` and `impact`. A `mod x;`
+  carrying `#[path = "..."]` reaches the file the attribute names, as rustc loads it, and never the
+  default `x.rs` beside it that rustc does not compile; a `path` carried by `cfg_attr` reaches
+  nothing. Measured against rust-analyzer on a fixture package holding all three shapes, every
+  call through them is recalled with no contradicted edge, and this repository's own scores are
+  unchanged. The fragment cache moves to `fragments-v30.json`, so an existing cache re-extracts
+  once.
 
 ### Fixed
 
