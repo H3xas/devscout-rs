@@ -31,12 +31,10 @@ The `--json` answers carry their own `schema_version`, described in
 
 ## Moved documentation pages
 
-Four reference pages moved under `docs/reference/`. The old paths answer with a one-line pointer
-for one release and are removed in the next minor release:
-
-| Old path | New path |
-| --- | --- |
-| `docs/answer-contract.md` | [`docs/reference/json-output.md`](../reference/json-output.md) |
-| `docs/csharp-coverage.md` | [`docs/reference/csharp-constructs.md`](../reference/csharp-constructs.md) |
-| `docs/dotnet-target-coverage.md` | [`docs/reference/dotnet-targets.md`](../reference/dotnet-targets.md) |
-| `docs/call-site-evidence-matrix.md` | [`docs/reference/call-site-evidence.md`](../reference/call-site-evidence.md) |
+The JSON contract, the C# construct catalogue, the .NET target catalogue and the call-site
+evidence page moved under [`docs/reference/`](../README.md#reference) as
+[JSON output](../reference/json-output.md), [C# constructs](../reference/csharp-constructs.md),
+[.NET targets](../reference/dotnet-targets.md) and
+[Call-site evidence](../reference/call-site-evidence.md). Each old path answers with a one-line
+pointer for one release and is removed in the next minor release;
+[CHANGELOG.md](../../CHANGELOG.md) names the old paths.
