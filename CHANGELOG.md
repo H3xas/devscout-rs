@@ -146,6 +146,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Documentation is organised by type.** `docs/answer-contract.md`, `docs/csharp-coverage.md`,
+  `docs/dotnet-target-coverage.md` and `docs/call-site-evidence-matrix.md` moved to
+  `docs/reference/json-output.md`, `docs/reference/csharp-constructs.md`,
+  `docs/reference/dotnet-targets.md` and `docs/reference/call-site-evidence.md`. Each old path
+  keeps a one-line pointer for this release and is removed in the next minor release.
 - **The lane record reads the admitted artifact's compilations.** `stats.lane` gains the state
   `partial` (reason `compilations-incomplete`, printed `lane: enriched, partial (<detail>)`, with
   `stats.semantic` kept) and the not-applied reasons `no-complete-compilation` and
