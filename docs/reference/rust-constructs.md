@@ -5,10 +5,10 @@ a definition with a span, which `find` lists and `read` quotes. On top of the it
 resolves Rust paths through the module tree and `use` scope, with no type inference, and records
 the calls, type uses and trait implementations they name as edges of the kinds C# already uses,
 so `refs`, `impact` and `tests` answer on Rust code. Method calls are never typed by their
-receiver. The catalogue is pinned by [`fixtures/rust-definitions/`](../fixtures/rust-definitions/)
-with [`tests/cli_rust_definitions.rs`](../tests/cli_rust_definitions.rs) and by
-[`fixtures/rust-edges/`](../fixtures/rust-edges/) with
-[`tests/cli_rust_edges.rs`](../tests/cli_rust_edges.rs), with the extractor's and resolver's own
+receiver. The catalogue is pinned by [`fixtures/rust-definitions/`](../../fixtures/rust-definitions/)
+with [`tests/cli_rust_definitions.rs`](../../tests/cli_rust_definitions.rs) and by
+[`fixtures/rust-edges/`](../../fixtures/rust-edges/) with
+[`tests/cli_rust_edges.rs`](../../tests/cli_rust_edges.rs), with the extractor's and resolver's own
 unit tests under `src/extract/tests/rs_*.rs` and `src/rsgraph/edge_tests/`.
 
 ## Grammar pin

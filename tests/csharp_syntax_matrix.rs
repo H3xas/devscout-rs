@@ -1,4 +1,4 @@
-//! Pins the C# construct catalogue in `docs/csharp-coverage.md` to the fixture under
+//! Pins the C# construct catalogue in `docs/reference/csharp-constructs.md` to the fixture under
 //! `fixtures/csharp-syntax/`.
 //!
 //! Three layers, each its own test:
@@ -29,7 +29,7 @@ fn fixture_dir() -> PathBuf {
 }
 
 fn catalogue_path() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/csharp-coverage.md")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/reference/csharp-constructs.md")
 }
 
 /// Every `.cs` file of the fixture, sorted by file name.
@@ -125,7 +125,8 @@ fn every_fixture_file_parses_without_error_or_missing_nodes() {
 
 #[test]
 fn the_catalogue_names_every_fixture_file_and_every_named_fixture_exists() {
-    let catalogue = fs::read_to_string(catalogue_path()).expect("docs/csharp-coverage.md exists");
+    let catalogue =
+        fs::read_to_string(catalogue_path()).expect("docs/reference/csharp-constructs.md exists");
     let on_disk: BTreeSet<String> = fixture_files().iter().map(|p| file_name(p)).collect();
 
     let unlisted: Vec<&String> = on_disk
@@ -134,7 +135,7 @@ fn the_catalogue_names_every_fixture_file_and_every_named_fixture_exists() {
         .collect();
     assert!(
         unlisted.is_empty(),
-        "fixture files missing from docs/csharp-coverage.md: {unlisted:?}"
+        "fixture files missing from docs/reference/csharp-constructs.md: {unlisted:?}"
     );
 
     let named: BTreeSet<String> = catalogue
@@ -148,7 +149,7 @@ fn the_catalogue_names_every_fixture_file_and_every_named_fixture_exists() {
         .collect();
     assert!(
         missing.is_empty(),
-        "docs/csharp-coverage.md names fixture files that do not exist: {missing:?}"
+        "docs/reference/csharp-constructs.md names fixture files that do not exist: {missing:?}"
     );
 }
 

@@ -70,7 +70,7 @@ impl Drop for Fixture {
 }
 
 // The exact `impact ICatalogStore --json` bytes this fixture has always
-// produced, pinned in `docs/answer-contract.md`. No import is ever
+// produced, pinned in `docs/reference/json-output.md`. No import is ever
 // configured in this test, so these bytes must not move by one byte.
 const EXPECTED_JSON: &str = concat!(
     r#"{"schema_version":1,"query":"ICatalogStore","status":"resolved","kind":"symbol","#,

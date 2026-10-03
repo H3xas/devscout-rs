@@ -6,7 +6,7 @@ sidecar preserve one invocation as its own distinct site, and which collapse two
 
 `EXPECTED.md` records every witness's expected call site, authored by reading `Witness.cs` alone,
 before any `devscout` command is run against it -- `tests/call_site_evidence.rs` checks the
-audited surfaces against that list, never the other way around. `docs/call-site-evidence-matrix.md`
+audited surfaces against that list, never the other way around. `docs/reference/call-site-evidence.md`
 is regenerated from real command output against this fixture (see that test's own doc comment),
 never hand-transcribed.
 

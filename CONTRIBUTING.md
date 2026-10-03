@@ -22,6 +22,9 @@ cargo test
 `tests/`, including the public conformance suite described below. There are no test-only
 dependencies beyond a stable Rust toolchain; nothing in the test suite reaches the network.
 
+**Fixtures.** Fixture sources carry no narrative headers; case notes live in the fixture
+directory's own `README.md`.
+
 Before opening a pull request, run:
 
 ```sh

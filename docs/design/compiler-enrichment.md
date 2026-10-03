@@ -1,5 +1,7 @@
 # Compiler-backed enrichment layer
 
+Historical design record, kept as written; for current behaviour see [Compiler facts](../guides/compiler-facts.md).
+
 > **Dated amendment (2026-09-22).** This document stays the historical record of the original
 > attempt, per its own closing paragraph ("if the gate fails, the layer is not shipped and this
 > document is the record of the attempt"); it is not rewritten. A later revision superseded three
