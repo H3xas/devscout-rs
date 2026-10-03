@@ -8,7 +8,7 @@ repository's own build. Composed and diffed by
 [`tools/qualify-dotnet-targets.py`](../../tools/qualify-dotnet-targets.py); results are read by
 [`tests/dotnet_target_qualification.rs`](../../tests/dotnet_target_qualification.rs) with no
 `dotnet` on the test path, and published in
-[`docs/dotnet-target-coverage.md`](../../docs/dotnet-target-coverage.md).
+[`docs/reference/dotnet-targets.md`](../../docs/reference/dotnet-targets.md).
 
 ## Shared cases
 

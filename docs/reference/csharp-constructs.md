@@ -2,8 +2,8 @@
 
 Every C# construct the extractor meets, with a verdict on whether it must produce a graph
 fact, and what actually happens today. The catalogue is pinned by
-[`fixtures/csharp-syntax/`](../fixtures/csharp-syntax/) (one hand-written, compilable file per
-construct group) and [`tests/csharp_syntax_matrix.rs`](../tests/csharp_syntax_matrix.rs), which
+[`fixtures/csharp-syntax/`](../../fixtures/csharp-syntax/) (one hand-written, compilable file per
+construct group) and [`tests/csharp_syntax_matrix.rs`](../../tests/csharp_syntax_matrix.rs), which
 fails when a fixture stops parsing clean, when a `must` row that produces today stops producing,
 or when the fixture set and this document drift apart.
 

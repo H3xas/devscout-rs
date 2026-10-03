@@ -1,4 +1,4 @@
-//! Pins `docs/dotnet-target-coverage.md` to the committed capability snapshots under
+//! Pins `docs/reference/dotnet-targets.md` to the committed capability snapshots under
 //! `fixtures/csharp-target-qualification/results/`. No `dotnet` toolchain is invoked here --
 //! every row is produced ahead of time by `tools/qualify-dotnet-targets.py --write` and diffed
 //! byte-for-byte by that same script's `--check` mode in CI; this file only checks that the
@@ -33,7 +33,7 @@ fn results_dir() -> PathBuf {
 }
 
 fn doc_path() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/dotnet-target-coverage.md")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/reference/dotnet-targets.md")
 }
 
 fn readme_path() -> PathBuf {
@@ -339,11 +339,11 @@ fn a_snapshot_exists_iff_its_row_state_implies_an_executed_run() {
 
 #[test]
 fn every_committed_row_appears_in_the_document_and_vice_versa() {
-    let doc = fs::read_to_string(doc_path()).expect("docs/dotnet-target-coverage.md exists");
+    let doc = fs::read_to_string(doc_path()).expect("docs/reference/dotnet-targets.md exists");
     for (id, _) in committed_rows() {
         assert!(
             doc.contains(&id),
-            "docs/dotnet-target-coverage.md does not name committed row {id}"
+            "docs/reference/dotnet-targets.md does not name committed row {id}"
         );
     }
 }
@@ -398,7 +398,7 @@ fn parse_doc_state_rows(doc: &str) -> Vec<(String, String)> {
 
 #[test]
 fn the_document_state_column_matches_each_committed_snapshot_in_both_directions() {
-    let doc = fs::read_to_string(doc_path()).expect("docs/dotnet-target-coverage.md exists");
+    let doc = fs::read_to_string(doc_path()).expect("docs/reference/dotnet-targets.md exists");
     let doc_rows = parse_doc_state_rows(&doc);
     assert!(
         !doc_rows.is_empty(),
@@ -411,7 +411,7 @@ fn the_document_state_column_matches_each_committed_snapshot_in_both_directions(
     for (id, published_state) in &doc_rows {
         let row = committed.get(id).unwrap_or_else(|| {
             panic!(
-                "docs/dotnet-target-coverage.md publishes a State for {id} but no committed \
+                "docs/reference/dotnet-targets.md publishes a State for {id} but no committed \
                  snapshot exists for it"
             )
         });
@@ -428,14 +428,14 @@ fn the_document_state_column_matches_each_committed_snapshot_in_both_directions(
         assert!(
             doc_ids.contains(&id),
             "{id} has a committed snapshot but no published State row in \
-             docs/dotnet-target-coverage.md"
+             docs/reference/dotnet-targets.md"
         );
     }
 }
 
 #[test]
 fn a_truncated_copy_of_the_document_fails_the_sync_check() {
-    let doc = fs::read_to_string(doc_path()).expect("docs/dotnet-target-coverage.md exists");
+    let doc = fs::read_to_string(doc_path()).expect("docs/reference/dotnet-targets.md exists");
     let truncated: String = doc
         .lines()
         .filter(|line| !line.contains("csharp73-net8.0-sdkstyle"))
@@ -456,7 +456,7 @@ fn a_truncated_copy_of_the_document_fails_the_sync_check() {
 
 #[test]
 fn every_inventory_row_including_wave_2_is_present() {
-    let doc = fs::read_to_string(doc_path()).expect("docs/dotnet-target-coverage.md exists");
+    let doc = fs::read_to_string(doc_path()).expect("docs/reference/dotnet-targets.md exists");
     let wave2_and_excluded = [
         "net403",
         "net451",
@@ -475,7 +475,7 @@ fn every_inventory_row_including_wave_2_is_present() {
     for name in wave2_and_excluded {
         assert!(
             names_target(&doc, name),
-            "docs/dotnet-target-coverage.md is missing inventory row for {name}"
+            "docs/reference/dotnet-targets.md is missing inventory row for {name}"
         );
     }
 }
@@ -784,7 +784,7 @@ fn every_inventory_target_is_a_row_in_the_document() {
     for tfm in INVENTORY_TFMS {
         assert!(
             names_target(&doc, tfm),
-            "docs/dotnet-target-coverage.md names no row for inventory target {tfm}"
+            "docs/reference/dotnet-targets.md names no row for inventory target {tfm}"
         );
     }
     for tfm in passing_profile_tfms() {
@@ -904,8 +904,8 @@ fn the_document_states_it_qualifies_the_compiler_fact_path_not_the_default_binar
 fn readme_points_at_the_coverage_document() {
     let readme = fs::read_to_string(readme_path()).unwrap();
     assert!(
-        readme.contains("dotnet-target-coverage.md"),
-        "README.md must point at docs/dotnet-target-coverage.md"
+        readme.contains("reference/dotnet-targets.md"),
+        "README.md must point at docs/reference/dotnet-targets.md"
     );
 }
 

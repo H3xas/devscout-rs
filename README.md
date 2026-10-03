@@ -46,7 +46,7 @@ doc comments and attributes, and `refs`, `impact` and `tests` answer on Rust thr
 resolution: the module tree from `mod` declarations and `Cargo.toml` crate roots, `use` scope and
 `pub use` re-exports, calls (including those inside macro arguments), type uses, `impl Trait for
 T`, and `#[test]` functions — with no method-call typing. See
-[docs/rust-coverage.md](docs/rust-coverage.md).
+[docs/reference/rust-constructs.md](docs/reference/rust-constructs.md).
 
 ## Install
 
@@ -144,7 +144,7 @@ carries the seed at all, and the zero-hit note on stderr advises a text-search f
 `zero-hit` means the seed resolved and the answer is empty: `impact`'s empty blast radius, or a
 `refs`/`read` member declared by exactly one type with nothing referencing it; `tests` with no
 rows still answers `hit`. Every hit row also carries a `why` naming the rule or tier that produced
-it. See [`docs/answer-contract.md`](docs/answer-contract.md) for the full contract, the `why`
+it. See [`docs/reference/json-output.md`](docs/reference/json-output.md) for the full contract, the `why`
 vocabulary, and a worked example per verb.
 
 Re-run `devscout map .` after edits; it re-parses only what changed and leaves the graph alone
@@ -363,7 +363,7 @@ Known, rather than hidden:
   other `bin` directory; in a mixed repository a Rust item shares the symbol lookup with C# and
   TypeScript definitions, so a bare name they share can become ambiguous or resolve to the Rust
   item — narrow the scope with `map <dir>` or the `init` scope. See
-  [docs/rust-coverage.md](docs/rust-coverage.md).
+  [docs/reference/rust-constructs.md](docs/reference/rust-constructs.md).
 - **Generic-delegate `typeParams` divergence is under review.** Type-parameter handling for
   generic delegate declarations does not yet agree with the rest of the generic ladder; the
   affected shapes are under review rather than pinned.
@@ -494,13 +494,13 @@ Known, rather than hidden:
   not treated as a directive. The `parse` and `spans` diagnostics show the raw tree, both arms
   included.
 - **Which C# constructs produce facts is catalogued, not implied.**
-  [`docs/csharp-coverage.md`](docs/csharp-coverage.md) lists every construct the extractor
+  [`docs/reference/csharp-constructs.md`](docs/reference/csharp-constructs.md) lists every construct the extractor
   meets with a syntactic verdict, an obligation (`must`, `may`, `must-not` produce a fact) and
   the measured status,
   pinned by `fixtures/csharp-syntax/` and `tests/csharp_syntax_matrix.rs`; the rows that are
   silent today are listed there as follow-ups rather than discovered by the next corpus.
 - **Which .NET targets, project systems and framework profiles are qualified is catalogued
-  separately.** [`docs/dotnet-target-coverage.md`](docs/dotnet-target-coverage.md) lists every
+  separately.** [`docs/reference/dotnet-targets.md`](docs/reference/dotnet-targets.md) lists every
   staged target's capability row alongside the ones still planned or excluded, pinned by
   `fixtures/csharp-target-qualification/` and `tests/dotnet_target_qualification.rs`. It
   qualifies the compiler-fact path measured there, not this README's own construct catalogue.

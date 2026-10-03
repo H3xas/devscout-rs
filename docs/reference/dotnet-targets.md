@@ -2,8 +2,8 @@
 
 Every staged .NET target, project system and framework-semantics profile, with the exact
 compilation context that produced its row. Pinned by
-[`fixtures/csharp-target-qualification/`](../fixtures/csharp-target-qualification/) and
-[`tests/dotnet_target_qualification.rs`](../tests/dotnet_target_qualification.rs), which fails
+[`fixtures/csharp-target-qualification/`](../../fixtures/csharp-target-qualification/) and
+[`tests/dotnet_target_qualification.rs`](../../tests/dotnet_target_qualification.rs), which fails
 when a row's committed snapshot and this document drift apart, when an inventory row goes
 missing, or when a support sentence anywhere in the repository names a target whose row is not
 `passing`.
@@ -147,9 +147,9 @@ Not executed yet. Each row waits on a named unlock and stays here until it runs.
 ## Held-out family
 
 The held-out report is a dated, manually run benchmark, not part of `cargo test` or CI:
-see [`bench/dotnet-target-qualification.sh`](../bench/dotnet-target-qualification.sh) and the
+see [`bench/dotnet-target-qualification.sh`](../../bench/dotnet-target-qualification.sh) and the
 pre-registered thresholds in
-[`fixtures/csharp-target-qualification/expected-held-out.json`](../fixtures/csharp-target-qualification/expected-held-out.json).
+[`fixtures/csharp-target-qualification/expected-held-out.json`](../../fixtures/csharp-target-qualification/expected-held-out.json).
 Results land under `docs/benchmarks/results/` once the run has executed at least once.
 
 ## Follow-ups

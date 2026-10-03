@@ -183,9 +183,10 @@ fn no_imports_flag_matches_the_artifact_deleted_case() {
 
 #[test]
 fn answer_contract_documents_imported_edge_and_the_schema_version_stays_one() {
-    let contract =
-        fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/answer-contract.md"))
-            .unwrap();
+    let contract = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/reference/json-output.md"),
+    )
+    .unwrap();
     assert!(
         contract.contains("`imported-edge`"),
         "the why table must document imported-edge"

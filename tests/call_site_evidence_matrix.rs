@@ -1,4 +1,4 @@
-//! Three things anchor `docs/call-site-evidence-matrix.md` to real command
+//! Three things anchor `docs/reference/call-site-evidence.md` to real command
 //! output rather than to memory:
 //!
 //! - `pinned_export_matches_the_committed_snapshot_or_is_regenerated_with_bless`
@@ -11,7 +11,7 @@
 //!   committed file instead of asserting against it -- the only sanctioned way
 //!   to change it, so a silent drift always fails `cargo test` first.
 //! - `docs_matrix_matches_the_committed_snapshot_or_is_regenerated_with_bless`
-//!   (bottom of this file) regenerates `docs/call-site-evidence-matrix.md`
+//!   (bottom of this file) regenerates `docs/reference/call-site-evidence.md`
 //!   itself the same way: `build_matrix_doc` runs every audited command fresh
 //!   and asserts the load-bearing fact behind each witness/gap cell against
 //!   that live output before writing the sentence naming it, so the document
@@ -224,12 +224,12 @@ fn no_optional_fact_kind_this_fixture_emits_carries_an_await_or_branch_field() {
 }
 
 // ============================================================================
-// docs/call-site-evidence-matrix.md -- the capability-matrix document itself,
+// docs/reference/call-site-evidence.md -- the capability-matrix document itself,
 // generated and byte-diffed the same way export.json is above.
 // ============================================================================
 
 fn matrix_doc_path() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/call-site-evidence-matrix.md")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/reference/call-site-evidence.md")
 }
 
 fn read_committed_facts() -> serde_json::Value {
@@ -553,7 +553,7 @@ fn build_matrix_doc(fx: &Fixture) -> String {
     );
     doc.push_str(
         "| `impact --json` | Witness: a `hit` answer's `rows[*].file` names an affected file \
-         (see the repository's own worked example, `docs/answer-contract.md`). Gap: `impact` \
+         (see the repository's own worked example, `docs/reference/json-output.md`). Gap: `impact` \
          reports file-level blast radius, not a per-invocation caller; no `fromLines` entry \
          names which specific call inside that file. On this fixture, `impact Ledger --json` is \
          itself a real `zero-hit`: its only callers share `Ledger`'s own file, which `impact`'s \
@@ -684,7 +684,7 @@ fn build_matrix_doc(fx: &Fixture) -> String {
          (`uses-member-precise`/`-ext`/`-guess`) and, on a heuristic row, `heuristic`/`tier`. \
          Every row in this fixture is `uses-member-precise` -- no guessed edge exists in a \
          package-free fixture with no ambiguity, so the guess/extension tiers are cited from \
-         `docs/answer-contract.md`'s own worked example, not re-demonstrated here. |\n",
+         `docs/reference/json-output.md`'s own worked example, not re-demonstrated here. |\n",
     );
     doc.push_str(
         "| `impact --json` | Witness: `rows[*].why`, `heuristicCount`/`heuristic`/`tier` when \
@@ -875,13 +875,13 @@ fn docs_matrix_matches_the_committed_snapshot_or_is_regenerated_with_bless() {
     let generated = build_matrix_doc(&fx);
 
     if std::env::var("BLESS").as_deref() == Ok("1") {
-        fs::write(matrix_doc_path(), &generated).expect("write call-site-evidence-matrix.md");
+        fs::write(matrix_doc_path(), &generated).expect("write call-site-evidence.md");
         return;
     }
 
     let committed = fs::read_to_string(matrix_doc_path()).unwrap_or_default();
     assert_eq!(
         generated, committed,
-        "docs/call-site-evidence-matrix.md is stale -- regenerate with `BLESS=1 cargo test --test call_site_evidence_matrix`"
+        "docs/reference/call-site-evidence.md is stale -- regenerate with `BLESS=1 cargo test --test call_site_evidence_matrix`"
     );
 }
