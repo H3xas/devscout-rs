@@ -155,6 +155,45 @@ corpus pin and same fixture, and is reported beside Run 0 rather than overwritin
 regression in one tier alongside an improvement in another stays visible instead of netting
 out.
 
+### The oracle
+
+The resolver-precision numbers come from a Roslyn oracle, [`tools/scout-semantic`](../../tools/scout-semantic/README.md),
+that compiles a solution and records every member reference with its resolved target. The same
+oracle has a second output mode, `--emit flowtrace-facts`, that writes the flow tracer's
+per-repository fact set with compilation-resolved types where a text pass runs out (primary
+constructors, locals, minimal-API lambdas). This cut emits eight fact kinds -- `message_class`,
+`consume`, `publish`, `ctor_field`, `di_binding`, `iface_impl`, `route` and `method_span` --
+under a header that names the producer, its version and the compilation; the facts carry no
+provenance of their own, and a recognised site whose type does not resolve is counted on stderr
+and fails the run under `--strict`. The fixture under `fixtures/csharp-flowtrace/` pins that
+output byte-for-byte in CI. Roslyn stays in the sidecar -- the `devscout` binary never links it.
+
+### Scoring with `audit --semantic`
+
+The plumbing verb `devscout audit --semantic <refs.jsonl> [--units F] [--defs F] [--json]
+[--assert F] [--fp-sites F]` scores an indexed repository's `uses-member` edges against those
+oracle records: precision per tier, recall over in-graph member sites, external-receiver leaks,
+structurally impossible edges, and fan-out. `--assert` reads a thresholds file and exits 1 on any
+violated or missing key, reporting every one. `--fp-sites` writes one JSON Lines row per false
+positive -- file, line, tier, class, the target the resolver bound, and the target(s) the oracle
+expected -- for every tier, not only the precise one.
+
+With `--json` anywhere in its arguments, `audit` writes every error (a bad argument, no
+repository, no or unreadable `graph.json`, an unreadable input, an `--fp-sites` file it cannot
+write, an `--assert` file it cannot read or parse) to stderr, exits 1 and prints nothing on
+stdout, so stdout only ever holds the one JSON report. `--assert` violations still go to stderr
+after the report. In text mode errors stay on stdout.
+
+### Fixture thresholds
+
+Two fixture solutions carry an oracle snapshot and a thresholds file of their own:
+`fixtures/csharp-semantic/` holds the per-tier precision and recall numbers, and
+`fixtures/csharp-direction/` holds the base-and-interface direction shapes, including the three
+known false positives named in
+[How names resolve](../explanation/resolution.md#declaring-type-binding). CI regenerates each
+snapshot from the oracle, diffs it against the committed one, then indexes an isolated copy of the
+fixture and asserts its thresholds.
+
 ## Rust edges
 
 A third benchmark family scores devscout's Rust edges against the references
