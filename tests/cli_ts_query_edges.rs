@@ -660,6 +660,64 @@ fn read_leaves_a_reference_inside_the_declaration_out_of_its_ts_tables() {
 }
 
 #[test]
+fn read_text_and_compact_render_the_ts_tables() {
+    let fx = Fixture::build("read-text");
+    let text = fx.expect_ok(&["read", "useCart"]);
+    let expected =
+        "inbound:\n  inherits (0):\n  uses-type (0):\n  uses-member (0):\n  call (2):\n    \
+         src/components/CartBadge.tsx:4  call  const items = useCart();\n    \
+         src/hooks/useCart.spec.ts:4  call  expect(useCart()).toEqual([]);\n  \
+         import (2):\n    \
+         src/components/CartBadge.tsx:1  import  import { useCart } from '../hooks/useCart';\n    \
+         src/hooks/useCart.spec.ts:1  import  import { useCart } from './useCart';";
+    assert!(text.contains(expected), "{text}");
+
+    let text = fx.expect_ok(&["read", "CartBadge"]);
+    assert!(
+        text.contains(
+            "  jsx-use (2):\n    \
+             src/components/CartBadge.spec.tsx:4  jsx-use  const view = <CartBadge />;\n    \
+             src/pages/CartPage.tsx:10  jsx-use  return <CartBadge key={id} data-size={empty.length} />;"
+        ),
+        "{text}"
+    );
+    let text = fx.expect_ok(&["read", "loadCart"]);
+    assert!(
+        text.contains(
+            "  dispatch (13, 8 dropped):\n    src/bulk/refill.ts:24  dispatch  dispatch(loadCart());"
+        ),
+        "{text}"
+    );
+    assert!(text.trim_end().ends_with("  +11 more"), "{text}");
+
+    let compact = fx.expect_ok(&["read", "useCart", "--compact"]);
+    assert!(
+        compact.contains(
+            "in:call (2):\n  src/components/CartBadge.tsx:4\n  src/hooks/useCart.spec.ts:4\n\
+             in:import (2):\n  src/components/CartBadge.tsx:1\n  src/hooks/useCart.spec.ts:1\n\
+             summary: edges=4 shown=4 dropped=0 ambiguous=0"
+        ),
+        "{compact}"
+    );
+    let compact = fx.expect_ok(&["read", "CartBadge", "--compact"]);
+    assert!(
+        compact.contains(
+            "in:jsx-use (2):\n  src/components/CartBadge.spec.tsx:4\n  src/pages/CartPage.tsx:10"
+        ),
+        "{compact}"
+    );
+    let compact = fx.expect_ok(&["read", "loadCart", "--compact"]);
+    assert!(
+        compact.contains("in:dispatch (13, 8 dropped):\n  src/bulk/refill.ts:24,25,26,27,28"),
+        "{compact}"
+    );
+    assert!(
+        compact.contains("summary: edges=41 shown=30 dropped=11 ambiguous=0"),
+        "{compact}"
+    );
+}
+
+#[test]
 fn a_graph_written_without_bound_defs_answers_with_no_import_table() {
     let fx = Fixture::build("refs-stripped");
     let mut graph = fx.graph();
@@ -767,6 +825,31 @@ fn tests_text_marks_a_row_vouched_by_its_name() {
          src/hooks/useCart.spec.ts (test path)\n  \
          lines: 1, 4"
     );
+}
+
+#[test]
+fn tests_text_marks_every_name_vouched_row() {
+    let fx = Fixture::build("tests-text-all");
+    for (seed, file) in [
+        ("useCart", USE_CART_SPEC),
+        ("CartBadge", BADGE_SPEC),
+        ("loadCart", ACTIONS_TEST_TS),
+        ("CartPage", "src/pages/CartPage.test.tsx"),
+        ("CartStore", "src/store/__tests__/deep/total.ts"),
+    ] {
+        let text = fx.expect_ok(&["tests", seed]);
+        assert!(
+            text.contains(&format!("\n\n{file} (test path)\n  lines: 1, 4")),
+            "tests {seed}: {text}"
+        );
+        assert_eq!(
+            text.matches(" (test path)").count(),
+            1,
+            "tests {seed}: {text}"
+        );
+    }
+    let text = fx.expect_ok(&["tests", "loadCart"]);
+    assert!(!text.contains(ACTIONS_TEST_JS), "{text}");
 }
 
 /// `(file, hop, why)` of every `impact` row, sorted by file.
