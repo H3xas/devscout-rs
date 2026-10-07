@@ -67,10 +67,12 @@ src/OrderController.cs  1  3  OrderRepository
 next: devscout refs Shop.Data.OrderRepository
 ```
 
-The first line of every resolved answer states the full count before any cap applies (`1 inbound
-(showing 1)`), and the last line names the next verb worth running, so a long answer tells you both
-what you are not seeing and where to go next. Both additions belong to the text and `--compact`
-formats; `--json` carries the totals as table fields and the suggestions as a `next` array.
+A resolved `refs`, `read`, `impact` or `tests` answer in text or `--compact` mode opens with the
+full count before any cap applies (`1 inbound (showing 1)`), and a text answer from those verbs or
+from `find` ends with a `next:` line naming the cheapest verb worth running — omitted when nothing
+is left to suggest — so a long answer tells you both what you are not seeing and where to go next.
+Under `--json` the totals arrive as table fields and the suggestions as a `next` array; `find` has
+no `--json` shape.
 
 Run `devscout map` after edits; only changed files are re-parsed. An ambiguous name lists every
 candidate, and `--pick N` chooses one ([Concepts](docs/concepts.md#seeds)).

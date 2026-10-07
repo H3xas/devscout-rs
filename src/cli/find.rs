@@ -93,18 +93,19 @@ pub(crate) fn cmd_find(cwd: &Path, query_str: &str, resources: bool) -> (i32, St
                         pool.len() - FIND_NAMES_CAP
                     ));
                 }
-                // The suggestion names the first DECLARATION the pool holds, not
-                // the first row: a markup or resource row printed ahead of a code
-                // declaration names nothing `read` could open, so it is stepped
-                // over rather than standing in for the declaration behind it.
-                // The index is built only when the pool is non-empty, which is
-                // exactly when a declaration row was printed.
+                // The suggestion names the first DECLARATION the answer PRINTS,
+                // not the first row: a markup or resource row printed ahead of a
+                // code declaration names nothing `read` could open, so it is
+                // stepped over rather than standing in for the declaration
+                // behind it -- and a declaration the cap dropped is not in the
+                // answer at all, so naming it would point at a row the reader
+                // cannot see.
+                let mut printed = pool.iter().take(FIND_NAMES_CAP);
                 let trailer = if pool.is_empty() {
                     None
                 } else {
                     let index = query::load_graph_index(g, &root);
-                    pool.iter()
-                        .find_map(|n| crate::render::next_line(&query::find_next(&index, n)))
+                    printed.find_map(|n| crate::render::next_line(&query::find_next(&index, n)))
                 };
                 (out, resource_count, trailer)
             }

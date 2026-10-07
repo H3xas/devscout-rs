@@ -32,23 +32,43 @@ const SPACED_SOURCES: &[(&str, &str)] = &[
     ),
 ];
 
+// A resource key matching the query. It is a declaration row of the block but
+// names nothing `read` opens, so it never carries the trailer itself.
+const RESOURCE_KEY_SOURCE: &str = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<root>\n  <data name=\"Panel\" xml:space=\"preserve\">\n    <value>Panel</value>\n  </data>\n</root>\n";
+
+// The class declaring the same name, two lines in so its row is recognisable.
+const PANEL_CLASS_SOURCE: &str =
+    "namespace Demo;\n\npublic class Panel\n{\n    public void Show() { }\n}\n";
+
 // A name whose matching rows are not all declarations: a markup class and a
 // resource key that both match the query, printed ahead of the C# class that
 // declares the same name. `read` opens only the class.
 const MIXED_POOL_SOURCES: &[(&str, &str)] = &[
-    (
-        "src/AStrings.resw",
-        "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<root>\n  <data name=\"Panel\" xml:space=\"preserve\">\n    <value>Panel</value>\n  </data>\n</root>\n",
-    ),
+    ("src/AStrings.resw", RESOURCE_KEY_SOURCE),
     (
         "src/AView.xaml",
         "<UserControl x:Class=\"Demo.Panel\">\n</UserControl>\n",
     ),
-    (
-        "src/ZPanel.cs",
-        "namespace Demo;\n\npublic class Panel\n{\n    public void Show() { }\n}\n",
-    ),
+    ("src/ZPanel.cs", PANEL_CLASS_SOURCE),
 ];
+
+// A `(&str, &str)` source list as the owned pairs a generated list needs.
+fn owned(sources: &[(&str, &str)]) -> Vec<(String, String)> {
+    sources
+        .iter()
+        .map(|(path, body)| ((*path).to_string(), (*body).to_string()))
+        .collect()
+}
+
+// One resource key per row ahead of the class, so the class declaration sits
+// at row `resource_keys + 1` of the declaration block.
+fn capped_pool_sources(resource_keys: usize) -> Vec<(String, String)> {
+    let mut sources: Vec<(String, String)> = (0..resource_keys)
+        .map(|i| (format!("src/A{i:02}.resw"), RESOURCE_KEY_SOURCE.to_string()))
+        .collect();
+    sources.push(("src/ZPanel.cs".to_string(), PANEL_CLASS_SOURCE.to_string()));
+    sources
+}
 
 struct Fixture {
     root: PathBuf,
@@ -101,7 +121,7 @@ fn bootstrap_initial_commit(dir: &Path) {
 }
 
 impl Fixture {
-    fn build(label: &str, extra: &[(&str, &str)]) -> Fixture {
+    fn build(label: &str, extra: Vec<(String, String)>) -> Fixture {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
         let base = env::temp_dir().join(format!(
             "scout-next-hints-{label}-{}-{n}",
@@ -113,7 +133,7 @@ impl Fixture {
         fs::create_dir_all(&home).expect("create home dir");
         let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/csharp-next-hints");
         copy_tree(&fixture, &root);
-        for (rel, body) in extra {
+        for (rel, body) in &extra {
             let path = root.join(rel);
             fs::create_dir_all(path.parent().unwrap()).expect("create extra dir");
             fs::write(path, body).expect("write extra source");
@@ -133,15 +153,19 @@ impl Fixture {
     }
 
     fn plain(label: &str) -> Fixture {
-        Fixture::build(label, &[])
+        Fixture::build(label, Vec::new())
     }
 
     fn with_spaced_paths(label: &str) -> Fixture {
-        Fixture::build(label, SPACED_SOURCES)
+        Fixture::build(label, owned(SPACED_SOURCES))
     }
 
     fn with_mixed_pool(label: &str) -> Fixture {
-        Fixture::build(label, MIXED_POOL_SOURCES)
+        Fixture::build(label, owned(MIXED_POOL_SOURCES))
+    }
+
+    fn with_capped_pool(label: &str, resource_keys: usize) -> Fixture {
+        Fixture::build(label, capped_pool_sources(resource_keys))
     }
 
     fn run(&self, args: &[&str]) -> Output {
@@ -369,6 +393,16 @@ fn tests_states_the_rows_it_printed_uncapped() {
 }
 
 #[test]
+fn find_states_no_count_because_it_prints_no_capped_table() {
+    let fx = Fixture::plain("find-count");
+
+    // `find`'s first line is a declaration or manifest row, so the count line
+    // belongs to the four table verbs alone.
+    let text = fx.stdout(&["find", "PriceSource"]);
+    assert!(!first_line(&text).contains("(showing "), "{text}");
+}
+
+#[test]
 fn a_zero_hit_answer_states_zero_rather_than_printing_nothing() {
     let fx = Fixture::plain("zero-count");
 
@@ -470,6 +504,33 @@ fn the_trailer_comes_from_the_first_declaration_not_the_first_row() {
         "next: devscout read Demo.Panel",
         "{with_resources}"
     );
+}
+
+#[test]
+fn the_trailer_never_names_a_declaration_the_block_dropped() {
+    // One resource key per printed row, then the class: at 25 keys the
+    // declaration is row 26, so the block prints 25 rows and drops it.
+    let hidden = Fixture::with_capped_pool("capped-hidden", 25);
+    let text = hidden.stdout(&["find", "Panel", "--resources"]);
+    assert!(
+        text.contains("… +1 more declarations (refine query)"),
+        "{text}"
+    );
+    // The manifest block still lists the file, so the claim is about the
+    // declaration rendering rather than the path appearing anywhere.
+    assert!(!text.contains("public class Panel"), "{text}");
+    assert!(!text.contains("next: "), "{text}");
+
+    // One key fewer and the declaration is the last row the block printed, so
+    // it is the row the trailer names.
+    let shown = Fixture::with_capped_pool("capped-shown", 24);
+    let text = shown.stdout(&["find", "Panel", "--resources"]);
+    assert!(!text.contains("more declarations"), "{text}");
+    assert!(
+        text.contains("src/ZPanel.cs:3  public class Panel"),
+        "{text}"
+    );
+    assert_eq!(last_line(&text), "next: devscout read Demo.Panel", "{text}");
 }
 
 #[test]
