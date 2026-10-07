@@ -155,8 +155,8 @@ The line belongs to those four verbs and those two formats: `--json` carries the
 its own table fields instead, `find` has neither the line nor a JSON shape, and an ambiguous,
 not-found or fallback answer states no count at all.
 
-A text or `--compact` answer to `refs`, `read`, `tests`, `impact` or `find` then ends with a
-`next:` line naming the cheapest verb to run next:
+A text or `--compact` answer to `refs`, `read`, `tests` and `impact`, and a text answer to `find`
+— which has no format flag — ends with a `next:` line naming the cheapest verb to run next:
 
 ```text
 next: devscout tests Widgetworks.Catalog.InMemoryCatalogStore | devscout impact InMemoryCatalogStore.cs

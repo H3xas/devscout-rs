@@ -403,6 +403,25 @@ fn find_states_no_count_because_it_prints_no_capped_table() {
 }
 
 #[test]
+fn find_reads_a_format_flag_as_one_more_query_word() {
+    let fx = Fixture::plain("find-formats");
+
+    let named = fx.stdout(&["find", "PriceSource"]);
+    assert!(
+        last_line(&named).starts_with("next: devscout read "),
+        "{named}"
+    );
+
+    // `--resources` is `find`'s only flag, so `--compact` joins the query
+    // instead of selecting a format: the words name no declaration, and the
+    // answer keeps the one text shape `find` has -- no declaration block, so
+    // no trailer either.
+    let with_flag = fx.stdout(&["find", "PriceSource", "--compact"]);
+    assert_ne!(with_flag, named, "{with_flag}");
+    assert!(!with_flag.contains("next: "), "{with_flag}");
+}
+
+#[test]
 fn a_zero_hit_answer_states_zero_rather_than_printing_nothing() {
     let fx = Fixture::plain("zero-count");
 
