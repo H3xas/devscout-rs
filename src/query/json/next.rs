@@ -10,9 +10,21 @@ use crate::graph;
 use crate::query;
 
 use super::{
-    impact_model_fields, impact_outcome, imported_section_fields, j_next, member_refs_fields,
+    impact_model_fields, impact_outcome, imported_section_fields, member_refs_fields,
     read_model_fields, refs_model_fields, tests_model::tests_model_fields, J,
 };
+
+// The `next` key's value: one argv array per suggestion, WITHOUT the binary
+// name -- the command a caller runs is theirs to supply, so the contract
+// states only the arguments. `pub(super)` because the bare-member wrapper in
+// `json.rs` carries the members' union in the same key.
+pub(super) fn j_next(next: &[Vec<String>]) -> J {
+    J::Arr(
+        next.iter()
+            .map(|argv| J::Arr(argv.iter().map(|a| J::Str(a.clone())).collect()))
+            .collect(),
+    )
+}
 
 // `next` sits immediately before `outcome`, which is the trailing field of
 // every answer object these builders are handed. The key is checked rather

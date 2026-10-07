@@ -288,6 +288,38 @@ fn find_suggests_nothing_for_a_name_that_declares_nothing() {
     .is_empty());
 }
 
+// A def records a second declaring site in `also_in` when a markup class and
+// the code-behind declaring it share one: `src/AView.xaml`'s `x:Class` and
+// `src/ZPanel.cs`'s class are one def, and a name row at either site declares
+// it. Reading only the primary site drops the suggestion for the other file.
+#[test]
+fn find_reads_a_declaration_recorded_as_an_also_in_site() {
+    let root = temp_repo_root("next-find-also-in");
+    let g = make_graph(
+        vec![def_also(
+            "Demo.Panel",
+            "Panel",
+            "Demo",
+            "class",
+            "src/AView.xaml",
+            1,
+            vec![("src/ZPanel.cs", 3)],
+        )],
+        Vec::new(),
+    );
+    let index = one_interface_index(&root, &g);
+    let want = vec![argv(&["read", "Demo.Panel"])];
+
+    assert_eq!(
+        find_next(&index, &name_row("Panel", "class", "src/ZPanel.cs", 3, "")),
+        want
+    );
+    assert_eq!(
+        find_next(&index, &name_row("Panel", "class", "src/AView.xaml", 1, "")),
+        want
+    );
+}
+
 // A Rust item's id carries the path characters a shell would otherwise read
 // as its own, and it still has to survive the exact-id rung of the resolver.
 #[test]
@@ -317,18 +349,6 @@ fn find_reads_a_rust_items_own_id() {
 // Suggesting it would hand the caller a command that cannot run.
 #[test]
 fn a_target_no_verb_would_read_as_a_seed_is_dropped() {
-    let root = temp_repo_root("next-dashed");
-    let mut g = interface_graph(Vec::new(), Vec::new());
-    g.defs.push(def(
-        "Dash.Dashed",
-        "Dashed",
-        "Dash",
-        "class",
-        "--dashed.cs",
-        3,
-    ));
-    let index = one_interface_index(&root, &g);
-
     assert!(merge_suggestions(vec![vec![argv(&["impact", "--dashed.cs"])]]).is_empty());
     // A single leading dash is an ordinary argument and survives.
     assert_eq!(

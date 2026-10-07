@@ -47,7 +47,11 @@ For `read InMemoryCatalogStore`, that key holds
 | `refs`, `read` | `tests <id>`, then `impact <the file declaring it>` |
 | `tests` | `impact <the file declaring the symbol>` |
 | `impact` | `refs <the first top symbol of the highest-ranked row>` |
-| `find` | `read <the declaration the first row names>` -- text only, as `find` has no `--json` |
+| `find` | `read <the def id of the first declaration row>` -- text only, as `find` has no `--json` |
+
+For `find`, the suggestion comes from the first row that declares something `read` opens: a markup
+name or a resource key printed ahead of the code is stepped over rather than standing in for the
+declaration behind it.
 
 The suggestions are derived from the answer already computed: no second query runs to produce them.
 Each candidate is then resolved with the resolver the *suggested* verb itself uses, and a candidate
@@ -64,7 +68,16 @@ answer and from `freshness`.
 The text and `--compact` renderers of `refs`, `read`, `impact` and `tests` open with the same
 numbers these JSON tables carry: `N inbound (showing M)` on `refs`/`read`, where N is the sum of the
 five inbound tables' `total` and M the sum of their row counts, and `N files (showing M)` on
-`impact` (`totalAffected` against the printed rows) and `tests` (the rows themselves, uncapped).
+`impact`, where N is the answer's `rows.length + dropped` -- every file the walk reached, which is
+`totalAffected + heuristicAffected`, since the line counts the heuristic rows the tables mark and
+`totalAffected` alone does not -- and M the printed rows, and on `tests`, where no row cap applies
+and the two numbers agree.
+
+The line belongs to those four verbs and those two formats. `refs`, `read`, `impact` and `tests`
+under `--json` state the same numbers as their own table fields and print no such line, and `find`
+has neither. A resolved answer that reached nothing still opens with `0 inbound (showing 0)` or
+`0 files (showing 0)`, while an `ambiguous` or `fallback-advised` answer states no count at all.
+
 Nothing in the JSON changed to make that possible -- the totals were always here, and the text
 output now states them rather than leaving a capped table looking complete. The
 [CLI reference](cli.md#output-formats) describes the line and the `next:` trailer under it.

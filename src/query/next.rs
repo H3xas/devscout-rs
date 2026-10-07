@@ -129,6 +129,27 @@ pub fn impact_next(index: &GraphIndex, model: &ImpactModel) -> Vec<NextArgv> {
     }
 }
 
+// The def a type-level name row declares, found by the SITE the row names: a
+// def carries that site either as its primary declaration or as an `also_in`
+// cross-reference (a markup class and the code-behind declaring it share one
+// def, and `by_file` indexes both sites), and either placement names the same
+// declaration. A row whose site no def claims names no declaration at all.
+fn declared_def<'g>(index: &GraphIndex<'g>, name: &graph::GraphName) -> Option<&'g graph::Def> {
+    let graph = index.graph;
+    index
+        .by_file
+        .get(&name.file)?
+        .iter()
+        .map(|&i| &graph.defs[i])
+        .find(|d| {
+            d.name == name.name
+                && (d.line == name.line
+                    || d.also_in
+                        .iter()
+                        .any(|site| site.file == name.file && site.line == name.line))
+        })
+}
+
 /// Suggestion after a `find` answer: read the declaration the row names.
 ///
 /// A member row declares no def of its own, so it names the type declaring it;
@@ -138,16 +159,7 @@ pub fn find_next(index: &GraphIndex, name: &graph::GraphName) -> Vec<NextArgv> {
         return Vec::new();
     }
     let id = if name.owner.is_empty() {
-        // A type-level row carries no def id, so the declaring def is found by
-        // the site the row itself names. A name index and a def table built
-        // from the same graph agree on all three, so a miss here means the
-        // row names something that is not a declaration.
-        match index
-            .graph
-            .defs
-            .iter()
-            .find(|d| d.file == name.file && d.line == name.line && d.name == name.name)
-        {
+        match declared_def(index, name) {
             Some(def) => def.id.as_str(),
             None => return Vec::new(),
         }

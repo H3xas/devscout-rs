@@ -45,15 +45,15 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   unchanged. The fragment cache moves to `fragments-v30.json`, so an existing cache re-extracts
   once.
 
-- **Every query answer states its full count and the next verb to run.** `refs`, `read`, `impact`
-  and `tests` now open their text and `--compact` output with the number the answer reached before
-  its row cap, `N inbound (showing M)` or `N files (showing M)`, so a truncated table can no longer
-  read as a complete one; a zero-hit answer says `0 inbound (showing 0)`. The same four verbs, and
-  `find` in text, end with a `next:` line naming the cheapest follow-up verb, single-quoted where a
-  shell would otherwise read an argument as its own. `--json` carries the same suggestions as a
-  `next` array of argv arrays, immediately before `outcome`. Each suggestion is resolved through
-  the resolver the named verb itself uses, so every command the line offers runs. `schema_version`
-  stays 1: this adds a key and a line rather than changing one.
+- **Every resolved query answer states its full count and the next verb to run.** `refs`, `read`,
+  `impact` and `tests` now open their text and `--compact` output with the number the answer reached
+  before its row cap, `N inbound (showing M)` or `N files (showing M)`, so a truncated table can no
+  longer read as a complete one; a zero-hit answer says `0 inbound (showing 0)`. The same four
+  verbs, and `find` in text, end with a `next:` line naming the cheapest follow-up verb,
+  single-quoted where a shell would otherwise read an argument as its own. Under `--json` the same
+  four verbs carry the suggestions as a `next` array of argv arrays, immediately before `outcome`.
+  Each suggestion is resolved through the resolver the named verb itself uses, so every command the
+  line offers runs. `schema_version` stays 1: this adds a key and a line rather than changing one.
 
 ### Fixed
 

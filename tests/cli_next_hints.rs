@@ -6,9 +6,9 @@
 //! and stdout's last line -- and an in-process call on `cmd_*` could not tell
 //! the two apart.
 //!
-//! SAFETY: every spawned process gets HOME, SCOUT_REGISTRY and SCOUT_CONTENT_DB
-//! pointed at a fresh temp dir, so the operator's real ~/.claude/settings.json
-//! and repos.json are never read and never written.
+//! SAFETY: every spawned process gets `HOME`, `SCOUT_REGISTRY` and
+//! `SCOUT_CONTENT_DB` pointed at a fresh temp dir, so the operator's real
+//! `~/.claude/settings.json` and `repos.json` are never read and never written.
 
 use std::env;
 use std::fs;
@@ -29,6 +29,24 @@ const SPACED_SOURCES: &[(&str, &str)] = &[
     (
         "Spaced Dir/LedgerReader.cs",
         "namespace Toolworks.Ledgers;\n\npublic class LedgerReader\n{\n    public void Read(ILedger ledger) => ledger.Post(\"entry\");\n}\n",
+    ),
+];
+
+// A name whose matching rows are not all declarations: a markup class and a
+// resource key that both match the query, printed ahead of the C# class that
+// declares the same name. `read` opens only the class.
+const MIXED_POOL_SOURCES: &[(&str, &str)] = &[
+    (
+        "src/AStrings.resw",
+        "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<root>\n  <data name=\"Panel\" xml:space=\"preserve\">\n    <value>Panel</value>\n  </data>\n</root>\n",
+    ),
+    (
+        "src/AView.xaml",
+        "<UserControl x:Class=\"Demo.Panel\">\n</UserControl>\n",
+    ),
+    (
+        "src/ZPanel.cs",
+        "namespace Demo;\n\npublic class Panel\n{\n    public void Show() { }\n}\n",
     ),
 ];
 
@@ -120,6 +138,10 @@ impl Fixture {
 
     fn with_spaced_paths(label: &str) -> Fixture {
         Fixture::build(label, SPACED_SOURCES)
+    }
+
+    fn with_mixed_pool(label: &str) -> Fixture {
+        Fixture::build(label, MIXED_POOL_SOURCES)
     }
 
     fn run(&self, args: &[&str]) -> Output {
@@ -421,6 +443,36 @@ fn the_trailer_is_absent_when_nothing_is_left_to_suggest() {
 }
 
 #[test]
+fn the_trailer_comes_from_the_first_declaration_not_the_first_row() {
+    let fx = Fixture::with_mixed_pool("mixed-pool");
+
+    // The markup row and the class row are both printed, markup first, and
+    // only the class names a declaration `read` opens.
+    let text = fx.stdout(&["find", "Panel"]);
+    assert!(
+        text.contains("src/AView.xaml:1  <UserControl x:Class=\"Demo.Panel\">"),
+        "{text}"
+    );
+    assert!(
+        text.contains("src/ZPanel.cs:3  public class Panel"),
+        "{text}"
+    );
+    assert_eq!(last_line(&text), "next: devscout read Demo.Panel", "{text}");
+
+    // `--resources` puts the resource key in the same pool, ahead of both.
+    let with_resources = fx.stdout(&["find", "Panel", "--resources"]);
+    assert!(
+        with_resources.contains("src/AStrings.resw:3  <data name=\"Panel\""),
+        "{with_resources}"
+    );
+    assert_eq!(
+        last_line(&with_resources),
+        "next: devscout read Demo.Panel",
+        "{with_resources}"
+    );
+}
+
+#[test]
 fn a_path_with_a_space_is_quoted_so_the_line_still_runs() {
     let fx = Fixture::with_spaced_paths("spaced");
     let text = fx.stdout(&["refs", "ILedger"]);
@@ -529,8 +581,14 @@ fn every_emitted_suggestion_runs_against_the_same_index() {
             checked += 1;
         }
     }
+    // `find` carries its suggestions on the text trailer alone, so only that
+    // half of the check applies to it.
+    for argv in suggestions_from_text(&fx.stdout(&["find", "IPriceSource"])) {
+        assert_suggestion_runs(&fx, &argv);
+        checked += 1;
+    }
     assert!(
-        checked >= 8,
+        checked >= 9,
         "every verb suggests something on this fixture, text and JSON alike: {checked}"
     );
 

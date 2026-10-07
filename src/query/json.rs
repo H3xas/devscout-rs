@@ -18,6 +18,7 @@ use crate::query;
 use crate::render;
 
 use super::why::{why_for_uses_member, Why};
+use next::j_next;
 
 // `pub(crate)`: `audit.rs`'s `--json` rendering builds its own `J` tree with
 // this same encoder rather than hand-rolling a second one.
@@ -98,17 +99,6 @@ pub(crate) fn js_float_string(v: f64) -> String {
     } else {
         s
     }
-}
-
-// The `next` key's value: one argv array per suggestion, WITHOUT the binary
-// name -- the command a caller runs is theirs to supply, so the contract
-// states only the arguments.
-pub(super) fn j_next(next: &[Vec<String>]) -> J {
-    J::Arr(
-        next.iter()
-            .map(|argv| J::Arr(argv.iter().map(|a| J::Str(a.clone())).collect()))
-            .collect(),
-    )
 }
 
 pub(super) fn j_table<R>(t: &query::Table<R>, row: impl Fn(&R) -> J) -> J {
