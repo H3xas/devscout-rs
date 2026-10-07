@@ -33,6 +33,42 @@ enum so no caller can spell a fifth one into existence:
 | `ambiguous` | The seed named more than one candidate (a type, or a member across more than one declaring type) and nothing was guessed between them. |
 | `fallback-advised` | Nothing in the graph carries the seed at all; the caller's zero-hit note advises a text-search fallback. |
 
+## `next`
+
+Every resolved answer -- a zero-hit one included -- carries a `next` key: the follow-up verbs worth
+running, as an array of argv arrays without the binary name. It sits immediately before `outcome`,
+and it is `[]` when the answer leaves nothing to suggest.
+
+For `read InMemoryCatalogStore`, that key holds
+`[["tests", "Widgetworks.Catalog.InMemoryCatalogStore"], ["impact", "InMemoryCatalogStore.cs"]]`.
+
+| Verb | What it suggests |
+| --- | --- |
+| `refs`, `read` | `tests <id>`, then `impact <the file declaring it>` |
+| `tests` | `impact <the file declaring the symbol>` |
+| `impact` | `refs <the first top symbol of the highest-ranked row>` |
+| `find` | `read <the declaration the first row names>` -- text only, as `find` has no `--json` |
+
+The suggestions are derived from the answer already computed: no second query runs to produce them.
+Each candidate is then resolved with the resolver the *suggested* verb itself uses, and a candidate
+that would not resolve to exactly one target is dropped rather than printed. Any argv in `next` can
+therefore be run as it stands -- it exits `0`, or `3` with `outcome: "zero-hit"` when the symbol it
+names turns out to resolve to nothing. Nothing here can exit `1` or `2`.
+
+`next` is present on `hit` and `zero-hit` answers, on the wrapper object and on every member object
+of a `members` answer, and it is absent from the `ambiguous` envelope, from the `fallback-advised`
+answer and from `freshness`.
+
+## The text count line
+
+The text and `--compact` renderers of `refs`, `read`, `impact` and `tests` open with the same
+numbers these JSON tables carry: `N inbound (showing M)` on `refs`/`read`, where N is the sum of the
+five inbound tables' `total` and M the sum of their row counts, and `N files (showing M)` on
+`impact` (`totalAffected` against the printed rows) and `tests` (the rows themselves, uncapped).
+Nothing in the JSON changed to make that possible -- the totals were always here, and the text
+output now states them rather than leaving a capped table looking complete. The
+[CLI reference](cli.md#output-formats) describes the line and the `next:` trailer under it.
+
 ## The `ambiguous` envelope
 
 `refs`, `read`, `impact` and `tests` share one JSON shape for `ambiguous`, whichever of the two
@@ -298,9 +334,11 @@ devscout refs CountItems --json
         "outbound": { "total": 0, "dropped": 0, "rows": [] }
       },
       "manifestGap": 0,
+      "next": [["tests", "Widgetworks.Catalog.InMemoryCatalogStore.CountItems"], ["impact", "InMemoryCatalogStore.cs"]],
       "outcome": "hit"
     }
   ],
+  "next": [["tests", "Widgetworks.Catalog.InMemoryCatalogStore.CountItems"], ["impact", "InMemoryCatalogStore.cs"]],
   "outcome": "hit"
 }
 ```
@@ -380,6 +418,7 @@ devscout read InMemoryCatalogStore --json
     "outbound": { "total": 0, "dropped": 0, "rows": [] }
   },
   "manifestGap": 0,
+  "next": [["tests", "Widgetworks.Catalog.InMemoryCatalogStore"], ["impact", "InMemoryCatalogStore.cs"]],
   "outcome": "hit"
 }
 ```
@@ -441,6 +480,7 @@ devscout impact ICatalogStore --json
   "manifestGap": 0,
   "heuristicAffected": 0,
   "testsAffected": 1,
+  "next": [["refs", "Widgetworks.Catalog.ICatalogStore"]],
   "outcome": "hit"
 }
 ```
@@ -475,6 +515,7 @@ devscout tests InMemoryCatalogStore --json
   "refCount": 2,
   "heuristicFileCount": 0,
   "heuristicRefCount": 0,
+  "next": [["impact", "InMemoryCatalogStore.cs"]],
   "outcome": "hit"
 }
 ```

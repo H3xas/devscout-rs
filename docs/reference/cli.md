@@ -139,10 +139,31 @@ see [methodology](../benchmarks/methodology.md#resolver-precision).
 
 ## Output formats
 
-`refs`, `impact`, and `tests` also take `--json` (machine-readable) or `--compact` (one line per
-hit, for piping). A zero-hit query is reported as a zero hit, not as an error — the tool never
-guesses a different symbol on your behalf, and an ambiguous name prints every candidate instead
-of picking one. See [JSON output](json-output.md) for the full contract.
+`refs`, `read`, `impact`, and `tests` also take `--json` (machine-readable) or `--compact` (one
+line per hit, for piping). A zero-hit query is reported as a zero hit, not as an error — the tool
+never guesses a different symbol on your behalf, and an ambiguous name prints every candidate
+instead of picking one. See [JSON output](json-output.md) for the full contract.
+
+Whichever format you choose, the first line states the **full** count before any row cap applies:
+`N inbound (showing M)` on `refs` and `read`, `N files (showing M)` on `impact` and `tests`. A
+table that was truncated can therefore never be mistaken for the whole answer. On `refs`/`read`, N
+counts the five reference kinds and excludes the `bus-hop` rows, which are possible routes rather
+than references; on `impact`, N is the number of files the walk reached, whether or not the row cap
+printed them; on `tests`, no row cap applies and the two numbers agree. A zero-hit answer states
+`0 inbound (showing 0)` or `0 files (showing 0)`.
+
+A text or `--compact` answer to `refs`, `read`, `tests`, `impact` or `find` then ends with a
+`next:` line naming the cheapest verb to run next:
+
+```text
+next: devscout tests Widgetworks.Catalog.InMemoryCatalogStore | devscout impact InMemoryCatalogStore.cs
+```
+
+The line is written to be pasted, so an argument a shell would read as its own — a space, `#`,
+`$`, a quote, a glob — is single-quoted. Every suggestion was resolved against the verb it names
+before it was printed, so each command on the line runs as it stands. An answer with nothing left
+to suggest omits the line entirely. Under `--json` the same suggestions arrive as a `next` array of
+argv arrays, without the binary name; see [JSON output](json-output.md#next).
 
 ## Exit codes
 

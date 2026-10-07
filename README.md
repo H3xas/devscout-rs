@@ -50,20 +50,26 @@ hooks: skipped (--no-hooks)
 map: mapped 14 files under . (preserved 0 agent purposes, downgraded 0 changed, 14 new, 0 removed, 14 ast signatures); graph rebuilt in ... (24 defs, 4 edges)
 
 $ devscout refs IOrderRepository
-Shop.Data.IOrderRepository  (interface)
+Shop.Data.IOrderRepository  (interface)  1 inbound (showing 1)
 def: src/IOrderRepository.cs:3
 inbound:
   inherits (1):
     src/OrderRepository.cs:3  inherits  public class OrderRepository : IOrderRepository
   uses-type (0):
   uses-member (0):
+next: devscout tests Shop.Data.IOrderRepository | devscout impact src/IOrderRepository.cs
 
 $ devscout impact src/OrderRepository.cs --hops 2
-impact: src/OrderRepository.cs  (file, seed files: src/OrderRepository.cs)  hops<=2
+impact: src/OrderRepository.cs  (file, seed files: src/OrderRepository.cs)  hops<=2  1 files (showing 1)
 affected files: 1  shown: 1  dropped: 0
 file  hops  via  top-symbols
 src/OrderController.cs  1  3  OrderRepository
+next: devscout refs Shop.Data.OrderRepository
 ```
+
+The first line of every answer states the full count before any cap applies (`1 inbound (showing
+1)`), and the last line names the next verb worth running, so a long answer tells you both what you
+are not seeing and where to go next.
 
 Run `devscout map` after edits; only changed files are re-parsed. An ambiguous name lists every
 candidate, and `--pick N` chooses one ([Concepts](docs/concepts.md#seeds)).

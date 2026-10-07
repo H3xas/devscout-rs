@@ -74,6 +74,7 @@ mod coverage;
 mod dispatch;
 mod find;
 mod impact;
+mod impact_seed;
 mod impact_why;
 mod imported;
 mod index;
@@ -83,11 +84,13 @@ mod infra;
 // it as `query::json::...`.
 pub(crate) mod json;
 mod member;
+mod next;
 mod occurrence;
 mod outcome;
 mod rank;
 mod read;
 mod refs;
+mod refs_member;
 mod refs_tables;
 mod seq;
 mod symbol;
@@ -97,10 +100,11 @@ pub use bus::{BusDirection, BusHopRow};
 pub use coverage::{build_tests_model, TestRow, TestVia, TestsModel, TestsResult};
 pub use find::{file_inbound_counts, find_names, first_decl_line_by_file, name_tier, source_line};
 pub use impact::{
-    build_impact_model, impact_walk, looks_like_file_path, resolve_impact_seed, BrakedFile,
-    BrakedIface, BusOrigin, ImpactModel, ImpactResult, ImpactRow, ImpactWalkResult, KindLines,
-    SeedKind, SeedResolution, VisitedEntry, DEFAULT_HOPS, DEFAULT_IFACE_MAX_FANIN,
+    build_impact_model, impact_walk, BrakedFile, BrakedIface, BusOrigin, ImpactModel, ImpactResult,
+    ImpactRow, ImpactWalkResult, KindLines, SeedKind, VisitedEntry, DEFAULT_HOPS,
+    DEFAULT_IFACE_MAX_FANIN,
 };
+pub use impact_seed::{looks_like_file_path, resolve_impact_seed, SeedResolution};
 pub use imported::{build_imported_section, ImportedRow, ImportedSection};
 pub use index::{
     def_files, def_sites, load_graph_index, load_graph_index_with, symbol_refs, DefSite,
@@ -111,13 +115,15 @@ pub use member::{
     qualified_member_owners, qualified_seed, resolve_member_seed, MemberCandidate,
     MemberSeedResolution,
 };
+pub use next::{find_next, impact_next, merge_suggestions, refs_next, tests_next, NextArgv};
 pub use outcome::{Outcome, SCHEMA_VERSION};
 pub use rank::{personalized_page_rank, DEFAULT_DAMPING, DEFAULT_ITERATIONS};
 pub use read::{build_read_model, ReadModel, ReadResult, ReadSpan};
-pub use refs::{build_refs_model, LineCache, MemberRefEntry, MemberRefs, RefsModel, RefsResult};
+pub use refs::{build_refs_model, LineCache, RefsModel, RefsResult};
+pub use refs_member::{MemberRefEntry, MemberRefs};
 pub use refs_tables::{
-    AmbiguousRow, AmbiguousTables, ImportRow, InboundRow, InboundTables, OutboundRow,
-    OutboundTables, Table, DEFAULT_CAP, INBOUND_CAP, OUTBOUND_CAP, SOURCE_MAX,
+    inbound_reference_counts, AmbiguousRow, AmbiguousTables, ImportRow, InboundRow, InboundTables,
+    OutboundRow, OutboundTables, Table, DEFAULT_CAP, INBOUND_CAP, OUTBOUND_CAP, SOURCE_MAX,
 };
 pub use seq::{SeqMap, SeqSet};
 pub use symbol::{resolve_symbol, Resolution};

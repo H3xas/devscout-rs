@@ -12,6 +12,7 @@ mod blocks;
 mod coverage;
 mod impact;
 mod markers;
+mod next;
 mod refs;
 
 fn table<R>(rows: Vec<R>, dropped: usize) -> Table<R> {

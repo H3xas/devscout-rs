@@ -1,7 +1,23 @@
 use crate::query;
 
 use super::blocks::{compact_block, ref_kind_block, ref_kind_block_if_any};
-use super::markers::{compact_marker, heuristic_suffix, source_suffix, BUS_HOP_UNVERIFIED};
+use super::markers::{
+    compact_marker, count_suffix, heuristic_suffix, source_suffix, BUS_HOP_UNVERIFIED,
+};
+
+// The first line both `refs` renderers open with: the resolved symbol, its
+// kind, and how many inbound references the answer counted against how many it
+// printed. `read` splices its own `def:` line in below this one, so the count
+// reaches that verb too.
+fn refs_head_line(model: &query::RefsModel) -> String {
+    let (total, shown) = query::inbound_reference_counts(&model.inbound);
+    format!(
+        "{}  ({}){}",
+        model.id,
+        model.kind,
+        count_suffix("inbound", total, shown)
+    )
+}
 
 // The one line that splits an enum's inbound member edges by which MEMBER they
 // land on. `refs Toggles` already counted them all under `uses-member`; this
@@ -57,7 +73,7 @@ pub(super) fn bus_hop_line(r: &query::BusHopRow) -> String {
 )]
 pub fn render_refs_text(model: &query::RefsModel) -> String {
     let mut out: Vec<String> = Vec::new();
-    out.push(format!("{}  ({})", model.id, model.kind));
+    out.push(refs_head_line(model));
     out.push(format!(
         "def: {}",
         model
@@ -298,7 +314,7 @@ pub fn render_refs_text(model: &query::RefsModel) -> String {
 )]
 pub fn render_refs_compact(model: &query::RefsModel) -> String {
     let mut out: Vec<String> = Vec::new();
-    out.push(format!("{}  ({})", model.id, model.kind));
+    out.push(refs_head_line(model));
     out.push(format!(
         "def: {}",
         model

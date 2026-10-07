@@ -59,6 +59,7 @@ fn empty_model(seed_files: Vec<&str>, rows: Vec<(&str, u32)>) -> ImpactModel {
                 via_count: 1,
                 ambiguous_count: 0,
                 top_symbols: vec![],
+                top_symbol_id: None,
                 top_symbols_more: 0,
                 score: 0.0,
                 heuristic_count: 0,

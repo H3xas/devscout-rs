@@ -1,7 +1,7 @@
 use crate::query;
 
 use super::blocks::{compact_block, ref_kind_block_if_any};
-use super::markers::{compact_marker, heuristic_suffix, test_via_suffix};
+use super::markers::{compact_marker, count_suffix, heuristic_suffix, test_via_suffix};
 use super::refs::bus_hop_line;
 
 /// Default `devscout tests` output.
@@ -17,7 +17,16 @@ use super::refs::bus_hop_line;
 /// use, and the summary counts stay precise-only, so a file listed under a
 /// covered count is a file a test really references.
 pub fn render_tests_text(model: &query::TestsModel) -> String {
-    let mut out: Vec<String> = vec![format!("tests for {}", model.symbol)];
+    // No row cap ever applies to a test file, so the counted and the printed
+    // number are the same one -- and they are still both stated, because the
+    // reader of the zero case has to see that the answer is empty rather than
+    // truncated.
+    let files = model.rows.len();
+    let mut out: Vec<String> = vec![format!(
+        "tests for {}{}",
+        model.symbol,
+        count_suffix("files", files, files)
+    )];
     if model.rows.is_empty() && model.bus.total == 0 {
         out.push("no test references found".to_string());
         return out.join("\n");
@@ -72,9 +81,13 @@ pub fn render_tests_compact(model: &query::TestsModel) -> String {
     } else {
         String::new()
     };
+    let files = model.rows.len();
     let mut out: Vec<String> = vec![format!(
-        "tests {} files={} refs={}{heur}",
-        model.symbol, model.test_file_count, model.ref_count
+        "tests {} files={} refs={}{heur}{}",
+        model.symbol,
+        model.test_file_count,
+        model.ref_count,
+        count_suffix("files", files, files)
     )];
     for r in &model.rows {
         let lines = r

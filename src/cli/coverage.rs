@@ -10,6 +10,7 @@ use crate::render;
 
 use super::answer::{
     ambiguous_candidates_out, fallback_advised_out, finish_query, member_ambiguous_out,
+    with_next_trailer,
 };
 use super::args::{first_positional, index_options, output_flags, parse_pick};
 use super::root::{require_graph, require_repo};
@@ -71,12 +72,13 @@ pub(crate) fn cmd_tests(cwd: &Path, args: &[String]) -> (i32, String) {
         }
         query::TestsResult::Resolved(model) => {
             let count = model.rows.len();
+            let next = query::tests_next(&index, &model);
             let out = if json {
-                query::json::tests_model_to_json(&model)
+                query::json::tests_model_to_json_with_next(&model, &next)
             } else if compact {
-                render::render_tests_compact(&model)
+                with_next_trailer(render::render_tests_compact(&model), &next)
             } else {
-                render::render_tests_text(&model)
+                with_next_trailer(render::render_tests_text(&model), &next)
             };
             (0, out, query::Outcome::Hit, count)
         }

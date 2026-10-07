@@ -38,6 +38,7 @@ fn impact_row(
         via_count,
         ambiguous_count,
         top_symbols: top_symbols.iter().map(|s| (*s).to_string()).collect(),
+        top_symbol_id: None,
         top_symbols_more,
         score,
         heuristic_count: 0,

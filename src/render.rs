@@ -26,6 +26,7 @@ mod blocks;
 mod coverage;
 mod impact;
 mod markers;
+mod next;
 mod read;
 mod refs;
 
@@ -35,6 +36,7 @@ pub use impact::{
     render_impact_text_with_imports,
 };
 pub use markers::seed_kind_str;
+pub use next::next_line;
 pub use read::{render_read_compact, render_read_text};
 pub use refs::{render_refs_compact, render_refs_text};
 

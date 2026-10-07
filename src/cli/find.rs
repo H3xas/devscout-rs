@@ -60,41 +60,49 @@ pub(crate) fn cmd_find(cwd: &Path, query_str: &str, resources: bool) -> (i32, St
         .as_ref()
         .map(query::file_inbound_counts)
         .unwrap_or_default();
-    let (decl_lines, resource_count): (Vec<String>, usize) = match graph.as_ref() {
-        None => (Vec::new(), 0),
-        Some(g) => {
-            let named = query::find_names(g, query_str);
-            let mut primary: Vec<&graph::GraphName> = Vec::new();
-            let mut resource_count = 0usize;
-            for n in named.iter() {
-                if query::name_tier(&n.kind) <= 2 {
-                    primary.push(n);
-                } else {
-                    resource_count += 1;
-                }
-            }
-            let pool: Vec<&graph::GraphName> = if resources { named } else { primary };
-            let mut out: Vec<String> = pool
-                .iter()
-                .take(FIND_NAMES_CAP)
-                .map(|n| {
-                    let text = query::source_line(&root, &n.file, n.line);
-                    if text.is_empty() {
-                        format!("{}:{}", n.file, n.line)
+    let (decl_lines, resource_count, trailer): (Vec<String>, usize, Option<String>) =
+        match graph.as_ref() {
+            None => (Vec::new(), 0, None),
+            Some(g) => {
+                let named = query::find_names(g, query_str);
+                let mut primary: Vec<&graph::GraphName> = Vec::new();
+                let mut resource_count = 0usize;
+                for n in named.iter() {
+                    if query::name_tier(&n.kind) <= 2 {
+                        primary.push(n);
                     } else {
-                        format!("{}:{}  {text}", n.file, n.line)
+                        resource_count += 1;
                     }
-                })
-                .collect();
-            if pool.len() > FIND_NAMES_CAP {
-                out.push(format!(
-                    "… +{} more declarations (refine query)",
-                    pool.len() - FIND_NAMES_CAP
-                ));
+                }
+                let pool: Vec<&graph::GraphName> = if resources { named } else { primary };
+                let mut out: Vec<String> = pool
+                    .iter()
+                    .take(FIND_NAMES_CAP)
+                    .map(|n| {
+                        let text = query::source_line(&root, &n.file, n.line);
+                        if text.is_empty() {
+                            format!("{}:{}", n.file, n.line)
+                        } else {
+                            format!("{}:{}  {text}", n.file, n.line)
+                        }
+                    })
+                    .collect();
+                if pool.len() > FIND_NAMES_CAP {
+                    out.push(format!(
+                        "… +{} more declarations (refine query)",
+                        pool.len() - FIND_NAMES_CAP
+                    ));
+                }
+                // Built only when a declaration row is actually printed: `find`
+                // answers from the manifest alone, and every other name it matched
+                // resolves to no declaration to read.
+                let trailer = pool.first().and_then(|n| {
+                    let index = query::load_graph_index(g, &root);
+                    crate::render::next_line(&query::find_next(&index, n))
+                });
+                (out, resource_count, trailer)
             }
-            (out, resource_count)
-        }
-    };
+        };
     match manifest::find_in_manifest_detailed(&root, query_str, &inbound_counts) {
         Ok(r) => {
             let answer = find_result_out(
@@ -103,6 +111,7 @@ pub(crate) fn cmd_find(cwd: &Path, query_str: &str, resources: bool) -> (i32, St
                 resources,
                 resource_count,
                 decl_lines,
+                trailer,
                 r,
             );
             finish_query(&root, "find", query_str, start, false, answer)
@@ -120,6 +129,7 @@ fn find_result_out(
     resources: bool,
     resource_count: usize,
     decl_lines: Vec<String>,
+    trailer: Option<String>,
     r: manifest::FindResult,
 ) -> (i32, String, query::Outcome, usize) {
     if r.hits.is_empty() && decl_lines.is_empty() {
@@ -158,6 +168,11 @@ fn find_result_out(
     }));
     if r.hits.len() > cap {
         lines.push(format!("… +{} more (refine query)", r.hits.len() - cap));
+    }
+    // Appended last, after every pool's own tail line, so the trailer stays the
+    // final stdout line under every combination of flags.
+    if let Some(line) = trailer {
+        lines.push(line);
     }
     (0, lines.join("\n"), query::Outcome::Hit, candidate_count)
 }

@@ -325,14 +325,15 @@ fn no_guess_leaves_a_test_file_reached_by_an_extension_call_and_drops_one_reache
     assert!(ext.contains("Tests/CounterTests.cs (extension)"), "{ext}");
     assert_eq!(
         stdout_of(&fx.run(&["tests", "WidgetExtensions", "--no-guess", "--compact"])),
-        "tests App.Core.WidgetExtensions files=0 refs=0 heuristic=1\nTests/CounterTests.cs 17x\n"
+        "tests App.Core.WidgetExtensions files=0 refs=0 heuristic=1  1 files (showing 1)\nTests/CounterTests.cs 17x\nnext: devscout impact Core/Targets.cs\n"
     );
 
     let guess = stdout_of(&fx.run(&["tests", "Counter"]));
     assert!(guess.contains("Tests/CounterTests.cs (guess)"), "{guess}");
     assert_eq!(
         stdout_of(&fx.run(&["tests", "Counter", "--no-guess"])),
-        "tests for App.Core.Counter\nno test references found\n",
+        "tests for App.Core.Counter  0 files (showing 0)\nno test references found\n\
+         next: devscout impact Core/Targets.cs\n",
         "nothing but a scored guess reached this symbol from a test file"
     );
 }
