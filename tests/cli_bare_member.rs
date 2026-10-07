@@ -136,13 +136,14 @@ fn a_bare_member_answers_with_its_declaring_type_and_only_the_lines_that_name_it
     assert_eq!(out.status.code(), Some(0), "{out:?}");
     assert_eq!(
         stdout_of(&out),
-        "App.Books.Ledger.PostEx  (member)\n\
+        "App.Books.Ledger.PostEx  (member)  1 inbound (showing 1)\n\
          def: src/Ledger.cs:7\n\
          inbound:\n\
          \x20 inherits (0):\n\
          \x20 uses-type (0):\n\
          \x20 uses-member (1):\n\
-         \x20   src/Consumer.cs:10  uses-member  Ledger.PostEx(2);\n"
+         \x20   src/Consumer.cs:10  uses-member  Ledger.PostEx(2);\n\
+         next: devscout tests App.Books.Ledger.PostEx | devscout impact src/Ledger.cs\n"
     );
 }
 
@@ -169,12 +170,13 @@ fn a_member_no_edge_line_names_keeps_its_exit_code_and_resolves_to_an_empty_list
     assert_eq!(out.status.code(), Some(3), "{out:?}");
     assert_eq!(
         stdout_of(&out),
-        "App.Books.Ledger.Reconcile  (member)\n\
+        "App.Books.Ledger.Reconcile  (member)  0 inbound (showing 0)\n\
          def: src/Ledger.cs:9\n\
          inbound:\n\
          \x20 inherits (0):\n\
          \x20 uses-type (0):\n\
-         \x20 uses-member (0):\n"
+         \x20 uses-member (0):\n\
+         next: devscout tests App.Books.Ledger.Reconcile | devscout impact src/Ledger.cs\n"
     );
 }
 

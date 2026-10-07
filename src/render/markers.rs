@@ -80,6 +80,15 @@ pub(crate) fn compact_marker(heuristic: bool, tier: Option<HeuristicTier>) -> &'
     }
 }
 
+// The full-count suffix every query renderer puts on its first line, after two
+// spaces: `total` is what the answer counted before its model cap, `shown` what
+// it actually printed. Without it a reader sees a capped table and has nothing
+// telling them the table is capped -- which is the failure this states the
+// answer against. One spelling, because four renderers say the same fact.
+pub(crate) fn count_suffix(noun: &str, total: usize, shown: usize) -> String {
+    format!("  {total} {noun} (showing {shown})")
+}
+
 // The source snippet, two spaces then the text, appended AFTER the heuristic
 // suffix by `ref_kind_block`. Only inbound rows ever carry a source line; every
 // other table's rows leave it empty and render no suffix.

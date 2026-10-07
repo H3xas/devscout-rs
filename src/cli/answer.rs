@@ -244,6 +244,18 @@ fn freshness_json(state: &FreshnessState) -> J {
     }
 }
 
+// Appends the `next:` trailer to a rendered answer, or returns it untouched
+// when nothing survived the suggestion list's own resolve check. The trailer
+// is stdout's last line, so a renderer never has to know it exists -- and
+// `--json`, which carries the same suggestions as a key instead, never calls
+// this.
+pub(crate) fn with_next_trailer(out: String, next: &[Vec<String>]) -> String {
+    match crate::render::next_line(next) {
+        Some(line) => format!("{out}\n{line}"),
+        None => out,
+    }
+}
+
 // Splices a top-level `freshness` key onto an already-rendered `--json`
 // answer, as its new last key (after `outcome`) -- string surgery on the
 // finished object rather than a second pass through the `J` tree, because

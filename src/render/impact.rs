@@ -3,8 +3,16 @@ use crate::query;
 
 use super::blocks::rle;
 use super::markers::{
-    compact_marker, heuristic_suffix, seed_kind_str, BUS_HOP_UNVERIFIED, INFRA_SUFFIX,
+    compact_marker, count_suffix, heuristic_suffix, seed_kind_str, BUS_HOP_UNVERIFIED, INFRA_SUFFIX,
 };
+
+// How many files the walk reached against how many rows survived the cap. The
+// imported section is a separate answer with its own counts and is not folded
+// in here, so the line keeps describing the native blast radius under both
+// renderers.
+fn impact_count_suffix(model: &query::ImpactModel) -> String {
+    count_suffix("files", model.rows.len() + model.dropped, model.rows.len())
+}
 
 // The default-renderer suffix for a row every path to it crossed a
 // `bus-hop`: the SAME disclosure sentence `refs`/`read`'s own bus-hop rows
@@ -35,9 +43,10 @@ pub fn render_impact_text(query: &str, model: &query::ImpactModel) -> String {
         joined
     };
     out.push(format!(
-        "impact: {query}  ({}, seed files: {seeds})  hops<={}",
+        "impact: {query}  ({}, seed files: {seeds})  hops<={}{}",
         seed_kind_str(model.kind),
-        model.hops
+        model.hops,
+        impact_count_suffix(model)
     ));
     // The affected count stays the count of files reached by real edges, and
     // the guesses are declared beside it rather than folded into it. The
@@ -147,9 +156,10 @@ pub fn render_impact_compact(query: &str, model: &query::ImpactModel) -> String 
         joined
     };
     out.push(format!(
-        "impact: {query}  ({}, seed: {seeds})  hops<={}",
+        "impact: {query}  ({}, seed: {seeds})  hops<={}{}",
         seed_kind_str(model.kind),
-        model.hops
+        model.hops,
+        impact_count_suffix(model)
     ));
 
     // The hop grouping preserves nothing order-relevant (the hop keys are

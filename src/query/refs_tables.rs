@@ -266,6 +266,28 @@ pub struct OutboundTables {
     pub imports: Table<ImportRow>,
 }
 
+/// How many inbound references an answer counted, and how many it kept.
+///
+/// The total over the five reference kinds and the sum of their rows. One
+/// function, so the kind set is stated once and the renderer's count line can
+/// never disagree with a later caller about which tables are a reference.
+///
+/// `bus-hop`, `ambiguous` and the outbound side are excluded on purpose: a bus
+/// hop is a possible route rather than a reference, and the outbound side is a
+/// separate question the caller asks with `--out`.
+pub fn inbound_reference_counts(inbound: &InboundTables) -> (usize, usize) {
+    let tables = [
+        &inbound.inherits,
+        &inbound.uses_type,
+        &inbound.uses_member,
+        &inbound.implements,
+        &inbound.overrides,
+    ];
+    tables.into_iter().fold((0, 0), |(total, shown), table| {
+        (total + table.total, shown + table.rows.len())
+    })
+}
+
 /// The inbound and outbound ambiguous-reference tables.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AmbiguousTables {

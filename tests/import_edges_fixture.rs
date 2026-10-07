@@ -116,6 +116,14 @@ fn direct_and_composed_imported_edges_appear_in_text_compact_and_json() {
     let compact = fx.ok(&["impact", "CheckoutController.cs", "--compact"]);
     assert!(compact.contains("checkoutClient.ts"), "{compact}");
     assert!(compact.contains("orderConsumer.ts"), "{compact}");
+
+    // An import adds keys before `outcome`; the suggestions take the slot
+    // immediately before it, as they do on the native-only shape.
+    let raw = fx.ok(&["impact", "CheckoutController.cs", "--json"]);
+    assert!(
+        raw.contains(",\"next\":[[\"refs\",") && raw.contains("]],\"outcome\":\"hit\""),
+        "the suggestions sit immediately before `outcome`: {raw}"
+    );
 }
 
 #[test]

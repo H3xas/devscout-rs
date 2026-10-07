@@ -17,7 +17,16 @@ use super::{j_bus_row, j_table, push_heuristic, J};
 // emits no `via` key at all, so today's bytes for every graph without a
 // project model are unchanged. `outcome` is always `"hit"`: reaching this
 // builder means the seed already resolved.
+#[cfg(test)]
+#[cfg(test)]
 pub(crate) fn tests_model_to_json(model: &query::TestsModel) -> String {
+    J::Obj(tests_model_fields(model)).to_json_string()
+}
+
+// The resolved `tests` field list, `outcome` last. Shared with `json/next.rs`,
+// which splices `next` into the slot before `outcome` -- so the trailing field
+// is load-bearing, not just the end of the list.
+pub(super) fn tests_model_fields(model: &query::TestsModel) -> Vec<(&'static str, J)> {
     let mut fields: Vec<(&'static str, J)> = vec![
         ("schema_version", J::UInt(query::SCHEMA_VERSION)),
         ("status", J::Str("resolved".to_string())),
@@ -84,5 +93,5 @@ pub(crate) fn tests_model_to_json(model: &query::TestsModel) -> String {
         fields.push(("bus-hop", j_table(&model.bus, j_bus_row)));
     }
     fields.push(("outcome", J::Str(query::Outcome::Hit.as_str().to_string())));
-    J::Obj(fields).to_json_string()
+    fields
 }

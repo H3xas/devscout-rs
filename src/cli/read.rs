@@ -10,7 +10,7 @@ use crate::render;
 
 use super::answer::{
     ambiguous_candidates_out, fallback_advised_out, finish_query, member_ambiguous_out,
-    ZERO_HIT_READ,
+    with_next_trailer, ZERO_HIT_READ,
 };
 use super::args::{first_positional, index_options, output_flags, parse_pick};
 use super::refs::{member_models_out, refs_model_row_count};
@@ -79,15 +79,18 @@ pub(crate) fn cmd_read(cwd: &Path, args: &[String]) -> (i32, String, Option<&'st
         // `read`'s member answer IS refs' -- a member carries no
         // declaration-span fact to add -- so it takes the same exit code and
         // the same word, rather than a second shape to keep in step.
-        query::ReadResult::Members(models) => member_models_out(q, json, compact, &models),
+        query::ReadResult::Members(models) => member_models_out(&index, q, json, compact, &models),
         query::ReadResult::Resolved(model) => {
             let count = refs_model_row_count(&model.refs);
+            // `read` answers with refs' own inbound model, so it carries refs'
+            // own suggestions rather than a second mapping to keep in step.
+            let next = query::refs_next(&index, &model.refs);
             let out = if json {
-                query::json::read_model_to_json(&model)
+                query::json::read_model_to_json_with_next(&model, &next)
             } else if compact {
-                render::render_read_compact(&model)
+                with_next_trailer(render::render_read_compact(&model), &next)
             } else {
-                render::render_read_text(&model)
+                with_next_trailer(render::render_read_text(&model), &next)
             };
             (0, out, query::Outcome::Hit, count)
         }

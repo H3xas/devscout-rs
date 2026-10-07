@@ -365,6 +365,6 @@ fn a_rust_read_offers_a_unique_name_and_the_full_id_of_a_shared_one() {
             "the offered subject resolves: {read:?}"
         );
         let text = String::from_utf8(read.stdout).unwrap();
-        assert!(text.starts_with(&format!("{id}  (fn)\n")), "{text}");
+        assert!(text.starts_with(&format!("{id}  (fn)  ")), "{text}");
     }
 }

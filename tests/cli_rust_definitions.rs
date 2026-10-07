@@ -343,19 +343,35 @@ const UNRECORDED: &[&str] = &[
     "ShelfMap",
 ];
 
-// The header, the def line and exactly the span's source lines; the inbound
-// table follows at once, so a span one line too long or too short fails.
-fn expected_read_head(fx: &Fixture, item: &Item) -> String {
+// The first line names the item, its kind and the answer's own inbound count;
+// the count's VALUE is pinned by the count-line tests, so what this checks is
+// that the count sits on that line and that the def line and exactly the span's
+// source lines start on the next one -- a span one line too long or too short
+// still fails here.
+fn assert_read_opens_with(fx: &Fixture, item: &Item, text: &str) {
     let lines = fx.source_lines(item.file);
-    format!(
-        "{}  ({})\ndef: {}:{}-{}\n{}\ninbound:\n",
-        item.id,
-        item.kind,
+    let span = format!(
+        "def: {}:{}-{}\n{}\ninbound:\n",
         item.file,
         item.line,
         item.end_line,
         lines[item.line - 1..item.end_line].join("\n")
-    )
+    );
+    let mut rest = text.split('\n');
+    let first = rest.next().unwrap_or_default();
+    assert!(
+        first.starts_with(&format!("{}  ({})  ", item.id, item.kind)),
+        "read should lead with the item and its kind, then the count: {text}"
+    );
+    assert!(
+        first.contains(" inbound (showing "),
+        "the first line states the full inbound count: {text}"
+    );
+    let tail = rest.collect::<Vec<_>>().join("\n");
+    assert!(
+        tail.starts_with(&span),
+        "read should print the declaration span next: {text}"
+    );
 }
 
 #[test]
@@ -403,17 +419,13 @@ fn unrecorded_constructs_have_no_declaration_row() {
 fn read_quotes_the_whole_span_by_name_id_and_path() {
     let fx = Fixture::with_rust_fixture("read");
     for item in ITEMS {
-        let head = expected_read_head(&fx, item);
         let mut spellings = vec![item.name, item.id];
         spellings.extend(item.path);
         for query in spellings {
             let out = fx.run(&["read", query]);
             assert!(out.status.success(), "read {query}: {out:?}");
             let text = String::from_utf8(out.stdout).unwrap();
-            assert!(
-                text.starts_with(&head),
-                "read {query} should open with:\n{head}\ngot:\n{text}"
-            );
+            assert_read_opens_with(&fx, item, &text);
         }
     }
 }
@@ -442,10 +454,7 @@ fn shared_paths_are_ambiguous_and_the_suffixed_id_reads_the_second() {
     let read = fx.run(&["read", second.id]);
     assert!(read.status.success(), "{read:?}");
     let text = String::from_utf8(read.stdout).unwrap();
-    assert!(
-        text.starts_with(&expected_read_head(&fx, &second)),
-        "{text}"
-    );
+    assert_read_opens_with(&fx, &second, &text);
     assert!(
         text.contains("write!(f, \"Gadget\")"),
         "the Debug body: {text}"
@@ -459,9 +468,15 @@ fn shared_paths_are_ambiguous_and_the_suffixed_id_reads_the_second() {
     );
     let twin = fx.run(&["read", "src/shelf.rs#home_shelf-1"]);
     assert!(twin.status.success(), "{twin:?}");
-    assert!(String::from_utf8(twin.stdout).unwrap().starts_with(
-        "src/shelf.rs#home_shelf-1  (fn)\ndef: src/shelf.rs:115-118\n#[cfg(not(unix))]\n"
-    ));
+    let twin = String::from_utf8(twin.stdout).unwrap();
+    assert!(
+        twin.starts_with("src/shelf.rs#home_shelf-1  (fn)  "),
+        "the suffixed id names the second item: {twin}"
+    );
+    assert!(
+        twin.contains("\ndef: src/shelf.rs:115-118\n#[cfg(not(unix))]\n"),
+        "the second item's own span: {twin}"
+    );
 }
 
 #[test]
@@ -634,7 +649,7 @@ fn rust_files_index_in_a_tree_with_no_cargo_manifest() {
     );
     let read = fx.stdout(&["read", "Ledger::close"]);
     assert!(
-        read.starts_with("crates/count/src/ledger.rs#Ledger::close  (fn)\n"),
+        read.starts_with("crates/count/src/ledger.rs#Ledger::close  (fn)  "),
         "{read}"
     );
 

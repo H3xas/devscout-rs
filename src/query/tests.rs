@@ -22,6 +22,7 @@ mod impact_ranking;
 mod imported;
 mod index;
 mod member;
+mod next;
 mod read;
 mod refs_bare_member;
 mod refs_enum;

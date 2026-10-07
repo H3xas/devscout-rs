@@ -201,12 +201,13 @@ fn a_resolved_member_nothing_references_exits_3_with_stderr_left_empty() {
         assert_eq!(out.status.code(), Some(3), "{verb}: {out:?}");
         assert_eq!(
             stdout_of(&out),
-            "Shop.Island.Total  (member)\n\
+            "Shop.Island.Total  (member)  0 inbound (showing 0)\n\
              def: src/Island.cs:5\n\
              inbound:\n\
              \x20 inherits (0):\n\
              \x20 uses-type (0):\n\
-             \x20 uses-member (0):\n",
+             \x20 uses-member (0):\n\
+             next: devscout tests Shop.Island.Total | devscout impact src/Island.cs\n",
             "{verb}"
         );
         assert_eq!(stderr_of(&out), "", "{verb}");

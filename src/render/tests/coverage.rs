@@ -40,7 +40,7 @@ fn tests_text_heads_the_file_and_indents_one_line_per_test_def() {
     )]);
     assert_eq!(
         render_tests_text(&model),
-        "tests for App.Orders.OrderService\ncovered by 1 test file(s), 2 reference(s)\n\ntests/OrderServiceTests.cs\n  App.Orders.Tests.OrderServiceTests  lines: 10, 11"
+        "tests for App.Orders.OrderService  1 files (showing 1)\ncovered by 1 test file(s), 2 reference(s)\n\ntests/OrderServiceTests.cs\n  App.Orders.Tests.OrderServiceTests  lines: 10, 11"
     );
 }
 
@@ -50,7 +50,7 @@ fn tests_text_answers_the_zero_case_in_one_line_instead_of_a_header_over_a_void(
     model.symbol = "App.Orders.Untested".to_string();
     assert_eq!(
         render_tests_text(&model),
-        "tests for App.Orders.Untested\nno test references found"
+        "tests for App.Orders.Untested  0 files (showing 0)\nno test references found"
     );
 }
 
@@ -107,7 +107,7 @@ fn tests_text_suffix_follows_the_row_tier() {
     );
     assert_eq!(
         render_tests_compact(&model),
-        "tests App.Orders.OrderService files=1 refs=1 heuristic=2\ntests/Precise.cs 9\ntests/Ext.cs 9x\ntests/Guess.cs 9h"
+        "tests App.Orders.OrderService files=1 refs=1 heuristic=2  3 files (showing 3)\ntests/Precise.cs 9\ntests/Ext.cs 9x\ntests/Guess.cs 9h"
     );
 }
 
@@ -151,14 +151,14 @@ fn tests_compact_folds_the_counts_into_the_header_and_drops_the_def_ids() {
     )]);
     assert_eq!(
         render_tests_compact(&model),
-        "tests App.Orders.OrderService files=1 refs=2\ntests/OrderServiceTests.cs 10,11"
+        "tests App.Orders.OrderService files=1 refs=2  1 files (showing 1)\ntests/OrderServiceTests.cs 10,11"
     );
 
     let mut empty = tests_model(vec![]);
     empty.symbol = "App.Orders.Untested".to_string();
     assert_eq!(
         render_tests_compact(&empty),
-        "tests App.Orders.Untested files=0 refs=0"
+        "tests App.Orders.Untested files=0 refs=0  0 files (showing 0)"
     );
 }
 
@@ -180,6 +180,6 @@ fn tests_compact_declares_heuristic_files_in_the_header_and_marks_their_lines() 
     ]);
     assert_eq!(
         render_tests_compact(&model),
-        "tests App.Orders.OrderService files=1 refs=1 heuristic=1\ntests/OrderServiceTests.cs 10\ntests/Partial.Extra.cs 9h,12h"
+        "tests App.Orders.OrderService files=1 refs=1 heuristic=1  2 files (showing 2)\ntests/OrderServiceTests.cs 10\ntests/Partial.Extra.cs 9h,12h"
     );
 }

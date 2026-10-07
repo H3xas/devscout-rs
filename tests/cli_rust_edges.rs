@@ -269,7 +269,11 @@ fn impact_counts_the_test_files_it_reaches() {
     let fx = Fixture::with_package("impact");
     let text = fx.stdout(&["impact", "src/shelf/dust.rs"]);
     assert!(text.contains("tests=2"), "{text}");
-    let rows: Vec<&str> = text.lines().skip(3).collect();
+    let rows: Vec<&str> = text
+        .lines()
+        .skip(3)
+        .take_while(|line| !line.starts_with("next: "))
+        .collect();
     assert_eq!(
         rows,
         vec![
@@ -278,6 +282,11 @@ fn impact_counts_the_test_files_it_reaches() {
             "checks/rim.rs  2  1  count",
             "src/lib.rs  2  2  Shelf, count",
         ],
+        "{text}"
+    );
+    assert_eq!(
+        text.lines().last(),
+        Some("next: devscout refs 'src/shelf/dust.rs#sweep'"),
         "{text}"
     );
 }
