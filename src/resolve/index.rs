@@ -616,5 +616,6 @@ pub(super) fn name_probe(name: String, namespace: &str, outer_types: Vec<String>
         lambda_arg_arity: None,
         method_type_arg_count: None,
         lambda_arg_shape: None,
+        receiver_type_qualified: None,
     }
 }

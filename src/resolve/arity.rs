@@ -77,6 +77,10 @@ pub(super) fn resolve_receiver_type(
     aliases: &HashMap<String, String>,
     file_contexts: &HashMap<String, FileContext>,
 ) -> Resolution {
+    if probe.qualified.is_some() {
+        probe.type_arg_count = arity;
+        return resolve_ref(&probe, usings, ns, index, aliases, file_contexts);
+    }
     if let Some(n) = arity {
         if n >= 1 {
             let full = aliases.get(&probe.name).unwrap_or(&probe.name);

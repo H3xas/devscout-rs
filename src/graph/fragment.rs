@@ -68,6 +68,7 @@ pub fn fragment_from_extraction(e: &extract::Extraction) -> Fragment {
                             FragFact {
                                 type_name: fact.type_name.clone(),
                                 args: fact.args.clone(),
+                                qualified_type: fact.qualified_type.clone(),
                             },
                         );
                     }
@@ -81,6 +82,7 @@ pub fn fragment_from_extraction(e: &extract::Extraction) -> Fragment {
                             FragFact {
                                 type_name: fact.type_name.clone(),
                                 args: fact.args.clone(),
+                                qualified_type: fact.qualified_type.clone(),
                             },
                         );
                     }
@@ -179,6 +181,7 @@ pub fn fragment_from_extraction(e: &extract::Extraction) -> Fragment {
                 type_arg_count: r.type_arg_count,
                 generic: r.generic,
                 receiver_type: r.receiver_type.clone(),
+                receiver_type_qualified: r.receiver_type_qualified.clone(),
                 arg_count: r.arg_count,
                 receiver_args: r.receiver_args.clone(),
                 outer_types: r.outer_types.clone(),
@@ -342,6 +345,7 @@ pub fn markup_fragment(root: &Path, rel: &str) -> Option<Fragment> {
                 lambda_arg_arity: None,
                 method_type_arg_count: None,
                 lambda_arg_shape: None,
+                receiver_type_qualified: None,
             })
             .collect(),
         names: facts

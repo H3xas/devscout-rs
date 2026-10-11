@@ -445,6 +445,7 @@ fn walk<'a>(
                             false,
                             Some(Fact {
                                 type_name: owner,
+                                qualified_type: None,
                                 args: None,
                                 call: Some(inner_member),
                                 awaited: false,

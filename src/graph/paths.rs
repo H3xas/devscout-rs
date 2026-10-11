@@ -135,16 +135,23 @@ pub fn project_units_path(root: &Path) -> PathBuf {
 // `list.Any(m => true)` would keep binding an `Any(Action<F>)` or an
 // uninferable `Any<T>(FilterDelegate<IX<T>>)` overload C# refuses, where a
 // fresh fragment of the same file skips both.
+// v28 adds ref `receiverTypeQualified` and fact `qualifiedType` -- the
+// written path of a receiver's own declared type, alongside the bare last
+// segment `receiverType`/`type` already carry. A cached v27 fragment of an
+// unchanged file carries neither, so a receiver declared `Outer.Type` would
+// keep resolving through its tail, which the ladder's using and
+// graph-wide-uniqueness steps answer with whatever same-named type they
+// reach, where a fresh fragment of the same file resolves the written path.
 // The rename IS the invalidation mechanism:
 // pre-bump caches stop being found, every file reparses
 // once, no reader carries version-compat logic. Writers delete every
 // superseded generation (see `remove_superseded_caches`).
 pub(crate) fn fragments_cache_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-v27.json")
+    graph_dir(root).join("fragments-v28.json")
 }
 
 pub(crate) fn fragments_index_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-index-v27.json")
+    graph_dir(root).join("fragments-index-v28.json")
 }
 
 // Every generation below the current one, not just the immediately previous:
@@ -203,6 +210,8 @@ pub(crate) const SUPERSEDED_CACHE_FILES: &[&str] = &[
     "fragments-index-v25.json",
     "fragments-v26.json",
     "fragments-index-v26.json",
+    "fragments-v27.json",
+    "fragments-index-v27.json",
 ];
 
 pub(crate) fn remove_superseded_caches(root: &Path) {

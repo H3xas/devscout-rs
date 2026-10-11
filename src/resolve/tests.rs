@@ -30,6 +30,7 @@ mod nested_step;
 mod project_admission;
 mod qualified_names;
 mod qualified_publish;
+mod qualified_receiver;
 mod receiver_hops;
 mod receiver_rule;
 mod receiver_tier;
@@ -141,6 +142,7 @@ fn type_ref(kind: &str, name: &str, qualified: Option<&str>, ns: &str) -> FragRe
         lambda_arg_arity: None,
         method_type_arg_count: None,
         lambda_arg_shape: None,
+        receiver_type_qualified: None,
     }
 }
 
@@ -170,6 +172,7 @@ fn member_ref(name: &str, qualified: Option<&str>, member: &str, ns: &str) -> Fr
         lambda_arg_arity: None,
         method_type_arg_count: None,
         lambda_arg_shape: None,
+        receiver_type_qualified: None,
     }
 }
 
@@ -596,6 +599,7 @@ fn with_member_types(
             FragFact {
                 type_name: (*ty).to_string(),
                 args: None,
+                qualified_type: None,
             },
         );
     }

@@ -26,7 +26,7 @@ fn rebuild_graph_writes_the_v13_caches_and_deletes_every_superseded_generation()
     // receiverCallMember pair, so a v12 fragment read back carries none and
     // every property hop and every var-from-invocation receiver would
     // silently stay unresolved.
-    assert_eq!(SUPERSEDED_CACHE_FILES.len(), 52, "v1..v26 pairs");
+    assert_eq!(SUPERSEDED_CACHE_FILES.len(), 54, "v1..v27 pairs");
     for stale in SUPERSEDED_CACHE_FILES {
         fs::write(graph_dir(&dir).join(stale), b"{}").unwrap();
     }
@@ -78,11 +78,11 @@ fn rebuild_graph_writes_the_v13_caches_and_deletes_every_superseded_generation()
     rebuild_graph(&dir, &graph_files, &fresh, true, None, None).unwrap();
 
     assert!(
-        graph_dir(&dir).join("fragments-v27.json").exists(),
-        "the v27 payload cache is what gets written"
+        graph_dir(&dir).join("fragments-v28.json").exists(),
+        "the v28 payload cache is what gets written"
     );
     assert!(
-        graph_dir(&dir).join("fragments-index-v27.json").exists(),
+        graph_dir(&dir).join("fragments-index-v28.json").exists(),
         "and its mtime-only index alongside it"
     );
     for stale in SUPERSEDED_CACHE_FILES {
@@ -93,32 +93,32 @@ fn rebuild_graph_writes_the_v13_caches_and_deletes_every_superseded_generation()
     }
 }
 
-// --- The v27 cache generation --------------------------
+// --- The v28 cache generation --------------------------
 
 #[test]
-fn fragments_cache_v27_supersedes_v26() {
-    let dir = temp_dir("fragments-cache-v27-paths");
+fn fragments_cache_v28_supersedes_v27() {
+    let dir = temp_dir("fragments-cache-v28-paths");
     assert_eq!(
         fragments_cache_path(&dir),
-        graph_dir(&dir).join("fragments-v27.json")
+        graph_dir(&dir).join("fragments-v28.json")
     );
     assert_eq!(
         fragments_index_path(&dir),
-        graph_dir(&dir).join("fragments-index-v27.json")
+        graph_dir(&dir).join("fragments-index-v28.json")
     );
     assert!(
-        SUPERSEDED_CACHE_FILES.contains(&"fragments-v26.json"),
-        "v26 joined the superseded list when the v27 bump landed"
+        SUPERSEDED_CACHE_FILES.contains(&"fragments-v27.json"),
+        "v27 joined the superseded list when the v28 bump landed"
     );
     assert!(
-        SUPERSEDED_CACHE_FILES.contains(&"fragments-index-v26.json"),
+        SUPERSEDED_CACHE_FILES.contains(&"fragments-index-v27.json"),
         "its index pairs with it, same as every other generation"
     );
 
-    let dir = temp_dir("rebuild-v27");
+    let dir = temp_dir("rebuild-v28");
     fs::create_dir_all(graph_dir(&dir)).unwrap();
-    fs::write(graph_dir(&dir).join("fragments-v26.json"), b"{}").unwrap();
-    fs::write(graph_dir(&dir).join("fragments-index-v26.json"), b"{}").unwrap();
+    fs::write(graph_dir(&dir).join("fragments-v27.json"), b"{}").unwrap();
+    fs::write(graph_dir(&dir).join("fragments-index-v27.json"), b"{}").unwrap();
 
     let fragment = Fragment {
         defs: vec![],
@@ -137,11 +137,11 @@ fn fragments_cache_v27_supersedes_v26() {
     }];
     rebuild_graph(&dir, &graph_files, &fresh, true, None, None).unwrap();
 
-    assert!(graph_dir(&dir).join("fragments-v27.json").exists());
-    assert!(graph_dir(&dir).join("fragments-index-v27.json").exists());
+    assert!(graph_dir(&dir).join("fragments-v28.json").exists());
+    assert!(graph_dir(&dir).join("fragments-index-v28.json").exists());
     assert!(
-        !graph_dir(&dir).join("fragments-v26.json").exists(),
-        "the v26 pair is deleted -- rename IS the invalidation"
+        !graph_dir(&dir).join("fragments-v27.json").exists(),
+        "the v27 pair is deleted -- rename IS the invalidation"
     );
     assert!(!graph_dir(&dir).join("fragments-index-v16.json").exists());
 }
@@ -294,7 +294,7 @@ fn a_pre_bump_fragment_cache_cannot_leave_a_supported_hop_unfound() {
     // half fails the moment the rename is reverted.
     let reused = temp_dir("bus-hop-current-generation-cache");
     fs::create_dir_all(graph_dir(&reused)).unwrap();
-    plant_cache_pair(&reused, &stale, index, "-v27");
+    plant_cache_pair(&reused, &stale, index, "-v28");
     let g = rebuilt(&reused);
     assert_eq!(hop_count(&g), 0);
     assert_eq!(g.stats.edges_by_kind.bus_hop, None);
@@ -492,7 +492,7 @@ fn a_warm_v22_cache_is_rebuilt_rather_than_read_without_array_facts() {
     // prevents, so this half fails the moment the rename is reverted.
     let reused = temp_dir("bus-array-current-generation-cache");
     fs::create_dir_all(graph_dir(&reused)).unwrap();
-    plant_cache_pair(&reused, &stale, index, "-v27");
+    plant_cache_pair(&reused, &stale, index, "-v28");
     let g = match rebuild_graph(
         &reused,
         &array_bus_files(),
@@ -513,5 +513,152 @@ fn a_warm_v22_cache_is_rebuilt_rather_than_read_without_array_facts() {
          prevents: the array bit is gone, so the array publish's own identity (rank 1) \
          matches neither handler's now-plain (rank 0) identity, and the route silently \
          disappears rather than reaching ArrayHandler"
+    );
+}
+
+// --- The v28 generation and a qualified receiver -------------------------
+
+const QUALIFIED_RECEIVER_SITE: &str = "src/App/Runner.cs";
+
+fn qualified_receiver_sources() -> Vec<(&'static str, &'static str)> {
+    vec![
+        (
+            "src/Rabbit/ConfigurationHostSettings.cs",
+            "\nnamespace App.Rabbit.Configuration\n{\n    public class ConfigurationHostSettings\n    {\n        public class ConfigurationBatchSettings\n        {\n            public bool Enabled { get; set; }\n        }\n    }\n}\n",
+        ),
+        (
+            "src/Bench/ConfigurationBatchSettings.cs",
+            "\nnamespace App.Bench;\n\npublic class ConfigurationBatchSettings\n{\n    public bool Enabled { get; set; }\n}\n",
+        ),
+        (
+            QUALIFIED_RECEIVER_SITE,
+            "\nusing App.Bench;\n\nnamespace App.Rabbit.Configuration\n{\n    internal class Runner\n    {\n        readonly ConfigurationHostSettings.ConfigurationBatchSettings _settings;\n\n        public bool Enabled\n        {\n            set => _settings.Enabled = value;\n        }\n    }\n}\n",
+        ),
+    ]
+}
+
+fn qualified_receiver_fresh() -> HashMap<String, AnyFragment> {
+    qualified_receiver_sources()
+        .into_iter()
+        .map(|(rel, src)| {
+            (
+                rel.to_string(),
+                AnyFragment::Cs(crate::graph::fragment_from_extraction(
+                    &crate::extract::extract(src),
+                )),
+            )
+        })
+        .collect()
+}
+
+fn qualified_receiver_files() -> Vec<GraphFile> {
+    qualified_receiver_sources()
+        .into_iter()
+        .map(|(rel, _)| GraphFile {
+            rel: rel.to_string(),
+            mtime: 7,
+        })
+        .collect()
+}
+
+/// The site fragment as the PREVIOUS generation wrote it: every key the
+/// qualifier added removed, so its receiver facts read as the bare tail the
+/// old extractor recorded.
+fn qualified_receiver_payload_without_the_qualifier() -> String {
+    fn strip(value: &mut serde_json::Value) {
+        match value {
+            serde_json::Value::Object(map) => {
+                map.remove("qualifiedType");
+                map.remove("receiverTypeQualified");
+                for child in map.values_mut() {
+                    strip(child);
+                }
+            }
+            serde_json::Value::Array(items) => {
+                for item in items {
+                    strip(item);
+                }
+            }
+            _ => {}
+        }
+    }
+    let fragment = qualified_receiver_fresh()
+        .remove(QUALIFIED_RECEIVER_SITE)
+        .expect("site fragment present");
+    let mut entry = serde_json::json!({"mtime": 7, "fragment": fragment});
+    strip(&mut entry["fragment"]);
+    serde_json::to_string(&serde_json::json!({ QUALIFIED_RECEIVER_SITE: entry })).unwrap()
+}
+
+fn qualified_receiver_targets(g: &Graph) -> Vec<String> {
+    g.edges
+        .iter()
+        .filter_map(|e| match e {
+            Edge::UsesMember {
+                to,
+                member,
+                heuristic: false,
+                ..
+            } if member.as_deref() == Some("Enabled") => Some(to.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn rebuild_qualified_receiver(dir: &std::path::Path) -> Graph {
+    match rebuild_graph(
+        dir,
+        &qualified_receiver_files(),
+        &qualified_receiver_fresh(),
+        true,
+        None,
+        None,
+    )
+    .unwrap()
+    {
+        RebuildOutcome::Rebuilt(g) => g,
+        RebuildOutcome::NotRebuilt => unreachable!("changed is true"),
+    }
+}
+
+#[test]
+fn a_prior_generation_cache_cannot_leave_a_qualified_receiver_on_its_bare_tail() {
+    let index = r#"{"src/App/Runner.cs":7}"#;
+    let stale = qualified_receiver_payload_without_the_qualifier();
+
+    let warm = temp_dir("qualified-receiver-warm-v27-cache");
+    fs::create_dir_all(graph_dir(&warm)).unwrap();
+    plant_cache_pair(&warm, &stale, index, "-v27");
+    let warm_graph = rebuild_qualified_receiver(&warm);
+    assert_eq!(
+        qualified_receiver_targets(&warm_graph),
+        vec!["App.Rabbit.Configuration.ConfigurationHostSettings+ConfigurationBatchSettings"],
+        "the v27 payload is not read, so this run re-parses the source and keeps the qualifier"
+    );
+    assert!(!graph_dir(&warm).join("fragments-v27.json").exists());
+
+    let cold = temp_dir("qualified-receiver-cold-cache");
+    fs::create_dir_all(graph_dir(&cold)).unwrap();
+    let cold_graph = rebuild_qualified_receiver(&cold);
+    assert_eq!(
+        qualified_receiver_targets(&warm_graph),
+        qualified_receiver_targets(&cold_graph),
+        "a run that ignored a prior-generation cache agrees with a cold one"
+    );
+
+    // The control: the same payload at the CURRENT generation is reused on
+    // its matching mtime, and the receiver falls back to its bare tail --
+    // which the file's own `using App.Bench;` answers with the decoy
+    // sharing that tail. That is the loss the rename prevents, so this half
+    // fails the moment the generation bump is reverted.
+    let reused = temp_dir("qualified-receiver-current-generation-cache");
+    fs::create_dir_all(graph_dir(&reused)).unwrap();
+    plant_cache_pair(&reused, &stale, index, "-v28");
+    let reused_graph = rebuild_qualified_receiver(&reused);
+    assert_eq!(
+        qualified_receiver_targets(&reused_graph),
+        vec!["App.Bench.ConfigurationBatchSettings"],
+        "reusing the tail-only entry at the current generation is exactly the wrong target the \
+         rename prevents"
     );
 }

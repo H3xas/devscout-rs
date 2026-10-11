@@ -369,8 +369,11 @@ pub struct FragHandlerRegistration {
 }
 
 /// One declared type fact: the type NAME, plus its top-level
-/// type-argument descriptors when the declaration carried any. Field order
-/// (`type`, `args`) is significant, and `args` is omitted when absent.
+/// type-argument descriptors when the declaration carried any.
+///
+/// Field order (`type`, `args`, `qualifiedType`) is significant, `args` and
+/// `qualifiedType` are omitted when absent, and `type` still carries the
+/// bare last segment so consumers that need only a name are unaffected.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FragFact {
     #[serde(rename = "type")]
@@ -379,6 +382,18 @@ pub struct FragFact {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     /// The args value.
     pub args: Option<Vec<String>>,
+    /// The written qualified path of the same declaration, set only when it
+    /// wrote one. Appended LAST of all, after `args`, and omitted when
+    /// absent. Joined the schema with the v28 cache bump, together with
+    /// `FragRef.receiverTypeQualified`: without it a declared field or
+    /// property names only the tail, and a receiver typed from that
+    /// declaration resolves like a bare one.
+    #[serde(
+        default,
+        rename = "qualifiedType",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub qualified_type: Option<String>,
 }
 
 /// One `extensionMethods` entry. Serialized field order (`name`, `thisType`,
@@ -659,6 +674,20 @@ pub struct FragRef {
         skip_serializing_if = "Option::is_none"
     )]
     pub lambda_arg_shape: Option<Vec<Option<FragLambdaShape>>>,
+    /// The receiver declaration's written qualified type path (see
+    /// extract.rs's `RefRecord`), set only when that declaration wrote one.
+    /// Appended LAST of all, after `lambdaArgShape`, and omitted when
+    /// absent. Joined the schema with the v28 cache bump: a v27 fragment
+    /// read back carries none, so a receiver declared `Outer.Type` would
+    /// keep resolving through its bare last segment, which the ladder's
+    /// using and graph-wide-uniqueness steps answer with whichever
+    /// same-named type they reach first.
+    #[serde(
+        default,
+        rename = "receiverTypeQualified",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub receiver_type_qualified: Option<String>,
 }
 
 pub(crate) fn is_false(b: &bool) -> bool {

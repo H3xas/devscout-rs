@@ -101,6 +101,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   unreadable `--assert` file) was printed on stdout, so a CI step that redirected stdout into the
   report file showed no message. With `--json` anywhere in the arguments, every error now goes to
   stderr with exit 1 and stdout stays empty. Text mode is unchanged.
+- **A receiver declared with a qualified type binds that type, not a same-named one.** A pattern
+  such as `endpoint is Outbox.OutboxSendEndpoint outboxEndpoint` or a field typed
+  `ConfigurationHostSettings.ConfigurationBatchSettings` was recorded by its last segment alone, so
+  `outboxEndpoint.Endpoint` resolved through a `using` that named a different `OutboxSendEndpoint`,
+  and `_settings.Enabled` bound a top-level `ConfigurationBatchSettings` in a project the declaring
+  code never referenced. The written path is now recorded alongside the simple name and resolved
+  first, so the member binds the declared type; a path that matches no type, or two, binds neither.
+  Unqualified receivers, extension matching, generic arity and the nullable rules are unchanged, and
+  a same-named declaration without a written path behaves exactly as before. The fragment cache
+  moves to `fragments-v28.json`, so an existing cache re-extracts once.
 
 ### Changed
 
