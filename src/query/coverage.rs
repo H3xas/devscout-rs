@@ -18,7 +18,8 @@ use super::test_path;
 ///
 /// An attribute-carrying def declared in the file (`Attribute`); absent that,
 /// the project model placing the file's unit inside a project marked `test`
-/// (`Project`); absent both, a TypeScript file named as a test (`Path`).
+/// (`Project`); absent both, a TypeScript or JavaScript file named as a test
+/// (`Path`).
 /// They are checked in that order -- the more specific vouch always wins
 /// whenever two would apply.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,8 +28,8 @@ pub enum TestVia {
     Attribute,
     /// No such def; the file's unit in the project model is a test project.
     Project,
-    /// Neither; the file is a `.ts`/`.tsx` file named `*.spec.*`/`*.test.*`
-    /// or sits below a `__tests__` directory.
+    /// Neither; the file is a `.ts`/`.tsx`/`.js`/`.mjs`/`.cjs` file named
+    /// `*.spec.*`/`*.test.*` or sits below a `__tests__` directory.
     Path,
 }
 

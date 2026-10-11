@@ -2,22 +2,36 @@
 // every consumer reads, so the two verbs and the `tests` bus filter always
 // agree. Three vouches, checked most specific first: an attributed test def
 // declared in the file, the project model placing the file in a test project,
-// and -- for a TypeScript file neither of those reaches -- the file's own name.
+// and -- for a TypeScript or JavaScript file neither of those reaches -- the
+// file's own name.
 
 use super::coverage::TestVia;
 use super::index::GraphIndex;
 
-// The TypeScript test-runner naming conventions. Case-sensitive, and `.ts`/
-// `.tsx` only: a JavaScript file is read by the other verbs but not
-// classified by its name.
-const TEST_SUFFIXES: [&str; 4] = [".spec.ts", ".spec.tsx", ".test.ts", ".test.tsx"];
+// The test-runner naming conventions. Case-sensitive, and never every
+// extension this tool reads: `.jsx` and the TypeScript module suffixes
+// `.mts`/`.cts` are read and graphed by the other verbs but not classified by
+// their name.
+const TEST_EXTENSIONS: [&str; 5] = [".ts", ".tsx", ".js", ".mjs", ".cjs"];
+const TEST_SUFFIXES: [&str; 10] = [
+    ".spec.ts",
+    ".spec.tsx",
+    ".spec.js",
+    ".spec.mjs",
+    ".spec.cjs",
+    ".test.ts",
+    ".test.tsx",
+    ".test.js",
+    ".test.mjs",
+    ".test.cjs",
+];
 const TESTS_SEGMENT: &str = "__tests__";
 
-/// Whether `file` is named as a TypeScript test file: one of the four
-/// `*.spec`/`*.test` suffixes, or a `.ts`/`.tsx` file below a directory
-/// segment exactly `__tests__`.
+/// Whether `file` is named as a test file: one of the `*.spec`/`*.test`
+/// suffixes this module lists, or a file of a classified extension below a
+/// directory segment exactly `__tests__`.
 pub(crate) fn is_test_path(file: &str) -> bool {
-    if !(file.ends_with(".ts") || file.ends_with(".tsx")) {
+    if !TEST_EXTENSIONS.iter().any(|ext| file.ends_with(ext)) {
         return false;
     }
     if TEST_SUFFIXES.iter().any(|suffix| file.ends_with(suffix)) {

@@ -70,7 +70,8 @@ pub const SKIP_DIRS: &[&str] = &[
 /// Case-sensitive, exact match on the substring from the *last* `.` in the
 /// file name onward.
 pub const SOURCE_EXT: &[&str] = &[
-    ".ts", ".tsx", ".js", ".jsx", ".cs", ".rs", ".json", ".md", ".xaml", ".resw", ".resx",
+    ".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".mjs", ".cjs", ".cs", ".rs", ".json", ".md",
+    ".xaml", ".resw", ".resx",
 ];
 
 /// Enumerates source files (`SOURCE_EXT`) under each scope directory.
@@ -351,6 +352,31 @@ mod tests {
         assert_eq!(
             files,
             vec!["src/cli/args.rs".to_string(), "src/lib.rs".to_string()]
+        );
+
+        fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn module_suffixes_are_listed_and_a_case_mismatch_is_not() {
+        let root = scratch_dir("module-ext");
+        write_file(&root.join("src/a.mjs"), "export const a = 1;\n");
+        write_file(&root.join("src/b.cjs"), "module.exports = {};\n");
+        write_file(&root.join("src/c.mts"), "export const c = 1;\n");
+        write_file(&root.join("src/d.cts"), "export const d = 1;\n");
+        write_file(&root.join("src/e.MJS"), "export const e = 1;\n");
+        write_file(&root.join("src/f.mjsx"), "export const f = 1;\n");
+
+        let mut files = list_source_files(&root, &["src".to_string()]).unwrap();
+        files.sort();
+        assert_eq!(
+            files,
+            vec![
+                "src/a.mjs".to_string(),
+                "src/b.cjs".to_string(),
+                "src/c.mts".to_string(),
+                "src/d.cts".to_string(),
+            ]
         );
 
         fs::remove_dir_all(&root).ok();

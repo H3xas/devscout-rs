@@ -153,7 +153,7 @@ impl<'g> GraphIndex<'g> {
     /// Whether `file` counts as a TEST file for `tests`/`impact`: an
     /// attribute-vouched def is declared in it (`test_defs_by_file`), the
     /// project model places it inside a unit marked `test`, or it is a
-    /// TypeScript file named as a test (see `test_path`). The project vouch
+    /// TypeScript or JavaScript file named as a test (see `test_path`). The project vouch
     /// fires even for a file that declares no attributed test method at all --
     /// a harness or fixture file living in a test project is still part of
     /// what a symbol's tests touch -- and fails open exactly like the rest of

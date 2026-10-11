@@ -316,9 +316,12 @@ pub enum TsGrammar {
 pub fn ts_grammar_for(rel: &str) -> Option<TsGrammar> {
     let dot = rel.rfind('.')?;
     match &rel[dot..] {
-        ".ts" => Some(TsGrammar::Typescript),
+        // `.mts`/`.cts` are TypeScript modules, `.mjs`/`.cjs` their JavaScript
+        // counterparts: the module suffix picks the module system, never the
+        // grammar.
+        ".ts" | ".mts" | ".cts" => Some(TsGrammar::Typescript),
         ".tsx" => Some(TsGrammar::Tsx),
-        ".js" | ".jsx" => Some(TsGrammar::Javascript),
+        ".js" | ".jsx" | ".mjs" | ".cjs" => Some(TsGrammar::Javascript),
         _ => None,
     }
 }
@@ -385,18 +388,24 @@ mod ts_grammar_tests {
         assert_eq!(ts_grammar_for("a/b.tsx"), Some(TsGrammar::Tsx));
         assert_eq!(ts_grammar_for("a/b.js"), Some(TsGrammar::Javascript));
         assert_eq!(ts_grammar_for("a/b.jsx"), Some(TsGrammar::Javascript));
+        assert_eq!(ts_grammar_for("a/b.mts"), Some(TsGrammar::Typescript));
+        assert_eq!(ts_grammar_for("a/b.cts"), Some(TsGrammar::Typescript));
+        assert_eq!(ts_grammar_for("a/b.mjs"), Some(TsGrammar::Javascript));
+        assert_eq!(ts_grammar_for("a/b.cjs"), Some(TsGrammar::Javascript));
         assert_eq!(ts_grammar_for("a/b.cs"), None);
         assert_eq!(ts_grammar_for("a/b"), None);
     }
 
     #[test]
-    fn is_ts_js_true_only_for_the_four_extensions() {
-        assert!(is_ts_js("x.ts"));
-        assert!(is_ts_js("x.tsx"));
-        assert!(is_ts_js("x.js"));
-        assert!(is_ts_js("x.jsx"));
-        assert!(!is_ts_js("x.cs"));
-        assert!(!is_ts_js("x.json"));
+    fn is_ts_js_holds_exactly_for_the_mapped_extensions() {
+        for rel in [
+            "x.ts", "x.tsx", "x.js", "x.jsx", "x.mts", "x.cts", "x.mjs", "x.cjs",
+        ] {
+            assert!(is_ts_js(rel), "{rel}");
+        }
+        for rel in ["x.cs", "x.json", "x.MJS", "x.mjsx", "x"] {
+            assert!(!is_ts_js(rel), "{rel}");
+        }
     }
 
     #[test]

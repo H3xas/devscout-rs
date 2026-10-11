@@ -158,7 +158,7 @@ why they are *unresolved*, a different question from which rule produced a settl
 | `jsx-use` | A TS/TSX/JS `jsx-use` edge: a JSX tag naming the component. |
 | `dispatch` | A TS/TSX/JS `dispatch` edge: an action creator handed to a dispatching call (`dispatch(...)`, `ofType(...)`). |
 | `import` | A TS/TSX/JS `import` edge whose bindings name the definition: a named, default or type-only import, or a named re-export. |
-| `test-path` | A `tests` row earned because the file is a TypeScript file named as a test (`*.spec.ts`, `*.spec.tsx`, `*.test.ts`, `*.test.tsx`, or below a directory named `__tests__`), with neither an attributed def nor a test project behind it. |
+| `test-path` | A `tests` row earned because the file is a TS/TSX/JS file named as a test (`*.spec.*` or `*.test.*` in `.ts`, `.tsx`, `.js`, `.mjs` or `.cjs`, or below a directory named `__tests__`), with neither an attributed def nor a test project behind it. |
 
 **Vocabulary growth.** `why` and `outcome` may each gain a new word over time without a
 `schema_version` bump, the same way an added key never bumps it. A consumer must treat a `why`
@@ -185,10 +185,12 @@ side-effect or `export *` statement binds no name and yields no `import` row; it
 calls still answer as `call` rows. A `graph.json` written before the field existed loads and
 answers with no `import` table until the next `map` rewrites it.
 
-**Test files by name.** `tests` counts a `.ts`/`.tsx` file named as a test (see `test-path` above)
-when neither the attribute nor the project vouch reaches it. Such a row writes `via: "path"` where
-a project-vouched row writes `via: "project"`, and the default renderer marks it ` (test path)`.
-`impact`'s `testsAffected` reads the same definition. JavaScript names are not classified.
+**Test files by name.** `tests` counts a `.ts`/`.tsx`/`.js`/`.mjs`/`.cjs` file named as a test
+(see `test-path` above) when neither the attribute nor the project vouch reaches it. Such a row
+writes `via: "path"` where a project-vouched row writes `via: "project"`, and the default
+renderer marks it ` (test path)`. `impact`'s `testsAffected` reads the same definition. The `.jsx`
+and `.mts`/`.cts` suffixes are read and graphed, but a file naming one of them is not classified
+as a test by its name.
 
 None of these additions changes `schema_version`; it stays `1`.
 
@@ -565,4 +567,4 @@ devscout tests InMemoryCatalogStore --json
 `CatalogStoreTests` earns its row because it declares `CountItems_StartsAtZero`, a def carrying
 xUnit's `[Fact]` attribute -- `why: "test-attribute"`. The other ways a `tests` row is earned are
 `test-project` (the file's unit is in a project marked `test`, with no attributed def of its own)
-and `test-path` (a TypeScript file named as a test, with neither of the other two).
+and `test-path` (a TS/TSX/JS file named as a test, with neither of the other two).
