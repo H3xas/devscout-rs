@@ -32,9 +32,10 @@ use bindings::{file_imports, resolve_reexports, Exports};
 
 const DEF_SEPARATOR: char = '#';
 // Extension probe order for a specifier that names no extension. TypeScript
-// sources lead so a repo carrying both `x.ts` and a built `x.js` resolves to
-// the source, which is the file an agent asking "who calls this" wants.
-const PROBE_EXTENSIONS: &[&str] = &[".ts", ".tsx", ".js", ".jsx"];
+// sources lead so a repo carrying both `x.ts` and a built `x.js`, or both
+// `x.mts` and its emitted `x.mjs`, resolves to the source, which is the file
+// an agent asking "who calls this" wants.
+const PROBE_EXTENSIONS: &[&str] = &[".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"];
 // ESM spells a relative import of a TypeScript module with the extension of
 // what it COMPILES to. The mapping is the TypeScript compiler's own, applied
 // only after the literal path has already failed to match a mapped file.
@@ -1218,6 +1219,56 @@ mod tests {
         assert_eq!(
             probe_file(Some("src/hooks"), &files),
             Some("src/hooks/index.ts".to_string())
+        );
+    }
+
+    #[test]
+    fn probe_order_prefers_a_typescript_module_over_its_emitted_javascript() {
+        let files: HashSet<&str> = ["src/x.mjs", "src/x.mts"].into_iter().collect();
+        assert_eq!(
+            probe_file(Some("src/x"), &files),
+            Some("src/x.mts".to_string())
+        );
+    }
+
+    #[test]
+    fn an_extensionless_specifier_reaches_a_commonjs_module() {
+        let files: HashSet<&str> = ["src/x.cjs"].into_iter().collect();
+        assert_eq!(
+            probe_file(Some("src/x"), &files),
+            Some("src/x.cjs".to_string())
+        );
+    }
+
+    #[test]
+    fn a_literal_module_file_beats_the_source_its_specifier_compiles_from() {
+        let files: HashSet<&str> = ["src/x.mjs", "src/x.mts"].into_iter().collect();
+        assert_eq!(
+            probe_file(Some("src/x.mjs"), &files),
+            Some("src/x.mjs".to_string())
+        );
+    }
+
+    #[test]
+    fn a_module_specifier_resolves_to_the_typescript_source_it_compiles_from() {
+        let esm: HashSet<&str> = ["src/x.mts"].into_iter().collect();
+        assert_eq!(
+            probe_file(Some("src/x.mjs"), &esm),
+            Some("src/x.mts".to_string())
+        );
+        let cjs: HashSet<&str> = ["src/x.cts"].into_iter().collect();
+        assert_eq!(
+            probe_file(Some("src/x.cjs"), &cjs),
+            Some("src/x.cts".to_string())
+        );
+    }
+
+    #[test]
+    fn a_directory_specifier_resolves_through_its_esm_index_file() {
+        let files: HashSet<&str> = ["src/util/index.mjs"].into_iter().collect();
+        assert_eq!(
+            probe_file(Some("src/util"), &files),
+            Some("src/util/index.mjs".to_string())
         );
     }
 

@@ -13,7 +13,8 @@ use crate::walk;
 // never a method call typed by its receiver. The remaining
 // extensions enumerated by `walk::SOURCE_EXT` are counted but not indexed.
 const FULLY_SUPPORTED_EXT: &[&str] = &[".cs"];
-const INDEXED_AND_GRAPHED_EXT: &[&str] = &[".ts", ".tsx", ".js", ".jsx"];
+const INDEXED_AND_GRAPHED_EXT: &[&str] =
+    &[".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".mjs", ".cjs"];
 const PATH_RESOLVED_EXT: &[&str] = &[".rs"];
 
 // ---------------------------------------------------------------------------
@@ -146,7 +147,24 @@ mod tests {
     #[test]
     fn census_language_tiers_are_explicit() {
         assert_eq!(FULLY_SUPPORTED_EXT, &[".cs"]);
-        assert_eq!(INDEXED_AND_GRAPHED_EXT, &[".ts", ".tsx", ".js", ".jsx"]);
+        assert_eq!(
+            INDEXED_AND_GRAPHED_EXT,
+            &[".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".mjs", ".cjs"]
+        );
+    }
+
+    #[test]
+    fn census_line_counts_every_module_suffix_in_the_indexed_tier() {
+        let dir = temp_dir("census-module-suffixes");
+        fs::write(dir.join("a.mjs"), "export const a = 1;").unwrap();
+        fs::write(dir.join("b.cjs"), "module.exports = {};").unwrap();
+        fs::write(dir.join("c.mts"), "export const c = 1;").unwrap();
+        fs::write(dir.join("d.cts"), "export const d = 1;").unwrap();
+        fs::write(dir.join("e.MJS"), "export const e = 1;").unwrap();
+        assert_eq!(
+            census_line(&dir),
+            "languages: 1 .cjs, 1 .cts, 1 .mjs, 1 .mts (indexed and graphed, narrower edge coverage)"
+        );
     }
 
     #[test]

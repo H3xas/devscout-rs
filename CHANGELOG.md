@@ -67,6 +67,15 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   measured. The fragment cache moves to `fragments-v31.json`, so an existing cache re-extracts
   once.
 
+- **`.mjs`, `.cjs`, `.mts` and `.cts` modules are indexed.** `map` discovers the four module
+  suffixes: `.mjs`/`.cjs` as JavaScript, `.mts`/`.cts` as TypeScript. A repository built from them
+  yields definitions for `find`, and its relative imports bind through the same `import` and `call`
+  edges as `.ts`/`.js`. An extensionless or directory specifier resolves to any of the four,
+  keeping a TypeScript source ahead of the JavaScript it compiles to; a specifier naming an emitted
+  `.mjs`/`.cjs` still falls back to its `.mts`/`.cts`/`.ts` source, and a literal file always wins.
+  `init` reports the four suffixes in its indexed-and-graphed census, and an existing repository
+  gains the files on its next ordinary `map`.
+
 ### Fixed
 
 - **An inherited field or property wins over a same-named type in a bare member access.**
@@ -183,6 +192,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   text header, and appends `lane_detail` and `compilations` to its `--json` report, which
   `--assert compilations.partial` reads. Exit codes are unchanged, and a graph without a lane
   record audits as before.
+
+- **JavaScript test files are classified by their path.** `tests` and `impact` count a
+  `.js`/`.mjs`/`.cjs` file named `*.test.*`/`*.spec.*`, or placed below an exact `__tests__`
+  directory, as a test file (`via: "path"`, `why: "test-path"`), where only `.ts`/`.tsx` names were
+  classified before. An attribute or test-project vouch still outranks the name, and `.jsx` and the
+  `.mts`/`.cts` suffixes stay unclassified.
 
 ## [0.8.0] - 2026-09-25
 

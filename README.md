@@ -86,9 +86,10 @@ constructs produce facts is catalogued in [C# constructs](docs/reference/csharp-
 and the targets the compiler-fact path is qualified on in
 [.NET targets](docs/reference/dotnet-targets.md).
 
-**TypeScript and JavaScript** (`.ts`, `.tsx`, `.js`, `.jsx`) are indexed for `find` and file
-purposes and graphed with imports (tsconfig `paths` and re-export barrels), calls, JSX usage and
-dispatch. `refs` and `impact` do not list TypeScript inbound rows yet.
+**TypeScript and JavaScript** (`.ts`, `.tsx`, `.mts`, `.cts`, `.js`, `.jsx`, `.mjs`, `.cjs`) are
+indexed for `find` and file purposes and graphed with imports (tsconfig `paths` and re-export
+barrels), calls, JSX usage and dispatch. `refs`, `read`, `impact` and `tests` read those edges for
+TypeScript and JavaScript alike; JavaScript query quality is not measured.
 
 **Rust** (`.rs`) is indexed and graphed through path resolution: modules, `use` scope, calls,
 type uses, trait impls and `#[test]` functions, with no method-call typing

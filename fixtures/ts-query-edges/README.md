@@ -51,10 +51,10 @@ edges they produce. The names are invented; nothing here is meant to build.
 
 Named as test files: `src/hooks/useCart.spec.ts`,
 `src/components/CartBadge.spec.tsx`, `src/actions/cartActions.test.ts`,
-`src/pages/CartPage.test.tsx`, and `src/store/__tests__/deep/total.ts`, which
-sits below a `__tests__` directory.
+`src/actions/cartActions.test.js`, `src/pages/CartPage.test.tsx`, and
+`src/store/__tests__/deep/total.ts`, which sits below a `__tests__` directory.
 
 Not test files by name, although each references a symbol under test:
-`src/actions/cartActions.test.js` (JavaScript), `tests/cartStore.ts` (a
-`tests` directory, not `__tests__`), and `src/store/cartStore__tests__.ts`
-(`__tests__` in the file name, not as a directory).
+`tests/cartStore.ts` (a `tests` directory, not `__tests__`), and
+`src/store/cartStore__tests__.ts` (`__tests__` in the file name, not as a
+directory).

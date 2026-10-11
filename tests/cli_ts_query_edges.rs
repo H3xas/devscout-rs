@@ -876,18 +876,19 @@ fn path_row(file: &str) -> (String, Vec<u64>, String, String) {
 }
 
 #[test]
-fn tests_counts_each_typescript_test_file_suffix_by_its_name() {
+fn tests_counts_each_test_file_suffix_by_its_name() {
     let fx = Fixture::build("tests-suffixes");
-    for (seed, file) in [
-        ("useCart", USE_CART_SPEC),
-        ("CartBadge", BADGE_SPEC),
-        ("loadCart", ACTIONS_TEST_TS),
-        ("CartPage", "src/pages/CartPage.test.tsx"),
+    for (seed, files) in [
+        ("useCart", vec![USE_CART_SPEC]),
+        ("CartBadge", vec![BADGE_SPEC]),
+        ("loadCart", vec![ACTIONS_TEST_JS, ACTIONS_TEST_TS]),
+        ("CartPage", vec!["src/pages/CartPage.test.tsx"]),
     ] {
         let tests = fx.json(&["tests", seed, "--json"]);
-        assert_eq!(test_rows(&tests), vec![path_row(file)], "tests {seed}");
-        assert_eq!(tests["testFileCount"], 1, "tests {seed}");
-        assert_eq!(tests["refCount"], 2, "tests {seed}");
+        let expected: Vec<_> = files.iter().map(|file| path_row(file)).collect();
+        assert_eq!(test_rows(&tests), expected, "tests {seed}");
+        assert_eq!(tests["testFileCount"], files.len(), "tests {seed}");
+        assert_eq!(tests["refCount"], 2 * files.len(), "tests {seed}");
     }
 }
 
@@ -913,11 +914,14 @@ fn tests_counts_a_file_below_a_nested_tests_directory_and_nothing_else_named_clo
 }
 
 #[test]
-fn a_javascript_test_file_is_not_counted_by_name() {
+fn a_javascript_test_file_is_counted_by_its_name() {
     let fx = Fixture::build("tests-js");
     let tests = fx.json(&["tests", "loadCart", "--json"]);
     let files: Vec<String> = test_rows(&tests).into_iter().map(|r| r.0).collect();
-    assert_eq!(files, vec![ACTIONS_TEST_TS.to_string()]);
+    assert_eq!(
+        files,
+        vec![ACTIONS_TEST_JS.to_string(), ACTIONS_TEST_TS.to_string()]
+    );
     let refs = fx.json(&["refs", "loadCart", "--all", "--json"]);
     assert!(rows(&refs["inbound"]["call"]).contains(&row(ACTIONS_TEST_JS, 4, "call")));
 }
@@ -940,26 +944,28 @@ fn tests_text_marks_a_row_vouched_by_its_name() {
 #[test]
 fn tests_text_marks_every_name_vouched_row() {
     let fx = Fixture::build("tests-text-all");
-    for (seed, file) in [
-        ("useCart", USE_CART_SPEC),
-        ("CartBadge", BADGE_SPEC),
-        ("loadCart", ACTIONS_TEST_TS),
-        ("CartPage", "src/pages/CartPage.test.tsx"),
-        ("CartStore", "src/store/__tests__/deep/total.ts"),
+    for (seed, files) in [
+        ("useCart", vec![USE_CART_SPEC]),
+        ("CartBadge", vec![BADGE_SPEC]),
+        ("loadCart", vec![ACTIONS_TEST_JS, ACTIONS_TEST_TS]),
+        ("CartPage", vec!["src/pages/CartPage.test.tsx"]),
+        ("CartStore", vec!["src/store/__tests__/deep/total.ts"]),
     ] {
         let text = fx.expect_ok(&["tests", seed]);
-        assert!(
-            text.contains(&format!("\n\n{file} (test path)\n  lines: 1, 4")),
-            "tests {seed}: {text}"
-        );
+        for file in &files {
+            assert!(
+                text.contains(&format!("\n{file} (test path)\n  lines: 1, 4")),
+                "tests {seed}: {text}"
+            );
+        }
         assert_eq!(
             text.matches(" (test path)").count(),
-            1,
+            files.len(),
             "tests {seed}: {text}"
         );
     }
     let text = fx.expect_ok(&["tests", "loadCart"]);
-    assert!(!text.contains(ACTIONS_TEST_JS), "{text}");
+    assert!(text.contains(ACTIONS_TEST_JS), "{text}");
 }
 
 /// `(file, hop, why)` of every `impact` row, sorted by file.
@@ -1007,8 +1013,8 @@ fn impact_at_one_hop_reaches_every_ts_referrer_but_no_namespace_or_side_effect_i
         .collect::<Vec<_>>()
     );
     assert_eq!(
-        impact["testsAffected"], 1,
-        "only the .ts test file is a test"
+        impact["testsAffected"], 2,
+        "both the .js and the .ts test file are tests"
     );
     let checkout = impact["rows"]
         .as_array()
