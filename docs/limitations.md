@@ -2,7 +2,7 @@
 
 Known, rather than hidden. One line per limit; each links the page that details it.
 
-- `refs` and `impact` fold none of the TypeScript edge kinds, so they list no TypeScript inbound rows: [TypeScript imports](explanation/resolution.md#typescript-imports).
+- TypeScript references cover imports, calls, JSX tags and dispatches only, a package imported by name resolves only through the repository's own `tsconfig`, and JavaScript answers are read but not measured: [TypeScript imports](explanation/resolution.md#typescript-imports).
 - Rust edges come from path resolution only: a method call is never typed by its receiver, and trait dispatch, generics, macro expansion and `cfg` evaluation are not followed: [Rust known gaps](reference/rust-constructs.md#known-gaps).
 - In a mixed repository a Rust item shares the symbol lookup with C# and TypeScript definitions, so a shared bare name can become ambiguous: [Rust paths](explanation/resolution.md#rust-paths).
 - Generic-delegate `typeParams` handling is under review rather than pinned: [Generic delegates](explanation/resolution.md#generic-delegates).

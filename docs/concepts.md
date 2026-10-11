@@ -23,8 +23,11 @@ unverified.
 
 C# (`.cs`) is the complete story: declarations, inheritance, type and member usage, and
 preprocessor-aware extraction. TypeScript / TSX / JavaScript (`.ts`, `.tsx`, `.js`, `.jsx`) are
-indexed for `find` and file purposes, and are resolved into the graph with a narrower set of edge
-kinds: `import`, `call`, `jsx-use` and `dispatch`. Rust edges come from path resolution. How each
+indexed for `find` and file purposes, and are resolved into `import`, `call`, `jsx-use` and
+`dispatch` edges, which `refs`, `read`, `impact` and `tests` read as their own tables; `tests` also
+counts a `.ts`/`.tsx` file named `*.spec.*`, `*.test.*` or placed below `__tests__/` as a test file.
+JavaScript files answer through the same edges but that surface is not measured. Rust edges come
+from path resolution. How each
 language's references become edges is in [How names resolve](explanation/resolution.md).
 
 ## Tiers

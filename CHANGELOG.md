@@ -17,7 +17,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (`<file>#<path>`, such as `src/shelf.rs#Widget::new`), or by a `::` path such as `Widget::new`;
   when two items in a file share a path, the later ones take a `-1`, `-2` suffix. This is the
   definition layer used by the Rust references and tests described below. That first slice
-  used the `fragments-v28.json` cache generation, superseded by v30 in this release.
+  used the `fragments-v28.json` cache generation, superseded by v31 in this release.
 - **`refs`, `impact` and `tests` answer on Rust code.** `map` now resolves Rust paths through the
   module tree (`mod` declarations, `mod.rs` and `foo.rs` with `foo/` layouts, inline modules, and
   crate roots read from each `Cargo.toml` in scope, or `lib.rs` and `main.rs` without one) and
@@ -31,7 +31,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   files as "indexed and graphed, path-resolved edges". A Cargo package model is kept beside the
   graph in `rust-crates.json`, so editing a `Cargo.toml` rebuilds the graph. Measured against
   rust-analyzer's own references on this repository, call edges scored precision 1.0 and recall
-  0.999. This slice used the `fragments-v29.json` cache generation, superseded by v30 in this
+  0.999. This slice used the `fragments-v29.json` cache generation, superseded by v31 in this
   release.
 - **Rust edges reach cargo's nested targets, `cfg_attr` tests and `#[path]` modules.** Cargo's
   nested target files `tests/<name>/main.rs`, `examples/<name>/main.rs` and
@@ -42,8 +42,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   default `x.rs` beside it that rustc does not compile; a `path` carried by `cfg_attr` reaches
   nothing. Measured against rust-analyzer on a fixture package holding all three shapes, every
   call through them is recalled with no contradicted edge, and this repository's own scores are
-  unchanged. The fragment cache moves to `fragments-v30.json`, so an existing cache re-extracts
-  once.
+  unchanged. This slice used the `fragments-v30.json` cache generation, superseded by v31 in this
+  release.
 
 - **Every resolved query answer states its full count and the next verb to run.** `refs`, `read`,
   `impact` and `tests` now open their text and `--compact` output with the number the answer reached
@@ -54,6 +54,18 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   four verbs carry the suggestions as a `next` array of argv arrays, immediately before `outcome`.
   Each suggestion is resolved through the resolver the named verb itself uses, so every command the
   line offers runs. `schema_version` stays 1: this adds a key and a line rather than changing one.
+
+- **`refs`, `read`, `impact` and `tests` answer for TypeScript.** The `import`, `call`, `jsx-use`
+  and `dispatch` edges the graph already held are now read: `refs` and `read` list each kind in a
+  table of its own, under the shared inbound cap, and `refs --out` mirrors them outbound; a table
+  appears only when it has rows, so C# answers keep their bytes. Rows carry the new `why` words
+  `call`, `jsx-use`, `dispatch` and `import`. `impact` walks the four kinds at every hop, and they
+  count toward the hub brake. A TS `import` edge in `graph.json` gains `bound_defs`, the
+  definitions its bindings resolve to, so an import row names the exact symbol. `tests` counts a
+  `.ts`/`.tsx` file named `*.spec.ts(x)`, `*.test.ts(x)` or placed below `__tests__/` as a test file
+  (`via: "path"`, `why: "test-path"`). JavaScript files answer through the same edges but are not
+  measured. The fragment cache moves to `fragments-v31.json`, so an existing cache re-extracts
+  once.
 
 ### Fixed
 

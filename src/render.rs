@@ -29,6 +29,7 @@ mod markers;
 mod next;
 mod read;
 mod refs;
+mod ts_tables;
 
 pub use coverage::{render_tests_compact, render_tests_text};
 pub use impact::{

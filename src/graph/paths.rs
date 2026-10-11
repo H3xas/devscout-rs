@@ -160,16 +160,21 @@ pub fn rust_crates_path(root: &Path) -> PathBuf {
 // marks as tests. A cached v29 Rust fragment of an unchanged file carries
 // neither, so its `#[path]` modules would keep reaching the default file
 // rustc does not compile, and its `cfg_attr` tests would stay unmarked.
+// v31 adds `bound_defs` to a TS `import` edge: the definitions its named,
+// default and type-only bindings resolve to. The fragments themselves are
+// unchanged, but an older cache pair of an unchanged repository would let `map`
+// skip the rebuild and keep a `graph.json` whose import edges bind nothing,
+// so every TS import row would stay missing until some file changed.
 // The rename IS the invalidation mechanism:
 // pre-bump caches stop being found, every file reparses
 // once, no reader carries version-compat logic. Writers delete every
 // superseded generation (see `remove_superseded_caches`).
 pub(crate) fn fragments_cache_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-v30.json")
+    graph_dir(root).join("fragments-v31.json")
 }
 
 pub(crate) fn fragments_index_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-index-v30.json")
+    graph_dir(root).join("fragments-index-v31.json")
 }
 
 // Every generation below the current one, not just the immediately previous:
@@ -234,6 +239,8 @@ pub(crate) const SUPERSEDED_CACHE_FILES: &[&str] = &[
     "fragments-index-v28.json",
     "fragments-v29.json",
     "fragments-index-v29.json",
+    "fragments-v30.json",
+    "fragments-index-v30.json",
 ];
 
 pub(crate) fn remove_superseded_caches(root: &Path) {

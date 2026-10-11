@@ -10,10 +10,11 @@
 
 use crate::graph;
 
-use super::index::{def_files, note_file, GraphIndex, InboundEntry, OutboundEntry, SymbolRefs};
+use super::index::{def_files, note_file, GraphIndex, InboundEntry, OutboundEntry};
 use super::refs::project_of;
 use super::refs_tables::{loc_cmp, InboundRow, Table};
 use super::seq::SeqSet;
+use super::symbol_refs::SymbolRefs;
 use std::collections::{HashMap, HashSet};
 
 // The interface def id(s) a class def's OWN file(s) declare an `inherits` OR
@@ -49,10 +50,13 @@ pub(super) fn implemented_interfaces(index: &GraphIndex, def_id: &str) -> Vec<St
     seen.into_vec()
 }
 
-/// The six inbound edge-kind lists `impact`'s reverse walk crosses, in the
-/// order it crosses them -- spelled here so the dispatch pair and the
-/// bus-hop kind all join that walk in exactly one place.
-pub(super) fn inbound_walk_kinds(inb: &InboundEntry) -> [&Vec<usize>; 6] {
+/// The inbound edge-kind lists `impact`'s reverse walk crosses, in the order
+/// it crosses them -- spelled here so the dispatch pair, the bus-hop kind and
+/// the four TS kinds all join that walk in exactly one place. A TS edge is a
+/// precise reference, so it lands in the walk's resolved-reference slot like
+/// the C# kinds.
+pub(super) fn inbound_walk_kinds(inb: &InboundEntry) -> [&Vec<usize>; 10] {
+    let [call, jsx_use, dispatch, import] = inb.ts.lists();
     [
         &inb.inherits,
         &inb.uses_type,
@@ -60,6 +64,10 @@ pub(super) fn inbound_walk_kinds(inb: &InboundEntry) -> [&Vec<usize>; 6] {
         &inb.implements,
         &inb.overrides,
         &inb.bus_hop,
+        call,
+        jsx_use,
+        dispatch,
+        import,
     ]
 }
 
@@ -181,9 +189,17 @@ pub(super) const K_USES_MEMBER: usize = 2;
 pub(super) const K_IMPLEMENTS: usize = 3;
 /// The kind index for `overrides`.
 pub(super) const K_OVERRIDES: usize = 4;
-/// The kind index for `imports`, last because it is the one kind that names a
-/// namespace rather than a file.
+/// The kind index for `imports`, the one kind that names a namespace rather
+/// than a file.
 pub(super) const K_IMPORTS: usize = 5;
+/// The kind index for a TS `call` edge; the four TS kinds follow `imports`.
+pub(super) const K_TS_CALL: usize = 6;
+/// The kind index for a TS `jsx-use` edge.
+pub(super) const K_TS_JSX_USE: usize = 7;
+/// The kind index for a TS `dispatch` edge.
+pub(super) const K_TS_DISPATCH: usize = 8;
+/// The kind index for a TS `import` edge.
+pub(super) const K_TS_IMPORT: usize = 9;
 
 /// One outbound edge awaiting the global cap: which kind's table it belongs
 /// to (`K_INHERITS`..`K_IMPORTS`), which edge it is, and whether it was
@@ -196,6 +212,10 @@ pub(super) struct RankedOutbound {
     pub edge: usize,
     /// Whether the edge declares itself a guess.
     pub heuristic: bool,
+    /// Which of a TS `import` edge's `bound_defs` this row names; one edge
+    /// binding two definitions ranks as two rows. Always 0 for every other
+    /// kind.
+    pub part: usize,
 }
 
 // The five ref kinds name a `to_file` -- ranked same-project/foreign against
@@ -216,9 +236,13 @@ pub(super) fn outbound_foreign(
         | graph::Edge::UsesType { to_file, .. }
         | graph::Edge::UsesMember { to_file, .. }
         | graph::Edge::Implements { to_file, .. }
-        | graph::Edge::Overrides { to_file, .. } => to_file.as_str(),
+        | graph::Edge::Overrides { to_file, .. }
+        | graph::Edge::Call { to_file, .. }
+        | graph::Edge::JsxUse { to_file, .. }
+        | graph::Edge::Dispatch { to_file, .. }
+        | graph::Edge::Import { to_file, .. } => to_file.as_str(),
         _ => unreachable!(
-            "outbound ranked kinds other than imports only ever hold inherits/uses-type/uses-member/implements/overrides edge indices"
+            "outbound ranked kinds other than imports only ever hold edges that name a to_file"
         ),
     };
     usize::from(project_of(to_file) != def_project)
@@ -238,6 +262,7 @@ pub(super) fn push_ranked(
             kind,
             edge: e,
             heuristic: false,
+            part: 0,
         });
     }
     for &e in heuristic {
@@ -245,6 +270,7 @@ pub(super) fn push_ranked(
             kind,
             edge: e,
             heuristic: true,
+            part: 0,
         });
     }
 }

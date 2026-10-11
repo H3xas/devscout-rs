@@ -7,6 +7,7 @@ fn empty_inbound() -> InboundTables {
         uses_member: table(vec![], 0),
         implements: table(vec![], 0),
         overrides: table(vec![], 0),
+        ts: Default::default(),
     }
 }
 fn empty_outbound() -> OutboundTables {
@@ -17,6 +18,7 @@ fn empty_outbound() -> OutboundTables {
         implements: table(vec![], 0),
         overrides: table(vec![], 0),
         imports: table(vec![], 0),
+        ts: Default::default(),
     }
 }
 fn empty_ambiguous() -> AmbiguousTables {

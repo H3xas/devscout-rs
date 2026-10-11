@@ -264,3 +264,58 @@ read against, and its site classes check that the oracle sees calls inside macro
 that its definitions map to devscout ids. A **head run** scores a commit carrying the edges; a
 defect it exposes is fixed inside the resolver's model and the head run repeats on the new
 commit. Both runs are published side by side in `results/`.
+
+## TypeScript reference parity
+
+A scripted run, no model in the loop, asking whether `refs`, `tests` and `impact` answer for
+TypeScript symbols, against the `[typescript]` corpus (nrwl/nx at the pin in
+[`bench/corpus.lock`](../../bench/corpus.lock)) and one TypeScript-capable peer. The seed rule,
+truth rule, adjudication, metrics, gate, arms, isolation rules and predictions are fixed in
+[`bench/truth/typescript/preregistration.md`](../../bench/truth/typescript/preregistration.md)
+before any arm runs, and `manifest.json` beside it hashes every input.
+
+Rerun, with `$BENCH` the absolute path of a scratch directory outside any checkout and outside your
+home directory, where the corpus copies, the arm state and the peer install live, and `$STORE` a
+private directory outside every checkout that keeps the pristine clone, each arm's stored outputs,
+the transcripts and the scores after the scratch directory is gone. Each arm runs once; its output
+directory is copied into `$STORE` as soon as it finishes:
+
+```sh
+python3 -B -m unittest discover -s bench -p 'test_ts_parity*.py'
+
+bench/clone-corpus.sh typescript "$STORE/nx-pristine"      # the one network fetch of the corpus
+for arm in devscout-base devscout-head crg; do cp -a "$STORE/nx-pristine" "$BENCH/nx-$arm"; done
+
+# the peer, from PyPI only, into an empty cache and a scratch HOME
+mkdir -p "$BENCH/install-home"
+env -i PATH="$PATH" HOME="$BENCH/install-home" UV_CACHE_DIR="$BENCH/uv-cache" \
+  bench/peers/code-review-graph/install.sh "$BENCH/crg-venv"
+
+# each arm from an empty environment; the runner refuses on any guard
+bench/ts-parity.sh devscout-base <devscout built from the base commit> "$BENCH/nx-devscout-base" "$BENCH" "$BENCH/out-base"
+bench/ts-parity.sh devscout-head <devscout built from the head commit> "$BENCH/nx-devscout-head" "$BENCH" "$BENCH/out-head"
+bench/ts-parity.sh crg "$BENCH/crg-venv/bin/code-review-graph" "$BENCH/nx-crg" "$BENCH" "$BENCH/out-crg"
+mkdir -p "$STORE/runs" && for out in out-base out-head out-crg; do cp -a "$BENCH/$out" "$STORE/runs/$out"; done
+
+# the scorer as pre-registered (the bench/ts_parity.py whose sha256 manifest.json records) and the
+# committed scorer, on the same stored outputs; the corpus root is spelled as the crg arm recorded
+# it and holds the pin's files
+git show 5f26493:bench/ts_parity.py > "$BENCH/ts_parity_preregistered.py"
+arms="devscout-base=$STORE/runs/out-base devscout-head=$STORE/runs/out-head crg=$STORE/runs/out-crg"
+python3 -B "$BENCH/ts_parity_preregistered.py" score bench/truth/typescript "$BENCH/nx-crg" "$STORE/scores-preregistered.json" $arms
+python3 -B bench/ts_parity.py score bench/truth/typescript "$BENCH/nx-crg" "$STORE/scores.json" $arms
+
+# the whole results document, from the two score files and the pre-registered files
+python3 -B bench/ts_parity_report.py bench/truth/typescript "$STORE/scores-preregistered.json" "$STORE/scores.json" \
+  docs/benchmarks/results/<run date>-typescript-reference-parity.md <run date> <devscout base commit> <devscout head commit>
+```
+
+Rendering the same score files again writes the same bytes, so a committed results document is
+checked by rerendering it and comparing.
+
+The truth files are regenerated, for audit only, with `ts_parity.py seeds`, `truth`, `flags`
+and `seal` against the pristine clone and ripgrep; a regenerated file that differs from the
+committed one is a finding, never a replacement. The dated results document reports every
+arm's stored commands and outputs, per-seed and pooled figures against the sealed and the raw
+truth, every miss and extra classified by the scorer's evidence, the generated where-peers-win
+section, the manifest check and the scorer-fix disclosure; no part of it is edited by hand.

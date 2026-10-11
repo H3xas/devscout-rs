@@ -147,9 +147,10 @@ instead of picking one. See [JSON output](json-output.md) for the full contract.
 A text or `--compact` answer to `refs`, `read`, `impact` and `tests` opens with the **full** count
 before any row cap applies: `N inbound (showing M)` on `refs` and `read`, `N files (showing M)` on
 `impact` and `tests`. A table that was truncated can therefore never be mistaken for the whole
-answer. On `refs`/`read`, N counts the five reference kinds and excludes the `bus-hop` rows, which
-are possible routes rather than references; on `impact`, N is the number of files the walk reached,
-whether or not the row cap printed them; on `tests`, no row cap applies and the two numbers agree.
+answer. On `refs`/`read`, N counts the five reference kinds and the four TypeScript kinds (`call`,
+`jsx-use`, `dispatch`, `import`) and excludes the `bus-hop` rows, which are possible routes rather
+than references; on `impact`, N is the number of files the walk reached, whether or not the row cap
+printed them; on `tests`, no row cap applies and the two numbers agree.
 A resolved answer that reached nothing states `0 inbound (showing 0)` or `0 files (showing 0)`.
 The line belongs to those four verbs and those two formats: `--json` carries the same numbers as
 its own table fields instead, `find` has neither the line nor a JSON shape, and an ambiguous,

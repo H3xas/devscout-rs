@@ -151,6 +151,8 @@ enum RowKind {
     UsesMember,
     Implements,
     Overrides,
+    // A TS-family table, whose word is fixed by the table itself.
+    Ts(Why),
 }
 
 fn why_for_row(kind: RowKind, heuristic: bool, tier: Option<graph::HeuristicTier>) -> Why {
@@ -160,6 +162,7 @@ fn why_for_row(kind: RowKind, heuristic: bool, tier: Option<graph::HeuristicTier
         RowKind::UsesMember => why_for_uses_member(heuristic, tier),
         RowKind::Implements => Why::Implements,
         RowKind::Overrides => Why::Overrides,
+        RowKind::Ts(why) => why,
     }
 }
 
@@ -447,6 +450,7 @@ fn j_inbound_tables(t: &query::InboundTables) -> J {
             &t.overrides,
             j_inbound_row,
         ))
+        .chain(ts_tables::ts_table_fields(&t.ts, j_inbound_row))
         .collect::<Vec<_>>(),
     )
 }
@@ -480,6 +484,7 @@ fn j_outbound_tables(t: &query::OutboundTables) -> J {
             "imports",
             j_table(&t.imports, j_import_row),
         )))
+        .chain(ts_tables::ts_table_fields(&t.ts, j_outbound_row))
         .collect::<Vec<_>>(),
     )
 }
@@ -788,3 +793,4 @@ pub(crate) use next::{
 };
 #[cfg(test)]
 pub(crate) use tests_model::tests_model_to_json;
+mod ts_tables;

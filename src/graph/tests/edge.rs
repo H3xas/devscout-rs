@@ -324,3 +324,47 @@ fn edges_by_kind_appends_the_four_ts_counts_after_ctor_di_when_present() {
         r#"{"inherits":1,"uses-type":2,"imports":3,"uses-member":4,"ctor-di":5,"implements":10,"overrides":11,"import":6,"call":7,"jsx-use":8,"dispatch":9}"#
     );
 }
+
+// --- TS import edge: `via` then `bound_defs`, each only when present -----
+
+fn ts_import(via: Option<&str>, bound_defs: &[&str]) -> Edge {
+    Edge::Import {
+        from_file: "app/use.ts".into(),
+        from_line: 3,
+        target: "../lib".into(),
+        to_file: "lib/a.ts".into(),
+        via: via.map(Into::into),
+        bound_defs: bound_defs.iter().map(|d| (*d).to_string()).collect(),
+    }
+}
+
+#[test]
+fn import_edge_writes_bound_defs_last() {
+    let json = serde_json::to_string(&ts_import(
+        Some("lib/index.ts"),
+        &["lib/a.ts#alpha", "lib/a.ts#beta"],
+    ))
+    .unwrap();
+    assert_eq!(
+        json,
+        r#"{"kind":"import","from_file":"app/use.ts","from_line":3,"target":"../lib","to_file":"lib/a.ts","via":"lib/index.ts","bound_defs":["lib/a.ts#alpha","lib/a.ts#beta"]}"#
+    );
+}
+
+#[test]
+fn import_edge_omits_empty_bound_defs() {
+    let json = serde_json::to_string(&ts_import(None, &[])).unwrap();
+    assert_eq!(
+        json,
+        r#"{"kind":"import","from_file":"app/use.ts","from_line":3,"target":"../lib","to_file":"lib/a.ts"}"#
+    );
+}
+
+#[test]
+fn import_edge_without_bound_defs_reads_as_binding_nothing() {
+    let e: Edge = serde_json::from_str(
+        r#"{"kind":"import","from_file":"app/use.ts","from_line":3,"target":"../lib","to_file":"lib/a.ts","via":"lib/index.ts"}"#,
+    )
+    .unwrap();
+    assert_eq!(e, ts_import(Some("lib/index.ts"), &[]));
+}

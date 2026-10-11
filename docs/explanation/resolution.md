@@ -158,10 +158,12 @@ file (its `extends` chain included; a nested config that declares neither falls 
 chain), and through re-export barrels up to eight hops deep, with the barrel the source names kept
 as `via` on the edge.
 
-**TypeScript reference queries fold none of the TS edge kinds.** The graph carries `import`, `call`,
-`jsx-use` and `dispatch` edges for TS/TSX files, but `refs` and `impact` read only the C#-shaped
-`uses-type`/`uses-member` index, so those verbs answer for TypeScript defs without the
-page-to-component and caller-to-callee rows that `graph.json` holds.
+**TypeScript references cover imports, calls, JSX tags and dispatches only.** A type annotation,
+an `extends`/`implements` clause, a value passed as an argument, a member reached through a chain or
+a local (`store.total()`), and a dynamic `import()` record no edge. A named re-export of a name its
+target module only re-exports again binds no definition. A package imported by name resolves only
+through the repository's own `tsconfig` `paths`/`baseUrl`, so a monorepo importing its own packages
+by package name leaves those imports external. JavaScript answers are read but not measured.
 
 ## Rust paths
 

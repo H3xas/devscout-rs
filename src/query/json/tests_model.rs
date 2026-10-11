@@ -57,13 +57,19 @@ pub(super) fn tests_model_fields(model: &query::TestsModel) -> Vec<(&'static str
                         ];
                         push_heuristic(&mut fields, r.heuristic, r.tier);
                         // `via` is appended LAST, after `heuristic`/`tier`, and only
-                        // when the row's vouch is the project model: an
-                        // attribute-vouched row keeps today's exact bytes.
-                        let why = if r.via == query::TestVia::Project {
-                            fields.push(("via", J::Str("project".to_string())));
-                            Why::TestProject
-                        } else {
-                            Why::TestAttribute
+                        // when the row's vouch is the project model or the
+                        // file's name: an attribute-vouched row keeps today's
+                        // exact bytes.
+                        let why = match r.via {
+                            query::TestVia::Attribute => Why::TestAttribute,
+                            query::TestVia::Project => {
+                                fields.push(("via", J::Str("project".to_string())));
+                                Why::TestProject
+                            }
+                            query::TestVia::Path => {
+                                fields.push(("via", J::Str("path".to_string())));
+                                Why::TestPath
+                            }
                         };
                         // Appended absolute LAST, after `via` when present: which of
                         // the two ways `tests` reaches a file earned this row.

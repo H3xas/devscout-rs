@@ -7,11 +7,15 @@ here is wired into `cargo test`; it is run by hand, against a corpus pinned by S
 | --- | --- |
 | `corpus.lock` | the pinned public corpora — repository, SHA, licence, status |
 | `clone-corpus.sh` | shallow-clones one locked corpus at its pin and removes `origin` |
+| `ts_parity.py`, `ts-parity.sh` | the TypeScript reference parity run: seed rule, truth, arm runner and scorer ([pre-registration](truth/typescript/preregistration.md)) |
+| `peers/code-review-graph/` | the peer arm's hash-pinned requirements and its guarded install |
 
 ## Corpora
 
-`corpus.lock` is the only place a pin is written. The C# corpus is registered; the TypeScript
-one is a proposal and carries no SHA until the first run that measures against it records one.
+`corpus.lock` is the only place a pin is written. Both the C# corpus (MassTransit) and the
+TypeScript corpus (nx at tag 22.5.4) are registered with a SHA; a corpus with status
+`proposed` carries no SHA and no published number until the first run that measures against it
+records one.
 
 ## Running a comparison
 

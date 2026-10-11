@@ -185,6 +185,56 @@ pub struct Table<R> {
     pub rows: Vec<R>,
 }
 
+// Written by hand rather than derived: a derive would demand `R: Default`,
+// which no row type implements or needs to.
+impl<R> Default for Table<R> {
+    fn default() -> Self {
+        Table {
+            total: 0,
+            dropped: 0,
+            rows: Vec::new(),
+        }
+    }
+}
+
+/// The four TS-family tables of one direction, in their fixed order. Each is
+/// rendered, and joins `--json`, only when its own total is non-zero, so an
+/// answer with no TS edge keeps the bytes it had before these tables existed.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TsTables<R> {
+    /// `call` rows.
+    pub call: Table<R>,
+    /// `jsx-use` rows.
+    pub jsx_use: Table<R>,
+    /// `dispatch` rows.
+    pub dispatch: Table<R>,
+    /// `import` rows.
+    pub import: Table<R>,
+}
+
+impl<R> Default for TsTables<R> {
+    fn default() -> Self {
+        TsTables {
+            call: Table::default(),
+            jsx_use: Table::default(),
+            dispatch: Table::default(),
+            import: Table::default(),
+        }
+    }
+}
+
+impl<R> TsTables<R> {
+    /// The four tables with the edge-kind word each is labelled by.
+    pub fn named(&self) -> [(&'static str, &Table<R>); 4] {
+        [
+            ("call", &self.call),
+            ("jsx-use", &self.jsx_use),
+            ("dispatch", &self.dispatch),
+            ("import", &self.import),
+        ]
+    }
+}
+
 pub(super) fn build_table<R>(
     mut idxs: Vec<usize>,
     edges: &[graph::Edge],
@@ -228,7 +278,7 @@ pub(super) fn ambiguous_row(e: &graph::Edge) -> AmbiguousRow {
     }
 }
 
-/// The five inbound tables, one per kind.
+/// The inbound tables, one per kind.
 ///
 /// `implements`/`overrides` are never heuristic, and a renderer shows
 /// either only when its own total is non-zero -- unlike the first three,
@@ -246,10 +296,12 @@ pub struct InboundTables {
     pub implements: Table<InboundRow>,
     /// The overrides value.
     pub overrides: Table<InboundRow>,
+    /// The four TS-family tables, sharing the same cap and ranking.
+    pub ts: TsTables<InboundRow>,
 }
 
-/// The six outbound tables: three by kind, `implements`/`overrides`, plus
-/// imports.
+/// The outbound tables: three by kind, `implements`/`overrides`, imports,
+/// and the four TS-family tables.
 #[derive(Debug, Clone, PartialEq)]
 pub struct OutboundTables {
     /// The inherits value.
@@ -264,13 +316,17 @@ pub struct OutboundTables {
     pub overrides: Table<OutboundRow>,
     /// The imports value.
     pub imports: Table<ImportRow>,
+    /// The four TS-family tables. An `import` row is one bound definition of
+    /// one edge, so one statement binding two names is two rows.
+    pub ts: TsTables<OutboundRow>,
 }
 
 /// How many inbound references an answer counted, and how many it kept.
 ///
-/// The total over the five reference kinds and the sum of their rows. One
-/// function, so the kind set is stated once and the renderer's count line can
-/// never disagree with a later caller about which tables are a reference.
+/// The total over the five reference kinds and the four TS-family kinds, and
+/// the sum of their rows. One function, so the kind set is stated once and the
+/// renderer's count line can never disagree with a later caller about which
+/// tables are a reference.
 ///
 /// `bus-hop`, `ambiguous` and the outbound side are excluded on purpose: a bus
 /// hop is a possible route rather than a reference, and the outbound side is a
@@ -282,6 +338,10 @@ pub fn inbound_reference_counts(inbound: &InboundTables) -> (usize, usize) {
         &inbound.uses_member,
         &inbound.implements,
         &inbound.overrides,
+        &inbound.ts.call,
+        &inbound.ts.jsx_use,
+        &inbound.ts.dispatch,
+        &inbound.ts.import,
     ];
     tables.into_iter().fold((0, 0), |(total, shown), table| {
         (total + table.total, shown + table.rows.len())

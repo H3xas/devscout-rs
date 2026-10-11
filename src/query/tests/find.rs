@@ -85,6 +85,7 @@ fn file_inbound_counts_excludes_heuristic_edges_and_non_reference_kinds() {
                 target: "./widgets".into(),
                 to_file: "Widgets/IWidget.ts".into(),
                 via: None,
+                bound_defs: Vec::new(),
             },
         ],
     );

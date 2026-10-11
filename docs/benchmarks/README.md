@@ -67,6 +67,11 @@ with predictions registered first. The 0.8.0 release tree has the same treatment
 [`results/2026-09-25-release-0.8.0.md`](results/2026-09-25-release-0.8.0.md), which adds the reach
 of the `bus-hop` edges and the opt-in enriched lane.
 
+The first TypeScript run is in
+[`results/2026-10-11-typescript-reference-parity.md`](results/2026-10-11-typescript-reference-parity.md),
+on the pinned nx corpus against one TypeScript-capable peer. Its registered recall gate was
+missed, as its pre-registration predicted: imports written by package name stay unresolved.
+
 ## Scorecard
 
 **Scorecard** (devscout 0.8.0 vs the `rg` baseline, MassTransit corpus; the scripted rows' full
@@ -163,3 +168,4 @@ Dated result documents, one file per run, never edited in place:
 | [2026-09-25-release-0.8.0.md](results/2026-09-25-release-0.8.0.md) | The 0.8.0 release tree: default lane, `bus-hop` reach and the opt-in enriched lane |
 | [2026-09-27-rust-edges.md](results/2026-09-27-rust-edges.md) | Rust call edges and test pairs against `rust-analyzer lsif` |
 | [2026-10-03-rust-targets.md](results/2026-10-03-rust-targets.md) | Rust nested targets, `cfg_attr` tests and path modules against `rust-analyzer lsif` |
+| [2026-10-11-typescript-reference-parity.md](results/2026-10-11-typescript-reference-parity.md) | TypeScript `refs`, `tests` and `impact` on the pinned nx corpus against one TypeScript-capable peer |

@@ -154,21 +154,50 @@ why they are *unresolved*, a different question from which rule produced a settl
 | `test-project` | A `tests` row earned because the project model places the file's unit inside a project marked `test`, with no attributed def of its own. |
 | `imported-edge` | An `impact` row reached only through an imported cross-repo edge -- never one of this graph's own -- carrying the foreign `repo` id and the export's `provenance` id. The weakest evidence this vocabulary names: a foreign, producer-asserted fact never outranks anything this crate resolved for itself. |
 | `bus-hop` | A recognized publish or dispatch site's message reaches a registered consumer/handler across project and assembly boundaries. A possible route, runtime routing unverified -- see [`bus-hop`](#bus-hop) below. |
+| `call` | A TS/TSX/JS `call` edge: a call or `new` naming the definition. |
+| `jsx-use` | A TS/TSX/JS `jsx-use` edge: a JSX tag naming the component. |
+| `dispatch` | A TS/TSX/JS `dispatch` edge: an action creator handed to a dispatching call (`dispatch(...)`, `ofType(...)`). |
+| `import` | A TS/TSX/JS `import` edge whose bindings name the definition: a named, default or type-only import, or a named re-export. |
+| `test-path` | A `tests` row earned because the file is a TypeScript file named as a test (`*.spec.ts`, `*.spec.tsx`, `*.test.ts`, `*.test.tsx`, or below a directory named `__tests__`), with neither an attributed def nor a test project behind it. |
 
 **Vocabulary growth.** `why` and `outcome` may each gain a new word over time without a
 `schema_version` bump, the same way an added key never bumps it. A consumer must treat a `why`
 or `outcome` value it does not recognise as opaque -- skip it rather than fail.
 
-Four edge kinds this crate records never reach `why`: a TS/TSX-only edge (`import`/`call`/
-`jsx-use`/`dispatch`) is never admitted into the inbound/outbound adjacency any of these four
-verbs read (`query::index`'s `Edge::Import | Edge::Call | Edge::JsxUse | Edge::Dispatch => {}`
-arm), so a row built from one -- and a word for it -- never exists.
+**TypeScript-family tables.** `refs` and `read` answer the four TS/TSX/JS edge kinds in tables of
+their own, keyed by the edge-kind name: `call`, `jsx-use`, `dispatch` and `import`, in that order,
+appended to `inbound` after `overrides` and, under `--out`, to `outbound` after `imports`. A table
+joins the object -- and the default and `--compact` renderers print it -- only when its total is
+non-zero, the rule `implements`/`overrides` already follow, so an answer with no TS edge keeps the
+exact bytes it had before these tables existed. They share the one inbound cap and ranking (and,
+outbound, the one outbound cap) with every other kind. An inbound `import` row is an import
+statement or named re-export binding the queried definition; an outbound `import` row is one bound
+definition of one statement, so a statement binding two names is two rows, each naming its own
+`to`. The kinds are read by edge kind, not by the file's language, so a JavaScript caller answers
+too; that surface is not measured.
+
+**`bound_defs`.** In `graph.json`, a TS `import` edge carries `bound_defs` after `via`, present
+only when non-empty: the ids of the definitions its named, default and type-only bindings (or a
+named re-export's names) resolve to, in binding order with duplicates dropped. Each id is declared
+in that edge's own `to_file` -- a name reached through a barrel sits on the `via` edge to its
+declaring file -- so the field never adds an edge. A namespace, whole-module `require`,
+side-effect or `export *` statement binds no name and yields no `import` row; its namespace member
+calls still answer as `call` rows. A `graph.json` written before the field existed loads and
+answers with no `import` table until the next `map` rewrites it.
+
+**Test files by name.** `tests` counts a `.ts`/`.tsx` file named as a test (see `test-path` above)
+when neither the attribute nor the project vouch reaches it. Such a row writes `via: "path"` where
+a project-vouched row writes `via: "project"`, and the default renderer marks it ` (test path)`.
+`impact`'s `testsAffected` reads the same definition. JavaScript names are not classified.
+
+None of these additions changes `schema_version`; it stays `1`.
 
 `why` is derived entirely from what the graph already persists on the edge that produced the row:
 its kind, and, for a `uses-member` edge, its `tier` (`ext`, `guess`, or absent, meaning precise).
 An `impact` row can fold more than one edge kind into a single per-file summary; when it does,
 the strongest evidence wins -- an explicit `ctor-di` site over a plain resolved reference, over
-the broader interface hop, over a guess, in that order.
+the broader interface hop, over a guess, in that order. The four TS kinds are resolved references;
+within that slot the lowest referencing line wins, so a TS row usually reports `import`.
 
 A `bus-hop` joins that same fold, one step past a guess: `ctor-di`, then a resolved reference, then
 an ambiguous one, then the interface hop, then a guess, then a `bus-hop` -- never displacing any of
@@ -534,6 +563,6 @@ devscout tests InMemoryCatalogStore --json
 ```
 
 `CatalogStoreTests` earns its row because it declares `CountItems_StartsAtZero`, a def carrying
-xUnit's `[Fact]` attribute -- `why: "test-attribute"`, the other of the two ways a `tests` row
-is earned being `test-project` (the file's unit is in a project marked `test`, with no attributed
-def of its own).
+xUnit's `[Fact]` attribute -- `why: "test-attribute"`. The other ways a `tests` row is earned are
+`test-project` (the file's unit is in a project marked `test`, with no attributed def of its own)
+and `test-path` (a TypeScript file named as a test, with neither of the other two).
