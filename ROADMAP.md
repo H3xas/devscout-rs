@@ -10,7 +10,7 @@ Reviewed for 0.9.0
 - **A reproducible agent-lane benchmark harness.** The protocol for measuring what an agent
   does with the index is written down, but no lane has been run against the pinned public
   corpora, and the agentic row on the scorecard is still a preliminary round measured on an
-  older build. The corpus pin, a one-command in-repo reproduction path beside
+  older build. The lanes' own corpus selection, a one-command in-repo reproduction path beside
   [`bench/semantic.sh`](bench/semantic.sh), and fresh figures land together —
   [#40](https://github.com/H3xas/devscout-rs/issues/40).
 - **A deny-warnings `cargo clippy` gate in CI.** CI builds, tests and runs clippy, but without
@@ -31,7 +31,7 @@ of edge kinds than C# (see README → Language support). Three independent stage
    [#42](https://github.com/H3xas/devscout-rs/issues/42).
 2. **Semantic binding via oxc** — adopt `oxc_parser`/`oxc_semantic`/`oxc_resolver` to replace
    name-based reference matching with real scope and symbol binding, and module resolution
-   that understands the TypeScript config —
+   rather than the current per-file approximation —
    [#43](https://github.com/H3xas/devscout-rs/issues/43).
 3. **An optional type-aware sidecar** — chained-call and `.d.ts`-level resolution requires the
    TypeScript checker; an optional external collector could feed those edges into the index.
@@ -40,7 +40,9 @@ of edge kinds than C# (see README → Language support). Three independent stage
 
 ## C# resolution depth
 
-The C# side carries the same open gap as TS at the top end: no resolution through chained
-method calls, and no analysis inside external package internals. Revisited after the TS
-stages prove out the approach —
+Syntax resolution follows a call chain one hop: a member access on the result of `a.M()` is
+typed, while a chain more than one hop deep, or one reached through `?.`, stays unrecorded.
+Nothing inside an external package is analysed either — the project model reads project files
+only, with no NuGet resolution. The opt-in compiler-fact path already resolves the call sites it
+covers. Revisited after the TS stages prove out the approach —
 [#45](https://github.com/H3xas/devscout-rs/issues/45).
