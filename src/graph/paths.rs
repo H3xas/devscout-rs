@@ -165,16 +165,23 @@ pub fn rust_crates_path(root: &Path) -> PathBuf {
 // unchanged, but an older cache pair of an unchanged repository would let `map`
 // skip the rebuild and keep a `graph.json` whose import edges bind nothing,
 // so every TS import row would stay missing until some file changed.
+// v32 adds ref `receiverTypeQualified` and fact `qualifiedType` -- the
+// written path of a receiver's own declared type, alongside the bare last
+// segment `receiverType`/`type` already carry. A cached v31 fragment of an
+// unchanged file carries neither, so a receiver declared `Outer.Type` would
+// keep resolving through its tail, which the ladder's using and
+// graph-wide-uniqueness steps answer with whatever same-named type they
+// reach, where a fresh fragment of the same file resolves the written path.
 // The rename IS the invalidation mechanism:
 // pre-bump caches stop being found, every file reparses
 // once, no reader carries version-compat logic. Writers delete every
 // superseded generation (see `remove_superseded_caches`).
 pub(crate) fn fragments_cache_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-v31.json")
+    graph_dir(root).join("fragments-v32.json")
 }
 
 pub(crate) fn fragments_index_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-index-v31.json")
+    graph_dir(root).join("fragments-index-v32.json")
 }
 
 // Every generation below the current one, not just the immediately previous:
@@ -241,6 +248,8 @@ pub(crate) const SUPERSEDED_CACHE_FILES: &[&str] = &[
     "fragments-index-v29.json",
     "fragments-v30.json",
     "fragments-index-v30.json",
+    "fragments-v31.json",
+    "fragments-index-v31.json",
 ];
 
 pub(crate) fn remove_superseded_caches(root: &Path) {

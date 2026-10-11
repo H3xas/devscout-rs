@@ -363,6 +363,12 @@ pub struct RefRecord {
     /// guard, which is what makes the chain-tail hazard structurally
     /// impossible. Always `None` for every other ref kind.
     pub receiver_type: Option<String>,
+    /// The declared type's own written path, alongside the bare last
+    /// segment `receiver_type` carries -- `Outer.Type` for a declaration
+    /// written that way, `None` for a bare one. The resolver's
+    /// typed-receiver probe resolves this form when it is present, because
+    /// a tail alone cannot tell two same-named types apart.
+    pub receiver_type_qualified: Option<String>,
     /// The argument count of the call this
     /// member access is the CALLEE of (`argument_list` named-child count),
     /// recorded only when the access is the `function` field of an
@@ -630,6 +636,11 @@ pub struct LambdaSlot {
 pub struct Fact {
     /// The type name value.
     pub type_name: String,
+    /// The same declaration's written path, when it wrote one, so two
+    /// declarations of one name that differ only in their qualifier
+    /// (`A.Widget` and `B.Widget`) are two facts rather than one conflicted
+    /// entry. Part of the equality the table compares.
+    pub qualified_type: Option<String>,
     /// The args value.
     pub args: Option<Vec<String>>,
     /// When set, the name's type is whatever the method of this name returns

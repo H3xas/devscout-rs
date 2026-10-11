@@ -90,6 +90,7 @@ fn declared_field_or_property_type<'a>(
 // FILE whose declaration wrote the type name down (its usings and aliases).
 pub(super) struct ReceiverFieldType {
     pub(super) type_name: String,
+    pub(super) qualified_type: Option<String>,
     pub(super) declaring_def: usize,
     pub(super) declaring_file: String,
 }
@@ -160,6 +161,7 @@ pub(super) fn bare_receiver_field_or_property_type(
     if let Some((fact, declaring_file)) = declared_field_or_property_type(index, start, &r.name) {
         return Some(ReceiverFieldType {
             type_name: fact.type_name.clone(),
+            qualified_type: fact.qualified_type.clone(),
             declaring_def: start,
             declaring_file: declaring_file.to_string(),
         });
@@ -186,6 +188,7 @@ pub(super) fn bare_receiver_field_or_property_type(
                     Some((fact, declaring_file)) => {
                         found = Some(ReceiverFieldType {
                             type_name: fact.type_name.clone(),
+                            qualified_type: fact.qualified_type.clone(),
                             declaring_def: idx,
                             declaring_file: declaring_file.to_string(),
                         });
@@ -400,6 +403,7 @@ pub(super) fn lambda_slot_receiver_type(
     agreed.map(
         |(_, type_name, declaring_def, declaring_file)| ReceiverFieldType {
             type_name,
+            qualified_type: None,
             declaring_def,
             declaring_file,
         },

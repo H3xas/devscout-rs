@@ -17,7 +17,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (`<file>#<path>`, such as `src/shelf.rs#Widget::new`), or by a `::` path such as `Widget::new`;
   when two items in a file share a path, the later ones take a `-1`, `-2` suffix. This is the
   definition layer used by the Rust references and tests described below. That first slice
-  used the `fragments-v28.json` cache generation, superseded by v31 in this release.
+  used the `fragments-v28.json` cache generation, superseded by v32 in this release.
 - **`refs`, `impact` and `tests` answer on Rust code.** `map` now resolves Rust paths through the
   module tree (`mod` declarations, `mod.rs` and `foo.rs` with `foo/` layouts, inline modules, and
   crate roots read from each `Cargo.toml` in scope, or `lib.rs` and `main.rs` without one) and
@@ -31,7 +31,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   files as "indexed and graphed, path-resolved edges". A Cargo package model is kept beside the
   graph in `rust-crates.json`, so editing a `Cargo.toml` rebuilds the graph. Measured against
   rust-analyzer's own references on this repository, call edges scored precision 1.0 and recall
-  0.999. This slice used the `fragments-v29.json` cache generation, superseded by v31 in this
+  0.999. This slice used the `fragments-v29.json` cache generation, superseded by v32 in this
   release.
 - **Rust edges reach cargo's nested targets, `cfg_attr` tests and `#[path]` modules.** Cargo's
   nested target files `tests/<name>/main.rs`, `examples/<name>/main.rs` and
@@ -42,7 +42,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   default `x.rs` beside it that rustc does not compile; a `path` carried by `cfg_attr` reaches
   nothing. Measured against rust-analyzer on a fixture package holding all three shapes, every
   call through them is recalled with no contradicted edge, and this repository's own scores are
-  unchanged. This slice used the `fragments-v30.json` cache generation, superseded by v31 in this
+  unchanged. This slice used the `fragments-v30.json` cache generation, superseded by v32 in this
   release.
 
 - **Every resolved query answer states its full count and the next verb to run.** `refs`, `read`,
@@ -64,8 +64,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   definitions its bindings resolve to, so an import row names the exact symbol. `tests` counts a
   `.ts`/`.tsx` file named `*.spec.ts(x)`, `*.test.ts(x)` or placed below `__tests__/` as a test file
   (`via: "path"`, `why: "test-path"`). JavaScript files answer through the same edges but are not
-  measured. The fragment cache moves to `fragments-v31.json`, so an existing cache re-extracts
-  once.
+  measured. This slice used the `fragments-v31.json` cache generation, superseded by v32 in this
+  release.
 
 - **`.mjs`, `.cjs`, `.mts` and `.cts` modules are indexed.** `map` discovers the four module
   suffixes: `.mjs`/`.cjs` as JavaScript, `.mts`/`.cts` as TypeScript. A repository built from them
@@ -174,6 +174,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   unreadable `--assert` file) was printed on stdout, so a CI step that redirected stdout into the
   report file showed no message. With `--json` anywhere in the arguments, every error now goes to
   stderr with exit 1 and stdout stays empty. Text mode is unchanged.
+- **A receiver declared with a qualified type binds that type, not a same-named one.** A pattern
+  such as `endpoint is Outbox.OutboxSendEndpoint outboxEndpoint` or a field typed
+  `ConfigurationHostSettings.ConfigurationBatchSettings` was recorded by its last segment alone, so
+  `outboxEndpoint.Endpoint` resolved through a `using` that named a different `OutboxSendEndpoint`,
+  and `_settings.Enabled` bound a top-level `ConfigurationBatchSettings` in a project the declaring
+  code never referenced. The written path is now recorded alongside the simple name and resolved
+  first, so the member binds the declared type; a path that matches no type, or two, binds neither.
+  Unqualified receivers, extension matching, generic arity and the nullable rules are unchanged, and
+  a same-named declaration without a written path behaves exactly as before. The fragment cache
+  moves to `fragments-v32.json`, so an existing cache re-extracts once.
 
 ### Changed
 

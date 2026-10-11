@@ -245,6 +245,7 @@ pub(super) fn resolve_member_qualifier(
         return Some(QualifierResolution {
             receiver: Some(Fact {
                 type_name: qt.clone(),
+                qualified_type: None,
                 args: receiver_args,
                 call: None,
                 awaited: false,

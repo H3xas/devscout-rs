@@ -252,6 +252,7 @@ fn frag_def_appends_property_types_last_after_test_methods() {
         FragFact {
             type_name: "Gauge".into(),
             args: None,
+            qualified_type: None,
         },
     );
     d.property_types.insert(
@@ -259,6 +260,7 @@ fn frag_def_appends_property_types_last_after_test_methods() {
         FragFact {
             type_name: "Toolbox".into(),
             args: Some(vec!["Gadget".into()]),
+            qualified_type: None,
         },
     );
     let json = serde_json::to_string(&d).unwrap();
@@ -303,6 +305,7 @@ fn frag_ref(generic: bool, receiver_type: Option<&str>, arg_count: Option<usize>
         type_arg_count: None,
         generic,
         receiver_type: receiver_type.map(String::from),
+        receiver_type_qualified: None,
         arg_count,
         receiver_args: None,
         outer_types: Vec::new(),
@@ -718,4 +721,69 @@ fn fragment_round_trip_keeps_method_params_and_receiver_lambda() {
     assert!(!r_plain_json.contains("receiverLambda"), "{r_plain_json}");
     let r_plain_reparsed: FragRef = serde_json::from_str(&r_plain_json).unwrap();
     assert_eq!(r_plain_reparsed.receiver_lambda, None);
+}
+
+// --- FragFact's qualifiedType and FragRef's receiverTypeQualified, appended
+// after every field the previous generation wrote -----------------------
+
+#[test]
+fn frag_fact_appends_qualified_type_last_after_args() {
+    let qualified = FragFact {
+        type_name: "Gauge".into(),
+        args: Some(vec!["Gadget".into()]),
+        qualified_type: Some("Hosts.Gauge".into()),
+    };
+    let json = serde_json::to_string(&qualified).unwrap();
+    assert_eq!(
+        json,
+        r#"{"type":"Gauge","args":["Gadget"],"qualifiedType":"Hosts.Gauge"}"#
+    );
+    let reparsed: FragFact = serde_json::from_str(&json).unwrap();
+    assert_eq!(reparsed.qualified_type, Some("Hosts.Gauge".to_string()));
+
+    // A fact written by the previous generation carries no such key, and its
+    // bytes stay exactly as they were.
+    let bare: FragFact = serde_json::from_str(r#"{"type":"Gauge","args":["Gadget"]}"#).unwrap();
+    assert_eq!(bare.qualified_type, None);
+    assert_eq!(
+        serde_json::to_string(&FragFact {
+            type_name: "Gauge".into(),
+            args: Some(vec!["Gadget".into()]),
+            qualified_type: None,
+        })
+        .unwrap(),
+        r#"{"type":"Gauge","args":["Gadget"]}"#
+    );
+}
+
+#[test]
+fn frag_ref_appends_receiver_type_qualified_last_after_lambda_arg_shape() {
+    let r = FragRef {
+        receiver_type_qualified: Some("Hosts.Binder".into()),
+        ..frag_ref(false, Some("Binder"), Some(1))
+    };
+    let json = serde_json::to_string(&r).unwrap();
+    assert_eq!(
+        json,
+        r#"{"kind":"uses-member","name":"repo","member":"Save","line":7,"namespace":"App.Shape","receiverType":"Binder","argCount":1,"receiverTypeQualified":"Hosts.Binder"}"#
+    );
+    let reparsed: FragRef = serde_json::from_str(&json).unwrap();
+    assert_eq!(
+        reparsed.receiver_type_qualified,
+        Some("Hosts.Binder".to_string())
+    );
+}
+
+#[test]
+fn frag_ref_without_a_qualified_path_keeps_its_previous_bytes() {
+    let json = serde_json::to_string(&frag_ref(false, Some("Binder"), Some(1))).unwrap();
+    assert!(
+        !json.contains("receiverTypeQualified"),
+        "an unqualified receiver adds no key: {json}"
+    );
+    let reparsed: FragRef =
+        serde_json::from_str(r#"{"kind":"uses-member","name":"repo","member":"Save","line":7,"namespace":"App.Shape","receiverType":"Binder","argCount":1}"#)
+            .unwrap();
+    assert_eq!(reparsed.receiver_type_qualified, None);
+    assert_eq!(reparsed.receiver_type.as_deref(), Some("Binder"));
 }

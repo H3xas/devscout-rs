@@ -321,6 +321,9 @@ fn fact_to_json(fact: &Fact) -> Json {
             Json::Arr(args.iter().map(|a| Json::Str(a.clone())).collect()),
         ));
     }
+    if let Some(qualified) = &fact.qualified_type {
+        fields.push(("qualifiedType", Json::Str(qualified.clone())));
+    }
     Json::Obj(fields)
 }
 
@@ -440,6 +443,9 @@ fn ref_to_json(r: &RefRecord) -> Json {
             })
             .collect();
         fields.push(("lambdaArgShape", Json::Arr(entries)));
+    }
+    if let Some(qualified) = &r.receiver_type_qualified {
+        fields.push(("receiverTypeQualified", Json::Str(qualified.clone())));
     }
     Json::Obj(fields)
 }

@@ -391,6 +391,228 @@ public class Host
     );
 }
 
+// --- The written qualifier alongside the simple receiver name ------------
+//
+// A receiver declared with a qualified type must keep that qualification:
+// reducing `Outbox.OutboxSendEndpoint` to `OutboxSendEndpoint` leaves the
+// resolver nothing to tell it apart from a same-named sibling, and the
+// ladder's bare-name steps answer from a `using` the declaration never saw.
+
+/// Every `uses-member` ref's (name, member, simple receiver type, written
+/// qualifier), in extraction order.
+fn receiver_facts_with_qualifier(
+    e: &Extraction,
+) -> Vec<(String, String, Option<String>, Option<String>)> {
+    e.refs
+        .iter()
+        .filter(|r| r.kind == "uses-member")
+        .map(|r| {
+            (
+                r.name.clone(),
+                r.member.clone().unwrap_or_default(),
+                r.receiver_type.clone(),
+                r.receiver_type_qualified.clone(),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn qualified_receiver_type_survives_every_direct_declaration_path() {
+    let e = extract_src(
+        r#"
+namespace App.Qualified;
+
+public class Host
+{
+  private Widgets.Widget _field;
+
+  public void Run(Widgets.Widget param)
+  {
+    Widgets.Widget local = null;
+    var cast = (Widgets.Widget)param;
+    var made = new Widgets.Widget();
+    if (param is Widgets.Widget named) { named.Go(); }
+    _field.Go();
+    param.Go();
+    local.Go();
+    cast.Go();
+    made.Go();
+  }
+}
+"#,
+    );
+    let qualified = receiver_facts_with_qualifier(&e);
+    for (name, member, simple, written) in &qualified {
+        assert_eq!(simple.as_deref(), Some("Widget"), "{name}.{member}");
+        assert_eq!(
+            written.as_deref(),
+            Some("Widgets.Widget"),
+            "{name}.{member} lost the written path"
+        );
+    }
+    assert_eq!(
+        qualified
+            .iter()
+            .map(|(name, _, _, _)| name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["named", "_field", "param", "local", "cast", "made"]
+    );
+}
+
+#[test]
+fn qualified_receiver_type_covers_namespace_nested_and_alias_paths() {
+    let e = extract_src(
+        r#"
+namespace App.Qualified;
+
+public class Host
+{
+  public void Run(App.Widgets.Widget namespaced, Outer.Inner nested, global::App.Widgets.Widget aliased)
+  {
+    namespaced.Go();
+    nested.Go();
+    aliased.Go();
+  }
+}
+"#,
+    );
+    let facts: Vec<(String, Option<String>, Option<String>)> = e
+        .refs
+        .iter()
+        .filter(|r| r.kind == "uses-member")
+        .map(|r| {
+            (
+                r.name.clone(),
+                r.receiver_type.clone(),
+                r.receiver_type_qualified.clone(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        facts,
+        vec![
+            (
+                "namespaced".to_string(),
+                Some("Widget".to_string()),
+                Some("App.Widgets.Widget".to_string())
+            ),
+            (
+                "nested".to_string(),
+                Some("Inner".to_string()),
+                Some("Outer.Inner".to_string())
+            ),
+            (
+                "aliased".to_string(),
+                Some("Widget".to_string()),
+                Some("global::App.Widgets.Widget".to_string())
+            ),
+        ]
+    );
+}
+
+#[test]
+fn qualified_receiver_type_keeps_wrappers_and_generic_arguments() {
+    // The wrappers are unwrapped for the simple name -- `base_type_identifier`
+    // has always looked through them -- but the path is what the declaration
+    // WROTE, so a nullable or array wrapper leaves the text alone and a
+    // generic argument list stays in it for the ladder's own normalization.
+    let e = extract_src(
+        r#"
+namespace App.Qualified;
+
+public class Host
+{
+  public void Run(Widgets.Widget? optional, Widgets.Widget[] many, Widgets.Box<int> generic)
+  {
+    optional.Go();
+    many.Go();
+    generic.Go();
+  }
+}
+"#,
+    );
+    let facts: Vec<(String, Option<String>, Option<String>)> = e
+        .refs
+        .iter()
+        .filter(|r| r.kind == "uses-member")
+        .map(|r| {
+            (
+                r.name.clone(),
+                r.receiver_type.clone(),
+                r.receiver_type_qualified.clone(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        facts,
+        vec![
+            (
+                "optional".to_string(),
+                Some("Widget".to_string()),
+                Some("Widgets.Widget".to_string())
+            ),
+            (
+                "many".to_string(),
+                Some("Widget".to_string()),
+                Some("Widgets.Widget".to_string())
+            ),
+            (
+                "generic".to_string(),
+                Some("Box".to_string()),
+                Some("Widgets.Box<int>".to_string())
+            ),
+        ]
+    );
+}
+
+#[test]
+fn two_same_tail_qualified_declarations_conflict_like_different_names() {
+    let e = extract_src(
+        r#"
+namespace App.Qualified;
+
+public class Host
+{
+  public void Run(bool flag)
+  {
+    if (flag) { Alpha.Widget x = null; x.Go(); }
+    else { Beta.Widget x = null; x.Go(); }
+  }
+}
+"#,
+    );
+    assert_eq!(
+        member_facts(&e),
+        vec![("Go", None), ("Go", None)],
+        "the qualifier is part of the fact, so the two declarations conflict"
+    );
+}
+
+#[test]
+fn an_unqualified_declaration_keeps_the_absent_qualifier() {
+    let e = extract_src(
+        r#"
+namespace App.Qualified;
+
+public class Host
+{
+  public void Run(Widget param)
+  {
+    param.Go();
+  }
+}
+"#,
+    );
+    let r = e
+        .refs
+        .iter()
+        .find(|r| r.kind == "uses-member")
+        .expect("member ref present");
+    assert_eq!(r.receiver_type.as_deref(), Some("Widget"));
+    assert_eq!(r.receiver_type_qualified, None);
+}
+
 #[test]
 fn stage2b_the_surviving_header_arm_supplies_receiver_facts_at_both_nesting_levels() {
     // The duplicate-header preproc shape (see
@@ -414,5 +636,43 @@ fn stage2b_the_surviving_header_arm_supplies_receiver_facts_at_both_nesting_leve
             ("items", Some("IReadOnlyList")),
             ("sink", Some("Sink")),
         ]
+    );
+}
+
+#[test]
+fn the_dump_carries_the_qualified_receiver_keys_and_omits_them_when_absent() {
+    let e = extract_src(
+        r#"
+namespace App.Qualified;
+
+public class Host
+{
+  public Widgets.Widget Dial { get; }
+
+  public void Run(Widgets.Widget param)
+  {
+    param.Go();
+  }
+}
+"#,
+    );
+    let json = extraction_to_json(&e);
+    assert!(
+        json.contains(r#""receiverTypeQualified": "Widgets.Widget""#),
+        "the ref keeps the written path: {json}"
+    );
+    assert!(
+        json.contains(r#""qualifiedType": "Widgets.Widget""#),
+        "and so does the declared type fact the resolver reads: {json}"
+    );
+    assert_eq!(
+        json.matches("receiverTypeQualified").count(),
+        1,
+        "the unqualified receiver adds no key at all: {json}"
+    );
+    assert_eq!(
+        json.matches("qualifiedType").count(),
+        1,
+        "and neither does an unqualified declaration: {json}"
     );
 }

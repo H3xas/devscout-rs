@@ -32,6 +32,7 @@ fn same_name_property_hop(generic_declares_select: bool, recorded_args: bool) ->
         FragFact {
             type_name: "ItemList".into(),
             args: recorded_args.then(|| vec!["*".into()]),
+            qualified_type: None,
         },
     );
     let holder = FragDef {

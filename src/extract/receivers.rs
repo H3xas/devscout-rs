@@ -52,6 +52,23 @@ fn add_fact(table: &mut FactTable, name: Option<String>, fact: Option<Fact>) {
     }
 }
 
+// The type node's own written path, when it names one: the text of a
+// `qualified_name`/`alias_qualified_name` reached through the same nullable
+// and array wrappers `base_type_identifier` unwraps. A bare identifier is
+// not a path, so it yields `None` and an unqualified declaration keeps the
+// simple name alone. Generic arguments stay in the text; normalizing them is
+// the ladder's job, not this reader's.
+fn qualified_type_name(node: Option<Node>, src: &[u8]) -> Option<String> {
+    let node = node?;
+    match node.kind() {
+        "nullable_type" | "array_type" => {
+            qualified_type_name(node.child_by_field_name("type"), src)
+        }
+        "qualified_name" | "alias_qualified_name" => Some(text(node, src)),
+        _ => None,
+    }
+}
+
 // The declared-type half stays `keep_predefined = false` --
 // a `string s` local still vouches for nothing.
 pub(super) fn type_fact(
@@ -70,6 +87,7 @@ pub(super) fn type_fact(
     let nullable = type_node.is_some_and(|n| n.kind() == "nullable_type");
     Some(Fact {
         type_name,
+        qualified_type: qualified_type_name(type_node, src),
         args,
         call: None,
         awaited: false,
@@ -281,6 +299,7 @@ pub(super) fn collect_member_facts(
             };
             let fact = owner.map(|type_name| Fact {
                 type_name,
+                qualified_type: None,
                 args: None,
                 call: Some(d.member.clone()),
                 awaited: d.awaited,
@@ -651,6 +670,7 @@ fn collection_element_fact(locals: &FactTable, type_facts: &FactTable, name: &st
         Some(Some(fact)) => match fact.args.as_deref() {
             Some([arg]) if arg != "*" => Some(Fact {
                 type_name: arg.clone(),
+                qualified_type: None,
                 args: None,
                 call: None,
                 awaited: false,

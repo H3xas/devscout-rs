@@ -583,7 +583,12 @@ pub fn resolve_graph_with_model(
                             ),
                             None => (usings, ns, aliases, r.outer_types.clone()),
                         };
-                        let probe = name_probe(receiver_type.clone(), probe_ns, probe_outer);
+                        let qualified = receiver_field
+                            .as_ref()
+                            .and_then(|f| f.qualified_type.as_ref())
+                            .or(r.receiver_type_qualified.as_ref());
+                        let mut probe = name_probe(receiver_type.clone(), probe_ns, probe_outer);
+                        probe.qualified = qualified.cloned();
                         // A type the extractor read off a declaration carries
                         // its argument list (`receiver_args`, absent for a
                         // non-generic type); one the resolver derived (a call
