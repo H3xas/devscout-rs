@@ -492,7 +492,7 @@ Every file `bench/truth/typescript/manifest.json` hashed at pre-registration, ch
 
 ## Scorer-fix disclosure
 
-Scored before: `bench/ts_parity.py` as pre-registered (its manifest sha256 `214424d8ca7935a3`). Scored after: the committed scorer (sha256 `feddd5f4d6f68ead`). Both read the same stored arm outputs with the same arguments.
+Scored before: `bench/ts_parity.py` as pre-registered (its manifest sha256 `214424d8ca7935a3`). Scored after: the committed scorer (sha256 `671b69ac081e4189`). Both read the same stored arm outputs with the same arguments.
 
 | Fix | Change |
 | --- | --- |
