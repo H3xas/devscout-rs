@@ -3,49 +3,46 @@
 Direction, not commitment: items ship when they are ready. Details and discussion live in
 the linked issues; anything not listed here is fair game for a proposal.
 
+Reviewed for 0.9.0
+
 ## Near term
 
-- **Reproducible agent-lane benchmark harness, then a 0.3.0 benchmark round.** The
-  tool-call proxy table in the benchmark docs currently lacks an in-repository
-  reproduction path, and the published scorecard was measured on 0.2.0; the corpus pin,
-  lane harness, commands, and fresh numbers land together. (A different benchmark family
-  already has this: [`bench/semantic.sh`](bench/semantic.sh) is a one-command, in-repo
-  reproduction path for the resolver-precision numbers — pinned fixture, one script, one
-  command. The agent-lane harness this item is about is still open.)
-- **Project-wide `cargo clippy -- -D warnings` in CI.** CI currently builds and tests but
-  does not run clippy; locally, `cargo clippy --all-targets` reports a pre-existing baseline
-  of style-level warnings (long first doc paragraphs, missing rustdoc backticks, and a
-  handful of complexity lints) that predates this entry. Closing that baseline to zero and
-  then adding a deny-warnings clippy job to CI is tracked here rather than done piecemeal,
-  so the gate lands already green. See CONTRIBUTING.md for what is expected of a pull
-  request in the meantime.
+- **A reproducible agent-lane benchmark harness.** The protocol for measuring what an agent
+  does with the index is written down, but no lane has been run against the pinned public
+  corpora, and the agentic row on the scorecard is still a preliminary round measured on an
+  older build. The lanes' own corpus selection, a one-command in-repo reproduction path beside
+  [`bench/semantic.sh`](bench/semantic.sh), and fresh figures land together —
+  [#40](https://github.com/H3xas/devscout-rs/issues/40).
+- **A deny-warnings `cargo clippy` gate in CI.** CI builds, tests and runs clippy, but without
+  `-D warnings`; a local `cargo clippy --all-targets` run still reports a pre-existing baseline
+  of style-level findings. Rather than silencing them piecemeal, the baseline closes to zero
+  first and the gate lands already green —
+  [#41](https://github.com/H3xas/devscout-rs/issues/41).
 
 ## TypeScript / JavaScript semantic coverage
 
 TS/TSX/JS files are parsed with tree-sitter and resolved into the graph with a narrower set
-of edge kinds than C# (see README → Limitations). Planned as three independent stages:
+of edge kinds than C# (see README → Language support). Three independent stages are open:
 
-1. **Resolution wins on the existing stack** — tsconfig path aliases, barrel-file
-   (`index.ts` re-export) following, and JSX component-usage edges, all derived from the
-   AST already parsed today. No new dependencies. Aliases from the repo-root tsconfig chain,
-   one barrel hop, and `jsx-use` edges shipped in 0.2.0; nearest-`tsconfig.json` alias
-   scoping and chained barrels (up to eight hops, cycle-guarded) shipped in 0.4.0. Still
-   open in this stage: `export * as ns from` namespace re-exports, and bare specifiers that
-   name a workspace package by its `package.json` name.
-2. **Semantic binding via oxc** — adopt `oxc_parser`/`oxc_semantic`/`oxc_resolver` to
-   replace name-based reference matching with real scope and symbol binding, and module
-   resolution that understands the TypeScript config.
-3. **Optional type-aware sidecar** — chained-call and `.d.ts`-level resolution requires the
+1. **The remaining single-file resolution cases** — namespace re-exports
+   (`export * as ns from`) contribute their import edge but no name mapping, and a bare
+   specifier that names a workspace package by its `package.json` name is not resolved to
+   that package. Both are wins on the AST already parsed today, with no new dependency —
+   [#42](https://github.com/H3xas/devscout-rs/issues/42).
+2. **Semantic binding via oxc** — adopt `oxc_parser`/`oxc_semantic`/`oxc_resolver` to replace
+   name-based reference matching with real scope and symbol binding, and module resolution
+   rather than the current per-file approximation —
+   [#43](https://github.com/H3xas/devscout-rs/issues/43).
+3. **An optional type-aware sidecar** — chained-call and `.d.ts`-level resolution requires the
    TypeScript checker; an optional external collector could feed those edges into the index.
-   Considered only after stages 1–2 are exhausted.
+   Considered only after stages 1–2 are exhausted —
+   [#44](https://github.com/H3xas/devscout-rs/issues/44).
 
 ## C# resolution depth
 
-The C# side carries the same open gap as TS at the top end: no resolution through chained
-method calls, and no analysis inside external package internals. Revisited after the TS
-stages prove out the approach.
-
-The compiler-backed enrichment layer — an optional, cached input to `resolve` produced by
-the Roslyn oracle in `tools/scout-semantic` out of process, never on the hook path — is
-designed in [`docs/design/compiler-enrichment.md`](docs/design/compiler-enrichment.md),
-with the shipping gate it must clear written down before any implementation.
+Syntax resolution follows a call chain one hop: a member access on the result of `a.M()` is
+typed, while a chain more than one hop deep, or one reached through `?.`, stays unrecorded.
+Nothing inside an external package is analysed either — the project model reads project files
+only, with no NuGet resolution. The opt-in compiler-fact path already resolves the call sites it
+covers. Revisited after the TS stages prove out the approach —
+[#45](https://github.com/H3xas/devscout-rs/issues/45).
