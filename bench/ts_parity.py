@@ -8,6 +8,7 @@ docs/benchmarks/methodology.md#typescript-reference-parity for the protocol.
 import hashlib
 import json
 import os
+import posixpath
 import pwd
 import re
 import subprocess
@@ -977,6 +978,201 @@ def peers_win(arm_scores):
     return cells
 
 
+# ---- evidence: what the stored answers show beyond the figures -------------------------
+#
+# Nothing here feeds a figure or the gate: the classes, totals and run summary are read by the
+# results renderer only, so a scorer that lacks them scores every figure the same.
+
+IMPORT_RE = re.compile(r"\b(?:import|export)\s+(?:type\s+)?([\w$*{},\s]*?)\s*\bfrom\s*(['\"])([^'\"\n]+)\2")
+BARE_IMPORT_RE = re.compile(r"\b(?:import|require)\s*\(?\s*(['\"])([^'\"\n]+)\1")
+RELATIVE_SUFFIXES = ("", ".ts", ".tsx", ".d.ts", "/index.ts", "/index.tsx")
+
+
+def without(text, kinds):
+    """The text with every character of the given lexer kinds blanked, offsets kept."""
+    return "".join(" " if kind in kinds else ch for ch, kind in zip(text, lex_regions(text)))
+
+
+def imports_of(text):
+    """(clause, specifier) of every import, re-export, dynamic import and require whose keyword
+    is code, not comment or string text."""
+    regions = lex_regions(text)
+    body = "".join(" " if kind == "m" else ch for ch, kind in zip(text, regions))
+    found = [(match.group(1), match.group(3)) for match in IMPORT_RE.finditer(body) if regions[match.start()] == "c"]
+    return found + [("", match.group(2)) for match in BARE_IMPORT_RE.finditer(body) if regions[match.start()] == "c"]
+
+
+def names_in(clause, name):
+    return re.search(rf"(?<![\w$]){re.escape(name)}(?![\w$])", clause) is not None
+
+
+def resolve_relative(corpus_root, from_file, specifier):
+    """The corpus file a relative specifier names, or None for a package name or a missing file."""
+    if not specifier.startswith("."):
+        return None
+    base = posixpath.normpath(posixpath.join(posixpath.dirname(from_file), specifier))
+    if base == ".." or base.startswith("../"):
+        return None
+    stems = [base] + ([base.rsplit(".", 1)[0]] if base.endswith((".js", ".jsx")) else [])
+    for stem in stems:
+        for suffix in RELATIVE_SUFFIXES:
+            if (Path(corpus_root) / (stem + suffix)).is_file():
+                return stem + suffix
+    return None
+
+
+def used_in_code(text, name):
+    """Called, constructed, extended, implemented or rendered as a JSX element outside comments
+    and strings."""
+    n = re.escape(name)
+    use = re.compile(rf"\bnew\s+{n}\b|(?<![\w$.]){n}\s*(?:<[^<>()]*>)?\s*\(|\b(?:extends|implements)\s+{n}\b"
+                     rf"|(?<![\w$.\]])<{n}[\s/>]")
+    return use.search(without(text, "ms")) is not None
+
+
+def reference_miss_class(text, name):
+    naming = [specifier for clause, specifier in imports_of(text) if names_in(clause, name)]
+    if any(not specifier.startswith(".") for specifier in naming):
+        return "package-name import naming the seed"
+    if naming:
+        used = "" if used_in_code(text, name) else "never "
+        return f"relative import, {used}called, constructed, extended or rendered"
+    return "no import naming the seed"
+
+
+def reference_extra_class(task, path, name, declaring_file, text, removed):
+    """Why an answered file is outside the sealed truth, in the order the truth rule drops it."""
+    if path == declaring_file:
+        return "declaring file"
+    if not path.endswith(TS_EXT):
+        return "outside the .ts/.tsx universe"
+    if (name, path) in removed:
+        return "removed by adjudication"
+    if text is None:
+        return "not a corpus file"
+    if not re.search(rf"\b{re.escape(name)}\b", text):
+        return "does not mention the seed"
+    if task == "tests" and not is_test_path(path):
+        return "not a test-path file"
+    return "mentions the seed outside the sealed truth"
+
+
+def answer_class(failed, any_rows, statuses):
+    """A class the whole answer earns before any one file is read, or None."""
+    if failed:
+        return "failed answer"
+    if not any_rows:
+        return "no row for any target"
+    if statuses and statuses <= {"not_found"}:
+        return "no node for the seed"
+    return None
+
+
+def impact_miss_class(text, path, queried, names, corpus_root):
+    imports = imports_of(text)
+    if any(resolve_relative(corpus_root, path, specifier) in queried for _, specifier in imports):
+        return "relative import of a queried file"
+    if any(not specifier.startswith(".") and any(names_in(clause, name) for name in names)
+           for clause, specifier in imports):
+        return "package-name import naming a registered name"
+    return "no import of a queried file"
+
+
+def imported_by(corpus_root, queried):
+    """Every corpus file a queried file imports by a relative specifier."""
+    found = set()
+    for path in queried:
+        for _, specifier in imports_of(read_text(corpus_root, path)):
+            target = resolve_relative(corpus_root, path, specifier)
+            if target:
+                found.add(target)
+    return found
+
+
+def impact_extra_class(path, text, imported, queried, corpus_root):
+    if path in imported:
+        return "imported by a queried file"
+    if any(resolve_relative(corpus_root, path, specifier) in queried for _, specifier in imports_of(text)):
+        return "imports a queried file"
+    return "no import link to a queried file"
+
+
+def answer_totals(arm, payloads):
+    """For one impact answer: the total each call reports, the rows it returned, and what it left
+    out, summed over the answer's calls."""
+    if arm == "crg":
+        fields, unit = ("total_impacted", "impacted_nodes", "nodes_omitted"), "nodes"
+    else:
+        fields, unit = ("totalAffected", "rows", "dropped"), "files"
+    reported = sum(payload.get(fields[0]) or 0 for payload in payloads)
+    returned = sum(len(payload.get(fields[1]) or []) for payload in payloads)
+    omitted = sum(payload.get(fields[2]) or 0 for payload in payloads)
+    truncated = any(payload.get("truncated") for payload in payloads) or omitted > 0
+    return {"calls": len(payloads), "unit": unit, "reported": reported, "returned": returned,
+            "omitted": omitted, "truncated": truncated}
+
+
+def corpus_text(corpus_root, path):
+    return read_text(corpus_root, path) if (Path(corpus_root) / path).is_file() else None
+
+
+def evidence(run_dir, corpus_root, seeds, sealed, scores):
+    """The run summary, the impact answer totals and a class for every miss and extra of one arm
+    against the sealed truth."""
+    record = read_json(Path(run_dir) / "runs.json")
+    arm = record["arm"]
+    payloads, statuses, exits, status_counts, setup = defaultdict(list), defaultdict(set), {}, {}, []
+    for run in record["runs"]:
+        task = run["task"]
+        exits.setdefault(task, defaultdict(int))[str(run.get("exit"))] += 1
+        if run["target"] == "setup":
+            setup.append({"task": task, "verb": run["argv"][1], "exit": run.get("exit"), "seconds": run.get("seconds")})
+            continue
+        try:
+            payload = json.loads((Path(run_dir) / run["stdout"]).read_text(encoding="utf-8", errors="replace"))
+        except ValueError:
+            payload = None
+        status = str(payload.get("status")) if isinstance(payload, dict) else "unparsable"
+        status_counts.setdefault(task, defaultdict(int))[status] += 1
+        key = (task, run["target"].split("|", 1)[0])
+        statuses[key].add(status)
+        if isinstance(payload, dict):
+            payloads[key].append(payload)
+
+    removed = {(entry["name"], entry["file"]) for entry in sealed.get("removed", [])}
+    declaring = {seed["name"]: seed["file"] for seed in seeds["seeds"]}
+    classes = {"refs": {}, "tests": {}, "impact": {}}
+    for task in ("refs", "tests"):
+        per_seed = scores[task]["perSeed"]
+        any_rows = any(entry["found"] or entry["extra"] for entry in per_seed.values())
+        for name, entry in per_seed.items():
+            level = answer_class(entry.get("failed"), any_rows, statuses.get((task, name)))
+            classes[task][name] = {
+                "missed": {path: level or reference_miss_class(read_text(corpus_root, path), name)
+                           for path in entry["missed"]},
+                "extra": {path: reference_extra_class(task, path, name, declaring[name],
+                                                      corpus_text(corpus_root, path), removed)
+                          for path in entry["extra"]}}
+    impact = scores["impact"].get("impact", {})
+    any_rows = any(block["rows"] or block["outsideUniverse"] for block in impact.values())
+    for key, files in target_lists(seeds).items():
+        block, queried, names = impact[key], set(files), sealed["targets"][key]["names"]
+        level = answer_class(block.get("failed"), any_rows, None)
+        imported = imported_by(corpus_root, queried)
+        classes["impact"][key] = {
+            "missed": {path: level or impact_miss_class(read_text(corpus_root, path), path, queried, names,
+                                                        corpus_root) for path in block["missed"]},
+            "extra": {path: impact_extra_class(path, read_text(corpus_root, path), imported, queried, corpus_root)
+                      for path in block["extra"]}}
+    totals = {}
+    for (task, key), answer in sorted(payloads.items()):
+        if task in ("impact", "impact-default"):
+            totals.setdefault(task, {})[key] = answer_totals(arm, answer)
+    return {"setup": setup, "exits": {task: dict(sorted(codes.items())) for task, codes in exits.items()},
+            "statuses": {task: dict(sorted(counts.items())) for task, counts in status_counts.items()},
+            "totals": totals, "classes": classes}
+
+
 # ---- commands --------------------------------------------------------------------------
 
 
@@ -1090,7 +1286,8 @@ def cmd_score(args):
             raise SystemExit(1)
         answers = registered_answers(load_answers(run_dir, corpus_root), answer_keys(templates, arm, seeds))
         scores = score(sealed, seeds, answers)
-        result[arm] = {"sealed": scores, "raw": score(raw_as_sealed, seeds, answers), "gate": gate(scores, seeds)}
+        result[arm] = {"sealed": scores, "raw": score(raw_as_sealed, seeds, answers), "gate": gate(scores, seeds),
+                       "evidence": evidence(run_dir, corpus_root, seeds, sealed, scores)}
     cells = peers_win({arm: block["sealed"] for arm, block in result.items()})
     result["wherePeersWin"] = [{"metric": label, "leaders": leaders, "values": values}
                                for label, leaders, values in cells]

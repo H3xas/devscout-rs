@@ -759,6 +759,121 @@ class ScoredRecordTests(unittest.TestCase):
             self.assertTrue(sealed["impact"]["impact-default"]["declaring:d/a.ts"]["failed"])
             self.assertTrue(scores["crg"]["sealed"]["refsWithFileImporters"]["perSeed"]["a"]["failed"])
 
+    def test_the_scores_carry_evidence_without_changing_a_figure(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = tp.canonical(root)
+            _, corpus, runs = score_bench(root)
+            Path(corpus, "x.ts").write_text("import { a } from '@pkg/a';\na();\n")
+            payloads = {"refs": {"inbound": {"call": {"rows": [{"file": "y.ts"}]}}},
+                        "impact": {"totalAffected": 4, "rows": [{"file": "x.ts"}], "dropped": 3}}
+            head = write_record(Path(root, "out-head"), "devscout-head", runs["devscout-head"], payloads=payloads)
+            scores = self.score(root, corpus, devscout_head=head)
+            block = scores["devscout-head"]
+            evidence = block.pop("evidence")
+            self.assertEqual(evidence["classes"]["refs"]["a"],
+                             {"missed": {"x.ts": "package-name import naming the seed"},
+                              "extra": {"y.ts": "not a corpus file"}})
+            self.assertEqual(evidence["totals"]["impact"]["declaring:d/a.ts"],
+                             {"calls": 1, "unit": "files", "reported": 4, "returned": 1, "omitted": 3,
+                              "truncated": True})
+            self.assertEqual(evidence["setup"], [{"task": "setup", "verb": "init", "exit": 0, "seconds": None}])
+            self.assertEqual(block["sealed"]["refs"]["pooled"], 0.0)
+            self.assertEqual(set(block), {"sealed", "raw", "gate"})
+
+
+class EvidenceTests(unittest.TestCase):
+    def test_imports_are_read_outside_comments(self):
+        text = ("// import { gone } from './gone'\n/* export * from 'also-gone' */\n"
+                "import type { A, B as C } from './a';\nimport D, { E } from \"@scope/pkg/e\";\n"
+                "export * from './star';\nimport './side';\nconst f = require('./f');\n"
+                "const g = await import('./g');\nconst s = \"import { h } from './h'\";\n")
+        self.assertEqual(tp.imports_of(text), [
+            ("{ A, B as C }", "./a"), ("D, { E }", "@scope/pkg/e"), ("*", "./star"),
+            ("", "./side"), ("", "./f"), ("", "./g")])
+
+    def test_relative_specifiers_resolve_to_corpus_files(self):
+        with tempfile.TemporaryDirectory() as root:
+            for path in ("d/a.ts", "d/b/index.ts", "d/c.tsx", "e.ts"):
+                Path(root, path).parent.mkdir(parents=True, exist_ok=True)
+                Path(root, path).write_text("")
+            resolve = lambda spec: tp.resolve_relative(root, "d/x.ts", spec)
+            self.assertEqual(resolve("./a"), "d/a.ts")
+            self.assertEqual(resolve("./a.js"), "d/a.ts")
+            self.assertEqual(resolve("./b"), "d/b/index.ts")
+            self.assertEqual(resolve("./c"), "d/c.tsx")
+            self.assertEqual(resolve("../e"), "e.ts")
+            self.assertIsNone(resolve("./missing"))
+            self.assertIsNone(resolve("@scope/a"))
+            self.assertIsNone(resolve("../../outside"))
+
+    def test_a_reference_miss_is_classed_by_its_import_and_its_use(self):
+        classes = {
+            "import { S } from '@pkg/s';\nS();\n": "package-name import naming the seed",
+            "import { S } from './s';\nnew S();\n": "relative import, called, constructed, extended or rendered",
+            "import { S } from './s';\nclass T extends S {}\n":
+                "relative import, called, constructed, extended or rendered",
+            "import { S } from './s';\nconst v = <S open />;\n":
+                "relative import, called, constructed, extended or rendered",
+            "import { S } from './s';\nlet v: S;\nconst w: Array<S> = [];\n// S()\n":
+                "relative import, never called, constructed, extended or rendered",
+            "import * as all from './s';\nall.S();\n": "no import naming the seed",
+        }
+        for text, expected in classes.items():
+            self.assertEqual(tp.reference_miss_class(text, "S"), expected, text)
+
+    def test_a_reference_extra_is_classed_against_the_truth_rule(self):
+        removed = {("S", "c.ts")}
+        cases = [
+            (("refs", "d/s.ts", "export class S {}"), "declaring file"),
+            (("refs", "a.rs", "S"), "outside the .ts/.tsx universe"),
+            (("refs", "c.ts", "// S"), "removed by adjudication"),
+            (("tests", "a.spec.ts", "import { T } from './t';"), "does not mention the seed"),
+            (("tests", "a.ts", "import { S } from './s';"), "not a test-path file"),
+            (("refs", "gone.ts", None), "not a corpus file"),
+            (("refs", "e.ts", "S"), "mentions the seed outside the sealed truth"),
+        ]
+        for (task, path, text), expected in cases:
+            self.assertEqual(tp.reference_extra_class(task, path, "S", "d/s.ts", text, removed), expected, path)
+
+    def test_an_answer_level_class_comes_before_the_file(self):
+        self.assertEqual(tp.answer_class(True, True, {"ok"}), "failed answer")
+        self.assertEqual(tp.answer_class(False, False, {"ok"}), "no row for any target")
+        self.assertEqual(tp.answer_class(False, True, {"not_found"}), "no node for the seed")
+        self.assertIsNone(tp.answer_class(False, True, {"not_found", "ok"}))
+        self.assertIsNone(tp.answer_class(False, True, set()))
+
+    def test_impact_rows_are_classed_by_their_import_link_to_a_queried_file(self):
+        with tempfile.TemporaryDirectory() as root:
+            files = {"q.ts": "import { dep } from './dep';\nexport const n = 1;\n", "dep.ts": "",
+                     "rel.ts": "import { n } from './q';\n", "pkg.ts": "import { n } from '@p/q';\n",
+                     "word.ts": "const n = 2;\n", "back.ts": "import './q';\n", "far.ts": ""}
+            for path, text in files.items():
+                Path(root, path).write_text(text)
+            queried = {"q.ts"}
+            self.assertEqual(tp.impact_miss_class(files["rel.ts"], "rel.ts", queried, ["n"], root),
+                             "relative import of a queried file")
+            self.assertEqual(tp.impact_miss_class(files["pkg.ts"], "pkg.ts", queried, ["n"], root),
+                             "package-name import naming a registered name")
+            self.assertEqual(tp.impact_miss_class(files["word.ts"], "word.ts", queried, ["n"], root),
+                             "no import of a queried file")
+            imported = tp.imported_by(root, queried)
+            self.assertEqual(imported, {"dep.ts"})
+            self.assertEqual(tp.impact_extra_class("dep.ts", "", imported, queried, root), "imported by a queried file")
+            self.assertEqual(tp.impact_extra_class("back.ts", files["back.ts"], imported, queried, root),
+                             "imports a queried file")
+            self.assertEqual(tp.impact_extra_class("far.ts", "", imported, queried, root),
+                             "no import link to a queried file")
+
+    def test_answer_totals_sum_what_each_tool_reports_and_leaves_out(self):
+        devscout = [{"totalAffected": 5, "rows": [{}, {}], "dropped": 3}, {"totalAffected": 1, "rows": [{}], "dropped": 0}]
+        self.assertEqual(tp.answer_totals("devscout-head", devscout),
+                         {"calls": 2, "unit": "files", "reported": 6, "returned": 3, "omitted": 3, "truncated": True})
+        crg = [{"total_impacted": 9, "impacted_nodes": [{}] * 4, "nodes_omitted": 5, "truncated": True}]
+        self.assertEqual(tp.answer_totals("crg", crg),
+                         {"calls": 1, "unit": "nodes", "reported": 9, "returned": 4, "omitted": 5, "truncated": True})
+        self.assertEqual(tp.answer_totals("crg", [{"total_impacted": 2, "impacted_nodes": [{}, {}]}])["truncated"],
+                         False)
+
 
 REPO = Path(__file__).resolve().parents[1]
 BENCH_COMMAND_FILES = ("docs/benchmarks/methodology.md", "bench/ts-parity.sh",
