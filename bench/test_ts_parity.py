@@ -1,9 +1,12 @@
+import contextlib
+import io
 import json
 import os
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 import ts_parity as tp
@@ -285,6 +288,27 @@ class GuardTests(unittest.TestCase):
             inside_home.mkdir()
             self.assertTrue(tp.corpus_problems(inside_home, PIN, PIN, str(scratch), str(scratch)))
 
+    def test_a_corpus_copy_with_index_state_or_edits_is_refused(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = tp.canonical(root)
+            clone = Path(root, "clone")
+            clone.mkdir()
+            self.assertEqual(tp.corpus_problems(clone, PIN, PIN, root, "/home/example", changes=[]), [])
+            for change in ("!! .scout/", "?? notes.ts", " M packages/a.ts"):
+                self.assertTrue(tp.corpus_problems(clone, PIN, PIN, root, "/home/example", changes=[change]), change)
+
+    def test_corpus_changes_are_read_with_ignored_and_untracked_files(self):
+        with tempfile.TemporaryDirectory() as root:
+            clone = Path(tp.canonical(root), "clone")
+            clone.mkdir()
+            subprocess.run(["git", "-C", str(clone), "init", "-q"], check=True)
+            Path(clone, ".gitignore").write_text(".scout/\n")
+            subprocess.run(["git", "-C", str(clone), "add", ".gitignore"], check=True)
+            self.assertEqual(tp.corpus_changes(str(clone)), ["A  .gitignore"])
+            Path(clone, ".scout").mkdir()
+            Path(clone, ".scout", "graph.json").write_text("{}")
+            self.assertIn("!! .scout/graph.json", tp.corpus_changes(str(clone)))
+
     def test_arm_env(self):
         with tempfile.TemporaryDirectory() as root:
             root = tp.canonical(root)
@@ -456,7 +480,10 @@ class RegisteredTargetTests(unittest.TestCase):
         self.assertNotIn("failed", result["refs"]["perSeed"]["a"])
 
 
-def fake_peer(root, version=tp.PEER_VERSION, identity=True, interpreter=None):
+TRAMPOLINE = "#!/bin/sh\n'''exec' '{python}' \"$0\" \"$@\"\n' '''\n"
+
+
+def fake_peer(root, version=tp.PEER_VERSION, identity=True, interpreter=None, trampoline=False):
     """A virtual environment holding a stand-in distribution of the peer and its entry script."""
     venv = Path(root, "venv")
     subprocess.run([sys.executable, "-m", "venv", "--without-pip", str(venv)], check=True)
@@ -472,7 +499,9 @@ def fake_peer(root, version=tp.PEER_VERSION, identity=True, interpreter=None):
     info.mkdir()
     (info / "METADATA").write_text(f"Metadata-Version: 2.1\nName: {tp.PEER_PACKAGE}\nVersion: {version}\n")
     binary = venv / "bin" / tp.PEER_PACKAGE
-    binary.write_text(f"#!{interpreter or venv / 'bin' / 'python'}\nfrom code_review_graph.cli import main\n")
+    python = interpreter or venv / "bin" / "python"
+    first = TRAMPOLINE.format(python=python) if trampoline else f"#!{python}\n"
+    binary.write_text(first + "from code_review_graph.cli import main\n")
     binary.chmod(0o755)
     return str(binary)
 
@@ -516,6 +545,23 @@ class ConsumedGuardTests(unittest.TestCase):
     def test_an_entry_script_bound_to_another_interpreter_is_refused(self):
         with tempfile.TemporaryDirectory() as root:
             self.assertTrue(tp.peer_binary_problems(fake_peer(tp.canonical(root), interpreter="/usr/bin/python3")))
+        with tempfile.TemporaryDirectory() as root:
+            other = fake_peer(tp.canonical(root), interpreter="/usr/bin/python3", trampoline=True)
+            self.assertTrue(tp.peer_binary_problems(other))
+
+    def test_an_entry_script_spelling_its_environment_through_a_link_passes(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = tp.canonical(root)
+            real = Path(root, "real")
+            real.mkdir()
+            alias = Path(root, "alias")
+            alias.symlink_to(real)
+            binary = fake_peer(str(real), interpreter=str(alias / "venv" / "bin" / "python"))
+            self.assertEqual(tp.peer_binary_problems(binary), [])
+
+    def test_an_entry_script_behind_the_long_path_trampoline_passes(self):
+        with tempfile.TemporaryDirectory() as root:
+            self.assertEqual(tp.peer_binary_problems(fake_peer(tp.canonical(root), trampoline=True)), [])
 
     def test_the_runner_rechecks_the_peer_and_the_seeds(self):
         with tempfile.TemporaryDirectory() as root:
@@ -526,14 +572,74 @@ class ConsumedGuardTests(unittest.TestCase):
             corpus.mkdir(parents=True)
             good = fake_peer(root)
 
-            def problems(arm, binary):
-                return tp.arm_problems(arm, binary, str(corpus), str(scratch), bench, PIN, "/home/example")
+            def problems(arm, binary, out=scratch / "out"):
+                return tp.arm_problems(arm, binary, str(corpus), str(scratch), str(out), bench, PIN, "/home/example")
 
             self.assertEqual(problems("crg", good), [])
             self.assertEqual(problems("devscout-base", "/usr/bin/true"), [])
             self.assertTrue(problems("crg", "/usr/bin/true"))
+            self.assertTrue(problems("devscout-base", "/usr/bin/true", out=Path(root, "out")))
             (bench / "seeds.json").write_text(json.dumps(dict(self.seeds, diffFiles=["x.ts"])))
             self.assertTrue(problems("devscout-base", "/usr/bin/true"))
+
+    def test_the_runner_refuses_a_scratch_root_given_as_a_relative_path(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = tp.canonical(root)
+            bench = bench_dir(root, self.seeds)
+            (Path(root, "scratch") / "corpus").mkdir(parents=True)
+            cwd, stderr = os.getcwd(), io.StringIO()
+            os.chdir(root)
+            try:
+                with contextlib.redirect_stderr(stderr):
+                    code = tp.run_arm("devscout-base", "/usr/bin/true", "scratch/corpus", "scratch", "scratch/out", bench)
+            finally:
+                os.chdir(cwd)
+            self.assertEqual(code, 1)
+            self.assertIn("refused: the bench scratch root is not an absolute path: scratch", stderr.getvalue())
+            self.assertFalse(Path(root, "scratch", "out").exists())
+
+    def test_the_arm_script_refuses_a_scratch_root_given_as_a_relative_path(self):
+        with tempfile.TemporaryDirectory() as root:
+            run = subprocess.run(["sh", str(REPO / "bench" / "ts-parity.sh"), "devscout-base", "/usr/bin/true",
+                                  "corpus", "scratch", "out"], cwd=root, capture_output=True, text=True)
+            self.assertEqual(run.returncode, 2, run.stderr)
+            self.assertIn("absolute", run.stderr)
+            self.assertEqual(os.listdir(root), [])
+
+    def test_the_install_rechecks_the_requirements_it_consumes(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = tp.canonical(root)
+            manifest_dir = Path(root, "truth", "typescript")
+            manifest_dir.mkdir(parents=True)
+            requirements = Path(root, "peers", "requirements.txt")
+            requirements.parent.mkdir()
+            requirements.write_text("a==1.0 --hash=sha256:" + "0" * 64 + "\n")
+            entry = "../../peers/requirements.txt"
+            (manifest_dir / "manifest.json").write_text(json.dumps({"files": {entry: tp.sha256_file(requirements)}}))
+            self.assertEqual(tp.registered_file_problems(manifest_dir, str(requirements)), [])
+            copy = Path(root, "copy.txt")
+            copy.write_text(requirements.read_text())
+            self.assertTrue(tp.registered_file_problems(manifest_dir, str(copy)))
+            requirements.write_text("a==1.1 --hash=sha256:" + "0" * 64 + "\n")
+            self.assertTrue(tp.registered_file_problems(manifest_dir, str(requirements)))
+            (manifest_dir / "manifest.json").write_text("{}")
+            self.assertTrue(tp.registered_file_problems(manifest_dir, str(requirements)))
+
+    def test_the_install_refuses_requirements_other_than_the_registered_file(self):
+        registered = REPO / "bench" / "peers" / "code-review-graph" / "requirements.txt"
+        with tempfile.TemporaryDirectory() as root:
+            root = tp.canonical(root)
+            copy = Path(root, "requirements.txt")
+            copy.write_text(registered.read_text(encoding="utf-8") + "# reordered\n", encoding="utf-8")
+            env = {"HOME": str(Path(root, "home")), "UV_CACHE_DIR": str(Path(root, "cache"))}
+            venv = str(Path(root, "venv"))
+            with mock.patch.dict(os.environ, env, clear=True), contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(tp.cmd_peer_preinstall([str(registered), venv]), 0)
+                self.assertEqual(tp.cmd_peer_preinstall([str(copy), venv]), 1)
+
+    def test_the_registered_peer_requirements_match_the_manifest(self):
+        requirements = REPO / "bench" / "peers" / "code-review-graph" / "requirements.txt"
+        self.assertEqual(tp.registered_file_problems(tp.MANIFEST_DIR, str(requirements)), [])
 
     def test_the_scorer_rechecks_seeds_and_truth(self):
         with tempfile.TemporaryDirectory() as root:
@@ -546,6 +652,112 @@ class ConsumedGuardTests(unittest.TestCase):
                 with self.assertRaises(SystemExit):
                     tp.cmd_score([str(bench), root, str(Path(root, "scores.json"))])
                 (bench / name).write_text(original)
+
+
+SCORE_TEMPLATES = ("devscout-head\tsetup\tsetup\t{bin} init --no-hooks\n"
+                   "devscout-head\trefs\tseed\t{bin} refs {seed} --all --json\n"
+                   "devscout-head\ttests\tseed\t{bin} tests {seed} --json\n"
+                   "devscout-head\timpact\tfile\t{bin} impact {file} --hops 1 --json\n"
+                   "devscout-head\timpact-default\tfile\t{bin} impact {file} --json\n"
+                   "crg\trefs\tseed\t{bin} query callers_of {seed} --repo {corpus}\n"
+                   "crg\trefs-importers\tseed\t{bin} query importers_of {seed} --repo {corpus}\n")
+
+
+def score_bench(root):
+    """A registered bench with one seed and the arm records the runner would write for it."""
+    seeds = {"pin": PIN, "seeds": [{"slot": 1, "name": "a", "file": "d/a.ts"}],
+             "declaringFiles": ["d/a.ts"], "diffFiles": []}
+    targets = {"declaring:d/a.ts": {"files": ["d/a.ts"], "names": ["a"]}, "diff": {"files": [], "names": []}}
+    bench = Path(root, "bench")
+    bench.mkdir()
+    (bench / "templates.tsv").write_text(SCORE_TEMPLATES)
+    (bench / "seeds.json").write_text(json.dumps(seeds))
+    (bench / "truth-sealed.json").write_text(json.dumps({"names": {"a": {"files": ["x.ts"]}}, "targets": targets}))
+    (bench / "truth-raw.json").write_text(json.dumps({"names": {"a": {"files": {"x.ts": [1]}}}, "targets": targets}))
+    names = ("templates.tsv", "seeds.json", "truth-sealed.json", "truth-raw.json")
+    (bench / "manifest.json").write_text(json.dumps({"files": {n: tp.sha256_file(bench / n) for n in names}}))
+    corpus = Path(root, "nx-crg")
+    corpus.mkdir()
+    runs = {arm: tp.invocations(tp.read_templates(bench / "templates.tsv"), arm, seeds, f"/bin/{arm}", str(corpus))
+            for arm in ("devscout-head", "crg")}
+    return bench, corpus, runs
+
+
+def write_record(directory, arm, runs, head=PIN, payloads=None):
+    directory.mkdir()
+    log = []
+    for number, (task, target, argv) in enumerate(runs):
+        payload = (payloads or {}).get(task, {"status": "ok", "results": [], "rows": [], "inbound": {}})
+        Path(directory, f"{number}.out").write_text(json.dumps(payload))
+        log.append({"n": number, "task": task, "target": target, "argv": argv, "exit": 0, "stdout": f"{number}.out"})
+    Path(directory, "runs.json").write_text(json.dumps({"arm": arm, "corpusHead": head, "runs": log}))
+    return directory
+
+
+class ScoredRecordTests(unittest.TestCase):
+    def score(self, root, corpus, **records):
+        out = Path(root, "scores.json")
+        specs = [f"{arm.replace('_', '-')}={path}" for arm, path in records.items()]
+        tp.cmd_score([str(Path(root, "bench")), str(corpus), str(out), *specs])
+        return json.loads(out.read_text())
+
+    def test_a_record_the_runner_would_write_is_scored(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = tp.canonical(root)
+            _, corpus, runs = score_bench(root)
+            head = write_record(Path(root, "out-head"), "devscout-head", runs["devscout-head"],
+                                payloads={"refs": {"inbound": {"call": {"rows": [{"file": "x.ts"}]}}}})
+            crg = write_record(Path(root, "out-crg"), "crg", runs["crg"])
+            scores = self.score(root, corpus, devscout_head=head, crg=crg)
+            self.assertEqual(scores["devscout-head"]["sealed"]["refs"]["pooled"], 1.0)
+            self.assertNotIn("failed", scores["devscout-head"]["sealed"]["tests"]["perSeed"]["a"])
+
+    def test_a_record_of_another_arm_or_revision_is_refused(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = tp.canonical(root)
+            _, corpus, runs = score_bench(root)
+            other_arm = write_record(Path(root, "out-a"), "devscout-base", runs["devscout-head"])
+            other_head = write_record(Path(root, "out-b"), "devscout-head", runs["devscout-head"], head="1" * 40)
+            for record in (other_arm, other_head):
+                with self.assertRaises(SystemExit):
+                    self.score(root, corpus, devscout_head=record)
+
+    def test_an_unregistered_or_repeated_invocation_is_refused(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = tp.canonical(root)
+            _, corpus, runs = score_bench(root)
+            task, target, argv = runs["devscout-head"][1]
+            extra = write_record(Path(root, "out-a"), "devscout-head",
+                                 runs["devscout-head"] + [(task, target, argv[:2] + ["visualize"])])
+            twice = write_record(Path(root, "out-b"), "devscout-head", runs["devscout-head"] + [(task, target, argv)])
+            for record in (extra, twice):
+                with self.assertRaises(SystemExit):
+                    self.score(root, corpus, devscout_head=record)
+
+    def test_peer_answers_are_scored_only_against_the_corpus_the_arm_ran_on(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = tp.canonical(root)
+            _, corpus, runs = score_bench(root)
+            crg = write_record(Path(root, "out-crg"), "crg", runs["crg"])
+            alias = Path(root, "alias")
+            alias.symlink_to(corpus)
+            self.assertIn("crg", self.score(root, alias, crg=crg))
+            with self.assertRaises(SystemExit):
+                self.score(root, Path(root), crg=crg)
+
+    def test_a_registered_invocation_missing_from_the_record_is_failed(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = tp.canonical(root)
+            _, corpus, runs = score_bench(root)
+            kept = [run for run in runs["devscout-head"] if run[0] not in ("tests", "impact-default")]
+            head = write_record(Path(root, "out-head"), "devscout-head", kept)
+            crg = write_record(Path(root, "out-crg"), "crg", [run for run in runs["crg"] if run[0] == "refs"])
+            scores = self.score(root, corpus, devscout_head=head, crg=crg)
+            sealed = scores["devscout-head"]["sealed"]
+            self.assertTrue(sealed["tests"]["perSeed"]["a"]["failed"])
+            self.assertNotIn("failed", sealed["refs"]["perSeed"]["a"])
+            self.assertTrue(sealed["impact"]["impact-default"]["declaring:d/a.ts"]["failed"])
+            self.assertTrue(scores["crg"]["sealed"]["refsWithFileImporters"]["perSeed"]["a"]["failed"])
 
 
 REPO = Path(__file__).resolve().parents[1]

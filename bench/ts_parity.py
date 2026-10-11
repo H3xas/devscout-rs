@@ -33,7 +33,11 @@ ANSWER_EXITS = {"devscout-base": (0, 3), "devscout-head": (0, 3), "crg": (0,)}
 # The peer exits 0 on its own errors, so its payload status decides; not_found is its answer
 # for a name it holds no node for.
 ANSWER_STATUSES = {"crg": ("ok", "not_found")}
-SCORE_INPUTS = ("seeds.json", "truth-sealed.json", "truth-raw.json")
+SCORE_INPUTS = ("seeds.json", "truth-sealed.json", "truth-raw.json", "templates.tsv")
+MANIFEST_DIR = Path(__file__).resolve().parent / "truth" / "typescript"
+SHEBANG_RE = re.compile(r"^#!\s*(\S+)")
+# Installers write this /bin/sh trampoline when the interpreter path is too long for a shebang.
+TRAMPOLINE_RE = re.compile(r"^'{3}exec' '([^']+)'", re.MULTILINE)
 
 PROVIDER_KEY_RE = re.compile(
     r"(API_?KEY|TOKEN|SECRET|PASSWORD|OPENAI|GEMINI|GOOGLE|MINIMAX|ANTHROPIC|VOYAGE|COHERE|MISTRAL)",
@@ -160,20 +164,34 @@ def identity_problems(package_dir, version):
     return problems
 
 
+def entry_interpreter(head):
+    """The interpreter an entry script runs, from its shebang or its /bin/sh trampoline."""
+    match = SHEBANG_RE.match(head.split("\n", 1)[0])
+    if not match:
+        return None
+    if match.group(1) == "/bin/sh":
+        trampoline = TRAMPOLINE_RE.search(head)
+        return trampoline.group(1) if trampoline else None
+    return match.group(1)
+
+
 def peer_binary_problems(binary):
     """The binary an arm run is given must be the entry script of a virtual environment whose
     installed peer passes the identity check, whatever the install step reported."""
-    path = Path(binary)
+    path = Path(canonical(binary))
     venv = path.parent.parent
-    python = venv / "bin" / "python"
     if path.name != PEER_PACKAGE or path.parent.name != "bin" or not (venv / "pyvenv.cfg").is_file():
         return [f"{binary} is not the {PEER_PACKAGE} entry script of a virtual environment"]
     try:
         head = path.read_bytes()[:1024].decode("utf-8", "replace")
     except OSError as error:
         return [f"cannot read {binary}: {error}"]
-    interpreters = {str(python), os.path.join(canonical(str(python.parent)), "python")}
-    if not any(f"#!{interpreter}\n" in head or f"'{interpreter}'" in head for interpreter in interpreters):
+    interpreter = entry_interpreter(head)
+    # The interpreter link itself resolves to the base Python, so its directory is what ties
+    # the script to this environment, however the install spelled the path.
+    if (interpreter is None or not os.path.isabs(interpreter)
+            or not os.path.basename(interpreter).startswith("python")
+            or canonical(os.path.dirname(interpreter)) != str(venv / "bin")):
         return [f"{binary} does not run the interpreter of its own virtual environment"]
     try:
         package_dir, version = installed_peer(venv)
@@ -201,6 +219,22 @@ def manifest_problems(bench_dir, names):
         if actual != recorded[name]:
             problems.append(f"{name} hash {actual} differs from the manifest {recorded[name]}")
     return problems
+
+
+def registered_file_problems(manifest_dir, path):
+    """A step that consumes a registered file re-checks it against the manifest entry that names
+    the same file, whatever path it was handed."""
+    manifest_dir = Path(manifest_dir)
+    try:
+        recorded = read_json(manifest_dir / "manifest.json")["files"]
+    except (OSError, ValueError, KeyError) as error:
+        return [f"cannot read the manifest: {error}"]
+    target = canonical(path)
+    for name, digest in recorded.items():
+        if canonical(manifest_dir / name) == target:
+            actual = sha256_file(target)
+            return [] if actual == digest else [f"{path} hash {actual} differs from the manifest {digest}"]
+    return [f"{path} has no manifest entry"]
 
 
 def is_devscout_checkout(directory):
@@ -240,10 +274,24 @@ def install_path_problems(cache_dir, venv, home_of_user):
             + place_problems("the peer virtual environment", canonical(venv), home_of_user))
 
 
-def corpus_problems(corpus, pin, head, scratch_root, home_of_user):
+def corpus_changes(corpus):
+    """Every changed, untracked or ignored path of the corpus copy, one `git status` line each."""
+    run = subprocess.run(["git", "-C", str(corpus), "status", "--porcelain", "--ignored", "--untracked-files=all"],
+                         capture_output=True, text=True)
+    if run.returncode != 0:
+        return [f"git status failed: {run.stderr.strip()}"]
+    return [line for line in run.stdout.splitlines() if line]
+
+
+def corpus_problems(corpus, pin, head, scratch_root, home_of_user, changes=()):
+    """The corpus must be a copy of the pin that no arm has indexed or edited, bound to the
+    scratch root and outside the real home."""
     problems = []
     if head != pin:
         problems.append(f"corpus HEAD {head} is not the pin {pin}")
+    if changes:
+        problems.append(f"the corpus copy is not a pristine clone of the pin: {len(changes)} changed, "
+                        f"untracked or ignored paths, first {changes[0]}")
     return problems + place_problems("the corpus", canonical(corpus), home_of_user, scratch_root)
 
 
@@ -672,7 +720,7 @@ def arm_env(arm, scratch):
     return env
 
 
-def arm_problems(arm, binary, corpus, scratch, bench_dir, head, home_of_user):
+def arm_problems(arm, binary, corpus, scratch, out_dir, bench_dir, head, home_of_user, changes=()):
     """Every guard an arm run must pass, judged on the paths and files the run will use."""
     bench = Path(bench_dir)
     problems = manifest_problems(bench, RUN_INPUTS)
@@ -681,20 +729,24 @@ def arm_problems(arm, binary, corpus, scratch, bench_dir, head, home_of_user):
     manifest = read_json(bench / "manifest.json")
     templates_path = bench / "templates.tsv"
     problems = template_problems(read_templates(templates_path), manifest["files"]["templates.tsv"], templates_path)
-    problems += corpus_problems(corpus, read_json(bench / "seeds.json")["pin"], head, scratch, home_of_user)
+    problems += corpus_problems(corpus, read_json(bench / "seeds.json")["pin"], head, scratch, home_of_user, changes)
     problems += arm_env_problems(arm, arm_env(arm, scratch), scratch, home_of_user)
+    problems += place_problems("the output directory", canonical(out_dir), home_of_user, scratch)
     if arm == "crg":
         problems += peer_binary_problems(binary)
     return problems
 
 
 def run_arm(arm, binary, corpus, scratch, out_dir, bench_dir):
+    if not os.path.isabs(scratch):
+        return refuse([f"the bench scratch root is not an absolute path: {scratch}"])
     # Resolved once: the child runs with the corpus as its working directory, so every path it
     # receives must already be absolute and every guard must judge the path the child will use.
-    binary, corpus, scratch = canonical(binary), canonical(corpus), canonical(scratch)
+    binary, corpus, scratch, out_dir = canonical(binary), canonical(corpus), canonical(scratch), canonical(out_dir)
     bench = Path(bench_dir)
     head = subprocess.run(["git", "-C", corpus, "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
-    if refuse(arm_problems(arm, binary, corpus, scratch, bench, head, real_home())):
+    changes = corpus_changes(corpus)
+    if refuse(arm_problems(arm, binary, corpus, scratch, out_dir, bench, head, real_home(), changes)):
         return 1
     templates = read_templates(bench / "templates.tsv")
     seeds = read_json(bench / "seeds.json")
@@ -784,6 +836,45 @@ def load_answers(run_dir, corpus_root=None):
     result = {key: sorted(value) for key, value in answers.items()}
     result.update({key: None for key in failed})
     return result
+
+
+def answer_keys(templates, arm, seeds):
+    """Every (task, target) the registered templates ask the arm to answer."""
+    return {(task, target.split("|", 1)[0])
+            for task, target, _ in invocations(templates, arm, seeds, "", "") if target != "setup"}
+
+
+def registered_answers(answers, keys):
+    """The answers over the registered keys: a key the record never answered maps to None."""
+    merged = {key: None for key in keys}
+    merged.update(answers)
+    return merged
+
+
+def run_record_problems(record, arm, templates, seeds, corpus_root):
+    """A stored arm record is scored only when it is the named arm's run at the pin and every
+    invocation in it is one the registered templates expand to, each run once."""
+    problems = []
+    if record.get("arm") != arm:
+        problems.append(f"the {arm} record is a run of {record.get('arm')}")
+    if record.get("corpusHead") != seeds["pin"]:
+        problems.append(f"the {arm} record ran on corpus HEAD {record.get('corpusHead')}, not the pin")
+    runs = record.get("runs", [])
+    binaries = {run["argv"][0] for run in runs if run.get("argv")}
+    if len(binaries) > 1:
+        problems.append(f"the {arm} record runs more than one binary")
+    binary = next(iter(binaries), "")
+    expected = {(task, target, tuple(argv))
+                for task, target, argv in invocations(templates, arm, seeds, binary, canonical(corpus_root))}
+    seen = set()
+    for run in runs:
+        key = (run.get("task"), run.get("target"), tuple(run.get("argv") or ()))
+        if key not in expected:
+            problems.append(f"the {arm} record holds an unregistered invocation: {' '.join(key[2])}")
+        elif key in seen:
+            problems.append(f"the {arm} record runs one invocation twice: {' '.join(key[2])}")
+        seen.add(key)
+    return problems
 
 
 def ratio(numerator, denominator):
@@ -906,6 +997,7 @@ def cmd_peer_preinstall(args):
     if cache_dir:
         problems += install_path_problems(cache_dir, venv, real_home())
     problems += requirement_problems(requirements)
+    problems += registered_file_problems(MANIFEST_DIR, requirements_path)
     return refuse(problems)
 
 
@@ -987,12 +1079,16 @@ def cmd_score(args):
     seeds = read_json(bench / "seeds.json")
     sealed = read_json(bench / "truth-sealed.json")
     raw = read_json(bench / "truth-raw.json")
+    templates = read_templates(bench / "templates.tsv")
     raw_as_sealed = {"names": {name: {"files": sorted(entry["files"])} for name, entry in raw["names"].items()},
                      "targets": raw["targets"]}
     result = {}
     for spec in runs:
         arm, run_dir = spec.split("=", 1)
-        answers = load_answers(run_dir, corpus_root)
+        record = read_json(Path(run_dir) / "runs.json")
+        if refuse(run_record_problems(record, arm, templates, seeds, corpus_root)):
+            raise SystemExit(1)
+        answers = registered_answers(load_answers(run_dir, corpus_root), answer_keys(templates, arm, seeds))
         scores = score(sealed, seeds, answers)
         result[arm] = {"sealed": scores, "raw": score(raw_as_sealed, seeds, answers), "gate": gate(scores, seeds)}
     cells = peers_win({arm: block["sealed"] for arm, block in result.items()})

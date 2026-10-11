@@ -6,8 +6,9 @@
 #          bench/peers/code-review-graph/install.sh <new venv dir> [python]
 #
 # A shared or reused package cache can hold a different build published under the same
-# name and version, so the cache must start empty, every requirement is hash-pinned, and
-# the only index is PyPI. HOME and the cache are absolute paths, and neither they nor the
+# name and version, so the cache must start empty, every requirement is hash-pinned, the
+# requirements file must still match its pre-registered manifest hash, and the only index
+# is PyPI. HOME and the cache are absolute paths, and neither they nor the
 # virtual environment may sit inside the real home directory or a checkout of this
 # repository. No extras are installed: the embedding providers and the
 # visualizer are the parts of the package that reach the network.

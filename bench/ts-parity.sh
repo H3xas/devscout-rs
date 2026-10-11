@@ -9,11 +9,13 @@
 # seeds differ from the pre-registered manifest, a template uses a verb outside the arm's
 # allowlist, the peer binary is not the entry script of a virtual environment whose installed
 # package passes the upstream identity check (checked again here, not only at install), the
-# corpus is not at the pin, or the corpus or a state directory (HOME, CRG_DATA_DIR,
-# SCOUT_REGISTRY, SCOUT_CONTENT_DB) is outside the scratch root, inside the real home
-# directory or inside a checkout of this repository. Every path is resolved to its canonical
-# absolute form before it is checked, because the arm runs with the corpus as its working
-# directory.
+# corpus is not at the pin or is not a pristine copy (any changed, untracked or ignored path,
+# such as an earlier arm's index), or the corpus, the output directory or a state directory
+# (HOME, CRG_DATA_DIR, SCOUT_REGISTRY, SCOUT_CONTENT_DB) is outside the scratch root, inside
+# the real home directory or inside a checkout of this repository. Every path is resolved to
+# its canonical absolute form before it is checked, because the arm runs with the corpus as
+# its working directory. The scratch root must be given as an absolute path: it also holds
+# the runner's own HOME, which is set before any path is resolved.
 
 set -eu
 
@@ -21,6 +23,13 @@ if [ "$#" -ne 5 ]; then
 	echo "usage: $0 <devscout-base|devscout-head|crg> <arm binary> <corpus copy> <scratch root> <output dir>" >&2
 	exit 2
 fi
+case "$4" in
+/*) ;;
+*)
+	echo "refused: the bench scratch root is not an absolute path: $4" >&2
+	exit 2
+	;;
+esac
 
 here="$(cd "$(dirname "$0")" && pwd)"
 
