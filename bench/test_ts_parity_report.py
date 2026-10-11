@@ -175,6 +175,12 @@ class RenderTests(unittest.TestCase):
             self.render()
 
 
+class TableTests(unittest.TestCase):
+    def test_a_cell_holding_a_pipe_stays_one_cell(self):
+        rendered = report.table(("A", "B"), [("x|y", "`p|q`")])
+        self.assertEqual(rendered.splitlines()[2], "| x\\|y | `p\\|q` |")
+
+
 class PredictionRuleTests(unittest.TestCase):
     def test_every_pre_registered_prediction_has_a_rule(self):
         preregistration = (REPO / "bench" / "truth" / "typescript" / "preregistration.md").read_text()

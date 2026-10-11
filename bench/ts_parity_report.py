@@ -94,8 +94,11 @@ def precision_cell(block):
 
 
 def table(header, rows):
+    def cell(value):
+        return str(value).replace("|", "\\|")
+
     lines = ["| " + " | ".join(header) + " |", "| " + " | ".join("---" for _ in header) + " |"]
-    lines += ["| " + " | ".join(str(cell) for cell in row) + " |" for row in rows]
+    lines += ["| " + " | ".join(cell(value) for value in row) + " |" for row in rows]
     return "\n".join(lines)
 
 

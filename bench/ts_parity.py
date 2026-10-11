@@ -1011,7 +1011,7 @@ def resolve_relative(corpus_root, from_file, specifier):
     if not specifier.startswith("."):
         return None
     base = posixpath.normpath(posixpath.join(posixpath.dirname(from_file), specifier))
-    if base == ".." or base.startswith("../"):
+    if posixpath.isabs(base) or base == ".." or base.startswith("../"):
         return None
     stems = [base] + ([base.rsplit(".", 1)[0]] if base.endswith((".js", ".jsx")) else [])
     for stem in stems:
@@ -1082,7 +1082,7 @@ def imported_by(corpus_root, queried):
     """Every corpus file a queried file imports by a relative specifier."""
     found = set()
     for path in queried:
-        for _, specifier in imports_of(read_text(corpus_root, path)):
+        for _, specifier in imports_of(corpus_text(corpus_root, path) or ""):
             target = resolve_relative(corpus_root, path, specifier)
             if target:
                 found.add(target)
@@ -1113,7 +1113,11 @@ def answer_totals(arm, payloads):
 
 
 def corpus_text(corpus_root, path):
-    return read_text(corpus_root, path) if (Path(corpus_root) / path).is_file() else None
+    """A corpus file's text, or None for a missing file or a path that leaves the corpus root."""
+    relative_path = posixpath.normpath(path)
+    if os.path.isabs(relative_path) or relative_path == ".." or relative_path.startswith("../"):
+        return None
+    return read_text(corpus_root, relative_path) if (Path(corpus_root) / relative_path).is_file() else None
 
 
 def evidence(run_dir, corpus_root, seeds, sealed, scores):
@@ -1148,7 +1152,7 @@ def evidence(run_dir, corpus_root, seeds, sealed, scores):
         for name, entry in per_seed.items():
             level = answer_class(entry.get("failed"), any_rows, statuses.get((task, name)))
             classes[task][name] = {
-                "missed": {path: level or reference_miss_class(read_text(corpus_root, path), name)
+                "missed": {path: level or reference_miss_class(corpus_text(corpus_root, path) or "", name)
                            for path in entry["missed"]},
                 "extra": {path: reference_extra_class(task, path, name, declaring[name],
                                                       corpus_text(corpus_root, path), removed)
@@ -1160,9 +1164,10 @@ def evidence(run_dir, corpus_root, seeds, sealed, scores):
         level = answer_class(block.get("failed"), any_rows, None)
         imported = imported_by(corpus_root, queried)
         classes["impact"][key] = {
-            "missed": {path: level or impact_miss_class(read_text(corpus_root, path), path, queried, names,
+            "missed": {path: level or impact_miss_class(corpus_text(corpus_root, path) or "", path, queried, names,
                                                         corpus_root) for path in block["missed"]},
-            "extra": {path: impact_extra_class(path, read_text(corpus_root, path), imported, queried, corpus_root)
+            "extra": {path: impact_extra_class(path, corpus_text(corpus_root, path) or "", imported, queried,
+                                               corpus_root)
                       for path in block["extra"]}}
     totals = {}
     for (task, key), answer in sorted(payloads.items()):

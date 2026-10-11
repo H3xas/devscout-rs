@@ -805,6 +805,8 @@ class EvidenceTests(unittest.TestCase):
             self.assertIsNone(resolve("./missing"))
             self.assertIsNone(resolve("@scope/a"))
             self.assertIsNone(resolve("../../outside"))
+            Path(root, "abs.ts").write_text("")
+            self.assertIsNone(tp.resolve_relative(root, str(Path(root, "x.ts")), "./abs"))
 
     def test_a_reference_miss_is_classed_by_its_import_and_its_use(self):
         classes = {
@@ -863,6 +865,16 @@ class EvidenceTests(unittest.TestCase):
                              "imports a queried file")
             self.assertEqual(tp.impact_extra_class("far.ts", "", imported, queried, root),
                              "no import link to a queried file")
+
+    def test_an_answer_path_outside_the_corpus_is_never_read(self):
+        with tempfile.TemporaryDirectory() as root:
+            corpus_root = Path(root, "corpus")
+            corpus_root.mkdir()
+            Path(root, "outside.ts").write_text("S")
+            Path(corpus_root, "inside.ts").write_text("S")
+            self.assertEqual(tp.corpus_text(corpus_root, "inside.ts"), "S")
+            for path in ("../outside.ts", str(Path(root, "outside.ts")), "a/../../outside.ts"):
+                self.assertIsNone(tp.corpus_text(corpus_root, path), path)
 
     def test_answer_totals_sum_what_each_tool_reports_and_leaves_out(self):
         devscout = [{"totalAffected": 5, "rows": [{}, {}], "dropped": 3}, {"totalAffected": 1, "rows": [{}], "dropped": 0}]
