@@ -717,6 +717,111 @@ fn read_text_and_compact_render_the_ts_tables() {
     );
 }
 
+const TS_KINDS: [&str; 4] = ["call", "jsx-use", "dispatch", "import"];
+
+/// `"4x2"`-style run-length join of one file's lines, as `--compact` writes them.
+fn run_length(lines: &[String]) -> String {
+    let mut out: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < lines.len() {
+        let run = lines[i..].iter().take_while(|l| **l == lines[i]).count();
+        out.push(if run > 1 {
+            format!("{}x{run}", lines[i])
+        } else {
+            lines[i].clone()
+        });
+        i += run;
+    }
+    out.join(",")
+}
+
+/// The text block and the `--compact` block that one `--json` table must
+/// render as, each ending at its line break.
+fn table_blocks(table: &Value, kind: &str, side: &str) -> (String, String) {
+    let total = table["total"].as_u64().unwrap();
+    let header = match table["dropped"].as_u64().unwrap() {
+        0 => format!("{kind} ({total}):"),
+        dropped => format!("{kind} ({total}, {dropped} dropped):"),
+    };
+    let mut text = format!("  {header}\n");
+    let mut groups: Vec<(String, Vec<String>)> = Vec::new();
+    for r in table["rows"].as_array().unwrap() {
+        let file = r["file"].as_str().unwrap();
+        let line = r["line"].as_u64().unwrap().to_string();
+        let target = r["to"]
+            .as_str()
+            .map(|to| format!("-> {to}  "))
+            .unwrap_or_default();
+        let (why, source) = (r["why"].as_str().unwrap(), r["source"].as_str().unwrap());
+        text.push_str(&format!("    {file}:{line}  {why}  {target}{source}\n"));
+        match groups.last_mut() {
+            Some((last, lines)) if last == file => lines.push(line),
+            _ => groups.push((file.to_string(), vec![line])),
+        }
+    }
+    let mut compact = format!("{side}:{header}\n");
+    for (file, lines) in groups {
+        compact.push_str(&format!("  {file}:{}\n", run_length(&lines)));
+    }
+    (text, compact)
+}
+
+#[test]
+fn every_ts_table_renders_its_json_rows_in_text_and_compact() {
+    let fx = Fixture::build("formats");
+    let cases: [(&str, &[&str]); 4] = [
+        ("refs", &[]),
+        ("refs", &["--all"]),
+        ("refs", &["--out"]),
+        ("read", &[]),
+    ];
+    for seed in ["useCart", "CartBadge", "loadCart", "CartPage"] {
+        for (verb, flags) in cases {
+            let args = |format: &[&'static str]| -> Vec<&'static str> {
+                [&[verb, seed][..], flags, format].concat()
+            };
+            let json = fx.json(&args(&["--json"]));
+            let text = fx.expect_ok(&args(&[]));
+            let compact = fx.expect_ok(&args(&["--compact"]));
+            let mut tables = 0;
+            for (section, side) in [("inbound", "in"), ("outbound", "out")] {
+                for kind in TS_KINDS {
+                    let Some(table) = json[section].get(kind) else {
+                        continue;
+                    };
+                    let (text_block, compact_block) = table_blocks(table, kind, side);
+                    assert!(
+                        text.contains(&text_block),
+                        "{args:?}: {text_block}\n{text}",
+                        args = args(&[])
+                    );
+                    assert!(
+                        compact.contains(&compact_block),
+                        "{compact_block}\n{compact}"
+                    );
+                    tables += 1;
+                }
+            }
+            assert!(tables > 0, "{verb} {seed} {flags:?} has no TS table");
+        }
+    }
+}
+
+#[test]
+fn read_answers_the_same_ts_tables_as_refs_in_json() {
+    let fx = Fixture::build("read-json");
+    for seed in ["useCart", "CartBadge", "loadCart", "CartPage"] {
+        let refs = fx.json(&["refs", seed, "--json"]);
+        let read = fx.json(&["read", seed, "--json"]);
+        for kind in TS_KINDS {
+            assert_eq!(
+                read["inbound"][kind], refs["inbound"][kind],
+                "{seed} {kind}"
+            );
+        }
+    }
+}
+
 #[test]
 fn a_graph_written_without_bound_defs_answers_with_no_import_table() {
     let fx = Fixture::build("refs-stripped");
