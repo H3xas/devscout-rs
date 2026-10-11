@@ -66,6 +66,6 @@ with predictions registered first. The 0.8.0 release tree has the same treatment
 of the `bus-hop` edges and the opt-in enriched lane.
 
 The first TypeScript run is in
-[`results/2026-09-27-typescript-reference-parity.md`](results/2026-09-27-typescript-reference-parity.md),
+[`results/2026-10-11-typescript-reference-parity.md`](results/2026-10-11-typescript-reference-parity.md),
 on the pinned nx corpus against one TypeScript-capable peer. Its registered recall gate was
 missed, as its pre-registration predicted: imports written by package name stay unresolved.
