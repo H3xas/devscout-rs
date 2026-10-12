@@ -7,6 +7,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-12
+
+A query-answer and second-language release: every resolved answer states its full count and the next
+verb to run, `refs`, `read`, `impact` and `tests` answer for TypeScript and for Rust, `.mjs`, `.cjs`,
+`.mts` and `.cts` modules are indexed, the opt-in enriched lane reports when it degrades, and the
+precise tier drops its remaining wrong-target classes.
+
 ### Added
 
 - **Rust definitions are indexed for `find` and `read`.** `map` now indexes every `.rs` file in
