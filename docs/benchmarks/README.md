@@ -65,7 +65,8 @@ The same eight scripted tasks were rerun on the 0.7.0 release tree, beside a res
 audit of that tree, in [`results/2026-09-25-release-0.7.0.md`](results/2026-09-25-release-0.7.0.md),
 with predictions registered first. The 0.8.0 release tree has the same treatment in
 [`results/2026-09-25-release-0.8.0.md`](results/2026-09-25-release-0.8.0.md), which adds the reach
-of the `bus-hop` edges and the opt-in enriched lane.
+of the `bus-hop` edges and the opt-in enriched lane, and so has the 0.9.0 release tree in
+[`results/2026-10-12-release-0.9.0.md`](results/2026-10-12-release-0.9.0.md).
 
 The first TypeScript run is in
 [`results/2026-10-11-typescript-reference-parity.md`](results/2026-10-11-typescript-reference-parity.md),
@@ -74,9 +75,9 @@ missed, as its pre-registration predicted: imports written by package name stay 
 
 ## Scorecard
 
-**Scorecard** (devscout 0.8.0 vs the `rg` baseline, MassTransit corpus; the scripted rows' full
+**Scorecard** (devscout 0.9.0 vs the `rg` baseline, MassTransit corpus; the scripted rows' full
 numbers, per-cell commands and grades are in
-[`docs/benchmarks/results/2026-09-25-release-0.8.0.md`](results/2026-09-25-release-0.8.0.md),
+[`docs/benchmarks/results/2026-10-12-release-0.9.0.md`](results/2026-10-12-release-0.9.0.md),
 the agentic row and its preliminary-run caveats in
 [`docs/benchmarks/results/2026-08.md`](results/2026-08.md)):
 
@@ -88,9 +89,10 @@ the agentic row and its preliminary-run caveats in
 | End-to-end retrieval | 1/2 correct | 2/2 correct | rg wins |
 | Agentic, Opus (preliminary, measured on 0.2.0) | 4/4 correct, median 180k tokens | 3/4 correct + 1 partial, median 199k tokens | No correctness edge; ~25k-token saving only |
 
-The four scripted rows were measured on 0.8.0's final tree, one run per cell, and every
-devscout answer is byte-identical to 0.7.0's. 0.2.0 read devscout 5 correct / 3 partial against
-rg's 6 / 2; 0.7.0 and 0.8.0 read 4 / 4, and the whole difference is one references task, where
+The four scripted rows were measured on 0.9.0's final tree, one run per cell, and every
+devscout answer is 0.8.0's (itself byte-identical to 0.7.0's) plus the next verb it now suggests.
+0.2.0 read devscout 5 correct / 3 partial against rg's 6 / 2; 0.7.0, 0.8.0 and 0.9.0 read 4 / 4,
+and the whole difference is one references task, where
 devscout also names three files that call `IJobService` members through a property typed with
 it, which a truth set built by text search cannot hold. The agentic row is the preliminary 0.2.0
 round and has not been re-measured.
@@ -147,6 +149,22 @@ against the project's own assets file) stays in the compilation's diagnostics bu
 demotes it, so an audit-on offline restore now gives complete compilations. The rule is in
 [`tools/scout-semantic/README.md`](../../tools/scout-semantic/README.md).
 
+Release 0.9.0 changes resolver output again: nine precise-tier fixes, one for each mechanism of
+the [wrong-target attribution](results/2026-09-24-precise-wrong-target-attribution.md), bind
+what C# binds or refuse the edge. Its final tree is measured in
+[`docs/benchmarks/results/2026-10-12-release-0.9.0.md`](results/2026-10-12-release-0.9.0.md).
+115 of the 170 precise wrong-target edges leave and none is added: precise precision 0.997
+(31,103 of 31,202), recall 0.529 precise, 0.575 precise+ext, 0.663 over all tiers. The 55 left are
+54 calls whose argument types are unknown or do not tell the overloads apart, and one lambda
+whose value type would be needed. 0.9.0's `graph.json` is not byte-identical to 0.8.0's; its
+`bus-hop` edges are 0.8.0's, edge for edge. The opt-in enriched lane keeps 0.8.0's figures
+(recall 0.920 precise, 0.921 precise+ext, 0.997 precision over its precise and semantic tiers
+together) and reaches them over an offline restore with the package audit on as well as off; on
+this corpus it reports `enriched-partial` and names its one partial compilation, and an artifact
+with no complete compilation is refused with that reason. Every scripted scorecard answer is
+0.8.0's plus the next verb it suggests, so no grade moved; `find` takes about a third longer,
+because it checks the command it suggests before printing it.
+
 A separate scripted-lane run measured **tool calls issued per task**: the index arm used fewer
 calls in all four query kinds, largest on references (5.0 vs 11.8 per lane, ~2.4x) — single-run
 proxy, details under "Tool-call proxy" in
@@ -169,3 +187,4 @@ Dated result documents, one file per run, never edited in place:
 | [2026-09-27-rust-edges.md](results/2026-09-27-rust-edges.md) | Rust call edges and test pairs against `rust-analyzer lsif` |
 | [2026-10-03-rust-targets.md](results/2026-10-03-rust-targets.md) | Rust nested targets, `cfg_attr` tests and path modules against `rust-analyzer lsif` |
 | [2026-10-11-typescript-reference-parity.md](results/2026-10-11-typescript-reference-parity.md) | TypeScript `refs`, `tests` and `impact` on the pinned nx corpus against one TypeScript-capable peer |
+| [2026-10-12-release-0.9.0.md](results/2026-10-12-release-0.9.0.md) | The 0.9.0 release tree: default lane with the precise-tier fixes attributed, `bus-hop` reach, the opt-in enriched lane in three passes and the scripted scorecard |

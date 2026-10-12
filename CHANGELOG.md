@@ -13,6 +13,7 @@ A query-answer and second-language release: every resolved answer states its ful
 verb to run, `refs`, `read`, `impact` and `tests` answer for TypeScript and for Rust, `.mjs`, `.cjs`,
 `.mts` and `.cts` modules are indexed, the opt-in enriched lane reports when it degrades, and the
 precise tier drops its remaining wrong-target classes.
+The release tree is measured in [`docs/benchmarks/results/2026-10-12-release-0.9.0.md`](docs/benchmarks/results/2026-10-12-release-0.9.0.md).
 
 ### Added
 
