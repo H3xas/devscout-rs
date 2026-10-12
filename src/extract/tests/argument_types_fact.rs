@@ -142,3 +142,16 @@ class C {
         vec![None, Some(ArgTypeRecord::Known("int".into()))]
     );
 }
+
+#[test]
+fn argument_typing_does_not_add_predefined_constructor_di_facts() {
+    let source =
+        "class C { public C(int count, string name, IService service) {} } interface IService {}";
+    let ctor_types: Vec<_> = extract_src(source)
+        .refs
+        .into_iter()
+        .filter(|r| r.kind == "ctor-param")
+        .map(|r| r.name)
+        .collect();
+    assert_eq!(ctor_types, vec!["IService"]);
+}

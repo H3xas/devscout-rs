@@ -266,6 +266,11 @@ fn walk<'a>(
                         continue;
                     }
                     let type_node = p.child_by_field_name("type");
+                    // Argument typing retains predefined facts in scope, but
+                    // constructor DI has never emitted them as service refs.
+                    if super::refs::base_type_identifier(type_node, src, false).is_none() {
+                        continue;
+                    }
                     if let Some(fact) = type_fact(type_node, src, &scope.type_params) {
                         let line = type_node.map(|t| t.start_position().row + 1).unwrap_or(0);
                         push_ctor_param_ref(

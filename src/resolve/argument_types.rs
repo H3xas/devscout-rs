@@ -78,6 +78,22 @@ pub(super) fn materialize(
         }
         result
     };
+    if *call
+        && descriptor.contains('*')
+        && lists.method_params.get(member).is_none_or(|overloads| {
+            overloads.iter().any(|overload| {
+                overload
+                    .type_params
+                    .as_ref()
+                    .is_none_or(|own| own.count > 0)
+            })
+        })
+    {
+        // The descriptor uses the same wildcard for the receiver's and the
+        // method's own type parameters. Only a known nongeneric method lets
+        // the receiver binding replace that wildcard soundly.
+        return None;
+    }
     substitute_receiver_type(
         &descriptor,
         receiver_args.as_deref(),
