@@ -453,6 +453,7 @@ fn walk<'a>(
                             Some(Fact {
                                 type_name: owner,
                                 descriptor: None,
+                                receiver_admissible: true,
                                 args: None,
                                 call: Some(inner_member),
                                 awaited: false,

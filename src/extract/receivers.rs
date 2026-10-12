@@ -72,6 +72,7 @@ pub(super) fn type_fact(
     Some(Fact {
         type_name,
         descriptor: Some(type_descriptor(type_node, src, type_params)),
+        receiver_admissible: base_type_identifier(type_node, src, false).is_some(),
         args,
         call: None,
         awaited: false,
@@ -180,6 +181,7 @@ fn literal_initializer_fact(declarator: Node, src: &[u8]) -> Option<Fact> {
     Some(Fact {
         type_name: type_name.to_string(),
         descriptor: Some(type_name.to_string()),
+        receiver_admissible: false,
         args: None,
         call: None,
         awaited: false,
@@ -333,6 +335,7 @@ pub(super) fn collect_member_facts(
             let fact = owner.map(|type_name| Fact {
                 type_name,
                 descriptor: None,
+                receiver_admissible: true,
                 args: None,
                 call: Some(d.member.clone()),
                 awaited: d.awaited,
@@ -705,6 +708,7 @@ fn collection_element_fact(locals: &FactTable, type_facts: &FactTable, name: &st
             Some([arg]) if arg != "*" => Some(Fact {
                 type_name: arg.clone(),
                 descriptor: None,
+                receiver_admissible: true,
                 args: None,
                 call: None,
                 awaited: false,

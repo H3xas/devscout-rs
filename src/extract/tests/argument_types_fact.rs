@@ -155,3 +155,24 @@ fn argument_typing_does_not_add_predefined_constructor_di_facts() {
         .collect();
     assert_eq!(ctor_types, vec!["IService"]);
 }
+
+#[test]
+fn typeof_inferred_local_is_argument_only() {
+    let source = "class C { void Use(object value) {} void Run() { var type = typeof(C); this.Use(type); type.IsNullable(1); } }";
+    let extracted = extract_src(source);
+    let use_ref = extracted
+        .refs
+        .iter()
+        .find(|r| r.member.as_deref() == Some("Use"))
+        .unwrap();
+    assert_eq!(
+        use_ref.arg_types,
+        Some(vec![Some(ArgTypeRecord::Known("Type".into()))])
+    );
+    let receiver_ref = extracted
+        .refs
+        .iter()
+        .find(|r| r.member.as_deref() == Some("IsNullable"))
+        .unwrap();
+    assert_eq!(receiver_ref.receiver_type, None);
+}

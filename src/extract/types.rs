@@ -655,6 +655,9 @@ pub struct Fact {
     /// Full declared type spelling for argument typing. Receiver inference
     /// continues to use `type_name` and `args`.
     pub descriptor: Option<String>,
+    /// Whether the fact may type a receiver. Argument-only facts preserve
+    /// the receiver inference boundary from before argument typing.
+    pub receiver_admissible: bool,
     /// The args value.
     pub args: Option<Vec<String>>,
     /// When set, the name's type is whatever the method of this name returns

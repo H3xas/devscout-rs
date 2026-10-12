@@ -106,27 +106,8 @@ impl<'a> Scope<'a> {
     }
 
     fn receiver_fact_for(&self, name: &str, src: &[u8]) -> Option<Fact> {
-        self.argument_fact_for(name, src).filter(|fact| {
-            !matches!(
-                fact.type_name.as_str(),
-                "string"
-                    | "char"
-                    | "bool"
-                    | "byte"
-                    | "sbyte"
-                    | "short"
-                    | "ushort"
-                    | "int"
-                    | "uint"
-                    | "long"
-                    | "ulong"
-                    | "float"
-                    | "double"
-                    | "decimal"
-                    | "object"
-                    | "dynamic"
-            )
-        })
+        self.argument_fact_for(name, src)
+            .filter(|fact| fact.receiver_admissible)
     }
 
     // `true` when the enclosing MEMBER's own fact table -- locals,
@@ -270,6 +251,7 @@ pub(super) fn resolve_member_qualifier(
             receiver: Some(Fact {
                 type_name: qt.clone(),
                 descriptor: None,
+                receiver_admissible: true,
                 args: receiver_args,
                 call: None,
                 awaited: false,
