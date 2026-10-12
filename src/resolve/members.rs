@@ -1,7 +1,7 @@
+use super::argument_compatibility::call_admits;
 use super::arity::{base_arity, call_arity, method_call_admits, resolve_ref_by_arity, CallArity};
 use super::index::{name_probe, DefIndex};
 use super::ladder::Resolution;
-use super::lambda_arity::lambda_arity_admits;
 use super::receiver::nullable_unwrap_owns_member;
 use super::scope::FileContext;
 use crate::graph::FragRef;
@@ -97,13 +97,14 @@ pub(super) fn declares_here_for_ref(
     idx: usize,
     r: &FragRef,
     this_shaped: bool,
+    source_file: &str,
 ) -> bool {
     let visible = if this_shaped {
         declares_member_any_visibility(index, idx, r.member.as_deref(), call_arity(r))
     } else {
         declares_member(index, idx, r.member.as_deref(), call_arity(r))
     };
-    visible && lambda_arity_admits(index, file_contexts, idx, r.member.as_deref(), r)
+    visible && call_admits(index, file_contexts, idx, r, source_file)
 }
 
 // Tier (e)'s own resolved-receiver-to-target step: the `Nullable<T>` veto,
@@ -119,15 +120,16 @@ pub(super) fn typed_receiver_precise_target(
     r: &FragRef,
     this_shaped: bool,
     receiver_nullable: bool,
+    source_file: &str,
 ) -> (Option<usize>, bool) {
     let nullable_veto = receiver_nullable
         && nullable_unwrap_owns_member(&index.defs[ridx].kind, r.member.as_deref());
     let target = if nullable_veto {
         None
-    } else if declares_here_for_ref(index, file_contexts, ridx, r, this_shaped) {
+    } else if declares_here_for_ref(index, file_contexts, ridx, r, this_shaped, source_file) {
         Some(ridx)
     } else {
-        typed_receiver_base_member(index, file_contexts, ridx, r, this_shaped)
+        typed_receiver_base_member(index, file_contexts, ridx, r, this_shaped, source_file)
     };
     (target, nullable_veto)
 }
@@ -267,10 +269,11 @@ pub(super) fn inherited_member_declared(
     file_contexts: &HashMap<String, FileContext>,
     start: usize,
     r: &FragRef,
+    source_file: &str,
 ) -> bool {
     inheritance_walk_matches(index, file_contexts, start, |idx| {
         declares_member(index, idx, r.member.as_deref(), call_arity(r))
-            && lambda_arity_admits(index, file_contexts, idx, r.member.as_deref(), r)
+            && call_admits(index, file_contexts, idx, r, source_file)
     })
 }
 
@@ -442,6 +445,19 @@ pub(super) fn base_member_declared(
     })
 }
 
+pub(super) fn base_member_for_ref(
+    index: &DefIndex,
+    file_contexts: &HashMap<String, FileContext>,
+    start: usize,
+    r: &FragRef,
+    source_file: &str,
+) -> Option<usize> {
+    first_base_declaring(index, file_contexts, start, true, |index, idx| {
+        declares_member_any_visibility(index, idx, r.member.as_deref(), call_arity(r))
+            && call_admits(index, file_contexts, idx, r, source_file)
+    })
+}
+
 // The typed-receiver precise tier's own base walk: when a
 // resolved receiver def does not itself declare the member, the first def
 // in its in-graph base closure that does is the precise target -- exactly
@@ -490,6 +506,7 @@ pub(super) fn typed_receiver_base_member(
     start: usize,
     r: &FragRef,
     any_visibility: bool,
+    source_file: &str,
 ) -> Option<usize> {
     let skip_interfaces = index.defs[start].kind != "interface";
     let admits = |index: &DefIndex, idx: usize| {
@@ -498,7 +515,7 @@ pub(super) fn typed_receiver_base_member(
         } else {
             declares_member(index, idx, r.member.as_deref(), call_arity(r))
         };
-        visible && lambda_arity_admits(index, file_contexts, idx, r.member.as_deref(), r)
+        visible && call_admits(index, file_contexts, idx, r, source_file)
     };
     if skip_interfaces || r.arg_count.is_some() {
         return first_base_declaring(index, file_contexts, start, skip_interfaces, admits);

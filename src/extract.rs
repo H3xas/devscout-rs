@@ -40,6 +40,8 @@
 // TS-family fragment shapes. `ts_purpose`, `ts_fragment_types` and
 // `ts_fragment` hold the TypeScript-family purpose and reference-fact
 // extraction.
+mod argument_member_types;
+mod argument_types;
 mod bus;
 mod bus_vocab;
 mod delegate_args;
@@ -71,8 +73,8 @@ pub use ts_purpose::{
     compose_hybrid_ts_purpose, extract_ts_purpose, extract_ts_purpose_with_heuristic,
 };
 pub use types::{
-    DefRecord, DelegateSignature, EnclosingCallFact, ExtensionMethod, Extraction, Fact,
-    HandlerRegistrationRecord, LambdaShape, LambdaSlot, NameRecord, OverloadTypeParamSites,
+    ArgTypeRecord, DefRecord, DelegateSignature, EnclosingCallFact, ExtensionMethod, Extraction,
+    Fact, HandlerRegistrationRecord, LambdaShape, LambdaSlot, NameRecord, OverloadTypeParamSites,
     PublishRecord, RefRecord, RegistrationRecord, UsingRecord,
 };
 pub use walk::extract;

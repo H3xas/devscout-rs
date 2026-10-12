@@ -192,6 +192,8 @@ pub struct MethodOverloadParams {
     /// The overload's own type parameters, when its fragment recorded both
     /// their count and their sites aligned with `params`.
     pub type_params: Option<OwnTypeParams>,
+    /// The range from the same declaration and position as `params`.
+    pub arity: Option<(usize, i64)>,
 }
 
 /// One overload's own type parameters: its count from
@@ -221,12 +223,17 @@ fn overloads_of(d: &FragDef, file: &str) -> Vec<(String, Vec<MethodOverloadParam
                 .method_type_param_sites
                 .get(name)
                 .filter(|s| s.len() == overloads.len());
+            let ranges = d
+                .method_arities
+                .get(name)
+                .filter(|r| r.len() == overloads.len());
             let entries = overloads
                 .iter()
                 .enumerate()
                 .map(|(k, params)| MethodOverloadParams {
                     params: params.clone(),
                     file: file.to_string(),
+                    arity: ranges.map(|r| r[k]),
                     type_params: counts.zip(sites).and_then(|(counts, sites)| {
                         let (count, sites) = (counts[k], &sites[k]);
                         (sites.len() == params.len()
@@ -616,5 +623,6 @@ pub(super) fn name_probe(name: String, namespace: &str, outer_types: Vec<String>
         lambda_arg_arity: None,
         method_type_arg_count: None,
         lambda_arg_shape: None,
+        arg_types: None,
     }
 }

@@ -9,6 +9,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Calls skip same-count overloads that reject known argument types.** A typed receiver now
+  continues through its base interfaces or classes, and an applicable extension can bind when
+  the receiver's own overload cannot accept a written literal, declared value or member result.
+  Unknown types still leave the overload available. The fragment cache moves to
+  `fragments-v33.json`, so an existing cache re-extracts once.
 - **Compiler-facts and context output list compiler diagnostics in one fixed order.** The
   compiler returns its diagnostics in an order that can change between identical runs. Each
   context record's `diagnostics.compiler` array, also embedded in compiler-facts output, was

@@ -10,8 +10,9 @@ use super::ladder::{
     type_qualifier_arm_admits, Admission, Narrowed, Resolution, Via,
 };
 use super::members::{
-    base_member_declared, declares_here_for_ref, extension_closure_key, inherited_member_declared,
-    member_shape, member_vouched, typed_receiver_base_member, typed_receiver_precise_target,
+    base_member_declared, base_member_for_ref, declares_here_for_ref, extension_closure_key,
+    inherited_member_declared, member_shape, member_vouched, typed_receiver_base_member,
+    typed_receiver_precise_target,
 };
 use super::provenance::{self, Step};
 use super::reach::attach_reach;
@@ -225,13 +226,9 @@ pub fn resolve_graph_with_model(
                 // lookup at the bases for exactly the same reason.
                 if r.receiver_base && r.receiver_call_owner.is_none() {
                     if let Resolution::Resolved(start, _) = &result {
-                        if let Some(target) = base_member_declared(
-                            &index,
-                            &file_contexts,
-                            *start,
-                            r.member.as_deref(),
-                            call_arity(r),
-                        ) {
+                        if let Some(target) =
+                            base_member_for_ref(&index, &file_contexts, *start, r, file)
+                        {
                             edges.push(Edge::uses_member(
                                 file.clone(),
                                 r.line,
@@ -310,8 +307,14 @@ pub fn resolve_graph_with_model(
                             // named through a derived type) keeps the
                             // public-only walk.
                             let this_shaped = is_this_shaped_receiver(r);
-                            let declares_here =
-                                declares_here_for_ref(&index, &file_contexts, idx, r, this_shaped);
+                            let declares_here = declares_here_for_ref(
+                                &index,
+                                &file_contexts,
+                                idx,
+                                r,
+                                this_shaped,
+                                file,
+                            );
                             // A qualifier that resolved as a TYPE binds the def
                             // that DECLARES the member, in this order: the named
                             // type itself; else the first in-graph base in its
@@ -339,6 +342,7 @@ pub fn resolve_graph_with_model(
                                 idx,
                                 r,
                                 this_shaped,
+                                file,
                             ) {
                                 Some(target)
                             } else if (r.generic && r.qualified.is_none())
@@ -624,6 +628,7 @@ pub fn resolve_graph_with_model(
                                 r,
                                 this_shaped,
                                 receiver_nullable,
+                                file,
                             );
                             if let Some(target) = target {
                                 edges.push(Edge::uses_member(
@@ -724,8 +729,14 @@ pub fn resolve_graph_with_model(
                                 if let Resolution::Resolved(hidx, _) =
                                     resolve_ref(&hop, usings, ns, &index, aliases, &file_contexts)
                                 {
-                                    if declares_here_for_ref(&index, &file_contexts, hidx, r, false)
-                                    {
+                                    if declares_here_for_ref(
+                                        &index,
+                                        &file_contexts,
+                                        hidx,
+                                        r,
+                                        false,
+                                        file,
+                                    ) {
                                         edges.push(Edge::uses_member(
                                             file.clone(),
                                             r.line,
@@ -921,7 +932,7 @@ pub fn resolve_graph_with_model(
                         // that name.
                         let vetoed = match receiver_def {
                             Some(ridx) => {
-                                inherited_member_declared(&index, &file_contexts, ridx, r)
+                                inherited_member_declared(&index, &file_contexts, ridx, r, file)
                             }
                             None => false,
                         };

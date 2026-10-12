@@ -2,6 +2,7 @@ use std::collections::HashSet;
 
 use tree_sitter::Node;
 
+use super::argument_types::stamp_arg_types;
 use super::bus::{array_message_bases, nested_base_type_args, publish_fact};
 use super::bus_vocab::{handler_registration_fact, property_message_args};
 use super::lambda_shape::stamp_lambda_arg_shape;
@@ -413,6 +414,7 @@ fn walk<'a>(
                     );
                     stamp_written_type_args(&mut out.refs, node.child_by_field_name("name"));
                     stamp_lambda_arg_shape(&mut out.refs, node);
+                    stamp_arg_types(&mut out.refs, node, src, scope, type_stack);
                 }
             } else if let (Some(qn), Some(m)) = (expr_field, &member) {
                 // Unit C, chain tail: `resolve_member_qualifier` structurally
@@ -445,6 +447,7 @@ fn walk<'a>(
                             false,
                             Some(Fact {
                                 type_name: owner,
+                                descriptor: None,
                                 args: None,
                                 call: Some(inner_member),
                                 awaited: false,
@@ -469,6 +472,7 @@ fn walk<'a>(
                         );
                         stamp_written_type_args(&mut out.refs, node.child_by_field_name("name"));
                         stamp_lambda_arg_shape(&mut out.refs, node);
+                        stamp_arg_types(&mut out.refs, node, src, scope, type_stack);
                     }
                 }
             }
@@ -524,6 +528,7 @@ fn walk<'a>(
                         );
                         stamp_written_type_args(&mut out.refs, binding.child_by_field_name("name"));
                         stamp_lambda_arg_shape(&mut out.refs, node);
+                        stamp_arg_types(&mut out.refs, node, src, scope, type_stack);
                     }
                 }
             }

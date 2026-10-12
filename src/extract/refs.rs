@@ -434,6 +434,7 @@ pub(super) fn push_ref(
         lambda_arg_arity: None,
         method_type_arg_count: None,
         lambda_arg_shape: None,
+        arg_types: None,
     });
 }
 
@@ -474,6 +475,7 @@ pub(super) fn push_ctor_param_ref(
         lambda_arg_arity: None,
         method_type_arg_count: None,
         lambda_arg_shape: None,
+        arg_types: None,
     });
 }
 
@@ -618,6 +620,7 @@ pub(super) fn push_member_ref(
             lambda_arg_arity: lambda_arg_arity.clone(),
             method_type_arg_count: None,
             lambda_arg_shape: None,
+            arg_types: None,
         }),
         None => refs.push(RefRecord {
             kind: "uses-member".to_string(),
@@ -644,6 +647,7 @@ pub(super) fn push_member_ref(
             lambda_arg_arity,
             method_type_arg_count: None,
             lambda_arg_shape: None,
+            arg_types: None,
         }),
     }
 }

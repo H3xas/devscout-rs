@@ -208,6 +208,7 @@ pub(super) fn lambda_slot_fact(
     };
     Some(Fact {
         type_name: String::new(),
+        descriptor: None,
         args: None,
         call: None,
         awaited: false,
@@ -266,6 +267,7 @@ pub(super) fn lambda_receiver_element_fact(
         return if fact.args.is_none() {
             Some(Fact {
                 type_name: fact.type_name.clone(),
+                descriptor: None,
                 args: None,
                 call: None,
                 awaited: false,
@@ -280,6 +282,7 @@ pub(super) fn lambda_receiver_element_fact(
     match fact.args.as_deref() {
         Some([arg]) if arg != "*" => Some(Fact {
             type_name: arg.clone(),
+            descriptor: None,
             args: None,
             call: None,
             awaited: false,

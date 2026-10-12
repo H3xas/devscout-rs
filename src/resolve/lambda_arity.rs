@@ -54,6 +54,21 @@ pub(super) fn lambda_arity_admits(
         .any(|overload| overload_admits(index, file_contexts, idx, overload, &call))
 }
 
+pub(super) fn lambda_overload_admits(
+    index: &DefIndex,
+    file_contexts: &HashMap<String, FileContext>,
+    idx: usize,
+    overload: &MethodOverloadParams,
+    r: &FragRef,
+) -> bool {
+    let call = LambdaCall {
+        arities: r.lambda_arg_arity.as_deref().unwrap_or_default(),
+        shapes: r.lambda_arg_shape.as_deref().unwrap_or_default(),
+        type_args_written: r.method_type_arg_count.is_some(),
+    };
+    overload_admits(index, file_contexts, idx, overload, &call)
+}
+
 struct LambdaCall<'a> {
     arities: &'a [Option<usize>],
     shapes: &'a [Option<FragLambdaShape>],

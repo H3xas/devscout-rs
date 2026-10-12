@@ -2,6 +2,7 @@ use std::collections::HashSet;
 
 use tree_sitter::Node;
 
+use super::argument_member_types::append_argument_member_types;
 use super::receivers::type_fact;
 use super::refs::{
     base_type_identifier, generic_arg_descriptors, type_descriptor, type_parameter_names,
@@ -179,6 +180,7 @@ pub(super) fn raw_method_params(
             None => pairs.push((name, vec![descriptors])),
         }
     }
+    append_argument_member_types(node, body, src, type_params, &mut pairs);
     pairs
 }
 
@@ -271,7 +273,9 @@ pub(super) fn raw_property_types(
         if name.is_empty() || !seen.insert(name.clone()) {
             continue;
         }
-        if let Some(fact) = type_fact(c.child_by_field_name("type"), src, type_params) {
+        if let Some(fact) = type_fact(c.child_by_field_name("type"), src, type_params)
+            .filter(|_| base_type_identifier(c.child_by_field_name("type"), src, false).is_some())
+        {
             pairs.push((name, fact));
         }
     }
@@ -343,7 +347,9 @@ pub(super) fn raw_field_types(
         else {
             continue;
         };
-        let Some(fact) = type_fact(vd.child_by_field_name("type"), src, type_params) else {
+        let Some(fact) = type_fact(vd.child_by_field_name("type"), src, type_params)
+            .filter(|_| base_type_identifier(vd.child_by_field_name("type"), src, false).is_some())
+        else {
             continue;
         };
         for decl in named_children(vd) {

@@ -85,7 +85,7 @@ impl<'a> Scope<'a> {
     // A member-table entry answers even when its
     // value is `None` -- a local whose type nothing vouches for must NOT
     // fall through to a same-named field of a different type.
-    fn receiver_fact_for(&self, name: &str, src: &[u8]) -> Option<Fact> {
+    pub(super) fn argument_fact_for(&self, name: &str, src: &[u8]) -> Option<Fact> {
         let locals = self.member_facts.get_or_init(|| {
             self.node.map(|n| {
                 collect_member_facts(
@@ -103,6 +103,30 @@ impl<'a> Scope<'a> {
             }
         }
         self.type_facts.get(name).cloned().flatten()
+    }
+
+    fn receiver_fact_for(&self, name: &str, src: &[u8]) -> Option<Fact> {
+        self.argument_fact_for(name, src).filter(|fact| {
+            !matches!(
+                fact.type_name.as_str(),
+                "string"
+                    | "char"
+                    | "bool"
+                    | "byte"
+                    | "sbyte"
+                    | "short"
+                    | "ushort"
+                    | "int"
+                    | "uint"
+                    | "long"
+                    | "ulong"
+                    | "float"
+                    | "double"
+                    | "decimal"
+                    | "object"
+                    | "dynamic"
+            )
+        })
     }
 
     // `true` when the enclosing MEMBER's own fact table -- locals,
@@ -141,7 +165,7 @@ impl<'a> Scope<'a> {
     // type reference" apart from "something claims it but vouches for
     // nothing", which `receiver_fact_for` alone collapses into the same
     // `None`.
-    fn name_is_claimed(&self, name: &str, src: &[u8]) -> bool {
+    pub(super) fn name_is_claimed(&self, name: &str, src: &[u8]) -> bool {
         self.has_local_fact(name, src) || self.type_facts.contains_key(name)
     }
 }
@@ -245,6 +269,7 @@ pub(super) fn resolve_member_qualifier(
         return Some(QualifierResolution {
             receiver: Some(Fact {
                 type_name: qt.clone(),
+                descriptor: None,
                 args: receiver_args,
                 call: None,
                 awaited: false,
