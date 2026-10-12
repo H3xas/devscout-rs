@@ -1,24 +1,25 @@
-use super::arity::{base_arity, method_arity_admits, resolve_ref_by_arity};
+use super::argument_compatibility::call_admits;
+use super::arity::{base_arity, call_arity, method_call_admits, resolve_ref_by_arity, CallArity};
 use super::index::{name_probe, DefIndex};
 use super::ladder::Resolution;
-use super::lambda_arity::lambda_arity_admits;
 use super::receiver::nullable_unwrap_owns_member;
 use super::scope::FileContext;
 use crate::graph::FragRef;
 use std::collections::{HashMap, HashSet};
 
 // The def's member lists, unioned: methods ∪ properties ∪ fields for a READ
-// (`arg_count == None`), which is what lets a static PROPERTY access
+// (`call == None`), which is what lets a static PROPERTY access
 // (MessageUrn.Prefix) and a const/static FIELD access earn an edge on the
 // same evidence a static method call already did.
 //
-// A CALL (`arg_count == Some(n)`) is narrower on both axes: properties and
+// A CALL (`call == Some(..)`) is narrower on both axes: properties and
 // fields never satisfy a call (the rule `member_vouched`'s own
 // Call/Read split already enforces for the scored tier; this is where the
 // PRECISE tier gains it too), and `methods` alone is not enough either -- the
-// name must ALSO have an overload whose own arity range admits `n`
-// (`method_arity_admits`), or this answers `false` exactly as it would for a
-// name this def never declares at all. That is what lets tier (f)/the scored
+// name must ALSO have an overload whose own arity range admits the value
+// count, and whose own type-parameter count matches a written type-argument
+// list (`method_call_admits`), or this answers `false` exactly as it would
+// for a name this def never declares at all. That is what lets tier (f)/the scored
 // tier run when a same-named instance member exists but at the WRONG
 // signature: the precise tier's own callers read `false` here as "nothing
 // declared", never mark the ref `emitted`, and every later tier proceeds
@@ -27,13 +28,13 @@ pub(super) fn declares_member(
     index: &DefIndex,
     idx: usize,
     member: Option<&str>,
-    arg_count: Option<usize>,
+    call: Option<CallArity>,
 ) -> bool {
     let Some(member) = member else { return false };
-    match arg_count {
-        Some(n) => {
+    match call {
+        Some(call) => {
             index.defs[idx].methods.iter().any(|m| m == member)
-                && method_arity_admits(index, idx, member, n)
+                && method_call_admits(index, idx, member, call)
         }
         None => {
             index.defs[idx].methods.iter().any(|m| m == member)
@@ -50,7 +51,7 @@ pub(super) fn declares_member(
 // already carry every accessibility with no filter of their own (see
 // `DefRecord::properties`), so `methods` is the only list this widens, and
 // the SAME arity gate applies to a non-public method: a
-// call whose `arg_count` no non-public overload admits is exactly as
+// call whose shape no non-public overload admits is exactly as
 // undeclared as one whose PUBLIC overloads all decline. Read ONLY where the
 // SITE is inside the hierarchy the member lookup is walking:
 // `base_member_declared` (a `base.` qualifier never considers anything but
@@ -65,9 +66,9 @@ pub(super) fn declares_member_any_visibility(
     index: &DefIndex,
     idx: usize,
     member: Option<&str>,
-    arg_count: Option<usize>,
+    call: Option<CallArity>,
 ) -> bool {
-    if declares_member(index, idx, member, arg_count) {
+    if declares_member(index, idx, member, call) {
         return true;
     }
     let Some(member) = member else { return false };
@@ -78,8 +79,8 @@ pub(super) fn declares_member_any_visibility(
     {
         return false;
     }
-    match arg_count {
-        Some(n) => method_arity_admits(index, idx, member, n),
+    match call {
+        Some(call) => method_call_admits(index, idx, member, call),
         None => true,
     }
 }
@@ -96,20 +97,14 @@ pub(super) fn declares_here_for_ref(
     idx: usize,
     r: &FragRef,
     this_shaped: bool,
+    source_file: &str,
 ) -> bool {
     let visible = if this_shaped {
-        declares_member_any_visibility(index, idx, r.member.as_deref(), r.arg_count)
+        declares_member_any_visibility(index, idx, r.member.as_deref(), call_arity(r))
     } else {
-        declares_member(index, idx, r.member.as_deref(), r.arg_count)
+        declares_member(index, idx, r.member.as_deref(), call_arity(r))
     };
-    visible
-        && lambda_arity_admits(
-            index,
-            file_contexts,
-            idx,
-            r.member.as_deref(),
-            r.lambda_arg_arity.as_deref(),
-        )
+    visible && call_admits(index, file_contexts, idx, r, source_file)
 }
 
 // Tier (e)'s own resolved-receiver-to-target step: the `Nullable<T>` veto,
@@ -125,15 +120,16 @@ pub(super) fn typed_receiver_precise_target(
     r: &FragRef,
     this_shaped: bool,
     receiver_nullable: bool,
+    source_file: &str,
 ) -> (Option<usize>, bool) {
     let nullable_veto = receiver_nullable
         && nullable_unwrap_owns_member(&index.defs[ridx].kind, r.member.as_deref());
     let target = if nullable_veto {
         None
-    } else if declares_here_for_ref(index, file_contexts, ridx, r, this_shaped) {
+    } else if declares_here_for_ref(index, file_contexts, ridx, r, this_shaped, source_file) {
         Some(ridx)
     } else {
-        typed_receiver_base_member(index, file_contexts, ridx, r, this_shaped)
+        typed_receiver_base_member(index, file_contexts, ridx, r, this_shaped, source_file)
     };
     (target, nullable_veto)
 }
@@ -273,16 +269,11 @@ pub(super) fn inherited_member_declared(
     file_contexts: &HashMap<String, FileContext>,
     start: usize,
     r: &FragRef,
+    source_file: &str,
 ) -> bool {
     inheritance_walk_matches(index, file_contexts, start, |idx| {
-        declares_member(index, idx, r.member.as_deref(), r.arg_count)
-            && lambda_arity_admits(
-                index,
-                file_contexts,
-                idx,
-                r.member.as_deref(),
-                r.lambda_arg_arity.as_deref(),
-            )
+        declares_member(index, idx, r.member.as_deref(), call_arity(r))
+            && call_admits(index, file_contexts, idx, r, source_file)
     })
 }
 
@@ -439,7 +430,7 @@ pub(super) fn first_base_declaring(
 // depth) and `declares_member_any_visibility` (a `base.` site is, by
 // construction, lexically inside the hierarchy it is walking, so a protected
 // or internal member is exactly as reachable as a public one), arity-gated
-// by the ref's own `arg_count` exactly like the
+// by the ref's own call shape exactly like the
 // typed-receiver walk below. `None` is the ordinary external-receiver
 // answer to the caller, never a candidate for a scored guess.
 pub(super) fn base_member_declared(
@@ -447,10 +438,23 @@ pub(super) fn base_member_declared(
     file_contexts: &HashMap<String, FileContext>,
     start: usize,
     member: Option<&str>,
-    arg_count: Option<usize>,
+    call: Option<CallArity>,
 ) -> Option<usize> {
     first_base_declaring(index, file_contexts, start, true, |index, idx| {
-        declares_member_any_visibility(index, idx, member, arg_count)
+        declares_member_any_visibility(index, idx, member, call)
+    })
+}
+
+pub(super) fn base_member_for_ref(
+    index: &DefIndex,
+    file_contexts: &HashMap<String, FileContext>,
+    start: usize,
+    r: &FragRef,
+    source_file: &str,
+) -> Option<usize> {
+    first_base_declaring(index, file_contexts, start, true, |index, idx| {
+        declares_member_any_visibility(index, idx, r.member.as_deref(), call_arity(r))
+            && call_admits(index, file_contexts, idx, r, source_file)
     })
 }
 
@@ -478,41 +482,95 @@ pub(super) fn base_member_declared(
 // `declares_member_any_visibility`, `false` keeps the public-only
 // `declares_member`, so a receiver typed by anything OTHER than the
 // enclosing type can only ever bind to a member C# would let it see from
-// outside. `r`'s own call-shape facts (`arg_count` and `lambda_arg_arity`)
-// gate every base the walk visits, exactly like they gate `start` itself in
-// `declares_here_for_ref`: a base that declares the name at the wrong
-// arity, or whose overload's delegate parameter a call's own delegate
-// argument cannot fill, is skipped exactly like one that does not declare
-// it at all.
+// outside. `r`'s own call-shape facts (`call_arity` and the lambda facts
+// `lambda_arity_admits` reads) gate every base the walk visits, exactly like
+// they gate `start` itself in `declares_here_for_ref`: a base that declares
+// the name at the wrong arity, or with no overload a call's own lambda
+// arguments can convert to, is skipped exactly like one that does not
+// declare it at all.
+//
+// An interface closure can reach the same member name along more than one
+// path, and the first declaration in walk order is not always the one C#
+// binds: for a READ, a declaration that sits in a base of another
+// declaring interface whose own property or field carries the name is
+// hidden (`IBusConfiguration : IEndpointConfiguration` reached before
+// `IInMemoryEndpointConfiguration`'s `new Topology`). So a read through an
+// interface receiver collects every admitted base and answers with the
+// first one `first_unhidden_declaration` keeps. A class or struct receiver
+// walks a single base-class chain, whose first declaring class is already
+// the nearest, and a CALL keeps the first declaring base because hiding
+// between overloads depends on argument types this walk cannot see.
 pub(super) fn typed_receiver_base_member(
     index: &DefIndex,
     file_contexts: &HashMap<String, FileContext>,
     start: usize,
     r: &FragRef,
     any_visibility: bool,
+    source_file: &str,
 ) -> Option<usize> {
     let skip_interfaces = index.defs[start].kind != "interface";
-    first_base_declaring(
-        index,
-        file_contexts,
-        start,
-        skip_interfaces,
-        |index, idx| {
-            let visible = if any_visibility {
-                declares_member_any_visibility(index, idx, r.member.as_deref(), r.arg_count)
-            } else {
-                declares_member(index, idx, r.member.as_deref(), r.arg_count)
-            };
-            visible
-                && lambda_arity_admits(
-                    index,
-                    file_contexts,
-                    idx,
-                    r.member.as_deref(),
-                    r.lambda_arg_arity.as_deref(),
-                )
-        },
-    )
+    let admits = |index: &DefIndex, idx: usize| {
+        let visible = if any_visibility {
+            declares_member_any_visibility(index, idx, r.member.as_deref(), call_arity(r))
+        } else {
+            declares_member(index, idx, r.member.as_deref(), call_arity(r))
+        };
+        visible && call_admits(index, file_contexts, idx, r, source_file)
+    };
+    if skip_interfaces || r.arg_count.is_some() {
+        return first_base_declaring(index, file_contexts, start, skip_interfaces, admits);
+    }
+    let mut declaring: Vec<usize> = Vec::new();
+    first_base_declaring(index, file_contexts, start, false, |index, idx| {
+        if admits(index, idx) && !declaring.contains(&idx) {
+            declaring.push(idx);
+        }
+        false
+    });
+    first_unhidden_declaration(index, file_contexts, &declaring, r.member.as_deref())
+}
+
+// C# member lookup removes every member declared in a base of a type that
+// itself declares the name as a property or field, whatever its depth and
+// whether or not `new` is written. `declaring` is in walk order, so the first
+// survivor is the walk's own answer whenever nothing is hidden, and also
+// when two unrelated declarations both survive (an ambiguity the compiler
+// rejects, so no compiled code depends on either choice). A cyclic
+// hierarchy can make every declaration hide every other; the first one in
+// walk order then stands rather than no edge at all.
+fn first_unhidden_declaration(
+    index: &DefIndex,
+    file_contexts: &HashMap<String, FileContext>,
+    declaring: &[usize],
+    member: Option<&str>,
+) -> Option<usize> {
+    let first = *declaring.first()?;
+    let Some(member) = member else {
+        return Some(first);
+    };
+    if declaring.len() == 1 {
+        return Some(first);
+    }
+    let mut hidden: HashSet<usize> = HashSet::new();
+    for &hider in declaring {
+        let lists = &index.member_lists[hider];
+        let redeclares = lists.properties.iter().any(|p| p == member)
+            || lists.fields.iter().any(|f| f == member);
+        if !redeclares {
+            continue;
+        }
+        first_base_declaring(index, file_contexts, hider, false, |_, idx| {
+            if declaring.contains(&idx) {
+                hidden.insert(idx);
+            }
+            false
+        });
+    }
+    declaring
+        .iter()
+        .copied()
+        .find(|idx| !hidden.contains(idx))
+        .or(Some(first))
 }
 
 // The extension bucket key tier (f) tries when the exact

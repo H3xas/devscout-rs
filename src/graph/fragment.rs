@@ -3,9 +3,11 @@ use std::path::Path;
 
 use crate::extract;
 
+use super::call_shape_types::{FragDelegateSignature, FragLambdaShape};
 use super::fragment_types::{
-    FragDef, FragEnclosingCall, FragExtensionMethod, FragFact, FragHandlerRegistration,
-    FragLambdaSlot, FragName, FragPublish, FragRef, FragRegistration, FragUsing, Fragment,
+    FragArgType, FragDef, FragEnclosingCall, FragExtensionMethod, FragFact,
+    FragHandlerRegistration, FragLambdaSlot, FragName, FragPublish, FragRef, FragRegistration,
+    FragUsing, Fragment,
 };
 use super::ordered::OrderedMap;
 
@@ -46,6 +48,7 @@ pub fn fragment_from_extraction(e: &extract::Extraction) -> Fragment {
                         arity_min: e.arity_min,
                         arity_max: e.arity_max,
                         this_args: e.this_args.clone(),
+                        type_param_count: Some(e.type_param_count),
                     })
                     .collect(),
                 bases: d.bases.clone(),
@@ -66,6 +69,7 @@ pub fn fragment_from_extraction(e: &extract::Extraction) -> Fragment {
                             FragFact {
                                 type_name: fact.type_name.clone(),
                                 args: fact.args.clone(),
+                                qualified_type: fact.qualified_type.clone(),
                             },
                         );
                     }
@@ -79,6 +83,7 @@ pub fn fragment_from_extraction(e: &extract::Extraction) -> Fragment {
                             FragFact {
                                 type_name: fact.type_name.clone(),
                                 args: fact.args.clone(),
+                                qualified_type: fact.qualified_type.clone(),
                             },
                         );
                     }
@@ -99,6 +104,20 @@ pub fn fragment_from_extraction(e: &extract::Extraction) -> Fragment {
                     }
                     m
                 },
+                method_type_arities: {
+                    let mut m = OrderedMap::new();
+                    for (name, counts) in &d.method_type_arities {
+                        m.insert(name.clone(), counts.clone());
+                    }
+                    m
+                },
+                method_type_param_sites: {
+                    let mut m = OrderedMap::new();
+                    for (name, overloads) in &d.method_type_param_sites {
+                        m.insert(name.clone(), overloads.clone());
+                    }
+                    m
+                },
                 method_params: {
                     let mut m = OrderedMap::new();
                     for (name, overloads) in &d.method_params {
@@ -116,6 +135,13 @@ pub fn fragment_from_extraction(e: &extract::Extraction) -> Fragment {
                 },
                 property_message_args: d.property_message_args.clone(),
                 array_message_bases: d.array_message_bases.clone(),
+                delegate_signature: d
+                    .delegate_signature
+                    .as_ref()
+                    .map(|s| FragDelegateSignature {
+                        returns: s.returns.clone(),
+                        type_params: s.type_params.clone(),
+                    }),
                 end_line: d.end_line,
             })
             .collect(),
@@ -132,9 +158,14 @@ pub fn fragment_from_extraction(e: &extract::Extraction) -> Fragment {
                     target: target.clone(),
                     global: *global,
                 },
-                extract::UsingRecord::Plain { text, global } => FragUsing::Plain {
+                extract::UsingRecord::Plain {
+                    text,
+                    global,
+                    namespace,
+                } => FragUsing::Plain {
                     text: text.clone(),
                     global: *global,
+                    namespace: namespace.clone(),
                 },
             })
             .collect(),
@@ -151,6 +182,7 @@ pub fn fragment_from_extraction(e: &extract::Extraction) -> Fragment {
                 type_arg_count: r.type_arg_count,
                 generic: r.generic,
                 receiver_type: r.receiver_type.clone(),
+                receiver_type_qualified: r.receiver_type_qualified.clone(),
                 arg_count: r.arg_count,
                 receiver_args: r.receiver_args.clone(),
                 outer_types: r.outer_types.clone(),
@@ -171,6 +203,41 @@ pub fn fragment_from_extraction(e: &extract::Extraction) -> Fragment {
                 }),
                 receiver_nullable: r.receiver_nullable,
                 lambda_arg_arity: r.lambda_arg_arity.clone(),
+                method_type_arg_count: r.method_type_arg_count,
+                lambda_arg_shape: r.lambda_arg_shape.as_ref().map(|shapes| {
+                    shapes
+                        .iter()
+                        .map(|s| {
+                            s.map(|s| FragLambdaShape {
+                                value_only: s.value_only,
+                                implicitly_typed: s.implicitly_typed,
+                            })
+                        })
+                        .collect()
+                }),
+                arg_types: r.arg_types.as_ref().map(|types| {
+                    types
+                        .iter()
+                        .map(|value| {
+                            value.as_ref().map(|value| match value {
+                                extract::ArgTypeRecord::Known(name) => {
+                                    FragArgType::Known(name.clone())
+                                }
+                                extract::ArgTypeRecord::Member {
+                                    owner,
+                                    member,
+                                    receiver_args,
+                                    call,
+                                } => FragArgType::Member {
+                                    owner: owner.clone(),
+                                    member: member.clone(),
+                                    receiver_args: receiver_args.clone(),
+                                    call: *call,
+                                },
+                            })
+                        })
+                        .collect()
+                }),
             })
             .collect(),
         names: e
@@ -259,11 +326,14 @@ pub fn markup_fragment(root: &Path, rel: &str) -> Option<Fragment> {
                 method_return_args: OrderedMap::new(),
                 non_public_methods: Vec::new(),
                 method_arities: OrderedMap::new(),
+                method_type_arities: OrderedMap::new(),
+                method_type_param_sites: OrderedMap::new(),
                 method_params: OrderedMap::new(),
                 override_methods: Vec::new(),
                 base_type_args: OrderedMap::new(),
                 property_message_args: Vec::new(),
                 array_message_bases: Vec::new(),
+                delegate_signature: None,
                 end_line: d.line,
             })
             .collect(),
@@ -297,6 +367,10 @@ pub fn markup_fragment(root: &Path, rel: &str) -> Option<Fragment> {
                 receiver_lambda: None,
                 receiver_nullable: false,
                 lambda_arg_arity: None,
+                method_type_arg_count: None,
+                lambda_arg_shape: None,
+                receiver_type_qualified: None,
+                arg_types: None,
             })
             .collect(),
         names: facts

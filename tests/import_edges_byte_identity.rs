@@ -70,7 +70,7 @@ impl Drop for Fixture {
 }
 
 // The exact `impact ICatalogStore --json` bytes this fixture has always
-// produced, pinned in `docs/answer-contract.md`. No import is ever
+// produced, pinned in `docs/reference/json-output.md`. No import is ever
 // configured in this test, so these bytes must not move by one byte.
 const EXPECTED_JSON: &str = concat!(
     r#"{"schema_version":1,"query":"ICatalogStore","status":"resolved","kind":"symbol","#,
@@ -84,7 +84,8 @@ const EXPECTED_JSON: &str = concat!(
     r#"{"file":"CatalogStoreTests.cs","hop":2,"viaCount":2,"ambiguousCount":0,"#,
     r#""topSymbols":["InMemoryCatalogStore"],"topSymbolsMore":0,"score":0.15227392859677333,"#,
     r#""fromLines":{"direct":11},"why":"uses-type"}],"#,
-    r#""dropped":0,"manifestGap":0,"heuristicAffected":0,"testsAffected":1,"outcome":"hit","#,
+    r#""dropped":0,"manifestGap":0,"heuristicAffected":0,"testsAffected":1,"#,
+    r#""next":[["refs","Widgetworks.Catalog.ICatalogStore"]],"outcome":"hit","#,
     r#""freshness":{"state":"unknown","reason":"no-index-state"}}"#,
 );
 

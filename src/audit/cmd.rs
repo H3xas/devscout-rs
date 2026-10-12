@@ -21,7 +21,23 @@ use super::score::score;
 /// caller can pipe into `jq` -- a CI step that both asserts and parses the
 /// report is the whole point of the two flags together. Either way the exit
 /// code is 1 and the lines themselves are identical.
+///
+/// The same rule covers every error: with `--json` anywhere in `args` it is
+/// written to stderr and the returned output is empty, so a caller that
+/// redirects stdout into a report file still sees why the command failed.
 pub(crate) fn cmd_audit(cwd: &Path, args: &[String]) -> (i32, String) {
+    let json_mode = args.iter().any(|a| a == "--json");
+    match run(cwd, args) {
+        Ok(outcome) => outcome,
+        Err(message) if json_mode => {
+            eprintln!("{message}");
+            (1, String::new())
+        }
+        Err(message) => (1, message),
+    }
+}
+
+fn run(cwd: &Path, args: &[String]) -> Result<(i32, String), String> {
     const USAGE: &str = "usage: devscout audit --semantic <refs.jsonl> [--units F] [--defs F] [--json] [--assert F] [--fp-sites F]";
 
     let mut semantic: Option<String> = None;
@@ -39,7 +55,7 @@ pub(crate) fn cmd_audit(cwd: &Path, args: &[String]) -> (i32, String) {
             "--semantic" | "--units" | "--defs" | "--assert" | "--fp-sites"
         ) {
             let Some(val) = args.get(i + 1) else {
-                return (1, format!("error: missing value for '{flag}'\n{USAGE}"));
+                return Err(format!("error: missing value for '{flag}'\n{USAGE}"));
             };
             match flag {
                 "--semantic" => semantic = Some(val.clone()),
@@ -54,20 +70,16 @@ pub(crate) fn cmd_audit(cwd: &Path, args: &[String]) -> (i32, String) {
             json = true;
             i += 1;
         } else {
-            return (1, format!("error: unrecognized argument '{flag}'\n{USAGE}"));
+            return Err(format!("error: unrecognized argument '{flag}'\n{USAGE}"));
         }
     }
     let Some(semantic) = semantic else {
-        return (
-            1,
-            format!("error: --semantic <refs.jsonl> is required\n{USAGE}"),
-        );
+        return Err(format!(
+            "error: --semantic <refs.jsonl> is required\n{USAGE}"
+        ));
     };
 
-    let root = match crate::cli::require_repo(cwd) {
-        Ok(r) => r,
-        Err(e) => return (1, format!("error: {e}")),
-    };
+    let root = crate::cli::require_repo(cwd).map_err(|e| format!("error: {e}"))?;
 
     let semantic_path = crate::repo::resolve_from(cwd, Path::new(&semantic));
     let units_path = units.map(|u| crate::repo::resolve_from(cwd, Path::new(&u)));
@@ -78,17 +90,13 @@ pub(crate) fn cmd_audit(cwd: &Path, args: &[String]) -> (i32, String) {
         defs: defs_path.as_deref(),
     };
 
-    let mut inputs = match load(&root, &opts) {
-        Ok(i) => i,
-        Err(e) => return (1, format!("error: {e}")),
-    };
+    let mut inputs = load(&root, &opts).map_err(|e| format!("error: {e}"))?;
     inputs.collect_fp_sites = fp_sites_path.is_some();
     let report = score(inputs);
     if let Some(fp_path) = fp_sites_path {
         let abs = crate::repo::resolve_from(cwd, Path::new(&fp_path));
-        if let Err(e) = std::fs::write(&abs, super::fp_sites::render(&report.fp_sites)) {
-            return (1, format!("error: failed to write {}: {e}", abs.display()));
-        }
+        std::fs::write(&abs, super::fp_sites::render(&report.fp_sites))
+            .map_err(|e| format!("error: failed to write {}: {e}", abs.display()))?;
     }
     let json_string = render_json(&report);
     let mut out = if json {
@@ -99,14 +107,9 @@ pub(crate) fn cmd_audit(cwd: &Path, args: &[String]) -> (i32, String) {
 
     if let Some(assert_path) = assert_path {
         let abs = crate::repo::resolve_from(cwd, Path::new(&assert_path));
-        let text = match std::fs::read_to_string(&abs) {
-            Ok(t) => t,
-            Err(e) => return (1, format!("error: failed to read {}: {e}", abs.display())),
-        };
-        let violations = match evaluate_assert(&json_string, &text) {
-            Ok(v) => v,
-            Err(e) => return (1, format!("error: {e}")),
-        };
+        let text = std::fs::read_to_string(&abs)
+            .map_err(|e| format!("error: failed to read {}: {e}", abs.display()))?;
+        let violations = evaluate_assert(&json_string, &text).map_err(|e| format!("error: {e}"))?;
         if !violations.is_empty() {
             if json {
                 // stdout keeps the bare JSON object; the violations are the
@@ -116,8 +119,8 @@ pub(crate) fn cmd_audit(cwd: &Path, args: &[String]) -> (i32, String) {
                 out.push('\n');
                 out.push_str(&violations.join("\n"));
             }
-            return (1, out);
+            return Ok((1, out));
         }
     }
-    (0, out)
+    Ok((0, out))
 }

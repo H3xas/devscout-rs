@@ -1,6 +1,190 @@
 use super::*;
 
 #[test]
+fn inherited_property_named_like_an_imported_type_takes_the_bare_qualifier() {
+    let files = fragments_for(&[
+        (
+            "Contracts/RoutingSlip.cs",
+            "namespace App.Contracts; public class RoutingSlip { public string Itinerary { get; } }",
+        ),
+        (
+            "Courier/SanitizedRoutingSlip.cs",
+            "namespace App.Courier; public class SanitizedRoutingSlip { public string Itinerary { get; } }",
+        ),
+        (
+            "Courier/BaseContext.cs",
+            "namespace App.Courier; public class BaseContext { protected SanitizedRoutingSlip RoutingSlip { get; } }",
+        ),
+        (
+            "Courier/HostContext.cs",
+            "using App.Contracts; namespace App.Courier; public class HostContext : BaseContext { public string Read() => RoutingSlip.Itinerary; }",
+        ),
+    ]);
+    let graph = resolve_graph(&no_git_root(), &files);
+    let edges: Vec<&str> = member_edges_from(&graph, "Courier/HostContext.cs")
+        .into_iter()
+        .map(|(target, _)| target)
+        .collect();
+    assert_eq!(edges, vec!["App.Courier.SanitizedRoutingSlip"]);
+}
+
+#[test]
+fn interface_inherited_property_named_like_an_imported_type_takes_the_bare_qualifier() {
+    let files = fragments_for(&[
+        (
+            "Contracts/RoutingSlip.cs",
+            "namespace App.Contracts; public class RoutingSlip { public static int Read() => 1; }",
+        ),
+        (
+            "App/SanitizedRoutingSlip.cs",
+            "namespace App; public class SanitizedRoutingSlip { public string Read() => \"member\"; }",
+        ),
+        (
+            "App/IBase.cs",
+            "namespace App; public interface IBase { SanitizedRoutingSlip RoutingSlip { get; } }",
+        ),
+        (
+            "App/IDerived.cs",
+            "using App.Contracts; namespace App; public interface IDerived : IBase { string Read() => RoutingSlip.Read(); }",
+        ),
+    ]);
+    let graph = resolve_graph(&no_git_root(), &files);
+    assert_eq!(
+        member_edges_from(&graph, "App/IDerived.cs"),
+        vec![("App.SanitizedRoutingSlip", 1)]
+    );
+}
+
+#[test]
+fn interface_own_property_named_like_an_imported_type_takes_the_bare_qualifier() {
+    let files = fragments_for(&[
+        (
+            "Contracts/RoutingSlip.cs",
+            "namespace App.Contracts; public class RoutingSlip { public static int Read() => 1; }",
+        ),
+        (
+            "App/SanitizedRoutingSlip.cs",
+            "namespace App; public class SanitizedRoutingSlip { public string Read() => \"member\"; }",
+        ),
+        (
+            "App/IDerived.cs",
+            "using App.Contracts; namespace App; public interface IDerived { SanitizedRoutingSlip RoutingSlip { get; } string Read() => RoutingSlip.Read(); }",
+        ),
+    ]);
+    let graph = resolve_graph(&no_git_root(), &files);
+    assert_eq!(
+        member_edges_from(&graph, "App/IDerived.cs"),
+        vec![("App.SanitizedRoutingSlip", 1)]
+    );
+}
+
+#[test]
+fn inherited_property_named_like_the_enclosing_type_takes_the_bare_qualifier() {
+    let files = fragments_for(&[
+        (
+            "Filters/IExceptionFilter.cs",
+            "namespace App.Filters; public interface IExceptionFilter { bool Match(); }",
+        ),
+        (
+            "Filters/ExceptionSpecification.cs",
+            "namespace App.Filters; public class ExceptionSpecification { protected IExceptionFilter Filter { get; } }",
+        ),
+        (
+            "Filters/Filter.cs",
+            "namespace App.Filters; public class Filter : ExceptionSpecification { public bool Match() => true; public bool Read() => Filter.Match(); }",
+        ),
+    ]);
+    let graph = resolve_graph(&no_git_root(), &files);
+    let edges: Vec<&str> = member_edges_from(&graph, "Filters/Filter.cs")
+        .into_iter()
+        .map(|(target, _)| target)
+        .collect();
+    assert_eq!(edges, vec!["App.Filters.IExceptionFilter"]);
+}
+
+#[test]
+fn inherited_bare_member_does_not_take_explicit_types_or_local_receivers() {
+    let files = fragments_for(&[
+        (
+            "Contracts/RoutingSlip.cs",
+            "namespace App.Contracts; public class RoutingSlip<T> { public static string Explicit { get; } public static string Generic { get; } public string Local() => \"x\"; }",
+        ),
+        (
+            "Courier/SanitizedRoutingSlip.cs",
+            "namespace App.Courier; public class SanitizedRoutingSlip { public string Bare { get; } }",
+        ),
+        (
+            "Courier/BaseContext.cs",
+            "namespace App.Courier; public class BaseContext { protected SanitizedRoutingSlip RoutingSlip { get; } }",
+        ),
+        (
+            "Courier/HostContext.cs",
+            "using App.Contracts; namespace App.Courier; public class HostContext : BaseContext {\n public string Bare() => RoutingSlip.Bare;\n public string Explicit() => App.Contracts.RoutingSlip<int>.Explicit;\n public string Generic() => RoutingSlip<int>.Generic;\n public string Local(RoutingSlip<int> RoutingSlip) => RoutingSlip.Local();\n }",
+        ),
+    ]);
+    let graph = resolve_graph(&no_git_root(), &files);
+    let mut edges: Vec<(&str, &str)> = graph
+        .edges
+        .iter()
+        .filter_map(|edge| match edge {
+            Edge::UsesMember {
+                from_file,
+                to,
+                member: Some(member),
+                heuristic: false,
+                ..
+            } if from_file == "Courier/HostContext.cs"
+                && ["Bare", "Explicit", "Generic", "Local"].contains(&member.as_str()) =>
+            {
+                Some((member.as_str(), to.as_str()))
+            }
+            _ => None,
+        })
+        .collect();
+    edges.sort_unstable();
+    assert_eq!(
+        edges,
+        vec![
+            ("Bare", "App.Courier.SanitizedRoutingSlip"),
+            ("Explicit", "App.Contracts.RoutingSlip"),
+            ("Generic", "App.Contracts.RoutingSlip"),
+            ("Local", "App.Contracts.RoutingSlip"),
+        ]
+    );
+}
+
+#[test]
+fn own_property_takes_precedence_over_inherited_property_and_visible_type() {
+    let files = fragments_for(&[
+        (
+            "Contracts/RoutingSlip.cs",
+            "namespace App.Contracts; public class RoutingSlip { public string Read() => \"type\"; }",
+        ),
+        (
+            "Courier/BaseValue.cs",
+            "namespace App.Courier; public class BaseValue { public string Read() => \"base\"; }",
+        ),
+        (
+            "Courier/OwnValue.cs",
+            "namespace App.Courier; public class OwnValue { public string Read() => \"own\"; }",
+        ),
+        (
+            "Courier/BaseContext.cs",
+            "namespace App.Courier; public class BaseContext { protected BaseValue RoutingSlip { get; } }",
+        ),
+        (
+            "Courier/HostContext.cs",
+            "using App.Contracts; namespace App.Courier; public class HostContext : BaseContext { private OwnValue RoutingSlip { get; } public string Run() => RoutingSlip.Read(); }",
+        ),
+    ]);
+    let graph = resolve_graph(&no_git_root(), &files);
+    assert_eq!(
+        member_edges_from(&graph, "Courier/HostContext.cs"),
+        vec![("App.Courier.OwnValue", 1)]
+    );
+}
+
+#[test]
 fn stage7_this_member_resolves_to_the_declaring_def_across_partial_files() {
     let files = fragments_for(&[
         (

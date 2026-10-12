@@ -130,7 +130,10 @@ pub fn dispatch(args: Vec<String>) {
         }
         Some("audit") => {
             let (code, out) = audit::cmd_audit(&cwd, &args[2..]);
-            print_out(&out);
+            // Empty only when an `audit --json` error already went to stderr.
+            if !out.is_empty() {
+                print_out(&out);
+            }
             process::exit(code);
         }
         Some("hook") => match args.get(2).map(String::as_str) {

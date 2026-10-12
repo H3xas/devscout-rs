@@ -116,6 +116,14 @@ fn direct_and_composed_imported_edges_appear_in_text_compact_and_json() {
     let compact = fx.ok(&["impact", "CheckoutController.cs", "--compact"]);
     assert!(compact.contains("checkoutClient.ts"), "{compact}");
     assert!(compact.contains("orderConsumer.ts"), "{compact}");
+
+    // An import adds keys before `outcome`; the suggestions take the slot
+    // immediately before it, as they do on the native-only shape.
+    let raw = fx.ok(&["impact", "CheckoutController.cs", "--json"]);
+    assert!(
+        raw.contains(",\"next\":[[\"refs\",") && raw.contains("]],\"outcome\":\"hit\""),
+        "the suggestions sit immediately before `outcome`: {raw}"
+    );
 }
 
 #[test]
@@ -183,9 +191,10 @@ fn no_imports_flag_matches_the_artifact_deleted_case() {
 
 #[test]
 fn answer_contract_documents_imported_edge_and_the_schema_version_stays_one() {
-    let contract =
-        fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/answer-contract.md"))
-            .unwrap();
+    let contract = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/reference/json-output.md"),
+    )
+    .unwrap();
     assert!(
         contract.contains("`imported-edge`"),
         "the why table must document imported-edge"

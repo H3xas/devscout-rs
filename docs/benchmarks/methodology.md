@@ -154,3 +154,168 @@ whatever a later run happens to produce. **Run 1** runs after the resolver chang
 corpus pin and same fixture, and is reported beside Run 0 rather than overwriting it, so a
 regression in one tier alongside an improvement in another stays visible instead of netting
 out.
+
+### The oracle
+
+The resolver-precision numbers come from a Roslyn oracle, [`tools/scout-semantic`](../../tools/scout-semantic/README.md),
+that compiles a solution and records every member reference with its resolved target. The same
+oracle has a second output mode, `--emit flowtrace-facts`, that writes the flow tracer's
+per-repository fact set with compilation-resolved types where a text pass runs out (primary
+constructors, locals, minimal-API lambdas). This cut emits eight fact kinds -- `message_class`,
+`consume`, `publish`, `ctor_field`, `di_binding`, `iface_impl`, `route` and `method_span` --
+under a header that names the producer, its version and the compilation; the facts carry no
+provenance of their own, and a recognised site whose type does not resolve is counted on stderr
+and fails the run under `--strict`. The fixture under `fixtures/csharp-flowtrace/` pins that
+output byte-for-byte in CI. Roslyn stays in the sidecar -- the `devscout` binary never links it.
+
+### Scoring with `audit --semantic`
+
+The plumbing verb `devscout audit --semantic <refs.jsonl> [--units F] [--defs F] [--json]
+[--assert F] [--fp-sites F]` scores an indexed repository's `uses-member` edges against those
+oracle records: precision per tier, recall over in-graph member sites, external-receiver leaks,
+structurally impossible edges, and fan-out. `--assert` reads a thresholds file and exits 1 on any
+violated or missing key, reporting every one. `--fp-sites` writes one JSON Lines row per false
+positive -- file, line, tier, class, the target the resolver bound, and the target(s) the oracle
+expected -- for every tier, not only the precise one.
+
+With `--json` anywhere in its arguments, `audit` writes every error (a bad argument, no
+repository, no or unreadable `graph.json`, an unreadable input, an `--fp-sites` file it cannot
+write, an `--assert` file it cannot read or parse) to stderr, exits 1 and prints nothing on
+stdout, so stdout only ever holds the one JSON report. `--assert` violations still go to stderr
+after the report. In text mode errors stay on stdout.
+
+### Fixture thresholds
+
+Two fixture solutions carry an oracle snapshot and a thresholds file of their own:
+`fixtures/csharp-semantic/` holds the per-tier precision and recall numbers, and
+`fixtures/csharp-direction/` holds the base-and-interface direction shapes, including the three
+known false positives named in
+[How names resolve](../explanation/resolution.md#declaring-type-binding). CI regenerates each
+snapshot from the oracle, diffs it against the committed one, then indexes an isolated copy of the
+fixture and asserts its thresholds.
+
+## Rust edges
+
+A third benchmark family scores devscout's Rust edges against the references
+[`rust-analyzer lsif`](https://rust-analyzer.github.io/) writes for this repository itself.
+[`bench/rust_edges.py`](../../bench/rust_edges.py) runs it (see
+[`bench/README.md`](../../bench/README.md#rust-edges-rust-analyzer-oracle)); it is standard-library
+Python with unit tests on a hand-written LSIF sample.
+
+### Oracle and universe
+
+- A pinned commit is exported with `git archive` into a scratch directory outside every git work
+  tree. `rust-analyzer lsif`, `cargo test --offline --all-targets -- --list` and `devscout init
+  --no-hooks` all run on that export, offline (`CARGO_NET_OFFLINE=true`) with a scratch
+  `CARGO_TARGET_DIR`, and the devscout binary is a release build of the same commit.
+- The scored universe is the files of the cargo package's targets: the LSIF documents under the
+  export root. `fixtures/`, `bench/` and every other file no target reaches are excluded on both
+  sides.
+- An LSIF reference is a range whose definition result names ranges other than itself. Its
+  target maps to the devscout def with the same file, name and name line (through `graph.names`,
+  then the def of that file and name whose span holds the line). A target in no export file is
+  external; a target with no such def (a local, a field, a variant, an item inside a function
+  body) is "not a recorded item".
+
+### Site classes
+
+Every oracle reference gets a context and a shape from the script's own lexer (string,
+raw-string, char and nested-comment aware), read off the source at the reference's position:
+
+- **Context:** plain, macro argument, `macro_rules!` body, attribute or derive, `use` tree.
+- **Shape:** path call (a name followed, past an optional turbofish, by `(` and not preceded by
+  `.`), method call, path qualifier (followed by `::`), struct literal, type position, macro name,
+  other value reference, and the positions rust-analyzer resolves without a name: operator,
+  literal, lifetime and whitespace inside an expression.
+- **Target:** recorded fn, recorded type, recorded other item, not a recorded item, external.
+
+The split between type positions and value references is lexical and approximate (a unit enum
+variant counts as a type position); it never touches the call population.
+
+### Metrics
+
+- **Call edges.** Population: oracle references of shape path call in a plain or macro-argument
+  context whose target is a recorded `fn`. Recall: the share of the population that devscout's
+  `uses-member` edges match on file, line and target, as multisets. Precision: over every Rust
+  `uses-member` edge in the universe, the share with an oracle reference at its file and line
+  to its target.
+- **Test edges.** Pairs of a test function and a recorded `fn` called at a population site
+  inside the test's span. Oracle-side tests come from the script's own `#[test]` scan; devscout's
+  are the defs carrying `testMethods`. Precision and recall over the two pair sets.
+- **Verdicts.** Every Rust edge of any kind is `match`, `wrong-target` (the oracle resolves the
+  same name on that line to something else) or `unconfirmed` (no oracle reference of that name
+  there); every non-match is listed and classified. `ambiguous` edges are reported with whether
+  the oracle's target is among the candidates.
+- **Test sets.** The script's `#[test]` scan is checked per target against the compiler's
+  `--list`, by qualified name derived from the module tree, and devscout's recognized tests
+  against the scan; every difference is classified. The scan also counts a `test` carried by
+  `cfg_attr`, with the predicate unevaluated, and the module tree follows a plain
+  `#[path = "..."]` on a `mod x;` declaration to the file it names.
+- **Definition mapping.** The share of item-shaped LSIF definitions (a name after `fn`, `struct`,
+  `enum`, `union`, `trait`, `mod`, `const`, `static`, `type` or `macro_rules!`) that map to a
+  devscout def, with every miss listed.
+
+### Thresholds and protocol
+
+Thresholds were registered before the first measurement: call-edge precision ≥ 0.98 and recall
+≥ 0.85; test-edge precision ≥ 0.98 and recall ≥ 0.85. **Run 0** scores the base, mapped by the
+base build, before any Rust edge exists: its population is the denominator every later run is
+read against, and its site classes check that the oracle sees calls inside macro arguments and
+that its definitions map to devscout ids. A **head run** scores a commit carrying the edges; a
+defect it exposes is fixed inside the resolver's model and the head run repeats on the new
+commit. Both runs are published side by side in `results/`.
+
+## TypeScript reference parity
+
+A scripted run, no model in the loop, asking whether `refs`, `tests` and `impact` answer for
+TypeScript symbols, against the `[typescript]` corpus (nrwl/nx at the pin in
+[`bench/corpus.lock`](../../bench/corpus.lock)) and one TypeScript-capable peer. The seed rule,
+truth rule, adjudication, metrics, gate, arms, isolation rules and predictions are fixed in
+[`bench/truth/typescript/preregistration.md`](../../bench/truth/typescript/preregistration.md)
+before any arm runs, and `manifest.json` beside it hashes every input.
+
+Rerun, with `$BENCH` the absolute path of a scratch directory outside any checkout and outside your
+home directory, where the corpus copies, the arm state and the peer install live, and `$STORE` a
+private directory outside every checkout that keeps the pristine clone, each arm's stored outputs,
+the transcripts and the scores after the scratch directory is gone. Each arm runs once; its output
+directory is copied into `$STORE` as soon as it finishes:
+
+```sh
+python3 -B -m unittest discover -s bench -p 'test_ts_parity*.py'
+
+bench/clone-corpus.sh typescript "$STORE/nx-pristine"      # the one network fetch of the corpus
+for arm in devscout-base devscout-head crg; do cp -a "$STORE/nx-pristine" "$BENCH/nx-$arm"; done
+
+# the peer, from PyPI only, into an empty cache and a scratch HOME
+mkdir -p "$BENCH/install-home"
+env -i PATH="$PATH" HOME="$BENCH/install-home" UV_CACHE_DIR="$BENCH/uv-cache" \
+  bench/peers/code-review-graph/install.sh "$BENCH/crg-venv"
+
+# each arm from an empty environment; the runner refuses on any guard
+bench/ts-parity.sh devscout-base <devscout built from the base commit> "$BENCH/nx-devscout-base" "$BENCH" "$BENCH/out-base"
+bench/ts-parity.sh devscout-head <devscout built from the head commit> "$BENCH/nx-devscout-head" "$BENCH" "$BENCH/out-head"
+bench/ts-parity.sh crg "$BENCH/crg-venv/bin/code-review-graph" "$BENCH/nx-crg" "$BENCH" "$BENCH/out-crg"
+mkdir -p "$STORE/runs" && for out in out-base out-head out-crg; do cp -a "$BENCH/$out" "$STORE/runs/$out"; done
+
+# the scorer as pre-registered (the bench/ts_parity.py whose sha256 manifest.json records) and the
+# committed scorer, on the same stored outputs; the corpus root is spelled as the crg arm recorded
+# it and holds the pin's files
+git show 5f26493:bench/ts_parity.py > "$BENCH/ts_parity_preregistered.py"
+arms="devscout-base=$STORE/runs/out-base devscout-head=$STORE/runs/out-head crg=$STORE/runs/out-crg"
+python3 -B "$BENCH/ts_parity_preregistered.py" score bench/truth/typescript "$BENCH/nx-crg" "$STORE/scores-preregistered.json" $arms
+python3 -B bench/ts_parity.py score bench/truth/typescript "$BENCH/nx-crg" "$STORE/scores.json" $arms
+
+# the whole results document, from the two score files and the pre-registered files
+python3 -B bench/ts_parity_report.py bench/truth/typescript "$STORE/scores-preregistered.json" "$STORE/scores.json" \
+  docs/benchmarks/results/<run date>-typescript-reference-parity.md <run date> <devscout base commit> <devscout head commit>
+```
+
+Rendering the same score files again writes the same bytes, so a committed results document is
+checked by rerendering it and comparing.
+
+The truth files are regenerated, for audit only, with `ts_parity.py seeds`, `truth`, `flags`
+and `seal` against the pristine clone and ripgrep; a regenerated file that differs from the
+committed one is a finding, never a replacement. The dated results document reports every
+arm's stored commands and outputs, per-seed and pooled figures against the sealed and the raw
+truth, every miss and extra classified by the scorer's evidence, the generated where-peers-win
+section, the manifest check and the scorer-fix disclosure; no part of it is edited by hand.

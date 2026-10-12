@@ -60,6 +60,7 @@ fn json_refs_model(rows: Vec<query::InboundRow>, out: bool) -> query::RefsModel 
             },
             implements: empty_in(),
             overrides: empty_in(),
+            ts: Default::default(),
         },
         outbound: out.then(|| query::OutboundTables {
             inherits: empty_out(),
@@ -72,6 +73,7 @@ fn json_refs_model(rows: Vec<query::InboundRow>, out: bool) -> query::RefsModel 
                 dropped: 0,
                 rows: Vec::new(),
             },
+            ts: Default::default(),
         }),
         ambiguous: query::AmbiguousTables {
             inbound: query::Table {

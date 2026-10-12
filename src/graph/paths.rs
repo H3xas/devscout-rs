@@ -40,6 +40,17 @@ pub fn project_units_path(root: &Path) -> PathBuf {
     graph_dir(root).join("project-units.json")
 }
 
+/// Path to the Rust crate-model sidecar for `root`.
+///
+/// Holds the serialized Cargo package model (`rsgraph::crates::RustCrates`)
+/// the last rebuild resolved Rust paths against. `map` compares it with a
+/// freshly discovered model to notice a `Cargo.toml` edit, which moves no
+/// walked mtime. Written only when a package is in scope and deleted
+/// otherwise, the same rule as `project_units_path`.
+pub fn rust_crates_path(root: &Path) -> PathBuf {
+    graph_dir(root).join("rust-crates.json")
+}
+
 // The version in both cache filenames is the fragment SCHEMA version, bumped
 // whenever the extractor starts recording something old cached fragments
 // lack -- v10 added def `type_params`/`base_generic_args` and the new
@@ -100,16 +111,82 @@ pub fn project_units_path(root: &Path) -> PathBuf {
 // accepted or released build; every run that wrote one, including this
 // lane's own measurement runs, is superseded by the rename same as any
 // other generation.
+// v24 drops explicit interface implementations (`IFace.Member` declarations)
+// from a def's `methods`, `methodReturns`, `methodReturnArgs`,
+// `nonPublicMethods`, `properties` and `propertyTypes`, and from the
+// class-scope receiver facts a bare property name reads -- a cached v23
+// fragment of an unchanged file still lists them, so `this.M()`, a property
+// hop and a bare name inside the implementing type would keep binding a
+// member C# lookup never finds there.
+// v25 adds `namespace` to a plain `usings` entry: the namespace the directive
+// is declared in, which bare type-name resolution reads to consult a using
+// only at its own namespace level, after that level's types. A cached v24
+// fragment of an unchanged file carries no such key and reads every using as
+// declared at compilation-unit level, so a using written inside a namespace
+// block would lose to a type in a shallower namespace and one written in a
+// sibling block would still apply. The same generation keeps the written
+// qualifier on a publish `message` the call names itself (`new Ns.M()` is
+// `Ns.M`, no longer `M`), so the message resolves through that qualifier; a
+// cached v24 fragment of an unchanged file still carries the bare name, which
+// the call site's namespace can bind to a different same-named type.
+// v26 adds ref `methodTypeArgCount` (the length of a type-argument list
+// written on the invoked member itself), def `methodTypeArities` (each
+// overload's own type-parameter count, aligned with `methodArities`) and
+// extension-entry `typeParamCount`, and keeps two extension overloads that
+// differ only in their type-parameter count as separate entries. A cached v25
+// fragment of an unchanged file carries none of them, so `x.M<A, B>()` would
+// keep binding an `M<T>` overload C# refuses, where a fresh fragment of the
+// same file binds only an overload with two type parameters.
+// v27 adds ref `lambdaArgShape` (whether each positional lambda literal's body
+// can only produce a value, and whether its parameters are implicitly typed),
+// def `methodTypeParamSites` (where each overload's own type parameters occur
+// in its parameter types, aligned with `methodParams`) and def
+// `delegateSignature` (a delegate's return and where its type parameters
+// occur). A cached v26 fragment of an unchanged file carries none of them, so
+// `list.Any(m => true)` would keep binding an `Any(Action<F>)` or an
+// uninferable `Any<T>(FilterDelegate<IX<T>>)` overload C# refuses, where a
+// fresh fragment of the same file skips both.
+// v28 adds the Rust fragment arm (`rs: 1`). No fragment an earlier build
+// wrote changes shape; the bump exists so a build without that arm never
+// meets a Rust fragment, because one cache entry no arm accepts makes the
+// whole cache fail to parse and every file reparse on every run.
+// v29 adds Rust resolution facts (`modFiles`, `ctors`, `tests`, `impls`,
+// `uses`, `blocks`, `sites`) and module scopes extended by item macros.
+// A cached v28 Rust fragment lacks these facts, so edges of an unchanged
+// file would be missing and globs reaching an item-macro module could be
+// resolved incorrectly.
+// v30 appends Rust `modPaths` (the file a `#[path]` attribute names for a
+// `mod x;` declaration) and lists in `tests` the functions a `cfg_attr`
+// marks as tests. A cached v29 Rust fragment of an unchanged file carries
+// neither, so its `#[path]` modules would keep reaching the default file
+// rustc does not compile, and its `cfg_attr` tests would stay unmarked.
+// v31 adds `bound_defs` to a TS `import` edge: the definitions its named,
+// default and type-only bindings resolve to. The fragments themselves are
+// unchanged, but an older cache pair of an unchanged repository would let `map`
+// skip the rebuild and keep a `graph.json` whose import edges bind nothing,
+// so every TS import row would stay missing until some file changed.
+// v32 adds ref `receiverTypeQualified` and fact `qualifiedType` -- the
+// written path of a receiver's own declared type, alongside the bare last
+// segment `receiverType`/`type` already carry. A cached v31 fragment of an
+// unchanged file carries neither, so a receiver declared `Outer.Type` would
+// keep resolving through its tail, which the ladder's using and
+// graph-wide-uniqueness steps answer with whatever same-named type they
+// reach, where a fresh fragment of the same file resolves the written path.
+// v33 adds ref `argTypes`, an ordered static-type fact for each written call
+// argument, and records conversion, variance and selected result descriptors
+// in the existing `methodParams` table. A cached v32 fragment has none of
+// these facts, so a same-count overload that rejects the arguments could
+// still bind precisely ahead of an applicable base or extension method.
 // The rename IS the invalidation mechanism:
 // pre-bump caches stop being found, every file reparses
 // once, no reader carries version-compat logic. Writers delete every
 // superseded generation (see `remove_superseded_caches`).
 pub(crate) fn fragments_cache_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-v23.json")
+    graph_dir(root).join("fragments-v33.json")
 }
 
 pub(crate) fn fragments_index_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-index-v23.json")
+    graph_dir(root).join("fragments-index-v33.json")
 }
 
 // Every generation below the current one, not just the immediately previous:
@@ -160,6 +237,26 @@ pub(crate) const SUPERSEDED_CACHE_FILES: &[&str] = &[
     "fragments-index-v21.json",
     "fragments-v22.json",
     "fragments-index-v22.json",
+    "fragments-v23.json",
+    "fragments-index-v23.json",
+    "fragments-v24.json",
+    "fragments-index-v24.json",
+    "fragments-v25.json",
+    "fragments-index-v25.json",
+    "fragments-v26.json",
+    "fragments-index-v26.json",
+    "fragments-v27.json",
+    "fragments-index-v27.json",
+    "fragments-v28.json",
+    "fragments-index-v28.json",
+    "fragments-v29.json",
+    "fragments-index-v29.json",
+    "fragments-v30.json",
+    "fragments-index-v30.json",
+    "fragments-v31.json",
+    "fragments-index-v31.json",
+    "fragments-v32.json",
+    "fragments-index-v32.json",
 ];
 
 pub(crate) fn remove_superseded_caches(root: &Path) {

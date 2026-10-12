@@ -2,11 +2,15 @@ use std::collections::HashSet;
 
 use tree_sitter::Node;
 
+use super::argument_member_types::append_argument_member_types;
 use super::receivers::type_fact;
 use super::refs::{
     base_type_identifier, generic_arg_descriptors, type_descriptor, type_parameter_names,
 };
-use super::text::{declared_name, is_override, is_public, named_children, text};
+use super::text::{
+    declared_name, is_explicit_implementation, is_override, is_public, named_children, text,
+};
+use super::type_arity_facts::own_type_parameter_count;
 use super::types::{ExtensionMethod, Fact};
 
 // Deliberately NOT public_method_names: that one strips a trailing "Async"
@@ -28,11 +32,17 @@ pub(super) fn raw_method_names(node: Node, src: &[u8], kind: &str) -> Vec<String
 // can never drift apart: method_returns is a map PARALLEL to methods, not a
 // second, wider survey of the type.
 fn is_recorded_method(node: Node, src: &[u8], kind: &str) -> bool {
-    node.kind() == "method_declaration" && (kind == "interface" || is_public(node, src))
+    is_lookup_method(node) && (kind == "interface" || is_public(node, src))
+}
+
+// A method declaration member lookup can find on its declaring type.
+fn is_lookup_method(node: Node) -> bool {
+    node.kind() == "method_declaration" && !is_explicit_implementation(node)
 }
 
 // `non_public_methods`: the exact complement of `is_recorded_method` among
-// method_declaration nodes -- every method NOT recorded in `methods`. An
+// the method declarations member lookup can find -- every such method NOT
+// recorded in `methods`. An
 // interface's methods are ALL recorded as public by `is_recorded_method`
 // (the `kind == "interface"` short-circuit), so this list is always empty
 // for an interface, by construction rather than by a second check here.
@@ -42,7 +52,7 @@ pub(super) fn raw_non_public_method_names(node: Node, src: &[u8], kind: &str) ->
     };
     named_children(body)
         .into_iter()
-        .filter(|c| c.kind() == "method_declaration" && !is_recorded_method(*c, src, kind))
+        .filter(|c| is_lookup_method(*c) && !is_recorded_method(*c, src, kind))
         .map(|c| declared_name(c, src))
         .filter(|n| !n.is_empty())
         .collect()
@@ -170,6 +180,7 @@ pub(super) fn raw_method_params(
             None => pairs.push((name, vec![descriptors])),
         }
     }
+    append_argument_member_types(node, body, src, type_params, &mut pairs);
     pairs
 }
 
@@ -218,7 +229,8 @@ fn method_param_descriptors(
 // a different grammar node (indexer_declaration) so they are excluded by
 // construction; expression-bodied properties are property_declaration like
 // any other, so they are included. No accessibility filter -- see
-// DefRecord::properties.
+// DefRecord::properties -- but an explicit interface implementation is left
+// out, so it can never claim the name ahead of the ordinary property.
 pub(super) fn raw_property_names(node: Node, src: &[u8]) -> Vec<String> {
     let Some(body) = node.child_by_field_name("body") else {
         return Vec::new();
@@ -226,7 +238,7 @@ pub(super) fn raw_property_names(node: Node, src: &[u8]) -> Vec<String> {
     let mut seen: HashSet<String> = HashSet::new();
     let mut names = Vec::new();
     for c in named_children(body) {
-        if c.kind() != "property_declaration" {
+        if c.kind() != "property_declaration" || is_explicit_implementation(c) {
             continue;
         }
         let name = declared_name(c, src);
@@ -254,14 +266,16 @@ pub(super) fn raw_property_types(
     let mut seen: HashSet<String> = HashSet::new();
     let mut pairs = Vec::new();
     for c in named_children(body) {
-        if c.kind() != "property_declaration" {
+        if c.kind() != "property_declaration" || is_explicit_implementation(c) {
             continue;
         }
         let name = declared_name(c, src);
         if name.is_empty() || !seen.insert(name.clone()) {
             continue;
         }
-        if let Some(fact) = type_fact(c.child_by_field_name("type"), src, type_params) {
+        if let Some(fact) = type_fact(c.child_by_field_name("type"), src, type_params)
+            .filter(|_| base_type_identifier(c.child_by_field_name("type"), src, false).is_some())
+        {
             pairs.push((name, fact));
         }
     }
@@ -333,7 +347,9 @@ pub(super) fn raw_field_types(
         else {
             continue;
         };
-        let Some(fact) = type_fact(vd.child_by_field_name("type"), src, type_params) else {
+        let Some(fact) = type_fact(vd.child_by_field_name("type"), src, type_params)
+            .filter(|_| base_type_identifier(vd.child_by_field_name("type"), src, false).is_some())
+        else {
             continue;
         };
         for decl in named_children(vd) {
@@ -493,12 +509,13 @@ fn has_default_value(parameter: Node) -> bool {
 
 // Extension methods this type declares: every method whose FIRST
 // parameter carries the `this` modifier, as
-// {name, thisType, arityMin, arityMax, thisArgs?} in source order, deduped by
-// the (name, thisType, arityMin, arityMax) QUADRUPLE -- the key the resolver's
-// bucket lookup and range filter are built from. Overloads that differ only in
-// their later parameters ("Render(this Widget w)" /
-// "Render(this Widget w, int d)") are two entries with two ranges, and a call
-// binds to whichever one its argument count actually falls inside.
+// {name, thisType, arityMin, arityMax, thisArgs?, typeParamCount} in source
+// order, deduped by (name, thisType, arityMin, arityMax, typeParamCount) --
+// the key the resolver's bucket lookup and count filters are built from.
+// Overloads that differ only in their later parameters ("Render(this Widget
+// w)" / "Render(this Widget w, int d)") or only in their own type-parameter
+// count are separate entries, and a call binds to whichever one its counts
+// actually fall inside.
 //
 // `this_args` (the generic amendment) is present only when the this-parameter
 // type is generic, and records that type's TOP-LEVEL type arguments with this
@@ -562,7 +579,10 @@ pub(super) fn raw_extension_methods(node: Node, src: &[u8]) -> Vec<ExtensionMeth
             continue;
         }
         let (arity_min, arity_max) = extension_arity_range(parameters, src);
-        if !seen.insert(format!("{name} {this_type} {arity_min} {arity_max}")) {
+        let type_param_count = own_type_parameter_count(c);
+        if !seen.insert(format!(
+            "{name} {this_type} {arity_min} {arity_max} {type_param_count}"
+        )) {
             continue;
         }
         let mut type_params = class_type_params.clone();
@@ -574,6 +594,7 @@ pub(super) fn raw_extension_methods(node: Node, src: &[u8]) -> Vec<ExtensionMeth
             arity_min,
             arity_max,
             this_args,
+            type_param_count,
         });
     }
     entries

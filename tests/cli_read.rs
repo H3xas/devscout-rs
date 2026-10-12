@@ -157,7 +157,7 @@ fn read_prints_the_declaration_span_with_verbatim_source_and_inbound() {
     assert_eq!(
         stdout_of(&out),
         concat!(
-            "Shop.IThing  (interface)\n",
+            "Shop.IThing  (interface)  1 inbound (showing 1)\n",
             "def: src/IThing.cs:3-6\n",
             "    public interface IThing\n",
             "    {\n",
@@ -168,6 +168,7 @@ fn read_prints_the_declaration_span_with_verbatim_source_and_inbound() {
             "    src/Thing.cs:3  inherits  public class Thing : IThing\n",
             "  uses-type (0):\n",
             "  uses-member (0):\n",
+            "next: devscout tests Shop.IThing | devscout impact src/IThing.cs\n",
         ),
         "span bounds 3-6 with the source quoted verbatim, then refs' inbound block"
     );
@@ -219,7 +220,9 @@ fn read_compact_keeps_the_span_on_the_def_line_and_drops_the_snippets() {
     assert_eq!(out.status.code(), Some(0), "{out:?}");
     let stdout = stdout_of(&out);
     assert!(
-        stdout.starts_with("Shop.IThing  (interface)\ndef: src/IThing.cs:3-6\n"),
+        stdout.starts_with(
+            "Shop.IThing  (interface)  1 inbound (showing 1)\ndef: src/IThing.cs:3-6\n"
+        ),
         "{stdout:?}"
     );
     assert!(
@@ -297,13 +300,14 @@ fn a_bare_member_answers_through_refs_shape_without_claiming_a_span() {
     assert_eq!(
         stdout,
         concat!(
-            "Shop.Thing.Id  (member)\n",
+            "Shop.Thing.Id  (member)  1 inbound (showing 1)\n",
             "def: src/Thing.cs:5\n",
             "inbound:\n",
             "  inherits (0):\n",
             "  uses-type (0):\n",
             "  uses-member (1):\n",
             "    src/Consumer.cs:9  uses-member  return t.Id;\n",
+            "next: devscout tests Shop.Thing.Id | devscout impact src/Thing.cs\n",
         ),
         "the member answer carries no span range anywhere"
     );
@@ -321,7 +325,7 @@ fn map_rerun_reuses_fragments_and_a_missing_cache_re_extracts_with_spans() {
     );
 
     let graph_dir = fx.graph_dir();
-    let current_cache = graph_dir.join("fragments-v23.json");
+    let current_cache = graph_dir.join("fragments-v33.json");
     assert!(
         current_cache.exists(),
         "the current cache generation is on disk"
@@ -335,7 +339,7 @@ fn map_rerun_reuses_fragments_and_a_missing_cache_re_extracts_with_spans() {
     // superseded generation.
     fs::write(graph_dir.join("fragments-v16.json"), b"{}").unwrap();
     fs::remove_file(&current_cache).unwrap();
-    fs::remove_file(graph_dir.join("fragments-index-v23.json")).unwrap();
+    fs::remove_file(graph_dir.join("fragments-index-v33.json")).unwrap();
 
     let rebuild = fx.run(&["map", "."]);
     assert!(rebuild.status.success(), "{rebuild:?}");

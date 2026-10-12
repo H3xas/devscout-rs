@@ -186,6 +186,7 @@ fn own_namespace_relative_and_bare_qualified_enum_uses_still_resolve() {
                 vec![FragUsing::Plain {
                     text: "App.Transports.Fabric".into(),
                     global: false,
+                    namespace: String::new(),
                 }],
                 vec![member_ref("ExchangeType", None, "Fanout", "App.Bus")],
             ),

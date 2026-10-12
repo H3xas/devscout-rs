@@ -7,6 +7,8 @@ use crate::graph::{
 };
 use crate::manifest;
 
+mod argument_binding;
+mod argument_compatibility;
 mod base_members;
 mod base_walk;
 mod bus;
@@ -14,20 +16,28 @@ mod byte_identity;
 mod ctor_di;
 mod dispatch;
 mod dotted_suffix;
+mod explicit_implementations;
 mod extension_generics;
 mod extension_tier;
 mod graph_invariants;
 mod ladder;
+mod lambda_applicability;
 mod lambda_parameters;
+mod level_walk_reach;
+mod member_hiding;
 mod member_qualifiers;
+mod method_type_arity;
 mod nested_end_to_end;
 mod nested_step;
 mod project_admission;
 mod qualified_names;
+mod qualified_publish;
+mod qualified_receiver;
 mod receiver_hops;
 mod receiver_rule;
 mod receiver_tier;
 mod scored_tier;
+mod using_levels;
 
 /// Not a real git repo -- `resolve_graph`'s single I/O call (`git_head`)
 /// fails closed to `None` here, the same as a non-repo shell-out failure.
@@ -56,11 +66,14 @@ fn def(id: &str, name: &str, ns: &str, kind: &str) -> FragDef {
         method_return_args: crate::graph::OrderedMap::new(),
         non_public_methods: vec![],
         method_arities: crate::graph::OrderedMap::new(),
+        method_type_arities: OrderedMap::new(),
+        method_type_param_sites: OrderedMap::new(),
         method_params: crate::graph::OrderedMap::new(),
         override_methods: vec![],
         base_type_args: crate::graph::OrderedMap::new(),
         property_message_args: Vec::new(),
         array_message_bases: Vec::new(),
+        delegate_signature: None,
         end_line: 0,
     }
 }
@@ -78,6 +91,7 @@ fn ext_def(id: &str, name: &str, ns: &str, extensions: &[(&str, &str, usize, i64
                 arity_min: *lo,
                 arity_max: *hi,
                 this_args: None,
+                type_param_count: None,
             })
             .collect(),
         ..def(id, name, ns, "class")
@@ -128,6 +142,10 @@ fn type_ref(kind: &str, name: &str, qualified: Option<&str>, ns: &str) -> FragRe
         receiver_lambda: None,
         receiver_nullable: false,
         lambda_arg_arity: None,
+        method_type_arg_count: None,
+        lambda_arg_shape: None,
+        receiver_type_qualified: None,
+        arg_types: None,
     }
 }
 
@@ -155,6 +173,10 @@ fn member_ref(name: &str, qualified: Option<&str>, member: &str, ns: &str) -> Fr
         receiver_lambda: None,
         receiver_nullable: false,
         lambda_arg_arity: None,
+        method_type_arg_count: None,
+        lambda_arg_shape: None,
+        receiver_type_qualified: None,
+        arg_types: None,
     }
 }
 
@@ -581,6 +603,7 @@ fn with_member_types(
             FragFact {
                 type_name: (*ty).to_string(),
                 args: None,
+                qualified_type: None,
             },
         );
     }

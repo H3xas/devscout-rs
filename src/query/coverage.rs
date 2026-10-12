@@ -3,27 +3,34 @@ use std::collections::HashMap;
 use crate::graph;
 
 use super::bus::{self, BusDirection, BusHopRow};
-use super::index::{def_files, symbol_refs, GraphIndex};
+use super::index::{def_files, GraphIndex};
 use super::member::{self, MemberCandidate, MemberSeedResolution};
 use super::refs_tables::{cap_rows, edge_loc, row_tier, Table, DEFAULT_CAP};
 use super::symbol::{resolve_symbol, Resolution};
+use super::symbol_refs::symbol_refs;
+use super::test_path;
 
 // ============================================================================
 // build_tests_model -- test coverage.
 // ============================================================================
 
-/// Which vouch earned a row in a tests model: an attribute-carrying def
-/// declared in the file (`Attribute`), or, absent that, the project model
-/// placing the file's unit inside a project marked `test` (`Project`).
+/// Which vouch earned a row in a tests model.
 ///
-/// The two are checked in that order -- a file's own attributed def is always
-/// the more specific vouch, so `Attribute` wins whenever both would apply.
+/// An attribute-carrying def declared in the file (`Attribute`); absent that,
+/// the project model placing the file's unit inside a project marked `test`
+/// (`Project`); absent both, a TypeScript or JavaScript file named as a test
+/// (`Path`).
+/// They are checked in that order -- the more specific vouch always wins
+/// whenever two would apply.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TestVia {
     /// A def in the file carries a test-runner attribute.
     Attribute,
     /// No such def; the file's unit in the project model is a test project.
     Project,
+    /// Neither; the file is a `.ts`/`.tsx`/`.js`/`.mjs`/`.cjs` file named
+    /// `*.spec.*`/`*.test.*` or sits below a `__tests__` directory.
+    Path,
 }
 
 /// One row of a tests model: a test `file`, the test-carrying `test_defs` in
@@ -98,8 +105,9 @@ pub enum TestsResult {
 }
 
 // The inbound kinds of one adjacency, walked in `REF_KINDS` order (plus
-// `implements`/`overrides`, which never carry a heuristic tier).
-fn collect_test_rows(index: &GraphIndex, kinds: [&[usize]; 5], heuristic: bool) -> Vec<TestRow> {
+// `implements`/`overrides` and the four TS kinds, which never carry a
+// heuristic tier).
+fn collect_test_rows(index: &GraphIndex, kinds: [&[usize]; 9], heuristic: bool) -> Vec<TestRow> {
     let mut rows: Vec<TestRow> = Vec::new();
     let mut by_file: HashMap<String, usize> = HashMap::new();
     for idxs in kinds {
@@ -107,15 +115,10 @@ fn collect_test_rows(index: &GraphIndex, kinds: [&[usize]; 5], heuristic: bool) 
             let (from_file, from_line) = edge_loc(&index.graph.edges[i]);
             let test_defs = index.test_defs_by_file.get(from_file);
             // The attribute vouch wins when it is there. Absent it, the file
-            // still earns a row -- with an empty `test_defs` -- when
-            // `is_test_file` vouches for it through the project model alone;
-            // a file neither vouch reaches is not a test file and is skipped,
-            // same as before this vouch existed.
-            let via = if test_defs.is_some() {
-                TestVia::Attribute
-            } else if index.is_test_file(from_file) {
-                TestVia::Project
-            } else {
+            // still earns a row -- with an empty `test_defs` -- when the
+            // project model or its own TypeScript test name vouches for it; a
+            // file no vouch reaches is not a test file and is skipped.
+            let Some(via) = test_path::test_via(index, from_file) else {
                 continue;
             };
             let slot = match by_file.get(from_file) {
@@ -193,6 +196,10 @@ pub fn build_tests_model(index: &GraphIndex, query: &str) -> TestsResult {
             &refs.inbound_uses_member,
             &refs.inbound_implements,
             &refs.inbound_overrides,
+            &refs.inbound_ts.call,
+            &refs.inbound_ts.jsx_use,
+            &refs.inbound_ts.dispatch,
+            &refs.inbound_ts.import,
         ],
         false,
     );
@@ -203,6 +210,10 @@ pub fn build_tests_model(index: &GraphIndex, query: &str) -> TestsResult {
             &refs.heuristic_inbound_inherits,
             &refs.heuristic_inbound_uses_type,
             &refs.heuristic_inbound_uses_member,
+            EMPTY,
+            EMPTY,
+            EMPTY,
+            EMPTY,
             EMPTY,
             EMPTY,
         ],
@@ -246,10 +257,7 @@ fn test_bus_rows(index: &GraphIndex, id: &str) -> Table<BusHopRow> {
     let filtered: Vec<BusHopRow> = all
         .rows
         .into_iter()
-        .filter(|r| {
-            r.direction == BusDirection::In
-                && (index.test_defs_by_file.contains_key(&r.file) || index.is_test_file(&r.file))
-        })
+        .filter(|r| r.direction == BusDirection::In && index.is_test_file(&r.file))
         .collect();
     let total = filtered.len();
     let (rows, dropped) = cap_rows(filtered, DEFAULT_CAP);

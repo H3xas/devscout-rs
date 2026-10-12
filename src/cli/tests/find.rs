@@ -118,20 +118,22 @@ fn cmd_find_resolves_every_code_and_markup_category_to_its_declaration_line() {
     for (query, expected) in [
         (
             "PopulateSlots",
-            "src/WidgetLedger.cs:11  private void PopulateSlots() { }",
+            "src/WidgetLedger.cs:11  private void PopulateSlots() { }\nnext: devscout read Gadgets.WidgetLedger",
         ),
         (
             "Label",
-            "src/WidgetLedger.cs:7  public string Label { get; set; }",
+            "src/WidgetLedger.cs:7  public string Label { get; set; }\nnext: devscout read Gadgets.WidgetLedger",
         ),
         (
             "_entryCount",
-            "src/WidgetLedger.cs:5  private int _entryCount;",
+            "src/WidgetLedger.cs:5  private int _entryCount;\nnext: devscout read Gadgets.WidgetLedger",
         ),
         (
             "Retired",
-            "src/WidgetLedger.cs:9  public event EventHandler Retired;",
+            "src/WidgetLedger.cs:9  public event EventHandler Retired;\nnext: devscout read Gadgets.WidgetLedger",
         ),
+        // A markup name declares nothing to read, so this answer is the one in
+        // the table with no trailer.
         (
             "Gadgets.PanelView",
             "src/Panel.xaml:2  x:Class=\"Gadgets.PanelView\">",
@@ -207,7 +209,9 @@ fn cmd_find_puts_the_declaration_block_above_the_manifest_block() {
     assert_eq!(code, 0);
     assert_eq!(
         out,
-        "src/WidgetLedger.cs:3  public class WidgetLedger\nsrc/WidgetLedger.cs:3: class WidgetLedger"
+        "src/WidgetLedger.cs:3  public class WidgetLedger\n\
+         src/WidgetLedger.cs:3: class WidgetLedger\n\
+         next: devscout read Gadgets.WidgetLedger"
     );
 }
 

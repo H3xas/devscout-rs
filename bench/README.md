@@ -7,11 +7,15 @@ here is wired into `cargo test`; it is run by hand, against a corpus pinned by S
 | --- | --- |
 | `corpus.lock` | the pinned public corpora — repository, SHA, licence, status |
 | `clone-corpus.sh` | shallow-clones one locked corpus at its pin and removes `origin` |
+| `ts_parity.py`, `ts-parity.sh` | the TypeScript reference parity run: seed rule, truth, arm runner and scorer ([pre-registration](truth/typescript/preregistration.md)) |
+| `peers/code-review-graph/` | the peer arm's hash-pinned requirements and its guarded install |
 
 ## Corpora
 
-`corpus.lock` is the only place a pin is written. The C# corpus is registered; the TypeScript
-one is a proposal and carries no SHA until the first run that measures against it records one.
+`corpus.lock` is the only place a pin is written. Both the C# corpus (MassTransit) and the
+TypeScript corpus (nx at tag 22.5.4) are registered with a SHA; a corpus with status
+`proposed` carries no SHA and no published number until the first run that measures against it
+records one.
 
 ## Running a comparison
 
@@ -102,6 +106,47 @@ for the metric definitions, the join rule, and the two-run protocol.
 
 **`refs.jsonl` for a private or unpublishable corpus is never committed** — the same rule as
 every other corpus artifact in this directory.
+
+## Rust edges (rust-analyzer oracle)
+
+A third harness scores devscout's Rust `uses-member`, `uses-type` and `implements` edges, and
+the test-to-function pairs they imply, against the references `rust-analyzer lsif` writes for
+this repository itself. `rust_edges.py` and `rust_sites.py` are standard-library Python;
+`rust-edges-sample/` holds a hand-written LSIF sample over two invented files, which the unit
+tests read.
+
+**Prerequisites**: the `rust-analyzer` component of the pinned toolchain (`rustup component
+add rust-analyzer`, which also needs `rust-src` so std macros expand), every dependency already
+in the local cargo cache, and a devscout release binary built from the commit being scored.
+
+```sh
+python3 -B -m unittest discover -s bench -p test_rust_edges.py
+
+git archive <commit> | tar -x -C /tmp/build-<commit>
+cargo build --release --offline --locked --manifest-path /tmp/build-<commit>/Cargo.toml
+
+python3 -B bench/rust_edges.py run --repo . --commit <commit> \
+  --devscout /tmp/build-<commit>/target/release/devscout \
+  --rust-analyzer "$(rustup which rust-analyzer)" \
+  --label <label> --scratch /tmp/rust-edges-<label>
+```
+
+`run` refuses a scratch directory inside a git work tree, because devscout climbs to the
+nearest `.git` and would map the enclosing repository instead of the export. Every cargo and
+rust-analyzer step runs with `CARGO_NET_OFFLINE=true` and a scratch `CARGO_TARGET_DIR`. The LSIF
+dump, the compiler's `cargo test -- --list` output, the mapped `graph.json`, the logs and the
+scored `report.json`, `edges.jsonl` (one verdict per Rust edge) and `references.jsonl` land in
+`bench/out/rust-edges/<label>/`, which is ignored. `score --out <dir> --source <export>`
+rescores saved files, and `confirm --out <dir> --source <export> <answer.json>...` checks each
+row of a saved `refs --json` or `tests --json` answer against the LSIF references.
+`report.json` lists under `calls.missed` every `[file, line, target]` population reference
+that devscout's `uses-member` edges do not fully recall.
+
+`--commit` takes any tree-ish `git archive` accepts, so a fixture package is judged on its own
+by naming its directory: `--commit <commit>:fixtures/rust-targets` exports only that package,
+and rust-analyzer, `cargo test -- --list` and devscout all run on it as a root of its own. See
+[`docs/benchmarks/methodology.md`](../docs/benchmarks/methodology.md#rust-edges) for the
+universe, the site classes and the thresholds.
 
 ## Rules the harness holds to
 

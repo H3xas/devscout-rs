@@ -11,9 +11,11 @@ use super::cache::{
     read_fragments_cache, write_fragments_cache, write_fragments_index, FragmentCacheEntry,
 };
 use super::fragment_types::{AnyFragment, Fragment};
+use super::lane::LaneStats;
 use super::ordered::OrderedMap;
 use super::paths::{
     atomic_write_json, graph_json_path, project_units_path, remove_superseded_caches,
+    rust_crates_path,
 };
 
 // ---------------------------------------------------------------------------
@@ -21,8 +23,9 @@ use super::paths::{
 // ---------------------------------------------------------------------------
 
 /// One file that contributes a graph fragment: C# (defs, refs, member names),
-/// markup (`x:Class`/`x:Name`, `.resw` keys -- names only) or TS/JS
-/// (imports, exported declarations, call/JSX/dispatch references).
+/// markup (`x:Class`/`x:Name`, `.resw` keys -- names only), TS/JS
+/// (imports, exported declarations, call/JSX/dispatch references) or Rust
+/// (items with spans).
 #[derive(Debug, Clone)]
 pub struct GraphFile {
     /// The rel value.
@@ -38,6 +41,17 @@ pub enum RebuildOutcome {
     NotRebuilt,
     /// Represents `Rebuilt`.
     Rebuilt(Graph),
+}
+
+impl RebuildOutcome {
+    /// The rebuilt graph's `stats.lane` record; `None` when nothing was
+    /// rebuilt or the run owed no record.
+    pub fn lane(&self) -> Option<&LaneStats> {
+        match self {
+            RebuildOutcome::Rebuilt(graph) => graph.stats.lane.as_ref(),
+            RebuildOutcome::NotRebuilt => None,
+        }
+    }
 }
 
 /// Whether the graph.json already on disk was written at the CURRENT schema
@@ -84,6 +98,22 @@ fn write_project_units(
     }
 }
 
+// Mirrors the Cargo package model into its staleness sidecar, the same
+// present-or-absent rule as `write_project_units`.
+fn write_rust_crates(
+    root: &Path,
+    crates: Option<&crate::rsgraph::crates::RustCrates>,
+) -> io::Result<()> {
+    match crates {
+        Some(c) => atomic_write_json(&rust_crates_path(root), c),
+        None => match fs::remove_file(rust_crates_path(root)) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(e),
+        },
+    }
+}
+
 /// `fresh_fragments`: fragments this run's extractor produced for files that
 /// needed reparsing (the same set that got a fresh purpose signature in the
 /// real `devscout map` flow -- `mapcmd::map_repo` assembles it). `changed`: from the
@@ -93,27 +123,55 @@ fn write_project_units(
 /// declares none -- serialized into `graph.units` and mirrored into the
 /// `project_units_path` staleness sidecar. The caller is expected to have
 /// already folded `project::sidecar_differs` into `changed`; this function
-/// only writes the sidecar, it never decides on it.
+/// only writes the sidecar, it never decides on it. `lane`: this run's
+/// enriched-lane decision, which supplies the layer resolution may use and
+/// the `stats.lane` record written with the graph; the caller is expected to
+/// have folded its `forces_rebuild` into `changed` as well.
 pub fn rebuild_graph(
     root: &Path,
     graph_files: &[GraphFile],
     fresh_fragments: &HashMap<String, AnyFragment>,
     changed: bool,
     model: Option<&crate::project::ProjectModel>,
-    semantic_layer: Option<&crate::semantic::SemanticLayer>,
+    lane: Option<&crate::semantic::LaneDecision>,
+) -> io::Result<RebuildOutcome> {
+    rebuild_graph_with_crates(
+        root,
+        graph_files,
+        fresh_fragments,
+        changed,
+        model,
+        lane,
+        None,
+    )
+}
+
+/// `rebuild_graph` with the Cargo package model `map` discovered: Rust
+/// paths resolve against its crate roots, and it is mirrored into the
+/// `rust_crates_path` sidecar. `None` means no package is in scope.
+pub fn rebuild_graph_with_crates(
+    root: &Path,
+    graph_files: &[GraphFile],
+    fresh_fragments: &HashMap<String, AnyFragment>,
+    changed: bool,
+    model: Option<&crate::project::ProjectModel>,
+    lane: Option<&crate::semantic::LaneDecision>,
+    crates: Option<&crate::rsgraph::crates::RustCrates>,
 ) -> io::Result<RebuildOutcome> {
     if !changed && graph_json_path(root).exists() && graph_schema_is_current(root) {
         return Ok(RebuildOutcome::NotRebuilt);
     }
 
     let cache = read_fragments_cache(root);
-    // Split at the door: the two shapes share no field beyond
-    // `defs`, and letting one resolver see the other's names would resolve a
-    // C# type reference onto a same-named TypeScript const. Built as two vecs
-    // here rather than one mixed vec split later so no fragment is cloned a
-    // third time on the rebuild path.
+    // Split at the door: the shapes share no field beyond `defs`, and letting
+    // one resolver see another's names would resolve a C# type reference onto
+    // a same-named TypeScript const. Rust fragments reach no resolver at all;
+    // their items are projected after it. Built as separate vecs here rather
+    // than one mixed vec split later so no fragment is cloned a third time on
+    // the rebuild path.
     let mut merged_cs: Vec<(String, Fragment)> = Vec::new();
     let mut merged_ts: Vec<(String, extract::TsFragment)> = Vec::new();
+    let mut merged_rs: Vec<(String, extract::RsFragment)> = Vec::new();
     let mut new_cache: OrderedMap<FragmentCacheEntry> = OrderedMap::new();
     for f in graph_files {
         let fragment = match cache.get(&f.rel) {
@@ -124,6 +182,7 @@ pub fn rebuild_graph(
         match &fragment {
             AnyFragment::Cs(c) => merged_cs.push((f.rel.clone(), c.clone())),
             AnyFragment::Ts(t) => merged_ts.push((f.rel.clone(), t.clone())),
+            AnyFragment::Rs(r) => merged_rs.push((f.rel.clone(), r.clone())),
         }
         new_cache.insert(
             f.rel.clone(),
@@ -134,15 +193,19 @@ pub fn rebuild_graph(
         );
     }
 
-    let graph = crate::resolve::resolve_graph_with_model(
+    let mut graph = crate::resolve::resolve_graph_with_model(
         root,
         &merged_cs,
         &merged_ts,
         model,
-        semantic_layer,
+        lane.and_then(crate::semantic::LaneDecision::layer),
     );
+    crate::semantic::record_lane(lane, &mut graph.stats);
+    crate::rsgraph::append_rust(&mut graph, &merged_rs);
+    crate::rsgraph::append_rust_edges(&mut graph, &merged_rs, crates);
     write_graph(root, &graph)?;
     write_project_units(root, model)?;
+    write_rust_crates(root, crates)?;
     write_fragments_cache(root, &new_cache)?;
     write_fragments_index(root, &new_cache)?;
     remove_superseded_caches(root);

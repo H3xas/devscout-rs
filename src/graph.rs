@@ -3,7 +3,7 @@
 // a mismatch makes reuse break silently.
 //
 // This module owns every serde struct for graph.json + the fragments-cache
-// pair (fragments-v23.json, fragments-index-v23.json), plus their path resolution,
+// pair (fragments-v33.json, fragments-index-v33.json), plus their path resolution,
 // atomic I/O, and the cache-then-resolve-then-write orchestration
 // (`rebuild_graph`). The pure resolution ladder that
 // turns fragments into `defs`/`edges` lives in `resolve.rs` and returns the
@@ -76,27 +76,32 @@
 //     (`manifest::git_head`) -- `resolve_graph` (resolve.rs) calls THAT, so
 //     this module does not duplicate it.
 
+mod argument_types;
 mod artifact;
 mod cache;
+mod call_shape_types;
 mod compiler_facts;
 mod def;
 mod edge;
 mod fragment;
 mod fragment_types;
 mod imports;
+mod lane;
 mod ordered;
 mod paths;
 mod rebuild;
 
 pub use artifact::{read_graph, Graph, GraphName, GraphUnit, Stats, GRAPH_SCHEMA_VERSION};
 pub use cache::{index_is_stale, read_fragments_index, FragmentCacheEntry};
+pub use call_shape_types::{FragDelegateSignature, FragLambdaShape};
 pub use compiler_facts::{
     admit, admit_and_publish, compiler_facts_json_path, expectations_for, locate_engine,
-    read_compiler_facts, run_engine, AdmissionExpectations, AdmittedFacts, Coverage,
-    IncompleteUnit, Profile, PublishError, RefusalReason, COMPILER_FACTS_ARTIFACT_SCHEMA_VERSION,
-    COMPILER_FACTS_CONTRACT_VERSION, COMPILER_FACTS_FORMAT, DEFAULT_OUTPUT_CAP, DEFAULT_TIMEOUT,
-    EXPECTED_CONTEXT_SCHEMA_VERSION, EXPECTED_DEPENDENCY_FINGERPRINT, EXPECTED_ENGINE_REVISION,
-    EXPECTED_PRODUCER_NAME, SCOUT_COMPILER_ENGINE,
+    read_compiler_facts, run_engine, AdmissionExpectations, AdmittedFacts, CompilationTally,
+    Coverage, IncompleteUnit, Profile, PublishError, RefusalReason,
+    COMPILER_FACTS_ARTIFACT_SCHEMA_VERSION, COMPILER_FACTS_CONTRACT_VERSION, COMPILER_FACTS_FORMAT,
+    DEFAULT_OUTPUT_CAP, DEFAULT_TIMEOUT, EXPECTED_CONTEXT_SCHEMA_VERSION,
+    EXPECTED_DEPENDENCY_FINGERPRINT, EXPECTED_ENGINE_REVISION, EXPECTED_PRODUCER_NAME,
+    SCOUT_COMPILER_ENGINE,
 };
 #[cfg(test)]
 pub(crate) use compiler_facts::{recompute_context_summary, CompilationRef};
@@ -106,17 +111,18 @@ pub use edge::{
 };
 pub use fragment::{fragment_from_extraction, markup_fragment};
 pub use fragment_types::{
-    AnyFragment, FragDef, FragExtensionMethod, FragFact, FragLambdaSlot, FragName, FragRef,
-    FragRegistration, FragUsing, Fragment,
+    AnyFragment, FragArgType, FragDef, FragExtensionMethod, FragFact, FragLambdaSlot, FragName,
+    FragRef, FragRegistration, FragUsing, Fragment,
 };
 pub use imports::{
     imported_edges_json_path, parse_imported_edges, read_imported_edges, write_imported_edges,
     EdgeEnd, ImportRecord, ImportedEdges, Provenance, IMPORTED_EDGES_FORMAT,
     IMPORTED_EDGES_SCHEMA_VERSION, IMPORTED_EDGE_KINDS,
 };
+pub use lane::{LaneCompilations, LaneReason, LaneStats};
 pub use ordered::{OrderedMap, Percent1};
-pub use paths::{graph_json_path, project_units_path};
-pub use rebuild::{rebuild_graph, GraphFile, RebuildOutcome};
+pub use paths::{graph_json_path, project_units_path, rust_crates_path};
+pub use rebuild::{rebuild_graph, rebuild_graph_with_crates, GraphFile, RebuildOutcome};
 
 #[cfg(test)]
 mod tests;

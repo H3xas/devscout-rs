@@ -149,6 +149,23 @@ pub struct DefRecord {
     /// extension tier. A read (no `argCount`) never consults this table.
     /// Appended LAST of all, after `non_public_methods`.
     pub method_arities: Vec<(String, Vec<(usize, i64)>)>,
+    /// Method name -> each overload's own type-parameter count, one entry
+    /// per overload in the same order and with the same length as that
+    /// name's `method_arities` entry, so position k of both lists describes
+    /// the same overload. The enclosing type's own type parameters never
+    /// count.
+    pub method_type_arities: Vec<(String, Vec<usize>)>,
+    /// Method name -> per overload, per parameter, where the method's OWN
+    /// type parameters occur in that parameter's type: `(k, position)` for
+    /// the k-th own type parameter, `position` being the top-level
+    /// type-argument index it sits inside, or -1 when it sits outside every
+    /// type argument (`T seed`, `T[] items`). One `Expression<...>` wrapper
+    /// is looked through first, as the resolver reads a delegate. Aligned
+    /// with `method_params` and `method_type_arities` overload for overload
+    /// and parameter for parameter; the `*` wildcard `method_params` writes
+    /// cannot tell a method's own type parameter from its type's, and this
+    /// can.
+    pub method_type_param_sites: Vec<(String, Vec<OverloadTypeParamSites>)>,
     /// Method name -> per-overload parameter type descriptors (see
     /// `type_descriptor`), one `Vec<String>` per overload in declaration
     /// order -- covers EVERY `method_declaration`, public and non-public
@@ -201,8 +218,36 @@ pub struct DefRecord {
     /// structural, off the rendered descriptor, and never loses the
     /// bracket. Appended LAST of all, after `property_message_args`.
     pub array_message_bases: Vec<String>,
+    /// A `delegate` def's own signature beyond its parameter list; `None`
+    /// for every other kind.
+    pub delegate_signature: Option<DelegateSignature>,
     /// 1-based last line of the complete declaration node.
     pub end_line: usize,
+}
+
+/// One overload's own-type-parameter sites, one list per parameter.
+pub type OverloadTypeParamSites = Vec<Vec<(usize, i64)>>;
+
+/// A delegate's return descriptor (`void` written out) and, per own type
+/// parameter in declaration order, where it occurs: `params`, `return`,
+/// `both` or `none`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DelegateSignature {
+    /// The `Invoke` return type, rendered like a parameter descriptor.
+    pub returns: String,
+    /// Per own type parameter: `params`, `return`, `both` or `none`.
+    pub type_params: Vec<String>,
+}
+
+/// What the syntax settles about one lambda-literal argument.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LambdaShape {
+    /// The body can only produce a value, so C# never converts the lambda
+    /// to a delegate returning `void`.
+    pub value_only: bool,
+    /// No parameter carries a written type, so type inference learns
+    /// nothing from the parameters.
+    pub implicitly_typed: bool,
 }
 
 /// One message-bus publish-site fact: an invocation handing a message
@@ -280,6 +325,9 @@ pub struct ExtensionMethod {
     /// A position naming one of the method's or the enclosing class's own type
     /// parameters is recorded as "*" (wildcard).
     pub this_args: Option<Vec<String>>,
+    /// The method's own type-parameter count (`M<T, U>(this I x)` is 2);
+    /// the enclosing class's never count.
+    pub type_param_count: usize,
 }
 
 /// Represents `RefRecord`.
@@ -315,6 +363,12 @@ pub struct RefRecord {
     /// guard, which is what makes the chain-tail hazard structurally
     /// impossible. Always `None` for every other ref kind.
     pub receiver_type: Option<String>,
+    /// The declared type's own written path, alongside the bare last
+    /// segment `receiver_type` carries -- `Outer.Type` for a declaration
+    /// written that way, `None` for a bare one. The resolver's
+    /// typed-receiver probe resolves this form when it is present, because
+    /// a tail alone cannot tell two same-named types apart.
+    pub receiver_type_qualified: Option<String>,
     /// The argument count of the call this
     /// member access is the CALLEE of (`argument_list` named-child count),
     /// recorded only when the access is the `function` field of an
@@ -420,6 +474,39 @@ pub struct RefRecord {
     /// lets the resolver judge, rather than assume). Appended LAST of all,
     /// after `receiver_nullable`.
     pub lambda_arg_arity: Option<Vec<Option<usize>>>,
+    /// The length of the type-argument list written on the invoked member
+    /// itself (`x.M<A, B>()` records 2), as opposed to `type_arg_count`,
+    /// which belongs to the qualifier. `None` when the member carries no
+    /// list, including every read: C# infers type arguments there, so the
+    /// resolver has no count to hold a candidate to.
+    pub method_type_arg_count: Option<usize>,
+    /// Per argument position of the same invocation `lambda_arg_arity`
+    /// reads, the shape of a positional lambda literal there (`None` at
+    /// every other position), or `None` entirely when no position holds
+    /// one.
+    pub lambda_arg_shape: Option<Vec<Option<LambdaShape>>>,
+    /// One type fact per written value argument, in source order. A missing
+    /// slot means its type cannot be established from the available facts.
+    pub arg_types: Option<Vec<Option<ArgTypeRecord>>>,
+}
+
+/// A type known at extraction, or a member whose declared type needs the
+/// resolver's cross-file declaration index.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ArgTypeRecord {
+    /// A type descriptor already established from local syntax or symbols.
+    Known(String),
+    /// A member whose declared type will be read from the declaration index.
+    Member {
+        /// The receiver type name.
+        owner: String,
+        /// The member name.
+        member: String,
+        /// Explicit type arguments on the receiver, when available.
+        receiver_args: Option<Vec<String>>,
+        /// Whether the member is invoked as a method.
+        call: bool,
+    },
 }
 
 /// Represents `UsingRecord`.
@@ -439,6 +526,10 @@ pub enum UsingRecord {
         text: String,
         /// Whether the directive is global.
         global: bool,
+        /// The namespace the directive is declared in: the enclosing
+        /// namespace declarations joined with `.`, or `""` at compilation-unit
+        /// level and for every `global using`.
+        namespace: String,
     },
 }
 
@@ -567,6 +658,17 @@ pub struct LambdaSlot {
 pub struct Fact {
     /// The type name value.
     pub type_name: String,
+    /// The same declaration's written path, when it wrote one, so two
+    /// declarations of one name that differ only in their qualifier
+    /// (`A.Widget` and `B.Widget`) are two facts rather than one conflicted
+    /// entry. Part of the equality the table compares.
+    pub qualified_type: Option<String>,
+    /// Full declared type spelling for argument typing. Receiver inference
+    /// continues to use `type_name` and `args`.
+    pub descriptor: Option<String>,
+    /// Whether the fact may type a receiver. Argument-only facts preserve
+    /// the receiver inference boundary from before argument typing.
+    pub receiver_admissible: bool,
     /// The args value.
     pub args: Option<Vec<String>>,
     /// When set, the name's type is whatever the method of this name returns

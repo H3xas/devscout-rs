@@ -14,6 +14,7 @@
 
 mod admit;
 mod artifact;
+mod compilation_tally;
 mod context_summary;
 mod expectations;
 mod paths;
@@ -25,6 +26,7 @@ pub use artifact::{
     Coverage, IncompleteUnit, Profile, COMPILER_FACTS_ARTIFACT_SCHEMA_VERSION,
     COMPILER_FACTS_CONTRACT_VERSION, COMPILER_FACTS_FORMAT,
 };
+pub use compilation_tally::CompilationTally;
 // Test-only: lets the hand-authored candidates in `graph::tests::compiler_facts`
 // compute a correct `context.contextFingerprint` against their own hand-built
 // `compilations` list, the same way the real producer does, without adding

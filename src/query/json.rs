@@ -18,6 +18,7 @@ use crate::query;
 use crate::render;
 
 use super::why::{why_for_uses_member, Why};
+use next::j_next;
 
 // `pub(crate)`: `audit.rs`'s `--json` rendering builds its own `J` tree with
 // this same encoder rather than hand-rolling a second one.
@@ -150,6 +151,8 @@ enum RowKind {
     UsesMember,
     Implements,
     Overrides,
+    // A TS-family table, whose word is fixed by the table itself.
+    Ts(Why),
 }
 
 fn why_for_row(kind: RowKind, heuristic: bool, tier: Option<graph::HeuristicTier>) -> Why {
@@ -159,6 +162,7 @@ fn why_for_row(kind: RowKind, heuristic: bool, tier: Option<graph::HeuristicTier
         RowKind::UsesMember => why_for_uses_member(heuristic, tier),
         RowKind::Implements => Why::Implements,
         RowKind::Overrides => Why::Overrides,
+        RowKind::Ts(why) => why,
     }
 }
 
@@ -312,6 +316,7 @@ fn j_ambiguous_row(r: &query::AmbiguousRow) -> J {
 // key is either in that slot or absent entirely. `outcome` is always `"hit"`
 // here and always last: every path that reaches this builder already
 // resolved.
+#[cfg(test)]
 pub(crate) fn refs_model_to_json(model: &query::RefsModel) -> String {
     refs_model_j(model, query::Outcome::Hit).to_json_string()
 }
@@ -323,7 +328,15 @@ pub(crate) fn refs_model_to_json(model: &query::RefsModel) -> String {
 // `outbound` follows; a caller cannot mistake a start-only answer for a
 // span. `outcome` rides along inside `refs_model_fields`'s own tail and stays
 // last regardless of where `span` is spliced in.
+#[cfg(test)]
 pub(crate) fn read_model_to_json(model: &query::ReadModel) -> String {
+    J::Obj(read_model_fields(model)).to_json_string()
+}
+
+// The resolved `read` field list, `outcome` last. Shared with
+// `json/next.rs`, which splices `next` into the slot before `outcome`, so the
+// two builders cannot disagree about where `span` sits.
+pub(super) fn read_model_fields(model: &query::ReadModel) -> Vec<(&'static str, J)> {
     let mut fields = refs_model_fields(&model.refs, query::Outcome::Hit);
     // `split_off(5)` lifts everything after the first five keys
     // (schema_version/status/query/id/kind) so `span` can take their place in
@@ -342,7 +355,7 @@ pub(crate) fn read_model_to_json(model: &query::ReadModel) -> String {
         ));
     }
     fields.extend(tail);
-    J::Obj(fields).to_json_string()
+    fields
 }
 
 // The bare-member `refs` JSON: `{status:'members', query, members, outcome}`,
@@ -351,25 +364,40 @@ pub(crate) fn read_model_to_json(model: &query::ReadModel) -> String {
 // wrapper's own `outcome` is appended last so a caller reading only the top
 // level still finds it there, and the SAME word is stamped on every member so
 // the two levels cannot disagree about whether the answer is empty.
+#[cfg(test)]
 pub(crate) fn member_refs_to_json(
     query_str: &str,
     models: &[query::RefsModel],
     outcome: query::Outcome,
 ) -> String {
-    J::Obj(vec![
+    let members = models.iter().map(|m| refs_model_j(m, outcome)).collect();
+    J::Obj(member_refs_fields(query_str, members, None, outcome)).to_json_string()
+}
+
+// The bare-member wrapper's field list, `outcome` last. Shared with
+// `json/next.rs`, whose wrapper carries the union of the members' own
+// suggestions in the same slot, so the two shapes stay one shape.
+pub(super) fn member_refs_fields(
+    query_str: &str,
+    members: Vec<J>,
+    next: Option<&[Vec<String>]>,
+    outcome: query::Outcome,
+) -> Vec<(&'static str, J)> {
+    let mut fields = vec![
         ("schema_version", J::UInt(query::SCHEMA_VERSION)),
         ("status", J::Str("members".to_string())),
         ("query", J::Str(query_str.to_string())),
-        (
-            "members",
-            J::Arr(models.iter().map(|m| refs_model_j(m, outcome)).collect()),
-        ),
-        ("outcome", J::Str(outcome.as_str().to_string())),
-    ])
-    .to_json_string()
+        ("members", J::Arr(members)),
+    ];
+    if let Some(next) = next {
+        fields.push(("next", j_next(next)));
+    }
+    fields.push(("outcome", J::Str(outcome.as_str().to_string())));
+    fields
 }
 
-fn refs_model_j(model: &query::RefsModel, outcome: query::Outcome) -> J {
+#[cfg(test)]
+pub(super) fn refs_model_j(model: &query::RefsModel, outcome: query::Outcome) -> J {
     J::Obj(refs_model_fields(model, outcome))
 }
 
@@ -422,6 +450,7 @@ fn j_inbound_tables(t: &query::InboundTables) -> J {
             &t.overrides,
             j_inbound_row,
         ))
+        .chain(ts_tables::ts_table_fields(&t.ts, j_inbound_row))
         .collect::<Vec<_>>(),
     )
 }
@@ -455,11 +484,15 @@ fn j_outbound_tables(t: &query::OutboundTables) -> J {
             "imports",
             j_table(&t.imports, j_import_row),
         )))
+        .chain(ts_tables::ts_table_fields(&t.ts, j_outbound_row))
         .collect::<Vec<_>>(),
     )
 }
 
-fn refs_model_fields(model: &query::RefsModel, outcome: query::Outcome) -> Vec<(&'static str, J)> {
+pub(super) fn refs_model_fields(
+    model: &query::RefsModel,
+    outcome: query::Outcome,
+) -> Vec<(&'static str, J)> {
     let mut fields = vec![
         ("schema_version", J::UInt(query::SCHEMA_VERSION)),
         ("status", J::Str("resolved".to_string())),
@@ -621,7 +654,10 @@ fn j_impact_row(r: &query::ImpactRow) -> J {
 // heuristicAffected, testsAffected, [braked]}`, in that key order. Shared by
 // the plain and imports-aware builders below so the fields both answers
 // carry can never drift apart between the two.
-fn impact_model_fields(query_str: &str, model: &query::ImpactModel) -> Vec<(&'static str, J)> {
+pub(super) fn impact_model_fields(
+    query_str: &str,
+    model: &query::ImpactModel,
+) -> Vec<(&'static str, J)> {
     vec![
         ("schema_version", J::UInt(query::SCHEMA_VERSION)),
         ("query", J::Str(query_str.to_string())),
@@ -701,6 +737,7 @@ fn impact_outcome(model: &query::ImpactModel, imported_hit: bool) -> query::Outc
 
 /// The resolved `impact` JSON shape, with the query key first, in
 /// [`impact_model_fields`]'s key order, `outcome` last.
+#[cfg(test)]
 pub(crate) fn impact_model_to_json(query_str: &str, model: &query::ImpactModel) -> String {
     let mut fields = impact_model_fields(query_str, model);
     let outcome = impact_outcome(model, false);
@@ -710,7 +747,7 @@ pub(crate) fn impact_model_to_json(query_str: &str, model: &query::ImpactModel) 
 
 // An imported row's JSON shape: `{file, hop, repo, importedKind, why}`, `why`
 // last like every other hit row this module builds.
-fn j_imported_row(r: &query::ImportedRow) -> J {
+pub(super) fn j_imported_row(r: &query::ImportedRow) -> J {
     J::Obj(vec![
         ("file", J::Str(r.file.clone())),
         ("hop", J::UInt(r.hop as u64)),
@@ -720,40 +757,40 @@ fn j_imported_row(r: &query::ImportedRow) -> J {
     ])
 }
 
-/// The resolved `impact` JSON shape with an import configured: every key
-/// [`impact_model_to_json`] writes, then `importedAffected`, `importedDropped`,
-/// `importedRows` and the export's `provenance` block, all appended before
-/// `outcome` -- additive only, so a consumer already reading the plain shape
-/// sees exactly what it saw before, plus these four keys. `outcome` reports
-/// `"hit"` when either the native model or the imported section found
-/// something, so an import can turn an otherwise-empty answer into a hit.
-pub(crate) fn impact_model_to_json_with_imports(
-    query_str: &str,
-    model: &query::ImpactModel,
+// The four keys an imported cross-repo export adds to an `impact` answer,
+// in their fixed order and before `outcome`. Shared with `json/next.rs` so
+// the imports-aware shape is stated once.
+pub(super) fn imported_section_fields(
     imported: &query::ImportedSection,
     provenance: &graph::Provenance,
-) -> String {
-    let mut fields = impact_model_fields(query_str, model);
-    fields.push(("importedAffected", J::UInt(imported.affected as u64)));
-    fields.push(("importedDropped", J::UInt(imported.dropped as u64)));
-    fields.push((
-        "importedRows",
-        J::Arr(imported.rows.iter().map(j_imported_row).collect()),
-    ));
-    fields.push((
-        "provenance",
-        J::Obj(vec![
-            ("id", J::Str(provenance.id.clone())),
-            ("producer", J::Str(provenance.producer.clone())),
-            ("formatVersion", J::UInt(provenance.format_version)),
-        ]),
-    ));
-    let outcome = impact_outcome(model, !imported.rows.is_empty());
-    fields.push(("outcome", J::Str(outcome.as_str().to_string())));
-    J::Obj(fields).to_json_string()
+) -> Vec<(&'static str, J)> {
+    vec![
+        ("importedAffected", J::UInt(imported.affected as u64)),
+        ("importedDropped", J::UInt(imported.dropped as u64)),
+        (
+            "importedRows",
+            J::Arr(imported.rows.iter().map(j_imported_row).collect()),
+        ),
+        (
+            "provenance",
+            J::Obj(vec![
+                ("id", J::Str(provenance.id.clone())),
+                ("producer", J::Str(provenance.producer.clone())),
+                ("formatVersion", J::UInt(provenance.format_version)),
+            ]),
+        ),
+    ]
 }
 
-// Split into its own sibling module to keep this file under its flat line
+// Split into their own sibling modules to keep this file under its flat line
 // limit -- see `json/tests_model.rs`'s own doc comment.
+mod next;
 mod tests_model;
+pub(crate) use next::{
+    impact_model_to_json_with_imports_and_next, impact_model_to_json_with_next,
+    member_refs_to_json_with_next, read_model_to_json_with_next, refs_model_to_json_with_next,
+    tests_model_to_json_with_next,
+};
+#[cfg(test)]
 pub(crate) use tests_model::tests_model_to_json;
+mod ts_tables;

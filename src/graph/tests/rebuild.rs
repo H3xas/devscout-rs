@@ -74,11 +74,14 @@ fn rebuild_graph_reuses_a_cached_fragment_at_matching_mtime() {
             method_return_args: OrderedMap::new(),
             non_public_methods: vec![],
             method_arities: OrderedMap::new(),
+            method_type_arities: OrderedMap::new(),
+            method_type_param_sites: OrderedMap::new(),
             method_params: OrderedMap::new(),
             override_methods: vec![],
             base_type_args: OrderedMap::new(),
             property_message_args: Vec::new(),
             array_message_bases: Vec::new(),
+            delegate_signature: None,
             end_line: 1,
         }],
         usings: vec![],
@@ -108,4 +111,35 @@ fn rebuild_graph_reuses_a_cached_fragment_at_matching_mtime() {
         }
         RebuildOutcome::NotRebuilt => panic!("changed=true must always rebuild"),
     }
+}
+
+// --- stats.lane: written only when the lane decision owes a record -----
+
+#[test]
+fn rebuild_graph_without_a_lane_record_writes_the_same_bytes_as_no_decision() {
+    let dir = temp_dir("rebuild-lane-absent");
+    rebuild_graph(&dir, &[], &HashMap::new(), true, None, None).unwrap();
+    let no_decision = fs::read(graph_json_path(&dir)).unwrap();
+
+    let absent = crate::semantic::decide_lane(&dir, false);
+    assert!(absent.record().is_none());
+    let outcome = rebuild_graph(&dir, &[], &HashMap::new(), true, None, Some(&absent)).unwrap();
+    assert_eq!(outcome.lane(), None);
+    let with_absent = fs::read(graph_json_path(&dir)).unwrap();
+    assert_eq!(with_absent, no_decision);
+    assert!(!String::from_utf8(with_absent).unwrap().contains("\"lane\""));
+}
+
+#[test]
+fn rebuild_graph_writes_a_due_lane_record_as_the_last_stats_key() {
+    let dir = temp_dir("rebuild-lane-no-semantic");
+    let decision = crate::semantic::decide_lane(&dir, true);
+    let outcome = rebuild_graph(&dir, &[], &HashMap::new(), true, None, Some(&decision)).unwrap();
+    let expected = LaneStats::not_applied(LaneReason::NoSemantic, None);
+    assert_eq!(outcome.lane(), Some(&expected));
+    let text = fs::read_to_string(graph_json_path(&dir)).unwrap();
+    assert!(
+        text.contains(r#""heuristic_by_tier":{"ext":0,"guess":0},"lane":{"state":"not-applied","reason":"no-semantic"}}"#),
+        "{text}"
+    );
 }

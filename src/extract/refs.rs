@@ -363,7 +363,7 @@ pub(super) fn member_qualifier_info(
 // check `invocation_arg_count` and `invocation_lambda_arg_arity` both need,
 // kept in one place so a chain window answers only for its OWN call, never
 // the one wrapping it, in exactly one way.
-fn invocation_arguments(node: Node) -> Option<Vec<Node>> {
+pub(super) fn invocation_arguments(node: Node) -> Option<Vec<Node>> {
     let parent = node.parent()?;
     if parent.kind() != "invocation_expression" {
         return None;
@@ -419,6 +419,7 @@ pub(super) fn push_ref(
         type_arg_count: None,
         generic: false,
         receiver_type: None,
+        receiver_type_qualified: None,
         arg_count: None,
         receiver_args: None,
         outer_types: type_stack.to_vec(),
@@ -432,6 +433,9 @@ pub(super) fn push_ref(
         receiver_lambda: None,
         receiver_nullable: false,
         lambda_arg_arity: None,
+        method_type_arg_count: None,
+        lambda_arg_shape: None,
+        arg_types: None,
     });
 }
 
@@ -457,6 +461,7 @@ pub(super) fn push_ctor_param_ref(
         type_arg_count: Some(args.as_ref().map_or(0, Vec::len)),
         generic: false,
         receiver_type: None,
+        receiver_type_qualified: None,
         arg_count: None,
         receiver_args: None,
         outer_types: type_stack.to_vec(),
@@ -470,6 +475,9 @@ pub(super) fn push_ctor_param_ref(
         receiver_lambda: None,
         receiver_nullable: false,
         lambda_arg_arity: None,
+        method_type_arg_count: None,
+        lambda_arg_shape: None,
+        arg_types: None,
     });
 }
 
@@ -555,6 +563,7 @@ pub(super) fn push_member_ref(
     // tell a recorded type, a call lookup, and a lambda-slot lookup apart.
     let (
         receiver_type,
+        receiver_type_qualified,
         receiver_args,
         receiver_call_owner,
         receiver_call_member,
@@ -564,13 +573,14 @@ pub(super) fn push_member_ref(
     ) = match receiver {
         Some(Fact {
             lambda: Some(slot), ..
-        }) => (None, None, None, None, false, Some(slot), false),
+        }) => (None, None, None, None, None, false, Some(slot), false),
         Some(Fact {
             type_name,
             call: Some(member),
             awaited,
             ..
         }) => (
+            None,
             None,
             None,
             Some(type_name),
@@ -581,63 +591,61 @@ pub(super) fn push_member_ref(
         ),
         Some(Fact {
             type_name,
+            qualified_type,
             args,
             call: None,
             nullable,
             ..
-        }) => (Some(type_name), args, None, None, false, None, nullable),
-        None => (None, None, None, None, false, None, false),
+        }) => (
+            Some(type_name),
+            qualified_type,
+            args,
+            None,
+            None,
+            false,
+            None,
+            nullable,
+        ),
+        None => (None, None, None, None, None, false, None, false),
     };
-    match qualifier_text.rfind('.') {
-        Some(dot) => refs.push(RefRecord {
-            kind: "uses-member".to_string(),
-            name: qualifier_text[dot + 1..].to_string(),
-            qualified: Some(qualifier_text.to_string()),
-            member: Some(member),
-            line,
-            namespace: Some(ns),
-            type_arg_count: arity,
-            generic,
-            receiver_type,
-            arg_count,
-            receiver_args,
-            outer_types: type_stack.to_vec(),
-            args: None,
-            receiver_property_owner: property_owner.clone(),
-            receiver_call_owner: receiver_call_owner.clone(),
-            receiver_call_member: receiver_call_member.clone(),
-            receiver_base,
-            receiver_awaited,
-            receiver_local,
-            receiver_lambda: receiver_lambda.clone(),
-            receiver_nullable,
-            lambda_arg_arity: lambda_arg_arity.clone(),
-        }),
-        None => refs.push(RefRecord {
-            kind: "uses-member".to_string(),
-            name: qualifier_text.to_string(),
-            qualified: None,
-            member: Some(member),
-            line,
-            namespace: Some(ns),
-            type_arg_count: arity,
-            generic,
-            receiver_type,
-            arg_count,
-            receiver_args,
-            outer_types: type_stack.to_vec(),
-            args: None,
-            receiver_property_owner: property_owner,
-            receiver_call_owner,
-            receiver_call_member,
-            receiver_base,
-            receiver_awaited,
-            receiver_local,
-            receiver_lambda,
-            receiver_nullable,
-            lambda_arg_arity,
-        }),
-    }
+    // A dotted qualifier is written relative to some enclosing scope, so its
+    // own text is the path and its last segment is the name; a bare one has
+    // no path at all.
+    let (name, qualified) = match qualifier_text.rfind('.') {
+        Some(dot) => (
+            qualifier_text[dot + 1..].to_string(),
+            Some(qualifier_text.to_string()),
+        ),
+        None => (qualifier_text.to_string(), None),
+    };
+    refs.push(RefRecord {
+        kind: "uses-member".to_string(),
+        name,
+        qualified,
+        member: Some(member),
+        line,
+        namespace: Some(ns),
+        type_arg_count: arity,
+        generic,
+        receiver_type,
+        receiver_type_qualified,
+        arg_count,
+        receiver_args,
+        outer_types: type_stack.to_vec(),
+        args: None,
+        receiver_property_owner: property_owner,
+        receiver_call_owner,
+        receiver_call_member,
+        receiver_base,
+        receiver_awaited,
+        receiver_local,
+        receiver_lambda,
+        receiver_nullable,
+        lambda_arg_arity,
+        method_type_arg_count: None,
+        lambda_arg_shape: None,
+        arg_types: None,
+    });
 }
 
 // Line comes from the type node itself, not the enclosing declaration -- a

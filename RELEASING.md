@@ -8,8 +8,9 @@ is required reading for a contribution — see [CONTRIBUTING.md](CONTRIBUTING.md
 
 1. Update `CHANGELOG.md` (move `[Unreleased]` into a dated `[x.y.z]` section) and bump the
    `version` in `Cargo.toml` in the same commit. Refresh `Cargo.lock` with
-   `cargo update -p devscout-rs --offline`, and update the release named in the README's
-   benchmark note so the scorecard says whether this release changes resolver output.
+   `cargo update -p devscout-rs --offline`, and update the release named in the benchmark note
+   in `docs/benchmarks/README.md` so the scorecard says whether this release changes resolver
+   output.
 2. Merge that to `main`, then push a tag: `git tag vX.Y.Z && git push origin vX.Y.Z`.
 
    A release branch that touches anything under `.github/workflows/` cannot be pushed over

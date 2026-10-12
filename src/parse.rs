@@ -1,5 +1,5 @@
-// tree-sitter runtime + C# and TS/JS grammars behind one Language seam. Full
-// extraction is extract.rs; this module owns parser access, the seed `parse`
+// tree-sitter runtime + C#, TS/JS and Rust grammars behind one Language seam.
+// Full extraction is extract.rs; this module owns parser access, the seed `parse`
 // text dump, and the `spans` diagnostic subcommand.
 
 use std::fs;
@@ -316,9 +316,12 @@ pub enum TsGrammar {
 pub fn ts_grammar_for(rel: &str) -> Option<TsGrammar> {
     let dot = rel.rfind('.')?;
     match &rel[dot..] {
-        ".ts" => Some(TsGrammar::Typescript),
+        // `.mts`/`.cts` are TypeScript modules, `.mjs`/`.cjs` their JavaScript
+        // counterparts: the module suffix picks the module system, never the
+        // grammar.
+        ".ts" | ".mts" | ".cts" => Some(TsGrammar::Typescript),
         ".tsx" => Some(TsGrammar::Tsx),
-        ".js" | ".jsx" => Some(TsGrammar::Javascript),
+        ".js" | ".jsx" | ".mjs" | ".cjs" => Some(TsGrammar::Javascript),
         _ => None,
     }
 }
@@ -348,6 +351,33 @@ pub fn parse_ts_js(units: &[u16], grammar: TsGrammar) -> Option<tree_sitter::Tre
     new_ts_parser(grammar).parse_utf16_le(units, None)
 }
 
+// ---------------------------------------------------------------------------
+// Rust grammar seam. A third grammar set, parsed as UTF-16 like the other two
+// so error recovery stays deterministic (see the encoding seam above). Only
+// definitions come out of it; see `extract::extract_rs_file`.
+// ---------------------------------------------------------------------------
+
+/// Whether `rel` is a Rust file, by its last `.` extension like
+/// `ts_grammar_for`.
+pub fn is_rust(rel: &str) -> bool {
+    rel.rfind('.').is_some_and(|dot| &rel[dot..] == ".rs")
+}
+
+fn new_rust_parser() -> Parser {
+    let mut parser = Parser::new();
+    parser
+        .set_language(&tree_sitter_rust::LANGUAGE.into())
+        .expect("failed to load Rust grammar");
+    parser
+}
+
+/// One parse of Rust source given as UTF-16 units. `None` only on the same
+/// cancellation edge cases as `parse_ts_js`; a syntax error is an ERROR node
+/// inside a still-present tree.
+pub fn parse_rust(units: &[u16]) -> Option<tree_sitter::Tree> {
+    new_rust_parser().parse_utf16_le(units, None)
+}
+
 #[cfg(test)]
 mod ts_grammar_tests {
     use super::*;
@@ -358,18 +388,24 @@ mod ts_grammar_tests {
         assert_eq!(ts_grammar_for("a/b.tsx"), Some(TsGrammar::Tsx));
         assert_eq!(ts_grammar_for("a/b.js"), Some(TsGrammar::Javascript));
         assert_eq!(ts_grammar_for("a/b.jsx"), Some(TsGrammar::Javascript));
+        assert_eq!(ts_grammar_for("a/b.mts"), Some(TsGrammar::Typescript));
+        assert_eq!(ts_grammar_for("a/b.cts"), Some(TsGrammar::Typescript));
+        assert_eq!(ts_grammar_for("a/b.mjs"), Some(TsGrammar::Javascript));
+        assert_eq!(ts_grammar_for("a/b.cjs"), Some(TsGrammar::Javascript));
         assert_eq!(ts_grammar_for("a/b.cs"), None);
         assert_eq!(ts_grammar_for("a/b"), None);
     }
 
     #[test]
-    fn is_ts_js_true_only_for_the_four_extensions() {
-        assert!(is_ts_js("x.ts"));
-        assert!(is_ts_js("x.tsx"));
-        assert!(is_ts_js("x.js"));
-        assert!(is_ts_js("x.jsx"));
-        assert!(!is_ts_js("x.cs"));
-        assert!(!is_ts_js("x.json"));
+    fn is_ts_js_holds_exactly_for_the_mapped_extensions() {
+        for rel in [
+            "x.ts", "x.tsx", "x.js", "x.jsx", "x.mts", "x.cts", "x.mjs", "x.cjs",
+        ] {
+            assert!(is_ts_js(rel), "{rel}");
+        }
+        for rel in ["x.cs", "x.json", "x.MJS", "x.mjsx", "x"] {
+            assert!(!is_ts_js(rel), "{rel}");
+        }
     }
 
     #[test]
@@ -385,5 +421,31 @@ mod ts_grammar_tests {
             TsGrammar::Javascript
         )
         .is_some());
+    }
+}
+
+#[cfg(test)]
+mod rust_grammar_tests {
+    use super::*;
+
+    #[test]
+    fn is_rust_is_true_only_for_the_rs_extension() {
+        assert!(is_rust("a/b.rs"));
+        assert!(is_rust("lib.rs"));
+        assert!(!is_rust("a/b.rs.bak"));
+        assert!(!is_rust("a/b.rsx"));
+        assert!(!is_rust("a/b.cs"));
+        assert!(!is_rust("a/b.ts"));
+        assert!(!is_rust("rs"));
+    }
+
+    #[test]
+    fn the_grammar_loads_and_parses_an_item_without_error() {
+        let tree = parse_rust(&utf16_units("/// Doc.\npub fn f() -> u32 { 1 }\n"))
+            .expect("the Rust grammar returns a tree");
+        let root = tree.root_node();
+        assert_eq!(root.kind(), "source_file");
+        assert!(!root.has_error());
+        assert_eq!(root.named_child(1).map(|n| n.kind()), Some("function_item"));
     }
 }

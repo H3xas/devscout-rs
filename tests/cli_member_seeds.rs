@@ -167,12 +167,13 @@ fn a_member_name_carried_by_two_types_answers_ambiguous_with_candidate_rows() {
 
 // --- `zero-hit`: a `Type.Member` spelling naming an unreferenced member -----
 
-const WEIGH_TEXT: &str = "Nautical.Crew.Anchor.Weigh  (member)\n\
+const WEIGH_TEXT: &str = "Nautical.Crew.Anchor.Weigh  (member)  0 inbound (showing 0)\n\
                           def: Anchor.cs:5\n\
                           inbound:\n\
                           \x20 inherits (0):\n\
                           \x20 uses-type (0):\n\
-                          \x20 uses-member (0):\n";
+                          \x20 uses-member (0):\n\
+                          next: devscout tests Nautical.Crew.Anchor.Weigh | devscout impact Anchor.cs\n";
 
 #[test]
 fn a_type_dot_member_seed_resolves_but_reaches_nothing() {

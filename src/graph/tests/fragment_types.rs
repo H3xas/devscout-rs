@@ -1,6 +1,8 @@
 use super::*;
 use crate::extract;
 
+mod argument_types;
+
 // --- FragDef's new keys, appended last, omitted when empty ----------------------
 
 fn frag_def(
@@ -50,6 +52,7 @@ fn frag_def_with_bases(
                 arity_min: *lo,
                 arity_max: *hi,
                 this_args: None,
+                type_param_count: None,
             })
             .collect(),
         bases: bases.iter().map(|s| s.to_string()).collect(),
@@ -60,11 +63,14 @@ fn frag_def_with_bases(
         method_return_args: OrderedMap::new(),
         non_public_methods: Vec::new(),
         method_arities: OrderedMap::new(),
+        method_type_arities: OrderedMap::new(),
+        method_type_param_sites: OrderedMap::new(),
         method_params: OrderedMap::new(),
         override_methods: Vec::new(),
         base_type_args: OrderedMap::new(),
         property_message_args: Vec::new(),
         array_message_bases: Vec::new(),
+        delegate_signature: None,
         test_methods: Vec::new(),
         end_line: 0,
     }
@@ -248,6 +254,7 @@ fn frag_def_appends_property_types_last_after_test_methods() {
         FragFact {
             type_name: "Gauge".into(),
             args: None,
+            qualified_type: None,
         },
     );
     d.property_types.insert(
@@ -255,6 +262,7 @@ fn frag_def_appends_property_types_last_after_test_methods() {
         FragFact {
             type_name: "Toolbox".into(),
             args: Some(vec!["Gadget".into()]),
+            qualified_type: None,
         },
     );
     let json = serde_json::to_string(&d).unwrap();
@@ -299,6 +307,7 @@ fn frag_ref(generic: bool, receiver_type: Option<&str>, arg_count: Option<usize>
         type_arg_count: None,
         generic,
         receiver_type: receiver_type.map(String::from),
+        receiver_type_qualified: None,
         arg_count,
         receiver_args: None,
         outer_types: Vec::new(),
@@ -312,6 +321,9 @@ fn frag_ref(generic: bool, receiver_type: Option<&str>, arg_count: Option<usize>
         receiver_lambda: None,
         receiver_nullable: false,
         lambda_arg_arity: None,
+        method_type_arg_count: None,
+        lambda_arg_shape: None,
+        arg_types: None,
     }
 }
 
@@ -427,6 +439,152 @@ fn any_fragment_round_trips_both_shapes_and_never_reads_one_as_the_other() {
         ts,
         "and round-trips to the same value"
     );
+}
+
+const CS_BYTES: &str = r#"{"defs":[],"usings":[],"refs":[],"names":[]}"#;
+const TS_BYTES: &str = r#"{"ts":1,"defs":[{"name":"x","kind":"const","line":1,"endLine":1}],"imports":[],"reexports":[],"refs":[]}"#;
+
+#[test]
+fn a_rust_fragment_serializes_exactly_round_trips_and_reads_only_as_rs() {
+    let rs = AnyFragment::Rs(extract::RsFragment {
+        rs: 1,
+        items: vec![extract::RsItem {
+            name: "fmt".into(),
+            kind: "fn".into(),
+            path: "Gadget::fmt-1".into(),
+            line: 3,
+            name_line: 4,
+            end_line: 6,
+        }],
+        ..extract::RsFragment::default()
+    });
+    let rs_json = serde_json::to_string(&rs).unwrap();
+    assert_eq!(
+        rs_json,
+        r#"{"rs":1,"items":[{"name":"fmt","kind":"fn","path":"Gadget::fmt-1","line":3,"nameLine":4,"endLine":6}]}"#
+    );
+    assert_eq!(serde_json::from_str::<AnyFragment>(&rs_json).unwrap(), rs);
+    assert!(serde_json::from_str::<extract::TsFragment>(&rs_json).is_err());
+    assert!(serde_json::from_str::<Fragment>(&rs_json).is_err());
+
+    for other in [CS_BYTES, TS_BYTES] {
+        assert!(serde_json::from_str::<extract::RsFragment>(other).is_err());
+        assert!(!matches!(
+            serde_json::from_str::<AnyFragment>(other).unwrap(),
+            AnyFragment::Rs(_)
+        ));
+    }
+    assert!(matches!(
+        serde_json::from_str::<AnyFragment>(CS_BYTES).unwrap(),
+        AnyFragment::Cs(_)
+    ));
+    assert!(matches!(
+        serde_json::from_str::<AnyFragment>(TS_BYTES).unwrap(),
+        AnyFragment::Ts(_)
+    ));
+}
+
+#[test]
+fn every_rust_fact_key_serializes_in_order_and_reads_only_as_rs() {
+    let rs = AnyFragment::Rs(extract::RsFragment {
+        rs: 1,
+        items: vec![extract::RsItem {
+            name: "glow".into(),
+            kind: "fn".into(),
+            path: "Lamp::glow".into(),
+            line: 2,
+            name_line: 2,
+            end_line: 2,
+        }],
+        mod_files: vec!["shelf".into()],
+        ctors: vec!["Lamp".into()],
+        tests: vec!["tests::lit".into()],
+        impls: vec![extract::RsImpl {
+            scope: "inner".into(),
+            self_type: "crate::Lamp".into(),
+            items: vec!["Lamp::glow".into()],
+        }],
+        uses: vec![extract::RsUse {
+            scope: "tests".into(),
+            block: Some(0),
+            path: "super::shelf::dust".into(),
+            name: "dust".into(),
+            line: 9,
+        }],
+        blocks: vec![
+            extract::RsBlock { parent: None },
+            extract::RsBlock { parent: Some(0) },
+        ],
+        sites: vec![extract::RsSite {
+            role: extract::RsRole::Call,
+            path: "Self::glow".into(),
+            line: 5,
+            lines: vec![4, 5],
+            scope: "inner".into(),
+            block: Some(1),
+            self_impl: Some(0),
+            self_trait: Some("Shine".into()),
+            mac: true,
+        }],
+        opaque_scopes: vec!["inner".into()],
+        mod_paths: vec![
+            extract::RsModPath {
+                item: "shelf".into(),
+                path: Some("real.rs".into()),
+            },
+            extract::RsModPath {
+                item: "inner::gen".into(),
+                path: None,
+            },
+        ],
+    });
+    let json = serde_json::to_string(&rs).unwrap();
+    assert_eq!(
+        json,
+        concat!(
+            r#"{"rs":1,"items":[{"name":"glow","kind":"fn","path":"Lamp::glow","line":2,"nameLine":2,"endLine":2}],"#,
+            r#""modFiles":["shelf"],"ctors":["Lamp"],"tests":["tests::lit"],"#,
+            r#""impls":[{"scope":"inner","selfType":"crate::Lamp","items":["Lamp::glow"]}],"#,
+            r#""uses":[{"scope":"tests","block":0,"path":"super::shelf::dust","name":"dust","line":9}],"#,
+            r#""blocks":[{},{"parent":0}],"#,
+            r#""sites":[{"role":"call","path":"Self::glow","line":5,"lines":[4,5],"scope":"inner","block":1,"selfImpl":0,"selfTrait":"Shine","mac":true}],"opaqueScopes":["inner"],"#,
+            r#""modPaths":[{"item":"shelf","path":"real.rs"},{"item":"inner::gen"}]}"#
+        )
+    );
+    assert_eq!(serde_json::from_str::<AnyFragment>(&json).unwrap(), rs);
+    assert!(serde_json::from_str::<extract::TsFragment>(&json).is_err());
+    assert!(serde_json::from_str::<Fragment>(&json).is_err());
+    for other in [CS_BYTES, TS_BYTES] {
+        assert!(serde_json::from_str::<extract::RsFragment>(other).is_err());
+    }
+}
+
+#[test]
+fn an_empty_rust_fragment_is_the_tag_and_an_empty_list() {
+    let json = serde_json::to_string(&AnyFragment::from(extract::RsFragment::default())).unwrap();
+    assert_eq!(json, r#"{"rs":1,"items":[]}"#);
+    assert!(matches!(
+        serde_json::from_str::<AnyFragment>(&json).unwrap(),
+        AnyFragment::Rs(_)
+    ));
+}
+
+#[test]
+fn a_fragment_without_rs_never_reads_as_rs() {
+    let item = r#"{"name":"f","kind":"fn","path":"f","line":1,"nameLine":1,"endLine":1}"#;
+    for bytes in [
+        r#"{"items":[]}"#.to_string(),
+        format!(r#"{{"items":[{item}]}}"#),
+        format!(r#"{{"ts":1,"items":[{item}]}}"#),
+    ] {
+        assert!(
+            !matches!(
+                serde_json::from_str::<AnyFragment>(&bytes),
+                Ok(AnyFragment::Rs(_))
+            ),
+            "{bytes} must never read as a Rust fragment"
+        );
+    }
 }
 
 // --- v8: FragRef's outerTypes, appended last -----------------------------
@@ -566,4 +724,69 @@ fn fragment_round_trip_keeps_method_params_and_receiver_lambda() {
     assert!(!r_plain_json.contains("receiverLambda"), "{r_plain_json}");
     let r_plain_reparsed: FragRef = serde_json::from_str(&r_plain_json).unwrap();
     assert_eq!(r_plain_reparsed.receiver_lambda, None);
+}
+
+// --- FragFact's qualifiedType and FragRef's receiverTypeQualified, appended
+// after every field the previous generation wrote -----------------------
+
+#[test]
+fn frag_fact_appends_qualified_type_last_after_args() {
+    let qualified = FragFact {
+        type_name: "Gauge".into(),
+        args: Some(vec!["Gadget".into()]),
+        qualified_type: Some("Hosts.Gauge".into()),
+    };
+    let json = serde_json::to_string(&qualified).unwrap();
+    assert_eq!(
+        json,
+        r#"{"type":"Gauge","args":["Gadget"],"qualifiedType":"Hosts.Gauge"}"#
+    );
+    let reparsed: FragFact = serde_json::from_str(&json).unwrap();
+    assert_eq!(reparsed.qualified_type, Some("Hosts.Gauge".to_string()));
+
+    // A fact written by the previous generation carries no such key, and its
+    // bytes stay exactly as they were.
+    let bare: FragFact = serde_json::from_str(r#"{"type":"Gauge","args":["Gadget"]}"#).unwrap();
+    assert_eq!(bare.qualified_type, None);
+    assert_eq!(
+        serde_json::to_string(&FragFact {
+            type_name: "Gauge".into(),
+            args: Some(vec!["Gadget".into()]),
+            qualified_type: None,
+        })
+        .unwrap(),
+        r#"{"type":"Gauge","args":["Gadget"]}"#
+    );
+}
+
+#[test]
+fn frag_ref_appends_receiver_type_qualified_last_after_lambda_arg_shape() {
+    let r = FragRef {
+        receiver_type_qualified: Some("Hosts.Binder".into()),
+        ..frag_ref(false, Some("Binder"), Some(1))
+    };
+    let json = serde_json::to_string(&r).unwrap();
+    assert_eq!(
+        json,
+        r#"{"kind":"uses-member","name":"repo","member":"Save","line":7,"namespace":"App.Shape","receiverType":"Binder","argCount":1,"receiverTypeQualified":"Hosts.Binder"}"#
+    );
+    let reparsed: FragRef = serde_json::from_str(&json).unwrap();
+    assert_eq!(
+        reparsed.receiver_type_qualified,
+        Some("Hosts.Binder".to_string())
+    );
+}
+
+#[test]
+fn frag_ref_without_a_qualified_path_keeps_its_previous_bytes() {
+    let json = serde_json::to_string(&frag_ref(false, Some("Binder"), Some(1))).unwrap();
+    assert!(
+        !json.contains("receiverTypeQualified"),
+        "an unqualified receiver adds no key: {json}"
+    );
+    let reparsed: FragRef =
+        serde_json::from_str(r#"{"kind":"uses-member","name":"repo","member":"Save","line":7,"namespace":"App.Shape","receiverType":"Binder","argCount":1}"#)
+            .unwrap();
+    assert_eq!(reparsed.receiver_type_qualified, None);
+    assert_eq!(reparsed.receiver_type.as_deref(), Some("Binder"));
 }

@@ -1,7 +1,7 @@
 {
   "tiers.precise.precision": { "min": 0.93 },
   "tiers.precise.edges": { "min": 60 },
-  "tiers.precise.fp": { "max": 4 },
+  "tiers.precise.fp": { "max": 3 },
   "recall.all": { "min": 0.9 },
   "silent.leak": { "max": 0 },
   "structural.impossible": { "max": 0 },

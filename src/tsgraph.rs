@@ -26,11 +26,16 @@ use serde_json::Value;
 use crate::extract::TsFragment;
 use crate::graph::{Def, Edge, OrderedMap};
 
+mod bindings;
+
+use bindings::{file_imports, resolve_reexports, Exports};
+
 const DEF_SEPARATOR: char = '#';
 // Extension probe order for a specifier that names no extension. TypeScript
-// sources lead so a repo carrying both `x.ts` and a built `x.js` resolves to
-// the source, which is the file an agent asking "who calls this" wants.
-const PROBE_EXTENSIONS: &[&str] = &[".ts", ".tsx", ".js", ".jsx"];
+// sources lead so a repo carrying both `x.ts` and a built `x.js`, or both
+// `x.mts` and its emitted `x.mjs`, resolves to the source, which is the file
+// an agent asking "who calls this" wants.
+const PROBE_EXTENSIONS: &[&str] = &[".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"];
 // ESM spells a relative import of a TypeScript module with the extension of
 // what it COMPILES to. The mapping is the TypeScript compiler's own, applied
 // only after the literal path has already failed to match a mapped file.
@@ -671,14 +676,6 @@ pub struct TsGraph {
     pub stats: TsStats,
 }
 
-struct ResolvedReexport {
-    spec: String,
-    line: usize,
-    star: bool,
-    names: Vec<(String, String)>,
-    to: Option<String>,
-}
-
 /// Resolves the TS/TSX graph: every file's reference fragments into edges.
 #[allow(
     clippy::too_many_lines,
@@ -720,99 +717,10 @@ pub fn resolve_ts_graph(fragments: &[(String, TsFragment)], alias: &TsAliasScope
         exports_by_file.insert(file.as_str(), by_name);
     }
 
-    let mut reexports_by_file: HashMap<&str, Vec<ResolvedReexport>> = HashMap::new();
-    for (file, frag) in fragments {
-        let rows = frag
-            .reexports
-            .iter()
-            .map(|rx| ResolvedReexport {
-                spec: rx.spec.clone(),
-                line: rx.line,
-                star: rx.star,
-                names: rx
-                    .names
-                    .iter()
-                    .map(|n| (n.exported.clone(), n.imported.clone()))
-                    .collect(),
-                to: resolve_specifier(file, &rx.spec, &file_set, alias),
-            })
-            .collect();
-        reexports_by_file.insert(file.as_str(), rows);
-    }
-
-    // `visited` is one top-level lookup's own map, fresh at every call site
-    // below (never shared across bindings or refs): a `(file, name)` pair
-    // revisited mid-walk means a cyclic `export *` pair sent the walk back to
-    // a state it is already computing, so it fails closed to `None` right
-    // there rather than recursing again. That guard also keeps a single
-    // `export *` fan-out linear in files times names. What the map REMEMBERS
-    // is the shallowest hop count the pair was walked from: a pair first met
-    // deep in the walk, where the cap cut its own re-exports short, is walked
-    // again when a shorter path reaches it with more hops to spend -- and
-    // never again from the same depth or deeper.
-    fn lookup_export(
-        file: &str,
-        name: &str,
-        hops: usize,
-        exports_by_file: &HashMap<&str, HashMap<String, usize>>,
-        reexports_by_file: &HashMap<&str, Vec<ResolvedReexport>>,
-        visited: &mut HashMap<(String, String), usize>,
-    ) -> Option<usize> {
-        let key = (file.to_string(), name.to_string());
-        if visited.get(&key).is_some_and(|&seen| seen <= hops) {
-            return None;
-        }
-        visited.insert(key, hops);
-        // Own declarations are checked before the hop cap is enforced, so a
-        // chain of exactly `BARREL_HOPS` barrels followed by a declaring file
-        // still resolves -- the cap bounds how many re-export hops are
-        // FOLLOWED, not how many files may be visited in total.
-        if let Some(own) = exports_by_file.get(file).and_then(|m| m.get(name)) {
-            return Some(*own);
-        }
-        if hops >= BARREL_HOPS {
-            return None;
-        }
-        for rx in reexports_by_file
-            .get(file)
-            .map(Vec::as_slice)
-            .unwrap_or(&[])
-        {
-            let Some(to) = &rx.to else { continue };
-            if rx.star {
-                if let Some(hit) = lookup_export(
-                    to,
-                    name,
-                    hops + 1,
-                    exports_by_file,
-                    reexports_by_file,
-                    visited,
-                ) {
-                    return Some(hit);
-                }
-                continue;
-            }
-            // Declaration order is the tie-break: the first re-export naming
-            // this export wins, matching the first-occurrence rule the def
-            // map itself uses.
-            for (exported, imported) in &rx.names {
-                if exported != name {
-                    continue;
-                }
-                if let Some(hit) = lookup_export(
-                    to,
-                    imported,
-                    hops + 1,
-                    exports_by_file,
-                    reexports_by_file,
-                    visited,
-                ) {
-                    return Some(hit);
-                }
-            }
-        }
-        None
-    }
+    let exports = Exports {
+        by_file: exports_by_file,
+        reexports_by_file: resolve_reexports(fragments, &file_set, alias),
+    };
 
     let mut edges: Vec<Edge> = Vec::new();
     let mut counts = TsEdgeCounts::default();
@@ -820,88 +728,11 @@ pub fn resolve_ts_graph(fragments: &[(String, TsFragment)], alias: &TsAliasScope
     let mut unresolved_refs = 0usize;
 
     for (file, frag) in fragments {
-        let mut bindings: HashMap<String, (String, String)> = HashMap::new();
-        for imp in &frag.imports {
-            let to = resolve_specifier(file, &imp.spec, &file_set, alias);
-            let Some(to) = to else {
-                external_imports += 1;
-                continue;
-            };
-            edges.push(Edge::Import {
-                from_file: file.clone(),
-                from_line: imp.line,
-                target: imp.spec.clone(),
-                to_file: to.clone(),
-                via: None,
-            });
-            counts.import += 1;
-            // First binding of a local name wins, the same first-occurrence
-            // rule the def map above uses: a file that binds one name twice is
-            // already broken TypeScript, and picking the later one would make
-            // the answer depend on statement order for no gain.
-            for b in &imp.bindings {
-                bindings
-                    .entry(b.local.clone())
-                    .or_insert((to.clone(), b.imported.clone()));
-            }
-            // A barrel is a routing table, not a dependency: `import
-            // { useThing } from '../hooks'` names index.ts but DEPENDS on the
-            // module index.ts re-exports it from. Without this edge, `impact`
-            // on the declaring file misses every consumer that came through
-            // the barrel. The edge to the named file stays (it is what the
-            // source literally says); this one carries `via` so a reader can
-            // tell the two apart, and one line contributes at most one edge per
-            // distinct declaring file however many names it pulls through.
-            let mut followed: HashSet<String> = HashSet::new();
-            for b in &imp.bindings {
-                if b.imported == "*" {
-                    continue;
-                }
-                let mut visited: HashMap<(String, String), usize> = HashMap::new();
-                let Some(target) = lookup_export(
-                    &to,
-                    &b.imported,
-                    0,
-                    &exports_by_file,
-                    &reexports_by_file,
-                    &mut visited,
-                ) else {
-                    continue;
-                };
-                let target_file = defs[target].file.clone();
-                if target_file == to || followed.contains(&target_file) {
-                    continue;
-                }
-                followed.insert(target_file.clone());
-                edges.push(Edge::Import {
-                    from_file: file.clone(),
-                    from_line: imp.line,
-                    target: imp.spec.clone(),
-                    to_file: target_file,
-                    via: Some(to.clone()),
-                });
-                counts.import += 1;
-            }
-        }
-        for rx in reexports_by_file
-            .get(file.as_str())
-            .map(Vec::as_slice)
-            .unwrap_or(&[])
-        {
-            match &rx.to {
-                None => external_imports += 1,
-                Some(to) => {
-                    edges.push(Edge::Import {
-                        from_file: file.clone(),
-                        from_line: rx.line,
-                        target: rx.spec.clone(),
-                        to_file: to.clone(),
-                        via: None,
-                    });
-                    counts.import += 1;
-                }
-            }
-        }
+        let imports = file_imports(file, frag, &file_set, alias, &defs, &exports);
+        counts.import += imports.edges.len();
+        external_imports += imports.external;
+        edges.extend(imports.edges);
+        let bindings = imports.bindings;
 
         for r in &frag.refs {
             let target = match bindings.get(&r.name) {
@@ -909,24 +740,12 @@ pub fn resolve_ts_graph(fragments: &[(String, TsFragment)], alias: &TsAliasScope
                 // carries no name of its own -- only `ns.member` says which
                 // export is meant.
                 Some((to, imported)) if imported == "*" => match &r.member {
-                    Some(m) => {
-                        let mut visited: HashMap<(String, String), usize> = HashMap::new();
-                        lookup_export(to, m, 0, &exports_by_file, &reexports_by_file, &mut visited)
-                    }
+                    Some(m) => exports.lookup(to, m),
                     None => None,
                 },
-                Some((to, imported)) => {
-                    let mut visited: HashMap<(String, String), usize> = HashMap::new();
-                    lookup_export(
-                        to,
-                        imported,
-                        0,
-                        &exports_by_file,
-                        &reexports_by_file,
-                        &mut visited,
-                    )
-                }
-                None if r.member.is_none() => exports_by_file
+                Some((to, imported)) => exports.lookup(to, imported),
+                None if r.member.is_none() => exports
+                    .by_file
                     .get(file.as_str())
                     .and_then(|m| m.get(&r.name))
                     .copied(),
@@ -1400,6 +1219,56 @@ mod tests {
         assert_eq!(
             probe_file(Some("src/hooks"), &files),
             Some("src/hooks/index.ts".to_string())
+        );
+    }
+
+    #[test]
+    fn probe_order_prefers_a_typescript_module_over_its_emitted_javascript() {
+        let files: HashSet<&str> = ["src/x.mjs", "src/x.mts"].into_iter().collect();
+        assert_eq!(
+            probe_file(Some("src/x"), &files),
+            Some("src/x.mts".to_string())
+        );
+    }
+
+    #[test]
+    fn an_extensionless_specifier_reaches_a_commonjs_module() {
+        let files: HashSet<&str> = ["src/x.cjs"].into_iter().collect();
+        assert_eq!(
+            probe_file(Some("src/x"), &files),
+            Some("src/x.cjs".to_string())
+        );
+    }
+
+    #[test]
+    fn a_literal_module_file_beats_the_source_its_specifier_compiles_from() {
+        let files: HashSet<&str> = ["src/x.mjs", "src/x.mts"].into_iter().collect();
+        assert_eq!(
+            probe_file(Some("src/x.mjs"), &files),
+            Some("src/x.mjs".to_string())
+        );
+    }
+
+    #[test]
+    fn a_module_specifier_resolves_to_the_typescript_source_it_compiles_from() {
+        let esm: HashSet<&str> = ["src/x.mts"].into_iter().collect();
+        assert_eq!(
+            probe_file(Some("src/x.mjs"), &esm),
+            Some("src/x.mts".to_string())
+        );
+        let cjs: HashSet<&str> = ["src/x.cts"].into_iter().collect();
+        assert_eq!(
+            probe_file(Some("src/x.cjs"), &cjs),
+            Some("src/x.cts".to_string())
+        );
+    }
+
+    #[test]
+    fn a_directory_specifier_resolves_through_its_esm_index_file() {
+        let files: HashSet<&str> = ["src/util/index.mjs"].into_iter().collect();
+        assert_eq!(
+            probe_file(Some("src/util"), &files),
+            Some("src/util/index.mjs".to_string())
         );
     }
 

@@ -12,12 +12,20 @@ use crate::render;
 
 use super::answer::{
     ambiguous_candidates_out, fallback_advised_out, finish_query, member_ambiguous_out,
-    EXIT_NO_RESULT,
+    with_next_trailer, EXIT_NO_RESULT,
 };
 use super::args::{index_options, output_flags, parse_int_js, parse_pick};
 use super::root::{repo_relative_arg, require_graph, require_repo_for_path};
 
 const IMPACT_USAGE: &str = "usage: devscout impact <file|symbol> [--hops N] [--no-iface] [--no-guess] [--no-dispatch] [--no-bus] [--no-imports] [--iface-max-fanin N] [--hub-max-indegree N] [--pick N] [--json|--compact]";
+
+/// The output flags the resolved answer reads, gathered so the answer builder
+/// takes one value rather than three positional booleans.
+struct ImpactFlags {
+    json: bool,
+    compact: bool,
+    no_imports: bool,
+}
 
 /// The numeric/positional argument parse `cmd_impact` needs before it can
 /// touch the repo or the graph: `--hops`/`--iface-max-fanin`/
@@ -122,6 +130,11 @@ pub(crate) fn cmd_impact(cwd: &Path, args: &[String]) -> (i32, String) {
         Err(e) => return e,
     };
 
+    let flags = ImpactFlags {
+        json,
+        compact,
+        no_imports: args.iter().any(|a| a == "--no-imports"),
+    };
     let root = match require_repo_for_path(cwd, Some(q)) {
         Ok(r) => r,
         Err(e) => return (1, format!("error: {e}")),
@@ -175,45 +188,58 @@ pub(crate) fn cmd_impact(cwd: &Path, args: &[String]) -> (i32, String) {
             let (code, out) = member_ambiguous_out(q, &candidates, json);
             (code, out, query::Outcome::Ambiguous, count)
         }
-        query::ImpactResult::Resolved(model) => {
-            // `--no-imports` answers exactly as if the artifact were absent --
-            // it is never even read, so this is the same "load nothing" path a
-            // repo with no import configured always takes.
-            let imported = if args.iter().any(|a| a == "--no-imports") {
-                None
-            } else {
-                graph::read_imported_edges(&root).map(|edges| {
-                    (
-                        query::build_imported_section(&model, &edges, query::DEFAULT_CAP),
-                        edges.provenance,
-                    )
-                })
-            };
-            let out = match (&imported, json, compact) {
-                (Some((section, prov)), true, _) => {
-                    query::json::impact_model_to_json_with_imports(q, &model, section, prov)
-                }
-                (Some((section, prov)), false, true) => {
-                    render::render_impact_compact_with_imports(q, &model, section, prov)
-                }
-                (Some((section, prov)), false, false) => {
-                    render::render_impact_text_with_imports(q, &model, section, prov)
-                }
-                (None, true, _) => query::json::impact_model_to_json(q, &model),
-                (None, false, true) => render::render_impact_compact(q, &model),
-                (None, false, false) => render::render_impact_text(q, &model),
-            };
-            // A resolved seed that reaches nothing beyond its own files, and
-            // whose import (if any) named nothing foreign either, is the same
-            // answer as an unresolved one -- empty -- and gets the same signal.
-            let imported_count = imported.as_ref().map_or(0, |(s, _)| s.rows.len());
-            let count = model.rows.len() + imported_count;
-            if count == 0 {
-                (EXIT_NO_RESULT, out, query::Outcome::ZeroHit, 0)
-            } else {
-                (0, out, query::Outcome::Hit, count)
-            }
-        }
+        query::ImpactResult::Resolved(model) => resolved_out(&index, &root, q, &model, flags),
     };
     finish_query(&root, "impact", q, start, json, answer)
+}
+
+/// The resolved `impact` answer: the imported section when an import is
+/// configured, the rendered model, and the exit code the two together earn.
+fn resolved_out(
+    index: &query::GraphIndex,
+    root: &Path,
+    q: &str,
+    model: &query::ImpactModel,
+    flags: ImpactFlags,
+) -> (i32, String, query::Outcome, usize) {
+    // `--no-imports` answers exactly as if the artifact were absent -- it is
+    // never even read, so this is the same "load nothing" path a repo with no
+    // import configured always takes.
+    let imported = if flags.no_imports {
+        None
+    } else {
+        graph::read_imported_edges(root).map(|edges| {
+            (
+                query::build_imported_section(model, &edges, query::DEFAULT_CAP),
+                edges.provenance,
+            )
+        })
+    };
+    let next = query::impact_next(index, model);
+    let out = match (&imported, flags.json, flags.compact) {
+        (Some((section, prov)), true, _) => {
+            query::json::impact_model_to_json_with_imports_and_next(q, model, section, prov, &next)
+        }
+        (Some((section, prov)), false, true) => with_next_trailer(
+            render::render_impact_compact_with_imports(q, model, section, prov),
+            &next,
+        ),
+        (Some((section, prov)), false, false) => with_next_trailer(
+            render::render_impact_text_with_imports(q, model, section, prov),
+            &next,
+        ),
+        (None, true, _) => query::json::impact_model_to_json_with_next(q, model, &next),
+        (None, false, true) => with_next_trailer(render::render_impact_compact(q, model), &next),
+        (None, false, false) => with_next_trailer(render::render_impact_text(q, model), &next),
+    };
+    // A resolved seed that reaches nothing beyond its own files, and whose
+    // import (if any) named nothing foreign either, is the same answer as an
+    // unresolved one -- empty -- and gets the same signal.
+    let imported_count = imported.as_ref().map_or(0, |(s, _)| s.rows.len());
+    let count = model.rows.len() + imported_count;
+    if count == 0 {
+        (EXIT_NO_RESULT, out, query::Outcome::ZeroHit, 0)
+    } else {
+        (0, out, query::Outcome::Hit, count)
+    }
 }

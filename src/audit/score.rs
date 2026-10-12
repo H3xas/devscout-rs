@@ -8,6 +8,7 @@
 use std::collections::{HashMap, HashSet};
 
 use super::fp_sites::FpSite;
+use super::lane::AuditLane;
 use super::model::{DefRow, EdgeRow, Inputs, OracleRef, Tier};
 use super::report::TierStats;
 use super::scoring::{
@@ -17,8 +18,8 @@ use super::scoring::{
 
 pub struct AuditReport {
     pub root: String,
-    /// `"syntax"` or `"enriched"` -- see `Inputs::lane`'s own doc comment.
-    pub lane: &'static str,
+    /// See `Inputs::lane`'s own doc comment.
+    pub lane: AuditLane,
     pub oracle_records: usize,
     pub oracle_sites: usize,
     pub oracle_external_sites: usize,

@@ -543,3 +543,136 @@ fn map_and_refs_never_spawn_the_compiler_engine_even_when_one_is_configured() {
         "map/refs must never spawn the compiler engine"
     );
 }
+
+/// `name` from the fixture set with each compilation's `state` and `reason`
+/// replaced, in order, written into the fixture root. The context
+/// fingerprint folds only identities and fingerprints, so it stays valid.
+fn with_compilation_states(fx: &Fixture, name: &str, states: &[(&str, &str)]) -> PathBuf {
+    let bytes = fs::read(fixture_path(name)).unwrap();
+    let mut candidate: Value = serde_json::from_slice(&bytes).unwrap();
+    let compilations = candidate["context"]["envelope"]["compilations"]
+        .as_array_mut()
+        .unwrap();
+    assert_eq!(compilations.len(), states.len());
+    for (compilation, (state, reason)) in compilations.iter_mut().zip(states) {
+        compilation["state"] = Value::from(*state);
+        compilation["reason"] = Value::from(*reason);
+    }
+    let path = fx.root.join(format!(
+        "states-{}.json",
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    fs::write(&path, serde_json::to_vec(&candidate).unwrap()).unwrap();
+    path
+}
+
+fn import_line(fx: &Fixture, path: &Path) -> String {
+    let out = fx.run(&["compiler-facts", "import", path.to_str().unwrap()]);
+    assert_eq!(out.status.code(), Some(0), "{out:?}");
+    String::from_utf8(out.stdout).unwrap()
+}
+
+#[test]
+fn import_and_status_name_a_partial_compilation_instead_of_complete_coverage() {
+    let fx = Fixture::new();
+    let path = with_compilation_states(
+        &fx,
+        "candidate.json",
+        &[("complete", "complete"), ("partial", "workspace-failure")],
+    );
+    let expected = "admitted compiler facts (engine 2), coverage: partial (1 of 2 compilations: workspace-failure 1)\n";
+
+    assert_eq!(import_line(&fx, &path), expected);
+    assert_eq!(fx.ok(&["compiler-facts", "status"]), expected);
+}
+
+#[test]
+fn every_counted_compilation_partial_is_tallied_by_reason_in_ascending_order() {
+    let fx = Fixture::new();
+    let path = with_compilation_states(
+        &fx,
+        "candidate.json",
+        &[
+            ("partial", "workspace-failure"),
+            ("failed", "binding-error"),
+        ],
+    );
+
+    assert_eq!(
+        import_line(&fx, &path),
+        "admitted compiler facts (engine 2), coverage: partial (2 of 2 compilations: binding-error 1, workspace-failure 1)\n"
+    );
+}
+
+#[test]
+fn compilations_all_complete_keep_the_complete_coverage_line() {
+    let fx = Fixture::new();
+    let path = with_compilation_states(
+        &fx,
+        "candidate.json",
+        &[("complete", "complete"), ("complete", "complete")],
+    );
+
+    assert_eq!(
+        import_line(&fx, &path),
+        "admitted compiler facts (engine 2), coverage: complete\n"
+    );
+}
+
+#[test]
+fn uncounted_compilation_states_never_make_coverage_partial() {
+    let fx = Fixture::new();
+    let path = with_compilation_states(
+        &fx,
+        "candidate.json",
+        &[
+            ("unsupported", "no-such-target"),
+            ("excluded", "not-requested"),
+        ],
+    );
+
+    assert_eq!(
+        import_line(&fx, &path),
+        "admitted compiler facts (engine 2), coverage: complete\n"
+    );
+}
+
+#[test]
+fn incomplete_units_keep_their_wording_and_gain_the_compilation_tally() {
+    let fx = Fixture::new();
+    let path = with_compilation_states(
+        &fx,
+        "candidate-partial.json",
+        &[("partial", "binding-error"), ("complete", "complete")],
+    );
+
+    assert_eq!(
+        import_line(&fx, &path),
+        "admitted compiler facts (engine 2), coverage: incomplete (1 unit affected; 1 of 2 compilations: binding-error 1)\n"
+    );
+}
+
+#[test]
+fn run_prints_the_partial_coverage_line_for_a_partial_candidate() {
+    let fx = Fixture::new();
+    let path = with_compilation_states(
+        &fx,
+        "candidate.json",
+        &[("partial", "workspace-failure"), ("complete", "complete")],
+    );
+    let stub = write_stub(
+        &fx.root,
+        "partial-engine.sh",
+        &format!("#!/bin/sh\nexec cat \"{}\"\n", path.display()),
+    );
+    let out = fx.run_with_engine(
+        &["compiler-facts", "run", "--solution", "Fixture.sln"],
+        &stub,
+    );
+
+    assert_eq!(out.status.code(), Some(0), "{out:?}");
+    assert_eq!(
+        String::from_utf8(out.stdout).unwrap(),
+        "admitted compiler facts (engine 2), coverage: partial (1 of 2 compilations: workspace-failure 1)\n"
+    );
+}

@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use super::assert_check::evaluate_assert;
+use super::lane::AuditLane;
 use super::load::parse_graph;
 use super::model::{DefRow, EdgeRow, Inputs, OracleRef, Tier, Unit};
 use super::render::{render_json, render_text};

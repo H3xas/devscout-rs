@@ -14,7 +14,7 @@ use super::qualifiers::{member_name_text, resolve_member_qualifier, Scope};
 use super::refs::{
     base_type_identifier, invocation_arg_count, type_descriptor, type_parameter_names,
 };
-use super::text::named_children;
+use super::text::{named_children, text};
 use super::types::{EnclosingCallFact, Fact, PublishRecord};
 
 // Verbs the local bus/mediator/scheduler stand-ins expose for handing a
@@ -198,7 +198,7 @@ fn generic_argument_message(
         .into_iter()
         .find(|c| c.kind() == "type_argument_list")?;
     let first = named_children(list).into_iter().next()?;
-    Some(type_descriptor(Some(first), src, type_params))
+    Some(written_message(Some(first), src, type_params))
 }
 
 // The type a call's FIRST argument constructs -- directly, or nested
@@ -220,7 +220,7 @@ fn construction_message(
     let first_arg = named_children(args).into_iter().next()?;
     let value = argument_value(first_arg)?;
     match find_construction(value)? {
-        Construction::Typed(ctor) => Some(type_descriptor(
+        Construction::Typed(ctor) => Some(written_message(
             ctor.child_by_field_name("type"),
             src,
             type_params,
@@ -319,7 +319,9 @@ fn find_construction(node: Node) -> Option<Construction> {
 // structurally off each `object_creation_expression`'s own `type` field --
 // never off the first element alone, which would name the wrong element
 // type for a mixed initializer. An empty initializer, or one holding
-// anything other than a construction, names no message.
+// anything other than a construction, names no message. Elements that name
+// one type but spell its qualifier differently give no qualifier to keep, so
+// the message falls back to the bare rendering they agree on.
 fn implicit_array_message(node: Node, src: &[u8], type_params: &HashSet<String>) -> Option<String> {
     let initializer = named_children(node)
         .into_iter()
@@ -328,19 +330,76 @@ fn implicit_array_message(node: Node, src: &[u8], type_params: &HashSet<String>)
     if elements.is_empty() {
         return None;
     }
-    let mut element_type: Option<String> = None;
+    let mut element_type: Option<(String, String)> = None;
+    let mut one_spelling = true;
     for element in elements {
         if element.kind() != "object_creation_expression" {
             return None;
         }
-        let descriptor = type_descriptor(element.child_by_field_name("type"), src, type_params);
+        let type_node = element.child_by_field_name("type");
+        let descriptor = type_descriptor(type_node, src, type_params);
+        let written = written_message(type_node, src, type_params);
         match &element_type {
-            None => element_type = Some(descriptor),
-            Some(existing) if *existing == descriptor => {}
+            None => element_type = Some((descriptor, written)),
+            Some((existing, spelled)) if *existing == descriptor => {
+                one_spelling &= *spelled == written;
+            }
             Some(_) => return None,
         }
     }
-    element_type.map(|t| format!("{t}[]"))
+    element_type.map(|(bare, written)| {
+        let element = if one_spelling { written } else { bare };
+        format!("{element}[]")
+    })
+}
+
+// A message type as the call writes it: `type_descriptor`'s rendering, with
+// the written qualifier kept in front when the type, under any nullable or
+// array wrapper, is a qualified name (`Ns.M`, `Ns.M[]`, `Outer.Inner`,
+// `Ns.Batch<M>`). The qualifier is rebuilt from its own tokens with the
+// trivia between them left out -- whitespace, line breaks, comments and any
+// other extra node -- so every call shape that reaches here names the same
+// segments the same way: the resolver splits a message at its last dot, and
+// `Ns./*c*/M` or `Ns . M` would otherwise reach it as `/*c*/M` or ` M`.
+// `type_descriptor` drops the qualifier because method parameters and
+// consumer bases share that rendering; a publish message needs it, because
+// the bare name read from the call site's namespace can bind a different
+// type than the one the qualifier names.
+fn written_message(node: Option<Node>, src: &[u8], type_params: &HashSet<String>) -> String {
+    let rendered = type_descriptor(node, src, type_params);
+    let mut core = node;
+    while let Some(n) = core.filter(|n| matches!(n.kind(), "nullable_type" | "array_type")) {
+        core = n.child_by_field_name("type");
+    }
+    let qualifier = core
+        .filter(|n| n.kind() == "qualified_name")
+        .and_then(|n| n.child_by_field_name("qualifier"))
+        .map(|q| {
+            let mut out = String::new();
+            push_tokens(q, src, &mut out);
+            out
+        });
+    match qualifier {
+        Some(qualifier) => format!("{qualifier}.{rendered}"),
+        None => rendered,
+    }
+}
+
+// Appends the source text of every token under `node`, in order, skipping
+// extra nodes (comments, preprocessor lines) and the whitespace between
+// tokens, which never belongs to a token.
+fn push_tokens(node: Node, src: &[u8], out: &mut String) {
+    if node.is_extra() {
+        return;
+    }
+    if node.child_count() == 0 {
+        out.push_str(&text(node, src));
+        return;
+    }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        push_tokens(child, src, out);
+    }
 }
 
 // A resolved receiver fact's own descriptor, matching `type_descriptor`'s

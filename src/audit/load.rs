@@ -4,6 +4,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
+use super::lane::AuditLane;
 use super::model::{AuditOptions, DefRow, EdgeRow, Inputs, OracleRef, Tier, Unit};
 
 /// Reads graph.json, the oracle's `refs.jsonl`/`units.jsonl`/`defs.jsonl`,
@@ -31,7 +32,7 @@ pub fn load(root: &Path, opts: &AuditOptions) -> Result<Inputs, String> {
         None => Vec::new(),
     };
     let universe = build_universe(root, &graph_value, &units);
-    let lane = lane_of(&graph_value);
+    let lane = AuditLane::read(&graph_value);
     let discovered_shapes = discovered_occurrence_shapes(root);
 
     Ok(Inputs {
@@ -102,22 +103,6 @@ fn discovered_occurrence_shapes(root: &Path) -> HashMap<(String, usize, String),
         );
     }
     shapes
-}
-
-/// `"enriched"` when graph.json's own top-level `stats.semantic` key is
-/// present (regardless of whether it holds any nonzero counter -- a run
-/// that admitted an artifact and confirmed nothing still ran the enriched
-/// lane), else `"syntax"`. See `Inputs::lane`'s own doc comment.
-fn lane_of(graph_value: &serde_json::Value) -> &'static str {
-    if graph_value
-        .get("stats")
-        .and_then(|s| s.get("semantic"))
-        .is_some()
-    {
-        "enriched"
-    } else {
-        "syntax"
-    }
 }
 
 /// Parses one non-empty line per record via `T`'s `Deserialize`. The error

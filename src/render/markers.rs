@@ -34,6 +34,9 @@ pub(crate) const BUS_HOP_UNVERIFIED: &str = "possible route, runtime routing unv
 // file itself. Composes after the heuristic suffix, never instead of it -- a
 // row can be both a guess AND project-vouched.
 const TEST_PROJECT_SUFFIX: &str = " (test project)";
+// The same for a TypeScript file vouched for by its test-file name alone
+// (`TestVia::Path`).
+const TEST_PATH_SUFFIX: &str = " (test path)";
 
 // The row's own tier word when the row is a guess, `""` otherwise. Applied
 // inside each row formatter rather than inside `ref_kind_block`, because the two
@@ -52,7 +55,8 @@ pub(crate) fn heuristic_suffix(heuristic: bool, tier: Option<HeuristicTier>) -> 
 }
 
 // `tests`-only: the `TEST_PROJECT_SUFFIX` when the row's vouch is
-// `TestVia::Project`, `""` for `TestVia::Attribute`. Kept as its own function
+// `TestVia::Project`, `TEST_PATH_SUFFIX` for `TestVia::Path`, `""` for
+// `TestVia::Attribute`. Kept as its own function
 // (rather than folded into `heuristic_suffix`) because the two facts are
 // independent -- a row's vouch has nothing to do with whether its reference
 // was guessed.
@@ -60,6 +64,7 @@ pub(crate) fn test_via_suffix(via: query::TestVia) -> &'static str {
     match via {
         query::TestVia::Attribute => "",
         query::TestVia::Project => TEST_PROJECT_SUFFIX,
+        query::TestVia::Path => TEST_PATH_SUFFIX,
     }
 }
 
@@ -78,6 +83,15 @@ pub(crate) fn compact_marker(heuristic: bool, tier: Option<HeuristicTier>) -> &'
         (true, Some(HeuristicTier::Ext)) => "x",
         (true, _) => "h",
     }
+}
+
+// The full-count suffix every query renderer puts on its first line, after two
+// spaces: `total` is what the answer counted before its model cap, `shown` what
+// it actually printed. Without it a reader sees a capped table and has nothing
+// telling them the table is capped -- which is the failure this states the
+// answer against. One spelling, because four renderers say the same fact.
+pub(crate) fn count_suffix(noun: &str, total: usize, shown: usize) -> String {
+    format!("  {total} {noun} (showing {shown})")
 }
 
 // The source snippet, two spaces then the text, appended AFTER the heuristic

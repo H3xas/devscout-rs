@@ -114,6 +114,16 @@
     },
     "kind": "class",
     "manifestGap": 0,
+    "next": [
+      [
+        "tests",
+        "Evidence.Ledger"
+      ],
+      [
+        "impact",
+        "Witness.cs"
+      ]
+    ],
     "outcome": "hit",
     "query": "Ledger",
     "schema_version": 1,
@@ -210,6 +220,16 @@
         },
         "kind": "member",
         "manifestGap": 0,
+        "next": [
+          [
+            "tests",
+            "Evidence.Ledger.Record"
+          ],
+          [
+            "impact",
+            "Witness.cs"
+          ]
+        ],
         "outcome": "hit",
         "query": "Record",
         "schema_version": 1,
@@ -225,6 +245,16 @@
         ],
         "status": "resolved"
       }
+    ],
+    "next": [
+      [
+        "tests",
+        "Evidence.Ledger.Record"
+      ],
+      [
+        "impact",
+        "Witness.cs"
+      ]
     ],
     "outcome": "hit",
     "query": "Record",
@@ -295,6 +325,16 @@
         },
         "kind": "member",
         "manifestGap": 0,
+        "next": [
+          [
+            "tests",
+            "Evidence.Ledger.RecordAsync"
+          ],
+          [
+            "impact",
+            "Witness.cs"
+          ]
+        ],
         "outcome": "hit",
         "query": "RecordAsync",
         "schema_version": 1,
@@ -306,6 +346,16 @@
         ],
         "status": "resolved"
       }
+    ],
+    "next": [
+      [
+        "tests",
+        "Evidence.Ledger.RecordAsync"
+      ],
+      [
+        "impact",
+        "Witness.cs"
+      ]
     ],
     "outcome": "hit",
     "query": "RecordAsync",
@@ -358,6 +408,16 @@
         },
         "kind": "member",
         "manifestGap": 0,
+        "next": [
+          [
+            "tests",
+            "Evidence.Caller.Recurse"
+          ],
+          [
+            "impact",
+            "Witness.cs"
+          ]
+        ],
         "outcome": "hit",
         "query": "Recurse",
         "schema_version": 1,
@@ -369,6 +429,16 @@
         ],
         "status": "resolved"
       }
+    ],
+    "next": [
+      [
+        "tests",
+        "Evidence.Caller.Recurse"
+      ],
+      [
+        "impact",
+        "Witness.cs"
+      ]
     ],
     "outcome": "hit",
     "query": "Recurse",

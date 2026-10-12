@@ -36,7 +36,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::manifest;
 use crate::mapcmd;
 use crate::repo;
-use crate::walk;
+
+// The language census lives in its own sibling file, `initcmd/census.rs`,
+// because this file sits at its size-ratchet ceiling.
+mod census;
 
 // ---------------------------------------------------------------------------
 // calendar date as `YYYY-MM-DD`. No date/time crate is used --
@@ -442,12 +445,6 @@ pub fn cmd_init(cwd: &Path, args: &[String]) -> (i32, String) {
 // operator's live settings on every test run.
 // ---------------------------------------------------------------------------
 
-// C# gets the complete extraction path. TypeScript-family files are indexed
-// and resolved into the graph, but with narrower edge coverage. The remaining
-// extensions enumerated by `walk::SOURCE_EXT` are counted but not indexed.
-const FULLY_SUPPORTED_EXT: &[&str] = &[".cs"];
-const INDEXED_AND_GRAPHED_EXT: &[&str] = &[".ts", ".tsx", ".js", ".jsx"];
-
 // Flags handled only here -- stripped from `args` before they ever reach
 // `parse_init_args` (which treats unknown tokens as scope-dir positionals), so
 // `--no-hooks`/`--no-map` are never mistaken for a scope directory and never
@@ -490,73 +487,11 @@ pub fn cmd_init_full(cwd: &Path, args: &[String]) -> (i32, String) {
 
     let lines = [
         out,
-        census_line(&root),
+        census::census_line(&root),
         hooks_line(no_hooks),
         map_line(&root, no_map),
     ];
     (0, lines.join("\n"))
-}
-
-// ---------------------------------------------------------------------------
-// Language census. Rather than a second, independent recursive walker, this
-// counts extensions over exactly the file set `walk::list_source_files` already
-// enumerates (its `SKIP_DIRS`/`SOURCE_EXT` contract). Bounded consequence, noted
-// rather than solved: a real-but-unsupported language outside `walk::SOURCE_EXT`
-// entirely (Python, Go, ...) is invisible to this census, same as it is
-// invisible to `devscout map` itself.
-// ---------------------------------------------------------------------------
-
-fn census_line(root: &Path) -> String {
-    let files = match walk::list_source_files(root, &[".".to_string()]) {
-        Ok(f) => f,
-        Err(e) => return format!("languages: error walking sources ({e})"),
-    };
-    if files.is_empty() {
-        return "languages: no source files found".to_string();
-    }
-
-    let mut counts: Vec<(String, usize)> = Vec::new();
-    for f in &files {
-        let ext = match f.rfind('.') {
-            Some(i) => f[i..].to_string(),
-            None => String::new(),
-        };
-        match counts.iter_mut().find(|(e, _)| *e == ext) {
-            Some(entry) => entry.1 += 1,
-            None => counts.push((ext, 1)),
-        }
-    }
-    counts.sort();
-    let (fully_supported, other): (Vec<_>, Vec<_>) = counts
-        .into_iter()
-        .partition(|(e, _)| FULLY_SUPPORTED_EXT.contains(&e.as_str()));
-    let (indexed_and_graphed, not_indexed): (Vec<_>, Vec<_>) = other
-        .into_iter()
-        .partition(|(e, _)| INDEXED_AND_GRAPHED_EXT.contains(&e.as_str()));
-    let fmt_group = |g: &[(String, usize)]| {
-        g.iter()
-            .map(|(e, c)| format!("{c} {e}"))
-            .collect::<Vec<_>>()
-            .join(", ")
-    };
-
-    let mut groups = Vec::new();
-    if !fully_supported.is_empty() {
-        groups.push(format!("{} (fully supported)", fmt_group(&fully_supported)));
-    }
-    if !indexed_and_graphed.is_empty() {
-        groups.push(format!(
-            "{} (indexed and graphed, narrower edge coverage)",
-            fmt_group(&indexed_and_graphed)
-        ));
-    }
-    if !not_indexed.is_empty() {
-        groups.push(format!(
-            "{} (present, not indexed)",
-            fmt_group(&not_indexed)
-        ));
-    }
-    format!("languages: {}", groups.join("; "))
 }
 
 // ---------------------------------------------------------------------------
@@ -1200,41 +1135,6 @@ mod tests {
         assert_eq!(rest, args);
     }
 
-    // -- census_line ---------------------------------------------------
-
-    #[test]
-    fn census_line_reports_all_three_support_tiers() {
-        let dir = temp_dir("census-mixed");
-        fs::write(dir.join("A.cs"), "namespace X { class A {} }").unwrap();
-        fs::write(dir.join("B.cs"), "namespace X { class B {} }").unwrap();
-        fs::write(dir.join("c.ts"), "export const x = 1;").unwrap();
-        fs::write(dir.join("d.md"), "# doc").unwrap();
-        let line = census_line(&dir);
-        assert_eq!(line, "languages: 2 .cs (fully supported); 1 .ts (indexed and graphed, narrower edge coverage); 1 .md (present, not indexed)");
-    }
-
-    #[test]
-    fn census_line_all_supported_omits_the_unsupported_clause() {
-        let dir = temp_dir("census-cs-only");
-        fs::write(dir.join("A.cs"), "namespace X { class A {} }").unwrap();
-        let line = census_line(&dir);
-        assert_eq!(line, "languages: 1 .cs (fully supported)");
-    }
-
-    #[test]
-    fn census_line_no_supported_still_reports_unsupported() {
-        let dir = temp_dir("census-unsupported-only");
-        fs::write(dir.join("a.md"), "# doc").unwrap();
-        let line = census_line(&dir);
-        assert_eq!(line, "languages: 1 .md (present, not indexed)");
-    }
-
-    #[test]
-    fn census_line_empty_repo_reports_no_source_files() {
-        let dir = temp_dir("census-empty");
-        assert_eq!(census_line(&dir), "languages: no source files found");
-    }
-
     // -- hooks_shape_ok / entry_shape_ok --------------------------------
 
     #[test]
@@ -1456,13 +1356,5 @@ mod tests {
         assert!(body.ends_with('\n'));
         let reread: manifest::Value = serde_json::from_str(&body).unwrap();
         assert_eq!(reread, v);
-    }
-
-    // -- language tier sanity ----------------------------------------------
-
-    #[test]
-    fn census_language_tiers_are_explicit() {
-        assert_eq!(FULLY_SUPPORTED_EXT, &[".cs"]);
-        assert_eq!(INDEXED_AND_GRAPHED_EXT, &[".ts", ".tsx", ".js", ".jsx"]);
     }
 }

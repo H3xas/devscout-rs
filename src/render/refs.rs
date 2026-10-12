@@ -1,7 +1,24 @@
 use crate::query;
 
 use super::blocks::{compact_block, ref_kind_block, ref_kind_block_if_any};
-use super::markers::{compact_marker, heuristic_suffix, source_suffix, BUS_HOP_UNVERIFIED};
+use super::markers::{
+    compact_marker, count_suffix, heuristic_suffix, source_suffix, BUS_HOP_UNVERIFIED,
+};
+use super::ts_tables;
+
+// The first line both `refs` renderers open with: the resolved symbol, its
+// kind, and how many inbound references the answer counted against how many it
+// printed. `read` splices its own `def:` line in below this one, so the count
+// reaches that verb too.
+fn refs_head_line(model: &query::RefsModel) -> String {
+    let (total, shown) = query::inbound_reference_counts(&model.inbound);
+    format!(
+        "{}  ({}){}",
+        model.id,
+        model.kind,
+        count_suffix("inbound", total, shown)
+    )
+}
 
 // The one line that splits an enum's inbound member edges by which MEMBER they
 // land on. `refs Toggles` already counted them all under `uses-member`; this
@@ -57,7 +74,7 @@ pub(super) fn bus_hop_line(r: &query::BusHopRow) -> String {
 )]
 pub fn render_refs_text(model: &query::RefsModel) -> String {
     let mut out: Vec<String> = Vec::new();
-    out.push(format!("{}  ({})", model.id, model.kind));
+    out.push(refs_head_line(model));
     out.push(format!(
         "def: {}",
         model
@@ -137,7 +154,8 @@ pub fn render_refs_text(model: &query::RefsModel) -> String {
             )
         },
     );
-    // One trailer for the five kinds, because they share one cap: the
+    ts_tables::inbound_blocks(&mut out, &model.inbound.ts);
+    // One trailer for every inbound kind, because they share one cap: the
     // per-kind headers say how much each kind lost, this says what the call as
     // a whole did not return. `--all` lifts this cap too, the same lever the
     // outbound trailer below names, but the text here already reports the true
@@ -146,7 +164,8 @@ pub fn render_refs_text(model: &query::RefsModel) -> String {
         + model.inbound.uses_type.dropped
         + model.inbound.uses_member.dropped
         + model.inbound.implements.dropped
-        + model.inbound.overrides.dropped;
+        + model.inbound.overrides.dropped
+        + ts_tables::sums(&model.inbound.ts).2;
     if inbound_dropped != 0 {
         out.push(format!("  +{inbound_dropped} more"));
     }
@@ -248,7 +267,8 @@ pub fn render_refs_text(model: &query::RefsModel) -> String {
                 )
             },
         );
-        // One trailer for the six outbound kinds, because they share one cap
+        ts_tables::outbound_blocks(&mut out, &ob.ts);
+        // One trailer for every outbound kind, because they share one cap
         // (mirrors the inbound trailer above). Printing only ever happens when
         // `--all` would actually return more rows, so the hint is never dead
         // advice -- true of the inbound trailer above too, which is why that one
@@ -258,7 +278,8 @@ pub fn render_refs_text(model: &query::RefsModel) -> String {
             + ob.uses_member.dropped
             + ob.implements.dropped
             + ob.overrides.dropped
-            + ob.imports.dropped;
+            + ob.imports.dropped
+            + ts_tables::sums(&ob.ts).2;
         if outbound_dropped != 0 {
             out.push(format!("  +{outbound_dropped} more, use --all"));
         }
@@ -298,7 +319,7 @@ pub fn render_refs_text(model: &query::RefsModel) -> String {
 )]
 pub fn render_refs_compact(model: &query::RefsModel) -> String {
     let mut out: Vec<String> = Vec::new();
-    out.push(format!("{}  ({})", model.id, model.kind));
+    out.push(refs_head_line(model));
     out.push(format!(
         "def: {}",
         model
@@ -362,6 +383,7 @@ pub fn render_refs_compact(model: &query::RefsModel) -> String {
         file_of_ib,
         line_ib,
     );
+    ts_tables::compact_blocks(&mut out, "in", &model.inbound.ts, file_of_ib, |r| r.line);
     // The direction letter ('i'/'o') stands in for the full `in`/`out` word --
     // compact strips message/evidence to the same terse shape every other
     // block here already takes. The trailing '?' is the possible-route
@@ -426,6 +448,7 @@ pub fn render_refs_compact(model: &query::RefsModel) -> String {
             file_of_imp,
             line_imp,
         );
+        ts_tables::compact_blocks(&mut out, "out", &ob.ts, file_of_ob, |r| r.line);
     }
 
     let amb_in = &model.ambiguous.inbound;
@@ -442,7 +465,9 @@ pub fn render_refs_compact(model: &query::RefsModel) -> String {
     // ask for them.
     let ob = model.outbound.as_ref();
     let ob_sum = |f: fn(&query::OutboundTables) -> usize| ob.map_or(0, f);
-    let edges = model.inbound.inherits.total
+    let (ts_total, ts_shown, ts_dropped) = ts_tables::sums(&model.inbound.ts);
+    let edges = ts_total
+        + model.inbound.inherits.total
         + model.inbound.uses_type.total
         + model.inbound.uses_member.total
         + model.inbound.implements.total
@@ -455,8 +480,10 @@ pub fn render_refs_compact(model: &query::RefsModel) -> String {
                 + o.implements.total
                 + o.overrides.total
                 + o.imports.total
+                + ts_tables::sums(&o.ts).0
         });
-    let shown = model.inbound.inherits.rows.len()
+    let shown = ts_shown
+        + model.inbound.inherits.rows.len()
         + model.inbound.uses_type.rows.len()
         + model.inbound.uses_member.rows.len()
         + model.inbound.implements.rows.len()
@@ -469,8 +496,10 @@ pub fn render_refs_compact(model: &query::RefsModel) -> String {
                 + o.implements.rows.len()
                 + o.overrides.rows.len()
                 + o.imports.rows.len()
+                + ts_tables::sums(&o.ts).1
         });
-    let dropped = model.inbound.inherits.dropped
+    let dropped = ts_dropped
+        + model.inbound.inherits.dropped
         + model.inbound.uses_type.dropped
         + model.inbound.uses_member.dropped
         + model.inbound.implements.dropped
@@ -483,6 +512,7 @@ pub fn render_refs_compact(model: &query::RefsModel) -> String {
                 + o.implements.dropped
                 + o.overrides.dropped
                 + o.imports.dropped
+                + ts_tables::sums(&o.ts).2
         });
     let ambiguous = amb_in.total + amb_out.total;
     let gap = if model.manifest_gap != 0 {

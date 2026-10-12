@@ -1,4 +1,4 @@
-use super::arity::{arity_accepts, generic_args_unify, resolve_receiver_type};
+use super::arity::{arity_accepts, call_arity, generic_args_unify, resolve_receiver_type};
 use super::bus::append_bus_edges;
 use super::dispatch::append_dispatch_edges;
 use super::edges::{
@@ -10,15 +10,17 @@ use super::ladder::{
     type_qualifier_arm_admits, Admission, Narrowed, Resolution, Via,
 };
 use super::members::{
-    base_member_declared, declares_here_for_ref, declares_member, extension_closure_key,
+    base_member_declared, base_member_for_ref, declares_here_for_ref, extension_closure_key,
     inherited_member_declared, member_shape, member_vouched, typed_receiver_base_member,
     typed_receiver_precise_target,
 };
+use super::property_hop::property_hop_target;
 use super::provenance::{self, Step};
+use super::reach::attach_reach;
 use super::receiver::{
     bare_receiver_field_or_property_type, def_outer_types, extractor_vouches_instance,
     is_this_shaped_receiver, lambda_slot_receiver_type, receiver_admits_candidate,
-    receiver_type_and_nullable, AssignabilityCache, ReceiverFieldType,
+    receiver_type_and_nullable, AssignabilityCache, BareMemberLookup, ReceiverFieldType,
 };
 use super::scope::{
     build_file_contexts, collect_global_usings_by_unit, namespace_encloses, score_candidate,
@@ -105,11 +107,12 @@ pub fn resolve_graph_with_model(
     let admission = Admission { model, unit_of_def };
     let (repo_wide_globals, globals_by_unit) =
         collect_global_usings_by_unit(fragments_by_file, &unit_of_file);
-    let file_contexts = build_file_contexts(
+    let mut file_contexts = build_file_contexts(
         fragments_by_file,
         &repo_wide_globals,
         model.map(|_| (&unit_of_file, &globals_by_unit)),
     );
+    attach_reach(&mut file_contexts, model, &unit_of_file, &index);
     // Built once, not per-ref: every ctor-param ref's implementor lookup shares
     // this one reverse index.
     let implementors_by_base_name = build_implementor_index(&index);
@@ -164,19 +167,9 @@ pub fn resolve_graph_with_model(
                 // ref, then only act when it lands on exactly one candidate
                 // that clears an emission tier. Enums emit unconditionally
                 // (the member def is the target when it exists). Non-enum types
-                // emit only on syntactic type-certainty, because a bare
-                // qualifier that resolves to a type can still be an instance
-                // property or local sharing the type's name:
-                //   (a) the member is in the def's recorded member lists --
-                //       methods, properties and fields
-                //       (`MessageUrn.ForType(...)`, `MessageUrn.Prefix` -- an
-                //       instance property named MessageUrn would not carry
-                //       either), or
-                //   (b) the qualifier carried a type-argument list (syntax no
-                //       local/field/property can carry), or
-                //   (c) the qualifier was dotted AND answered at the
-                //       exact-qualified ladder step, or by step 1.5's
-                //       segment-by-segment walk through nested types.
+                // emit on a recorded member, a generic type path, or an
+                // exact dotted type path. A bare name first checks the
+                // enclosing type's own/inherited field/property before a type.
                 // Everything else (ambiguous, external, or a non-enum
                 // resolution with no certainty signal) is dropped silently
                 // and deliberately NOT counted in ambiguous_count/
@@ -199,6 +192,7 @@ pub fn resolve_graph_with_model(
                     &admission,
                 );
                 let mut emitted = false;
+                let mut receiver_field: Option<ReceiverFieldType> = None;
                 // `base.M`: a receiver_base ref's `result` names the
                 // ENCLOSING type (the same resolution a plain `this.M` ref
                 // gets, from the same `receiver_type`/`name`), and this rule
@@ -224,13 +218,9 @@ pub fn resolve_graph_with_model(
                 // lookup at the bases for exactly the same reason.
                 if r.receiver_base && r.receiver_call_owner.is_none() {
                     if let Resolution::Resolved(start, _) = &result {
-                        if let Some(target) = base_member_declared(
-                            &index,
-                            &file_contexts,
-                            *start,
-                            r.member.as_deref(),
-                            r.arg_count,
-                        ) {
+                        if let Some(target) =
+                            base_member_for_ref(&index, &file_contexts, *start, r, file)
+                        {
                             edges.push(Edge::uses_member(
                                 file.clone(),
                                 r.line,
@@ -246,7 +236,25 @@ pub fn resolve_graph_with_model(
                     emitted = true;
                 } else if let Resolution::Resolved(idx, via) = &result {
                     let (idx, via) = (*idx, *via);
-                    if type_qualifier_arm_admits(via, &index.defs[idx].id, r) {
+                    if r.qualified.is_none()
+                        && !r.generic
+                        && !extractor_vouches_instance(r)
+                        && r.receiver_lambda.is_none()
+                        && type_qualifier_arm_admits(via, &index.defs[idx].id, r)
+                    {
+                        receiver_field = bare_receiver_field_or_property_type(
+                            &index,
+                            ns,
+                            r,
+                            usings,
+                            aliases,
+                            &file_contexts,
+                            BareMemberLookup::TypePriority,
+                        );
+                    }
+                    if receiver_field.is_none()
+                        && type_qualifier_arm_admits(via, &index.defs[idx].id, r)
+                    {
                         if index.defs[idx].kind == "enum" {
                             let member_key = format!(
                                 "{}.{}",
@@ -309,8 +317,14 @@ pub fn resolve_graph_with_model(
                             // named through a derived type) keeps the
                             // public-only walk.
                             let this_shaped = is_this_shaped_receiver(r);
-                            let declares_here =
-                                declares_here_for_ref(&index, &file_contexts, idx, r, this_shaped);
+                            let declares_here = declares_here_for_ref(
+                                &index,
+                                &file_contexts,
+                                idx,
+                                r,
+                                this_shaped,
+                                file,
+                            );
                             // A qualifier that resolved as a TYPE binds the def
                             // that DECLARES the member, in this order: the named
                             // type itself; else the first in-graph base in its
@@ -338,6 +352,7 @@ pub fn resolve_graph_with_model(
                                 idx,
                                 r,
                                 this_shaped,
+                                file,
                             ) {
                                 Some(target)
                             } else if (r.generic && r.qualified.is_none())
@@ -404,13 +419,15 @@ pub fn resolve_graph_with_model(
                 // taken-but-unknown, which is the answer the extractor already
                 // gave.
                 let (mut receiver_type_name, receiver_nullable) = receiver_type_and_nullable(r);
-                // Set only by the bare-identifier field/property fallback
-                // below, and only so the resolution of the name it produced
+                if receiver_type_name.is_none() {
+                    receiver_type_name = receiver_field.as_ref().map(|f| f.type_name.clone());
+                }
+                // Set only by the bare-identifier field/property lookup,
+                // and only so the resolution of the name it produced
                 // can happen in the DECLARING file's context rather than
                 // this one's. Every other way `receiver_type_name` is
                 // filled reads a name off this file's own ref, so it stays
                 // `None` and the site's own context is used.
-                let mut receiver_field: Option<ReceiverFieldType> = None;
                 if receiver_type_name.is_none() {
                     if let (Some(owner), Some(member)) =
                         (&r.receiver_call_owner, &r.receiver_call_member)
@@ -537,6 +554,7 @@ pub fn resolve_graph_with_model(
                             usings,
                             aliases,
                             &file_contexts,
+                            BareMemberLookup::ReceiverFallback,
                         );
                         receiver_type_name = receiver_field.as_ref().map(|f| f.type_name.clone());
                     }
@@ -569,7 +587,12 @@ pub fn resolve_graph_with_model(
                             ),
                             None => (usings, ns, aliases, r.outer_types.clone()),
                         };
-                        let probe = name_probe(receiver_type.clone(), probe_ns, probe_outer);
+                        let qualified = receiver_field
+                            .as_ref()
+                            .and_then(|f| f.qualified_type.as_ref())
+                            .or(r.receiver_type_qualified.as_ref());
+                        let mut probe = name_probe(receiver_type.clone(), probe_ns, probe_outer);
+                        probe.qualified = qualified.cloned();
                         // A type the extractor read off a declaration carries
                         // its argument list (`receiver_args`, absent for a
                         // non-generic type); one the resolver derived (a call
@@ -623,6 +646,7 @@ pub fn resolve_graph_with_model(
                                 r,
                                 this_shaped,
                                 receiver_nullable,
+                                file,
                             );
                             if let Some(target) = target {
                                 edges.push(Edge::uses_member(
@@ -711,39 +735,20 @@ pub fn resolve_graph_with_model(
                 // DECLARATION, and a guess built on top of a second hop is a
                 // guess about a guess.
                 if !emitted {
-                    if let Some(owner) = &r.receiver_property_owner {
-                        let probe = name_probe(owner.clone(), ns, r.outer_types.clone());
-                        if let Resolution::Resolved(oidx, _) =
-                            resolve_ref(&probe, usings, ns, &index, aliases, &file_contexts)
-                        {
-                            if let Some(fact) = index.member_lists[oidx].property_types.get(&r.name)
-                            {
-                                let hop =
-                                    name_probe(fact.type_name.clone(), ns, r.outer_types.clone());
-                                if let Resolution::Resolved(hidx, _) =
-                                    resolve_ref(&hop, usings, ns, &index, aliases, &file_contexts)
-                                {
-                                    if declares_member(
-                                        &index,
-                                        hidx,
-                                        r.member.as_deref(),
-                                        r.arg_count,
-                                    ) {
-                                        edges.push(Edge::uses_member(
-                                            file.clone(),
-                                            r.line,
-                                            index.defs[hidx].id.clone(),
-                                            index.defs[hidx].file.clone(),
-                                            r.member.clone(),
-                                            None,
-                                        ));
-                                        provenance::note(&edges, Step::PropertyHop);
-                                        edges_by_kind.uses_member += 1;
-                                        emitted = true;
-                                    }
-                                }
-                            }
-                        }
+                    if let Some(hidx) =
+                        property_hop_target(r, usings, ns, &index, aliases, &file_contexts, file)
+                    {
+                        edges.push(Edge::uses_member(
+                            file.clone(),
+                            r.line,
+                            index.defs[hidx].id.clone(),
+                            index.defs[hidx].file.clone(),
+                            r.member.clone(),
+                            None,
+                        ));
+                        provenance::note(&edges, Step::PropertyHop);
+                        edges_by_kind.uses_member += 1;
+                        emitted = true;
                     }
                 }
                 // Tier (f): extension methods, by C#'s own lookup rule.
@@ -847,7 +852,7 @@ pub fn resolve_graph_with_model(
                 //     possible there.
                 if !emitted {
                     if let (Some(receiver_type), Some(member), Some(arg_count)) =
-                        (&receiver_type_name, r.member.as_deref(), r.arg_count)
+                        (&receiver_type_name, r.member.as_deref(), call_arity(r))
                     {
                         let exact_key = format!("{member} {receiver_type}");
                         // The exact key misses for an extension whose
@@ -924,7 +929,7 @@ pub fn resolve_graph_with_model(
                         // that name.
                         let vetoed = match receiver_def {
                             Some(ridx) => {
-                                inherited_member_declared(&index, &file_contexts, ridx, r)
+                                inherited_member_declared(&index, &file_contexts, ridx, r, file)
                             }
                             None => false,
                         };
@@ -1082,7 +1087,7 @@ pub fn resolve_graph_with_model(
                                             d,
                                             member,
                                             shape,
-                                            r.arg_count,
+                                            call_arity(r),
                                             receiver_type,
                                             r.receiver_args.as_ref(),
                                             r.receiver_type.is_some(),
@@ -1295,6 +1300,7 @@ pub fn resolve_graph_with_model(
             ts: None,
             bus_vocabulary_derived,
             semantic: semantic_stats,
+            lane: None,
         },
         defs: index.defs,
         edges,

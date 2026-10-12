@@ -39,27 +39,49 @@
 // `json` holds the hand-rolled JSON serialisation for both the C# and the
 // TS-family fragment shapes. `ts_purpose`, `ts_fragment_types` and
 // `ts_fragment` hold the TypeScript-family purpose and reference-fact
+// extraction. `rs_fragment_types` and `rs_fragment` hold the Rust item
+// extraction: definitions with spans and a purpose, no references.
+// `rs_attrs` reads a Rust item's outer attributes, `cfg_attr` included: the
+// test mark and a module declaration's `path`.
 // extraction.
+mod argument_member_types;
+mod argument_types;
 mod bus;
 mod bus_vocab;
 mod delegate_args;
 mod dump;
 mod json;
+mod lambda_shape;
 mod lambdas;
 mod members;
 mod qualifiers;
 mod receivers;
 mod refs;
+mod rs_attrs;
+mod rs_facts_types;
+mod rs_fragment;
+mod rs_fragment_types;
+mod rs_macro_bind;
+mod rs_macro_scan;
+mod rs_paths;
+mod rs_scope;
+mod rs_sites;
+mod rs_uses;
 mod text;
 mod ts_fragment;
 mod ts_fragment_types;
 mod ts_purpose;
+mod type_arity_facts;
 mod type_defs;
+mod type_param_sites;
 mod types;
 mod walk;
 
 pub use dump::run_extract_dump;
 pub use json::{extraction_to_json, ts_extraction_to_json};
+pub use rs_facts_types::{RsBlock, RsImpl, RsModPath, RsRole, RsSite, RsUse};
+pub use rs_fragment::extract_rs_file;
+pub use rs_fragment_types::{RsFileExtraction, RsFragment, RsItem};
 pub use ts_fragment::{extract_ts_file, extract_ts_fragment, TsFileExtraction};
 pub use ts_fragment_types::{
     TsBinding, TsFragment, TsFragmentDef, TsImport, TsReexport, TsReexportName, TsRef,
@@ -68,8 +90,9 @@ pub use ts_purpose::{
     compose_hybrid_ts_purpose, extract_ts_purpose, extract_ts_purpose_with_heuristic,
 };
 pub use types::{
-    DefRecord, EnclosingCallFact, ExtensionMethod, Extraction, Fact, HandlerRegistrationRecord,
-    LambdaSlot, NameRecord, PublishRecord, RefRecord, RegistrationRecord, UsingRecord,
+    ArgTypeRecord, DefRecord, DelegateSignature, EnclosingCallFact, ExtensionMethod, Extraction,
+    Fact, HandlerRegistrationRecord, LambdaShape, LambdaSlot, NameRecord, OverloadTypeParamSites,
+    PublishRecord, RefRecord, RegistrationRecord, UsingRecord,
 };
 pub use walk::extract;
 

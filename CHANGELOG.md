@@ -7,6 +7,222 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-12
+
+A query-answer and second-language release: every resolved answer states its full count and the next
+verb to run, `refs`, `read`, `impact` and `tests` answer for TypeScript and for Rust, `.mjs`, `.cjs`,
+`.mts` and `.cts` modules are indexed, the opt-in enriched lane reports when it degrades, and the
+precise tier fixes each wrong-target mechanism measured in 0.8.0, removing 115 of its 170
+wrong-target edges on the pinned benchmark corpus.
+The release tree is measured in [`docs/benchmarks/results/2026-10-12-release-0.9.0.md`](docs/benchmarks/results/2026-10-12-release-0.9.0.md).
+
+### Added
+
+- **Rust definitions are indexed for `find` and `read`.** `map` now indexes every `.rs` file in
+  its scope, in every repository, and records each item: modules, structs, enums, unions, traits,
+  functions and methods (free, associated, trait and extern), constants, statics, type aliases and
+  associated types, and `macro_rules!` macros. `find` lists them, and `read` quotes an item's whole
+  span, doc comments and attributes included. An item is named by its name, by its id
+  (`<file>#<path>`, such as `src/shelf.rs#Widget::new`), or by a `::` path such as `Widget::new`;
+  when two items in a file share a path, the later ones take a `-1`, `-2` suffix. This is the
+  definition layer used by the Rust references and tests described below. That first slice
+  used the `fragments-v28.json` cache generation, superseded by v33 in this release.
+- **`refs`, `impact` and `tests` answer on Rust code.** `map` now resolves Rust paths through the
+  module tree (`mod` declarations, `mod.rs` and `foo.rs` with `foo/` layouts, inline modules, and
+  crate roots read from each `Cargo.toml` in scope, or `lib.rs` and `main.rs` without one) and
+  through `use` scope (groups, globs, renames, `self`, `super`, `crate`, the package's library name,
+  and `pub use` re-exports followed to the defining item). A call bound to one function becomes a
+  `uses-member` edge to it, a type use, struct literal or constructor a `uses-type` edge, and
+  `impl Trait for T` an `implements` edge; calls written inside macro arguments such as
+  `assert_eq!` and `vec!` count too. A name two imports both provide gives an `ambiguous` edge
+  instead of a guess, and a method call is never typed by its receiver. Functions carrying
+  `#[test]` are recognized as tests, so `tests <fn>` and `impact` reach them. `init` reports `.rs`
+  files as "indexed and graphed, path-resolved edges". A Cargo package model is kept beside the
+  graph in `rust-crates.json`, so editing a `Cargo.toml` rebuilds the graph. Measured against
+  rust-analyzer's own references on this repository, call edges scored precision 1.0 and recall
+  0.999. This slice used the `fragments-v29.json` cache generation, superseded by v33 in this
+  release.
+- **Rust edges reach cargo's nested targets, `cfg_attr` tests and `#[path]` modules.** Cargo's
+  nested target files `tests/<name>/main.rs`, `examples/<name>/main.rs` and
+  `benches/<name>/main.rs` are crate roots, so their calls through the library's crate name bind
+  like those from `tests/*.rs`. A function marked by `#[cfg_attr(<predicate>, test)]`, with any
+  predicate and nested `cfg_attr` included, is a test for `tests` and `impact`. A `mod x;`
+  carrying `#[path = "..."]` reaches the file the attribute names, as rustc loads it, and never the
+  default `x.rs` beside it that rustc does not compile; a `path` carried by `cfg_attr` reaches
+  nothing. Measured against rust-analyzer on a fixture package holding all three shapes, every
+  call through them is recalled with no contradicted edge, and this repository's own scores are
+  unchanged. This slice used the `fragments-v30.json` cache generation, superseded by v33 in this
+  release.
+
+- **Every resolved query answer states its full count and the next verb to run.** `refs`, `read`,
+  `impact` and `tests` now open their text and `--compact` output with the number the answer reached
+  before its row cap, `N inbound (showing M)` or `N files (showing M)`, so a truncated table can no
+  longer read as a complete one; a zero-hit answer says `0 inbound (showing 0)`. The same four
+  verbs, and `find` in text, end with a `next:` line naming the cheapest follow-up verb,
+  single-quoted where a shell would otherwise read an argument as its own. Under `--json` the same
+  four verbs carry the suggestions as a `next` array of argv arrays, immediately before `outcome`.
+  Each suggestion is resolved through the resolver the named verb itself uses, so every command the
+  line offers runs. `schema_version` stays 1: this adds a key and a line rather than changing one.
+
+- **`refs`, `read`, `impact` and `tests` answer for TypeScript.** The `import`, `call`, `jsx-use`
+  and `dispatch` edges the graph already held are now read: `refs` and `read` list each kind in a
+  table of its own, under the shared inbound cap, and `refs --out` mirrors them outbound; a table
+  appears only when it has rows, so C# answers keep their bytes. Rows carry the new `why` words
+  `call`, `jsx-use`, `dispatch` and `import`. `impact` walks the four kinds at every hop, and they
+  count toward the hub brake. A TS `import` edge in `graph.json` gains `bound_defs`, the
+  definitions its bindings resolve to, so an import row names the exact symbol. `tests` counts a
+  `.ts`/`.tsx` file named `*.spec.ts(x)`, `*.test.ts(x)` or placed below `__tests__/` as a test file
+  (`via: "path"`, `why: "test-path"`). JavaScript files answer through the same edges but are not
+  measured. This slice used the `fragments-v31.json` cache generation, superseded by v33 in this
+  release.
+
+- **`.mjs`, `.cjs`, `.mts` and `.cts` modules are indexed.** `map` discovers the four module
+  suffixes: `.mjs`/`.cjs` as JavaScript, `.mts`/`.cts` as TypeScript. A repository built from them
+  yields definitions for `find`, and its relative imports bind through the same `import` and `call`
+  edges as `.ts`/`.js`. An extensionless or directory specifier resolves to any of the four,
+  keeping a TypeScript source ahead of the JavaScript it compiles to; a specifier naming an emitted
+  `.mjs`/`.cjs` still falls back to its `.mts`/`.cts`/`.ts` source, and a literal file always wins.
+  `init` reports the four suffixes in its indexed-and-graphed census, and an existing repository
+  gains the files on its next ordinary `map`.
+
+### Fixed
+
+- **An inherited field or property wins over a same-named type in a bare member access.**
+  `RoutingSlip.Itinerary` inside a derived courier context now binds through its inherited
+  `RoutingSlip` property instead of an imported `RoutingSlip` type. Explicit type paths, generic
+  qualifiers and local receivers keep their existing lookup rules.
+- **Calls skip same-count overloads that reject known argument types.** A typed receiver now
+  continues through its base interfaces or classes, and an applicable extension can bind when
+  the receiver's own overload cannot accept a written literal, declared value or member result.
+  Unknown types still leave the overload available. The fragment cache moves to
+  `fragments-v33.json`, so an existing cache re-extracts once.
+- **Compiler-facts and context output list compiler diagnostics in one fixed order.** The
+  compiler returns its diagnostics in an order that can change between identical runs. Each
+  context record's `diagnostics.compiler` array, also embedded in compiler-facts output, was
+  written in that order, and the compiler-facts `diagnostics` array kept it for entries sharing a
+  file, line and code, so two runs over the same inputs could write different bytes. Both
+  arrays are now ordered by file, line, diagnostic code, message and severity, with a missing
+  file or line first and every text compared ordinally, so repeated runs over the same inputs
+  write identical bytes.
+- **An explicit interface implementation is no longer treated as an ordinary member of the type
+  that declares it.** C# reaches `void IFace.Run()` or `IHost IBus.Host` only through a receiver
+  typed as the interface, so inside the implementing type a call, a property hop or a bare name now
+  binds what C# binds: `this.Run()` binds a base class's public `Run` or earns no precise edge
+  instead of pointing at the invisible explicit method, `bus.Host.Open()` reads the public `Host`
+  property's type even when the explicit one is declared first, and a bare `LogContext.Info` names
+  the `LogContext` type rather than an explicit property of that name. An explicit implementation is
+  still found through the interface, by `find` and `read`, and by `implements` pairing. The
+  fragment cache moves to `fragments-v24.json`, so an existing cache re-extracts once.
+- **A property read through an interface that inherits two declarations of it binds the one C#
+  binds.** When an interface reaches the same property along two base paths and one declaring
+  interface derives from the other, the more derived declaration hides the other, with or without
+  `new`, however deep either one sits. A read such as `cfg.Topology` on an
+  `IInMemoryBusConfiguration : IBusConfiguration, IInMemoryEndpointConfiguration` receiver now
+  binds `IInMemoryEndpointConfiguration.Topology` instead of the hidden
+  `IEndpointConfiguration.Topology` that the first base reaches. Method calls and class receivers
+  bind as before.
+- **A bare type name resolves in the namespace-level order C# uses.** A type declared in an
+  enclosing namespace now wins over a same-named type imported by a using directive declared
+  further out, including compilation-unit and `global using` directives: `TestInstance` inside
+  `namespace Tests { namespace ContainerTests { using TestFramework.Sagas; ... } }` binds the
+  `TestInstance` declared in `ContainerTests`, not the imported one. A using directive declared
+  inside a namespace still wins over a type in a shallower namespace, a using declared in an inner
+  namespace wins over one declared in an outer namespace instead of making the name ambiguous, and
+  a using declared in a namespace block that does not enclose the reference no longer applies to
+  it. With a `.csproj` project model, a type in an enclosing namespace, or one a using imports, that
+  is declared only in a project the reference's own project does not reference is passed over, so
+  the lookup moves on as C# does. A publish that names its message with a qualifier
+  (`Publish(new Subjects.StartCommand())`) now resolves the message through that qualifier instead
+  of the bare name. The fragment cache moves to `fragments-v25.json`, so an existing cache
+  re-extracts once.
+- **`map` says when the enriched lane was not applied, and why.** A stale or unreadable admitted
+  compiler-facts artifact used to drop `map` to the syntax lane with nothing on screen to say so.
+  Whenever an entry sits at the compiler-facts path or `--no-semantic` is given, `map` now prints a
+  second line, `lane: enriched` or `lane: syntax (enriched lane not applied: <reason>[: <detail>])`,
+  and writes the same record to `graph.json` as `stats.lane` (`state`, then `reason` and `detail`
+  when present). The reasons are `stale-artifact`, `imports-moved`, `artifact-unreadable` and
+  `no-semantic`, and `detail` carries the freshness token verbatim. With no artifact and no flag,
+  output and `graph.json` are unchanged.
+- **A stale or moved-import artifact no longer writes a zeroed `stats.semantic` block.** `audit`
+  read that block as the enriched lane; such a graph now reports `lane: syntax`, as the documented
+  omit-when-not-applied rule already promised. Edges are unchanged.
+- **`map --no-semantic` always rebuilds**, so its lane record describes the current run. With no
+  artifact on an unchanged tree it now prints `graph rebuilt` where it printed `graph unchanged`.
+- **A call written with an explicit type-argument list binds only an overload with that many type
+  parameters.** `configurator.AddConsumer<TConsumer, TDefinition>()` used to bind a same-named
+  `AddConsumer<T>` the receiver's interface declares, because only the value arguments were
+  counted. C# refuses that overload, and now so does the precise member check: a written list
+  binds only a method whose own overload declares that many type parameters and also accepts the
+  value arguments. Extension methods are filtered the same way, so the call binds the extension
+  class that declares `AddConsumer<T, TDefinition>` rather than one that declares only
+  `AddConsumer<T>`. A call written without a list binds as before. The fragment cache moves to
+  `fragments-v26.json`, so an existing cache re-extracts once.
+- **A lambda argument binds only an overload it can convert to.** `list.Any(m => m switch { ... })`
+  used to bind a same-named `Any(Action<Filter> apply)` or `Any<T>(FilterDelegate<IX<T>> filter)`
+  overload, because only the lambda's parameter count was compared with the delegate's. C# refuses
+  both, and now so does the precise member check: a lambda whose body can only produce a value
+  skips an overload whose delegate returns `void`, and a generic overload is skipped when the call
+  writes no type-argument list and one of its type parameters occurs only in the parameter types
+  of delegates that implicitly typed lambdas fill, since nothing can infer it. Every lambda
+  argument must fit the same overload. The call then binds the base type's overload that accepts
+  the lambda, and a call through a property (`harness.Sent.SelectAsync(_ => true)`) no longer binds
+  an overload the lambda cannot convert to. A statement-bodied lambda, an explicitly typed one, a
+  call with a written type-argument list, and a type parameter another argument or the delegate's
+  return can fix bind as before. The fragment cache moves to `fragments-v27.json`, so an existing
+  cache re-extracts once.
+- **A NuGet vulnerability-audit warning no longer makes a compilation partial.** A restore done
+  offline with the audit on logs `NU1900` for each project, and the SDK replays it as a workspace
+  failure, so every such compilation read `partial`/`workspace-failure`, `--strict` exited 2, and
+  the enriched lane confirmed little or nothing. `scout-semantic` now keeps such a diagnostic in
+  the record's workspace diagnostics without demoting the compilation or failing `--strict`,
+  when the assets file of the project it names logs `NU1900` to `NU1905` at `Warning` level with
+  the same message. Any other code or level, and a missing or unreadable assets file, still
+  demote. Artifacts produced earlier keep their states until they are produced again.
+- **Compiler-facts coverage and the lane no longer claim complete or enriched over partial
+  compilations.** `compiler-facts import`, `run` and `status` printed `coverage: complete`
+  whenever no unit was listed incomplete, and `map` and `audit` said `enriched`, even when the
+  producer had marked compilations partial and their facts confirmed nothing. The coverage line
+  now reads `coverage: partial (K of M compilations: <tally>)`, and the incomplete-units wording
+  gains the same tally. See Changed for the new lane values.
+- **`audit --json` errors go to stderr.** A fatal error (a bad argument, no `graph.json`, an
+  unreadable `--assert` file) was printed on stdout, so a CI step that redirected stdout into the
+  report file showed no message. With `--json` anywhere in the arguments, every error now goes to
+  stderr with exit 1 and stdout stays empty. Text mode is unchanged.
+- **A receiver declared with a qualified type binds that type, not a same-named one.** A pattern
+  such as `endpoint is Outbox.OutboxSendEndpoint outboxEndpoint` or a field typed
+  `ConfigurationHostSettings.ConfigurationBatchSettings` was recorded by its last segment alone, so
+  `outboxEndpoint.Endpoint` resolved through a `using` that named a different `OutboxSendEndpoint`,
+  and `_settings.Enabled` bound a top-level `ConfigurationBatchSettings` in a project the declaring
+  code never referenced. The written path is now recorded alongside the simple name and resolved
+  first, so the member binds the declared type; a path that matches no type, or two, binds neither.
+  Unqualified receivers, extension matching, generic arity and the nullable rules are unchanged, and
+  a same-named declaration without a written path behaves exactly as before. This slice used the
+  `fragments-v32.json` cache generation, superseded by v33 in this release.
+
+### Changed
+
+- **Documentation is organised by type.** `docs/answer-contract.md`, `docs/csharp-coverage.md`,
+  `docs/dotnet-target-coverage.md` and `docs/call-site-evidence-matrix.md` moved to
+  `docs/reference/json-output.md`, `docs/reference/csharp-constructs.md`,
+  `docs/reference/dotnet-targets.md` and `docs/reference/call-site-evidence.md`. Each old path
+  keeps a one-line pointer for this release and is removed in the next minor release.
+- **The lane record reads the admitted artifact's compilations.** `stats.lane` gains the state
+  `partial` (reason `compilations-incomplete`, printed `lane: enriched, partial (<detail>)`, with
+  `stats.semantic` kept) and the not-applied reasons `no-complete-compilation` and
+  `nothing-confirmed` (no `stats.semantic`, and the same edges as the syntax-only graph). Every
+  record decided from the compilations, `applied` included, carries
+  `compilations: {"total": M, "partial": K}`. `audit` reports lane `enriched-partial` for a
+  partial record, so a check for `"enriched"` now fails on such a run, adds the reason to its
+  text header, and appends `lane_detail` and `compilations` to its `--json` report, which
+  `--assert compilations.partial` reads. Exit codes are unchanged, and a graph without a lane
+  record audits as before.
+
+- **JavaScript test files are classified by their path.** `tests` and `impact` count a
+  `.js`/`.mjs`/`.cjs` file named `*.test.*`/`*.spec.*`, or placed below an exact `__tests__`
+  directory, as a test file (`via: "path"`, `why: "test-path"`), where only `.ts`/`.tsx` names were
+  classified before. An attribute or test-project vouch still outranks the name, and `.jsx` and the
+  `.mts`/`.cts` suffixes stay unclassified.
+
 ## [0.8.0] - 2026-09-25
 
 A candidate-route release: a recognized publish or dispatch call gains `bus-hop` edges to the
@@ -110,7 +326,7 @@ artifact leaves the syntax-only graph exactly as before.
   [`docs/benchmarks/results/2026-09-resolver-precision.md`](docs/benchmarks/results/2026-09-resolver-precision.md)'s
   "Run 7" section for the measured result, and
   [`docs/benchmarks/results/2026-09-25-release-0.8.0.md`](docs/benchmarks/results/2026-09-25-release-0.8.0.md)
-  for the measurement of this release's tree. See [Compiler facts](README.md#compiler-facts).
+  for the measurement of this release's tree. See [Compiler facts](docs/guides/compiler-facts.md).
 - **CI exercises the enriched lane end to end.** The `semantic-audit` workflow job now also runs
   the oracle in `--emit compiler-facts` mode on the `csharp-semantic` fixture from the checkout
   root, so the artifact's `sourceSnapshot.headSha` is a real commit and its paths match the
@@ -213,7 +429,7 @@ produce, and the compiler-fact path's .NET target coverage is published per targ
   the real embedded build-context envelope's own per-compilation identity/fingerprint pairs rather
   than compared against a placeholder copy of itself. `engineRevision` moves to `"2"` and
   `artifactSchemaVersion` to `2`; `contractVersion` and the artifact filename are unchanged. See
-  [Compiler facts](README.md#compiler-facts).
+  [Compiler facts](docs/guides/compiler-facts.md).
 - **The Roslyn oracle emits a build-context envelope.** `tools/scout-semantic --emit context`
   writes one record per compilation identity (project path and name, requested target,
   configuration, platform), each carrying one of `complete`, `partial`, `unsupported`, `failed` or
@@ -238,8 +454,8 @@ produce, and the compiler-fact path's .NET target coverage is published per targ
   no same-table collision; it disambiguates two calls to one target that would otherwise serialize
   to byte-identical rows (for example two calls on one line), scoped to one table of one answer
   against one graph snapshot -- not a stable cross-run identity. No existing key is renamed, removed
-  or reordered and `schema_version` is unchanged. See [`docs/answer-contract.md`](docs/answer-contract.md#freshness)
-  and its [`occurrenceIndex`](docs/answer-contract.md#occurrenceindex) section.
+  or reordered and `schema_version` is unchanged. See [`docs/reference/json-output.md`](docs/reference/json-output.md#freshness)
+  and its [`occurrenceIndex`](docs/reference/json-output.md#occurrenceindex) section.
 - **A new offline semantic-truth harness and fixture pack** (`devscout_rs::truth`, dev/test
   infrastructure only, no new CLI verb): a versioned case manifest schema with independently
   reviewed expectations, span-based occurrence identity, a nine-row fault-control battery, a

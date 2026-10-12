@@ -84,6 +84,20 @@ const FILES: &[(&str, &str)] = &[
     ("src/notes.txt", "scratch\n"),
 ];
 
+// A Rust file: a unique method name offers itself, and a method name two
+// trait impls share offers the full id of the nearer one.
+//
+// 1  /// A lantern.            12 impl std::fmt::Display for Wick {
+// 2  pub struct Lantern;       13     fn fmt(...) -> ... {     <- span 13-15
+// 4  impl Lantern {            18 impl std::fmt::Debug for Wick {
+// 5      /// Lights it.        19     fn fmt(...) -> ... {     <- span 19-21
+// 6      pub fn light(&self)   <- span 5-6
+// 9  /// A wick.
+// 10 pub struct Wick;
+const LAMP: &str = "/// A lantern.\npub struct Lantern;\n\nimpl Lantern {\n    /// Lights it.\n    pub fn light(&self) {}\n}\n\n/// A wick.\npub struct Wick;\n\nimpl std::fmt::Display for Wick {\n    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n        write!(f, \"wick\")\n    }\n}\n\nimpl std::fmt::Debug for Wick {\n    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n        write!(f, \"Wick\")\n    }\n}\n";
+
+const RUST_FILES: &[(&str, &str)] = &[("src/lamp.rs", LAMP)];
+
 struct Fixture {
     root: PathBuf,
     home: PathBuf,
@@ -94,11 +108,15 @@ impl Fixture {
     // `git commit`) so `advance_head` can move HEAD over the SAME tree below
     // without dragging working-tree noise into the staleness assertions.
     fn build(prefix: &str) -> Fixture {
+        Fixture::build_with(prefix, FILES)
+    }
+
+    fn build_with(prefix: &str, files: &[(&str, &str)]) -> Fixture {
         let base = temp_dir(prefix);
         let root = base.join("repo");
         let home = base.join("home");
         fs::create_dir_all(&home).expect("create home dir");
-        for (rel, body) in FILES {
+        for (rel, body) in files {
             let path = root.join(rel);
             fs::create_dir_all(path.parent().unwrap()).expect("create fixture dir");
             fs::write(&path, body).expect("write fixture file");
@@ -324,4 +342,29 @@ fn whole_file_reads_offer_the_first_mapped_symbol_in_both_response_shapes() {
         "s2",
     ));
     assert_eq!(legacy, offer_envelope("First"));
+}
+
+#[test]
+fn a_rust_read_offers_a_unique_name_and_the_full_id_of_a_shared_one() {
+    let fx = Fixture::build_with("rust-offer", RUST_FILES);
+    let path = fx.root.join("src").join("lamp.rs");
+
+    let light = fx.hook_read(&ranged_read_payload(&path, LAMP, "s1", 5, 2));
+    assert_eq!(light, offer_envelope("light"));
+
+    let fmt = fx.hook_read(&ranged_read_payload(&path, LAMP, "s2", 13, 3));
+    assert_eq!(fmt, offer_envelope("src/lamp.rs#Wick::fmt"));
+
+    for (subject, id) in [
+        ("light", "src/lamp.rs#Lantern::light"),
+        ("src/lamp.rs#Wick::fmt", "src/lamp.rs#Wick::fmt"),
+    ] {
+        let read = fx.run_raw(&["read", subject]);
+        assert!(
+            read.status.success(),
+            "the offered subject resolves: {read:?}"
+        );
+        let text = String::from_utf8(read.stdout).unwrap();
+        assert!(text.starts_with(&format!("{id}  (fn)  ")), "{text}");
+    }
 }

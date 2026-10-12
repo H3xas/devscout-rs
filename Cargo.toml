@@ -1,6 +1,6 @@
 [package]
 name = "devscout-rs"
-version = "0.8.0"
+version = "0.9.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/H3xas/devscout-rs"
@@ -29,19 +29,24 @@ sha1 = "=0.11.0"
 # tree-sitter-c-sharp 0.23.5 depends on the lightweight `tree-sitter-language`
 # crate (^0.1) for its ABI, not on `tree-sitter` directly -- grammar crates
 # decoupled from the parser crate's version starting ~0.22. That means the
-# latest tree-sitter (0.26.12) and latest tree-sitter-c-sharp (0.23.5) are a
-# valid pair: both implement/consume the same tree-sitter-language ABI, so
-# there is no version lock between them to satisfy beyond "recent enough".
+# pinned tree-sitter runtime below and tree-sitter-c-sharp are a valid pair:
+# both implement/consume the same tree-sitter-language ABI, so there is no
+# version lock between them to satisfy beyond "recent enough".
 tree-sitter = "=0.27.0"
 tree-sitter-c-sharp = "=0.23.5"
 # The TypeScript/JavaScript grammars, a second grammar set behind the same
 # seam. Both crates declare `tree-sitter-language` (^0.1) as their only
 # *normal* dependency and `tree-sitter` itself only as a *dev* dependency --
 # the same decoupled-ABI pattern the tree-sitter-c-sharp pin above already
-# relies on -- so both compile cleanly against this crate's pinned
-# tree-sitter = "=0.26.12" runtime with zero version conflict.
+# relies on -- so both compile cleanly against the pinned tree-sitter
+# runtime above with zero version conflict.
 tree-sitter-typescript = "=0.23.2"
 tree-sitter-javascript = "=0.25.0"
+# The Rust grammar, a third grammar set behind the same seam. Its only
+# *normal* dependency is `tree-sitter-language` (^0.1) and it takes
+# `tree-sitter` only as a *dev* dependency, so it links against the pinned
+# runtime above with no version conflict, like the two grammar pins above.
+tree-sitter-rust = "=0.24.2"
 
 [profile.release]
 lto = true

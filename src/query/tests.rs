@@ -22,11 +22,14 @@ mod impact_ranking;
 mod imported;
 mod index;
 mod member;
+mod next;
 mod read;
 mod refs_bare_member;
 mod refs_enum;
 mod refs_tables;
 mod symbol;
+mod test_path;
+mod ts_edges;
 
 static COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -78,6 +81,7 @@ fn dummy_stats() -> graph::Stats {
         ts: None,
         bus_vocabulary_derived: None,
         semantic: None,
+        lane: None,
     }
 }
 

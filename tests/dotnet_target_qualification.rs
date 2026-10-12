@@ -1,4 +1,4 @@
-//! Pins `docs/dotnet-target-coverage.md` to the committed capability snapshots under
+//! Pins `docs/reference/dotnet-targets.md` to the committed capability snapshots under
 //! `fixtures/csharp-target-qualification/results/`. No `dotnet` toolchain is invoked here --
 //! every row is produced ahead of time by `tools/qualify-dotnet-targets.py --write` and diffed
 //! byte-for-byte by that same script's `--check` mode in CI; this file only checks that the
@@ -14,9 +14,11 @@
 //! 3. Substitution controls: both prior-art controls are recorded from their own independently
 //!    inspected evidence, never from the oracle's own status line -- one control's fixed defect
 //!    now reads `passing` from a positively observed refusal, the other still reads `failing`.
-//! 4. Publication: no support sentence in the document, `README.md` or `CHANGELOG.md` names a
-//!    target whose row is not `passing`, `README.md` names no target without a held-out row, and
-//!    the document states its own scope in its own words.
+//! 4. Publication: no support sentence in the document or in a publication page names a target
+//!    whose row is not `passing`, no publication page names a target without a held-out row (of
+//!    the changelog, only `[Unreleased]` counts there), and the document states its own scope in
+//!    its own words. The publication pages are `README.md`, `CHANGELOG.md` and every prose page
+//!    that carries README content (`publication_pages`).
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -33,15 +35,56 @@ fn results_dir() -> PathBuf {
 }
 
 fn doc_path() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/dotnet-target-coverage.md")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/reference/dotnet-targets.md")
 }
 
 fn readme_path() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("README.md")
 }
 
-fn changelog_path() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("CHANGELOG.md")
+/// The pages a support claim can be published on: `README.md`, `CHANGELOG.md`, and every prose
+/// page that carries README content, as `(repository-relative path, text)`. A missing fixed page
+/// or an empty page directory fails here, so the publication sweeps can never pass by reading
+/// nothing.
+fn publication_pages() -> Vec<(String, String)> {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut paths: Vec<PathBuf> = [
+        "README.md",
+        "CHANGELOG.md",
+        "docs/README.md",
+        "docs/concepts.md",
+        "docs/limitations.md",
+        "docs/install.md",
+    ]
+    .iter()
+    .map(|page| root.join(page))
+    .collect();
+    for dir in ["docs/guides", "docs/explanation"] {
+        let mut pages: Vec<PathBuf> = fs::read_dir(root.join(dir))
+            .unwrap_or_else(|e| panic!("{dir} must exist: {e}"))
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| path.extension().is_some_and(|ext| ext == "md"))
+            .collect();
+        assert!(
+            !pages.is_empty(),
+            "{dir} holds no page, so the publication sweep would read nothing there"
+        );
+        pages.sort();
+        paths.extend(pages);
+    }
+    paths
+        .into_iter()
+        .map(|path| {
+            let name = path
+                .strip_prefix(root)
+                .unwrap()
+                .to_string_lossy()
+                .into_owned();
+            let text =
+                fs::read_to_string(&path).unwrap_or_else(|e| panic!("{name} must exist: {e}"));
+            (name, text)
+        })
+        .collect()
 }
 
 /// Every committed row, keyed by its `profile_id`, sorted for a deterministic iteration order.
@@ -339,11 +382,11 @@ fn a_snapshot_exists_iff_its_row_state_implies_an_executed_run() {
 
 #[test]
 fn every_committed_row_appears_in_the_document_and_vice_versa() {
-    let doc = fs::read_to_string(doc_path()).expect("docs/dotnet-target-coverage.md exists");
+    let doc = fs::read_to_string(doc_path()).expect("docs/reference/dotnet-targets.md exists");
     for (id, _) in committed_rows() {
         assert!(
             doc.contains(&id),
-            "docs/dotnet-target-coverage.md does not name committed row {id}"
+            "docs/reference/dotnet-targets.md does not name committed row {id}"
         );
     }
 }
@@ -398,7 +441,7 @@ fn parse_doc_state_rows(doc: &str) -> Vec<(String, String)> {
 
 #[test]
 fn the_document_state_column_matches_each_committed_snapshot_in_both_directions() {
-    let doc = fs::read_to_string(doc_path()).expect("docs/dotnet-target-coverage.md exists");
+    let doc = fs::read_to_string(doc_path()).expect("docs/reference/dotnet-targets.md exists");
     let doc_rows = parse_doc_state_rows(&doc);
     assert!(
         !doc_rows.is_empty(),
@@ -411,7 +454,7 @@ fn the_document_state_column_matches_each_committed_snapshot_in_both_directions(
     for (id, published_state) in &doc_rows {
         let row = committed.get(id).unwrap_or_else(|| {
             panic!(
-                "docs/dotnet-target-coverage.md publishes a State for {id} but no committed \
+                "docs/reference/dotnet-targets.md publishes a State for {id} but no committed \
                  snapshot exists for it"
             )
         });
@@ -428,14 +471,14 @@ fn the_document_state_column_matches_each_committed_snapshot_in_both_directions(
         assert!(
             doc_ids.contains(&id),
             "{id} has a committed snapshot but no published State row in \
-             docs/dotnet-target-coverage.md"
+             docs/reference/dotnet-targets.md"
         );
     }
 }
 
 #[test]
 fn a_truncated_copy_of_the_document_fails_the_sync_check() {
-    let doc = fs::read_to_string(doc_path()).expect("docs/dotnet-target-coverage.md exists");
+    let doc = fs::read_to_string(doc_path()).expect("docs/reference/dotnet-targets.md exists");
     let truncated: String = doc
         .lines()
         .filter(|line| !line.contains("csharp73-net8.0-sdkstyle"))
@@ -456,7 +499,7 @@ fn a_truncated_copy_of_the_document_fails_the_sync_check() {
 
 #[test]
 fn every_inventory_row_including_wave_2_is_present() {
-    let doc = fs::read_to_string(doc_path()).expect("docs/dotnet-target-coverage.md exists");
+    let doc = fs::read_to_string(doc_path()).expect("docs/reference/dotnet-targets.md exists");
     let wave2_and_excluded = [
         "net403",
         "net451",
@@ -475,7 +518,7 @@ fn every_inventory_row_including_wave_2_is_present() {
     for name in wave2_and_excluded {
         assert!(
             names_target(&doc, name),
-            "docs/dotnet-target-coverage.md is missing inventory row for {name}"
+            "docs/reference/dotnet-targets.md is missing inventory row for {name}"
         );
     }
 }
@@ -669,8 +712,7 @@ fn framework_adapter_evidence_requires_full_identity_not_name_alone() {
 #[test]
 fn no_document_or_readme_emits_an_aggregate_dotnet_supported_flag() {
     let doc = fs::read_to_string(doc_path()).unwrap();
-    let readme = fs::read_to_string(readme_path()).unwrap();
-    let changelog = fs::read_to_string(changelog_path()).unwrap();
+    let pages = publication_pages();
     for banned in [
         ".NET supported",
         "fully .NET supported",
@@ -680,14 +722,12 @@ fn no_document_or_readme_emits_an_aggregate_dotnet_supported_flag() {
             !doc.contains(banned),
             "coverage document names a banned aggregate flag: {banned}"
         );
-        assert!(
-            !readme.contains(banned),
-            "README.md names a banned aggregate flag: {banned}"
-        );
-        assert!(
-            !changelog.contains(banned),
-            "CHANGELOG.md names a banned aggregate flag: {banned}"
-        );
+        for (name, text) in &pages {
+            assert!(
+                !text.contains(banned),
+                "{name} names a banned aggregate flag: {banned}"
+            );
+        }
     }
 }
 
@@ -784,7 +824,7 @@ fn every_inventory_target_is_a_row_in_the_document() {
     for tfm in INVENTORY_TFMS {
         assert!(
             names_target(&doc, tfm),
-            "docs/dotnet-target-coverage.md names no row for inventory target {tfm}"
+            "docs/reference/dotnet-targets.md names no row for inventory target {tfm}"
         );
     }
     for tfm in passing_profile_tfms() {
@@ -815,8 +855,7 @@ fn the_sweep_covers_every_target_that_is_not_passing() {
 #[test]
 fn no_support_sentence_names_a_target_ahead_of_its_row() {
     let doc = fs::read_to_string(doc_path()).unwrap();
-    let readme = fs::read_to_string(readme_path()).unwrap();
-    let changelog = fs::read_to_string(changelog_path()).unwrap();
+    let pages = publication_pages();
     let (before_wave2, _) = doc
         .split_once("## Wave 2")
         .expect("the document has a Wave 2 section boundary");
@@ -825,28 +864,66 @@ fn no_support_sentence_names_a_target_ahead_of_its_row() {
             !names_target(before_wave2, target),
             "{target} is not a passing row and must not appear before the Wave 2 heading"
         );
-        assert!(
-            !names_target(&readme, target),
-            "{target} is not a passing row and must not appear in README.md"
-        );
-        assert!(
-            !names_target(&changelog, target),
-            "{target} is not a passing row and must not appear in CHANGELOG.md"
-        );
+        for (name, text) in &pages {
+            assert!(
+                !names_target(text, target),
+                "{target} is not a passing row and must not appear in {name}"
+            );
+        }
     }
+}
+
+/// The part of a publication page that advertises the coming release. A dated changelog section
+/// records what an earlier release qualified and is never rewritten, so only `[Unreleased]` counts
+/// there; every other page counts whole. Only a line that starts with the heading opens or closes
+/// the section, so prose quoting the heading cannot shift the slice away from the real entries.
+fn advertising_part<'a>(name: &str, text: &'a str) -> &'a str {
+    if name != "CHANGELOG.md" {
+        return text;
+    }
+    let mut offset = 0;
+    let mut start = None;
+    for line in text.split_inclusive('\n') {
+        match start {
+            None if line.starts_with("## [Unreleased]") => start = Some(offset + line.len()),
+            Some(from) if line.starts_with("## [") => return &text[from..offset],
+            _ => {}
+        }
+        offset += line.len();
+    }
+    &text[start.expect("CHANGELOG.md has an [Unreleased] section")..]
+}
+
+#[test]
+fn the_unreleased_slice_starts_at_the_heading_line_not_at_a_mention_of_it() {
+    let changelog = "# Changelog\n\nNew entries go under `## [Unreleased]`.\n\n\
+                     ## [Unreleased]\n\n- coming entry\n\n\
+                     ## [1.0.0] - 2026-01-01\n\n- dated entry\n";
+    let part = advertising_part("CHANGELOG.md", changelog);
+    assert!(part.contains("coming entry"), "slice: {part:?}");
+    assert!(!part.contains("dated entry"), "slice: {part:?}");
+}
+
+#[test]
+#[should_panic(expected = "CHANGELOG.md has an [Unreleased] section")]
+fn a_changelog_without_an_unreleased_heading_fails_the_held_out_sweep() {
+    let changelog = "# Changelog\n\n### [Unreleased]\n\n## [1.0.0] - 2026-01-01\n\n- dated entry\n";
+    advertising_part("CHANGELOG.md", changelog);
 }
 
 #[test]
 fn readme_advertises_no_target_without_a_held_out_row() {
-    let readme = fs::read_to_string(readme_path()).unwrap();
+    let pages = publication_pages();
     for tfm in passing_profile_tfms() {
         if HELD_OUT_MEASURED_TFMS.contains(&tfm.as_str()) {
             continue;
         }
-        assert!(
-            !names_target(&readme, &tfm),
-            "{tfm} has no held-out row and must not be advertised in README.md"
-        );
+        for (name, text) in &pages {
+            assert!(
+                !names_target(advertising_part(name, text), &tfm),
+                "{tfm} has no held-out row and must not be advertised in {name}"
+            );
+        }
     }
 }
 
@@ -904,8 +981,8 @@ fn the_document_states_it_qualifies_the_compiler_fact_path_not_the_default_binar
 fn readme_points_at_the_coverage_document() {
     let readme = fs::read_to_string(readme_path()).unwrap();
     assert!(
-        readme.contains("dotnet-target-coverage.md"),
-        "README.md must point at docs/dotnet-target-coverage.md"
+        readme.contains("reference/dotnet-targets.md"),
+        "README.md must point at docs/reference/dotnet-targets.md"
     );
 }
 

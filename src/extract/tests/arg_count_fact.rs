@@ -209,7 +209,7 @@ fn stage3_extension_methods_serialize_last_with_the_arity_range_and_this_args() 
         };
         assert_eq!(
             kv.iter().map(|(k, _)| *k).collect::<Vec<_>>(),
-            vec!["name", "thisType", "arityMin", "arityMax"],
+            vec!["name", "thisType", "arityMin", "arityMax", "typeParamCount"],
             "entry key order is significant too"
         );
     }
@@ -236,7 +236,14 @@ fn stage3_extension_methods_serialize_last_with_the_arity_range_and_this_args() 
     };
     assert_eq!(
         kv.iter().map(|(k, _)| *k).collect::<Vec<_>>(),
-        vec!["name", "thisType", "arityMin", "arityMax", "thisArgs"],
+        vec![
+            "name",
+            "thisType",
+            "arityMin",
+            "arityMax",
+            "thisArgs",
+            "typeParamCount"
+        ],
         "thisArgs lands after arityMax, and only on a generic this-parameter"
     );
     assert!(

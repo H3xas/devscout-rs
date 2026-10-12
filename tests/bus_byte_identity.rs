@@ -114,8 +114,15 @@ const SCHEMA_PREFIX: &str = r#"{"schema_version":3,"#;
 const SEMANTIC_LEN: usize = 39966;
 const SEMANTIC_SHA256: &str = "c0e5ef806be97b02f37fb6e7db0e64622d9de53a9f86290d518f6cce2f3b3102";
 
-const DIRECTION_LEN: usize = 29874;
-const DIRECTION_SHA256: &str = "2dd18553dc4ba2b74d5904bfe01193db555e54df60f09d67a4668e6a0d47d15a";
+// Re-derived when an explicit interface implementation stopped counting as a
+// member of its declaring type: the one `this.Stamp()` edge in
+// `MixedExplicit.cs` moved from that class to the base declaring the public
+// `Stamp`, and every other byte is unchanged.
+// Re-derived when `overload.Same(1)` selected OverloadBase.Same(int) instead
+// of OverloadDerived.Same(string). The 107-edge count and every other graph
+// field stayed identical to the previous fixture graph.
+const DIRECTION_LEN: usize = 29859;
+const DIRECTION_SHA256: &str = "cc05beeebbe3cda973678c9af7dbd54739390fd22b0754c8bd07563b137ee441";
 
 #[test]
 fn graph_json_stays_byte_identical_on_csharp_semantic_which_has_no_bus_site() {

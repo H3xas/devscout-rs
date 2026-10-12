@@ -24,7 +24,7 @@ use std::path::Path;
 
 use serde_json::Value;
 
-use crate::graph::read_compiler_facts;
+use crate::graph::{read_compiler_facts, CompilationTally};
 use crate::resolve::DefIndex;
 
 use super::freshness::{self, Freshness};
@@ -115,6 +115,7 @@ struct RawFacts {
     source_head_sha: Option<String>,
     source_dirty: bool,
     compilations: Vec<RawCompilation>,
+    tally: CompilationTally,
     occurrences: Vec<RawOccurrence>,
 }
 
@@ -287,6 +288,7 @@ fn parse_raw(bytes: &[u8]) -> Option<RawFacts> {
         source_head_sha,
         source_dirty,
         compilations: parse_compilations(&root),
+        tally: CompilationTally::from_artifact(&root),
         occurrences: parse_occurrences(&root),
     })
 }
@@ -447,6 +449,7 @@ pub struct SemanticLayer {
     by_site: HashMap<(String, usize, String), Vec<usize>>,
     occurrences: Vec<RawOccurrence>,
     compilations: Vec<RawCompilation>,
+    tally: CompilationTally,
 }
 
 impl SemanticLayer {
@@ -485,6 +488,7 @@ impl SemanticLayer {
             by_site,
             occurrences: raw.occurrences,
             compilations: raw.compilations,
+            tally: raw.tally,
         })
     }
 
@@ -492,6 +496,16 @@ impl SemanticLayer {
     /// not per reference.
     pub fn is_fresh(&self) -> bool {
         self.freshness.is_fresh()
+    }
+
+    /// The counted compilations of the bytes this layer was built from.
+    pub fn compilation_tally(&self) -> &CompilationTally {
+        &self.tally
+    }
+
+    /// The whole-artifact freshness verdict `load` evaluated.
+    pub fn freshness(&self) -> &Freshness {
+        &self.freshness
     }
 
     /// Every distinct `(file, name_line, member)` compatibility key this

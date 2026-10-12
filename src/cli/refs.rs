@@ -11,7 +11,7 @@ use crate::render;
 
 use super::answer::{
     ambiguous_candidates_out, fallback_advised_out, finish_query, member_ambiguous_out,
-    EXIT_NO_RESULT, ZERO_HIT_REFS,
+    with_next_trailer, EXIT_NO_RESULT, ZERO_HIT_REFS,
 };
 use super::args::{first_positional, index_options, output_flags, parse_pick};
 use super::root::{require_graph, require_repo};
@@ -26,18 +26,25 @@ const REFS_USAGE: &str =
 // The row count `refs`/`read` telemetry reports for a resolved answer: every
 // inbound row plus, under `--out`, every outbound row -- the same rows the
 // text/JSON renderers already walk, counted here once rather than re-parsed
-// out of the rendered answer.
+// out of the rendered answer. The TS tables count too, so a TypeScript answer
+// never reports zero rows beside a non-empty table.
 pub(crate) fn refs_model_row_count(model: &query::RefsModel) -> usize {
     let mut n = model.inbound.inherits.rows.len()
         + model.inbound.uses_type.rows.len()
-        + model.inbound.uses_member.rows.len();
+        + model.inbound.uses_member.rows.len()
+        + ts_row_count(&model.inbound.ts);
     if let Some(ob) = &model.outbound {
         n += ob.inherits.rows.len()
             + ob.uses_type.rows.len()
             + ob.uses_member.rows.len()
-            + ob.imports.rows.len();
+            + ob.imports.rows.len()
+            + ts_row_count(&ob.ts);
     }
     n
+}
+
+fn ts_row_count<R>(tables: &query::TsTables<R>) -> usize {
+    tables.named().iter().map(|(_, t)| t.rows.len()).sum()
 }
 
 // A bare member answers with one ordinary refs model per declaring type, so
@@ -47,6 +54,7 @@ pub(crate) fn refs_model_row_count(model: &query::RefsModel) -> usize {
 // tables empty: the seed resolved, so this is `refs`' own zero hit and not the
 // unresolved case `fallback_advised_out` renders.
 pub(crate) fn member_models_out(
+    index: &query::GraphIndex,
     q: &str,
     json: bool,
     compact: bool,
@@ -57,15 +65,21 @@ pub(crate) fn member_models_out(
     } else {
         (0, query::Outcome::Hit)
     };
+    // Each member answers for itself; the union is what the answer as a whole
+    // suggests, and it is what the text trailer states once, after every block.
+    let member_next: Vec<Vec<query::NextArgv>> =
+        models.iter().map(|m| query::refs_next(index, m)).collect();
+    let union = query::merge_suggestions(member_next.clone());
     let out = if json {
-        query::json::member_refs_to_json(q, models, outcome)
+        query::json::member_refs_to_json_with_next(q, models, outcome, &member_next, &union)
     } else {
         let render: fn(&query::RefsModel) -> String = if compact {
             render::render_refs_compact
         } else {
             render::render_refs_text
         };
-        models.iter().map(render).collect::<Vec<_>>().join("\n")
+        let body = models.iter().map(render).collect::<Vec<_>>().join("\n");
+        with_next_trailer(body, &union)
     };
     let count = models.iter().map(refs_model_row_count).sum();
     (code, out, outcome, count)
@@ -153,15 +167,16 @@ fn refs_result_out(
             let (code, out) = member_ambiguous_out(q, &candidates, json);
             (code, out, query::Outcome::Ambiguous, count)
         }
-        query::RefsResult::Members(models) => member_models_out(q, json, compact, &models),
+        query::RefsResult::Members(models) => member_models_out(index, q, json, compact, &models),
         query::RefsResult::Resolved(model) => {
             let count = refs_model_row_count(&model);
+            let next = query::refs_next(index, &model);
             let out = if json {
-                query::json::refs_model_to_json(&model)
+                query::json::refs_model_to_json_with_next(&model, &next)
             } else if compact {
-                render::render_refs_compact(&model)
+                with_next_trailer(render::render_refs_compact(&model), &next)
             } else {
-                render::render_refs_text(&model)
+                with_next_trailer(render::render_refs_text(&model), &next)
             };
             (0, out, query::Outcome::Hit, count)
         }

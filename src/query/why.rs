@@ -10,11 +10,9 @@
 // carry their own `origin`/`candidateCount` fields describing why they are
 // UNRESOLVED, a different question from which rule produced a settled hit.
 //
-// A TS/TSX-only edge kind (`import`/`call`/`jsx-use`/`dispatch`) names no
-// word here: `query::index` never admits those kinds into the
-// inbound/outbound adjacency any of the four verbs read (see its own
-// `Edge::Import | Edge::Call | Edge::JsxUse | Edge::Dispatch => {}` arm), so a
-// row built from one never exists for `why` to describe.
+// The four TS/TSX edge kinds (`call`/`jsx-use`/`dispatch`/`import`) each name
+// their own word, appended after `bus-hop` with `test-path` (the `tests` vouch
+// a TS file earns by its name) so no earlier word moves.
 
 use crate::graph;
 
@@ -59,14 +57,26 @@ pub enum Why {
     /// for itself.
     ImportedEdge,
     /// A `bus-hop` edge: a publish site's resolved message reaching a
-    /// registered consumer/handler def. Appended after `imported-edge`, the
-    /// fourteenth and newest word, so no existing word moves.
+    /// registered consumer/handler def. Appended after `imported-edge`, so
+    /// no existing word moves.
     BusHop,
+    /// A TS/TSX `call` edge: a call or `new` naming the definition.
+    Call,
+    /// A TS/TSX `jsx-use` edge: a JSX tag naming the component.
+    JsxUse,
+    /// A TS/TSX `dispatch` edge: an action creator handed to a dispatching
+    /// call.
+    Dispatch,
+    /// A TS/TSX `import` edge whose bindings name the definition.
+    Import,
+    /// A `tests` row earned because the file is named as a TypeScript test
+    /// file, with neither an attributed def nor a test project behind it.
+    TestPath,
 }
 
 impl Why {
     /// Every value, in the order the doc comment above lists them.
-    pub const ALL: [Why; 14] = [
+    pub const ALL: [Why; 19] = [
         Why::Inherits,
         Why::UsesType,
         Why::UsesMemberPrecise,
@@ -81,6 +91,11 @@ impl Why {
         Why::Overrides,
         Why::ImportedEdge,
         Why::BusHop,
+        Why::Call,
+        Why::JsxUse,
+        Why::Dispatch,
+        Why::Import,
+        Why::TestPath,
     ];
 
     /// The exact `--json` word for this value.
@@ -100,6 +115,11 @@ impl Why {
             Why::Overrides => "overrides",
             Why::ImportedEdge => "imported-edge",
             Why::BusHop => "bus-hop",
+            Why::Call => "call",
+            Why::JsxUse => "jsx-use",
+            Why::Dispatch => "dispatch",
+            Why::Import => "import",
+            Why::TestPath => "test-path",
         }
     }
 }
@@ -124,11 +144,8 @@ pub(crate) fn why_for_uses_member(heuristic: bool, tier: Option<graph::Heuristic
 }
 
 /// The `why` value for the edge that produced a row, derived from its kind
-/// and -- for `uses-member` -- its own `heuristic`/`tier`. Only ever called
-/// with an `inherits`/`uses-type`/`uses-member`/`imports`/`implements`/
-/// `overrides`/`bus-hop`/`ambiguous` edge, the only kinds that ever populate
-/// a `refs`/`read`/`impact` row; every other kind is unreachable here by
-/// construction (see the module header).
+/// and -- for `uses-member` -- its own `heuristic`/`tier`. Never called with a
+/// `ctor-di` edge, the one kind no `refs`/`read`/`impact` row is built from.
 pub(crate) fn why_for_edge(edge: &graph::Edge) -> Why {
     match edge {
         graph::Edge::Inherits { .. } => Why::Inherits,
@@ -138,6 +155,10 @@ pub(crate) fn why_for_edge(edge: &graph::Edge) -> Why {
         graph::Edge::Implements { .. } => Why::Implements,
         graph::Edge::Overrides { .. } => Why::Overrides,
         graph::Edge::BusHop { .. } => Why::BusHop,
+        graph::Edge::Call { .. } => Why::Call,
+        graph::Edge::JsxUse { .. } => Why::JsxUse,
+        graph::Edge::Dispatch { .. } => Why::Dispatch,
+        graph::Edge::Import { .. } => Why::Import,
         // An ambiguous edge's `origin` is the same ref-kind string the ladder
         // steps record for a resolved edge ("inherits"/"uses-type"/
         // "uses-member"); an ambiguous edge is never heuristic (ambiguity and
@@ -148,8 +169,8 @@ pub(crate) fn why_for_edge(edge: &graph::Edge) -> Why {
             "uses-type" => Why::UsesType,
             _ => Why::UsesMemberPrecise,
         },
-        _ => unreachable!(
-            "why_for_edge is only called with inherits/uses-type/uses-member/imports/implements/overrides/bus-hop/ambiguous edges, the only kinds that ever populate a refs/read/impact row"
+        graph::Edge::CtorDi { .. } => unreachable!(
+            "why_for_edge is never called with a ctor-di edge, the one kind no refs/read/impact row is built from"
         ),
     }
 }
@@ -175,6 +196,11 @@ mod tests {
             "overrides",
             "imported-edge",
             "bus-hop",
+            "call",
+            "jsx-use",
+            "dispatch",
+            "import",
+            "test-path",
         ];
         let words: Vec<&str> = Why::ALL.iter().map(|w| w.as_str()).collect();
         for word in &words {

@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::extract;
 
+pub use super::argument_types::FragArgType;
+use super::call_shape_types::{FragDelegateSignature, FragLambdaShape, FragOverloadSites};
 use super::ordered::OrderedMap;
 
 // ---------------------------------------------------------------------------
@@ -164,6 +166,29 @@ pub struct FragDef {
         skip_serializing_if = "OrderedMap::is_empty"
     )]
     pub method_arities: OrderedMap<Vec<(usize, i64)>>,
+    /// Method name -> each overload's own type-parameter count, aligned
+    /// position for position with that name's `methodArities` entry (see
+    /// `extract::DefRecord::method_type_arities`), omitted when empty.
+    /// Joined the schema with the v26 cache bump. A name with no entry, or
+    /// one whose length disagrees with `methodArities`, leaves a call
+    /// written with a type-argument list on the value-only rule.
+    #[serde(
+        default,
+        rename = "methodTypeArities",
+        skip_serializing_if = "OrderedMap::is_empty"
+    )]
+    pub method_type_arities: OrderedMap<Vec<usize>>,
+    /// Method name -> per overload, per parameter, the `[k, position]` sites
+    /// of the method's own type parameters (see
+    /// `extract::DefRecord::method_type_param_sites`), aligned with
+    /// `methodParams` and `methodTypeArities`, omitted when empty. Joined
+    /// the schema with the v27 cache bump.
+    #[serde(
+        default,
+        rename = "methodTypeParamSites",
+        skip_serializing_if = "OrderedMap::is_empty"
+    )]
+    pub method_type_param_sites: OrderedMap<Vec<FragOverloadSites>>,
     /// Method name -> per-overload parameter type descriptors, one
     /// `Vec<String>` per overload in declaration order -- covers every
     /// method, public and non-public alike, same method set as
@@ -236,6 +261,14 @@ pub struct FragDef {
         skip_serializing_if = "Vec::is_empty"
     )]
     pub array_message_bases: Vec<String>,
+    /// A `delegate` def's return and type-parameter occurrences, omitted on
+    /// every other def. Joined the schema with the v27 cache bump.
+    #[serde(
+        default,
+        rename = "delegateSignature",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub delegate_signature: Option<FragDelegateSignature>,
     #[serde(default, rename = "endLine", skip_serializing_if = "is_zero")]
     /// The end line value.
     pub end_line: usize,
@@ -337,8 +370,11 @@ pub struct FragHandlerRegistration {
 }
 
 /// One declared type fact: the type NAME, plus its top-level
-/// type-argument descriptors when the declaration carried any. Field order
-/// (`type`, `args`) is significant, and `args` is omitted when absent.
+/// type-argument descriptors when the declaration carried any.
+///
+/// Field order (`type`, `args`, `qualifiedType`) is significant, `args` and
+/// `qualifiedType` are omitted when absent, and `type` still carries the
+/// bare last segment so consumers that need only a name are unaffected.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FragFact {
     #[serde(rename = "type")]
@@ -347,6 +383,18 @@ pub struct FragFact {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     /// The args value.
     pub args: Option<Vec<String>>,
+    /// The written qualified path of the same declaration, set only when it
+    /// wrote one. Appended LAST of all, after `args`, and omitted when
+    /// absent. Joined the schema with the v28 cache bump, together with
+    /// `FragRef.receiverTypeQualified`: without it a declared field or
+    /// property names only the tail, and a receiver typed from that
+    /// declaration resolves like a bare one.
+    #[serde(
+        default,
+        rename = "qualifiedType",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub qualified_type: Option<String>,
 }
 
 /// One `extensionMethods` entry. Serialized field order (`name`, `thisType`,
@@ -372,6 +420,15 @@ pub struct FragExtensionMethod {
     /// key otherwise), so a non-generic entry keeps four fields exactly.
     #[serde(default, rename = "thisArgs", skip_serializing_if = "Option::is_none")]
     pub this_args: Option<Vec<String>>,
+    /// The method's own type-parameter count, appended after `thisArgs`.
+    /// Joined the schema with the v26 cache bump; an absent key reads back
+    /// as unknown, which filters nothing.
+    #[serde(
+        default,
+        rename = "typeParamCount",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub type_param_count: Option<usize>,
 }
 
 /// One untyped lambda parameter's callee slot (see extract.rs's `LambdaSlot`).
@@ -415,6 +472,11 @@ pub enum FragUsing {
         text: String,
         /// Whether the directive is global.
         global: bool,
+        /// The namespace the directive is declared in; `""` (compilation-unit
+        /// level) when absent, which is also how a fragment cached before the
+        /// key existed reads.
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        namespace: String,
     },
 }
 
@@ -590,6 +652,46 @@ pub struct FragRef {
         skip_serializing_if = "Option::is_none"
     )]
     pub lambda_arg_arity: Option<Vec<Option<usize>>>,
+    /// The length of the type-argument list written on the invoked member
+    /// itself (see extract.rs's `RefRecord`), as opposed to `typeArgCount`,
+    /// the qualifier's. Appended LAST of all, after `lambdaArgArity`,
+    /// omitted when absent. Joined the schema with the v26 cache bump: a
+    /// v25 fragment read back carries none, so a call written with a
+    /// type-argument list would keep binding an overload of another
+    /// type-parameter count.
+    #[serde(
+        default,
+        rename = "methodTypeArgCount",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub method_type_arg_count: Option<usize>,
+    /// Per argument position of the same invocation, a positional lambda
+    /// literal's shape (see extract.rs's `RefRecord`). Appended LAST of
+    /// all, after `methodTypeArgCount`, omitted when absent. Joined the
+    /// schema with the v27 cache bump.
+    #[serde(
+        default,
+        rename = "lambdaArgShape",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub lambda_arg_shape: Option<Vec<Option<FragLambdaShape>>>,
+    /// The receiver declaration's written qualified type path (see
+    /// extract.rs's `RefRecord`), set only when that declaration wrote one.
+    /// Appended LAST of all, after `lambdaArgShape`, and omitted when
+    /// absent. Joined the schema with the v28 cache bump: a v27 fragment
+    /// read back carries none, so a receiver declared `Outer.Type` would
+    /// keep resolving through its bare last segment, which the ladder's
+    /// using and graph-wide-uniqueness steps answer with whichever
+    /// same-named type they reach first.
+    #[serde(
+        default,
+        rename = "receiverTypeQualified",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub receiver_type_qualified: Option<String>,
+    /// Per written value argument. Null slots are deliberately unknown.
+    #[serde(default, rename = "argTypes", skip_serializing_if = "Option::is_none")]
+    pub arg_types: Option<Vec<Option<FragArgType>>>,
 }
 
 pub(crate) fn is_false(b: &bool) -> bool {
@@ -659,13 +761,14 @@ pub struct Fragment {
     pub handler_registrations: Vec<FragHandlerRegistration>,
 }
 
-/// The two shapes a cached fragment can have. Each rel is keyed to whichever
-/// shape the file's grammar produced; the `ts: 1` tag is what tells them
-/// apart, on disk and at the
-/// resolver's door. Untagged, and TS FIRST: a C#/markup fragment carries no
-/// `ts` key (so the TS arm always fails on it) and a TS fragment carries no
-/// `usings` (so the C# arm always fails on it) -- the discrimination is total
-/// in both directions, never a first-match-wins guess.
+/// The three shapes a cached fragment can have. Each rel is keyed to
+/// whichever shape the file's grammar produced; a required key tells them
+/// apart, on disk and at the resolver's door. Untagged, TS first, Rust last:
+/// a TS fragment carries `ts`, a C#/markup fragment carries `usings` (and
+/// `defs`, `refs`), and a Rust fragment carries `rs` and neither of the
+/// others' required keys. Each arm fails on the other two shapes, so the
+/// discrimination is total in every direction, never a first-match-wins
+/// guess.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum AnyFragment {
@@ -673,6 +776,8 @@ pub enum AnyFragment {
     Ts(extract::TsFragment),
     /// Represents `Cs`.
     Cs(Fragment),
+    /// A Rust fragment: items with spans, no references.
+    Rs(extract::RsFragment),
 }
 
 impl From<Fragment> for AnyFragment {
@@ -684,5 +789,11 @@ impl From<Fragment> for AnyFragment {
 impl From<extract::TsFragment> for AnyFragment {
     fn from(f: extract::TsFragment) -> Self {
         AnyFragment::Ts(f)
+    }
+}
+
+impl From<extract::RsFragment> for AnyFragment {
+    fn from(f: extract::RsFragment) -> Self {
+        AnyFragment::Rs(f)
     }
 }

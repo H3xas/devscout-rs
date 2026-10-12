@@ -38,7 +38,7 @@ fn precise_edge_at_a_matching_in_solution_site_scores_as_a_true_positive() {
         records: vec![record],
         units: Vec::new(),
         universe,
-        lane: "syntax",
+        lane: AuditLane::SYNTAX,
         discovered_shapes: HashMap::new(),
         collect_fp_sites: false,
     });
@@ -93,7 +93,7 @@ fn guessed_edge_at_an_all_external_site_scores_as_a_leaked_false_positive() {
         records: vec![record],
         units: Vec::new(),
         universe,
-        lane: "syntax",
+        lane: AuditLane::SYNTAX,
         discovered_shapes: HashMap::new(),
         collect_fp_sites: false,
     });
@@ -158,7 +158,7 @@ fn a_matching_record_among_several_at_one_site_still_earns_a_true_positive() {
         records: vec![wrong, right],
         units: Vec::new(),
         universe: ["F.cs".to_string()].into_iter().collect(),
-        lane: "syntax",
+        lane: AuditLane::SYNTAX,
         discovered_shapes: HashMap::new(),
         collect_fp_sites: false,
     });
@@ -223,7 +223,7 @@ fn member_equality_picks_the_right_record_at_a_shared_site_chain_tail_vs_qualifi
         records: vec![load_record, validate_record],
         units: Vec::new(),
         universe: ["F.cs".to_string()].into_iter().collect(),
-        lane: "syntax",
+        lane: AuditLane::SYNTAX,
         discovered_shapes: HashMap::new(),
         collect_fp_sites: false,
     });
@@ -312,7 +312,7 @@ fn a_different_member_non_external_record_does_not_block_an_external_leak_classi
         records: vec![has_max_length, e_name, entity_property],
         units: Vec::new(),
         universe: ["F.cs".to_string()].into_iter().collect(),
-        lane: "syntax",
+        lane: AuditLane::SYNTAX,
         discovered_shapes: HashMap::new(),
         collect_fp_sites: false,
     });
@@ -371,7 +371,7 @@ fn an_edge_naming_a_member_no_record_at_the_site_names_falls_back_to_the_whole_s
         records: vec![in_tree],
         units: Vec::new(),
         universe: ["F.cs".to_string()].into_iter().collect(),
-        lane: "syntax",
+        lane: AuditLane::SYNTAX,
         discovered_shapes: HashMap::new(),
         collect_fp_sites: false,
     });
@@ -424,7 +424,7 @@ fn an_edge_naming_an_unwritten_member_at_an_all_external_site_is_still_a_leak() 
         records: vec![external_only],
         units: Vec::new(),
         universe: ["F.cs".to_string()].into_iter().collect(),
-        lane: "syntax",
+        lane: AuditLane::SYNTAX,
         discovered_shapes: HashMap::new(),
         collect_fp_sites: false,
     });
@@ -488,7 +488,7 @@ fn enum_member_edge_matches_both_the_full_and_the_bare_spelling() {
         records: vec![rec_at_full, rec_at_bare],
         units: Vec::new(),
         universe: ["F.cs".to_string()].into_iter().collect(),
-        lane: "syntax",
+        lane: AuditLane::SYNTAX,
         discovered_shapes: HashMap::new(),
         collect_fp_sites: false,
     });
@@ -565,7 +565,7 @@ fn an_edge_from_a_file_outside_units_files_is_dropped_not_a_false_positive() {
         // intersected with the union of ok units' files ("App/A.cs"
         // only), since "Other/B.cs" belongs to no unit at all.
         universe: ["App/A.cs".to_string()].into_iter().collect(),
-        lane: "syntax",
+        lane: AuditLane::SYNTAX,
         discovered_shapes: HashMap::new(),
         collect_fp_sites: false,
     });
@@ -642,7 +642,7 @@ fn structural_check_via_units_flags_an_edge_the_caller_project_cannot_reach() {
         records: vec![record],
         units,
         universe: ["App/A.cs".to_string()].into_iter().collect(),
-        lane: "syntax",
+        lane: AuditLane::SYNTAX,
         discovered_shapes: HashMap::new(),
         collect_fp_sites: false,
     });
@@ -700,7 +700,7 @@ fn structural_fallback_flags_a_non_test_caller_reaching_a_test_attributed_def() 
         records: Vec::new(),
         units: Vec::new(), // empty -> "test-defs" fallback
         universe: HashSet::new(),
-        lane: "syntax",
+        lane: AuditLane::SYNTAX,
         discovered_shapes: HashMap::new(),
         collect_fp_sites: false,
     });
@@ -745,7 +745,7 @@ fn an_oracle_def_row_saying_test_false_un_marks_the_file_for_the_structural_fall
         records: Vec::new(),
         units: Vec::new(), // empty -> "test-defs" fallback
         universe: HashSet::new(),
-        lane: "syntax",
+        lane: AuditLane::SYNTAX,
         discovered_shapes: HashMap::new(),
         collect_fp_sites: false,
     };

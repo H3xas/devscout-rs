@@ -1,13 +1,16 @@
-use super::arity::{arity_accepts, base_arity, generic_args_unify, resolve_ref_by_arity};
+use super::arity::{
+    arity_accepts, base_arity, generic_args_unify, resolve_ref_by_arity, CallArity,
+};
+use super::delegate_shape::delegate_shape;
 use super::index::{name_probe, DefIndex, MethodOverloadParams};
 use super::ladder::{resolve_ref, Resolution};
 use super::members::{
     base_member_declared, declares_member, extension_closure_key, inheritance_walk_find,
     inheritance_walk_matches, MemberShape,
 };
-use super::scope::FileContext;
+use super::scope::{FileContext, FileUsings};
 use crate::graph::{Def, FragFact, FragLambdaSlot, FragRef};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 // `true` exactly for the `this.` shape (precision rule (a)): a `uses-member`
 // ref whose recorded receiver type IS the innermost `outer_types` entry --
@@ -87,8 +90,14 @@ fn declared_field_or_property_type<'a>(
 // FILE whose declaration wrote the type name down (its usings and aliases).
 pub(super) struct ReceiverFieldType {
     pub(super) type_name: String,
+    pub(super) qualified_type: Option<String>,
     pub(super) declaring_def: usize,
     pub(super) declaring_file: String,
+}
+
+pub(super) enum BareMemberLookup {
+    TypePriority,
+    ReceiverFallback,
 }
 
 // The enclosing-type chain a ref written INSIDE `def`'s own body carries
@@ -110,7 +119,7 @@ pub(super) fn def_outer_types(def: &Def) -> Vec<String> {
 }
 
 // The bare-identifier receiver lookup a ref with NO in-file fact at all
-// falls back to: the innermost `outer_types` def's OWN merged field_types,
+// checks the innermost `outer_types` def's OWN merged field_types,
 // then property_types (a partial class's sibling-file field/property, the
 // current file cannot see for itself), then the same two tables on each
 // in-graph base of that def, in DECLARATION order, each followed by its own
@@ -120,7 +129,10 @@ pub(super) fn def_outer_types(def: &Def) -> Vec<String> {
 // `None` when `outer_types` is empty (no enclosing type, so no field/
 // property table to consult), when the innermost entry does not resolve
 // in-graph, or when neither table on `start` nor on any in-graph base
-// answers for the name.
+// answers for the name. At type priority, an implementing class does not
+// inherit interface members into its bare-name scope; an interface does
+// inherit its base interfaces' members. The receiver fallback retains its
+// prior fact walk.
 //
 // The answer names the def and the file the fact came FROM, not the site
 // that read it: the type name is a bare identifier, and the caller has to
@@ -130,9 +142,10 @@ pub(super) fn bare_receiver_field_or_property_type(
     index: &DefIndex,
     ns: &str,
     r: &FragRef,
-    usings: &HashSet<String>,
+    usings: &FileUsings,
     aliases: &HashMap<String, String>,
     file_contexts: &HashMap<String, FileContext>,
+    use_kind: BareMemberLookup,
 ) -> Option<ReceiverFieldType> {
     let innermost = r.outer_types.last()?;
     let probe = name_probe(innermost.clone(), ns, r.outer_types.clone());
@@ -141,9 +154,14 @@ pub(super) fn bare_receiver_field_or_property_type(
     else {
         return None;
     };
+    // Implemented interfaces do not put their properties in a class's bare
+    // name scope; an interface's own base interfaces do put theirs in scope.
+    let skip_interfaces =
+        matches!(use_kind, BareMemberLookup::TypePriority) && index.defs[start].kind != "interface";
     if let Some((fact, declaring_file)) = declared_field_or_property_type(index, start, &r.name) {
         return Some(ReceiverFieldType {
             type_name: fact.type_name.clone(),
+            qualified_type: fact.qualified_type.clone(),
             declaring_def: start,
             declaring_file: declaring_file.to_string(),
         });
@@ -163,10 +181,14 @@ pub(super) fn bare_receiver_field_or_property_type(
         ) {
             let mut found: Option<ReceiverFieldType> = None;
             inheritance_walk_find(index, file_contexts, bidx, |idx| {
+                if skip_interfaces && index.defs[idx].kind == "interface" {
+                    return false;
+                }
                 match declared_field_or_property_type(index, idx, &r.name) {
                     Some((fact, declaring_file)) => {
                         found = Some(ReceiverFieldType {
                             type_name: fact.type_name.clone(),
+                            qualified_type: fact.qualified_type.clone(),
                             declaring_def: idx,
                             declaring_file: declaring_file.to_string(),
                         });
@@ -188,7 +210,7 @@ pub(super) fn bare_receiver_field_or_property_type(
 // a descriptor that names something this resolver can look up.
 // `Func<Options,bool>` is `Func`, `Options[]` is `Options`; the descriptor
 // for an unknown shape is `?`, whose head is empty.
-fn descriptor_head(text: &str) -> &str {
+pub(super) fn descriptor_head(text: &str) -> &str {
     let end = text.find(['<', '[', '?']).unwrap_or(text.len());
     &text[..end]
 }
@@ -198,7 +220,7 @@ fn descriptor_head(text: &str) -> &str {
 // rather than three. Empty when the descriptor carries no argument list at
 // all; the descriptors this reads are written without spaces (see
 // `FragDef::method_params`), so no trimming is needed.
-fn descriptor_args(text: &str) -> Vec<String> {
+pub(super) fn descriptor_args(text: &str) -> Vec<String> {
     let Some(open) = text.find('<') else {
         return Vec::new();
     };
@@ -225,18 +247,8 @@ fn descriptor_args(text: &str) -> Vec<String> {
 }
 
 // The PARAMETER LIST of the delegate a parameter descriptor names, which is
-// where an untyped lambda's own parameter types are written down. The three
-// BCL delegate shapes are read structurally -- `Action<A,B>` takes its
-// arguments as they stand, `Func<A,B,R>` drops the return type, `Predicate<A>`
-// takes its single argument -- because no in-graph def declares them. Any
-// other head is a name: resolved under the DECLARING file's context (the
-// descriptor is a bare identifier, and only that file's usings, aliases and
-// nesting say what it meant) and answered only when it lands on a `delegate`
-// def, whose own list this reader keeps under `Invoke`.
-//
-// An ARRAY of delegates is not a delegate (`Action<Options>[]` takes a
-// collection, never a lambda), so a descriptor that ends in brackets answers
-// nothing at all.
+// where an untyped lambda's own parameter types are written down (see
+// `delegate_shape` for the shapes it reads).
 pub(super) fn delegate_parameters(
     text: &str,
     index: &DefIndex,
@@ -244,77 +256,7 @@ pub(super) fn delegate_parameters(
     declaring_def: usize,
     declaring_file: &str,
 ) -> Option<Vec<String>> {
-    if text.ends_with(']') {
-        return None;
-    }
-    // `Expression<Func<Options,bool>>` is the expression-tree wrapper the LINQ
-    // shapes are written with; the delegate inside it is what the lambda binds
-    // to. Unwrapped exactly ONCE -- a doubly-wrapped expression is not a shape
-    // C# accepts a lambda for, and unwrapping again would invent a binding.
-    let args = descriptor_args(text);
-    if descriptor_head(text) == "Expression" && args.len() == 1 {
-        return delegate_invoke_parameters(
-            &args[0],
-            index,
-            file_contexts,
-            declaring_def,
-            declaring_file,
-        );
-    }
-    delegate_invoke_parameters(text, index, file_contexts, declaring_def, declaring_file)
-}
-
-// `delegate_parameters` minus the expression-tree unwrap -- split out so the
-// unwrap can never run twice.
-fn delegate_invoke_parameters(
-    text: &str,
-    index: &DefIndex,
-    file_contexts: &HashMap<String, FileContext>,
-    declaring_def: usize,
-    declaring_file: &str,
-) -> Option<Vec<String>> {
-    if text.ends_with(']') {
-        return None;
-    }
-    let head = descriptor_head(text);
-    let args = descriptor_args(text);
-    match head {
-        "Action" if !args.is_empty() => Some(args),
-        "Func" if args.len() >= 2 => {
-            let mut params = args;
-            params.pop();
-            Some(params)
-        }
-        "Predicate" if args.len() == 1 => Some(args),
-        "Action" | "Func" | "Predicate" | "" => None,
-        _ => {
-            let ctx = file_contexts.get(declaring_file)?;
-            let def = &index.defs[declaring_def];
-            let probe = name_probe(
-                head.to_string(),
-                def.namespace.as_str(),
-                def_outer_types(def),
-            );
-            let Resolution::Resolved(didx, _) = resolve_ref(
-                &probe,
-                &ctx.usings,
-                def.namespace.as_str(),
-                index,
-                &ctx.aliases,
-                file_contexts,
-            ) else {
-                return None;
-            };
-            if index.defs[didx].kind != "delegate" {
-                return None;
-            }
-            index.member_lists[didx]
-                .method_params
-                .get("Invoke")
-                .and_then(|overloads| overloads.first())
-                .map(|o| o.params.clone())
-        }
-    }
+    delegate_shape(text, index, file_contexts, declaring_def, declaring_file).map(|s| s.params)
 }
 
 // One untyped lambda parameter's type, read off the CALLEE's own declared
@@ -342,7 +284,7 @@ pub(super) fn lambda_slot_receiver_type(
     index: &DefIndex,
     file_contexts: &HashMap<String, FileContext>,
     ns: &str,
-    usings: &HashSet<String>,
+    usings: &FileUsings,
     aliases: &HashMap<String, String>,
     r: &FragRef,
     slot: &FragLambdaSlot,
@@ -461,6 +403,7 @@ pub(super) fn lambda_slot_receiver_type(
     agreed.map(
         |(_, type_name, declaring_def, declaring_file)| ReceiverFieldType {
             type_name,
+            qualified_type: None,
             declaring_def,
             declaring_file,
         },
@@ -626,7 +569,7 @@ pub(super) fn receiver_admits_candidate(
     candidate: usize,
     member: &str,
     shape: MemberShape,
-    arg_count: Option<usize>,
+    call: Option<CallArity>,
     receiver_type: &str,
     receiver_args: Option<&Vec<String>>,
     args_known: bool,
@@ -656,7 +599,7 @@ pub(super) fn receiver_admits_candidate(
         .iter()
         .any(|c| {
             c.def_idx == candidate
-                && arg_count.is_none_or(|n| arity_accepts(&c.entry, n))
+                && call.is_none_or(|call| arity_accepts(&c.entry, call))
                 && generic_args_unify(c.entry.this_args.as_ref(), receiver_args)
         })
 }

@@ -1,6 +1,8 @@
 # csharp-enrichment fixture
 
-Used by `tests/semantic_enrichment.rs`. A small, hand-authored C# tree that
+Used by `tests/semantic_enrichment.rs`, `tests/semantic_lane.rs` and
+`tests/semantic_lane_compilations.rs`. A small,
+hand-authored C# tree that
 gives the compiler-fact enrichment consumer (`src/semantic/`) three distinct
 kinds of site to react to, all driven from a hand-built admitted-artifact
 JSON the test constructs itself -- no `dotnet` build, no oracle run, and no
@@ -99,3 +101,45 @@ Every occurrence fact the test admits is constructed by hand in
 `tests/semantic_enrichment.rs` itself (line numbers are read back from a
 syntax-only `map` run first, never hand-guessed), so a fixture's expected
 state is authored independently of any producer's output.
+
+`tests/semantic_lane.rs` (with its harness in `tests/support/`) reuses the
+same tree for the `map` lane line and `stats.lane`. Each way an admitted
+artifact can fail to apply gets its own copy of the tree:
+
+- a stale artifact: HEAD moved by committing `notes.txt` outside the mapped
+  `src` scope, or the same file left untracked so the tree is dirty;
+- moved imports: the candidate records `external-file:../home/Directory.Build.props`,
+  a file in the fixture's sibling `home` directory, which the test then
+  rewrites or deletes;
+- an unreadable artifact: valid JSON with a wrong `format`, the first half
+  of a candidate's bytes, or a directory, placed straight at the artifact
+  path;
+- `--no-semantic`, over an enriched graph, with no artifact, and over a
+  garbage artifact.
+
+Each stale and moved-import case also maps a second copy of the tree, given
+the same commit or untracked file but no artifact, and requires identical
+edges, so a stale layer is shown to change no edge. The unreadable cases
+compare against the same copy's own syntax-only map, taken before anything
+was placed at the artifact path.
+
+`tests/semantic_lane_compilations.rs` reuses the same tree and harness for the
+lane once the artifact's own compilations are read. Its candidates carry six
+compilations: the fixture's own, which the occurrence sites name, and five
+more with distinct identities, with the context fingerprint folded again over
+all six. Each case sets the six states:
+
+- three complete and three `partial`/`workspace-failure`, with one confirmed
+  `Config.Load()` fact: the partial lane;
+- all six partial: `no-complete-compilation`;
+- all complete, or three partial, with no occurrence at all:
+  `nothing-confirmed`;
+- all six partial, then HEAD moved: the stale reason wins and carries no
+  counts;
+- all complete with the confirmed fact: the applied record with its counts.
+
+Each not-applied case maps a second copy of the tree with no artifact and
+requires identical edges. The cases also run `audit` over an empty oracle for
+the label, the text header, `lane_detail`, `compilations` and `--assert
+compilations.partial`, and one more maps with no artifact at all, whose report
+carries neither key.
