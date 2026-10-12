@@ -77,6 +77,17 @@ fn argument_positions_admit(
         let Some(arg_type) = materialize(arg, source_file, r, index, contexts) else {
             return true;
         };
+        if param.contains('*')
+            && overload.type_params.as_ref().is_none_or(|own| {
+                own.sites
+                    .get(position)
+                    .is_none_or(|sites| !sites.is_empty())
+            })
+        {
+            // The shared wildcard can name a method parameter. An absent or
+            // occupied site cannot be bound from the declaring type's receiver.
+            return true;
+        }
         let binding = if r.receiver_type.as_deref() == Some(index.defs[idx].name.as_str())
             || r.name == index.defs[idx].name
         {
@@ -114,6 +125,9 @@ struct CompareContext<'a> {
 }
 
 fn can_accept(cx: &CompareContext<'_>, arg: &str, param: &str) -> bool {
+    let arg = canonical_primitives(arg);
+    let param = canonical_primitives(param);
+    let (arg, param) = (arg.as_str(), param.as_str());
     let CompareContext {
         index,
         contexts,
@@ -267,18 +281,60 @@ fn numeric(name: &str) -> bool {
 
 fn fixed_bcl(name: &str) -> Option<&str> {
     match name {
-        "string" | "String" => Some("string"),
-        "bool" | "Boolean" => Some("bool"),
-        "char" | "Char" => Some("char"),
+        "string" => Some("string"),
+        "bool" => Some("bool"),
+        "char" => Some("char"),
         "Type" => Some("Type"),
         "DateTime" => Some("DateTime"),
         "TimeSpan" => Some("TimeSpan"),
         "Uri" => Some("Uri"),
         "CancellationToken" => Some("CancellationToken"),
-        "int" | "Int32" => Some("int"),
-        "long" | "Int64" => Some("long"),
-        "double" | "Double" => Some("double"),
-        "decimal" | "Decimal" => Some("decimal"),
+        "int" => Some("int"),
+        "long" => Some("long"),
+        "double" => Some("double"),
+        "decimal" => Some("decimal"),
         _ => None,
     }
+}
+
+fn canonical_primitives(descriptor: &str) -> String {
+    fn primitive(token: &str) -> &str {
+        let bare = token.strip_prefix("System.").unwrap_or(token);
+        match bare {
+            "SByte" => "sbyte",
+            "Byte" => "byte",
+            "Int16" => "short",
+            "UInt16" => "ushort",
+            "Int32" => "int",
+            "UInt32" => "uint",
+            "Int64" => "long",
+            "UInt64" => "ulong",
+            "Single" => "float",
+            "Double" => "double",
+            "Decimal" => "decimal",
+            "Char" => "char",
+            "Boolean" => "bool",
+            "String" => "string",
+            "Object" => "object",
+            _ => token,
+        }
+    }
+
+    let mut result = String::with_capacity(descriptor.len());
+    let mut rest = descriptor;
+    while !rest.is_empty() {
+        let token_len = rest
+            .bytes()
+            .take_while(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'.'))
+            .count();
+        if token_len > 0 {
+            result.push_str(primitive(&rest[..token_len]));
+            rest = &rest[token_len..];
+        } else {
+            let ch = rest.chars().next().expect("nonempty descriptor");
+            result.push(ch);
+            rest = &rest[ch.len_utf8()..];
+        }
+    }
+    result
 }
