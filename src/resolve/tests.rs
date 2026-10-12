@@ -7,6 +7,8 @@ use crate::graph::{
 };
 use crate::manifest;
 
+mod argument_binding;
+mod argument_compatibility;
 mod base_members;
 mod base_walk;
 mod bus;
@@ -143,6 +145,7 @@ fn type_ref(kind: &str, name: &str, qualified: Option<&str>, ns: &str) -> FragRe
         method_type_arg_count: None,
         lambda_arg_shape: None,
         receiver_type_qualified: None,
+        arg_types: None,
     }
 }
 
@@ -173,6 +176,7 @@ fn member_ref(name: &str, qualified: Option<&str>, member: &str, ns: &str) -> Fr
         method_type_arg_count: None,
         lambda_arg_shape: None,
         receiver_type_qualified: None,
+        arg_types: None,
     }
 }
 

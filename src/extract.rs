@@ -43,6 +43,9 @@
 // extraction: definitions with spans and a purpose, no references.
 // `rs_attrs` reads a Rust item's outer attributes, `cfg_attr` included: the
 // test mark and a module declaration's `path`.
+// extraction.
+mod argument_member_types;
+mod argument_types;
 mod bus;
 mod bus_vocab;
 mod delegate_args;
@@ -87,8 +90,8 @@ pub use ts_purpose::{
     compose_hybrid_ts_purpose, extract_ts_purpose, extract_ts_purpose_with_heuristic,
 };
 pub use types::{
-    DefRecord, DelegateSignature, EnclosingCallFact, ExtensionMethod, Extraction, Fact,
-    HandlerRegistrationRecord, LambdaShape, LambdaSlot, NameRecord, OverloadTypeParamSites,
+    ArgTypeRecord, DefRecord, DelegateSignature, EnclosingCallFact, ExtensionMethod, Extraction,
+    Fact, HandlerRegistrationRecord, LambdaShape, LambdaSlot, NameRecord, OverloadTypeParamSites,
     PublishRecord, RefRecord, RegistrationRecord, UsingRecord,
 };
 pub use walk::extract;

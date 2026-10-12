@@ -485,6 +485,7 @@ fn imports_edge_is_recorded_regardless_of_whether_the_target_is_known() {
                 method_type_arg_count: None,
                 lambda_arg_shape: None,
                 receiver_type_qualified: None,
+                arg_types: None,
             }],
         ),
     )];
@@ -542,6 +543,7 @@ fn ambiguous_pct_only_counts_type_ref_attempts_not_uses_member_or_imports() {
                         method_type_arg_count: None,
                         lambda_arg_shape: None,
                         receiver_type_qualified: None,
+                        arg_types: None,
                     },
                 ],
             ),

@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::extract;
 
+pub use super::argument_types::FragArgType;
 use super::call_shape_types::{FragDelegateSignature, FragLambdaShape, FragOverloadSites};
 use super::ordered::OrderedMap;
 
@@ -688,6 +689,9 @@ pub struct FragRef {
         skip_serializing_if = "Option::is_none"
     )]
     pub receiver_type_qualified: Option<String>,
+    /// Per written value argument. Null slots are deliberately unknown.
+    #[serde(default, rename = "argTypes", skip_serializing_if = "Option::is_none")]
+    pub arg_types: Option<Vec<Option<FragArgType>>>,
 }
 
 pub(crate) fn is_false(b: &bool) -> bool {

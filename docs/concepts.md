@@ -107,7 +107,7 @@ and records the same answer as `stats.lane` in `graph.json`; see
 | edge | A recorded reference from one definition or file to another in the graph. |
 | edge kind | What an edge records: `inherits`, `uses-type`, `uses-member`, `implements`, `overrides` and `bus-hop` on C#; `import`, `call`, `jsx-use` and `dispatch` on TypeScript. |
 | tier | How a heuristic `uses-member` edge was found: `ext` or `guess`. A precise edge carries no tier. |
-| precise | A `uses-member` edge with neither `heuristic` nor `tier`: the resolver bound the declaring type as far as names and arity can tell. |
+| precise | A `uses-member` edge with neither `heuristic` nor `tier`: the resolver bound the declaring type as far as names, arity and known argument types can tell. |
 | ext | The tier of an edge found by C#'s own extension-method lookup. |
 | guess | The tier of an edge found by a bounded name match among the definitions that declare the member; `--no-guess` drops it. |
 | candidate | One of several definitions a name could mean. An ambiguous answer lists every candidate instead of choosing one. |

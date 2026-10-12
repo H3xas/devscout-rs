@@ -118,8 +118,11 @@ const SEMANTIC_SHA256: &str = "c0e5ef806be97b02f37fb6e7db0e64622d9de53a9f86290d5
 // member of its declaring type: the one `this.Stamp()` edge in
 // `MixedExplicit.cs` moved from that class to the base declaring the public
 // `Stamp`, and every other byte is unchanged.
-const DIRECTION_LEN: usize = 29862;
-const DIRECTION_SHA256: &str = "62038f88a4d1ed99ab8cae234dff876137d90e4bdd85c9e1bdf70fd6b7fd8159";
+// Re-derived when `overload.Same(1)` selected OverloadBase.Same(int) instead
+// of OverloadDerived.Same(string). The 107-edge count and every other graph
+// field stayed identical to the previous fixture graph.
+const DIRECTION_LEN: usize = 29859;
+const DIRECTION_SHA256: &str = "cc05beeebbe3cda973678c9af7dbd54739390fd22b0754c8bd07563b137ee441";
 
 #[test]
 fn graph_json_stays_byte_identical_on_csharp_semantic_which_has_no_bus_site() {

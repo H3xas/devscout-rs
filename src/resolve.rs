@@ -52,6 +52,8 @@
 // in `tests/ladder.rs` is a regression trap for exactly this: it fails loudly (ambiguous where
 // it should resolve cleanly) if the exclusion is ever dropped.
 
+mod argument_compatibility;
+mod argument_types;
 mod arity;
 mod assembly;
 mod bus;

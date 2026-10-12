@@ -7,7 +7,8 @@ use super::lambdas::{
     lambda_slot_fact, DeferredLambdaParam,
 };
 use super::refs::{
-    base_type_identifier, generic_arg_descriptors, member_qualifier_info, type_parameter_names,
+    base_type_identifier, generic_arg_descriptors, member_qualifier_info, type_descriptor,
+    type_parameter_names,
 };
 use super::text::{declared_name, is_explicit_implementation, named_children, text};
 use super::types::Fact;
@@ -69,14 +70,14 @@ fn qualified_type_name(node: Option<Node>, src: &[u8]) -> Option<String> {
     }
 }
 
-// The declared-type half stays `keep_predefined = false` --
-// a `string s` local still vouches for nothing.
+// Keep predefined declarations in the scope table for argument typing.
+// Receiver lookup filters them separately, preserving its narrower rule.
 pub(super) fn type_fact(
     type_node: Option<Node>,
     src: &[u8],
     type_params: &HashSet<String>,
 ) -> Option<Fact> {
-    let type_name = base_type_identifier(type_node, src, false)?;
+    let type_name = base_type_identifier(type_node, src, true)?;
     let args = generic_arg_descriptors(type_node, src, type_params);
     // The array/nullable bits are read off the type node's OWN top-level
     // kind, before any unwrapping -- `base_type_identifier`/
@@ -88,6 +89,8 @@ pub(super) fn type_fact(
     Some(Fact {
         type_name,
         qualified_type: qualified_type_name(type_node, src),
+        descriptor: Some(type_descriptor(type_node, src, type_params)),
+        receiver_admissible: base_type_identifier(type_node, src, false).is_some(),
         args,
         call: None,
         awaited: false,
@@ -154,6 +157,57 @@ fn cast_expression_fact(
         .into_iter()
         .find(|c| c.kind() == "cast_expression")?;
     type_fact(cast.child_by_field_name("type"), src, type_params)
+}
+
+fn literal_initializer_fact(declarator: Node, src: &[u8]) -> Option<Fact> {
+    let init = named_children(declarator).into_iter().find(|c| {
+        matches!(
+            c.kind(),
+            "string_literal"
+                | "raw_string_literal"
+                | "verbatim_string_literal"
+                | "interpolated_string_expression"
+                | "character_literal"
+                | "boolean_literal"
+                | "integer_literal"
+                | "real_literal"
+                | "typeof_expression"
+        )
+    })?;
+    let type_name = match init.kind() {
+        "string_literal"
+        | "raw_string_literal"
+        | "verbatim_string_literal"
+        | "interpolated_string_expression" => "string",
+        "character_literal" => "char",
+        "boolean_literal" => "bool",
+        "integer_literal" => "int",
+        "real_literal" => {
+            match text(init, src)
+                .chars()
+                .last()
+                .map(|c| c.to_ascii_lowercase())
+            {
+                Some('f') => "float",
+                Some('m') => "decimal",
+                _ => "double",
+            }
+        }
+        "typeof_expression" => "Type",
+        _ => return None,
+    };
+    Some(Fact {
+        type_name: type_name.to_string(),
+        qualified_type: None,
+        descriptor: Some(type_name.to_string()),
+        receiver_admissible: false,
+        args: None,
+        call: None,
+        awaited: false,
+        is_array: false,
+        nullable: false,
+        lambda: None,
+    })
 }
 
 // Fields and primary-constructor parameters of one type declaration. Direct
@@ -300,6 +354,8 @@ pub(super) fn collect_member_facts(
             let fact = owner.map(|type_name| Fact {
                 type_name,
                 qualified_type: None,
+                descriptor: None,
+                receiver_admissible: true,
                 args: None,
                 call: Some(d.member.clone()),
                 awaited: d.awaited,
@@ -497,6 +553,7 @@ fn visit_member_facts(
             let fact = if is_var {
                 new_expression_fact(decl, src, type_params)
                     .or_else(|| cast_expression_fact(decl, src, type_params))
+                    .or_else(|| literal_initializer_fact(decl, src))
             } else {
                 declared.clone()
             };
@@ -671,6 +728,8 @@ fn collection_element_fact(locals: &FactTable, type_facts: &FactTable, name: &st
             Some([arg]) if arg != "*" => Some(Fact {
                 type_name: arg.clone(),
                 qualified_type: None,
+                descriptor: None,
+                receiver_admissible: true,
                 args: None,
                 call: None,
                 awaited: false,

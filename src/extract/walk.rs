@@ -2,6 +2,7 @@ use std::collections::HashSet;
 
 use tree_sitter::Node;
 
+use super::argument_types::stamp_arg_types;
 use super::bus::{array_message_bases, nested_base_type_args, publish_fact};
 use super::bus_vocab::{handler_registration_fact, property_message_args};
 use super::lambda_shape::stamp_lambda_arg_shape;
@@ -265,6 +266,11 @@ fn walk<'a>(
                         continue;
                     }
                     let type_node = p.child_by_field_name("type");
+                    // Argument typing retains predefined facts in scope, but
+                    // constructor DI has never emitted them as service refs.
+                    if super::refs::base_type_identifier(type_node, src, false).is_none() {
+                        continue;
+                    }
                     if let Some(fact) = type_fact(type_node, src, &scope.type_params) {
                         let line = type_node.map(|t| t.start_position().row + 1).unwrap_or(0);
                         push_ctor_param_ref(
@@ -413,6 +419,7 @@ fn walk<'a>(
                     );
                     stamp_written_type_args(&mut out.refs, node.child_by_field_name("name"));
                     stamp_lambda_arg_shape(&mut out.refs, node);
+                    stamp_arg_types(&mut out.refs, node, src, scope, type_stack);
                 }
             } else if let (Some(qn), Some(m)) = (expr_field, &member) {
                 // Unit C, chain tail: `resolve_member_qualifier` structurally
@@ -446,6 +453,8 @@ fn walk<'a>(
                             Some(Fact {
                                 type_name: owner,
                                 qualified_type: None,
+                                descriptor: None,
+                                receiver_admissible: true,
                                 args: None,
                                 call: Some(inner_member),
                                 awaited: false,
@@ -470,6 +479,7 @@ fn walk<'a>(
                         );
                         stamp_written_type_args(&mut out.refs, node.child_by_field_name("name"));
                         stamp_lambda_arg_shape(&mut out.refs, node);
+                        stamp_arg_types(&mut out.refs, node, src, scope, type_stack);
                     }
                 }
             }
@@ -525,6 +535,7 @@ fn walk<'a>(
                         );
                         stamp_written_type_args(&mut out.refs, binding.child_by_field_name("name"));
                         stamp_lambda_arg_shape(&mut out.refs, node);
+                        stamp_arg_types(&mut out.refs, node, src, scope, type_stack);
                     }
                 }
             }

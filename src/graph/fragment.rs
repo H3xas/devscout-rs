@@ -5,8 +5,9 @@ use crate::extract;
 
 use super::call_shape_types::{FragDelegateSignature, FragLambdaShape};
 use super::fragment_types::{
-    FragDef, FragEnclosingCall, FragExtensionMethod, FragFact, FragHandlerRegistration,
-    FragLambdaSlot, FragName, FragPublish, FragRef, FragRegistration, FragUsing, Fragment,
+    FragArgType, FragDef, FragEnclosingCall, FragExtensionMethod, FragFact,
+    FragHandlerRegistration, FragLambdaSlot, FragName, FragPublish, FragRef, FragRegistration,
+    FragUsing, Fragment,
 };
 use super::ordered::OrderedMap;
 
@@ -214,6 +215,29 @@ pub fn fragment_from_extraction(e: &extract::Extraction) -> Fragment {
                         })
                         .collect()
                 }),
+                arg_types: r.arg_types.as_ref().map(|types| {
+                    types
+                        .iter()
+                        .map(|value| {
+                            value.as_ref().map(|value| match value {
+                                extract::ArgTypeRecord::Known(name) => {
+                                    FragArgType::Known(name.clone())
+                                }
+                                extract::ArgTypeRecord::Member {
+                                    owner,
+                                    member,
+                                    receiver_args,
+                                    call,
+                                } => FragArgType::Member {
+                                    owner: owner.clone(),
+                                    member: member.clone(),
+                                    receiver_args: receiver_args.clone(),
+                                    call: *call,
+                                },
+                            })
+                        })
+                        .collect()
+                }),
             })
             .collect(),
         names: e
@@ -346,6 +370,7 @@ pub fn markup_fragment(root: &Path, rel: &str) -> Option<Fragment> {
                 method_type_arg_count: None,
                 lambda_arg_shape: None,
                 receiver_type_qualified: None,
+                arg_types: None,
             })
             .collect(),
         names: facts

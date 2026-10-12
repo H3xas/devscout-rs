@@ -42,18 +42,20 @@ member bind to different callees leave the parameter untyped.
 
 ## Declaring-type binding
 
-**A precise `uses-member` edge binds the type that declares the member, as far as names and arity
-can tell.** The declaring type in the receiver's static chain — inherited, overridden and hidden
-members, interface members through interface, implementing-class and base-interface receivers,
-static members through bare, qualified and generic derived type names — is what the edge targets. An
-explicit interface implementation is a member only of its interface, so `this.M()` in a class that
-both inherits a public `M` and explicitly implements an interface's `M` binds the base. Three shapes
-are decided by information the graph does not carry and bind the wrong side of an `inherits` edge:
-same-arity overloads split across base and derived by parameter type; an `internal new` member
-hiding a public base member (only `public` counts as visible to a receiver other than `this`, so an
-`internal override` is a silent miss instead); and a `private new` field shadowing a public base
-property when read from outside its type. Each is pinned as a known false positive in
-`fixtures/csharp-direction`.
+**A precise `uses-member` edge binds the type that declares the member, as far as names, arity and
+known argument types can tell.** The declaring type in the receiver's static chain — inherited,
+overridden and hidden members, interface members through interface, implementing-class and
+base-interface receivers, static members through bare, qualified and generic derived type names — is
+what the edge targets. An explicit interface implementation is a member only of its interface, so
+`this.M()` in a class that both inherits a public `M` and explicitly implements an interface's `M`
+binds the base. A same-count overload whose parameter types reject a written argument's known type
+is skipped, and the walk continues to the base, sibling-interface or extension overload that accepts
+it; an argument of unknown type leaves every same-count overload available.
+Two shapes are decided by information the graph does not carry and bind the wrong side of an
+`inherits` edge: an `internal new` member hiding a public base member (only `public` counts as
+visible to a receiver other than `this`, so an `internal override` is a silent miss instead); and a
+`private new` field shadowing a public base property when read from outside its type. Each is pinned
+as a known false positive in `fixtures/csharp-direction`.
 
 ## Type-argument counts
 

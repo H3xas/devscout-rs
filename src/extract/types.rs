@@ -485,6 +485,28 @@ pub struct RefRecord {
     /// every other position), or `None` entirely when no position holds
     /// one.
     pub lambda_arg_shape: Option<Vec<Option<LambdaShape>>>,
+    /// One type fact per written value argument, in source order. A missing
+    /// slot means its type cannot be established from the available facts.
+    pub arg_types: Option<Vec<Option<ArgTypeRecord>>>,
+}
+
+/// A type known at extraction, or a member whose declared type needs the
+/// resolver's cross-file declaration index.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ArgTypeRecord {
+    /// A type descriptor already established from local syntax or symbols.
+    Known(String),
+    /// A member whose declared type will be read from the declaration index.
+    Member {
+        /// The receiver type name.
+        owner: String,
+        /// The member name.
+        member: String,
+        /// Explicit type arguments on the receiver, when available.
+        receiver_args: Option<Vec<String>>,
+        /// Whether the member is invoked as a method.
+        call: bool,
+    },
 }
 
 /// Represents `UsingRecord`.
@@ -641,6 +663,12 @@ pub struct Fact {
     /// (`A.Widget` and `B.Widget`) are two facts rather than one conflicted
     /// entry. Part of the equality the table compares.
     pub qualified_type: Option<String>,
+    /// Full declared type spelling for argument typing. Receiver inference
+    /// continues to use `type_name` and `args`.
+    pub descriptor: Option<String>,
+    /// Whether the fact may type a receiver. Argument-only facts preserve
+    /// the receiver inference boundary from before argument typing.
+    pub receiver_admissible: bool,
     /// The args value.
     pub args: Option<Vec<String>>,
     /// When set, the name's type is whatever the method of this name returns

@@ -3,7 +3,7 @@
 // a mismatch makes reuse break silently.
 //
 // This module owns every serde struct for graph.json + the fragments-cache
-// pair (fragments-v32.json, fragments-index-v32.json), plus their path resolution,
+// pair (fragments-v33.json, fragments-index-v33.json), plus their path resolution,
 // atomic I/O, and the cache-then-resolve-then-write orchestration
 // (`rebuild_graph`). The pure resolution ladder that
 // turns fragments into `defs`/`edges` lives in `resolve.rs` and returns the
@@ -76,6 +76,7 @@
 //     (`manifest::git_head`) -- `resolve_graph` (resolve.rs) calls THAT, so
 //     this module does not duplicate it.
 
+mod argument_types;
 mod artifact;
 mod cache;
 mod call_shape_types;
@@ -110,8 +111,8 @@ pub use edge::{
 };
 pub use fragment::{fragment_from_extraction, markup_fragment};
 pub use fragment_types::{
-    AnyFragment, FragDef, FragExtensionMethod, FragFact, FragLambdaSlot, FragName, FragRef,
-    FragRegistration, FragUsing, Fragment,
+    AnyFragment, FragArgType, FragDef, FragExtensionMethod, FragFact, FragLambdaSlot, FragName,
+    FragRef, FragRegistration, FragUsing, Fragment,
 };
 pub use imports::{
     imported_edges_json_path, parse_imported_edges, read_imported_edges, write_imported_edges,

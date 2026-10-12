@@ -218,6 +218,7 @@ pub(super) fn type_probe(raw: &str, ns: &str, outer_types: &[String]) -> FragRef
         method_type_arg_count: None,
         lambda_arg_shape: None,
         receiver_type_qualified: None,
+        arg_types: None,
     }
 }
 

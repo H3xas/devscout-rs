@@ -19,6 +19,7 @@ pub(super) fn property_hop_target(
     index: &DefIndex,
     aliases: &HashMap<String, String>,
     file_contexts: &HashMap<String, FileContext>,
+    source_file: &str,
 ) -> Option<usize> {
     let owner = r.receiver_property_owner.as_ref()?;
     let probe = name_probe(owner.clone(), ns, r.outer_types.clone());
@@ -40,5 +41,6 @@ pub(super) fn property_hop_target(
     ) else {
         return None;
     };
-    declares_here_for_ref(index, file_contexts, target_idx, r, false).then_some(target_idx)
+    declares_here_for_ref(index, file_contexts, target_idx, r, false, source_file)
+        .then_some(target_idx)
 }

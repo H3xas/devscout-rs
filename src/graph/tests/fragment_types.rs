@@ -1,6 +1,8 @@
 use super::*;
 use crate::extract;
 
+mod argument_types;
+
 // --- FragDef's new keys, appended last, omitted when empty ----------------------
 
 fn frag_def(
@@ -321,6 +323,7 @@ fn frag_ref(generic: bool, receiver_type: Option<&str>, arg_count: Option<usize>
         lambda_arg_arity: None,
         method_type_arg_count: None,
         lambda_arg_shape: None,
+        arg_types: None,
     }
 }
 

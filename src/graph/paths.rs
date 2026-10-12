@@ -172,16 +172,21 @@ pub fn rust_crates_path(root: &Path) -> PathBuf {
 // keep resolving through its tail, which the ladder's using and
 // graph-wide-uniqueness steps answer with whatever same-named type they
 // reach, where a fresh fragment of the same file resolves the written path.
+// v33 adds ref `argTypes`, an ordered static-type fact for each written call
+// argument, and records conversion, variance and selected result descriptors
+// in the existing `methodParams` table. A cached v32 fragment has none of
+// these facts, so a same-count overload that rejects the arguments could
+// still bind precisely ahead of an applicable base or extension method.
 // The rename IS the invalidation mechanism:
 // pre-bump caches stop being found, every file reparses
 // once, no reader carries version-compat logic. Writers delete every
 // superseded generation (see `remove_superseded_caches`).
 pub(crate) fn fragments_cache_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-v32.json")
+    graph_dir(root).join("fragments-v33.json")
 }
 
 pub(crate) fn fragments_index_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-index-v32.json")
+    graph_dir(root).join("fragments-index-v33.json")
 }
 
 // Every generation below the current one, not just the immediately previous:
@@ -250,6 +255,8 @@ pub(crate) const SUPERSEDED_CACHE_FILES: &[&str] = &[
     "fragments-index-v30.json",
     "fragments-v31.json",
     "fragments-index-v31.json",
+    "fragments-v32.json",
+    "fragments-index-v32.json",
 ];
 
 pub(crate) fn remove_superseded_caches(root: &Path) {
