@@ -12,7 +12,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 A query-answer and second-language release: every resolved answer states its full count and the next
 verb to run, `refs`, `read`, `impact` and `tests` answer for TypeScript and for Rust, `.mjs`, `.cjs`,
 `.mts` and `.cts` modules are indexed, the opt-in enriched lane reports when it degrades, and the
-precise tier drops its remaining wrong-target classes.
+precise tier fixes each wrong-target mechanism measured in 0.8.0, removing 115 of its 170
+wrong-target edges on the pinned benchmark corpus.
 The release tree is measured in [`docs/benchmarks/results/2026-10-12-release-0.9.0.md`](docs/benchmarks/results/2026-10-12-release-0.9.0.md).
 
 ### Added
@@ -325,7 +326,7 @@ artifact leaves the syntax-only graph exactly as before.
   [`docs/benchmarks/results/2026-09-resolver-precision.md`](docs/benchmarks/results/2026-09-resolver-precision.md)'s
   "Run 7" section for the measured result, and
   [`docs/benchmarks/results/2026-09-25-release-0.8.0.md`](docs/benchmarks/results/2026-09-25-release-0.8.0.md)
-  for the measurement of this release's tree. See [Compiler facts](README.md#compiler-facts).
+  for the measurement of this release's tree. See [Compiler facts](docs/guides/compiler-facts.md).
 - **CI exercises the enriched lane end to end.** The `semantic-audit` workflow job now also runs
   the oracle in `--emit compiler-facts` mode on the `csharp-semantic` fixture from the checkout
   root, so the artifact's `sourceSnapshot.headSha` is a real commit and its paths match the
@@ -428,7 +429,7 @@ produce, and the compiler-fact path's .NET target coverage is published per targ
   the real embedded build-context envelope's own per-compilation identity/fingerprint pairs rather
   than compared against a placeholder copy of itself. `engineRevision` moves to `"2"` and
   `artifactSchemaVersion` to `2`; `contractVersion` and the artifact filename are unchanged. See
-  [Compiler facts](README.md#compiler-facts).
+  [Compiler facts](docs/guides/compiler-facts.md).
 - **The Roslyn oracle emits a build-context envelope.** `tools/scout-semantic --emit context`
   writes one record per compilation identity (project path and name, requested target,
   configuration, platform), each carrying one of `complete`, `partial`, `unsupported`, `failed` or
@@ -453,8 +454,8 @@ produce, and the compiler-fact path's .NET target coverage is published per targ
   no same-table collision; it disambiguates two calls to one target that would otherwise serialize
   to byte-identical rows (for example two calls on one line), scoped to one table of one answer
   against one graph snapshot -- not a stable cross-run identity. No existing key is renamed, removed
-  or reordered and `schema_version` is unchanged. See [`docs/answer-contract.md`](docs/answer-contract.md#freshness)
-  and its [`occurrenceIndex`](docs/answer-contract.md#occurrenceindex) section.
+  or reordered and `schema_version` is unchanged. See [`docs/reference/json-output.md`](docs/reference/json-output.md#freshness)
+  and its [`occurrenceIndex`](docs/reference/json-output.md#occurrenceindex) section.
 - **A new offline semantic-truth harness and fixture pack** (`devscout_rs::truth`, dev/test
   infrastructure only, no new CLI verb): a versioned case manifest schema with independently
   reviewed expectations, span-based occurrence identity, a nine-row fault-control battery, a
