@@ -34,9 +34,12 @@ Five ways to run it:
      every commit message in the range. Exit 1 if any hit was found.
 
   4. `--require-signoff <git-log-range>` checks that every commit in the
-     range carries a `Signed-off-by:` trailer, printing one
-     `<sha>: missing Signed-off-by trailer` line per commit that lacks it.
-     Exit 1 if any commit is missing one, 0 otherwise.
+     range carries a conventional `Signed-off-by: Name <email>` trailer in
+     its final paragraph, printing one `<sha>: missing a conventional
+     Signed-off-by trailer` line per commit that lacks it. An empty or
+     unparseable range, and a range that selects no commits, are refused
+     with exit 1 rather than passed as zero checked commits. Exit 1 if any
+     commit is rejected or the range is unusable, 0 otherwise.
 
   5. `--selfcheck` recomputes this file's own sha256 (with the recorded
      HYGIENE_SHA256 value normalized out first, so the hash does not need
@@ -64,11 +67,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-HYGIENE_VERSION = "1.2.0"
+HYGIENE_VERSION = "1.3.0"
 # Frozen by hashing this file with this value normalized to 64 zeros first;
 # --selfcheck redoes that normalization, so editing the body without
 # refreshing this constant is exactly the drift --selfcheck exists to catch.
-HYGIENE_SHA256 = "4fad4465a36f608499c554cd0d8db1ab42285174d873832d7a3a0df04bee22f5"
+HYGIENE_SHA256 = "7b39d7e415eeda399869b8f3e4bf0dd03d4aad3bead7f57b2631e2857c1d36b2"
 
 # `--scan` with no explicit paths now walks every git-tracked file (see
 # should_ignore_for_scan for what still gets skipped). Kept as a name, not a
@@ -124,7 +127,15 @@ PLAN_LABEL_RE = re.compile(
 # ---- the commit-message classes -------------------------------------------
 
 COMMIT_TRAILER_RE = re.compile(r"\b(Co-Authored-By|Claude-Session|Generated with)\b")
-SIGNOFF_TRAILER_RE = re.compile(r"^Signed-off-by:\s*\S", re.MULTILINE)
+# A DCO trailer is a conventional `Signed-off-by: Name <email>` line. The name
+# must be non-empty and the address must carry both an `@` and a dotted
+# domain, so a lookalike such as `Signed-off-by: someone`, a bare
+# `Signed-off-by:`, or a value without a real address is a malformed
+# declaration rather than an accepted one.
+SIGNOFF_TRAILER_RE = re.compile(
+    r"^Signed-off-by:[ \t]+\S[^<>]*[ \t]+<[^<>\s@]+@[^<>\s@]+\.[^<>\s@]+>[ \t]*$",
+    re.MULTILINE,
+)
 
 
 def has_tool_name(line):
@@ -450,11 +461,29 @@ def scan_commits_mode(commit_range):
     return 1 if hits else 0
 
 
+def has_signoff_trailer(body):
+    """True when `body`'s final paragraph carries a conventional DCO trailer.
+    A sign-off that looks valid but sits in the prose, with a later paragraph
+    after it, is not a trailer and is refused."""
+    text = body.strip("\n").rstrip()
+    if not text:
+        return False
+    last_paragraph = re.split(r"\n[ \t]*\n", text)[-1]
+    return bool(SIGNOFF_TRAILER_RE.search(last_paragraph))
+
+
 def require_signoff_mode(commit_range):
-    """Check every commit in `commit_range` carries a Signed-off-by trailer.
-    Unlike scan_commits_mode this needs commit boundaries, not just lines, so
-    it walks one NUL/STX-delimited record per commit rather than the raw
-    line stream."""
+    """Check every commit in `commit_range` carries a conventional
+    Signed-off-by trailer in its final paragraph. Unlike scan_commits_mode
+    this needs commit boundaries, not just lines, so it walks one
+    NUL/STX-delimited record per commit rather than the raw line stream.
+
+    An empty or unparseable range, and a range that resolves to no commits,
+    are refusals: a checker that reported success over an empty selection
+    would pass commits it never read."""
+    if not commit_range or not commit_range.strip():
+        print("comment-hygiene: --require-signoff needs a non-empty range", file=sys.stderr)
+        return 1
     try:
         out = subprocess.run(
             ["git", "log", "--format=%H%x00%B%x02", commit_range],
@@ -463,22 +492,29 @@ def require_signoff_mode(commit_range):
             text=True,
         )
     except Exception as exc:
-        print(f"comment-hygiene: git log failed: {exc}", file=sys.stderr)
+        print(f"comment-hygiene: git log failed for range {commit_range!r}: {exc}", file=sys.stderr)
         return 1
 
+    checked = 0
     hits = []
     for record in out.stdout.split("\x02"):
         record = record.strip("\n")
         if not record:
             continue
         sha, _, body = record.partition("\x00")
-        if not SIGNOFF_TRAILER_RE.search(body):
+        checked += 1
+        if not has_signoff_trailer(body):
             short_sha = sha[:12] if sha else "?"
-            hits.append(f"{short_sha}: missing Signed-off-by trailer")
+            hits.append(f"{short_sha}: missing a conventional Signed-off-by trailer")
 
     for hit in hits:
         print(hit)
-    return 1 if hits else 0
+    if hits:
+        return 1
+    if checked == 0:
+        print(f"comment-hygiene: range {commit_range!r} selects no commits", file=sys.stderr)
+        return 1
+    return 0
 
 
 # ---- selfcheck mode ---------------------------------------------------------
