@@ -62,10 +62,11 @@ fn expression_type(
 ) -> Option<ArgTypeRecord> {
     let known = |name: &str| Some(ArgTypeRecord::Known(name.to_string()));
     match expression.kind() {
-        "string_literal"
-        | "raw_string_literal"
-        | "verbatim_string_literal"
-        | "interpolated_string_expression" => known("string"),
+        "string_literal" | "raw_string_literal" | "verbatim_string_literal" => known("string"),
+        // Every interpolated form -- `$"..."`, `$@"..."`, `@$"..."` and the
+        // raw `$"""..."""` -- is one `interpolated_string_expression` node, so
+        // one arm tells them all apart from a plain string literal.
+        "interpolated_string_expression" => known(super::types::INTERPOLATED_ARG_DESCRIPTOR),
         "character_literal" => known("char"),
         "boolean_literal" => known("bool"),
         "null_literal" => known("null"),

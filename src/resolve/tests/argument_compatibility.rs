@@ -74,3 +74,100 @@ fn known_arguments_still_admit_dynamic_nullable_and_unknown_external_pairs() {
     ];
     assert_eq!(targets(&files), vec!["App.Receiver"; 3]);
 }
+
+// --- interpolated string handler parameters -------------------------------
+
+#[test]
+fn interpolated_handler_ac_1_the_mark_merges_across_partial_declarations() {
+    let files = [
+        ("Domain/Handlers.cs", "namespace App { public partial struct LogHandler { public LogHandler(int literalLength, int formattedCount) {} } }"),
+        ("Domain/Handlers.Marked.cs", "namespace App { [InterpolatedStringHandler] public partial struct LogHandler {} }"),
+        ("Domain/Logger.cs", "namespace App { public class Logger { public void Log(LogHandler handler) {} } }"),
+        ("Use/Run.cs", "namespace App { public class Runner { public void Run(Logger logger, int n) { logger.Log($\"count {n}\"); } } }"),
+    ];
+    assert_eq!(targets(&files), vec!["App.Logger"]);
+}
+
+#[test]
+fn interpolated_handler_ac_3_a_marked_handler_parameter_takes_an_interpolated_argument() {
+    let files = [
+        ("Domain/Logging.cs", "namespace App { [System.Runtime.CompilerServices.InterpolatedStringHandler] public ref struct LogHandler { public LogHandler(int literalLength, int formattedCount) {} } public class Logger { public void Log(LogHandler handler) {} } }"),
+        ("Use/Run.cs", "namespace App { public class Runner { public void Run(Logger logger, int n) { logger.Log($\"count {n}\"); } } }"),
+    ];
+    assert_eq!(targets(&files), vec!["App.Logger"]);
+}
+
+#[test]
+fn interpolated_handler_ac_3_a_modified_handler_after_a_leading_parameter_binds() {
+    let files = [
+        ("Domain/Check.cs", "namespace App { [InterpolatedStringHandler] public struct CheckHandler {} public class Checker { public void Check(bool strict, ref CheckHandler handler) {} } }"),
+        ("Use/Run.cs", "namespace App { public class Runner { public void Run(Checker checker, bool strict) { checker.Check(strict, $\"v{strict}\"); } } }"),
+    ];
+    assert_eq!(targets(&files), vec!["App.Checker"]);
+}
+
+#[test]
+fn interpolated_handler_ac_3_a_nested_handler_type_binds_its_declaring_type() {
+    let files = [
+        ("Domain/Outer.cs", "namespace App { public class Outer { [InterpolatedStringHandler] public struct Nested { } public void Send(Nested handler) {} } }"),
+        ("Use/Run.cs", "namespace App { public class Runner { public void Run(Outer outer) { outer.Send($\"n\"); } } }"),
+    ];
+    assert_eq!(targets(&files), vec!["App.Outer"]);
+}
+
+#[test]
+fn interpolated_handler_ac_3_a_base_declared_handler_overload_binds_on_a_derived_receiver() {
+    let files = [
+        ("Domain/Base.cs", "namespace App { [InterpolatedStringHandler] public struct LogHandler {} public class BaseLogger { public void Log(LogHandler handler) {} } }"),
+        ("Domain/Derived.cs", "namespace App { public class Logger : BaseLogger {} }"),
+        ("Use/Run.cs", "namespace App { public class Runner { public void Run(Logger logger) { logger.Log($\"d\"); } } }"),
+    ];
+    assert_eq!(targets(&files), vec!["App.BaseLogger"]);
+}
+
+#[test]
+fn interpolated_handler_ac_3_an_extension_method_taking_a_handler_binds_its_class() {
+    let files = [
+        ("Domain/Log.cs", "namespace App { [InterpolatedStringHandler] public struct LogHandler {} public class Logger { } public static class LogExtensions { public static void Log(this Logger logger, LogHandler handler) {} } }"),
+        ("Use/Run.cs", "namespace App { public class Runner { public void Run(Logger logger) { logger.Log($\"x\"); } } }"),
+    ];
+    assert_eq!(targets(&files), vec!["App.LogExtensions"]);
+}
+
+#[test]
+fn interpolated_handler_ac_4_plain_strings_against_a_marked_handler_keep_the_extension() {
+    let files = [
+        ("Domain/Log.cs", "namespace App { [InterpolatedStringHandler] public struct LogHandler {} public class Logger { public void Log(LogHandler handler) {} } public static class LogExtensions { public static void Log(this Logger logger, string message) {} } }"),
+        ("Use/Run.cs", "namespace App { public class Runner { public void Run(Logger logger, string message) {\n logger.Log(\"plain\");\n logger.Log(message);\n } } }"),
+    ];
+    assert_eq!(targets(&files), vec!["App.LogExtensions"; 2]);
+}
+
+#[test]
+fn interpolated_handler_ac_4_interpolated_arguments_against_unmarked_and_fixed_types_keep_the_extension(
+) {
+    let files = [
+        ("Domain/Types.cs", "namespace App { public class StopContext {} public class Receiver { public void Stop(StopContext context) {} public void Count(int value) {} public void Delay(TimeSpan due) {} } public static class ReceiverExtensions { public static void Stop(this Receiver receiver, string reason) {} public static void Count(this Receiver receiver, string value) {} public static void Delay(this Receiver receiver, string value) {} } }"),
+        ("Use/Run.cs", "namespace App { public class Runner { public void Run(Receiver receiver) { receiver.Stop($\"a\"); receiver.Count($\"b\"); receiver.Delay($\"c\"); } } }"),
+    ];
+    assert_eq!(targets(&files), vec!["App.ReceiverExtensions"; 3]);
+}
+
+#[test]
+fn interpolated_handler_ac_4_string_object_formattable_and_external_parameters_keep_the_declaring_type(
+) {
+    let files = [
+        ("Domain/Types.cs", "namespace App { public class Receiver { public void Text(string value) {} public void Any(object value) {} public void Format(IFormattable value) {} public void Formattable(FormattableString value) {} public void External(System.Text.StringBuilder value) {} } }"),
+        ("Use/Run.cs", "namespace App { public class Runner { public void Run(Receiver receiver) { receiver.Text($\"a\"); receiver.Any($\"b\"); receiver.Format($\"c\"); receiver.Formattable($\"d\"); receiver.External($\"e\"); } } }"),
+    ];
+    assert_eq!(targets(&files), vec!["App.Receiver"; 5]);
+}
+
+#[test]
+fn interpolated_handler_ac_4_a_declared_string_conversion_keeps_the_handler_overload() {
+    let files = [
+        ("Domain/Log.cs", "namespace App { [InterpolatedStringHandler] public struct LogHandler { public static implicit operator LogHandler(string value) => default; } public class Logger { public void Log(LogHandler handler) {} } public static class LogExtensions { public static void Log(this Logger logger, string message) {} } }"),
+        ("Use/Run.cs", "namespace App { public class Runner { public void Run(Logger logger) { logger.Log(\"done\"); } } }"),
+    ];
+    assert_eq!(targets(&files), vec!["App.Logger"]);
+}

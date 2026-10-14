@@ -7,6 +7,20 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **An interpolated string argument binds an in-graph `[InterpolatedStringHandler]` parameter.** A call
+  whose argument is written `$"…"` — regular, verbatim (`$@"…"`, `@$"…"`) or raw (`$"""…"""`), with or
+  without holes, parenthesized or not — is recorded apart from a plain string and is admitted at a
+  parameter whose type resolves to a type declared with `[InterpolatedStringHandler]` (bare, with the
+  `Attribute` suffix, namespace-qualified or `global::`-qualified, on any one of a type's partial
+  declarations), so the call binds the handler parameter's declaring type precisely again. Every other
+  comparison still reads the argument as `string`: a string literal or a string-typed local against a
+  handler parameter that declares no implicit conversion keeps the argument-type veto, an interpolated
+  string against an unmarked in-graph parameter keeps it too, so the calls that bind an extension method
+  behind an instance overload taking a `StopContext` bind it as before. The fragment cache moves to
+  `fragments-v34.json`, so an existing cache re-extracts once.
+
 ## [0.9.0] - 2026-10-12
 
 A query-answer and second-language release: every resolved answer states its full count and the next
