@@ -37,6 +37,9 @@ jobs:
       - name: Docs hygiene (tracker ids and acceptance-check labels)
         run: sh tools/check-docs-hygiene.sh
 
+      - name: Docs hygiene self-test
+        run: sh tools/check-docs-hygiene-selftest.sh
+
       - name: Size and complexity ratchet
         run: sh tools/check-size-and-complexity.sh
 
