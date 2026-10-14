@@ -16,8 +16,21 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `Widgets./*c*/Widget` and `Widgets.` followed by a line break and `Widget` all read as
   `Widgets.Widget`. The raw source text used to reach the resolution ladder, match no def path, and
   drop a precise edge to a guess. A name whose subtree holds a parse error keeps its source text and
-  so binds nothing new. This moves the fragment cache to the `fragments-v34.json` /
-  `fragments-index-v34.json` generation, so a cache an earlier version wrote is re-extracted once.
+  so binds nothing new. This first moved the fragment cache to the `fragments-v34.json` /
+  `fragments-index-v34.json` generation; the handler change below advances the release's current
+  cache to v35, so an existing cache re-extracts once.
+
+- **An interpolated string argument binds an in-graph `[InterpolatedStringHandler]` parameter.** A call
+  whose argument is written `$"…"` — regular, verbatim (`$@"…"`, `@$"…"`) or raw (`$"""…"""`), with or
+  without holes, parenthesized or not — is recorded apart from a plain string and is admitted at a
+  parameter whose type resolves to a type declared with `[InterpolatedStringHandler]` (bare, with the
+  `Attribute` suffix, namespace-qualified or `global::`-qualified, on any one of a type's partial
+  declarations), so the call binds the handler parameter's declaring type precisely again. Every other
+  comparison still reads the argument as `string`: a string literal or a string-typed local against a
+  handler parameter that declares no implicit conversion keeps the argument-type veto, an interpolated
+  string against an unmarked in-graph parameter keeps it too, so the calls that bind an extension method
+  behind an instance overload taking a `StopContext` bind it as before. The fragment cache moves to
+  `fragments-v35.json`, so an existing cache re-extracts once.
 
 ## [0.9.0] - 2026-10-12
 

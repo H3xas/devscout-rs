@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use tree_sitter::Node;
 
-use super::argument_member_types::append_argument_member_types;
+use super::argument_member_types::{append_argument_member_types, append_declaration_marks};
 use super::receivers::type_fact;
 use super::refs::{
     base_type_identifier, generic_arg_descriptors, type_descriptor, type_parameter_names,
@@ -158,7 +158,11 @@ pub(super) fn raw_method_params(
         )];
     }
     let Some(body) = node.child_by_field_name("body") else {
-        return Vec::new();
+        // A positional record writes `;` where every other kind writes a body,
+        // and its own attributes still contribute their declaration marks.
+        let mut pairs: Vec<(String, Vec<Vec<String>>)> = Vec::new();
+        append_declaration_marks(node, src, &mut pairs);
+        return pairs;
     };
     let mut pairs: Vec<(String, Vec<Vec<String>>)> = Vec::new();
     for c in named_children(body) {
@@ -707,7 +711,7 @@ const ATTRIBUTE_SUFFIX: &str = "Attribute";
 // the last dot names the type, and C# lets a usage site drop the `Attribute`
 // suffix, so both spellings of the same name are offered and either one
 // matching is a match.
-fn attribute_names(node: Node, src: &[u8]) -> HashSet<String> {
+pub(super) fn attribute_names(node: Node, src: &[u8]) -> HashSet<String> {
     let mut names = HashSet::new();
     for list in named_children(node) {
         if list.kind() != "attribute_list" {

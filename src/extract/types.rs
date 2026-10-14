@@ -490,6 +490,22 @@ pub struct RefRecord {
     pub arg_types: Option<Vec<Option<ArgTypeRecord>>>,
 }
 
+/// The descriptor an interpolated string argument records instead of `string`.
+///
+/// C# may bind `$"..."` to an `[InterpolatedStringHandler]` parameter, so the
+/// resolver must tell the two apart; every other comparison reads it as
+/// `string`. Reserved like the `@`-prefixed `methodParams` keys, and never a
+/// type descriptor `type_descriptor` produces from source.
+pub const INTERPOLATED_ARG_DESCRIPTOR: &str = "@interpolated-string";
+
+/// The reserved `methodParams` key marking a type declared with
+/// `[InterpolatedStringHandler]`, beside `@implicit-conversion`.
+///
+/// It carries one empty overload, so the merged type carries the mark however
+/// many partial declarations spell the attribute, and no member projection
+/// reads parameters from it.
+pub const INTERPOLATED_HANDLER_MARK: &str = "@interpolated-string-handler";
+
 /// A type known at extraction, or a member whose declared type needs the
 /// resolver's cross-file declaration index.
 #[derive(Debug, Clone, PartialEq, Eq)]
