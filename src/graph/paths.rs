@@ -177,21 +177,22 @@ pub fn rust_crates_path(root: &Path) -> PathBuf {
 // in the existing `methodParams` table. A cached v32 fragment has none of
 // these facts, so a same-count overload that rejects the arguments could
 // still bind precisely ahead of an applicable base or extension method.
-// v34 records an interpolated string argument under its own descriptor and
-// marks a type declared `[InterpolatedStringHandler]` in the `methodParams`
-// table. A cached v33 fragment has neither, so an interpolated string passed
-// to a handler parameter would still compare as a plain `string` and veto the
-// overload C# selects.
+// v34 records every dotted name the C# extractor builds out of a qualified path's own tokens, a
+// separate change that already owns that generation on the integration target.
+// v35 records an interpolated string argument under its own descriptor and marks a type declared
+// `[InterpolatedStringHandler]` in the `methodParams` table. A cached v33 fragment has neither, and
+// a cached v34 pair carries the other change's facts only, so a map that reused either would still
+// compare the interpolated string as a plain `string` and veto the overload C# selects.
 // The rename IS the invalidation mechanism:
 // pre-bump caches stop being found, every file reparses
 // once, no reader carries version-compat logic. Writers delete every
 // superseded generation (see `remove_superseded_caches`).
 pub(crate) fn fragments_cache_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-v34.json")
+    graph_dir(root).join("fragments-v35.json")
 }
 
 pub(crate) fn fragments_index_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-index-v34.json")
+    graph_dir(root).join("fragments-index-v35.json")
 }
 
 // Every generation below the current one, not just the immediately previous:
@@ -264,6 +265,8 @@ pub(crate) const SUPERSEDED_CACHE_FILES: &[&str] = &[
     "fragments-index-v32.json",
     "fragments-v33.json",
     "fragments-index-v33.json",
+    "fragments-v34.json",
+    "fragments-index-v34.json",
 ];
 
 pub(crate) fn remove_superseded_caches(root: &Path) {

@@ -19,7 +19,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   handler parameter that declares no implicit conversion keeps the argument-type veto, an interpolated
   string against an unmarked in-graph parameter keeps it too, so the calls that bind an extension method
   behind an instance overload taking a `StopContext` bind it as before. The fragment cache moves to
-  `fragments-v34.json`, so an existing cache re-extracts once.
+  `fragments-v35.json`, so an existing cache re-extracts once.
 
 ## [0.9.0] - 2026-10-12
 
