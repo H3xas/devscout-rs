@@ -1,31 +1,43 @@
 //! Query-time index-freshness state for a programmatic consumer.
 //!
-//! `manifest::freshness_warning` already detects a stale index -- source
-//! edited since the graph was last built, at the same HEAD -- but only as a
-//! human-readable stderr line, and it collapses three different conditions
-//! into the same `None`: no `index-state.json` sidecar, git unavailable, and
-//! a genuinely fresh index. A `--json` consumer needs to tell those apart:
-//! "verified fresh" is not the same claim as "cannot tell". This module
-//! calls the exact same primitives `freshness_warning` does
-//! (`manifest::read_index_state`, `manifest::git_head`,
-//! `manifest::dirty_indexed_files_at`, `manifest::read_manifest`) so the two
-//! answers can never disagree about the underlying facts, only about how
-//! much of the distinction each one exposes. `manifest.rs` itself is frozen
-//! at its current line count and gains no new logic here -- this is a
-//! separate call site over its existing public functions, not a refactor of
-//! it, so the frozen file's own stderr text and tests are untouched.
+//! An index is `fresh` only when the worktree asking published it and the bytes
+//! it indexed -- dirty files included, compared by content -- still match the
+//! working tree. Anything else is `stale`, or `unknown` with a reason. The
+//! distinction matters because "verified fresh" is a much stronger claim than
+//! "cannot tell", and the `--json` contract exists so a machine reader can act
+//! on the difference.
+//!
+//! The state, the record it is read from and the validation that produces it
+//! live apart on purpose:
+//!
+//! - [`record`] owns the on-disk format: the published record, the in-progress
+//!   marker, the content-digest table and the artifact identities;
+//! - [`publish`] owns the `map` side -- the lock, the marker, the final write;
+//! - [`validate`] owns the query side -- one validation per invocation,
+//!   bracketing the artifacts the answer came from, inside three caps;
+//! - [`status`] owns the one `git status` reader both sides call;
+//! - [`relevance`] owns which paths a change to can invalidate an index.
+//!
+//! The stderr lines live here, next to the states they describe, so a reader
+//! can compare the human wording with the machine word in one place.
 
-use std::collections::HashSet;
+pub mod publish;
+pub mod record;
+pub mod relevance;
+pub mod status;
+pub mod validate;
+
 use std::path::Path;
 
-use crate::manifest::{self, Value};
+pub use record::{DigestTable, Record, RecordState};
+pub use status::StatusError;
 
 /// The query-time freshness state of an indexed root. Scoped to one root at
 /// the moment it is computed; carries no cross-query identity of its own.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FreshnessState {
-    /// The index matches the working tree: the same HEAD as when it was
-    /// built, and no indexed file has gone dirty since.
+    /// The index matches the working tree: this worktree published it, at the
+    /// same HEAD, and no indexed byte differs.
     Fresh,
     /// The index is behind the working tree.
     Stale {
@@ -33,8 +45,8 @@ pub enum FreshnessState {
         indexed_head: String,
         /// The HEAD the working tree is at now.
         current_head: String,
-        /// How many indexed files are dirty now but were not dirty when the
-        /// index was built.
+        /// How many indexed or configuration files differ from the bytes the
+        /// index recorded.
         changed_files: usize,
     },
     /// Freshness could not be established either way.
@@ -46,18 +58,26 @@ pub enum FreshnessState {
 
 /// Why [`FreshnessState::Unknown`] could not resolve further.
 ///
-/// Collapsed together on `manifest::freshness_warning`'s stderr path (both
-/// read as silence there); distinguished here because a machine reader must
-/// be able to act differently on "never indexed with this feature" than on
-/// "git is unavailable".
+/// These are not collapsed: a machine reader must be able to act differently on
+/// "this index belongs to another worktree" than on "git is unavailable" than on
+/// "there were more changes than the check reads".
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnknownReason {
-    /// No `index-state.json` sidecar was found or it did not parse -- an
-    /// index built before this sidecar existed, or a corrupt one.
+    /// No freshness record was found, or the one there cannot certify anything
+    /// -- an index built before this record existed, a 0.9.0 one, or a corrupt
+    /// one.
     NoIndexState,
-    /// `git rev-parse HEAD` did not resolve -- git unavailable, or this root
-    /// is not (or is no longer) a git repository.
+    /// Git could not answer: `rev-parse HEAD` did not resolve, or the status
+    /// read failed. Also this root not being a git repository at all.
     GitUnavailable,
+    /// The index was published by a different worktree of this repository.
+    OtherWorktree,
+    /// The change set exceeded one of the validation caps, so freshness could
+    /// not be verified inside the budget.
+    ValidationBudget,
+    /// The index was replaced or re-published while this query ran, or a `map`
+    /// is running or was interrupted.
+    IndexChanged,
 }
 
 impl UnknownReason {
@@ -67,89 +87,80 @@ impl UnknownReason {
         match self {
             UnknownReason::NoIndexState => "no-index-state",
             UnknownReason::GitUnavailable => "git-unavailable",
+            UnknownReason::OtherWorktree => "other-worktree",
+            UnknownReason::ValidationBudget => "validation-budget",
+            UnknownReason::IndexChanged => "index-changed",
         }
     }
 }
 
-// The default scope `manifest::freshness_warning` falls back to when the
-// manifest carries no non-empty `scoped_dirs` -- kept in step with that
-// function's own fallback deliberately, not derived from it (it is not
-// exposed as a constant there).
-fn default_scope() -> Vec<String> {
-    vec![".".to_string()]
+/// How a root is named in a stderr line: its own directory name, the same word
+/// the 0.9.0 stale line used.
+#[must_use]
+pub fn repo_id(root: &Path) -> String {
+    root.file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("repo")
+        .to_string()
 }
 
-fn string_array(v: &Value) -> Option<Vec<String>> {
-    match v {
-        Value::Array(items) => Some(
-            items
-                .iter()
-                .filter_map(Value::as_str)
-                .map(str::to_string)
-                .collect(),
-        ),
-        _ => None,
-    }
+fn short(head: &str) -> &str {
+    &head[..head.len().min(7)]
 }
 
-/// Computes [`FreshnessState`] for `root`, from the same primitives
-/// `manifest::freshness_warning` uses.
+/// The stale line, byte for byte the format 0.9.0 printed.
+#[must_use]
+pub fn stale_line(repo: &str, indexed_head: &str, current_head: &str, changed: usize) -> String {
+    format!(
+        "devscout: index for {repo} is stale (indexed at {}, HEAD {}; {changed} changed files) — rebuild with devscout map",
+        short(indexed_head),
+        short(current_head),
+    )
+}
+
+/// The line for an index another worktree published.
+#[must_use]
+pub fn other_worktree_line(repo: &str) -> String {
+    format!(
+        "devscout: index for {repo} was built in another worktree — run devscout map here to use it"
+    )
+}
+
+/// The line for an index that changed under a running query, or one a `map` is
+/// mid-way through writing.
+#[must_use]
+pub fn index_changed_line(repo: &str) -> String {
+    format!(
+        "devscout: index for {repo} changed while this query ran, or a map is running or was interrupted — re-run the query, or rebuild with devscout map"
+    )
+}
+
+/// The line for a change set past the validation caps.
+#[must_use]
+pub fn validation_budget_line(repo: &str) -> String {
+    format!(
+        "devscout: freshness of the index for {repo} could not be verified (more changes than the check reads) — rebuild with devscout map"
+    )
+}
+
+/// The line for a record this build cannot certify -- a 0.9.0 index, or a
+/// corrupt one.
+#[must_use]
+pub fn uncertifiable_line(repo: &str) -> String {
+    format!(
+        "devscout: index for {repo} has no freshness record this version can verify — rebuild with devscout map"
+    )
+}
+
+/// Computes [`FreshnessState`] for `root`, as the library convenience over a
+/// full validation asked from `root` itself.
+///
+/// The caller keeps the state only; the stderr line [`validate::Begin::finish`]
+/// also returns belongs to whoever prints it, and this entry point prints
+/// nothing.
 #[must_use]
 pub fn index_freshness_state(root: &Path) -> FreshnessState {
-    let Some(state) = manifest::read_index_state(root) else {
-        return FreshnessState::Unknown {
-            reason: UnknownReason::NoIndexState,
-        };
-    };
-    let Some(stored_head) = state
-        .get("head")
-        .and_then(Value::as_str)
-        .map(str::to_string)
-    else {
-        return FreshnessState::Unknown {
-            reason: UnknownReason::NoIndexState,
-        };
-    };
-    let Some(current_head) = manifest::git_head(root) else {
-        return FreshnessState::Unknown {
-            reason: UnknownReason::GitUnavailable,
-        };
-    };
-
-    let manifest_doc = manifest::read_manifest(root).ok().flatten();
-    let indexed_files: HashSet<String> = manifest_doc
-        .as_ref()
-        .and_then(|m| m.get("entries"))
-        .and_then(Value::as_object)
-        .map(|entries| entries.iter().map(|(k, _)| k.clone()).collect())
-        .unwrap_or_default();
-    let scope: Vec<String> = manifest_doc
-        .as_ref()
-        .and_then(|m| m.get("scoped_dirs"))
-        .and_then(string_array)
-        .filter(|v: &Vec<String>| !v.is_empty())
-        .unwrap_or_else(default_scope);
-
-    let current_dirty = manifest::dirty_indexed_files_at(root, &scope, &indexed_files);
-    let baseline_dirty: HashSet<String> = state
-        .get("dirty_indexed_files")
-        .and_then(string_array)
-        .map(|v| v.into_iter().collect())
-        .unwrap_or_default();
-    let changed_files = current_dirty
-        .iter()
-        .filter(|p| !baseline_dirty.contains(*p))
-        .count();
-
-    if current_head == stored_head && changed_files == 0 {
-        FreshnessState::Fresh
-    } else {
-        FreshnessState::Stale {
-            indexed_head: stored_head,
-            current_head,
-            changed_files,
-        }
-    }
+    validate::begin(root, root).finish().state
 }
 
 #[cfg(test)]
@@ -178,5 +189,27 @@ mod tests {
     fn unknown_reason_words_are_stable() {
         assert_eq!(UnknownReason::NoIndexState.as_str(), "no-index-state");
         assert_eq!(UnknownReason::GitUnavailable.as_str(), "git-unavailable");
+        assert_eq!(UnknownReason::OtherWorktree.as_str(), "other-worktree");
+        assert_eq!(
+            UnknownReason::ValidationBudget.as_str(),
+            "validation-budget"
+        );
+        assert_eq!(UnknownReason::IndexChanged.as_str(), "index-changed");
+    }
+
+    #[test]
+    fn each_reason_has_its_own_line_with_a_stable_key_phrase() {
+        assert!(other_worktree_line("repo").contains("another worktree"));
+        assert!(index_changed_line("repo").contains("changed while"));
+        assert!(validation_budget_line("repo").contains("could not be verified"));
+        assert!(uncertifiable_line("repo").contains("rebuild with devscout map"));
+    }
+
+    #[test]
+    fn the_stale_line_keeps_the_legacy_shape() {
+        assert_eq!(
+            stale_line("repo", "abcdef0123", "1234567890", 2),
+            "devscout: index for repo is stale (indexed at abcdef0, HEAD 1234567; 2 changed files) — rebuild with devscout map"
+        );
     }
 }

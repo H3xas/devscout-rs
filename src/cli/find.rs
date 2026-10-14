@@ -8,7 +8,7 @@ use crate::graph;
 use crate::manifest;
 use crate::query;
 
-use super::answer::{finish_query, EXIT_NO_RESULT};
+use super::answer::{begin_validation, finish_query, EXIT_NO_RESULT};
 use super::root::require_repo;
 
 // Output caps: an uncapped find can dump the whole near-match pool (measured
@@ -36,6 +36,8 @@ pub(crate) fn cmd_find(cwd: &Path, query_str: &str, resources: bool) -> (i32, St
         Ok(r) => r,
         Err(e) => return (1, format!("error: {e}")),
     };
+    // One validation per invocation, opened before any index artifact is read.
+    begin_validation(&root, cwd);
     if query_str.is_empty() {
         return (2, "usage: devscout find <query> [--resources]".to_string());
     }

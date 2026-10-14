@@ -178,15 +178,21 @@ pub struct DefaultPurposeDetail {
 /// Decode is lossy so a strict UTF-8 read cannot drop real files carrying stray
 /// non-UTF-8 bytes (seen in the wild in comments).
 pub fn default_purpose_detailed(root: &Path, rel: &str) -> DefaultPurposeDetail {
-    let text = match fs::read(root.join(rel)) {
-        Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
-        Err(_) => {
-            return DefaultPurposeDetail {
-                text: String::new(),
-                is_comment: false,
-            }
-        }
-    };
+    match fs::read(root.join(rel)) {
+        Ok(bytes) => default_purpose_detailed_in(&String::from_utf8_lossy(&bytes)),
+        Err(_) => DefaultPurposeDetail {
+            text: String::new(),
+            is_comment: false,
+        },
+    }
+}
+
+/// [`default_purpose_detailed`] over bytes the caller already read.
+///
+/// A `map` that hashes a file derives its heuristic purpose from the same bytes
+/// the digest describes, instead of reading the file again.
+#[must_use]
+pub fn default_purpose_detailed_in(text: &str) -> DefaultPurposeDetail {
     for raw in text.split('\n').take(15) {
         // `char::is_whitespace` does not include U+FEFF (ZWNBSP/BOM), so a
         // BOM-prefixed first line would keep the BOM in the purpose text

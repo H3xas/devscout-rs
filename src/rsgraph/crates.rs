@@ -1,6 +1,6 @@
 //! Cargo packages in the mapped scope: their crate roots and library names.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::io;
 use std::path::Path;
@@ -76,6 +76,18 @@ pub fn discover(
     scope: &[String],
     rs_files: &[String],
 ) -> io::Result<Option<RustCrates>> {
+    discover_with_digests(root, scope, rs_files, &mut BTreeMap::new())
+}
+
+/// [`discover`] recording a content digest for every manifest it parsed into
+/// `digests`, so a caller certifying the Cargo model reads the bytes this scan
+/// read rather than reading the file again.
+pub fn discover_with_digests(
+    root: &Path,
+    scope: &[String],
+    rs_files: &[String],
+    digests: &mut BTreeMap<String, String>,
+) -> io::Result<Option<RustCrates>> {
     let walked: HashSet<&str> = rs_files.iter().map(String::as_str).collect();
     let mut packages = Vec::new();
     for rel in crate::walk::list_files_with_ext(root, scope, &[".toml"])? {
@@ -85,6 +97,7 @@ pub fn discover(
         let Ok(bytes) = fs::read(root.join(&rel)) else {
             continue;
         };
+        digests.insert(rel.clone(), crate::freshness::record::sha256_hex(&bytes));
         let dir = rel
             .strip_suffix("Cargo.toml")
             .unwrap_or("")

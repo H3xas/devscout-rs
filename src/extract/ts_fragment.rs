@@ -1,5 +1,4 @@
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
 
 use tree_sitter::Node;
 
@@ -679,18 +678,13 @@ pub struct TsFileExtraction {
 /// Parses TypeScript-family source into its optional purpose and graph fragment.
 ///
 /// Returns `None` when the selected grammar cannot parse the source.
-pub fn extract_ts_file(
-    root: &Path,
-    rel: &str,
-    source: &str,
-    grammar: crate::parse::TsGrammar,
-) -> Option<TsFileExtraction> {
+pub fn extract_ts_file(source: &str, grammar: crate::parse::TsGrammar) -> Option<TsFileExtraction> {
     let units = crate::parse::utf16_units(source);
     let tree = crate::parse::parse_ts_js(&units, grammar)?;
     let src = crate::parse::utf16_bytes(&units);
     let root_node = tree.root_node();
     let purpose = ts_purpose_segments(root_node, &src).map(|raw| {
-        let detail = crate::walk::default_purpose_detailed(root, rel);
+        let detail = crate::walk::default_purpose_detailed_in(source);
         if detail.is_comment {
             compose_hybrid_ts_purpose(&detail.text, &raw)
         } else {

@@ -11,8 +11,8 @@ use crate::query;
 use crate::render;
 
 use super::answer::{
-    ambiguous_candidates_out, fallback_advised_out, finish_query, member_ambiguous_out,
-    with_next_trailer, EXIT_NO_RESULT,
+    ambiguous_candidates_out, begin_validation, fallback_advised_out, finish_query,
+    member_ambiguous_out, with_next_trailer, EXIT_NO_RESULT,
 };
 use super::args::{index_options, output_flags, parse_int_js, parse_pick};
 use super::root::{repo_relative_arg, require_graph, require_repo_for_path};
@@ -139,6 +139,8 @@ pub(crate) fn cmd_impact(cwd: &Path, args: &[String]) -> (i32, String) {
         Ok(r) => r,
         Err(e) => return (1, format!("error: {e}")),
     };
+    // One validation per invocation, opened before any index artifact is read.
+    begin_validation(&root, cwd);
     let q = repo_relative_arg(cwd, &root, q);
     let q = q.as_str();
     let g = match require_graph(&root) {

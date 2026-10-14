@@ -20,36 +20,28 @@
 // in-scope entries in their original prior-manifest order. See `map_repo`'s merge
 // step and `MapReport::merged_out_of_scope`.
 //
-// ## Content-hash reuse (`MapOptions::hash_reuse`, the binary's default)
+// ## Content-derived reuse
 //
-// Reuse keyed on a file's content hash instead of its mtime, so a fresh
-// git-worktree checkout (new mtimes, byte-identical content) does not force a
-// full reparse of every C# file -- exactly the case the shared,
-// git-common-dir-keyed manifest/graph was built to serve: every linked worktree
-// of one repo already shares one manifest and one graph, but a worktree that
-// never ran `devscout map` before would otherwise repeat the full parse cost on
-// first run because its files carry the checkout's OWN mtimes, not the mtimes
-// recorded by whichever worktree wrote the shared manifest first.
+// Reuse is keyed on the content digest of the bytes a file holds, always -- so
+// a fresh git-worktree checkout (new mtimes, byte-identical content) does not
+// force a reparse, and a rewrite that keeps a file's size and modification time
+// cannot pass for an unchanged one. `SCOUT_MTIME_REUSE` is accepted and ignored;
+// there is no mtime mode left to select.
 //
-// Confined entirely to this module: when enabled, the SAME i64 slot used for
-// `mtime` (and this crate's `graph::GraphFile.mtime` / `graph::OrderedMap<i64>`
-// fragments-index) instead carries the first 8 bytes of the file's SHA-256
+// Each file is read exactly once per run: that read produces the digest the
+// freshness record certifies, the reuse key, the heuristic purpose text and, on
+// a miss, the extraction. No two of those can describe different bytes. The read
+// lives in `plan_entry`.
+//
+// The SAME i64 slot used for `mtime` (and this crate's `graph::GraphFile.mtime`
+// / `graph::OrderedMap<i64>` fragments index) carries the first 8 bytes of the
 // digest, big-endian, as a cache key -- not a timestamp. This is a deliberate,
 // documented repurposing of an existing i64 slot rather than a schema change (no
-// new manifest or graph field): a manifest or fragments-index written in
-// hash-reuse mode has NUMERICALLY MEANINGLESS `mtime` values by wall-clock
-// standards, by design. Collision risk (two distinct files' 8-byte SHA-256
-// prefixes colliding) is astronomically below any concern for a reuse cache key,
-// which this is -- not a content-addressing guarantee. See `hashkey::cache_key`
-// and `cache_key_for`.
-//
-// The BINARY defaults to hash reuse (`MapOptions::from_env`), with
-// `SCOUT_MTIME_REUSE=1` as the escape hatch back to mtime keying.
-// `MapOptions::default()` STAYS `hash_reuse: false` (mtime keying). Two
-// consequences worth knowing at the call site: (1) the first `map` over a
-// manifest written in the other mode cannot match any stored key, so it repays
-// one full reparse and then converges; (2) alternating the two modes against the
-// same repo flips the keys back and forth, costing a full reparse each crossing.
+// new manifest or graph field): a manifest or fragments index written this way
+// has NUMERICALLY MEANINGLESS `mtime` values by wall-clock standards, by design.
+// Collision risk (two distinct files' 8-byte SHA-256 prefixes colliding) is
+// astronomically below any concern for a reuse cache key, which this is -- not a
+// content-addressing guarantee. See `hashkey::cache_key`.
 //
 // ## Parallel extraction determinism
 //
@@ -79,10 +71,11 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io;
 use std::path::Path;
-use std::time::{Instant, UNIX_EPOCH};
+use std::time::Instant;
 
 use rayon::prelude::*;
 
+use crate::freshness;
 use crate::graph::{self, GraphFile};
 use crate::manifest::{self, Value};
 use crate::project;
@@ -251,58 +244,88 @@ fn with_ensured_source(entry: &Value) -> Value {
     }
     Value::Object(out)
 }
-
-// Does `rel` (a manifest key, `/`-joined repo-relative path) fall under one of
-// `scope`'s directories? Mirrors the SAME containment `list_source_files` uses to
-// decide what to walk (`"."` covers everything; otherwise `dir` itself or
-// anything under `dir/`) -- so a prior entry is "in scope" exactly when THIS
-// run's walk could have produced it, independent of whether it actually did. That
-// independence is the whole point: it is what lets `map_repo` tell "genuinely
-// deleted (in scope, not in this run's files)" apart from "never looked at this
-// run (out of scope entirely)" -- a distinction a plain "is this rel in
-// `entries`" test cannot make, because that is true for neither case.
-fn is_within_scope(rel: &str, scope: &[String]) -> bool {
-    scope
-        .iter()
-        .any(|d| d == "." || rel == d || rel.starts_with(&format!("{d}/")))
-}
-
-// mtime keying (`hash_reuse == false`): the file's modification time in
-// milliseconds, `0` on any stat failure (caught, not propagated -- a file that
-// vanished between the walk and the stat is not fatal to the whole run). The
-// value is computed as a double (`sec * 1000 + nsec / 1e6`) and then floored,
-// deliberately: near-millisecond-boundary nanosecond values can round UP in that
-// float math, and reproducing that exact pipeline keeps the cache key stable
-// against manifests keyed the same way.
-//
-// content-hash reuse (`hash_reuse == true`): the file's content-hash cache key
-// (module header) instead, `0` on any read failure -- same fail-open shape.
-fn cache_key_for(root: &Path, rel: &str, opts: &MapOptions) -> i64 {
-    let abs = root.join(rel);
-    if opts.hash_reuse {
-        match fs::read(&abs) {
-            Ok(bytes) => hashkey::cache_key(&bytes),
-            Err(_) => 0,
-        }
-    } else {
-        match fs::metadata(&abs).and_then(|m| m.modified()) {
-            Ok(t) => match t.duration_since(UNIX_EPOCH) {
-                Ok(d) => {
-                    let ms = (d.as_secs() as f64) * 1000.0 + f64::from(d.subsec_nanos()) / 1e6;
-                    ms.floor() as i64
-                }
-                Err(_) => 0,
-            },
-            Err(_) => 0,
-        }
+// The pathspecs a `map` reads `git status` over: the scope, and every
+// configuration input the relevance predicate accepts -- the ancestor
+// directories' props and csproj files, plus whatever the previous record
+// certified, so a recorded input outside the scope's own pathspecs still
+// reports its own edits.
+fn map_pathspecs(scope: &[String], prior_config_inputs: &[String]) -> Vec<String> {
+    let mut specs = freshness::status::scope_pathspecs(scope);
+    specs.extend(freshness::relevance::config_pathspecs(scope));
+    for rel in prior_config_inputs {
+        specs.push(format!(":(literal){rel}"));
     }
+    specs
 }
 
+// One walked file's plan: the content key and the content digest off ONE read,
+// its prior manifest entry, whether that entry is reusable, the heuristic
+// purpose the same text yields, and -- when the entry is not reusable -- the
+// reparse that same text produced.
 struct PlanEntry {
     rel: String,
     cache_key: i64,
+    digest: Option<String>,
     prior_entry: Option<Value>,
     reusable: bool,
+    heuristic: String,
+    parsed: Option<dispatch::ParsedFile>,
+}
+
+// Reads `rel` once and derives everything this run needs from those bytes: the
+// content key that replaces an mtime, the digest the freshness record will
+// certify, the heuristic purpose text, and the reparse when neither the
+// fragments cache nor the prior manifest entry already answers for the file.
+//
+// A file the run cannot read yields no digest and a key that matches nothing,
+// so the next run retries it rather than freezing a cache entry over bytes
+// nobody saw.
+fn plan_entry(
+    root: &Path,
+    rel: &str,
+    graph_index: &graph::OrderedMap<i64>,
+    prior_index: &HashMap<String, Value>,
+) -> PlanEntry {
+    let prior_entry = prior_index.get(rel).cloned();
+    let Ok(bytes) = fs::read(root.join(rel)) else {
+        return PlanEntry {
+            rel: rel.to_string(),
+            cache_key: 0,
+            digest: None,
+            prior_entry,
+            reusable: false,
+            heuristic: String::new(),
+            parsed: None,
+        };
+    };
+    let cache_key = hashkey::cache_key(&bytes);
+    let text = String::from_utf8_lossy(&bytes).into_owned();
+    // The fragments cache is keyed on this same value, so a cache entry can
+    // only be reused when it describes these bytes.
+    let fragment_ok = !dispatch::is_graph_source(rel) || graph_index.get(rel) == Some(&cache_key);
+    let reusable = prior_entry
+        .as_ref()
+        .map(|e| {
+            entry_cache_key(e) == Some(cache_key)
+                && dispatch::carries_best_source(e, rel)
+                && fragment_ok
+        })
+        .unwrap_or(false);
+    let heuristic = walk::default_purpose_detailed_in(&text).text;
+    let parsed = if reusable {
+        None
+    } else {
+        dispatch::reparse(rel, &text)
+    };
+    PlanEntry {
+        rel: rel.to_string(),
+        cache_key,
+        digest: Some(freshness::record::sha256_hex(&bytes)),
+        prior_entry,
+        reusable,
+        heuristic,
+        parsed,
+    }
 }
 
 /// Runs `devscout map`, assembled from walk.rs (walk), extract.rs (extract),
@@ -323,6 +346,37 @@ pub fn map_repo(root: &Path, scope_dirs: &[String], opts: MapOptions) -> io::Res
         },
     )
     .map_err(io_err)?;
+
+    // The lock and this run's identity, held until the report is returned: two
+    // `map` runs over one repository serialize here rather than interleave.
+    let session = freshness::publish::begin(root)?;
+
+    // The prior record decides how much of the previous run this one may
+    // reuse. Only the worktree that published an index may reuse its manifest
+    // entries or trust its graph, and only while the graph on disk is still the
+    // one that record certified.
+    let prior_record = match freshness::record::read_record(root) {
+        freshness::RecordState::Published(record) => Some(*record),
+        _ => None,
+    };
+    // A root with no Git administrative directory keeps its state privately
+    // under `<root>/.scout`, where no sibling worktree can reach it, so its
+    // previous manifest is always its own and it publishes no record to say so.
+    let prior_mine = match (session.owner(), prior_record.as_ref()) {
+        (Some(owner), Some(record)) => record.owner == owner,
+        (None, None) => true,
+        _ => false,
+    };
+    let prior_config_inputs: Vec<String> = prior_record
+        .as_ref()
+        .filter(|_| prior_mine)
+        .map(|r| r.config_inputs.keys().cloned().collect())
+        .unwrap_or_default();
+    let pathspecs = map_pathspecs(&scope, &prior_config_inputs);
+
+    let head0 = manifest::git_head(root);
+    // T0: what Git already reports as changed before this run reads anything.
+    let status0 = freshness::status::git_status_paths(root, &pathspecs, None).ok();
     let files = walk::list_source_files(root, &scope)?;
 
     // A missing manifest, or one with no `entries` object, both collapse to "no
@@ -330,74 +384,47 @@ pub fn map_repo(root: &Path, scope_dirs: &[String], opts: MapOptions) -> io::Res
     // behavior on a missing `entries` key does NOT apply here -- `map` never
     // errors on this, only `find` does).
     let prior_manifest = manifest::read_manifest(root).map_err(io_err)?;
-    let prior_entries: Vec<(String, Value)> = prior_manifest
-        .as_ref()
-        .and_then(|m| m.get("entries"))
-        .and_then(Value::as_object)
-        .map(|s| s.to_vec())
-        .unwrap_or_default();
+    let prior_entries: Vec<(String, Value)> = if prior_mine {
+        prior_manifest
+            .as_ref()
+            .and_then(|m| m.get("entries"))
+            .and_then(Value::as_object)
+            .map(|s| s.to_vec())
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
     let prior_index: HashMap<String, Value> = prior_entries.iter().cloned().collect();
 
-    // The cheap mtime-only index (`graph::read_fragments_index`) -- read once,
-    // reused for every file's fragment-freshness check below AND for the
-    // `changed` decision further down, so even a fully unchanged run reads it
-    // only once.
+    // The reuse index (`graph::read_fragments_index`) -- read once, reused for
+    // every file's fragment-freshness check below. Its own owner stamp empties
+    // it when another worktree wrote it, so nothing crosses worktrees.
     let graph_index = graph::read_fragments_index(root);
 
-    let plan: Vec<PlanEntry> = files
-        .iter()
-        .map(|rel| {
-            let cache_key = cache_key_for(root, rel, &opts);
-            let fragment_ok = !dispatch::is_graph_source(rel)
-                || graph_index.get(rel.as_str()) == Some(&cache_key);
-            let prior_entry = prior_index.get(rel.as_str()).cloned();
-            let reusable = prior_entry
-                .as_ref()
-                .map(|e| {
-                    entry_cache_key(e) == Some(cache_key)
-                        && dispatch::carries_best_source(e, rel)
-                        && fragment_ok
-                })
-                .unwrap_or(false);
-            PlanEntry {
-                rel: rel.clone(),
-                cache_key,
-                prior_entry,
-                reusable,
-            }
-        })
-        .collect();
-
-    // ---- parallel reparse (rayon) --------------------------------------
-    // See the module header's "Parallel extraction determinism" section:
-    // `map` (not `filter`) over `plan.par_iter()` keeps this an
-    // IndexedParallelIterator end to end, and the result is folded into
-    // order-erasing HashMaps immediately below, before anything
-    // artifact-affecting reads it. The per-file language dispatch lives in
-    // `mapcmd/dispatch.rs`.
-    let per_file: Vec<Option<dispatch::ParsedFile>> = plan
+    // ---- one read per file, in parallel (rayon) -------------------------
+    // See the module header's "Parallel extraction determinism" section: the
+    // result is folded into order-erasing maps immediately below, before
+    // anything artifact-affecting reads it, so artifact byte order stays walk
+    // order regardless of which worker finished which file first.
+    let mut plan: Vec<PlanEntry> = files
         .par_iter()
-        .map(|p| {
-            if p.reusable {
-                return None;
-            }
-            dispatch::reparse(root, &p.rel)
-        })
+        .map(|rel| plan_entry(root, rel, &graph_index, &prior_index))
         .collect();
 
+    let per_file: Vec<Option<dispatch::ParsedFile>> =
+        plan.iter_mut().map(|p| p.parsed.take()).collect();
     let (purposes, fresh_fragments) = dispatch::fold(per_file);
-    // A plan entry with no `per_file` result (unreadable file, reusable, or not a
-    // reparse candidate at all -- e.g. a `.md`/`.json` file) simply has no
-    // `purposes`/`fresh_fragments` entry -- the loop below falls back to
-    // `default_purpose`, and `graph::rebuild_graph` drops it from the graph (a
-    // file with no fragment contributes nothing).
 
     let mut entries: Vec<(String, Value)> = Vec::with_capacity(plan.len());
     let mut preserved = 0usize;
     let mut downgraded = 0usize;
     let mut added = 0usize;
+    let mut digests: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
 
     for p in &plan {
+        if let Some(digest) = &p.digest {
+            digests.insert(p.rel.clone(), digest.clone());
+        }
         if p.reusable {
             let merged = with_ensured_source(
                 p.prior_entry
@@ -427,17 +454,11 @@ pub fn map_repo(root: &Path, scope_dirs: &[String], opts: MapOptions) -> io::Res
                 ("mtime", Value::number(p.cache_key)),
                 ("source", Value::string("ast")),
             ]),
-            None => {
-                let source = dispatch::fallback_source(&p.rel);
-                Value::object(vec![
-                    (
-                        "purpose",
-                        Value::string(walk::default_purpose(root, &p.rel)),
-                    ),
-                    ("mtime", Value::number(p.cache_key)),
-                    ("source", Value::string(source)),
-                ])
-            }
+            None => Value::object(vec![
+                ("purpose", Value::string(p.heuristic.clone())),
+                ("mtime", Value::number(p.cache_key)),
+                ("source", Value::string(dispatch::fallback_source(&p.rel))),
+            ]),
         };
         entries.push((p.rel.clone(), value));
     }
@@ -456,7 +477,10 @@ pub fn map_repo(root: &Path, scope_dirs: &[String], opts: MapOptions) -> io::Res
         let entries_index: HashSet<String> = entries.iter().map(|(k, _)| k.clone()).collect();
         prior_entries
             .iter()
-            .filter(|entry| is_within_scope(&entry.0, &scope) && !entries_index.contains(&entry.0))
+            .filter(|entry| {
+                freshness::relevance::is_within_scope(&entry.0, &scope)
+                    && !entries_index.contains(&entry.0)
+            })
             .count()
     };
 
@@ -468,22 +492,17 @@ pub fn map_repo(root: &Path, scope_dirs: &[String], opts: MapOptions) -> io::Res
     // preserved/downgraded/added/removed/parsed_ast above.
     let mut merged_out_of_scope = 0usize;
     for entry in &prior_entries {
-        if !is_within_scope(&entry.0, &scope) {
+        if !freshness::relevance::is_within_scope(&entry.0, &scope) {
             entries.push(entry.clone());
             merged_out_of_scope += 1;
         }
     }
     let total_manifest_entries = entries.len();
-    let indexed_file_set: HashSet<String> = entries.iter().map(|(k, _)| k.clone()).collect();
 
-    let built_at_head = manifest::git_head(root);
     let manifest_value = Value::object(vec![
         (
             "built_at_head",
-            built_at_head
-                .clone()
-                .map(Value::string)
-                .unwrap_or(Value::Null),
+            head0.clone().map(Value::string).unwrap_or(Value::Null),
         ),
         (
             "scoped_dirs",
@@ -491,25 +510,6 @@ pub fn map_repo(root: &Path, scope_dirs: &[String], opts: MapOptions) -> io::Res
         ),
         ("entries", Value::Object(entries)),
     ]);
-    manifest::write_manifest(root, &manifest_value)?;
-
-    // Index-freshness sidecar, written every successful map run, the same cadence
-    // manifest.json's own built_at_head refreshes on.
-    let dirty = manifest::is_working_tree_dirty(root, &scope);
-    let dirty_indexed_files = manifest::dirty_indexed_files_at(root, &scope, &indexed_file_set);
-    manifest::write_index_state(
-        root,
-        built_at_head,
-        dirty,
-        &dirty_indexed_files,
-        total_manifest_entries as i64,
-    )?;
-
-    // Clear the `refresh-needed` flag if present.
-    let flag = repo::scout_dir(root).join("refresh-needed");
-    if flag.exists() {
-        fs::remove_file(&flag)?;
-    }
 
     let graph_files: Vec<GraphFile> = plan
         .iter()
@@ -522,28 +522,50 @@ pub fn map_repo(root: &Path, scope_dirs: &[String], opts: MapOptions) -> io::Res
     // The repo's `.csproj` projects, rediscovered on every run: the scan is
     // cheap (a handful of files, hand-scanned) next to the extraction above,
     // and it is the only way to notice a csproj edit at all -- `.csproj` is
-    // not a `SOURCE_EXT`, so no walked file's mtime moves when one changes.
+    // not a `SOURCE_EXT`, so no walked file's key moves when one changes.
     // `None` when the repo declares no project, which keeps graph.json's
-    // bytes exactly as they were.
-    let project_model = project::discover(root, &scope)?;
+    // bytes exactly as they were. The digests it records are of the bytes it
+    // parsed, which are the bytes the record will certify.
+    let mut config_digests: std::collections::BTreeMap<String, String> =
+        std::collections::BTreeMap::new();
+    let project_model = project::discover_with_digests(root, &scope, &mut config_digests)?;
     // The enriched-lane decision (`semantic::decide_lane`): the layer
     // resolution may use, if any, and the `stats.lane` record this run owes.
     let lane = crate::semantic::decide_lane(root, opts.no_semantic);
 
-    // Discover the Cargo model on every run so a manifest edit can rebuild
-    // the graph even when no indexed source file changed.
     let rs_files: Vec<String> = graph_files
         .iter()
         .filter(|f| crate::parse::is_rust(&f.rel))
         .map(|f| f.rel.clone())
         .collect();
-    let crates = crate::rsgraph::crates::discover(root, &scope, &rs_files)?;
-    // Rebuild for a changed source index, a changed project or Cargo model,
-    // or when this run owes an enriched-lane record.
-    let changed = graph::index_is_stale(&graph_index, &graph_files)
+    let crates = crate::rsgraph::crates::discover_with_digests(
+        root,
+        &scope,
+        &rs_files,
+        &mut config_digests,
+    )?;
+
+    // Rebuild for a changed source index, a changed project or Cargo model, an
+    // owed enriched-lane record, or a graph this run cannot certify as its own:
+    // a graph.json another worktree (or an older build) rewrote is not evidence
+    // about this worktree's files, however unchanged the fragments index looks.
+    let graph_on_disk = freshness::record::ArtifactIdentity::of(&graph::graph_json_path(root));
+    let graph_trusted = prior_mine
+        && prior_record
+            .as_ref()
+            .is_none_or(|r| r.artifacts.graph == graph_on_disk);
+    let changed = !graph_trusted
+        || graph::index_is_stale(&graph_index, &graph_files)
         || project::sidecar_differs(root, project_model.as_ref())
         || crate::rsgraph::crates::sidecar_differs(root, crates.as_ref())
         || lane.forces_rebuild();
+
+    // From here every write belongs to the new generation, so the record
+    // becomes a marker first: a reader that arrives mid-run -- or after a crash
+    // -- sees a run in progress, never a record certifying a half-written pair.
+    session.mark_in_progress()?;
+
+    manifest::write_manifest(root, &manifest_value)?;
 
     let graph_start = Instant::now();
     let outcome = graph::rebuild_graph_with_crates(
@@ -561,6 +583,42 @@ pub fn map_repo(root: &Path, scope_dirs: &[String], opts: MapOptions) -> io::Res
         graph::RebuildOutcome::Rebuilt(g) => (true, Some(g.defs.len()), Some(g.edges.len())),
         graph::RebuildOutcome::NotRebuilt => (false, None, None),
     };
+
+    // T0 union T2, over the relevant paths: a file dirty when it was read and
+    // restored before the run ended is still a file whose bytes this index did
+    // not see. Either read failing leaves the union unknown, and the record
+    // then publishes without it -- uncertifiable, which is the honest answer.
+    let status2 = freshness::status::git_status_paths(root, &pathspecs, None).ok();
+    let dirty_at_map: Option<Vec<String>> = match (status0.as_ref(), status2.as_ref()) {
+        (Some(t0), Some(t2)) => {
+            let mut union: std::collections::BTreeSet<String> = t0
+                .union(t2)
+                .filter(|p| freshness::relevance::is_relevant(p, &scope))
+                .cloned()
+                .collect();
+            Some(std::mem::take(&mut union).into_iter().collect())
+        }
+        _ => None,
+    };
+
+    // The digest table first, the record last, both by atomic rename: the
+    // record is what tells a reader the pair it names is complete.
+    if session.owner().is_some() {
+        session.write_digests(&digests)?;
+        session.publish(
+            head0,
+            &scope,
+            total_manifest_entries as u64,
+            dirty_at_map,
+            config_digests,
+        )?;
+    }
+
+    // Clear the `refresh-needed` flag if present.
+    let flag = repo::scout_dir(root).join("refresh-needed");
+    if flag.exists() {
+        fs::remove_file(&flag)?;
+    }
 
     Ok(MapReport {
         scope,
@@ -583,6 +641,7 @@ pub fn map_repo(root: &Path, scope_dirs: &[String], opts: MapOptions) -> io::Res
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::freshness::relevance::is_within_scope;
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -1055,15 +1114,12 @@ mod tests {
         fs::remove_dir_all(&root).ok();
     }
 
-    // -- content-hash reuse --------------------------------------------
+    // -- content-derived reuse -----------------------------------------
 
     #[test]
-    fn hash_reuse_survives_an_mtime_only_touch() {
-        let root = temp_dir("hash-reuse");
-        let opts = MapOptions {
-            hash_reuse: true,
-            ..Default::default()
-        };
+    fn an_mtime_only_touch_still_reuses() {
+        let root = temp_dir("content-reuse");
+        let opts = MapOptions::default();
         let content = "namespace Fixtures.MapCmd { public class A {} }\n";
         write_file(&root.join("src/A.cs"), content);
         let first = map_repo(&root, &[], opts).unwrap();
@@ -1081,19 +1137,16 @@ mod tests {
         assert_eq!(second.downgraded, 0);
         assert!(
             !second.graph_rebuilt,
-            "same content hash must reuse, not reparse"
+            "same bytes must reuse, however far the mtime moved"
         );
 
         fs::remove_dir_all(&root).ok();
     }
 
     #[test]
-    fn hash_reuse_reparses_on_real_content_change() {
-        let root = temp_dir("hash-reparse");
-        let opts = MapOptions {
-            hash_reuse: true,
-            ..Default::default()
-        };
+    fn a_real_content_change_reparses() {
+        let root = temp_dir("content-reparse");
+        let opts = MapOptions::default();
         write_file(
             &root.join("src/A.cs"),
             "namespace Fixtures.MapCmd { public class A {} }\n",
@@ -1105,30 +1158,36 @@ mod tests {
             "namespace Fixtures.MapCmd { public class A { public void M() {} } }\n",
         );
         let second = map_repo(&root, &[], opts).unwrap();
-        assert!(second.graph_rebuilt, "changed content hash must reparse");
+        assert!(second.graph_rebuilt, "changed bytes must reparse");
 
         fs::remove_dir_all(&root).ok();
     }
 
     #[test]
-    fn mtime_default_mode_ignores_content_and_keys_on_mtime_only() {
-        // Sanity check that the two modes are actually distinct: rewriting
-        // identical content under DEFAULT (mtime) mode still forces a
-        // reparse if the mtime moved, unlike hash_reuse above.
-        let root = temp_dir("mtime-default");
-        let content = "namespace Fixtures.MapCmd { public class A {} }\n";
-        write_file(&root.join("src/A.cs"), content);
+    fn a_same_path_same_mtime_different_bytes_change_is_re_extracted() {
+        // Reuse is keyed on the bytes, never on the timestamp: a rewrite that
+        // restores the modification time must still be seen by the next run.
+        let root = temp_dir("content-key");
+        let path = root.join("src/A.cs");
+        write_file(&path, "namespace Fixtures.MapCmd { public class A {} }\n");
         map_repo(&root, &[], MapOptions::default()).unwrap();
 
-        std::thread::sleep(std::time::Duration::from_millis(10));
-        write_file(&root.join("src/A.cs"), content);
+        let modified = fs::metadata(&path).unwrap().modified().unwrap();
+        write_file(
+            &path,
+            "namespace Fixtures.MapCmd { public class A { public void M() {} } }\n",
+        );
+        fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(modified)
+            .unwrap();
+
         let second = map_repo(&root, &[], MapOptions::default()).unwrap();
-        // mtime moved -> not reusable -> reparsed -> graph still has the
-        // same single def, but the fragments-index mtime must have moved,
-        // which rebuild_graph treats as "changed".
         assert!(
             second.graph_rebuilt,
-            "default mode has no content-awareness -- an mtime bump alone reparses"
+            "the digest decides, not the timestamp: these bytes were never extracted"
         );
 
         fs::remove_dir_all(&root).ok();

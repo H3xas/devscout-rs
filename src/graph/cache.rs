@@ -18,27 +18,57 @@ pub struct FragmentCacheEntry {
     pub fragment: AnyFragment,
 }
 
+// The cache generation's file shape: the entries plus the worktree that wrote
+// them. The owner rides inside the payload rather than in the file name so a
+// reader can tell "someone else's cache" from "no cache" in one parse, and so
+// nothing needs to be renamed when a worktree takes the cache over.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct OwnerStamped<V> {
+    owner: Option<String>,
+    entries: OrderedMap<V>,
+}
+
+fn owning_worktree(root: &Path) -> Option<String> {
+    crate::freshness::record::owner_of(root)
+}
+
 pub(crate) fn read_fragments_cache(root: &Path) -> OrderedMap<FragmentCacheEntry> {
-    match fs::read_to_string(fragments_cache_path(root)) {
-        Ok(text) => serde_json::from_str(&text).unwrap_or_default(),
-        Err(_) => OrderedMap::default(),
+    let Ok(text) = fs::read_to_string(fragments_cache_path(root)) else {
+        return OrderedMap::default();
+    };
+    let Ok(stamped) = serde_json::from_str::<OwnerStamped<FragmentCacheEntry>>(&text) else {
+        return OrderedMap::default();
+    };
+    if stamped.owner != owning_worktree(root) {
+        return OrderedMap::default();
     }
+    stamped.entries
 }
 
 pub(crate) fn write_fragments_cache(
     root: &Path,
     cache: &OrderedMap<FragmentCacheEntry>,
 ) -> io::Result<()> {
-    atomic_write_json(&fragments_cache_path(root), cache)
+    let stamped = OwnerStamped {
+        owner: owning_worktree(root),
+        entries: cache.clone(),
+    };
+    atomic_write_json(&fragments_cache_path(root), &stamped)
 }
 
-/// Read the fragments index (rel -> mtime). Used for the per-file reuse
+/// Read the fragments index (rel -> reuse key). Used for the per-file reuse
 /// decision, independent of the graph rebuild.
 pub fn read_fragments_index(root: &Path) -> OrderedMap<i64> {
-    match fs::read_to_string(fragments_index_path(root)) {
-        Ok(text) => serde_json::from_str(&text).unwrap_or_default(),
-        Err(_) => OrderedMap::default(),
+    let Ok(text) = fs::read_to_string(fragments_index_path(root)) else {
+        return OrderedMap::default();
+    };
+    let Ok(stamped) = serde_json::from_str::<OwnerStamped<i64>>(&text) else {
+        return OrderedMap::default();
+    };
+    if stamped.owner != owning_worktree(root) {
+        return OrderedMap::default();
     }
+    stamped.entries
 }
 
 pub(crate) fn write_fragments_index(
@@ -49,10 +79,14 @@ pub(crate) fn write_fragments_index(
     for (rel, entry) in cache.iter() {
         index.insert(rel.clone(), entry.mtime);
     }
-    atomic_write_json(&fragments_index_path(root), &index)
+    let stamped = OwnerStamped {
+        owner: owning_worktree(root),
+        entries: index,
+    };
+    atomic_write_json(&fragments_index_path(root), &stamped)
 }
 
-/// Whether the fragments index is stale for the given graph files (any mtime
+/// Whether the fragments index is stale for the given graph files (any key
 /// mismatch, or a differing file count).
 pub fn index_is_stale(index: &OrderedMap<i64>, graph_files: &[GraphFile]) -> bool {
     graph_files

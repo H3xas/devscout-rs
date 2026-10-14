@@ -109,7 +109,7 @@ pub use def::{AlsoIn, Def};
 pub use edge::{
     Candidate, Edge, EdgesByKind, HeuristicByTier, HeuristicTier, SemanticProvenance, SemanticStats,
 };
-pub use fragment::{fragment_from_extraction, markup_fragment};
+pub use fragment::{fragment_from_extraction, markup_fragment, markup_fragment_text};
 pub use fragment_types::{
     AnyFragment, FragArgType, FragDef, FragExtensionMethod, FragFact, FragLambdaSlot, FragName,
     FragRef, FragRegistration, FragUsing, Fragment,

@@ -177,16 +177,25 @@ pub fn rust_crates_path(root: &Path) -> PathBuf {
 // in the existing `methodParams` table. A cached v32 fragment has none of
 // these facts, so a same-count overload that rejects the arguments could
 // still bind precisely ahead of an applicable base or extension method.
+// v34 adds no extraction field: it stamps the pair with the worktree that
+// wrote it, and changes the file shape from a bare rel-keyed object to an
+// `{owner, entries}` one. The owner is the writing worktree's Git
+// administrative directory, so a fragment another worktree extracted is
+// never reused here even when the relative path and the content key both
+// match: another worktree's scope and its own configuration are what those
+// bytes were read under. A v33 payload carries no owner and does not parse
+// as this generation either, so the bump is also what stops a pre-stamp
+// cache from being read.
 // The rename IS the invalidation mechanism:
 // pre-bump caches stop being found, every file reparses
 // once, no reader carries version-compat logic. Writers delete every
 // superseded generation (see `remove_superseded_caches`).
 pub(crate) fn fragments_cache_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-v33.json")
+    graph_dir(root).join("fragments-v34.json")
 }
 
 pub(crate) fn fragments_index_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-index-v33.json")
+    graph_dir(root).join("fragments-index-v34.json")
 }
 
 // Every generation below the current one, not just the immediately previous:
@@ -257,6 +266,8 @@ pub(crate) const SUPERSEDED_CACHE_FILES: &[&str] = &[
     "fragments-index-v31.json",
     "fragments-v32.json",
     "fragments-index-v32.json",
+    "fragments-v33.json",
+    "fragments-index-v33.json",
 ];
 
 pub(crate) fn remove_superseded_caches(root: &Path) {

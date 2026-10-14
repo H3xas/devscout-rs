@@ -7,8 +7,6 @@
 // manifest, graph rebuild).
 
 use std::collections::HashMap;
-use std::fs;
-use std::path::Path;
 
 use crate::extract;
 use crate::graph::{self, AnyFragment, Fragment};
@@ -35,24 +33,6 @@ pub(super) fn is_graph_source(rel: &str) -> bool {
         || markup::is_markup(rel)
         || parse::ts_grammar_for(rel).is_some()
         || parse::is_rust(rel)
-}
-
-// LOSSY UTF-8 decoding (invalid byte sequences become U+FFFD), never failing on
-// bad encoding, only on a real I/O failure (missing file, permission). Both this
-// crate's extraction worker and `default_purpose` read this way;
-// `fs::read_to_string` is the wrong primitive here -- it is STRICT UTF-8 and
-// returns `Err` on the first invalid byte, silently dropping any file with even
-// one non-UTF-8 byte (e.g. a stray CP1252 em-dash inside a `//` comment: the
-// lossy read substitutes one U+FFFD and produces a normal signature, while
-// `fs::read_to_string` errors on it outright). Losing a file this way is not just
-// a missed purpose -- `graph::index_is_stale`'s `index.len() != graph_files.len()`
-// check makes the loss STICKY: a C# file the walk finds but the fragments cache
-// can never hold forces `changed == true` on every subsequent run forever,
-// defeating incremental reuse for the whole graph, not just this one file.
-fn read_source_lossy(path: &Path) -> Option<String> {
-    fs::read(path)
-        .ok()
-        .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
 }
 
 // ---------------------------------------------------------------------------
@@ -119,19 +99,30 @@ pub(super) enum ParsedFile {
 // reference fragment) on the SAME parse. Both branches produce a fragment;
 // which SHAPE it is decides which resolver sees it, and that routing is the
 // `AnyFragment` tag, never this dispatch.
-pub(super) fn reparse(root: &Path, rel: &str) -> Option<ParsedFile> {
+//
+// `text` is the lossy-decoded source `map` already read to hash the file, so
+// the digest it records and the facts extracted here describe one set of bytes.
+// `fs::read_to_string` would be the wrong primitive for that read: it is STRICT
+// UTF-8 and returns `Err` on the first invalid byte, silently dropping any file
+// with even one non-UTF-8 byte (e.g. a stray CP1252 em-dash inside a `//`
+// comment). Losing a file that way is not just a missed purpose --
+// `graph::index_is_stale`'s `index.len() != graph_files.len()` check makes the
+// loss STICKY, forcing `changed == true` on every later run.
+pub(super) fn reparse(rel: &str, text: &str) -> Option<ParsedFile> {
     if is_csharp(rel) {
-        return read_source_lossy(&root.join(rel))
-            .map(|src| ParsedFile::CSharp(rel.to_string(), extract::extract(&src)));
+        return Some(ParsedFile::CSharp(rel.to_string(), extract::extract(text)));
     }
     // Markup never reaches a grammar -- the scan is a line walk -- but it
     // obeys the same reuse decision every other graph source obeys, so it
     // is dispatched from the same place.
     if markup::is_markup(rel) {
-        return graph::markup_fragment(root, rel).map(|f| ParsedFile::Markup(rel.to_string(), f));
+        return Some(ParsedFile::Markup(
+            rel.to_string(),
+            graph::markup_fragment_text(rel, text),
+        ));
     }
     if parse::is_rust(rel) {
-        let rs = extract::extract_rs_file(&read_source_lossy(&root.join(rel))?);
+        let rs = extract::extract_rs_file(text);
         return Some(ParsedFile::Rust(rel.to_string(), rs.purpose, rs.fragment));
     }
     let grammar = parse::ts_grammar_for(rel)?;
@@ -141,8 +132,7 @@ pub(super) fn reparse(root: &Path, rel: &str) -> Option<ParsedFile> {
     // leading comment text when that heuristic match was comment-derived.
     // The same call returns the reference fragment off that one parse, and
     // a parse failure drops the file out of BOTH outputs.
-    let src = read_source_lossy(&root.join(rel))?;
-    let ts = extract::extract_ts_file(root, rel, &src, grammar)?;
+    let ts = extract::extract_ts_file(text, grammar)?;
     Some(ParsedFile::TsJs(rel.to_string(), ts.purpose, ts.fragment))
 }
 

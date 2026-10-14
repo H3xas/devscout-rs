@@ -9,8 +9,8 @@ use crate::query;
 use crate::render;
 
 use super::answer::{
-    ambiguous_candidates_out, fallback_advised_out, finish_query, member_ambiguous_out,
-    with_next_trailer,
+    ambiguous_candidates_out, begin_validation, fallback_advised_out, finish_query,
+    member_ambiguous_out, with_next_trailer,
 };
 use super::args::{first_positional, index_options, output_flags, parse_pick};
 use super::root::{require_graph, require_repo};
@@ -36,6 +36,8 @@ pub(crate) fn cmd_tests(cwd: &Path, args: &[String]) -> (i32, String) {
         Ok(r) => r,
         Err(e) => return (1, format!("error: {e}")),
     };
+    // One validation per invocation, opened before any index artifact is read.
+    begin_validation(&root, cwd);
     let g = match require_graph(&root) {
         Ok(g) => g,
         Err(e) => return e,

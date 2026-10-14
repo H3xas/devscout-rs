@@ -17,7 +17,7 @@ use super::root::require_repo;
 // flag stripping, and printing `MapReport::summary_line()` plus, when the run
 // recorded one, the lane line (`LaneStats::line`). `MapOptions::from_env()`
 // decides the fragment-reuse mode (mapcmd.rs's own module header): content-hash
-// reuse is the default, `SCOUT_MTIME_REUSE=1` drops back to mtime keying.
+// reuse is keyed on content, always.
 // `--no-semantic` is a flag, not an environment switch (mapcmd/options.rs's
 // own doc comment), so it is read here and folded onto the env-derived
 // options rather than added to `from_env` itself.

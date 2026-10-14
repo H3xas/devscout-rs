@@ -3,13 +3,13 @@
 // renderers, the not-found fallback, and the one telemetry call every
 // resolved query makes.
 
+use std::cell::RefCell;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use crate::freshness::{self, FreshnessState};
+use crate::freshness::{validate, FreshnessState};
 use crate::graph;
-use crate::manifest;
 use crate::query;
 use crate::query::json::J;
 use crate::suggest;
@@ -59,20 +59,72 @@ pub(crate) fn emit_zero_hit_note(code: i32, note: Option<&str>, cwd: &Path, quer
         .and_then(|()| lock.write_all(b"\n"));
 }
 
+// This invocation's one freshness validation, opened by the verb BEFORE it
+// reads `graph.json` or `manifest.json` and finished once, by `finish_query` or
+// by the stderr path. `--json` and stderr therefore describe one reading of one
+// moment, and a query pays for exactly one `git status`.
+//
+// The slot is per-thread and per-invocation: a `begin_validation` replaces
+// whatever the previous call in this process left, so an in-process test that
+// runs two queries in a row can never inherit the first one's verdict.
+thread_local! {
+    static SLOT: RefCell<Option<Slot>> = const { RefCell::new(None) };
+}
+
+struct Slot {
+    root: PathBuf,
+    begin: validate::Begin,
+    finished: Option<validate::Validation>,
+}
+
+// Opens the invocation's validation. Every query verb calls this as soon as it
+// has a root, before any index artifact is read, so the snapshot it takes is
+// genuinely earlier than the answer.
+pub(crate) fn begin_validation(root: &Path, invocation_dir: &Path) {
+    let begin = validate::begin(root, invocation_dir);
+    SLOT.with(|slot| {
+        *slot.borrow_mut() = Some(Slot {
+            root: root.to_path_buf(),
+            begin,
+            finished: None,
+        });
+    });
+}
+
+// The finished validation for `root`, running it on first use. `None` when the
+// slot belongs to another root -- a verb whose root came from its own path
+// argument rather than the invocation directory -- so the caller falls back to
+// a fresh validation of its own.
+fn validation_for(root: &Path) -> Option<validate::Validation> {
+    SLOT.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        let entry = slot.as_mut()?;
+        if entry.root != root {
+            return None;
+        }
+        if entry.finished.is_none() {
+            entry.finished = Some(entry.begin.finish());
+        }
+        entry.finished.clone()
+    })
+}
+
 // Query-time index freshness, `find`/`refs`/`read`/`impact`/`tests` only: `map`
 // just rebuilt the index and has nothing to say about it being stale relative to
 // itself. Root resolution mirrors `require_repo`'s plain climb, never
-// `require_repo_for_path`'s argument-named-file fallback -- a query that only
-// resolved its root through an argument gets no freshness check, silently, the
-// safe default. Called BEFORE `emit_zero_hit_note` so the two lines land on
-// stderr in a fixed order when both fire for the same query. Never touches
-// stdout, never changes the exit code.
+// `require_repo_for_path`'s argument-named-file fallback. Called BEFORE
+// `emit_zero_hit_note` so the two lines land on stderr in a fixed order when
+// both fire for the same query. Never touches stdout, never changes the exit
+// code.
 pub(crate) fn emit_freshness_warning(cwd: &Path) {
     let Some(root) = crate::repo::find_scout_root(cwd).or_else(|| crate::repo::find_repo_root(cwd))
     else {
         return;
     };
-    let Some(warning) = manifest::freshness_warning(&root) else {
+    // The verb's own validation when it opened one at this root; otherwise this
+    // invocation never reached a verb, and the check runs here, once.
+    let validation = validation_for(&root).unwrap_or_else(|| validate::begin(&root, cwd).finish());
+    let Some(warning) = validation.warning else {
         return;
     };
     let stderr = std::io::stderr();
@@ -293,7 +345,10 @@ pub(crate) fn finish_query(
 ) -> (i32, String) {
     let (code, mut out, outcome, candidate_count) = answer;
     if json {
-        out = append_freshness(&out, &freshness::index_freshness_state(root));
+        let state = validation_for(root)
+            .map(|v| v.state)
+            .unwrap_or_else(|| validate::begin(root, root).finish().state);
+        out = append_freshness(&out, &state);
     }
     telemetry::record(
         root,
