@@ -3,15 +3,17 @@ use std::collections::HashSet;
 use tree_sitter::Node;
 
 use super::delegate_args::delegate_argument_param_count;
-use super::text::{named_children, text};
+use super::text::{name_text, named_children, path_text, text};
 use super::types::{Fact, RefRecord, RegistrationRecord};
 
 // Unwraps nullable/array/alias-qualified wrappers,
 // pulls the base identifier out of a generic_name (discarding its type
 // arguments -- those are recorded separately when the walk reaches the
-// type_argument_list node), and takes qualified_name's full dotted text
-// verbatim. Anything else (predefined_type, implicit_type/`var`, ...) is
-// not a user-defined type reference.
+// type_argument_list node), and rebuilds a qualified_name's full dotted path
+// from its own tokens, so the trivia between its segments never reaches the
+// last-dot split that reads the reference's own name out of it. Anything else
+// (predefined_type, implicit_type/`var`, ...) is not a user-defined type
+// reference.
 fn outer_type_name(node: Node, src: &[u8]) -> Option<String> {
     match node.kind() {
         "nullable_type" | "array_type" => match node.child_by_field_name("type") {
@@ -24,10 +26,11 @@ fn outer_type_name(node: Node, src: &[u8]) -> Option<String> {
             .map(|id| text(id, src)),
         "qualified_name" => {
             let tail = node.child_by_field_name("name")?;
-            let full = text(node, src);
-            let tail_text = text(tail, src);
             let normalized_tail = outer_type_name(tail, src)?;
-            full.strip_suffix(&tail_text)
+            // Both sides of the split use the same reader, so the tail still
+            // divides off a name whose own type arguments carry trivia.
+            let full = name_text(node, src);
+            full.strip_suffix(&name_text(tail, src))
                 .map(|prefix| format!("{prefix}{normalized_tail}"))
         }
         "alias_qualified_name" => match node.child_by_field_name("name") {
@@ -313,7 +316,10 @@ pub(super) fn member_qualifier_info(
 ) -> Option<(String, bool)> {
     let node = node?;
     match node.kind() {
-        "identifier" | "qualified_name" => Some((text(node, src), false)),
+        "identifier" => Some((text(node, src), false)),
+        // A dotted qualifier is a name like any other: the walk's scope and
+        // ladder steps compare it whole, so its trivia never reaches them.
+        "qualified_name" => Some((path_text(node, src), false)),
         "generic_name" => named_children(node)
             .into_iter()
             .find(|c| c.kind() == "identifier")

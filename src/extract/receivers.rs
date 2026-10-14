@@ -10,7 +10,7 @@ use super::refs::{
     base_type_identifier, generic_arg_descriptors, member_qualifier_info, type_descriptor,
     type_parameter_names,
 };
-use super::text::{declared_name, is_explicit_implementation, named_children, text};
+use super::text::{declared_name, is_explicit_implementation, named_children, path_text, text};
 use super::types::Fact;
 
 // ---------------------------------------------------------------------------
@@ -53,19 +53,20 @@ fn add_fact(table: &mut FactTable, name: Option<String>, fact: Option<Fact>) {
     }
 }
 
-// The type node's own written path, when it names one: the text of a
+// The type node's own written path, when it names one: a
 // `qualified_name`/`alias_qualified_name` reached through the same nullable
-// and array wrappers `base_type_identifier` unwraps. A bare identifier is
-// not a path, so it yields `None` and an unqualified declaration keeps the
-// simple name alone. Generic arguments stay in the text; normalizing them is
-// the ladder's job, not this reader's.
+// and array wrappers `base_type_identifier` unwraps, rebuilt from its own
+// tokens so the trivia between its segments never reaches the ladder. A bare
+// identifier is not a path, so it yields `None` and an unqualified
+// declaration keeps the simple name alone. Generic arguments stay in the
+// path; normalizing them is the ladder's job, not this reader's.
 fn qualified_type_name(node: Option<Node>, src: &[u8]) -> Option<String> {
     let node = node?;
     match node.kind() {
         "nullable_type" | "array_type" => {
             qualified_type_name(node.child_by_field_name("type"), src)
         }
-        "qualified_name" | "alias_qualified_name" => Some(text(node, src)),
+        "qualified_name" | "alias_qualified_name" => Some(path_text(node, src)),
         _ => None,
     }
 }

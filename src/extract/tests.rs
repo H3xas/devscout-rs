@@ -30,6 +30,7 @@ mod preproc_duplicate_header;
 mod preproc_fluent_chain;
 mod property_types_fact;
 mod publish_message_qualifier;
+mod qualified_path_tokens;
 mod qualifier_capture;
 mod receiver_facts;
 mod registration_fact;

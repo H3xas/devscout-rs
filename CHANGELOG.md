@@ -7,6 +7,18 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **A qualified name written with spaces, line breaks or comments between its parts now resolves like
+  its plain spelling.** Every dotted name the C# extractor records -- a receiver's declared type, a
+  type reference, a base-list entry, a DI registration's two types, a namespace name, and a `using`
+  target or alias -- is rebuilt from the name's own tokens, so `Widgets . Widget`,
+  `Widgets./*c*/Widget` and `Widgets.` followed by a line break and `Widget` all read as
+  `Widgets.Widget`. The raw source text used to reach the resolution ladder, match no def path, and
+  drop a precise edge to a guess. A name whose subtree holds a parse error keeps its source text and
+  so binds nothing new. This moves the fragment cache to the `fragments-v34.json` /
+  `fragments-index-v34.json` generation, so a cache an earlier version wrote is re-extracted once.
+
 ## [0.9.0] - 2026-10-12
 
 A query-answer and second-language release: every resolved answer states its full count and the next
