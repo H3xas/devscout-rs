@@ -240,14 +240,14 @@ sha256 and applies its records only when the stored hash matches; a mismatch dro
 records only** — the site falls through to the syntax tiers — and counts as stale. The hash is over
 the file's **raw bytes as stored on disk** (no decoding, no newline normalisation, a byte-order
 mark included), lowercase hex. These are bytes `map` already reads: under content-hash reuse
-`cache_key_for` (`src/mapcmd.rs:361`) does `fs::read` on every graph file and hashes it with no
-decode in between, so the layer costs no extra read — it just retains the full digest beside the
-8-byte `hashkey::cache_key`. A file whose bytes do not decode cleanly hashes like any other and
-keeps its records.
+`map` reads every indexed file once to hash it, so the layer costs no extra read — it just retains
+the full digest beside the 8-byte `hashkey::cache_key`. A file whose bytes do not decode cleanly
+hashes like any other and keeps its records.
 
-**Under `SCOUT_MTIME_REUSE=1` the layer is disabled.** That branch (`src/mapcmd.rs:369`) calls only
-`fs::metadata`, so no bytes are read and nothing can validate a record. `map` applies no records,
-writes no `stats.semantic`, and the rebuild trigger treats the run as wanting no cache. It prints
+**`SCOUT_MTIME_REUSE` no longer disables the layer.** The variable is accepted and ignored: reuse
+keys are content-derived unconditionally, so the bytes are always read and a record can always be
+validated. The historical mtime branch, which called only `fs::metadata` and could validate
+nothing, is gone. A build that predates this change still prints
 `semantic: cache ignored (mtime reuse)` **only when `semantic-v1.json` exists** — `load` stats the
 path first and returns `None` silently when there is no file, so a repository that never ran the
 oracle never sees the line. **One rebuild per mode switch, never per run**: after an enriched build
@@ -570,7 +570,7 @@ graph.
 | Another worktree on another branch, same git common dir | Applies only records whose per-file hash matches that tree | Files that differ fall through; the shared cache is safe by construction |
 | Corrupt or truncated cache JSON | Treated as absent | One stderr line; `map` still succeeds |
 | Two units disagree on one site | Stores both records verbatim | The join key is inert by D3; the records count in `recordsIgnored` |
-| `SCOUT_MTIME_REUSE=1` | No file bytes are read, so the layer is disabled | `semantic: cache ignored (mtime reuse)` only if a cache file exists, else silence; the sidecar rule sees "nothing wanted", so the mode switch costs one rebuild |
+| `SCOUT_MTIME_REUSE=1` | Accepted and ignored; file bytes are always read, so the layer stays on | Identical to the unset case — the variable changes nothing |
 | Scoped `map` (`map src`) | Consults the layer only for files that run walks | Out-of-scope entries are neither current nor stale and are counted in neither |
 | Every cached file stale | Layer present, applies nothing | `stats.semantic` written with `recordsApplied: 0`; the enriched assert fails on `tiers.semantic.edges` |
 | A solution outside the root | The oracle emits no record for its documents | `Relative` returns null outside `--root`, so those files simply never appear in the cache |

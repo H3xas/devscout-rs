@@ -223,17 +223,33 @@ query.
 
 | `state` | Meaning | Other keys |
 | --- | --- | --- |
-| `"fresh"` | The index was built at the working tree's current HEAD and no indexed file has gone dirty since. | none |
-| `"stale"` | The index is behind the working tree. | `indexedHead`, `currentHead` (both full-length, unlike the truncated stderr warning), `changedFiles` (indexed files dirty now but not at index time) |
-| `"unknown"` | Freshness could not be established either way. | `reason`: `"no-index-state"` (no `index-state.json` sidecar, or it did not parse -- an index built before this key existed, or a corrupt one) or `"git-unavailable"` (`git rev-parse HEAD` did not resolve) |
+| `"fresh"` | The worktree asking published this index, at the working tree's current HEAD, and no indexed byte differs from what the index recorded. | none |
+| `"stale"` | The index is behind the working tree. | `indexedHead`, `currentHead` (both full-length, unlike the truncated stderr warning), `changedFiles` (indexed files and configuration inputs whose bytes differ from the indexed bytes, plus added and deleted relevant files) |
+| `"unknown"` | Freshness could not be established either way. | `reason`, one of the words below |
 
-This exposes, to a programmatic consumer, exactly the condition
-`src/manifest.rs::freshness_warning` already prints as a one-line stderr note for a human -- the
-two are computed from the same primitives and can never disagree about the underlying facts. The
-stderr note collapses "no index-state.json", "git unavailable" and "genuinely fresh" into the same
-silence; `freshness.state` keeps them apart, because a script cannot read stderr silence as three
-different things. No native precise tier is upgraded or downgraded by this key -- it says whether
-the index is current, not whether any individual row is trustworthy.
+`freshness.reason` is one of five words:
+
+| `reason` | Meaning |
+| --- | --- |
+| `"no-index-state"` | No `index-state.json`, or one this build cannot certify: an index built by 0.9.0, an interrupted one, or a corrupt one. The stderr line distinguishes a missing record, which stays silent, from an uncertifiable one, which asks for a re-run. |
+| `"git-unavailable"` | `git rev-parse HEAD` did not resolve, or the `git status` read failed or produced output this build cannot parse. |
+| `"other-worktree"` | The index was published by a different worktree of this repository. Run `devscout map` here to publish this worktree's own index. |
+| `"validation-budget"` | The change set exceeded one of the validation caps (5,000 `git status` entries, 2,048 candidate paths, or 16 MiB of candidate bytes), so freshness could not be verified inside the budget. |
+| `"index-changed"` | The record or one of the two artifacts changed while the query ran, or a `map` is running or was interrupted. |
+
+`changedFiles` counts files by their bytes, never by size or modification time, and includes
+configuration inputs that model discovery reads: an edited `.csproj`, `Directory.Build.props` or
+`Cargo.toml`, and a new file the walk would index.
+
+Both stderr and `--json` come from one validation per invocation, so they describe one reading of
+one moment. Every verdict but a genuinely fresh index and two silent cases has its own stderr
+line; stderr stays silent for a missing record and for unavailable Git. The stale line keeps the
+wording earlier releases used.
+
+This exposes, to a programmatic consumer, exactly the conditions the stderr lines describe for a
+human, computed from the same validation and never able to disagree with it. No native precise
+tier is upgraded or downgraded by this key -- it says whether the index is current, not whether
+any individual row is trustworthy.
 
 ## `occurrenceIndex`
 

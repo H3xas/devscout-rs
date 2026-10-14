@@ -8,6 +8,7 @@ here is wired into `cargo test`; it is run by hand, against a corpus pinned by S
 | `corpus.lock` | the pinned public corpora — repository, SHA, licence, status |
 | `clone-corpus.sh` | shallow-clones one locked corpus at its pin and removes `origin` |
 | `ts_parity.py`, `ts-parity.sh` | the TypeScript reference parity run: seed rule, truth, arm runner and scorer ([pre-registration](truth/typescript/preregistration.md)) |
+| `freshness-latency.sh` | what a query pays for certifying a dirty index, against the previous release at the same state |
 | `peers/code-review-graph/` | the peer arm's hash-pinned requirements and its guarded install |
 
 ## Corpora
@@ -65,6 +66,23 @@ Cost without a model in the loop is payload bytes, reported as the proxy it is:
 
 `tokens = ceil(bytes / 4)`. Never place a byte-derived token figure in the same table as a
 harness per-agent counter figure from an agentic lane.
+
+## Freshness validation latency
+
+`freshness-latency.sh` measures the one cost a query pays that a `map` does not: certifying that
+the index still describes the working tree.
+
+```sh
+./bench/clone-corpus.sh typescript bench/clones/typescript
+sh bench/freshness-latency.sh bench/clones/typescript [baseline-binary]
+```
+
+Each arm gets its own state directory and its own copy of the clone. Two states are measured with
+`hyperfine --warmup 20 --runs 200` over `refs <seed> --json`: a clean tree, and a tree with the
+first 1,000 `.ts` files dirty at map time and 100 of them edited again afterwards. The script
+prints both arms' p95 for both states, the deltas, the dirty state's `freshness` object and the
+candidate byte total, and exits non-zero when a delta exceeds its budget or the dirty state does
+not answer `stale`.
 
 ## Resolver precision (semantic oracle)
 

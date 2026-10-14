@@ -22,4 +22,14 @@ Known, rather than hidden. One line per limit; each links the page that details 
 - The content store follows `HOME` by default: [Environment variables](reference/environment.md#the-content-store-follows-home).
 - No watch mode: `map` is incremental, but you run it: [Freshness](concepts.md#freshness).
 - Artifact ordering is deterministic but not a stability promise across minor versions: [Storage](reference/storage.md#ordering).
+- Freshness validation is bounded by three caps — 5,000 `git status` entries, 2,048 candidate paths and 16 MiB of candidate bytes — and answers `unknown` with reason `validation-budget` past any of them: [Freshness](reference/json-output.md#freshness).
+- The index belongs to one worktree at a time: a query from any other worktree reports `unknown` with reason `other-worktree` until it runs `map`: [Storage](reference/storage.md#one-owner-per-index).
+- Freshness is undefended for files Git ignores, which the walk can still index, so their edits and their new ones go undetected: [Freshness](concepts.md#freshness).
+- Freshness is undefended for paths `git status` cannot see — `assume-unchanged`, `skip-worktree`, sparse checkout, submodules, or a stale `core.fsmonitor` answer: [Freshness](concepts.md#freshness).
+- Freshness is undefended outside a Git repository, in a bare repository, and under `GIT_DIR`/`GIT_WORK_TREE` overrides: [Freshness](concepts.md#freshness).
+- Freshness is undefended for an edit made after validation starts while a query runs, for manifest entries an earlier broader `map` left outside the published scope, and for deliberately colliding digests: [Freshness](concepts.md#freshness).
+- Artifact identity is `len`/`modified_ns` (plus `dev`/`ino` on Unix), so a foreign write of the same length inside one timestamp tick on Windows, or inode reuse with an equal size and nanosecond mtime on Unix, goes unnoticed: [Freshness](concepts.md#freshness).
+- An index published at the same tree by a different build of this or a later release is not told apart by extractor identity; compiler-fact artifacts and imported cross-repository edges keep their own freshness rules: [Freshness](concepts.md#freshness).
+- Latency on slow or network filesystems, and dirty trees beyond the benchmarked 1,000-file reference state, are outside the measured budget: [Freshness](concepts.md#freshness).
+- Freshness validation reads `git status` without allowing Git to write a refreshed index, so a tree whose index went stale without the user running Git pays a full re-hash on every query: about 0.5 s on the benchmarked corpus against about 0.1 s when the index may be written back: [Freshness validation latency](benchmarks/results/2026-10-14-freshness-latency.md#what-this-bounds).
 - A message-bus row is a possible route from a recognised publish or dispatch call to a matching handler; runtime routing is unverified: [`bus-hop`](reference/json-output.md#bus-hop).

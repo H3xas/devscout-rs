@@ -7,6 +7,45 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- A query no longer reports `fresh` for an index that does not describe the working tree. Comparing
+  `HEAD` and dirty-path membership was not enough: a file that was already dirty when the index was
+  built was never re-checked, so editing it a second time -- even keeping its size and modification
+  time -- left the old answer labelled `fresh`.
+
+### Changed
+
+- An index belongs to one worktree at a time. A `map` records the worktree that published it, and a
+  query from any other linked worktree answers `unknown` with reason `other-worktree` instead of
+  serving that index as `fresh`. Fragment reuse no longer crosses worktrees either, and the cache
+  generation moved to `v34`.
+- Freshness now compares content. The index records a SHA-256 of the bytes it extracted for every
+  indexed file and every configuration input it read, and validation hashes each candidate and
+  compares. Size and modification time are budget estimates only. `changedFiles` counts files whose
+  bytes differ, plus added and deleted relevant files and changed configuration inputs.
+- The `freshness` object gains three reason words -- `other-worktree`, `validation-budget` and
+  `index-changed` -- and `git-unavailable` widens to cover a `git status` run that fails or cannot be
+  parsed. No new state and no new key. Each new reason also gets its own stderr line; the stale line
+  keeps its earlier wording, and stderr stays silent for a missing record and for unavailable Git.
+- Stderr and `--json` come from one validation per invocation, so a query pays for one `git status`
+  and cannot describe two different moments.
+- Validation is bounded: 5,000 `git status` entries, 2,048 candidate paths and 16 MiB of candidate
+  bytes. Past a cap the state is `unknown` with reason `validation-budget`.
+- A `map` holds a lock in the shared scout directory and publishes the freshness record last, by
+  atomic rename, after an in-progress marker. A query racing a map, or reading a record whose
+  artifacts were replaced afterwards, answers `unknown` with reason `index-changed`.
+- `SCOUT_MTIME_REUSE` is accepted and ignored: reuse keys are content-derived unconditionally, so
+  there is no mtime mode left to select. The `MapOptions::hash_reuse` field stays for API
+  compatibility and no longer changes behavior.
+- The `manifest` module's re-exported `freshness_warning`, `read_index_state`, `write_index_state`,
+  `index_state_path`, `dirty_indexed_files_at` and `is_working_tree_dirty` move to the
+  `freshness` module's own submodules.
+- An index written by an earlier release, or by a different build of this one at the same tree, is
+  never certified. Queries answer `unknown` with reason `no-index-state` and a note to re-run `map`,
+  and the first `map` after an upgrade is cold. A downgrade needs a re-map too. See the
+  [upgrading guide](docs/guides/upgrading.md).
+
 ## [0.9.0] - 2026-10-12
 
 A query-answer and second-language release: every resolved answer states its full count and the next

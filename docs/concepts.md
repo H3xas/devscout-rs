@@ -79,9 +79,21 @@ symbol on your behalf, and an ambiguous name prints every candidate instead of p
 ## Freshness
 
 Re-run `devscout map .` after edits; it re-parses only what changed and leaves the graph alone when
-nothing moved. If the index falls behind `HEAD`, queries print a staleness warning on stderr rather
-than silently answering from stale data. There is no watch mode: `map` is fast and incremental, but
-you run it; nothing watches the filesystem for you.
+nothing moved. Reuse is keyed on content, so a file rewritten to the same bytes -- or rewritten with
+its size and modification time preserved -- is still seen.
+
+An index belongs to one worktree at a time: the worktree that last ran `map` in the repository. A
+query from any other linked worktree reports `unknown` with reason `other-worktree` until that
+worktree maps. Within the owning worktree, an index is `fresh` only when the bytes it recorded --
+dirty files included, compared by digest -- still match the working tree, and the two artifacts it
+certified are the ones still on disk. Anything else is `stale`, or `unknown` with a reason a script
+can branch on; the same verdict reaches stderr as a line and `--json` as the `freshness` object, from
+one validation per invocation. Validation is capped (5,000 `git status` entries, 2,048 candidate
+paths, 16 MiB of candidate bytes), and a tree past a cap answers `unknown` with reason
+`validation-budget` rather than a verdict it could not earn.
+
+There is no watch mode: `map` is fast and incremental, but you run it; nothing watches the
+filesystem for you.
 
 **Freshness** also names two narrower records: the agent hooks' read-freshness cache, which
 remembers what a session has already read (see [Agent hooks](guides/agent-hooks.md)), and the
@@ -114,5 +126,5 @@ and records the same answer as `stats.lane` in `graph.json`; see
 | seed | The symbol or file a query starts from. |
 | member seed | A seed that names a member: `Show`, `Widget.Show` or `App.Widgets.Widget.Show`. |
 | outcome | The answer's kind: `hit`, `zero-hit`, `ambiguous` or `fallback-advised`. |
-| freshness | Whether the index is current with `HEAD`; a query warns on stderr when it has fallen behind. |
+| freshness | Whether the index describes the working tree: this worktree published it, at the current `HEAD`, and no indexed byte differs. A query reports it on stderr and under `--json`. |
 | lane | Which graph a `map` built: syntax-only, or enriched by an admitted compiler-fact artifact. |

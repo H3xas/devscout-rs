@@ -45,6 +45,14 @@ requested range; a full-file read chooses the first mapped declaration. The
 offer does not replace or truncate the file content, and non-code, unmapped,
 stale, or already-offered reads do not produce another offer.
 
+An offer is made only when the index certifies the bytes being read: the
+reading worktree published it, at the HEAD this read already resolved, the
+`graph.json` is still the one the record names, and the file's bytes on disk
+hash to the digest that index recorded. A sibling worktree's index, a file
+edited again after it was indexed, and an index written by an earlier release
+therefore produce no offer. The whole check is a small record file, the digest
+table and one hash -- the hook runs no `git status` per read.
+
 ## What the hooks store
 
 The hooks are the only writers of the read-freshness cache, `<root>/.scout/cache.db`, and of the
