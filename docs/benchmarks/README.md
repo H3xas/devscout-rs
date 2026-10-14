@@ -188,4 +188,5 @@ Dated result documents, one file per run, never edited in place:
 | [2026-10-03-rust-targets.md](results/2026-10-03-rust-targets.md) | Rust nested targets, `cfg_attr` tests and path modules against `rust-analyzer lsif` |
 | [2026-10-11-typescript-reference-parity.md](results/2026-10-11-typescript-reference-parity.md) | TypeScript `refs`, `tests` and `impact` on the pinned nx corpus against one TypeScript-capable peer |
 | [2026-10-14-freshness-latency.md](results/2026-10-14-freshness-latency.md) | What a query pays for certifying a dirty index, against the previous release at the same state |
+| [2026-10-14-hook-latency.md](results/2026-10-14-hook-latency.md) | First-read offer latency against an identical read with the offer suppressed |
 | [2026-10-12-release-0.9.0.md](results/2026-10-12-release-0.9.0.md) | The 0.9.0 release tree: default lane with the precise-tier fixes attributed, `bus-hop` reach, the opt-in enriched lane in three passes and the scripted scorecard |

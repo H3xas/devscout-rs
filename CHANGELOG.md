@@ -20,7 +20,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   query from any other linked worktree answers `unknown` with reason `other-worktree` instead of
   serving that index as `fresh`. Fragment reuse no longer crosses worktrees either, and the cache
   generation moved to `v34`.
-- Freshness now compares content. The index records a SHA-256 of the bytes it extracted for every
+- Freshness now compares content. The index records a SHA256 of the bytes it extracted for every
   indexed file and every configuration input it read, and validation hashes each candidate and
   compares. Size and modification time are budget estimates only. `changedFiles` counts files whose
   bytes differ, plus added and deleted relevant files and changed configuration inputs.

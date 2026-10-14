@@ -1,5 +1,5 @@
 // `devscout hook read` and `devscout hook bash`: stdin JSON -> decision -> stdout,
-// fail-open, < 10 ms end-to-end.
+// fail-open; a first read is about 20 ms p95 on macOS arm64, mostly one git rev-parse spawn.
 //
 // Components:
 //   - the read hook -- `handle_read` below
