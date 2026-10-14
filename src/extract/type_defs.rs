@@ -9,7 +9,7 @@ use super::members::{
     raw_property_types, raw_test_methods,
 };
 use super::refs::{push_ref, type_parameter_names_ordered};
-use super::text::{declared_name, named_children, text};
+use super::text::{declared_name, named_children, path_text, text};
 use super::type_arity_facts::raw_method_type_arities;
 use super::type_param_sites::{delegate_signature, raw_method_type_param_sites};
 use super::types::{DefRecord, NameRecord, RefRecord, UsingRecord};
@@ -258,12 +258,12 @@ pub(super) fn record_using(
     let Some(target) = kids.last() else {
         return;
     };
-    let text_val = text(*target, src).trim().to_string();
+    let text_val = path_text(*target, src).trim().to_string();
     if text_val.is_empty() {
         return;
     }
     if kids.len() == 2 {
-        let alias_name = text(kids[0], src).trim().to_string();
+        let alias_name = path_text(kids[0], src).trim().to_string();
         if !alias_name.is_empty() {
             usings.push(UsingRecord::Alias {
                 alias: alias_name,

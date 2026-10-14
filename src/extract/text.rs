@@ -47,6 +47,92 @@ pub(super) fn declared_name(node: Node, src: &[u8]) -> String {
 }
 
 // ---------------------------------------------------------------------------
+// Token-built dotted names.
+// ---------------------------------------------------------------------------
+
+// The dotted name a qualified name's own tokens spell, with the whitespace,
+// line breaks and comments between them left out: trivia never belongs to a
+// name, and a name written with it must read exactly as its clean spelling
+// does, because every consumer splits or compares that string -- the
+// resolver's last-dot split, a def-path suffix test, a scope lookup.
+//
+// Two adjacent word tokens keep one space between them, so a tuple element
+// name inside a type-argument list stays two words the way `type_descriptor`
+// renders the same list.
+//
+// `None` when any node in the subtree is an ERROR or MISSING node: a name
+// that did not parse gets no token-built path, and its caller then keeps the
+// source text it recorded before, so a parse error can never earn a path the
+// raw text would not have matched.
+pub(super) fn token_path(node: Node, src: &[u8]) -> Option<String> {
+    // One gate for the whole subtree, checked before the walk for the reason
+    // `push_path_tokens` gives below: this grammar reports an ERROR node as
+    // an extra one, so a walk that decided per node would read a damaged
+    // name as if the damage were a comment.
+    if node.has_error() {
+        return None;
+    }
+    let mut out = String::new();
+    if push_path_tokens(node, src, &mut out) {
+        Some(out)
+    } else {
+        None
+    }
+}
+
+// `token_path`, or the node's own source text when its subtree did not parse
+// cleanly.
+pub(super) fn path_text(node: Node, src: &[u8]) -> String {
+    token_path(node, src).unwrap_or_else(|| text(node, src))
+}
+
+// The written text of one name node, read by whichever rule that node earns:
+// its token path when the subtree parsed, its source text when it did not. A
+// caller that has to split one name against another -- a qualified name
+// against its own tail -- reads BOTH sides this way, so the two halves come
+// from one reader and a name written with trivia, or with trivia inside its
+// type arguments, still divides where it was written to divide.
+pub(super) fn name_text(node: Node, src: &[u8]) -> String {
+    if node.has_error() {
+        text(node, src)
+    } else {
+        path_text(node, src)
+    }
+}
+
+fn push_path_tokens(node: Node, src: &[u8], out: &mut String) -> bool {
+    // An ERROR node is reported as an extra one too, so the refusal test has
+    // to come before the trivia skip.
+    if node.is_error() || node.is_missing() {
+        return false;
+    }
+    if node.is_extra() {
+        return true;
+    }
+    if node.child_count() == 0 {
+        let piece = text(node, src);
+        if piece.chars().next().is_some_and(is_identifier_char)
+            && out.chars().last().is_some_and(is_identifier_char)
+        {
+            out.push(' ');
+        }
+        out.push_str(&piece);
+        return true;
+    }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if !push_path_tokens(child, src, out) {
+            return false;
+        }
+    }
+    true
+}
+
+fn is_identifier_char(c: char) -> bool {
+    c.is_alphanumeric() || c == '_'
+}
+
+// ---------------------------------------------------------------------------
 // Purpose/signature composition.
 // ---------------------------------------------------------------------------
 

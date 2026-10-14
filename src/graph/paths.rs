@@ -177,16 +177,25 @@ pub fn rust_crates_path(root: &Path) -> PathBuf {
 // in the existing `methodParams` table. A cached v32 fragment has none of
 // these facts, so a same-count overload that rejects the arguments could
 // still bind precisely ahead of an applicable base or extension method.
+// v34 records every dotted name the C# extractor builds out of a qualified
+// name's own tokens, with the whitespace, line breaks and comments between
+// them left out, so `Widgets . Widget` reads as `Widgets.Widget`. A cached
+// v33 fragment of an unchanged file keeps the raw text in its receiver and
+// type-reference fields, and no lookup matches that text: the written path
+// reaches the ladder with trivia inside it, the last-dot split yields a name
+// with a blank or a comment in it, and every precise edge the name earned
+// degrades to a bare-name guess. A fresh extraction of the same unchanged
+// bytes disagrees, which is why the pair has to move.
 // The rename IS the invalidation mechanism:
 // pre-bump caches stop being found, every file reparses
 // once, no reader carries version-compat logic. Writers delete every
 // superseded generation (see `remove_superseded_caches`).
 pub(crate) fn fragments_cache_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-v33.json")
+    graph_dir(root).join("fragments-v34.json")
 }
 
 pub(crate) fn fragments_index_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-index-v33.json")
+    graph_dir(root).join("fragments-index-v34.json")
 }
 
 // Every generation below the current one, not just the immediately previous:
@@ -257,6 +266,8 @@ pub(crate) const SUPERSEDED_CACHE_FILES: &[&str] = &[
     "fragments-index-v31.json",
     "fragments-v32.json",
     "fragments-index-v32.json",
+    "fragments-v33.json",
+    "fragments-index-v33.json",
 ];
 
 pub(crate) fn remove_superseded_caches(root: &Path) {
