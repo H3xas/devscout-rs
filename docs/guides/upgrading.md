@@ -28,7 +28,7 @@ Two consequences follow for an upgrade, and one for a downgrade:
 - **A downgrade needs a re-map too.** An earlier release reads the new record as one it cannot
   certify, so it answers `unknown` until its own `map` rewrites the record in the older shape.
   Leftover files the older build does not know about (`index-digests.json`, `map.lock`,
-  `fragments-v34.json` and its index) cost disk only and can be deleted by hand.
+  `fragments-v36.json` and its index) cost disk only and can be deleted by hand.
 
 ## Graph schema history
 

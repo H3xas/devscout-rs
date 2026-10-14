@@ -14,12 +14,35 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   built was never re-checked, so editing it a second time -- even keeping its size and modification
   time -- left the old answer labelled `fresh`.
 
+- **A qualified name written with spaces, line breaks or comments between its parts now resolves like
+  its plain spelling.** Every dotted name the C# extractor records -- a receiver's declared type, a
+  type reference, a base-list entry, a DI registration's two types, a namespace name, and a `using`
+  target or alias -- is rebuilt from the name's own tokens, so `Widgets . Widget`,
+  `Widgets./*c*/Widget` and `Widgets.` followed by a line break and `Widget` all read as
+  `Widgets.Widget`. The raw source text used to reach the resolution ladder, match no def path, and
+  drop a precise edge to a guess. A name whose subtree holds a parse error keeps its source text and
+  so binds nothing new. This first moved the fragment cache to the `fragments-v34.json` /
+  `fragments-index-v34.json` generation; the handler change below advances the release's current
+  cache to v35, so an existing cache re-extracts once.
+
+- **An interpolated string argument binds an in-graph `[InterpolatedStringHandler]` parameter.** A call
+  whose argument is written `$"…"` — regular, verbatim (`$@"…"`, `@$"…"`) or raw (`$"""…"""`), with or
+  without holes, parenthesized or not — is recorded apart from a plain string and is admitted at a
+  parameter whose type resolves to a type declared with `[InterpolatedStringHandler]` (bare, with the
+  `Attribute` suffix, namespace-qualified or `global::`-qualified, on any one of a type's partial
+  declarations), so the call binds the handler parameter's declaring type precisely again. Every other
+  comparison still reads the argument as `string`: a string literal or a string-typed local against a
+  handler parameter that declares no implicit conversion keeps the argument-type veto, an interpolated
+  string against an unmarked in-graph parameter keeps it too, so the calls that bind an extension method
+  behind an instance overload taking a `StopContext` bind it as before. The fragment cache moves to
+  `fragments-v35.json`, so an existing cache re-extracts once.
+
 ### Changed
 
 - An index belongs to one worktree at a time. A `map` records the worktree that published it, and a
   query from any other linked worktree answers `unknown` with reason `other-worktree` instead of
   serving that index as `fresh`. Fragment reuse no longer crosses worktrees either, and the cache
-  generation moved to `v34`.
+  generation moves on to `v36`, past both generations above.
 - Freshness now compares content. The index records a SHA256 of the bytes it extracted for every
   indexed file and every configuration input it read, and validation hashes each candidate and
   compares. Size and modification time are budget estimates only. `changedFiles` counts files whose

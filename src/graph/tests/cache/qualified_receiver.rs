@@ -108,16 +108,16 @@ fn a_prior_generation_cache_cannot_leave_a_qualified_receiver_on_its_bare_tail()
     let index = r#"{"src/App/Runner.cs":7}"#;
     let stale = qualified_receiver_payload_without_the_qualifier();
 
-    let warm = temp_dir("qualified-receiver-warm-v32-cache");
+    let warm = temp_dir("qualified-receiver-warm-v33-cache");
     fs::create_dir_all(graph_dir(&warm)).unwrap();
-    plant_cache_pair(&warm, &stale, index, "-v32");
+    plant_cache_pair(&warm, &stale, index, "-v33");
     let warm_graph = rebuild_qualified_receiver(&warm);
     assert_eq!(
         qualified_receiver_targets(&warm_graph),
         vec!["App.Rabbit.Configuration.ConfigurationHostSettings+ConfigurationBatchSettings"],
-        "the v32 payload is not read, so this run re-parses the source and keeps the qualifier"
+        "the v33 payload is not read, so this run re-parses the source and keeps the qualifier"
     );
-    assert!(!graph_dir(&warm).join("fragments-v32.json").exists());
+    assert!(!graph_dir(&warm).join("fragments-v33.json").exists());
 
     let cold = temp_dir("qualified-receiver-cold-cache");
     fs::create_dir_all(graph_dir(&cold)).unwrap();
@@ -135,7 +135,7 @@ fn a_prior_generation_cache_cannot_leave_a_qualified_receiver_on_its_bare_tail()
     // fails the moment the generation bump is reverted.
     let reused = temp_dir("qualified-receiver-current-generation-cache");
     fs::create_dir_all(graph_dir(&reused)).unwrap();
-    plant_cache_pair(&reused, &stale, index, "-v34");
+    plant_cache_pair(&reused, &stale, index, "-v36");
     let reused_graph = rebuild_qualified_receiver(&reused);
     assert_eq!(
         qualified_receiver_targets(&reused_graph),

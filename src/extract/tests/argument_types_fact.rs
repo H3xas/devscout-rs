@@ -30,7 +30,7 @@ class C {
         names,
         vec![
             Some("string".into()),
-            Some("string".into()),
+            Some(INTERPOLATED_ARG_DESCRIPTOR.into()),
             Some("char".into()),
             Some("bool".into()),
             Some("null".into()),
@@ -175,4 +175,61 @@ fn typeof_inferred_local_is_argument_only() {
         .find(|r| r.member.as_deref() == Some("IsNullable"))
         .unwrap();
     assert_eq!(receiver_ref.receiver_type, None);
+}
+
+#[test]
+fn interpolated_handler_ac_2_interpolated_arguments_are_told_apart_from_strings() {
+    let source = r#"
+class Box { public string Value { get; } public string Get() => "g"; }
+class C {
+  string field;
+  void Run(string parameter, Box box) {
+    string local = "l";
+    this.Use($"a", $"b{1}", $@"v", @$"w", $"""raw""", ($"paren"),
+              "plain", @"verbatim", """raw""",
+              local, parameter, field, box.Value, box.Get(), "x" + $"y");
+  }
+  void Use(params object[] values) { }
+}
+"#;
+    let facts = arg_types(source, "Use");
+    let names: Vec<Option<String>> = facts
+        .iter()
+        .take(12)
+        .map(|f| match f {
+            Some(ArgTypeRecord::Known(name)) => Some(name.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        names,
+        vec![
+            Some(INTERPOLATED_ARG_DESCRIPTOR.into()),
+            Some(INTERPOLATED_ARG_DESCRIPTOR.into()),
+            Some(INTERPOLATED_ARG_DESCRIPTOR.into()),
+            Some(INTERPOLATED_ARG_DESCRIPTOR.into()),
+            Some(INTERPOLATED_ARG_DESCRIPTOR.into()),
+            Some(INTERPOLATED_ARG_DESCRIPTOR.into()),
+            Some("string".into()),
+            Some("string".into()),
+            Some("string".into()),
+            Some("string".into()),
+            Some("string".into()),
+            Some("string".into()),
+        ]
+    );
+    assert!(
+        matches!(&facts[12], Some(ArgTypeRecord::Member { member, .. }) if member == "Value"),
+        "{:?}",
+        facts[12]
+    );
+    assert!(
+        matches!(&facts[13], Some(ArgTypeRecord::Member { member, .. }) if member == "Get"),
+        "{:?}",
+        facts[13]
+    );
+    assert!(
+        facts[14].is_none(),
+        "a concatenation is not one interpolated argument"
+    );
 }

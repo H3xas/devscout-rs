@@ -14,7 +14,7 @@ use super::qualifiers::{member_name_text, resolve_member_qualifier, Scope};
 use super::refs::{
     base_type_identifier, invocation_arg_count, type_descriptor, type_parameter_names,
 };
-use super::text::{named_children, text};
+use super::text::{named_children, path_text};
 use super::types::{EnclosingCallFact, Fact, PublishRecord};
 
 // Verbs the local bus/mediator/scheduler stand-ins expose for handing a
@@ -356,9 +356,9 @@ fn implicit_array_message(node: Node, src: &[u8], type_params: &HashSet<String>)
 // A message type as the call writes it: `type_descriptor`'s rendering, with
 // the written qualifier kept in front when the type, under any nullable or
 // array wrapper, is a qualified name (`Ns.M`, `Ns.M[]`, `Outer.Inner`,
-// `Ns.Batch<M>`). The qualifier is rebuilt from its own tokens with the
-// trivia between them left out -- whitespace, line breaks, comments and any
-// other extra node -- so every call shape that reaches here names the same
+// `Ns.Batch<M>`). The qualifier is rebuilt through `text::path_text`, the
+// one token-path helper every extractor site that records a dotted name
+// shares, so every call shape that reaches here names the same
 // segments the same way: the resolver splits a message at its last dot, and
 // `Ns./*c*/M` or `Ns . M` would otherwise reach it as `/*c*/M` or ` M`.
 // `type_descriptor` drops the qualifier because method parameters and
@@ -374,31 +374,10 @@ fn written_message(node: Option<Node>, src: &[u8], type_params: &HashSet<String>
     let qualifier = core
         .filter(|n| n.kind() == "qualified_name")
         .and_then(|n| n.child_by_field_name("qualifier"))
-        .map(|q| {
-            let mut out = String::new();
-            push_tokens(q, src, &mut out);
-            out
-        });
+        .map(|q| path_text(q, src));
     match qualifier {
         Some(qualifier) => format!("{qualifier}.{rendered}"),
         None => rendered,
-    }
-}
-
-// Appends the source text of every token under `node`, in order, skipping
-// extra nodes (comments, preprocessor lines) and the whitespace between
-// tokens, which never belongs to a token.
-fn push_tokens(node: Node, src: &[u8], out: &mut String) {
-    if node.is_extra() {
-        return;
-    }
-    if node.child_count() == 0 {
-        out.push_str(&text(node, src));
-        return;
-    }
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        push_tokens(child, src, out);
     }
 }
 

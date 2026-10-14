@@ -31,6 +31,7 @@ mod nested_end_to_end;
 mod nested_step;
 mod project_admission;
 mod qualified_names;
+mod qualified_path_tokens;
 mod qualified_publish;
 mod qualified_receiver;
 mod receiver_hops;

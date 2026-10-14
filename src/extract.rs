@@ -92,7 +92,8 @@ pub use ts_purpose::{
 pub use types::{
     ArgTypeRecord, DefRecord, DelegateSignature, EnclosingCallFact, ExtensionMethod, Extraction,
     Fact, HandlerRegistrationRecord, LambdaShape, LambdaSlot, NameRecord, OverloadTypeParamSites,
-    PublishRecord, RefRecord, RegistrationRecord, UsingRecord,
+    PublishRecord, RefRecord, RegistrationRecord, UsingRecord, INTERPOLATED_ARG_DESCRIPTOR,
+    INTERPOLATED_HANDLER_MARK,
 };
 pub use walk::extract;
 

@@ -88,3 +88,80 @@ public static class Ext
         )]
     );
 }
+
+// --- the interpolated-string-handler mark ---------------------------------
+
+fn handler_marked(e: &Extraction, id: &str) -> bool {
+    find_def(e, id)
+        .unwrap_or_else(|| panic!("{id} def present"))
+        .method_params
+        .iter()
+        .any(|(name, overloads)| {
+            name == INTERPOLATED_HANDLER_MARK && overloads.as_slice() == [Vec::<String>::new()]
+        })
+}
+
+#[test]
+fn interpolated_handler_ac_1_handler_attribute_marks_its_declaring_type() {
+    let e = extract_src(
+        r#"
+namespace App.Handlers;
+
+[InterpolatedStringHandler]
+public struct Bare { }
+
+[InterpolatedStringHandlerAttribute]
+public class Suffixed { }
+
+[System.Runtime.CompilerServices.InterpolatedStringHandler]
+public ref struct Qualified { }
+
+[global::System.Runtime.CompilerServices.InterpolatedStringHandlerAttribute]
+public record GlobalQualified(int Value);
+
+public class Outer
+{
+    [InterpolatedStringHandler]
+    public struct Nested { }
+}
+
+public class Plain { }
+
+public struct AlsoPlain { }
+"#,
+    );
+    for id in [
+        "App.Handlers.Bare",
+        "App.Handlers.Suffixed",
+        "App.Handlers.Qualified",
+        "App.Handlers.GlobalQualified",
+        "App.Handlers.Outer+Nested",
+    ] {
+        assert!(
+            handler_marked(&e, id),
+            "{id} carries the handler mark: {:?}",
+            find_def(&e, id).map(|d| &d.method_params)
+        );
+    }
+    for id in [
+        "App.Handlers.Plain",
+        "App.Handlers.AlsoPlain",
+        "App.Handlers.Outer",
+    ] {
+        assert!(!handler_marked(&e, id), "{id} carries no mark");
+    }
+    // The mark's own overload carries no parameter descriptor, so nothing that
+    // reads a member's parameters can see one there.
+    let marked = find_def(&e, "App.Handlers.Bare").expect("Bare def present");
+    let mark = marked
+        .method_params
+        .iter()
+        .find(|(name, _)| name == INTERPOLATED_HANDLER_MARK)
+        .expect("the mark is a method_params entry");
+    assert_eq!(mark.1, vec![Vec::<String>::new()]);
+    assert_eq!(
+        marked.method_params.len(),
+        1,
+        "a type with no members records the mark alone"
+    );
+}

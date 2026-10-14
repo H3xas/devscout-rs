@@ -100,6 +100,27 @@ fn argument_positions_admit(
         else {
             return true;
         };
+        // An interpolated string compares as `string` everywhere below except
+        // at the one parameter C# hands it to whole: a marked in-graph handler
+        // type. The mark rides on the merged declaring type, so a partial
+        // declaration in another file carries it too.
+        let interpolated = arg_type == crate::extract::INTERPOLATED_ARG_DESCRIPTOR;
+        if interpolated
+            && marked_handler(
+                index,
+                contexts,
+                &overload.file,
+                &index.defs[idx].namespace,
+                &param_type,
+            )
+        {
+            return true;
+        }
+        let arg_type = if interpolated {
+            "string".to_string()
+        } else {
+            arg_type
+        };
         can_accept(
             &CompareContext {
                 index,
@@ -236,6 +257,24 @@ fn has_conversion(index: &DefIndex, idx: usize) -> bool {
     index.member_lists[idx]
         .method_params
         .contains_key("@implicit-conversion")
+}
+
+// Whether the parameter's own type is an in-graph type the extractor marked as
+// an interpolated string handler. Only a resolved in-graph type can carry the
+// mark, so a fixed-BCL or external parameter type answers false and keeps the
+// plain string comparison.
+fn marked_handler(
+    index: &DefIndex,
+    contexts: &HashMap<String, FileContext>,
+    param_file: &str,
+    ns: &str,
+    param: &str,
+) -> bool {
+    resolve_type(index, contexts, param_file, ns, &[], descriptor_head(param)).is_some_and(|idx| {
+        index.member_lists[idx]
+            .method_params
+            .contains_key(crate::extract::INTERPOLATED_HANDLER_MARK)
+    })
 }
 
 fn resolve_type(

@@ -177,13 +177,26 @@ pub fn rust_crates_path(root: &Path) -> PathBuf {
 // in the existing `methodParams` table. A cached v32 fragment has none of
 // these facts, so a same-count overload that rejects the arguments could
 // still bind precisely ahead of an applicable base or extension method.
-// v34 adds no extraction field: it stamps the pair with the worktree that
+// v34 records every dotted name the C# extractor builds out of a qualified
+// name's own tokens, with the whitespace, line breaks and comments between
+// them left out, so `Widgets . Widget` reads as `Widgets.Widget`. A cached
+// v33 fragment of an unchanged file keeps the raw text in its receiver and
+// type-reference fields, and no lookup matches that text: the written path
+// reaches the ladder with trivia inside it, the last-dot split yields a name
+// with a blank or a comment in it, and every precise edge the name earned
+// degrades to a bare-name guess. A fresh extraction of the same unchanged
+// bytes disagrees, which is why the pair has to move.
+// v35 records an interpolated string argument under its own descriptor and marks a type declared
+// `[InterpolatedStringHandler]` in the `methodParams` table. A cached v33 fragment has neither, and
+// a cached v34 pair carries the other change's facts only, so a map that reused either would still
+// compare the interpolated string as a plain `string` and veto the overload C# selects.
+// v36 adds no extraction field: it stamps the pair with the worktree that
 // wrote it, and changes the file shape from a bare rel-keyed object to an
 // `{owner, entries}` one. The owner is the writing worktree's Git
 // administrative directory, so a fragment another worktree extracted is
 // never reused here even when the relative path and the content key both
 // match: another worktree's scope and its own configuration are what those
-// bytes were read under. A v33 payload carries no owner and does not parse
+// bytes were read under. A v35 payload carries no owner and does not parse
 // as this generation either, so the bump is also what stops a pre-stamp
 // cache from being read.
 // The rename IS the invalidation mechanism:
@@ -191,11 +204,11 @@ pub fn rust_crates_path(root: &Path) -> PathBuf {
 // once, no reader carries version-compat logic. Writers delete every
 // superseded generation (see `remove_superseded_caches`).
 pub(crate) fn fragments_cache_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-v34.json")
+    graph_dir(root).join("fragments-v36.json")
 }
 
 pub(crate) fn fragments_index_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-index-v34.json")
+    graph_dir(root).join("fragments-index-v36.json")
 }
 
 // Every generation below the current one, not just the immediately previous:
@@ -268,6 +281,10 @@ pub(crate) const SUPERSEDED_CACHE_FILES: &[&str] = &[
     "fragments-index-v32.json",
     "fragments-v33.json",
     "fragments-index-v33.json",
+    "fragments-v34.json",
+    "fragments-index-v34.json",
+    "fragments-v35.json",
+    "fragments-index-v35.json",
 ];
 
 pub(crate) fn remove_superseded_caches(root: &Path) {
