@@ -20,26 +20,15 @@ use super::qualifiers::Scope;
 use super::refs::type_descriptor;
 use super::text::{named_children, text};
 use super::types::HandlerRegistrationRecord;
+use crate::bus_seed::{INSTALL_PREFIXES, ROLE_SUFFIXES};
 use std::collections::HashSet;
 
 // A registration call hands a container a type it does not otherwise use, so
-// its own name carries the only signal available before resolution. Both
-// halves below are role words rather than vendor names: a prefix that says
-// something is being installed, or a suffix naming the role the installed
-// type plays. A name matching neither cannot be a registration, and a name
-// matching either still has to survive the resolver's own check that the
-// type it names carries a generic base.
-const INSTALL_PREFIXES: &[&str] = &["Add", "Register", "Use", "Map", "Subscribe"];
-const ROLE_SUFFIXES: &[&str] = &[
-    "Consumer",
-    "Handler",
-    "Processor",
-    "Worker",
-    "Saga",
-    "Subscriber",
-    "Listener",
-];
-
+// its own name carries the only signal available before resolution: a prefix
+// that says something is being installed, or a role suffix naming what the
+// installed type plays. A name matching neither cannot be a registration, and
+// a name matching either still has to survive the resolver's own check that
+// the type it names carries a generic base.
 fn is_installation_name(name: &str) -> bool {
     INSTALL_PREFIXES.iter().any(|p| name.starts_with(p))
         || ROLE_SUFFIXES.iter().any(|s| name.ends_with(s))

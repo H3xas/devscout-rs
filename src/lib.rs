@@ -10,6 +10,9 @@
 /// `devscout audit --semantic`: scores `uses-member` graph edges against a
 /// Roslyn-derived oracle.
 pub mod audit;
+/// The message-bus names recognized before a repository has said anything
+/// about itself, shared by the extraction and resolution layers.
+pub mod bus_seed;
 /// Command-line argument parsing and dispatch.
 pub mod cli;
 /// C#, TypeScript and Rust declaration extraction, and C# and TypeScript

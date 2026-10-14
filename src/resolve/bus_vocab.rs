@@ -39,24 +39,15 @@ use super::index::DefIndex;
 use super::ladder::{resolve_ref, Resolution};
 use super::receiver::def_outer_types;
 use super::scope::FileContext;
+use crate::bus_seed::{CONSUMER_BASES, PUBLISH_VERBS};
 use crate::graph::{FragDef, Fragment};
 
-// Handler bases every repository gets for free, before it has said anything
-// about itself. These are the seed a repository with no registration call at
-// all falls back to, never the limit of what can be recognized.
-const ROOT_CONSUMER_BASES: &[&str] = &[
-    "IConsumer",
-    "BaseConsumer",
-    "IAmInitiatedBy",
-    "IWorkHandler",
-    "IRequestHandler",
-];
-
-// Publish verbs on the same footing. Extraction keeps its own copy of these
-// names for a different job -- deciding whether a plain identifier argument
-// is worth recording at all -- so the two lists answer different questions
-// and neither can be derived from the other.
-const ROOT_PUBLISH_VERBS: &[&str] = &["Publish", "PublishAsync", "SubmitJob", "Reply", "Send"];
+// Both sets below are the shared seed plus whatever this corpus says about
+// itself: `derive_publish_verbs` closes over local forwarding wrappers, and
+// `derive_consumer_bases` over every base a registration admits. The seed is
+// never restated here, so the verb list that decides whether an
+// identifier-argument call was recorded at all and the one that decides
+// whether a recorded site emits cannot drift apart.
 
 /// A message's own identity: the element definition it resolves to, plus
 /// how many array layers wrap it (0 for a plain message, 1 for `M[]`, 2 for
@@ -265,10 +256,8 @@ pub(super) fn concrete_base_argument(
 /// every publish site through it, and only then has the "what does this
 /// corpus send" fact the consumer-base vocabulary needs.
 pub(super) fn derive_publish_verbs(fragments_by_file: &[(String, Fragment)]) -> HashSet<String> {
-    let mut publish_verbs: HashSet<String> = ROOT_PUBLISH_VERBS
-        .iter()
-        .map(|s| (*s).to_string())
-        .collect();
+    let mut publish_verbs: HashSet<String> =
+        PUBLISH_VERBS.iter().map(|s| (*s).to_string()).collect();
     harvest_wrappers(fragments_by_file, &mut publish_verbs);
     publish_verbs
 }
@@ -285,10 +274,8 @@ pub(super) fn derive_consumer_bases(
     file_contexts: &HashMap<String, FileContext>,
     sent: &HashSet<MessageIdentity>,
 ) -> (HashSet<String>, HashSet<String>, bool) {
-    let mut consumer_bases: HashSet<String> = ROOT_CONSUMER_BASES
-        .iter()
-        .map(|s| (*s).to_string())
-        .collect();
+    let mut consumer_bases: HashSet<String> =
+        CONSUMER_BASES.iter().map(|s| (*s).to_string()).collect();
     let mut binding_only_bases: HashSet<String> = HashSet::new();
     let contributed = harvest_registrations(
         fragments_by_file,

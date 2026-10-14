@@ -16,15 +16,14 @@ use super::refs::{
 };
 use super::text::{named_children, text};
 use super::types::{EnclosingCallFact, Fact, PublishRecord};
+use crate::bus_seed::is_publish_verb;
 
-// Verbs the local bus/mediator/scheduler stand-ins expose for handing a
-// message instance to another dispatch, checked on the invoked method's
-// bare name only -- the same shape-only rule `registration_fact` (refs.rs)
-// already applies to a DI registration call. Neither this list nor the rest
-// of this module validates the receiver's own declared type: a call this
-// shape-only test wrongly accepts simply earns no edge at the resolve
+// Which verbs count as a publish is the seed's list, checked on the invoked
+// method's bare name only -- the same shape-only rule `registration_fact`
+// (refs.rs) already applies to a DI registration call. Neither that list nor
+// the rest of this module validates the receiver's own declared type: a call
+// this shape-only test wrongly accepts simply earns no edge at the resolve
 // layer, which needs a registered consumer before it builds one at all.
-const PUBLISH_VERBS: &[&str] = &["Publish", "PublishAsync", "SubmitJob", "Reply", "Send"];
 
 /// A publish-site fact for `function` when it is the callee of an
 /// invocation this module can read a message off. `function` must already
@@ -38,9 +37,9 @@ const PUBLISH_VERBS: &[&str] = &["Publish", "PublishAsync", "SubmitJob", "Reply"
 /// repository's own forwarding wrapper carries a name this engine cannot
 /// know in advance and the resolver is what decides which names its
 /// vocabulary ended up holding. The remaining shape, a plain identifier
-/// argument, stays gated on `PUBLISH_VERBS`: it is by far the most common
-/// call shape in any codebase, and recording every one of them would cost
-/// fragment bytes out of all proportion to the wrappers it would find.
+/// argument, stays gated on the seed's publish verbs: it is by far the most
+/// common call shape in any codebase, and recording every one of them would
+/// cost fragment bytes out of all proportion to the wrappers it would find.
 pub(super) fn publish_fact(
     function: Node,
     ns: &str,
@@ -50,7 +49,7 @@ pub(super) fn publish_fact(
 ) -> Option<PublishRecord> {
     let name_node = function.child_by_field_name("name")?;
     let verb = member_name_text(Some(name_node), src)?;
-    let known_verb = PUBLISH_VERBS.contains(&verb.as_str());
+    let known_verb = is_publish_verb(&verb);
     let message = match named_message(function, name_node, src, &scope.type_params) {
         Some(message) => message,
         None if known_verb => identifier_message(function, src, type_stack, scope)?,
