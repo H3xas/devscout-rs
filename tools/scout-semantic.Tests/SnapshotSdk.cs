@@ -49,13 +49,40 @@ internal static class SnapshotSdk
     internal static string[] ReferenceAssemblyPaths() =>
         Directory.GetFiles(ReferenceAssemblyDirectory, "*.dll").OrderBy(path => path, StringComparer.Ordinal).ToArray();
 
+    /// <summary>The variables a .NET host sets in its children to point MSBuild and the MSBuild
+    /// SDK resolver at its own installation. A host does not overwrite a value it already finds,
+    /// so a child that inherits them keeps the <em>launcher's</em> targets and tasks even when the
+    /// pinned root's host is the one being started -- an ordinary <c>dotnet test</c> launched by a
+    /// newer SDK is enough to hand a 9.0.305 child a 10.0.302 <c>Sdks</c> directory, which then
+    /// fails to load its tasks. Selecting a host explicitly means this list is dropped first.
+    /// </summary>
+    internal static readonly string[] SdkSelectionVariables =
+    {
+        "MSBuildSDKsPath",
+        "MSBuildExtensionsPath",
+        "MSBuildExtensionsPath32",
+        "MSBuildExtensionsPath64",
+        "MSBuildUserExtensionsPath",
+        "MSBUILD_EXE_PATH",
+        "DOTNET_HOST_PATH",
+        "DOTNET_MSBUILD_SDK_RESOLVER_SDKS_DIR",
+        "DOTNET_MSBUILD_SDK_RESOLVER_SDKS_VER",
+        "DOTNET_MSBUILD_SDK_RESOLVER_CLI_DIR",
+        "DOTNET_MSBUILD_SDK_RESOLVER_MSBUILD_DIR",
+    };
+
     /// <summary>Points a child process at the dedicated install: this root's host first on
-    /// <c>PATH</c>, this root as <c>DOTNET_ROOT</c>, and no multi-level lookup, so the restore the
-    /// child spawns and the MSBuild it registers both come from it. The nologo and telemetry
-    /// switches only keep the captured output free of banner text a test would otherwise have to
-    /// step over.</summary>
+    /// <c>PATH</c>, this root as <c>DOTNET_ROOT</c>, no inherited selection override and no
+    /// multi-level lookup, so the restore the child spawns and the MSBuild it registers both come
+    /// from it. The nologo and telemetry switches only keep the captured output free of banner
+    /// text a test would otherwise have to step over.</summary>
     internal static void ApplyTo(ProcessStartInfo startInfo)
     {
+        foreach (var variable in SdkSelectionVariables)
+        {
+            startInfo.Environment.Remove(variable);
+        }
+
         startInfo.Environment["DOTNET_ROOT"] = Root;
         startInfo.Environment["DOTNET_MULTILEVEL_LOOKUP"] = "0";
         startInfo.Environment["DOTNET_NOLOGO"] = "1";

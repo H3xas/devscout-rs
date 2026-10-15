@@ -61,6 +61,24 @@ SHA512_RE = re.compile(r"^[0-9a-f]{128}$")
 LIST_SDKS_RE = re.compile(r"^(\S+)\s+\[(.+)\]$")
 MSBUILD_LINE_RE = re.compile(r"^msbuild (\S+) at (.+)$", re.MULTILINE)
 
+# Variables a .NET host exports to point MSBuild and the MSBuild SDK resolver at its own
+# installation. They are dropped from every child's environment (see `child_environment`), because
+# a host keeps a value it finds already set and would otherwise honour the launcher's selection
+# over the root this tool validated.
+SDK_SELECTION_VARIABLES = (
+    "MSBuildSDKsPath",
+    "MSBuildExtensionsPath",
+    "MSBuildExtensionsPath32",
+    "MSBuildExtensionsPath64",
+    "MSBuildUserExtensionsPath",
+    "MSBUILD_EXE_PATH",
+    "DOTNET_HOST_PATH",
+    "DOTNET_MSBUILD_SDK_RESOLVER_SDKS_DIR",
+    "DOTNET_MSBUILD_SDK_RESOLVER_SDKS_VER",
+    "DOTNET_MSBUILD_SDK_RESOLVER_CLI_DIR",
+    "DOTNET_MSBUILD_SDK_RESOLVER_MSBUILD_DIR",
+)
+
 # Platform -> runtime identifier, the key the pin's archive table uses. A host outside this table
 # has no declared archive and is refused rather than guessed at.
 HOST_RIDS = {
@@ -235,8 +253,16 @@ def host_rid():
 def child_environment(root):
     """The environment every child runs under: this root's host first on PATH, and this root as
     DOTNET_ROOT, so the muxer, the SDK it selects and the MSBuild the oracle registers all come
-    from the supplied install rather than an ambient one."""
+    from the supplied install rather than an ambient one.
+
+    The variables a .NET host sets to point MSBuild and the MSBuild SDK resolver at its own
+    installation are removed from the inherited environment first. A host does not overwrite one it
+    already finds, so a child started from a shell or a driven task that inherited another
+    installation's selection would build against that installation's targets and tasks while
+    `DOTNET_ROOT` and the absolute host path say otherwise."""
     environment = os.environ.copy()
+    for variable in SDK_SELECTION_VARIABLES:
+        environment.pop(variable, None)
     environment["DOTNET_ROOT"] = str(root)
     environment["DOTNET_MULTILEVEL_LOOKUP"] = "0"
     environment["DOTNET_NOLOGO"] = "1"

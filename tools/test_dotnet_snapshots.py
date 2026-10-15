@@ -227,11 +227,12 @@ class InputDriftTests(SyntheticRootCase):
 
 class InventoryTests(SyntheticRootCase):
     def test_the_digest_is_independent_of_creation_order(self):
-        first, _ = snapshots.tree_inventory(self.root.pack, "the reference pack")
+        first_count, first_digest = snapshots.tree_inventory(self.root.pack, "the reference pack")
         (self.root.pack / "System.Runtime.dll").unlink()
         (self.root.pack / "System.Runtime.dll").write_text("reference-bytes", encoding="utf-8")
-        second, _ = snapshots.tree_inventory(self.root.pack, "the reference pack")
-        self.assertEqual(first, second)
+        second_count, second_digest = snapshots.tree_inventory(self.root.pack, "the reference pack")
+        self.assertEqual(first_count, second_count)
+        self.assertEqual(first_digest, second_digest)
 
     def test_an_empty_tree_is_refused(self):
         empty = Path(self._dir.name) / "empty"
@@ -340,6 +341,23 @@ class DeclarationTests(unittest.TestCase):
         pin = copy.deepcopy(self.pin)
         del pin["archives"]["linux-x64"]["url"]
         self.assert_refused(pin, "missing")
+
+
+class ChildEnvironmentTests(unittest.TestCase):
+    def test_the_supplied_root_selects_and_leads_the_path(self):
+        environment = snapshots.child_environment(Path("/pinned/root"))
+
+        self.assertEqual(environment["DOTNET_ROOT"], "/pinned/root")
+        self.assertTrue(environment["PATH"].startswith("/pinned/root" + os.pathsep))
+        self.assertEqual(environment["DOTNET_MULTILEVEL_LOOKUP"], "0")
+
+    def test_an_inherited_sdk_selection_never_reaches_a_child(self):
+        decoys = {variable: f"/launcher/{variable}" for variable in snapshots.SDK_SELECTION_VARIABLES}
+        with mock.patch.dict(os.environ, decoys):
+            environment = snapshots.child_environment(Path("/pinned/root"))
+
+        for variable in snapshots.SDK_SELECTION_VARIABLES:
+            self.assertNotIn(variable, environment)
 
 
 class HostAndEntryPointTests(unittest.TestCase):

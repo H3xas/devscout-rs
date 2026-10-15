@@ -614,7 +614,12 @@ python3 tools/dotnet-snapshots.py --sdk-root <root> --write   # replace both, af
 
 Exit codes are `0` for success, `1` for drift (`--check` only) and `2` for a refused pin, root or
 prerequisite. Both modes run every child with the supplied root as `DOTNET_ROOT` and first on
-`PATH`, and refuse the run when the oracle reports an MSBuild instance outside that root. `--write`
+`PATH`, and drop the variables a host exports to point MSBuild and the MSBuild SDK resolver at
+*its* install (`MSBuildSDKsPath`, `MSBuildExtensionsPath`, `DOTNET_HOST_PATH` and the
+`DOTNET_MSBUILD_SDK_RESOLVER_*` set). A host does not overwrite a value it finds already set, so
+without that a shell or a driven task that inherited another installation's selection would build
+against that installation's targets while the root above said otherwise. The run is refused when
+the oracle reports an MSBuild instance outside that root. `--write`
 replaces the two snapshot files and nothing else, and a failure of the second producer leaves both
 untouched. Generated output goes to a disposable directory under `out/`, removed on success and
 kept for inspection on failure.
@@ -646,7 +651,12 @@ prerequisite failure to report, never a reason to download one or to fall back t
 
 CI provisions the same thing from the declared `linux-x64` archive into a job-private root, checks
 the published sha512 before unpacking, and runs `--check` from it; the job fails on drift instead
-of refreshing expected bytes.
+of refreshing expected bytes. Every other step of that job which re-produces one of the two
+snapshots -- the compiler-facts and context producers, their byte diffs, the capability-restricted
+run and the repeat-run check -- invokes the oracle through the same root, and the validator's own
+unit tests run there too. The job's parent `global.json` pin is left for the steps it still
+covers: it selects a *version*, and the same version unpacked by a different installer still moves
+every recorded reference identity.
 
 ### What is regenerated, and what is exempt
 
@@ -667,6 +677,13 @@ where no pin is in reach:
 ```sh
 SNAPSHOT_DOTNET_ROOT="$HOME/.dotnet-roots/9.0.305-osx-arm64" dotnet test tools/scout-semantic.Tests -c Release
 ```
+
+The launcher may be any install, including one newer than the pin: each child the helpers start
+has the launcher's own SDK-selection variables removed before the pinned root's are applied, so
+`dotnet test` run by a 10.0 band still compiles every test-owned project with the pinned 9.0.305
+targets and tasks rather than the launcher's. The variable is still required -- a missing or
+incompatible root fails the run naming it, rather than letting those projects fall back to the
+ambient SDK.
 
 ## Implementation notes and known limits
 

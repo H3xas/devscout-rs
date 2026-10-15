@@ -26,10 +26,18 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   manifests' own content inventories, the published archive digest per host) and refuses anything
   else before either file changes, then regenerates both and compares raw bytes with nothing
   masked. CI extracts the declared archive into a root of its own and runs the same check instead
-  of trusting the SDK the runner selects. `OfflineRestoreCliTests` and the tests sharing its
+  of trusting the SDK the runner selects, and every other step of that job which re-produces one of
+  the two snapshots -- the compiler-facts and context producers, the capability-restricted run and
+  the repeat-run check -- invokes the oracle through that root too, so no producer is left on the
+  runner's own install of the same version. `OfflineRestoreCliTests` and the tests sharing its
   helpers take their host, their `global.json` pin and their stub's reference assemblies from
   `SNAPSHOT_DOTNET_ROOT`, so a project they create under the system temporary directory compiles
-  under the pinned install whether or not the machine's own default SDK is newer.
+  under the pinned install whether or not the machine's own default SDK is newer. Both the tool and
+  those helpers drop the
+  SDK-selection variables a host exports to its children (`MSBuildSDKsPath`, `MSBuildExtensionsPath`,
+  `DOTNET_HOST_PATH` and the `DOTNET_MSBUILD_SDK_RESOLVER_*` set) before applying the pinned root:
+  a host keeps a value it finds already set, so a 10.0-band launcher would otherwise hand its own
+  targets and tasks to the pinned child and fail the offline restores it was meant to pin.
 
 - A query no longer reports `fresh` for an index that does not describe the working tree. Comparing
   `HEAD` and dirty-path membership was not enough: a file that was already dirty when the index was

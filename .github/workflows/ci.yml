@@ -205,6 +205,12 @@ jobs:
           SNAPSHOT_DOTNET_ROOT: ${{ runner.temp }}/dotnet-snapshot-sdk
         run: python3 tools/dotnet-snapshots.py --sdk-root "$SNAPSHOT_DOTNET_ROOT" --check
 
+      # The validator's own refusals -- a wrong or missing root, changed pack or manifest
+      # content, a malformed declaration -- are what keep a drifted install out of the
+      # comparison above, so they run here too rather than only on a developer's machine.
+      - name: Snapshot SDK validator tests
+        run: python3 -m unittest discover -s tools -p test_dotnet_snapshots.py
+
       - name: Restore (oracle locked, context tests locked, fixtures CPM-pinned or plain)
         run: |
           dotnet restore tools/scout-semantic --locked-mode
@@ -253,12 +259,26 @@ jobs:
       - name: Facts output matches the committed snapshot
         run: diff -u fixtures/csharp-flowtrace/facts.json out/facts/csharp-flowtrace.json
 
+      # Everything from here that produces or re-produces a committed snapshot runs the oracle
+      # through the dedicated root acquired above, never through the SDK this job's other steps
+      # select out of the runner's own install. The parent pin chooses a version, not an install:
+      # the same 9.0.305 laid out by the runner's installer still moves every recorded reference
+      # identity, so a producer left on it would fail the comparison it is meant to keep.
       - name: Restore the compiler-facts fixture (package-free)
-        run: dotnet restore fixtures/csharp-compiler-facts/Fixture.csproj
+        env:
+          SNAPSHOT_DOTNET_ROOT: ${{ runner.temp }}/dotnet-snapshot-sdk
+        run: |
+          export DOTNET_ROOT="$SNAPSHOT_DOTNET_ROOT"
+          export PATH="$SNAPSHOT_DOTNET_ROOT:$PATH"
+          "$SNAPSHOT_DOTNET_ROOT/dotnet" restore fixtures/csharp-compiler-facts/Fixture.csproj
 
       - name: Run the oracle in compiler-facts protocol mode on its own fixture
+        env:
+          SNAPSHOT_DOTNET_ROOT: ${{ runner.temp }}/dotnet-snapshot-sdk
         run: |
-          dotnet run --project tools/scout-semantic --no-build -c Release -- \
+          export DOTNET_ROOT="$SNAPSHOT_DOTNET_ROOT"
+          export PATH="$SNAPSHOT_DOTNET_ROOT:$PATH"
+          "$SNAPSHOT_DOTNET_ROOT/dotnet" run --project tools/scout-semantic --no-build -c Release -- \
             fixtures/csharp-compiler-facts/Fixture.csproj --root fixtures/csharp-compiler-facts \
             --emit compiler-facts --compiler-facts out/compiler-facts/csharp-compiler-facts.json \
             --tfm net9.0 -p Configuration=Debug -p Platform=AnyCPU --no-git
@@ -272,8 +292,12 @@ jobs:
       # request -- field-by-field, rather than doubling the committed
       # fixture's size with a second full snapshot.
       - name: Capability-restricted run carries no occurrences key and reports its own provided set
+        env:
+          SNAPSHOT_DOTNET_ROOT: ${{ runner.temp }}/dotnet-snapshot-sdk
         run: |
-          dotnet run --project tools/scout-semantic --no-build -c Release -- \
+          export DOTNET_ROOT="$SNAPSHOT_DOTNET_ROOT"
+          export PATH="$SNAPSHOT_DOTNET_ROOT:$PATH"
+          "$SNAPSHOT_DOTNET_ROOT/dotnet" run --project tools/scout-semantic --no-build -c Release -- \
             fixtures/csharp-compiler-facts/Fixture.csproj --root fixtures/csharp-compiler-facts \
             --emit compiler-facts --compiler-facts out/compiler-facts/csharp-compiler-facts-restricted.json \
             --tfm net9.0 -p Configuration=Debug -p Platform=AnyCPU --capabilities symbols,diagnostics --no-git
@@ -288,8 +312,12 @@ jobs:
           fi
 
       - name: Run the oracle in context mode on its own fixture (default selection)
+        env:
+          SNAPSHOT_DOTNET_ROOT: ${{ runner.temp }}/dotnet-snapshot-sdk
         run: |
-          dotnet run --project tools/scout-semantic --no-build -c Release -- \
+          export DOTNET_ROOT="$SNAPSHOT_DOTNET_ROOT"
+          export PATH="$SNAPSHOT_DOTNET_ROOT:$PATH"
+          "$SNAPSHOT_DOTNET_ROOT/dotnet" run --project tools/scout-semantic --no-build -c Release -- \
             fixtures/csharp-context/Fixture.sln --root fixtures/csharp-context \
             --emit context --context out/context/csharp-context.json
 
@@ -297,8 +325,12 @@ jobs:
         run: diff -u fixtures/csharp-context/context.json out/context/csharp-context.json
 
       - name: Two context runs over the same pinned inputs are byte-identical
+        env:
+          SNAPSHOT_DOTNET_ROOT: ${{ runner.temp }}/dotnet-snapshot-sdk
         run: |
-          dotnet run --project tools/scout-semantic --no-build -c Release -- \
+          export DOTNET_ROOT="$SNAPSHOT_DOTNET_ROOT"
+          export PATH="$SNAPSHOT_DOTNET_ROOT:$PATH"
+          "$SNAPSHOT_DOTNET_ROOT/dotnet" run --project tools/scout-semantic --no-build -c Release -- \
             fixtures/csharp-context/Fixture.sln --root fixtures/csharp-context \
             --emit context --context out/context/csharp-context-2.json
           diff -u out/context/csharp-context.json out/context/csharp-context-2.json
