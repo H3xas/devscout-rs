@@ -143,6 +143,8 @@ mod tests {
             "Sender",
             "Dispatcher",
             "Postgres",
+            "Publishé",
+            "Publish-Again",
             "ProjectTo",
             "IsAny",
             "",
