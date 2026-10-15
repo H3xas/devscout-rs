@@ -164,20 +164,46 @@ jobs:
       # upward from the working directory, so a pin in the checkout's parent
       # directory holds for every step run from the checkout while leaving the
       # working tree clean for the oracle's git-state provenance. The
-      # qualification tree and its net10.0 row keep their own, closer pins. The
-      # temporary directory beside the pin is for tests that build projects of
-      # their own: under the system temp directory they would resolve the newest
-      # SDK instead.
+      # qualification tree and its net10.0 row keep their own, closer pins. Tests
+      # that build projects of their own are not covered by it: they run from the
+      # system temporary directory with no pin in reach, and select their own
+      # install through SNAPSHOT_DOTNET_ROOT instead.
       - name: Pin the .NET SDK for steps run from the checkout
         run: |
           printf '{"sdk": {"version": "9.0.305", "rollForward": "disable"}}\n' > "$GITHUB_WORKSPACE/../global.json"
-          mkdir -p "$GITHUB_WORKSPACE/../tmp"
           test "$(dotnet --version)" = 9.0.305
 
       - uses: actions/cache@v6
         with:
           path: ~/.nuget/packages
           key: ${{ runner.os }}-nuget-${{ hashFiles('tools/scout-semantic/packages.lock.json', 'tools/scout-semantic.Tests/packages.lock.json', 'fixtures/csharp-semantic/Directory.Packages.props', 'fixtures/csharp-target-qualification/Directory.Packages.props') }}
+
+      # The two committed snapshots record the SDK and MSBuild versions the run resolved, every
+      # reference assembly's MVID and the hash of every imported file, so they reproduce only from
+      # an install of the pinned patch laid out the same way. Two installs of one patch are not the
+      # same install: the runner's own copy is a different layout, and the SDK this job's other
+      # steps select lives in it. This extracts the archive the pin names into a root of its own --
+      # never over the runner's install -- and checks the published digest before unpacking
+      # anything.
+      - name: Acquire the pinned snapshot SDK into a dedicated root
+        env:
+          SNAPSHOT_DOTNET_ROOT: ${{ runner.temp }}/dotnet-snapshot-sdk
+        run: |
+          set -eu
+          archive="$RUNNER_TEMP/$(jq -r '.archives["linux-x64"].name' tools/dotnet-snapshot-sdk.json)"
+          curl -fsSL -o "$archive" "$(jq -r '.archives["linux-x64"].url' tools/dotnet-snapshot-sdk.json)"
+          echo "$(jq -r '.archives["linux-x64"].sha512' tools/dotnet-snapshot-sdk.json)  $archive" | sha512sum --check --strict -
+          mkdir -p "$SNAPSHOT_DOTNET_ROOT"
+          tar -xzf "$archive" -C "$SNAPSHOT_DOTNET_ROOT"
+
+      # One validation, then the comparison: the tool refuses a root that is missing an SDK, carries
+      # a second one, or whose reference-pack or workload-manifest bytes differ from the pin, and it
+      # never rewrites a committed snapshot. A mismatch fails the job rather than refreshing the
+      # expected bytes.
+      - name: Validate the pinned SDK and compare both committed snapshots
+        env:
+          SNAPSHOT_DOTNET_ROOT: ${{ runner.temp }}/dotnet-snapshot-sdk
+        run: python3 tools/dotnet-snapshots.py --sdk-root "$SNAPSHOT_DOTNET_ROOT" --check
 
       - name: Restore (oracle locked, context tests locked, fixtures CPM-pinned or plain)
         run: |
@@ -197,13 +223,14 @@ jobs:
       - name: Build oracle
         run: dotnet build tools/scout-semantic --no-restore -c Release
 
-      # The offline-restore tests create and build projects under the temp
-      # directory, so it has to sit under the pinned parent for those builds to
-      # resolve the same SDK as the oracle. It is spelled without `..` because
-      # the tests compare the paths they build under it with resolved ones.
+      # The offline-restore tests create and build projects of their own under the system temporary
+      # directory. They select the dedicated root above explicitly -- host, pin and reference
+      # assemblies alike -- rather than depending on that directory sitting under a parent pin, so
+      # no TMPDIR override is needed and the run is the same one a developer gets locally.
       - name: Context schema unit tests
-        run: |
-          TMPDIR="$(dirname "$GITHUB_WORKSPACE")/tmp" dotnet test tools/scout-semantic.Tests --no-restore -c Release
+        env:
+          SNAPSHOT_DOTNET_ROOT: ${{ runner.temp }}/dotnet-snapshot-sdk
+        run: dotnet test tools/scout-semantic.Tests --no-restore -c Release
 
       - name: Run oracle on the fixture solution
         run: |

@@ -15,6 +15,22 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The two committed .NET oracle snapshots are now reproducible from one declared SDK install,
+  and the tests that build temporary projects select it explicitly.** `compiler-facts.json` and
+  `context.json` record the resolved SDK and MSBuild versions, every reference assembly's MVID,
+  the hash of every imported file and the fingerprint folded from all of it, so two installs of one
+  SDK patch -- a macOS installer layout and a `dotnet-install` tarball layout, or a machine that
+  resolves a newer default -- disagreed on their bytes with no source change. `tools/dotnet-snapshots.py`
+  is now the only producer of those two files: it validates the supplied `--sdk-root` against the
+  new pin in `tools/dotnet-snapshot-sdk.json` (exact SDK, the reference pack's and the workload
+  manifests' own content inventories, the published archive digest per host) and refuses anything
+  else before either file changes, then regenerates both and compares raw bytes with nothing
+  masked. CI extracts the declared archive into a root of its own and runs the same check instead
+  of trusting the SDK the runner selects. `OfflineRestoreCliTests` and the tests sharing its
+  helpers take their host, their `global.json` pin and their stub's reference assemblies from
+  `SNAPSHOT_DOTNET_ROOT`, so a project they create under the system temporary directory compiles
+  under the pinned install whether or not the machine's own default SDK is newer.
+
 - A query no longer reports `fresh` for an index that does not describe the working tree. Comparing
   `HEAD` and dirty-path membership was not enough: a file that was already dirty when the index was
   built was never re-checked, so editing it a second time -- even keeping its size and modification

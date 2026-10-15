@@ -10,6 +10,12 @@ repository's own build. Composed and diffed by
 `dotnet` on the test path, and published in
 [`docs/reference/dotnet-targets.md`](../../docs/reference/dotnet-targets.md).
 
+The committed rows are qualification results, not captures of one install: each keeps the SDK
+version it observed and the pin it ran under -- 9.0.305 and the tree's own `global.json` for every
+row, plus the `net10.0` row's separate 10.0.302 directory. They are composed by the qualification
+script above and are exempt from `tools/dotnet-snapshots.py` for that reason
+(`tools/scout-semantic/README.md` classifies every committed oracle snapshot and its exemption).
+
 ## Shared cases
 
 | File | What it exercises |

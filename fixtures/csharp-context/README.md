@@ -35,11 +35,22 @@ username, and no restore-generated `obj/*.nuget.g.props`/`.targets` content is f
 envelope. `versions.sdk`/`versions.msbuild` are stamped from the SDK that generated the fixture, and
 reference identities (assembly MVIDs) are hashed from that SDK's install, so the install layout
 matters as much as the patch number. `context.json` and
-`fixtures/csharp-compiler-facts/compiler-facts.json`, the two snapshots CI regenerates, come from a
-9.0.305 install laid out the way CI's `dotnet-install` lays it out, selected through the same
-`global.json` pin CI writes: a macOS `.pkg` install of the same patch ships reference assemblies
-with different MVIDs. The other four files are only checked offline and keep the bytes they were
-generated with.
+`fixtures/csharp-compiler-facts/compiler-facts.json`, the two snapshots the regeneration tool owns,
+come from a 9.0.305 `dotnet-install` tarball layout: a macOS `.pkg` install of the same patch ships
+reference assemblies with different MVIDs. The other four files are only checked offline and keep
+the bytes they were generated with.
+
+Regenerate `context.json` with, from the repository root:
+
+```sh
+python3 tools/dotnet-snapshots.py --sdk-root "$SNAPSHOT_DOTNET_ROOT" --write
+```
+
+It validates the supplied root against `tools/dotnet-snapshot-sdk.json`, regenerates this file and
+`../csharp-compiler-facts/compiler-facts.json` together, and refuses a root that carries another
+SDK, a second one, or pack or manifest bytes that differ from the pin --
+`tools/scout-semantic/README.md` documents obtaining such a root, what the pin covers, and which
+committed snapshots are exempt from regeneration and why.
 
 ## Known gaps
 
