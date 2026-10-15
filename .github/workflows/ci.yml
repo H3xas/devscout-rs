@@ -46,6 +46,9 @@ jobs:
       - name: Size and complexity ratchet self-test
         run: sh tools/check-size-and-complexity-selftest.sh
 
+      - name: DCO sign-off checker self-test
+        run: sh tools/check-dco-selftest.sh
+
       - name: Install stable Rust toolchain
         uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
         with:
