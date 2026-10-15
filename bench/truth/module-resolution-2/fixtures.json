@@ -1,0 +1,66 @@
+[
+  {
+    "id": "nx",
+    "corpus": "typescript",
+    "url": "https://github.com/nrwl/nx.git",
+    "sha": "1ce5e91f5ec13cf8812f3e67e1fae33079336876",
+    "license": "MIT",
+    "mode": "node10",
+    "prefix": "packages/nx/",
+    "minimum_truth_resolvable": 100,
+    "preflight_truth_resolvable": 2993,
+    "shapes": [
+      "pnpm-workspace",
+      "CommonJS",
+      "package-main"
+    ]
+  },
+  {
+    "id": "pyright",
+    "corpus": "typescript-module-node16",
+    "url": "https://github.com/microsoft/pyright.git",
+    "sha": "f2e1a5344576ae07730fcca2c4497a9453a7ab11",
+    "license": "MIT",
+    "mode": "node16",
+    "prefix": "packages/pyright-internal/",
+    "minimum_truth_resolvable": 100,
+    "preflight_truth_resolvable": 2768,
+    "shapes": [
+      "ESM",
+      "CommonJS",
+      "package-main"
+    ]
+  },
+  {
+    "id": "schematics",
+    "corpus": "typescript-module-nodenext",
+    "url": "https://github.com/nestjs/schematics.git",
+    "sha": "0fb879d759ce6effa73ce43ab703d7c772e8c5e6",
+    "license": "MIT",
+    "mode": "nodenext",
+    "prefix": "src/lib/",
+    "minimum_truth_resolvable": 100,
+    "preflight_truth_resolvable": 129,
+    "shapes": [
+      "CommonJS",
+      "relative"
+    ]
+  },
+  {
+    "id": "vite",
+    "corpus": "typescript-module-bundler",
+    "url": "https://github.com/vitejs/vite.git",
+    "sha": "928e721b36690ac0f3f118290a21fc0cc4349055",
+    "license": "MIT",
+    "mode": "bundler",
+    "prefix": "packages/vite/",
+    "minimum_truth_resolvable": 100,
+    "preflight_truth_resolvable": 1099,
+    "shapes": [
+      "ESM",
+      "exports",
+      "imports",
+      "pnpm-workspace"
+    ]
+  }
+]

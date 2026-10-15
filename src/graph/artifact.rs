@@ -163,12 +163,15 @@ pub struct Graph {
     /// set that declares no name byte-identical to what it was.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub names: Vec<GraphName>,
-    /// The repo's `.csproj` projects, sorted by `id` -- appended LAST, after
+    /// The repo's `.csproj` projects, sorted by `id` -- appended after
     /// `names`, and omitted entirely when the repo declares none. A tree with
     /// no `.csproj` therefore serializes exactly as it did before the project
     /// model existed.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub units: Vec<GraphUnit>,
+    /// Imports left unresolved by a declared TypeScript module mode.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unresolved_imports: Vec<crate::tsgraph::UnresolvedImport>,
 }
 
 /// Reads and deserializes the repository graph, returning `None` on failure.

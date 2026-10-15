@@ -1,0 +1,1 @@
+{"compilerOptions":{"module":"commonjs","moduleResolution":"node10","baseUrl":"src","paths":{"@sample/lib":["alias"],"@sample/miss":["absent"]}}}

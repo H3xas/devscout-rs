@@ -52,6 +52,7 @@ fn stats_keeps_heuristic_by_tier_last_even_when_a_ts_block_is_present() {
             ts_def_count: 2,
             external_import_count: 3,
             unresolved_ref_count: 4,
+            ..crate::tsgraph::TsStats::default()
         }),
         semantic: None,
         lane: None,
@@ -110,6 +111,7 @@ fn graph_omits_units_when_empty_and_appends_them_after_names_otherwise() {
             owner: String::new(),
         }],
         units: Vec::new(),
+        unresolved_imports: Vec::new(),
     };
 
     const WITHOUT_UNITS: &str = concat!(
@@ -172,6 +174,36 @@ fn graph_omits_units_when_empty_and_appends_them_after_names_otherwise() {
     assert!(reparsed.units.is_empty());
     let round_tripped: Graph = serde_json::from_str(&json).unwrap();
     assert_eq!(round_tripped.units, g.units);
+}
+
+#[test]
+fn module_resolution_ac_6_unresolved_imports_append_after_units_and_default_empty() {
+    let mut graph = Graph {
+        schema_version: GRAPH_SCHEMA_VERSION,
+        built_at_head: None,
+        defs: Vec::new(),
+        edges: Vec::new(),
+        stats: empty_stats(),
+        names: Vec::new(),
+        units: Vec::new(),
+        unresolved_imports: Vec::new(),
+    };
+    let without = serde_json::to_string(&graph).unwrap();
+    assert!(!without.contains("unresolved_imports"));
+    graph
+        .unresolved_imports
+        .push(crate::tsgraph::UnresolvedImport {
+            from_file: "src/main.ts".into(),
+            from_line: 2,
+            target: "./missing".into(),
+            reason: "target-not-indexed".into(),
+        });
+    let with = serde_json::to_string(&graph).unwrap();
+    assert!(with.ends_with(concat!(
+        r#""unresolved_imports":[{"from_file":"src/main.ts","from_line":2,"target":"./missing","reason":"target-not-indexed"}]}"#
+    )));
+    let reparsed: Graph = serde_json::from_str(&without).unwrap();
+    assert!(reparsed.unresolved_imports.is_empty());
 }
 
 // --- stats.lane: appended last, omitted when no lane record is due -----

@@ -319,3 +319,55 @@ committed one is a finding, never a replacement. The dated results document repo
 arm's stored commands and outputs, per-seed and pooled figures against the sealed and the raw
 truth, every miss and extra classified by the scorer's evidence, the generated where-peers-win
 section, the manifest check and the scorer-fix disclosure; no part of it is edited by hand.
+
+## TypeScript module resolution
+
+The [second registration](../../bench/truth/module-resolution-2/preregistration.md) scores the
+module-naming sites devscout records against TypeScript 5.9.3. It keeps the first registration's
+public repositories, pins, prefixes, TypeScript options and thresholds. Its classifier removes
+the documented `outside-envelope` sites before either binary's graph is read. The first
+registration and [its result](results/2026-10-15-typescript-module-resolution.md) can be
+reproduced from their own registration commit with `bench/truth/module-resolution/`; this run
+leaves those inputs and results unchanged.
+
+Run from the repository worktree. `SCRATCH` and `STORE` are separate absolute directories outside
+any checkout; `TS` names the installed TypeScript 5.9.3 `typescript.js`. Use one pristine copy per
+fixture and arm, at the exact `fixtures.json` and `corpus.lock` pin. First produce truth and its
+classification on the pristine fixture, before either arm runs:
+
+```sh
+REG=bench/truth/module-resolution-2
+python3 -B bench/ts_resolution_envelope.py verify "$REG"
+python3 -B bench/ts_resolution.py verify bench/truth/module-resolution
+node bench/ts_resolution_sites.cjs "$TS" "$SCRATCH/nx-pristine" nx packages/nx/ "$STORE/nx-truth.tsv"
+python3 -B bench/ts_resolution_envelope.py classify "$SCRATCH/nx-pristine" \
+  "$STORE/nx-truth.tsv" "$STORE/nx-classified.tsv"
+python3 -B bench/ts_resolution_envelope.py count "$STORE"/*-classified.tsv
+```
+
+Repeat truth and classification for Pyright (`packages/pyright-internal/`), Schematics
+(`src/lib/`) and Vite (`packages/vite/`). The classified files and their hashes precede the first
+arm. Build one `devscout` binary from the recorded base commit and another from the registered
+head. Run all base fixtures first, then all head fixtures, with fresh copies and isolated state:
+
+```sh
+sh bench/ts-resolution.sh "$BASE_BIN" "$SCRATCH/nx-base" "$NX_PIN" \
+  "$SCRATCH/nx-base-state" "$STORE/base/nx"
+python3 -B bench/ts_resolution_envelope.py score "$REG" nx base \
+  "$STORE/nx-classified.tsv" "$STORE/base/nx/graph.json" "$STORE/base/nx/score.json"
+sh bench/ts-resolution.sh "$HEAD_BIN" "$SCRATCH/nx-head" "$NX_PIN" \
+  "$SCRATCH/nx-head-state" "$STORE/head/nx"
+python3 -B bench/ts_resolution_envelope.py score "$REG" nx head \
+  "$STORE/nx-classified.tsv" "$STORE/head/nx/graph.json" "$STORE/head/nx/score.json"
+```
+
+For each binary, copy and map every directory under `fixtures/module-resolution/` into a separate
+scratch case directory with its own HOME, registry and content DB. Keep each case's `graph.json`
+at `$STORE/synthetic/<arm>/<case>/graph.json`, then run
+`python3 -B bench/ts_resolution_envelope.py synthetic "$REG" <arm>
+"$STORE/synthetic/<arm>" "$STORE/synthetic/<arm>-score.json"`. The head must match all 65
+registered rows, target or unresolved reason included. After scoring all eight public fixture
+graphs, render both arms and both synthetic scores with
+`bench/ts_resolution_envelope_report.py <date> <base-commit> <head-commit> <new-results-file>
+<eight-score-files> --synthetic <base-score> <head-score>`. Render again to a new scratch path and
+compare bytes. The renderer refuses an existing output file.

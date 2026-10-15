@@ -2,7 +2,7 @@
 
 Known, rather than hidden. One line per limit; each links the page that details it.
 
-- TypeScript references cover imports, calls, JSX tags and dispatches only, a package imported by name resolves only through the repository's own `tsconfig`, and JavaScript answers are read but not measured: [TypeScript imports](explanation/resolution.md#typescript-imports).
+- TypeScript references cover imports, calls, JSX tags and dispatches only; declared module modes resolve repository workspace packages, but external dependencies and unrecorded `require()` forms remain outside the graph, configuration-only edits need another `map`, and JavaScript query answers have no separate parity measurement: [TypeScript modules](reference/typescript-modules.md).
 - Rust edges come from path resolution only: a method call is never typed by its receiver, and trait dispatch, generics, macro expansion and `cfg` evaluation are not followed: [Rust known gaps](reference/rust-constructs.md#known-gaps).
 - In a mixed repository a Rust item shares the symbol lookup with C# and TypeScript definitions, so a shared bare name can become ambiguous: [Rust paths](explanation/resolution.md#rust-paths).
 - Generic-delegate `typeParams` handling is under review rather than pinned: [Generic delegates](explanation/resolution.md#generic-delegates).

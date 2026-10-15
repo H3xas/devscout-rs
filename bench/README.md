@@ -8,6 +8,10 @@ here is wired into `cargo test`; it is run by hand, against a corpus pinned by S
 | `corpus.lock` | the pinned public corpora — repository, SHA, licence, status |
 | `clone-corpus.sh` | shallow-clones one locked corpus at its pin and removes `origin` |
 | `ts_parity.py`, `ts-parity.sh` | the TypeScript reference parity run: seed rule, truth, arm runner and scorer ([pre-registration](truth/typescript/preregistration.md)) |
+| `ts_resolution_sites.cjs` | TypeScript 5.9.3 truth for the import sites the extractor records |
+| `ts_resolution_envelope.py` | configuration-only site classification and base/head scoring ([registration](truth/module-resolution-2/preregistration.md)) |
+| `ts_resolution_envelope_report.py` | deterministic results with excluded sites and synthetic cases |
+| `test_ts_resolution_envelope.py`, `test_ts_resolution_envelope_report.py` | classifier, scorer and renderer checks |
 | `freshness-latency.sh` | what a query pays for certifying a dirty index, against the previous release at the same state |
 | `hook-latency.sh` | first-read offer latency against an identical read with the offer suppressed |
 | `peers/code-review-graph/` | the peer arm's hash-pinned requirements and its guarded install |

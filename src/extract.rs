@@ -69,6 +69,7 @@ mod rs_sites;
 mod rs_uses;
 mod text;
 mod ts_fragment;
+mod ts_fragment_forms;
 mod ts_fragment_types;
 mod ts_purpose;
 mod type_arity_facts;
@@ -84,7 +85,8 @@ pub use rs_fragment::extract_rs_file;
 pub use rs_fragment_types::{RsFileExtraction, RsFragment, RsItem};
 pub use ts_fragment::{extract_ts_file, extract_ts_fragment, TsFileExtraction};
 pub use ts_fragment_types::{
-    TsBinding, TsFragment, TsFragmentDef, TsImport, TsReexport, TsReexportName, TsRef,
+    TsBinding, TsDynamicImport, TsFragment, TsFragmentDef, TsImport, TsReexport, TsReexportName,
+    TsRef,
 };
 pub use ts_purpose::{
     compose_hybrid_ts_purpose, extract_ts_purpose, extract_ts_purpose_with_heuristic,

@@ -94,6 +94,7 @@ fn make_graph(defs: Vec<graph::Def>, edges: Vec<graph::Edge>) -> graph::Graph {
         stats: dummy_stats(),
         names: Vec::new(),
         units: Vec::new(),
+        unresolved_imports: Vec::new(),
     }
 }
 

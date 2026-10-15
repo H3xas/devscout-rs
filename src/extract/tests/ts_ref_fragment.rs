@@ -27,6 +27,45 @@ fn ref_tuples(f: &TsFragment) -> Vec<(&str, &str, Option<&str>, usize)> {
 }
 
 #[test]
+fn module_resolution_ac_5_records_import_equals_and_export_equals() {
+    let imported = ts_fragment(
+        "import thing = require('./thing');\nthing.run();\n",
+        crate::parse::TsGrammar::Typescript,
+    );
+    assert_eq!(imported.imports.len(), 1);
+    assert!(imported.imports[0].require);
+    assert_eq!(imported.imports[0].spec, "./thing");
+    assert_eq!(imported.imports[0].bindings[0].local, "thing");
+    assert_eq!(imported.imports[0].bindings[0].imported, "*");
+
+    let exported = ts_fragment(
+        "function thing() {}\nexport = thing;\n",
+        crate::parse::TsGrammar::Typescript,
+    );
+    assert_eq!(exported.export_equals.as_deref(), Some("thing"));
+    assert_eq!(exported.defs[0].name, "thing");
+    let missing = ts_fragment("export = unknown;", crate::parse::TsGrammar::Typescript);
+    assert!(missing.export_equals.is_none());
+}
+
+#[test]
+fn module_resolution_ac_5_records_namespace_and_literal_dynamic_imports() {
+    let fragment = ts_fragment(
+        "export * as ns from './module';\nimport('./dynamic');\nimport(`./template`);\nimport(`./${name}`);\nimport(name);\n",
+        crate::parse::TsGrammar::Typescript,
+    );
+    assert_eq!(fragment.reexports[0].namespace.as_deref(), Some("ns"));
+    assert_eq!(fragment.dynamic_imports.len(), 2);
+    assert_eq!(fragment.dynamic_imports[0].spec, "./dynamic");
+    assert_eq!(fragment.dynamic_imports[1].spec, "./template");
+    assert_eq!(fragment.non_literal_dynamic_imports, 2);
+    let json = serde_json::to_string(&fragment).unwrap();
+    assert!(json.contains("\"namespace\":\"ns\""));
+    assert!(json.contains("\"dynamicImports\":[{\"spec\":\"./dynamic\",\"line\":2}"));
+    assert!(json.ends_with("\"nonLiteralDynamicImports\":2}"));
+}
+
+#[test]
 fn an_import_clause_records_default_named_aliased_and_namespace_bindings() {
     let f = ts_fragment(
         "import Thing, { one, two as alias } from './m';\nimport * as ns from './n';\n",

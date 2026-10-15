@@ -1,0 +1,1 @@
+{"compilerOptions":{"module":"commonjs","moduleResolution":"node10","paths":{"pick":["./src/js-only.js","./src/ts-only.ts"]}}}
