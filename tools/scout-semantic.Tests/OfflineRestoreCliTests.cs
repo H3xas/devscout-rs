@@ -25,45 +25,11 @@ namespace ScoutSemanticTests;
 /// </summary>
 public sealed class OfflineRestoreCliTests
 {
-    private static readonly string RepoRoot = FindRepoRoot();
     internal static readonly string CliDll = Path.Combine(AppContext.BaseDirectory, "scout-semantic.dll");
 
     private const string PackageId = "StubPkg";
     private const string PackageVersion = "1.0.0";
     internal const string Tfm = "net9.0";
-
-    private static string FindRepoRoot()
-    {
-        var dir = AppContext.BaseDirectory;
-        while (dir is not null && !File.Exists(Path.Combine(dir, "fixtures", "csharp-semantic", "Fixture.sln")))
-        {
-            var parent = Path.GetDirectoryName(dir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-            dir = parent == dir ? null : parent;
-        }
-
-        return dir ?? throw new InvalidOperationException(
-            $"could not locate the repository root (fixtures/csharp-semantic/Fixture.sln) walking up from {AppContext.BaseDirectory}");
-    }
-
-    /// <summary>The installed SDK's own netcoreapp reference-assembly set (never the runtime
-    /// implementation assemblies <c>typeof(object).Assembly.Location</c> would give): compiling
-    /// the stub against these keeps its metadata's own type identities (<c>System.Object</c>'s
-    /// declaring assembly, in particular) exactly what an ordinary SDK-style build's own compiler
-    /// invocation -- the one that later compiles the consumer project against this stub -- itself
-    /// expects, so the two independently-compiled assemblies agree on every shared BCL type.</summary>
-    private static string[] ReferenceAssemblyPaths()
-    {
-        var runtimeDir = Path.GetDirectoryName(typeof(object).Assembly.Location)!;
-        var dotnetRoot = Directory.GetParent(runtimeDir)!.Parent!.Parent!.FullName;
-        var refPackRoot = Path.Combine(dotnetRoot, "packs", "Microsoft.NETCore.App.Ref");
-        var versionDir = Directory.EnumerateDirectories(refPackRoot)
-            .OrderByDescending(d => d, StringComparer.Ordinal)
-            .First();
-        var netDir = Directory.EnumerateDirectories(Path.Combine(versionDir, "ref"))
-            .OrderByDescending(d => d, StringComparer.Ordinal)
-            .First();
-        return Directory.GetFiles(netDir, "*.dll");
-    }
 
     /// <summary>Compiles a trivial stub assembly with Roslyn and packs it, by hand, into the
     /// exact expanded layout a NuGet global packages folder uses -- nuspec, a real <c>.nupkg</c>
@@ -81,7 +47,7 @@ public sealed class OfflineRestoreCliTests
         var compilation = CSharpCompilation.Create(
             PackageId,
             new[] { syntaxTree },
-            ReferenceAssemblyPaths().Select(p => MetadataReference.CreateFromFile(p)),
+            SnapshotSdk.ReferenceAssemblyPaths().Select(p => MetadataReference.CreateFromFile(p)),
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 
         using var dllStream = new MemoryStream();
@@ -136,7 +102,7 @@ public sealed class OfflineRestoreCliTests
     /// and the compile's only possible error is the reference this file's tests are about.</summary>
     internal static string WriteConsumerProject(string root, string extraProperties = "")
     {
-        Directory.CreateDirectory(root);
+        SnapshotSdk.WriteGlobalJson(root);
         File.WriteAllText(Path.Combine(root, "Consumer.csproj"), $"""
             <Project Sdk="Microsoft.NET.Sdk">
               <PropertyGroup>
@@ -166,7 +132,7 @@ public sealed class OfflineRestoreCliTests
     /// consumer itself cannot bind, the same shape the real defect this test guards took.</summary>
     private static string WriteReferencedLibProject(string root)
     {
-        Directory.CreateDirectory(root);
+        SnapshotSdk.WriteGlobalJson(root);
         File.WriteAllText(Path.Combine(root, "ReferencedLib.csproj"), $"""
             <Project Sdk="Microsoft.NET.Sdk">
               <PropertyGroup>
@@ -184,7 +150,7 @@ public sealed class OfflineRestoreCliTests
 
     private static string WriteConsumerReferencingProject(string root, string referencedLibProjectPath)
     {
-        Directory.CreateDirectory(root);
+        SnapshotSdk.WriteGlobalJson(root);
         var relative = Path.GetRelativePath(root, referencedLibProjectPath).Replace('\\', '/');
         File.WriteAllText(Path.Combine(root, "Consumer.csproj"), $"""
             <Project Sdk="Microsoft.NET.Sdk">
@@ -207,7 +173,7 @@ public sealed class OfflineRestoreCliTests
     /// test stays independent of the machine's own package cache.</summary>
     private static string WriteNetStandardLibProject(string dir)
     {
-        Directory.CreateDirectory(dir);
+        SnapshotSdk.WriteGlobalJson(dir);
         File.WriteAllText(Path.Combine(dir, "Lib.csproj"), $"""
             <Project Sdk="Microsoft.NET.Sdk">
               <PropertyGroup>
@@ -237,13 +203,14 @@ public sealed class OfflineRestoreCliTests
 
     internal static (int ExitCode, string Output) RunDotnetRestore(string project, string nugetPackages, string source)
     {
-        var psi = new ProcessStartInfo("dotnet")
+        var psi = new ProcessStartInfo(SnapshotSdk.DotnetPath)
         {
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
             WorkingDirectory = Path.GetDirectoryName(project)!,
         };
+        SnapshotSdk.ApplyTo(psi);
         foreach (var arg in new[] { "restore", project, "--source", source, "-p:NuGetAudit=false" })
         {
             psi.ArgumentList.Add(arg);
@@ -260,13 +227,14 @@ public sealed class OfflineRestoreCliTests
     internal static (int ExitCode, string StdOut, string StdErr, TimeSpan Elapsed) RunCli(
         string workingDirectory, string nugetPackages, params string[] args)
     {
-        var psi = new ProcessStartInfo("dotnet")
+        var psi = new ProcessStartInfo(SnapshotSdk.DotnetPath)
         {
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
             WorkingDirectory = workingDirectory,
         };
+        SnapshotSdk.ApplyTo(psi);
         psi.ArgumentList.Add(CliDll);
         foreach (var arg in args)
         {
@@ -681,6 +649,50 @@ public sealed class OfflineRestoreCliTests
             Assert.True(File.Exists(customAssets), $"expected the restore to write {customAssets}. stderr:\n{stderr}");
             Assert.Null(ScoutSemantic.OfflineRestore.RecordedRestoreError(customAssets));
             Assert.Equal("{}", File.ReadAllText(staleAssets));
+        }
+        finally
+        {
+            DeleteAll(root, gpf, outPath);
+        }
+    }
+
+    /// <summary>A project the test creates under the system temporary directory -- outside the
+    /// checkout, outside the pinned install, and with no pin above it -- still resolves the pinned
+    /// SDK, and a compilation that binds proves it did: the run reports the MSBuild instance it
+    /// registered, which has to be the pinned install's own, and the consumer that uses the stub
+    /// package's type reaches <c>complete</c>. A host whose own default SDK is newer is exactly
+    /// the machine this fails on when the selection is left ambient, so the assertions are on the
+    /// selection the run reported rather than on which SDK the machine would have chosen.</summary>
+    [Fact]
+    public void a_project_under_the_system_temp_directory_resolves_the_pinned_sdk()
+    {
+        Assert.True(File.Exists(CliDll), $"expected the built CLI at {CliDll}");
+        var root = Path.Combine(Path.GetTempPath(), $"scout-semantic-pinned-sdk-{Guid.NewGuid():N}");
+        var gpf = Path.Combine(Path.GetTempPath(), $"scout-semantic-pinned-sdk-gpf-{Guid.NewGuid():N}");
+        var outPath = Path.Combine(Path.GetTempPath(), $"scout-semantic-pinned-sdk-out-{Guid.NewGuid():N}.json");
+        try
+        {
+            Assert.False(root.StartsWith(SnapshotSdk.RepoRoot, StringComparison.Ordinal));
+            Assert.False(root.StartsWith(SnapshotSdk.Root, StringComparison.Ordinal));
+
+            Directory.CreateDirectory(gpf);
+            WriteStubPackage(gpf);
+            WriteConsumerProject(root);
+
+            var (exitCode, _, stderr, _) = RunCli(
+                root, gpf,
+                "Consumer.csproj", "--root", ".", "--emit", "context", "--context", outPath, "--tfm", Tfm);
+
+            Assert.True(exitCode == 0, $"expected exit 0, got {exitCode}. stderr:\n{stderr}");
+            var registration = stderr.Split('\n')
+                .Single(line => line.StartsWith("msbuild ", StringComparison.Ordinal));
+            Assert.Equal(
+                $"msbuild {SnapshotSdk.SdkVersion} at {Path.Combine(SnapshotSdk.Root, "sdk", SnapshotSdk.SdkVersion)}",
+                registration.Trim());
+
+            var compilation = SingleCompilation(outPath);
+            Assert.Equal("complete", compilation.GetProperty("state").GetString());
+            Assert.Equal("complete", compilation.GetProperty("reason").GetString());
         }
         finally
         {

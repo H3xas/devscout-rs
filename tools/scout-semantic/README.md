@@ -444,13 +444,11 @@ a dynamic receiver (see its own README). Its output is committed as
 `fixtures/csharp-compiler-facts/compiler-facts.json`, which CI regenerates with `--no-git` and
 diffs byte-for-byte, and which `tests/compiler_facts_shape.rs` checks for shape without a .NET
 toolchain. Regenerate the snapshot after any change to `CompilerFacts.cs`, `CompilerOccurrences.cs`
-or the fixture:
+or the fixture, through the pinned-root command
+[above](#committed-snapshots-and-the-pinned-snapshot-sdk):
 
 ```sh
-dotnet run --project tools/scout-semantic --no-build -c Release -- \
-    fixtures/csharp-compiler-facts/Fixture.csproj --root fixtures/csharp-compiler-facts \
-    --emit compiler-facts --compiler-facts fixtures/csharp-compiler-facts/compiler-facts.json \
-    --tfm net9.0 -p Configuration=Debug -p Platform=AnyCPU --no-git
+python3 tools/dotnet-snapshots.py --sdk-root "$SNAPSHOT_DOTNET_ROOT" --write
 ```
 
 ## Multi-targeting
@@ -577,6 +575,115 @@ fingerprint's own mutation-class evidence and the four-way multi-target/multi-co
 identity round trip live in the sibling `fixtures/csharp-context-fingerprint/` (its own `README.md`;
 `tests/context_fingerprint_pairs.rs` pins it offline the same way), generated locally and not
 CI-regenerated.
+
+## Committed snapshots and the pinned snapshot SDK
+
+Two committed files are the engine's own output captured from a run, not hand-written data:
+
+| Snapshot | Producer |
+|---|---|
+| `fixtures/csharp-compiler-facts/compiler-facts.json` | `--emit compiler-facts` over the package-free compiler-facts fixture |
+| `fixtures/csharp-context/context.json` | `--emit context` over the context fixture's default selection |
+
+Both record what the *install* was, not only what the source was: `versions.sdk`,
+`versions.msbuild`, every `references[].identity` (a reference assembly's MVID), the hash of every
+imported file in `imports[].hash`, and the per-compilation `fingerprint` that folds all of it
+together. Two installs of the same patch disagree on those bytes -- a macOS installer layout ships
+unsigned reference assemblies with different MVIDs than a `dotnet-install` tarball layout, and the
+workload manifests each layout carries hash differently -- so a snapshot generated under one layout
+diffs under the other with no source change, and a runner that resolves a *newer* SDK moves
+`versions` alone. Generation is therefore restricted to one declared install, and the comparison is
+raw bytes with no field masked or normalized.
+
+`tools/dotnet-snapshot-sdk.json` declares that install: the exact SDK version, the official archive
+for each supported host with its published sha512, and the content inventory of the two input
+trees whose bytes reach a snapshot -- the `Microsoft.NETCore.App.Ref` pack the compilations bind
+against and the workload manifests the SDK resolves. An inventory is the sha256 of every regular
+file's root-relative path and content under the tree in sorted order, so a changed, added or
+removed file changes it; a symlink, a non-regular file and an empty tree are refused outright.
+
+`tools/dotnet-snapshots.py` is the only thing that produces the two files. It validates the
+supplied root against the pin first -- exactly one SDK, at exactly the pinned version, with both
+inventories agreeing -- then restores and builds the oracle and both producers, and only then
+compares or writes:
+
+```sh
+python3 tools/dotnet-snapshots.py --sdk-root <root> --check   # compare, never write a tracked file
+python3 tools/dotnet-snapshots.py --sdk-root <root> --write   # replace both, after both succeeded
+```
+
+Exit codes are `0` for success, `1` for drift (`--check` only) and `2` for a refused pin, root or
+prerequisite. Both modes run every child with the supplied root as `DOTNET_ROOT` and first on
+`PATH`, and drop the variables a host exports to point MSBuild and the MSBuild SDK resolver at
+*its* install (`MSBuildSDKsPath`, `MSBuildExtensionsPath`, `DOTNET_HOST_PATH` and the
+`DOTNET_MSBUILD_SDK_RESOLVER_*` set). A host does not overwrite a value it finds already set, so
+without that a shell or a driven task that inherited another installation's selection would build
+against that installation's targets while the root above said otherwise. The run is refused when
+the oracle reports an MSBuild instance outside that root. `--write`
+replaces the two snapshot files and nothing else, and a failure of the second producer leaves both
+untouched. Generated output goes to a disposable directory under `out/`, removed on success and
+kept for inspection on failure.
+
+### Obtaining the pinned root offline
+
+Local generation stays offline: verify an archive the machine already has, extract it into a
+directory of its own, and never extract over a system install or write a pin into a checkout
+parent.
+
+```sh
+archive="$HOME/Downloads/dotnet-sdk-9.0.305-osx-arm64.tar.gz"
+python3 - "$archive" <<'PY'
+import hashlib, json, sys
+pin = json.load(open("tools/dotnet-snapshot-sdk.json"))["archives"]["osx-arm64"]
+digest = hashlib.sha512(open(sys.argv[1], "rb").read()).hexdigest()
+sys.exit(0 if digest == pin["sha512"] else "the archive does not match the declared sha512")
+PY
+mkdir -p "$HOME/.dotnet-roots/9.0.305-osx-arm64"
+tar -xzf "$archive" -C "$HOME/.dotnet-roots/9.0.305-osx-arm64"
+```
+
+Extract the archive whole. A root assembled by copying only the pieces the snapshots visibly need
+is not a complete install, and the failure surfaces later rather than at validation: the
+offline-restore tests' temporary projects resolve `Microsoft.AspNetCore.App.Ref` from the same root
+they select their host from. A root that is missing an SDK, carries a second one, or whose pack or
+manifest bytes differ is refused before any snapshot is generated; missing archives are a
+prerequisite failure to report, never a reason to download one or to fall back to an ambient SDK.
+
+CI provisions the same thing from the declared `linux-x64` archive into a job-private root, checks
+the published sha512 before unpacking, and runs `--check` from it; the job fails on drift instead
+of refreshing expected bytes. Every other step of that job which re-produces one of the two
+snapshots -- the compiler-facts and context producers, their byte diffs, the capability-restricted
+run and the repeat-run check -- invokes the oracle through the same root, and the validator's own
+unit tests run there too. The job's parent `global.json` pin is left for the steps it still
+covers: it selects a *version*, and the same version unpacked by a different installer still moves
+every recorded reference identity.
+
+### What is regenerated, and what is exempt
+
+| Committed output | Class | Why |
+|---|---|---|
+| `fixtures/csharp-compiler-facts/compiler-facts.json`, `fixtures/csharp-context/context.json` | regenerated | The two files `tools/dotnet-snapshots.py` owns and CI regenerates. |
+| the four other `fixtures/csharp-context/*.json` | static conformance input | Each pins one selection or scope case that the default run does not cover; they are checked offline from committed bytes by `tests/context_envelope.rs` and are not install captures that a refresh should rewrite. |
+| the thirteen `fixtures/csharp-context-fingerprint/**/*.json` | static mutation evidence | Every pair holds the same consuming source with exactly one other input moved, including the SDK-version pair and the reference-content pair, whose whole point is that those two installs and those two reference DLLs differ. Two of them (`ac4/`) hold the four-way multi-target/multi-configuration identity round trip. Regenerating them would destroy the evidence `tests/context_fingerprint_pairs.rs` reads. |
+| `fixtures/csharp-target-qualification/results/*.json` and its `expected*.json` | composed conformance output | Each row records the SDK its own row observed and the pin it ran under: 9.0.305 for every row but the `net10.0` row, which pins 10.0.302 in its own directory. They are composed by `tools/qualify-dotnet-targets.py` and keep those observed values. |
+| `fixtures/compiler-facts/candidate*.json`, `fixtures/csharp-truth/manifest.json` | synthetic input | Hand-authored candidate documents and a truth manifest, not captures of any install. |
+| `refs.jsonl`/`units.jsonl`/`facts.json`/`direction`/`ts`-family outputs | unchanged | They carry no SDK, MSBuild, reference-identity or import-hash field, so no install moves them. An identity- or provenance-only delta in one would have to be demonstrated before it were treated as anything but a regression. |
+
+`tools/scout-semantic.Tests` reads the same pin: every test that builds a project of its own takes
+its host, its pin and its stub's reference assemblies from the install named by
+`SNAPSHOT_DOTNET_ROOT`, because those projects are created under the system temporary directory
+where no pin is in reach:
+
+```sh
+SNAPSHOT_DOTNET_ROOT="$HOME/.dotnet-roots/9.0.305-osx-arm64" dotnet test tools/scout-semantic.Tests -c Release
+```
+
+The launcher may be any install, including one newer than the pin: each child the helpers start
+has the launcher's own SDK-selection variables removed before the pinned root's are applied, so
+`dotnet test` run by a 10.0 band still compiles every test-owned project with the pinned 9.0.305
+targets and tasks rather than the launcher's. The variable is still required -- a missing or
+incompatible root fails the run naming it, rather than letting those projects fall back to the
+ambient SDK.
 
 ## Implementation notes and known limits
 

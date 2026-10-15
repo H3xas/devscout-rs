@@ -66,14 +66,19 @@ the real embedded `context.envelope` (replacing a frozen placeholder), and the t
 `artifactSchemaVersion`/`producer.engineRevision` this delta deliberately moves -- each checked
 field by field, not assumed clean by precedent.
 
-Regenerate with (from the repository root, after `dotnet build tools/scout-semantic -c Release`):
+Regenerate with, from the repository root, against the dedicated pinned SDK install
+(`tools/scout-semantic/README.md` documents obtaining and validating one, and what the pin covers):
 
 ```sh
-dotnet run --project tools/scout-semantic --no-build -c Release -- \
-  fixtures/csharp-compiler-facts/Fixture.csproj --root fixtures/csharp-compiler-facts \
-  --emit compiler-facts --compiler-facts fixtures/csharp-compiler-facts/compiler-facts.json \
-  --tfm net9.0 -p Configuration=Debug -p Platform=AnyCPU --no-git
+python3 tools/dotnet-snapshots.py --sdk-root "$SNAPSHOT_DOTNET_ROOT" --write
 ```
+
+That command regenerates this snapshot and `fixtures/csharp-context/context.json` together -- both
+are produced from one validated root in one transaction -- and `--check` in place of `--write`
+compares them without touching a tracked file. `compiler-facts.json` records the resolved SDK and
+MSBuild versions, the MVID of every reference assembly and the hash of every import, so it only
+reproduces from an install of the pinned patch laid out the same way; the command refuses any other
+root rather than writing bytes that would diff on another machine.
 
 A run restricted to the pre-existing capabilities (no `occurrences` key, otherwise byte-identical)
 is produced the same way, adding `--capabilities symbols,diagnostics`:
