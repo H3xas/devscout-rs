@@ -84,6 +84,101 @@ fn module_resolution_ac_1_bundler_allows_extensionless_relative_import() {
 }
 
 #[test]
+fn module_resolution_ac_1_non_esm_modes_probe_dotted_basenames() {
+    for (mode, package_type, usage) in [
+        ("node10", "module", Usage::Import),
+        ("bundler", "module", Usage::Import),
+        ("node16", "commonjs", Usage::Require),
+    ] {
+        let root = Temp::new();
+        root.write(
+            "tsconfig.json",
+            &format!(r#"{{"compilerOptions":{{"moduleResolution":"{mode}"}}}}"#),
+        );
+        root.write("package.json", &format!(r#"{{"type":"{package_type}"}}"#));
+        let files = ["src/use.ts", "src/user.service.ts"];
+        assert_eq!(
+            target(resolve(&root, &files, "./user.service", usage)).as_deref(),
+            Some("src/user.service.ts"),
+            "{mode}"
+        );
+    }
+}
+
+#[test]
+fn module_resolution_ac_1_esm_alias_does_not_append_extensions_or_probe_directories() {
+    let root = Temp::new();
+    root.write(
+        "tsconfig.json",
+        r#"{"compilerOptions":{"moduleResolution":"node16","baseUrl":".","paths":{"@lib/*":["lib/*"]}}}"#,
+    );
+    root.write("package.json", r#"{"type":"module"}"#);
+    let files = ["src/use.ts", "lib/bar.ts", "lib/foo/index.ts", "lib/qux.js"];
+    assert!(target(resolve(&root, &files, "@lib/bar", Usage::Import)).is_none());
+    assert!(target(resolve(&root, &files, "@lib/foo", Usage::Import)).is_none());
+    assert!(target(resolve(&root, &files, "lib/bar", Usage::Import)).is_none());
+    assert_eq!(
+        target(resolve(&root, &files, "@lib/qux.js", Usage::Import)).as_deref(),
+        Some("lib/qux.js")
+    );
+}
+
+#[test]
+fn module_resolution_ac_2_non_esm_paths_probe_directory_indexes() {
+    for mode in ["node10", "bundler"] {
+        let root = Temp::new();
+        root.write(
+            "tsconfig.json",
+            &format!(
+                r#"{{"compilerOptions":{{"moduleResolution":"{mode}","baseUrl":".","paths":{{"@lib/*":["lib/*"]}}}}}}"#
+            ),
+        );
+        let files = ["src/use.ts", "lib/foo/index.ts"];
+        assert_eq!(
+            target(resolve(&root, &files, "@lib/foo", Usage::Import)).as_deref(),
+            Some("lib/foo/index.ts"),
+            "{mode}"
+        );
+        assert_eq!(
+            target(resolve(&root, &files, "lib/foo", Usage::Import)).as_deref(),
+            Some("lib/foo/index.ts"),
+            "{mode}"
+        );
+    }
+}
+
+#[test]
+fn module_resolution_ac_2_dotted_alias_and_package_main_probe_sources() {
+    let root = Temp::new();
+    root.write(
+        "tsconfig.json",
+        r#"{"compilerOptions":{"moduleResolution":"node10","baseUrl":".","paths":{"@app/*":["lib/*"]}}}"#,
+    );
+    root.write("package.json", r#"{"workspaces":["packages/*"]}"#);
+    root.write(
+        "packages/cfg/package.json",
+        r#"{"name":"cfg","main":"lib/config.prod"}"#,
+    );
+    let files = [
+        "src/use.ts",
+        "lib/user.service.ts",
+        "packages/cfg/lib/config.prod.ts",
+    ];
+    assert_eq!(
+        target(resolve(&root, &files, "@app/user.service", Usage::Import)).as_deref(),
+        Some("lib/user.service.ts")
+    );
+    assert_eq!(
+        target(resolve(&root, &files, "lib/user.service", Usage::Import)).as_deref(),
+        Some("lib/user.service.ts")
+    );
+    assert_eq!(
+        target(resolve(&root, &files, "cfg", Usage::Import)).as_deref(),
+        Some("packages/cfg/lib/config.prod.ts")
+    );
+}
+
+#[test]
 fn module_resolution_ac_2_workspace_main_maps_declared_build_output() {
     let root = Temp::new();
     root.write(

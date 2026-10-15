@@ -91,15 +91,17 @@ impl Resolver<'_> {
         let aliases = scope_for(file, self.alias);
         let targets = alias_targets(spec, &aliases.aliases);
         let matched = !targets.is_empty();
+        let strict =
+            matches!(scope.mode, Mode::Node16 | Mode::NodeNext) && matches!(usage, Usage::Import);
         for candidate in targets.into_iter().flatten() {
-            if let Some(target) = self.probe(&candidate, false) {
+            if let Some(target) = self.probe(&candidate, !strict, strict) {
                 return Resolution::Resolved(target);
             }
         }
         if !matched {
             if let Some(base) = &aliases.base_url_dir {
                 if let Some(path) = join_rel(base, spec) {
-                    if let Some(target) = self.probe(&path, true) {
+                    if let Some(target) = self.probe(&path, !strict, strict) {
                         return Resolution::Resolved(target);
                     }
                 }
@@ -171,18 +173,18 @@ impl Resolver<'_> {
         let strict =
             matches!(mode, Mode::Node16 | Mode::NodeNext) && matches!(usage, Usage::Import);
         if !strict {
-            return self.probe(&path, true).map_or(
+            return self.probe(&path, true, false).map_or(
                 Resolution::Unresolved(Reason::TargetNotIndexed),
                 Resolution::Resolved,
             );
         }
         if !extension_of(&path).is_empty() {
-            return self.probe(&path, false).map_or(
+            return self.probe(&path, false, true).map_or(
                 Resolution::Unresolved(Reason::TargetNotIndexed),
                 Resolution::Resolved,
             );
         }
-        if self.probe_file(&path).is_some() {
+        if self.probe_file(&path, false).is_some() {
             return Resolution::Unresolved(Reason::EsmExtensionRequired);
         }
         if self.probe_directory(&path).is_some() {
@@ -280,7 +282,7 @@ impl Resolver<'_> {
         {
             return Resolution::Resolved(hit);
         }
-        if let Some(hit) = self.probe(target, directory) {
+        if let Some(hit) = self.probe(target, directory, false) {
             return Resolution::Resolved(hit);
         }
         if [".d.ts", ".d.mts", ".d.cts"]
@@ -300,28 +302,42 @@ impl Resolver<'_> {
         Resolution::Unresolved(Reason::TargetNotIndexed)
     }
 
-    fn probe(&self, path: &str, directory: bool) -> Option<String> {
-        self.probe_file(path)
+    fn probe(&self, path: &str, directory: bool, strict: bool) -> Option<String> {
+        self.probe_file(path, strict)
             .or_else(|| directory.then(|| self.probe_directory(path)).flatten())
     }
 
-    fn probe_file(&self, path: &str) -> Option<String> {
+    fn probe_file(&self, path: &str, strict: bool) -> Option<String> {
         let extension = extension_of(path);
+        if (strict || matches!(extension, ".ts" | ".tsx" | ".mts" | ".cts"))
+            && !matches!(extension, ".js" | ".jsx" | ".mjs" | ".cjs")
+        {
+            return (![".d.ts", ".d.mts", ".d.cts"]
+                .iter()
+                .any(|declaration| path.ends_with(declaration))
+                && self.files.contains(path))
+            .then(|| path.to_string());
+        }
         let candidates: &[&str] = match extension {
             ".js" => &[".ts", ".tsx", ".js", ".jsx"],
             ".jsx" => &[".tsx", ".ts", ".jsx", ".js"],
             ".mjs" => &[".mts", ".mjs"],
             ".cjs" => &[".cts", ".cjs"],
             "" => &[".ts", ".tsx", ".js", ".jsx"],
-            _ => &[extension],
+            _ => &[".ts", ".tsx", ".js", ".jsx", extension],
         };
-        let stem = if extension.is_empty() {
+        let stem = if extension.is_empty() || !matches!(extension, ".js" | ".jsx" | ".mjs" | ".cjs")
+        {
             path
         } else {
             &path[..path.len() - extension.len()]
         };
         for suffix in candidates {
-            let candidate = format!("{stem}{suffix}");
+            let candidate = if *suffix == extension && !extension.is_empty() && stem == path {
+                path.to_string()
+            } else {
+                format!("{stem}{suffix}")
+            };
             if ![".d.ts", ".d.mts", ".d.cts"]
                 .iter()
                 .any(|declaration| candidate.ends_with(declaration))
@@ -342,13 +358,13 @@ impl Resolver<'_> {
         {
             if let Some(main) = &package.main {
                 if let Some(candidate) = join_rel(path, main) {
-                    if let Some(hit) = self.probe_file(&candidate) {
+                    if let Some(hit) = self.probe_file(&candidate, false) {
                         return Some(hit);
                     }
                 }
             }
         }
-        self.probe_file(&format!("{path}/index"))
+        self.probe_file(&format!("{path}/index"), false)
     }
 }
 
