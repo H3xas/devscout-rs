@@ -1,7 +1,8 @@
 # module-extensions
 
-A small repository whose files are `.mjs`, `.cjs`, `.mts` and `.cts`, so the
-four module suffixes and the JavaScript test-path rule can be checked against
+A small repository whose files include `.mjs`, `.cjs`, `.mts`, `.cts`,
+`.js` and `.jsx`, so the module suffixes and the TypeScript/JavaScript
+test-path rule can be checked against
 the definitions and edges they produce. The names are invented; nothing here is
 meant to run.
 
@@ -50,15 +51,19 @@ definition.
 
 ## Test files
 
+The name rule classifies `.ts`, `.tsx`, `.mts`, `.cts`, `.js`, `.jsx`,
+`.mjs` and `.cjs` with a `*.test.*` or `*.spec.*` ending or below an exact
+`__tests__` directory segment.
+
 Named as test files: `src/core/money.test.mjs` (the `node:test` suite),
 `src/core/money.test.js`, `src/core/money.spec.js`, `src/core/money.spec.mjs`,
-`src/core/money.test.cjs` and `src/core/money.spec.cjs` by suffix, and
+`src/core/money.test.cjs`, `src/core/money.spec.cjs`,
+`src/core/money.test.jsx` and `src/core/money.test.mts` by suffix, and
 `src/core/__tests__/deep/check.mjs`, `check.js` and `check.cjs` by their
 `__tests__` directory.
 
 Not test files by name, although each references a symbol under test:
-`src/core/money.test.jsx` and `src/core/money.test.mts` (suffixes the rule does
-not name), `src/naming/Total.TEST.mjs` (a case variant of `*.test.*`),
+`src/naming/Total.TEST.mjs` (a case variant of `*.test.*`),
 `src/core/__tests__x/check.mjs` (`__tests__` as part of a longer segment),
 `src/case/__Tests__/check.mjs` (a case variant of the segment) and
 `tests/helpers.js` (a `tests` directory, not `__tests__`).

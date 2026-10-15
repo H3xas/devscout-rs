@@ -7,6 +7,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Test files named `*.test.*` or `*.spec.*`, or placed below `__tests__`, are now classified by
+  path for `.mts`, `.cts` and `.jsx` as well as `.ts`, `.tsx`, `.js`, `.mjs` and `.cjs`. The
+  `tests` and `impact` commands count these files when they reference the queried code.
+
 ### Fixed
 
 - A query no longer reports `fresh` for an index that does not describe the working tree. Comparing

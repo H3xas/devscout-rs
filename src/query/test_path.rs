@@ -8,20 +8,24 @@
 use super::coverage::TestVia;
 use super::index::GraphIndex;
 
-// The test-runner naming conventions. Case-sensitive, and never every
-// extension this tool reads: `.jsx` and the TypeScript module suffixes
-// `.mts`/`.cts` are read and graphed by the other verbs but not classified by
-// their name.
-const TEST_EXTENSIONS: [&str; 5] = [".ts", ".tsx", ".js", ".mjs", ".cjs"];
-const TEST_SUFFIXES: [&str; 10] = [
+// Explicitly classify .ts, .tsx, .mts, .cts, .js, .jsx, .mjs and .cjs:
+// a newly readable suffix needs its own test-path decision.
+const TEST_EXTENSIONS: [&str; 8] = [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"];
+const TEST_SUFFIXES: [&str; 16] = [
     ".spec.ts",
     ".spec.tsx",
+    ".spec.mts",
+    ".spec.cts",
     ".spec.js",
+    ".spec.jsx",
     ".spec.mjs",
     ".spec.cjs",
     ".test.ts",
     ".test.tsx",
+    ".test.mts",
+    ".test.cts",
     ".test.js",
+    ".test.jsx",
     ".test.mjs",
     ".test.cjs",
 ];
