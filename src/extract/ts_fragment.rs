@@ -3,8 +3,10 @@ use std::collections::{HashMap, HashSet};
 use tree_sitter::Node;
 
 use super::text::{named_children, text, truncate};
+use super::ts_fragment_forms;
 use super::ts_fragment_types::{
-    TsBinding, TsFragment, TsFragmentDef, TsImport, TsReexport, TsReexportName, TsRef,
+    TsBinding, TsDynamicImport, TsFragment, TsFragmentDef, TsImport, TsReexport, TsReexportName,
+    TsRef,
 };
 use super::ts_purpose::{
     common_js_export_target, compose_hybrid_ts_purpose, is_default_export_statement,
@@ -104,23 +106,17 @@ fn ts_import_bindings(stmt: Node, src: &[u8]) -> Vec<TsBinding> {
     out
 }
 
-// A bare `export * from 'm'` carries no names and is marked `star`. `export *
-// as NS from 'm'` binds a namespace OBJECT under NS -- resolving `NS.member`
-// through it would be a second hop past the one level the resolver follows,
-// so it contributes its import edge and no name mapping (neither `star` nor
-// any `names` entry).
+// A bare `export * from 'm'` carries no names and is marked `star`.
 fn ts_reexport_entry(stmt: Node, src: &[u8]) -> Option<TsReexport> {
     let spec = ts_string_literal(stmt.child_by_field_name("source"), src)?;
     let line = ts_line(stmt);
-    if named_children(stmt)
-        .iter()
-        .any(|c| c.kind() == "namespace_export")
-    {
+    if let Some(namespace) = ts_fragment_forms::namespace_export(stmt, src) {
         return Some(TsReexport {
             spec,
             line,
             star: false,
             names: Vec::new(),
+            namespace: Some(namespace),
         });
     }
     let Some(clause) = named_children(stmt)
@@ -132,6 +128,7 @@ fn ts_reexport_entry(stmt: Node, src: &[u8]) -> Option<TsReexport> {
             line,
             star: true,
             names: Vec::new(),
+            namespace: None,
         });
     };
     let mut names = Vec::new();
@@ -153,6 +150,7 @@ fn ts_reexport_entry(stmt: Node, src: &[u8]) -> Option<TsReexport> {
         line,
         star: false,
         names,
+        namespace: None,
     })
 }
 
@@ -415,6 +413,7 @@ fn ts_require_import(decl_node: Node, src: &[u8]) -> Vec<TsImport> {
             spec,
             line: ts_line(d),
             bindings,
+            require: true,
         });
     }
     out
@@ -576,12 +575,26 @@ fn ts_record_ref(
 // is always seen before the argument it consumes, which is what lets the
 // consumed set suppress a duplicate plain-call ref for that argument.
 // Cursor-driven, materialising a `Node` only for the four reference kinds.
-fn ts_ref_walk(program_node: Node, src: &[u8], refs: &mut Vec<TsRef>, known: &HashSet<String>) {
+fn ts_ref_walk(
+    program_node: Node,
+    src: &[u8],
+    refs: &mut Vec<TsRef>,
+    known: &HashSet<String>,
+    dynamic_imports: &mut Vec<TsDynamicImport>,
+    non_literal_dynamic_imports: &mut usize,
+) {
     let mut consumed: HashSet<usize> = HashSet::new();
     let mut cursor = program_node.walk();
     loop {
         if TS_REFERENCE_NODES.contains(&cursor.node().kind()) {
             ts_record_ref(cursor.node(), src, refs, &mut consumed, known);
+        }
+        if cursor.node().kind() == "call_expression" {
+            match ts_fragment_forms::dynamic_import(cursor.node(), src) {
+                Some(Some(import)) => dynamic_imports.push(import),
+                Some(None) => *non_literal_dynamic_imports += 1,
+                None => {}
+            }
         }
         if cursor.goto_first_child() {
             continue;
@@ -608,15 +621,20 @@ pub fn extract_ts_fragment(program_node: Node, src: &[u8]) -> TsFragment {
     let decls = ts_top_level_decls(program_node, src);
     let mut imports: Vec<TsImport> = Vec::new();
     let mut reexports: Vec<TsReexport> = Vec::new();
+    let mut export_equals = None;
     for stmt in named_children(program_node) {
         if stmt.kind() == "import_statement" {
             let Some(spec) = ts_string_literal(stmt.child_by_field_name("source"), src) else {
+                if let Some(import) = ts_fragment_forms::import_equals(stmt, src) {
+                    imports.push(import);
+                }
                 continue;
             };
             imports.push(TsImport {
                 spec,
                 line: ts_line(stmt),
                 bindings: ts_import_bindings(stmt, src),
+                require: false,
             });
         } else if stmt.kind() == "export_statement" && stmt.child_by_field_name("source").is_some()
         {
@@ -626,8 +644,20 @@ pub fn extract_ts_fragment(program_node: Node, src: &[u8]) -> TsFragment {
         } else if stmt.kind() == "lexical_declaration" || stmt.kind() == "variable_declaration" {
             imports.extend(ts_require_import(stmt, src));
         }
+        if export_equals.is_none() {
+            export_equals = ts_fragment_forms::export_equals(stmt, src);
+        }
     }
-    let defs: Vec<TsFragmentDef> = ts_exported_names(program_node, &decls, src)
+    let mut exported = ts_exported_names(program_node, &decls, src);
+    if let Some(name) = export_equals
+        .as_ref()
+        .filter(|name| decls.contains_key(*name))
+    {
+        if !exported.contains(name) {
+            exported.push(name.clone());
+        }
+    }
+    let defs: Vec<TsFragmentDef> = exported
         .into_iter()
         .map(|name| {
             let d = &decls[&name];
@@ -651,9 +681,16 @@ pub fn extract_ts_fragment(program_node: Node, src: &[u8]) -> TsFragment {
         }
     }
     let mut refs: Vec<TsRef> = Vec::new();
-    ts_ref_walk(program_node, src, &mut refs, &known);
-    // Appended LAST and only when the file has one, the house rule for every
-    // added fact -- a file with no default export keeps the shorter shape.
+    let mut dynamic_imports = Vec::new();
+    let mut non_literal_dynamic_imports = 0;
+    ts_ref_walk(
+        program_node,
+        src,
+        &mut refs,
+        &known,
+        &mut dynamic_imports,
+        &mut non_literal_dynamic_imports,
+    );
     let default = ts_default_export_name(program_node, src).filter(|d| decls.contains_key(d));
     TsFragment {
         ts: 1,
@@ -662,6 +699,9 @@ pub fn extract_ts_fragment(program_node: Node, src: &[u8]) -> TsFragment {
         reexports,
         refs,
         default,
+        export_equals: export_equals.filter(|name| decls.contains_key(name)),
+        dynamic_imports,
+        non_literal_dynamic_imports,
     }
 }
 

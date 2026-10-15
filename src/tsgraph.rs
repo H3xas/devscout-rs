@@ -714,6 +714,12 @@ pub fn resolve_ts_graph(fragments: &[(String, TsFragment)], alias: &TsAliasScope
                 by_name.insert("default".to_string(), i);
             }
         }
+        if let Some(name) = &frag.export_equals {
+            if let Some(&index) = by_name.get(name) {
+                by_name.entry("default".to_string()).or_insert(index);
+                by_name.insert("export=".to_string(), index);
+            }
+        }
         exports_by_file.insert(file.as_str(), by_name);
     }
 
@@ -741,9 +747,17 @@ pub fn resolve_ts_graph(fragments: &[(String, TsFragment)], alias: &TsAliasScope
                 // export is meant.
                 Some((to, imported)) if imported == "*" => match &r.member {
                     Some(m) => exports.lookup(to, m),
-                    None => None,
+                    None => exports.lookup(to, "export="),
                 },
-                Some((to, imported)) => exports.lookup(to, imported),
+                Some((to, imported)) => r
+                    .member
+                    .as_ref()
+                    .and_then(|member| {
+                        exports
+                            .namespace_target(to, imported)
+                            .and_then(|ns| exports.lookup(&ns, member))
+                    })
+                    .or_else(|| exports.lookup(to, imported)),
                 None if r.member.is_none() => exports
                     .by_file
                     .get(file.as_str())
@@ -835,6 +849,7 @@ mod tests {
             reexports,
             refs,
             default: None,
+            ..TsFragment::default()
         }
     }
 
@@ -849,6 +864,7 @@ mod tests {
                     imported: (*i).into(),
                 })
                 .collect(),
+            require: false,
         }
     }
 
@@ -870,6 +886,7 @@ mod tests {
                 exported: exported.into(),
                 imported: exported.into(),
             }],
+            namespace: None,
         }
     }
 
@@ -879,6 +896,7 @@ mod tests {
             line: 1,
             star: true,
             names: vec![],
+            namespace: None,
         }
     }
 

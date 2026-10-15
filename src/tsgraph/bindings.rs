@@ -16,6 +16,7 @@ pub(super) struct ResolvedReexport {
     line: usize,
     star: bool,
     names: Vec<(String, String)>,
+    namespace: Option<String>,
     to: Option<String>,
 }
 
@@ -47,6 +48,7 @@ pub(super) fn resolve_reexports<'a>(
                     .iter()
                     .map(|n| (n.exported.clone(), n.imported.clone()))
                     .collect(),
+                namespace: rx.namespace.clone(),
                 to: resolve_specifier(file, &rx.spec, file_set, alias),
             })
             .collect();
@@ -61,6 +63,56 @@ impl Exports<'_> {
     pub(super) fn lookup(&self, file: &str, name: &str) -> Option<usize> {
         let mut visited: HashMap<(String, String), usize> = HashMap::new();
         lookup_export(file, name, 0, self, &mut visited)
+    }
+
+    pub(super) fn namespace_target(&self, file: &str, name: &str) -> Option<String> {
+        let mut visited = HashSet::new();
+        self.namespace_target_in(file, name, 0, &mut visited)
+    }
+
+    fn namespace_target_in(
+        &self,
+        file: &str,
+        name: &str,
+        hops: usize,
+        visited: &mut HashSet<String>,
+    ) -> Option<String> {
+        if hops >= BARREL_HOPS || !visited.insert(file.to_string()) {
+            return None;
+        }
+        if self
+            .by_file
+            .get(file)
+            .is_some_and(|own| own.contains_key(name))
+        {
+            return None;
+        }
+        let rows = self.reexports_by_file.get(file)?;
+        for row in rows {
+            if row.namespace.as_deref() == Some(name) {
+                return row.to.clone();
+            }
+        }
+        for row in rows {
+            if let Some((_, imported)) = row.names.iter().find(|(exported, _)| exported == name) {
+                return row
+                    .to
+                    .as_ref()
+                    .and_then(|to| self.namespace_target_in(to, imported, hops + 1, visited));
+            }
+        }
+        for row in rows {
+            if row.star {
+                if let Some(to) = row
+                    .to
+                    .as_ref()
+                    .and_then(|to| self.namespace_target_in(to, name, hops + 1, visited))
+                {
+                    return Some(to);
+                }
+            }
+        }
+        None
     }
 }
 
@@ -93,6 +145,12 @@ fn lookup_export(
         return Some(*own);
     }
     if hops >= BARREL_HOPS {
+        return None;
+    }
+    if exports.reexports_by_file.get(file).is_some_and(|rows| {
+        rows.iter()
+            .any(|row| row.namespace.as_deref() == Some(name))
+    }) {
         return None;
     }
     for rx in exports
@@ -185,6 +243,9 @@ pub(super) fn file_imports(
         let mut via_edge: HashMap<String, usize> = HashMap::new();
         for b in &imp.bindings {
             if b.imported == "*" {
+                if let Some(target) = exports.lookup(&to, "export=") {
+                    bind(&mut out.edges[statement], &defs[target].id);
+                }
                 continue;
             }
             let Some(target) = exports.lookup(&to, &b.imported) else {
@@ -208,6 +269,19 @@ pub(super) fn file_imports(
                 out.edges.len() - 1
             };
             bind(&mut out.edges[slot], &defs[target].id);
+        }
+    }
+    for imp in &frag.dynamic_imports {
+        match resolve_specifier(file, &imp.spec, file_set, alias) {
+            Some(to) => out.edges.push(Edge::Import {
+                from_file: file.to_string(),
+                from_line: imp.line,
+                target: imp.spec.clone(),
+                to_file: to,
+                via: None,
+                bound_defs: Vec::new(),
+            }),
+            None => out.external += 1,
         }
     }
     for rx in exports

@@ -424,6 +424,7 @@ fn any_fragment_round_trips_both_shapes_and_never_reads_one_as_the_other() {
         reexports: Vec::new(),
         refs: Vec::new(),
         default: None,
+        ..extract::TsFragment::default()
     });
     let ts_json = serde_json::to_string(&ts).unwrap();
     assert_eq!(

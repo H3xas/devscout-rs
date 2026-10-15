@@ -199,16 +199,18 @@ pub fn rust_crates_path(root: &Path) -> PathBuf {
 // bytes were read under. A v35 payload carries no owner and does not parse
 // as this generation either, so the bump is also what stops a pre-stamp
 // cache from being read.
+// v37 appends import-equals, export-equals, namespace re-export and dynamic
+// import facts to TS fragments. Older fragments cannot supply those facts.
 // The rename IS the invalidation mechanism:
 // pre-bump caches stop being found, every file reparses
 // once, no reader carries version-compat logic. Writers delete every
 // superseded generation (see `remove_superseded_caches`).
 pub(crate) fn fragments_cache_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-v36.json")
+    graph_dir(root).join("fragments-v37.json")
 }
 
 pub(crate) fn fragments_index_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-index-v36.json")
+    graph_dir(root).join("fragments-index-v37.json")
 }
 
 // Every generation below the current one, not just the immediately previous:
@@ -285,6 +287,8 @@ pub(crate) const SUPERSEDED_CACHE_FILES: &[&str] = &[
     "fragments-index-v34.json",
     "fragments-v35.json",
     "fragments-index-v35.json",
+    "fragments-v36.json",
+    "fragments-index-v36.json",
 ];
 
 pub(crate) fn remove_superseded_caches(root: &Path) {
