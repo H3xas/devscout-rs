@@ -16,9 +16,9 @@ use super::refs::{
 };
 use super::text::{named_children, path_text};
 use super::types::{EnclosingCallFact, Fact, PublishRecord};
-use crate::bus_seed::is_publish_verb;
+use crate::bus_seed::{has_dispatch_root, is_publish_verb};
 
-// Which verbs count as a publish is the seed's list, checked on the invoked
+// Which verbs count as a publish use the seed and its word rule, checked on the invoked
 // method's bare name only -- the same shape-only rule `registration_fact`
 // (refs.rs) already applies to a DI registration call. Neither that list nor
 // the rest of this module validates the receiver's own declared type: a call
@@ -37,7 +37,7 @@ use crate::bus_seed::is_publish_verb;
 /// repository's own forwarding wrapper carries a name this engine cannot
 /// know in advance and the resolver is what decides which names its
 /// vocabulary ended up holding. The remaining shape, a plain identifier
-/// argument, stays gated on the seed's publish verbs: it is by far the most
+/// argument, stays gated on the seed's publish verbs and dispatch roots: it is by far the most
 /// common call shape in any codebase, and recording every one of them would
 /// cost fragment bytes out of all proportion to the wrappers it would find.
 pub(super) fn publish_fact(
@@ -52,7 +52,9 @@ pub(super) fn publish_fact(
     let known_verb = is_publish_verb(&verb);
     let message = match named_message(function, name_node, src, &scope.type_params) {
         Some(message) => message,
-        None if known_verb => identifier_message(function, src, type_stack, scope)?,
+        None if known_verb || has_dispatch_root(&verb) => {
+            identifier_message(function, src, type_stack, scope)?
+        }
         None => return None,
     };
     // A message that is the enclosing METHOD's own type parameter is not a

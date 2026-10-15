@@ -27,13 +27,45 @@
 ///
 /// Matched on the invoked method's bare name only. Extraction keeps the
 /// identifier-argument shape -- a call whose message is a plain variable --
-/// behind this list, because that shape is far too common in any codebase to
-/// record everywhere, while a message the call NAMES itself (a generic type
-/// argument, or a type constructed as its first argument) is recorded whatever
-/// the method is called. Both layers then read the same five names: this list
-/// is also the seed `derive_publish_verbs` starts from before the corpus's own
-/// forwarding wrappers extend it.
+/// behind this list or [`has_dispatch_root`], because that shape is far too
+/// common in any codebase to record everywhere. This list alone seeds
+/// `derive_publish_verbs` before the corpus's own forwarding wrappers extend it.
 pub const PUBLISH_VERBS: &[&str] = &["Publish", "PublishAsync", "SubmitJob", "Reply", "Send"];
+
+/// Whole words that name a dispatch in a repository's own publish method.
+pub const DISPATCH_ROOTS: &[&str] = &[
+    "Publish", "Send", "Submit", "Reply", "Dispatch", "Enqueue", "Emit", "Post", "Raise", "Notify",
+];
+
+/// First words that describe inspection or lifecycle work rather than dispatch.
+pub const DISPATCH_GUARDS: &[&str] = &["Get", "Cancel", "Connect", "Can", "Is", "Has"];
+
+fn word_ends_here(suffix: &str) -> bool {
+    suffix.is_empty()
+        || suffix
+            .as_bytes()
+            .first()
+            .is_some_and(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || *b == b'_')
+}
+
+/// Whether the bare method name contains an unguarded dispatch root word.
+/// Seed and wrapper-promoted verbs are admitted separately by the caller.
+pub fn has_dispatch_root(verb: &str) -> bool {
+    let first = verb
+        .strip_prefix("Try")
+        .filter(|tail| tail.as_bytes().first().is_some_and(u8::is_ascii_uppercase))
+        .unwrap_or(verb);
+    if DISPATCH_GUARDS
+        .iter()
+        .any(|guard| first.strip_prefix(guard).is_some_and(word_ends_here))
+    {
+        return false;
+    }
+    DISPATCH_ROOTS.iter().any(|root| {
+        verb.match_indices(root)
+            .any(|(start, _)| word_ends_here(&verb[start + root.len()..]))
+    })
+}
 
 /// Handler bases every repository gets for free.
 ///
@@ -78,4 +110,48 @@ pub const ROLE_SUFFIXES: &[&str] = &[
 /// second literal that has to be kept in step by hand.
 pub fn is_publish_verb(verb: &str) -> bool {
     PUBLISH_VERBS.contains(&verb)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{has_dispatch_root, DISPATCH_GUARDS, DISPATCH_ROOTS};
+
+    #[test]
+    fn dispatch_root_word_rule() {
+        for root in DISPATCH_ROOTS {
+            assert!(has_dispatch_root(root), "{root}");
+            assert!(has_dispatch_root(&format!("Try{root}")), "Try{root}");
+            assert!(
+                has_dispatch_root(&format!("{root}Messages")),
+                "{root}Messages"
+            );
+            assert!(has_dispatch_root(&format!("{root}2")), "{root}2");
+            assert!(has_dispatch_root(&format!("{root}_Now")), "{root}_Now");
+            assert!(!has_dispatch_root(&format!("{root}ed")), "{root}ed");
+        }
+        for guard in DISPATCH_GUARDS {
+            for prefix in ["", "Try"] {
+                assert!(!has_dispatch_root(&format!("{prefix}{guard}Publish")));
+                assert!(!has_dispatch_root(&format!("{prefix}{guard}2Publish")));
+            }
+        }
+        for name in [
+            "IssuePublish",
+            "HashPublish",
+            "TryPublish",
+            "Published",
+            "Sender",
+            "Dispatcher",
+            "Postgres",
+            "Publishé",
+            "Publish-Again",
+            "ProjectTo",
+            "IsAny",
+            "",
+            "TryGetPublishedMessages",
+        ] {
+            let expected = matches!(name, "IssuePublish" | "HashPublish" | "TryPublish");
+            assert_eq!(has_dispatch_root(name), expected, "{name}");
+        }
+    }
 }
