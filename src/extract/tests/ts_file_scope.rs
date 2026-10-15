@@ -42,3 +42,36 @@ fn file_scope_defs_ac_2_nested_wrappers_are_collected_in_source_order() {
         );
     }
 }
+
+#[test]
+fn file_scope_defs_ac_5_exported_require_bindings_remain_defs() {
+    for (source, name) in [
+        (
+            "const whole = require('./m');\nmodule.exports = whole;",
+            "whole",
+        ),
+        ("const prop = require('./m');\nexports.prop = prop;", "prop"),
+        ("const esm = require('./m');\nexport { esm };", "esm"),
+    ] {
+        for grammar in [
+            crate::parse::TsGrammar::Javascript,
+            crate::parse::TsGrammar::Typescript,
+        ] {
+            let f = fragment(source, grammar);
+            assert!(
+                f.defs.iter().any(|d| d.name == name && !d.local),
+                "{source}"
+            );
+        }
+    }
+    for grammar in [
+        crate::parse::TsGrammar::Javascript,
+        crate::parse::TsGrammar::Typescript,
+    ] {
+        let f = fragment(
+            "const dflt = require('./m');\nexport default dflt;",
+            grammar,
+        );
+        assert!(f.defs.iter().all(|d| d.name != "dflt"));
+    }
+}

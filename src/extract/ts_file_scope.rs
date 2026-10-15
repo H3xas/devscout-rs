@@ -11,6 +11,7 @@ pub(super) struct TsDecl {
     pub kind: &'static str,
     pub line: usize,
     pub end_line: usize,
+    require_bound: bool,
 }
 
 pub(super) struct TsDecls {
@@ -26,7 +27,14 @@ impl TsDecls {
         }
     }
 
-    fn add(&mut self, name: String, kind: &'static str, line: usize, end_line: usize) {
+    fn add(
+        &mut self,
+        name: String,
+        kind: &'static str,
+        line: usize,
+        end_line: usize,
+        require_bound: bool,
+    ) {
         if name.is_empty() || self.by_name.contains_key(&name) {
             return;
         }
@@ -37,6 +45,7 @@ impl TsDecls {
                 kind,
                 line,
                 end_line,
+                require_bound,
             },
         );
     }
@@ -47,15 +56,20 @@ impl TsDecls {
         };
         if kind == "const" {
             for declarator in named_children(node) {
-                if declarator.kind() != "variable_declarator"
-                    || require_spec(declarator, src).is_some()
-                {
+                if declarator.kind() != "variable_declarator" {
                     continue;
                 }
+                let require_bound = require_spec(declarator, src).is_some();
                 let name_node = declarator.child_by_field_name("name");
                 let line = name_node.unwrap_or(declarator).start_position().row + 1;
                 for name in ts_pattern_names(name_node, src) {
-                    self.add(name, kind, line, declarator.end_position().row + 1);
+                    self.add(
+                        name,
+                        kind,
+                        line,
+                        declarator.end_position().row + 1,
+                        require_bound,
+                    );
                 }
             }
         } else {
@@ -64,6 +78,7 @@ impl TsDecls {
                 kind,
                 node.start_position().row + 1,
                 node.end_position().row + 1,
+                false,
             );
         }
     }
@@ -195,6 +210,9 @@ pub(super) fn local_defs(
                 continue;
             }
             let decl = &table.by_name[name];
+            if decl.require_bound {
+                continue;
+            }
             out.push(TsFragmentDef {
                 name: name.clone(),
                 kind: decl.kind.to_string(),

@@ -1,0 +1,147 @@
+{
+  "defs": [
+    {
+      "endLine": 2,
+      "file": "app.js",
+      "id": "app.js#main",
+      "kind": "function",
+      "line": 2,
+      "name": "main",
+      "namespace": ""
+    },
+    {
+      "endLine": 2,
+      "file": "app2.ts",
+      "id": "app2.ts#m2",
+      "kind": "function",
+      "line": 2,
+      "name": "m2",
+      "namespace": ""
+    },
+    {
+      "endLine": 1,
+      "file": "lib/bar.js",
+      "id": "lib/bar.js#bar",
+      "kind": "function",
+      "line": 1,
+      "name": "bar",
+      "namespace": "lib"
+    },
+    {
+      "endLine": 1,
+      "file": "lib/foo.js",
+      "id": "lib/foo.js#foo",
+      "kind": "function",
+      "line": 1,
+      "name": "foo",
+      "namespace": "lib"
+    },
+    {
+      "endLine": 1,
+      "file": "lib/index.js",
+      "id": "lib/index.js#foo",
+      "kind": "const",
+      "line": 1,
+      "name": "foo",
+      "namespace": "lib"
+    },
+    {
+      "endLine": 2,
+      "file": "lib/index.js",
+      "id": "lib/index.js#bar",
+      "kind": "const",
+      "line": 2,
+      "name": "bar",
+      "namespace": "lib"
+    }
+  ],
+  "edges": [
+    {
+      "bound_defs": [
+        "lib/index.js#foo",
+        "lib/index.js#bar"
+      ],
+      "from_file": "app.js",
+      "from_line": 1,
+      "kind": "import",
+      "target": "./lib/index",
+      "to_file": "lib/index.js"
+    },
+    {
+      "from_file": "app.js",
+      "from_line": 2,
+      "kind": "call",
+      "to": "lib/index.js#foo",
+      "to_file": "lib/index.js"
+    },
+    {
+      "from_file": "app.js",
+      "from_line": 2,
+      "kind": "call",
+      "to": "lib/index.js#bar",
+      "to_file": "lib/index.js"
+    },
+    {
+      "bound_defs": [
+        "lib/index.js#bar"
+      ],
+      "from_file": "app2.ts",
+      "from_line": 1,
+      "kind": "import",
+      "target": "./lib/index",
+      "to_file": "lib/index.js"
+    },
+    {
+      "from_file": "app2.ts",
+      "from_line": 2,
+      "kind": "call",
+      "to": "lib/index.js#bar",
+      "to_file": "lib/index.js"
+    },
+    {
+      "from_file": "lib/index.js",
+      "from_line": 1,
+      "kind": "import",
+      "target": "./foo",
+      "to_file": "lib/foo.js"
+    },
+    {
+      "bound_defs": [
+        "lib/bar.js#bar"
+      ],
+      "from_file": "lib/index.js",
+      "from_line": 2,
+      "kind": "import",
+      "target": "./bar",
+      "to_file": "lib/bar.js"
+    }
+  ],
+  "manifest": {
+    "app.js": {
+      "purpose": "function main",
+      "source": "ast"
+    },
+    "app2.ts": {
+      "purpose": "function m2",
+      "source": "ast"
+    },
+    "lib/bar.js": {
+      "purpose": "function bar",
+      "source": "ast"
+    },
+    "lib/foo.js": {
+      "purpose": "function foo",
+      "source": "ast"
+    },
+    "lib/index.js": {
+      "purpose": "const foo | const bar",
+      "source": "ast"
+    }
+  },
+  "tsStats": {
+    "external_import_count": 0,
+    "ts_def_count": 6,
+    "ts_file_count": 5,
+    "unresolved_ref_count": 0
+  }
+}

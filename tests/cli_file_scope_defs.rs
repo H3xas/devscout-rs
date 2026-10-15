@@ -257,6 +257,11 @@ fn file_scope_defs_ac_5_exported_rows_edges_and_purposes_match_base() {
         ("ts-grammar", "fixtures/ts-grammar"),
         ("mixed", "fixtures/file-scope-defs/mixed"),
         ("cross", "fixtures/file-scope-defs/cross"),
+        ("cjs-barrel", "fixtures/file-scope-defs/cjs-barrel"),
+        (
+            "require-exports",
+            "fixtures/file-scope-defs/require-exports",
+        ),
         ("ties", "fixtures/file-scope-defs/ties"),
     ];
     for (name, path) in roots {
@@ -393,18 +398,18 @@ fn file_scope_defs_ac_8_prior_cache_generation_reextracts() {
     let fixture = fresh("mixed");
     let dir = fixture.repo.join(".scout/graph");
     fs::rename(
-        dir.join("fragments-v37.json"),
+        dir.join("fragments-v39.json"),
         dir.join("fragments-v33.json"),
     )
     .unwrap();
     fs::rename(
-        dir.join("fragments-index-v37.json"),
+        dir.join("fragments-index-v39.json"),
         dir.join("fragments-index-v33.json"),
     )
     .unwrap();
     fixture.ok(&["map", "."]);
-    assert!(dir.join("fragments-v37.json").exists());
-    assert!(dir.join("fragments-index-v37.json").exists());
+    assert!(dir.join("fragments-v39.json").exists());
+    assert!(dir.join("fragments-index-v39.json").exists());
     assert!(!dir.join("fragments-v33.json").exists());
     assert!(!dir.join("fragments-index-v33.json").exists());
     assert_eq!(def(&fixture.graph(), "main.js#localFn")["local"], true);
@@ -413,7 +418,7 @@ fn file_scope_defs_ac_8_prior_cache_generation_reextracts() {
 #[test]
 fn file_scope_defs_ac_8_invalid_local_cache_value_reextracts() {
     let fixture = fresh("mixed");
-    let cache = fixture.repo.join(".scout/graph/fragments-v37.json");
+    let cache = fixture.repo.join(".scout/graph/fragments-v39.json");
     let text = fs::read_to_string(&cache).unwrap();
     assert!(text.contains("\"local\":true"));
     fs::write(
