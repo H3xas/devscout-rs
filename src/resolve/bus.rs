@@ -492,7 +492,9 @@ fn kept_publish_sites(
             if publish.enclosing_method.is_some() {
                 continue;
             }
-            if !publish_verbs.contains(&publish.verb) {
+            if !publish_verbs.contains(&publish.verb)
+                && !crate::bus_seed::has_dispatch_root(&publish.verb)
+            {
                 continue;
             }
             let Some(message) = bus_vocab::resolve_message_identity(

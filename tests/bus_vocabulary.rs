@@ -189,6 +189,19 @@ fn a_publish_wrapper_forwarding_to_a_recognized_verb_is_itself_a_publish_site() 
 }
 
 #[test]
+fn house_verb_enqueue_reaches_its_worker() {
+    let fx = Fixture::new();
+    let reached: Vec<_> = fx
+        .hops()
+        .into_iter()
+        .filter(|(file, _, _, _)| file == "HouseVerbOnly.cs")
+        .collect();
+    assert_eq!(reached.len(), 1, "{reached:?}");
+    assert_eq!(reached[0].1, "AisleWorker");
+    assert_eq!(reached[0].2, "AisleNotice");
+}
+
+#[test]
 fn wrapper_forwarding_stops_at_one_hop() {
     let fx = Fixture::new();
     let reached: Vec<String> = fx

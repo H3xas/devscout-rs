@@ -9,6 +9,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- House publish verbs with an unguarded dispatch root word now reach registered handlers in generic,
+  constructed and plain identifier argument calls. The fragment cache advances to v37 so unchanged
+  source files are re-extracted once for identifier-argument publish sites.
+
 - Test files named `*.test.*` or `*.spec.*`, or placed below `__tests__`, are now classified by
   path for `.mts`, `.cts` and `.jsx` as well as `.ts`, `.tsx`, `.js`, `.mjs` and `.cjs`. The
   `tests` and `impact` commands count these files when they reference the queried code.
