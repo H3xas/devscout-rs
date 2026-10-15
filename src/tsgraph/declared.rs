@@ -214,6 +214,7 @@ impl Resolver<'_> {
             package,
             package_map::imports(map, spec, usage.condition(), mode, conditions),
             true,
+            matches!(mode, Mode::Node16 | Mode::NodeNext) && matches!(usage, Usage::Import),
         )
     }
 
@@ -231,6 +232,7 @@ impl Resolver<'_> {
                     package,
                     package_map::exports(map, subpath, usage.condition(), mode, conditions),
                     false,
+                    matches!(mode, Mode::Node16 | Mode::NodeNext) && matches!(usage, Usage::Import),
                 );
             }
         }
@@ -242,10 +244,16 @@ impl Resolver<'_> {
         let Some(target) = join_rel(&package.dir, path) else {
             return Resolution::Unresolved(Reason::TargetNotIndexed);
         };
-        self.package_file(package, &target, true)
+        self.package_file(package, &target, true, false)
     }
 
-    fn map_target(&self, package: &Package, selected: MapMatch, imports: bool) -> Resolution {
+    fn map_target(
+        &self,
+        package: &Package,
+        selected: MapMatch,
+        imports: bool,
+        strict: bool,
+    ) -> Resolution {
         match selected {
             MapMatch::NotMatched => Resolution::Unresolved(if imports {
                 Reason::ImportsSpecifierNotMatched
@@ -262,7 +270,7 @@ impl Resolver<'_> {
                     let Some(path) = join_rel(&package.dir, &target) else {
                         continue;
                     };
-                    match self.package_file(package, &path, false) {
+                    match self.package_file(package, &path, false, strict) {
                         Resolution::Resolved(hit) => return Resolution::Resolved(hit),
                         Resolution::Unresolved(reason) => last = reason,
                         Resolution::LegacyExternal => {}
@@ -273,7 +281,13 @@ impl Resolver<'_> {
         }
     }
 
-    fn package_file(&self, package: &Package, target: &str, directory: bool) -> Resolution {
+    fn package_file(
+        &self,
+        package: &Package,
+        target: &str,
+        directory: bool,
+        strict: bool,
+    ) -> Resolution {
         if let Some(hit) = self
             .config
             .build_outputs
@@ -282,7 +296,7 @@ impl Resolver<'_> {
         {
             return Resolution::Resolved(hit);
         }
-        if let Some(hit) = self.probe(target, directory, false) {
+        if let Some(hit) = self.probe(target, directory, strict) {
             return Resolution::Resolved(hit);
         }
         if [".d.ts", ".d.mts", ".d.cts"]

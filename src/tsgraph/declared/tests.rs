@@ -179,6 +179,52 @@ fn module_resolution_ac_2_dotted_alias_and_package_main_probe_sources() {
 }
 
 #[test]
+fn module_resolution_ac_3_esm_maps_do_not_append_extensions_to_dotted_targets() {
+    let root = Temp::new();
+    root.write(
+        "tsconfig.json",
+        r#"{"compilerOptions":{"moduleResolution":"node16"}}"#,
+    );
+    root.write(
+        "package.json",
+        r##"{"type":"module","workspaces":["packages/*"],"imports":{"#own":"./src/own.service"}}"##,
+    );
+    root.write(
+        "packages/pkg/package.json",
+        r#"{"name":"pkg","type":"module","exports":"./src/user.service"}"#,
+    );
+    let files = [
+        "src/use.ts",
+        "src/own.service.ts",
+        "packages/pkg/src/user.service.ts",
+    ];
+    assert!(target(resolve(&root, &files, "#own", Usage::Import)).is_none());
+    assert!(target(resolve(&root, &files, "pkg", Usage::Import)).is_none());
+}
+
+#[test]
+fn module_resolution_ac_3_esm_package_main_can_probe_dotted_targets() {
+    let root = Temp::new();
+    root.write(
+        "tsconfig.json",
+        r#"{"compilerOptions":{"moduleResolution":"node16"}}"#,
+    );
+    root.write(
+        "package.json",
+        r#"{"type":"module","workspaces":["packages/*"]}"#,
+    );
+    root.write(
+        "packages/pkg/package.json",
+        r#"{"name":"pkg","type":"module","main":"./src/user.service"}"#,
+    );
+    let files = ["src/use.ts", "packages/pkg/src/user.service.ts"];
+    assert_eq!(
+        target(resolve(&root, &files, "pkg", Usage::Import)).as_deref(),
+        Some("packages/pkg/src/user.service.ts")
+    );
+}
+
+#[test]
 fn module_resolution_ac_2_workspace_main_maps_declared_build_output() {
     let root = Temp::new();
     root.write(
