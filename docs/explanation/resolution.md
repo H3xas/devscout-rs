@@ -155,17 +155,27 @@ guide](../guides/compiler-facts.md#consuming-an-admitted-artifact).
 
 ## TypeScript imports
 
-Import specifiers resolve through the `paths` and `baseUrl` of the nearest `tsconfig.json` above the
-file (its `extends` chain included; a nested config that declares neither falls back to the root
-chain), and through re-export barrels up to eight hops deep, with the barrel the source names kept
-as `via` on the edge.
+Import specifiers use the owning `tsconfig.json` chain's `paths`, `baseUrl` and declared
+`moduleResolution`, then the package and workspace rules that mode selects. A nested config that
+declares no mode can inherit one from an ancestor. The resolver reads `package.json` format and
+entry points, conditional `exports` and `imports`, and npm, yarn or pnpm workspace members by name.
+It maps a declared build output to its source only through `outDir` with `rootDir` or `composite`.
+Node16 and nodenext ESM imports require an extension and forbid a directory import; bundler and
+node10 allow extensionless relatives. A declaration of `classic` or no mode retains the earlier
+resolution. A rejected configuration input is disclosed instead of supplying guessed package
+facts. The [mode table and reason vocabulary](../reference/typescript-modules.md) give the exact
+scope. Re-export barrels are followed up to eight hops, with the named barrel kept as `via`.
 
-**TypeScript references cover imports, calls, JSX tags and dispatches only.** A type annotation,
-an `extends`/`implements` clause, a value passed as an argument, a member reached through a chain or
-a local (`store.total()`), and a dynamic `import()` record no edge. A named re-export of a name its
-target module only re-exports again binds no definition. A package imported by name resolves only
-through the repository's own `tsconfig` `paths`/`baseUrl`, so a monorepo importing its own packages
-by package name leaves those imports external. JavaScript answers are read but not measured.
+**TypeScript references cover imports, calls, JSX tags and dispatches only.** A literal dynamic
+`import()` now records its module edge, as do import-equals and namespace re-exports. A non-literal
+dynamic import is counted without an edge. `require('name')` is recorded only as the direct
+initializer of a top-level, non-exported variable declaration; a nested or standalone `require`
+call is not. A type annotation, an `extends`/`implements` clause, a value passed as an argument,
+a member reached through a chain or a local (`store.total()`) still records no reference edge.
+A named re-export of a name its target module only re-exports again binds no definition. Packages
+outside the repository's workspace and aliases remain external. JavaScript query answers are read
+but have not had a separate query-level parity measurement. Editing configuration alone does not
+re-resolve the existing graph; run `map` again.
 
 ## Rust paths
 

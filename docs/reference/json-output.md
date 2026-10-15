@@ -185,6 +185,15 @@ side-effect or `export *` statement binds no name and yields no `import` row; it
 calls still answer as `call` rows. A `graph.json` written before the field existed loads and
 answers with no `import` table until the next `map` rewrites it.
 
+**Unresolved TypeScript imports.** `graph.json` schema 3 appends `unresolved_imports` only when a
+declared-mode scope has imports without an indexed implementation target. A row has `from_file`,
+`from_line`, `target` (the source specifier) and one closed `reason`; see the
+[reason vocabulary](typescript-modules.md#unresolved-imports). `stats.ts` appends
+`unresolved_import_reasons` (reason to count), `unsupported_mode_scopes` (config and mode),
+`refused_config` (file and failing field), and `non_literal_dynamic_import_count` when those values
+are non-empty. An absent key means there are no records of that kind. These graph additions do not
+change its schema version or the query-answer `schema_version`.
+
 **Test files by name.** `tests` counts a file ending in `.ts`, `.tsx`, `.mts`, `.cts`,
 `.js`, `.jsx`, `.mjs` or `.cjs` when its name matches the `test-path` rule above
 and neither the attribute nor the project vouch reaches it. Such a row

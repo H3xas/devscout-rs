@@ -9,6 +9,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TypeScript and JavaScript imports in a declared `node10`, `node16`, `nodenext` or `bundler`
+  scope now follow package `type`, `main`, conditional `exports` and `imports`, npm/yarn/pnpm
+  workspace names, and declared build-output mappings. Literal dynamic imports, import-equals,
+  `export =` and namespace re-exports contribute their module bindings. `graph.json` discloses
+  unresolved imports and refused configuration; the fragment cache advances to v37 and reparses
+  once after upgrade. [Resolution rules](docs/reference/typescript-modules.md) list the mode and
+  syntax limits.
+
 - Test files named `*.test.*` or `*.spec.*`, or placed below `__tests__`, are now classified by
   path for `.mts`, `.cts` and `.jsx` as well as `.ts`, `.tsx`, `.js`, `.mjs` and `.cjs`. The
   `tests` and `impact` commands count these files when they reference the queried code.
