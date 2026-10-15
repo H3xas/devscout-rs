@@ -124,6 +124,7 @@ fn def(id: &str, name: &str, namespace: &str, kind: &str, file: &str, line: usiz
         test_methods: vec![],
         also_in: vec![],
         end_line: 0,
+        local: false,
     }
 }
 
@@ -153,6 +154,7 @@ fn def_also(
             })
             .collect(),
         end_line: 0,
+        local: false,
     }
 }
 
@@ -658,6 +660,7 @@ fn widget_def() -> graph::Def {
         test_methods: vec![],
         also_in: vec![],
         end_line: 0,
+        local: false,
     }
 }
 

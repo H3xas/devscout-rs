@@ -19,8 +19,7 @@ use serde::{Deserialize, Serialize};
 // relationship at all.
 // ---------------------------------------------------------------------------
 
-/// One exported top-level declaration, in the shape the fragment serializes:
-/// `name`, `kind`, `line`, in that order.
+/// One file-scope declaration, with a marker for names not exported.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TsFragmentDef {
     /// The name value.
@@ -32,6 +31,13 @@ pub struct TsFragmentDef {
     #[serde(rename = "endLine")]
     /// The end line value.
     pub end_line: usize,
+    #[serde(default, skip_serializing_if = "is_false")]
+    /// Whether this declaration is private to its file.
+    pub local: bool,
+}
+
+fn is_false(value: &bool) -> bool {
+    !value
 }
 
 /// One local name an import statement binds, and the export it names in the

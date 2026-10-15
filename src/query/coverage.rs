@@ -6,7 +6,7 @@ use super::bus::{self, BusDirection, BusHopRow};
 use super::index::{def_files, GraphIndex};
 use super::member::{self, MemberCandidate, MemberSeedResolution};
 use super::refs_tables::{cap_rows, edge_loc, row_tier, Table, DEFAULT_CAP};
-use super::symbol::{resolve_symbol, Resolution};
+use super::symbol::{resolve_local_symbol, resolve_symbol, Resolution};
 use super::symbol_refs::symbol_refs;
 use super::test_path;
 
@@ -183,7 +183,11 @@ pub fn build_tests_model(index: &GraphIndex, query: &str) -> TestsResult {
             MemberSeedResolution::Ambiguous(candidates) => {
                 return TestsResult::MemberAmbiguous(candidates)
             }
-            MemberSeedResolution::NotFound => return TestsResult::NotFound,
+            MemberSeedResolution::NotFound => match resolve_local_symbol(index, query) {
+                Resolution::Resolved(id) => id,
+                Resolution::Ambiguous(ids) => return TestsResult::Ambiguous(ids),
+                Resolution::NotFound => return TestsResult::NotFound,
+            },
         },
     };
     let refs = symbol_refs(index, &id);

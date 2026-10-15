@@ -68,6 +68,7 @@ mod rs_scope;
 mod rs_sites;
 mod rs_uses;
 mod text;
+mod ts_file_scope;
 mod ts_fragment;
 mod ts_fragment_types;
 mod ts_purpose;

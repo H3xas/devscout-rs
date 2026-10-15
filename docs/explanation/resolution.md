@@ -155,6 +155,13 @@ guide](../guides/compiler-facts.md#consuming-an-admitted-artifact).
 
 ## TypeScript imports
 
+TypeScript and JavaScript file-scope declarations, including declarations in a top-level IIFE body,
+become definitions even when they are not exported. Calls, JSX tags and dispatch references to
+those definitions resolve within the same file only. Imports and re-exports cannot bind them. A
+bare name shared by an exported definition and a file-local definition resolves to the exported
+one; an exact `<file>#<name>` id can name the local definition. Manifest purposes still describe
+exports only.
+
 Import specifiers resolve through the `paths` and `baseUrl` of the nearest `tsconfig.json` above the
 file (its `extends` chain included; a nested config that declares neither falls back to the root
 chain), and through re-export barrels up to eight hops deep, with the barrel the source names kept

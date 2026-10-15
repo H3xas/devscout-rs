@@ -7,6 +7,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Index TypeScript and JavaScript file-scope declarations, including declarations in top-level
+  IIFE bodies, as definitions. Calls, JSX tags and dispatch references to them resolve within the
+  same file; imported names remain bound to exported definitions only. An exported definition wins
+  a bare-name tie, and an exact file-qualified id selects a local declaration. `find` now prints
+  TS/JS declaration rows. `graph.json` and the fragment cache mark non-exported definitions with
+  `"local": true`, while exported rows keep their earlier shape; `extract-dump` also lists local
+  declarations. The `fragments-v37.json` cache generation re-extracts unchanged files once.
+
 ## [0.9.0] - 2026-10-12
 
 A query-answer and second-language release: every resolved answer states its full count and the next

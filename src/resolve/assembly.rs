@@ -1316,6 +1316,7 @@ pub fn resolve_graph_with_model(
         );
         let ts = crate::tsgraph::resolve_ts_graph(ts_fragments_by_file, &alias);
         graph.defs.extend(ts.defs);
+        graph.names.extend(ts.names);
         graph.edges.extend(ts.edges);
         graph.stats.def_count = graph.defs.len();
         graph.stats.edges_by_kind.import = Some(ts.edges_by_kind.import);

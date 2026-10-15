@@ -177,16 +177,18 @@ pub fn rust_crates_path(root: &Path) -> PathBuf {
 // in the existing `methodParams` table. A cached v32 fragment has none of
 // these facts, so a same-count overload that rejects the arguments could
 // still bind precisely ahead of an applicable base or extension method.
+// v37 adds file-scope TS/JS declarations and local references. A cached v33
+// fragment for an unchanged file has none of these facts and must be reparsed.
 // The rename IS the invalidation mechanism:
 // pre-bump caches stop being found, every file reparses
 // once, no reader carries version-compat logic. Writers delete every
 // superseded generation (see `remove_superseded_caches`).
 pub(crate) fn fragments_cache_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-v33.json")
+    graph_dir(root).join("fragments-v37.json")
 }
 
 pub(crate) fn fragments_index_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-index-v33.json")
+    graph_dir(root).join("fragments-index-v37.json")
 }
 
 // Every generation below the current one, not just the immediately previous:
@@ -257,6 +259,14 @@ pub(crate) const SUPERSEDED_CACHE_FILES: &[&str] = &[
     "fragments-index-v31.json",
     "fragments-v32.json",
     "fragments-index-v32.json",
+    "fragments-v33.json",
+    "fragments-index-v33.json",
+    "fragments-v34.json",
+    "fragments-index-v34.json",
+    "fragments-v35.json",
+    "fragments-index-v35.json",
+    "fragments-v36.json",
+    "fragments-index-v36.json",
 ];
 
 pub(crate) fn remove_superseded_caches(root: &Path) {

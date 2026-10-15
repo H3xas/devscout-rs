@@ -1,0 +1,246 @@
+{
+  "defs": [
+    {
+      "endLine": 7,
+      "file": "ArticleCard.tsx",
+      "id": "ArticleCard.tsx#ArticleCardProps",
+      "kind": "interface",
+      "line": 3,
+      "name": "ArticleCardProps",
+      "namespace": ""
+    },
+    {
+      "endLine": 18,
+      "file": "ArticleCard.tsx",
+      "id": "ArticleCard.tsx#ArticleCard",
+      "kind": "function",
+      "line": 9,
+      "name": "ArticleCard",
+      "namespace": ""
+    },
+    {
+      "endLine": 6,
+      "file": "OrderService.ts",
+      "id": "OrderService.ts#IOrderService",
+      "kind": "interface",
+      "line": 4,
+      "name": "IOrderService",
+      "namespace": ""
+    },
+    {
+      "endLine": 22,
+      "file": "OrderService.ts",
+      "id": "OrderService.ts#OrderService",
+      "kind": "class",
+      "line": 8,
+      "name": "OrderService",
+      "namespace": ""
+    },
+    {
+      "endLine": 5,
+      "file": "articleTypes.ts",
+      "id": "articleTypes.ts#ArticleItem",
+      "kind": "interface",
+      "line": 1,
+      "name": "ArticleItem",
+      "namespace": ""
+    },
+    {
+      "endLine": 10,
+      "file": "articleTypes.ts",
+      "id": "articleTypes.ts#ArticleAuthor",
+      "kind": "interface",
+      "line": 7,
+      "name": "ArticleAuthor",
+      "namespace": ""
+    },
+    {
+      "endLine": 12,
+      "file": "articleTypes.ts",
+      "id": "articleTypes.ts#ArticleItemStatus",
+      "kind": "type",
+      "line": 12,
+      "name": "ArticleItemStatus",
+      "namespace": ""
+    },
+    {
+      "endLine": 17,
+      "file": "articleTypes.ts",
+      "id": "articleTypes.ts#ArticlePage",
+      "kind": "type",
+      "line": 14,
+      "name": "ArticlePage",
+      "namespace": ""
+    },
+    {
+      "endLine": 29,
+      "file": "notificationDigest.ts",
+      "id": "notificationDigest.ts#NotificationDigestBuilder",
+      "kind": "class",
+      "line": 18,
+      "name": "NotificationDigestBuilder",
+      "namespace": ""
+    },
+    {
+      "endLine": 33,
+      "file": "notificationDigest.ts",
+      "id": "notificationDigest.ts#buildDailyDigest",
+      "kind": "function",
+      "line": 31,
+      "name": "buildDailyDigest",
+      "namespace": ""
+    },
+    {
+      "endLine": 5,
+      "file": "pathHelpers.js",
+      "id": "pathHelpers.js#joinSafe",
+      "kind": "function",
+      "line": 3,
+      "name": "joinSafe",
+      "namespace": ""
+    },
+    {
+      "endLine": 9,
+      "file": "pathHelpers.js",
+      "id": "pathHelpers.js#isAbsolute",
+      "kind": "function",
+      "line": 7,
+      "name": "isAbsolute",
+      "namespace": ""
+    },
+    {
+      "endLine": 3,
+      "file": "stringUtils.ts",
+      "id": "stringUtils.ts#truncate",
+      "kind": "function",
+      "line": 1,
+      "name": "truncate",
+      "namespace": ""
+    },
+    {
+      "endLine": 7,
+      "file": "stringUtils.ts",
+      "id": "stringUtils.ts#slugify",
+      "kind": "function",
+      "line": 5,
+      "name": "slugify",
+      "namespace": ""
+    },
+    {
+      "endLine": 9,
+      "file": "stringUtils.ts",
+      "id": "stringUtils.ts#DEFAULT_MAX_LENGTH",
+      "kind": "const",
+      "line": 9,
+      "name": "DEFAULT_MAX_LENGTH",
+      "namespace": ""
+    },
+    {
+      "endLine": 22,
+      "file": "useWidgetData.ts",
+      "id": "useWidgetData.ts#useWidgetData",
+      "kind": "function",
+      "line": 8,
+      "name": "useWidgetData",
+      "namespace": ""
+    },
+    {
+      "endLine": 5,
+      "file": "widgetPanelWithNote.ts",
+      "id": "widgetPanelWithNote.ts#WidgetPanelProps",
+      "kind": "interface",
+      "line": 2,
+      "name": "WidgetPanelProps",
+      "namespace": ""
+    },
+    {
+      "endLine": 9,
+      "file": "widgetPanelWithNote.ts",
+      "id": "widgetPanelWithNote.ts#WidgetPanel",
+      "kind": "function",
+      "line": 7,
+      "name": "WidgetPanel",
+      "namespace": ""
+    },
+    {
+      "endLine": 24,
+      "file": "widgetsSlice.ts",
+      "id": "widgetsSlice.ts#widgetsSlice",
+      "kind": "const",
+      "line": 13,
+      "name": "widgetsSlice",
+      "namespace": ""
+    },
+    {
+      "endLine": 26,
+      "file": "widgetsSlice.ts",
+      "id": "widgetsSlice.ts#setLoading",
+      "kind": "const",
+      "line": 26,
+      "name": "setLoading",
+      "namespace": ""
+    },
+    {
+      "endLine": 26,
+      "file": "widgetsSlice.ts",
+      "id": "widgetsSlice.ts#setItems",
+      "kind": "const",
+      "line": 26,
+      "name": "setItems",
+      "namespace": ""
+    }
+  ],
+  "edges": [],
+  "manifest": {
+    "ArticleCard.tsx": {
+      "purpose": "function ArticleCard | interface ArticleCardProps",
+      "source": "ast"
+    },
+    "OrderService.ts": {
+      "purpose": "class OrderService : IOrderService; getOrder, cancelOrder | interface IOrderService",
+      "source": "ast"
+    },
+    "articleTypes.ts": {
+      "purpose": "interface ArticleItem | interface ArticleAuthor | type ArticleItemStatus | type ArticlePage",
+      "source": "ast"
+    },
+    "formatCurrency.ts": {
+      "purpose": "default (anonymous)",
+      "source": "ast"
+    },
+    "notificationDigest.ts": {
+      "purpose": "class NotificationDigestBuilder; addEvent, build | function buildDailyDigest",
+      "source": "ast"
+    },
+    "pathHelpers.js": {
+      "purpose": "function joinSafe | function isAbsolute",
+      "source": "ast"
+    },
+    "reexportBarrel.ts": {
+      "purpose": "reexports WidgetCard, WidgetList, Dialog, *, WidgetTypes",
+      "source": "ast"
+    },
+    "stringUtils.ts": {
+      "purpose": "function truncate | function slugify | const DEFAULT_MAX_LENGTH",
+      "source": "ast"
+    },
+    "useWidgetData.ts": {
+      "purpose": "function useWidgetData",
+      "source": "ast"
+    },
+    "widgetPanelWithNote.ts": {
+      "purpose": "Renders the widget summary panel and its retry action \u2014 function WidgetPanel | interface WidgetPanelProps",
+      "source": "ast"
+    },
+    "widgetsSlice.ts": {
+      "purpose": "const widgetsSlice | const setLoading | const setItems | default (anonymous)",
+      "source": "ast"
+    }
+  },
+  "tsStats": {
+    "external_import_count": 11,
+    "ts_def_count": 21,
+    "ts_file_count": 11,
+    "unresolved_ref_count": 6
+  }
+}

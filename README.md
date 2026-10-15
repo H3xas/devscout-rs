@@ -47,7 +47,7 @@ $ devscout init --no-hooks
 devscout initialized at ...
 languages: ...
 hooks: skipped (--no-hooks)
-map: mapped 14 files under . (preserved 0 agent purposes, downgraded 0 changed, 14 new, 0 removed, 14 ast signatures); graph rebuilt in ... (24 defs, 4 edges)
+map: mapped 14 files under . (preserved 0 agent purposes, downgraded 0 changed, 14 new, 0 removed, 14 ast signatures); graph rebuilt in ... (30 defs, 7 edges)
 
 $ devscout refs IOrderRepository
 Shop.Data.IOrderRepository  (interface)  1 inbound (showing 1)
@@ -89,7 +89,9 @@ and the targets the compiler-fact path is qualified on in
 **TypeScript and JavaScript** (`.ts`, `.tsx`, `.mts`, `.cts`, `.js`, `.jsx`, `.mjs`, `.cjs`) are
 indexed for `find` and file purposes and graphed with imports (tsconfig `paths` and re-export
 barrels), calls, JSX usage and dispatch. `refs`, `read`, `impact` and `tests` read those edges for
-TypeScript and JavaScript alike; JavaScript query quality is not measured.
+TypeScript and JavaScript alike. File-scope declarations, including declarations in a top-level
+IIFE body, are indexed even without an export. Their references resolve within the same file only;
+an exported definition wins a bare-name tie. JavaScript query quality is not measured.
 
 **Rust** (`.rs`) is indexed and graphed through path resolution: modules, `use` scope, calls,
 type uses, trait impls and `#[test]` functions, with no method-call typing

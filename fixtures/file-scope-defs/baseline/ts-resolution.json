@@ -1,0 +1,133 @@
+{
+  "defs": [
+    {
+      "endLine": 5,
+      "file": "apps/api/src/handler.ts",
+      "id": "apps/api/src/handler.ts#handleRequest",
+      "kind": "function",
+      "line": 3,
+      "name": "handleRequest",
+      "namespace": "apps/api/src"
+    },
+    {
+      "endLine": 3,
+      "file": "apps/web/src/components/buttons/PrimaryButton.tsx",
+      "id": "apps/web/src/components/buttons/PrimaryButton.tsx#PrimaryButton",
+      "kind": "function",
+      "line": 1,
+      "name": "PrimaryButton",
+      "namespace": "apps/web/src/components/buttons"
+    },
+    {
+      "endLine": 9,
+      "file": "apps/web/src/pages/HomePage.tsx",
+      "id": "apps/web/src/pages/HomePage.tsx#HomePage",
+      "kind": "function",
+      "line": 3,
+      "name": "HomePage",
+      "namespace": "apps/web/src/pages"
+    },
+    {
+      "endLine": 3,
+      "file": "packages/core/src/formatLabel.ts",
+      "id": "packages/core/src/formatLabel.ts#formatLabel",
+      "kind": "function",
+      "line": 1,
+      "name": "formatLabel",
+      "namespace": "packages/core/src"
+    }
+  ],
+  "edges": [
+    {
+      "bound_defs": [
+        "packages/core/src/formatLabel.ts#formatLabel"
+      ],
+      "from_file": "apps/api/src/handler.ts",
+      "from_line": 1,
+      "kind": "import",
+      "target": "@core/formatLabel",
+      "to_file": "packages/core/src/formatLabel.ts"
+    },
+    {
+      "from_file": "apps/api/src/handler.ts",
+      "from_line": 4,
+      "kind": "call",
+      "to": "packages/core/src/formatLabel.ts#formatLabel",
+      "to_file": "packages/core/src/formatLabel.ts"
+    },
+    {
+      "bound_defs": [
+        "apps/web/src/components/buttons/PrimaryButton.tsx#PrimaryButton"
+      ],
+      "from_file": "apps/web/src/components/buttons/index.ts",
+      "from_line": 1,
+      "kind": "import",
+      "target": "./PrimaryButton",
+      "to_file": "apps/web/src/components/buttons/PrimaryButton.tsx"
+    },
+    {
+      "from_file": "apps/web/src/components/index.ts",
+      "from_line": 1,
+      "kind": "import",
+      "target": "./buttons",
+      "to_file": "apps/web/src/components/buttons/index.ts"
+    },
+    {
+      "from_file": "apps/web/src/pages/HomePage.tsx",
+      "from_line": 1,
+      "kind": "import",
+      "target": "@/components",
+      "to_file": "apps/web/src/components/index.ts"
+    },
+    {
+      "bound_defs": [
+        "apps/web/src/components/buttons/PrimaryButton.tsx#PrimaryButton"
+      ],
+      "from_file": "apps/web/src/pages/HomePage.tsx",
+      "from_line": 1,
+      "kind": "import",
+      "target": "@/components",
+      "to_file": "apps/web/src/components/buttons/PrimaryButton.tsx",
+      "via": "apps/web/src/components/index.ts"
+    },
+    {
+      "from_file": "apps/web/src/pages/HomePage.tsx",
+      "from_line": 6,
+      "kind": "jsx-use",
+      "to": "apps/web/src/components/buttons/PrimaryButton.tsx#PrimaryButton",
+      "to_file": "apps/web/src/components/buttons/PrimaryButton.tsx"
+    }
+  ],
+  "manifest": {
+    "apps/api/src/handler.ts": {
+      "purpose": "function handleRequest",
+      "source": "ast"
+    },
+    "apps/web/src/components/buttons/PrimaryButton.tsx": {
+      "purpose": "function PrimaryButton",
+      "source": "ast"
+    },
+    "apps/web/src/components/buttons/index.ts": {
+      "purpose": "reexports PrimaryButton",
+      "source": "ast"
+    },
+    "apps/web/src/components/index.ts": {
+      "purpose": "reexports *",
+      "source": "ast"
+    },
+    "apps/web/src/pages/HomePage.tsx": {
+      "purpose": "function HomePage",
+      "source": "ast"
+    },
+    "packages/core/src/formatLabel.ts": {
+      "purpose": "function formatLabel",
+      "source": "ast"
+    }
+  },
+  "tsStats": {
+    "external_import_count": 0,
+    "ts_def_count": 4,
+    "ts_file_count": 6,
+    "unresolved_ref_count": 0
+  }
+}

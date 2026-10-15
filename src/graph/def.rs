@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use super::fragment_types::is_zero;
+use super::fragment_types::{is_false, is_zero};
 
 // ---------------------------------------------------------------------------
 // graph.json schema.
@@ -46,4 +46,7 @@ pub struct Def {
     #[serde(default, rename = "endLine", skip_serializing_if = "is_zero")]
     /// The end line value.
     pub end_line: usize,
+    #[serde(default, skip_serializing_if = "is_false")]
+    /// Whether this definition is private to its file.
+    pub local: bool,
 }

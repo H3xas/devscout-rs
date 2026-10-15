@@ -1,0 +1,853 @@
+{
+  "defs": [
+    {
+      "endLine": 3,
+      "file": "src/actions/cartActions.ts",
+      "id": "src/actions/cartActions.ts#loadCart",
+      "kind": "function",
+      "line": 1,
+      "name": "loadCart",
+      "namespace": "src/actions"
+    },
+    {
+      "endLine": 7,
+      "file": "src/actions/cartActions.ts",
+      "id": "src/actions/cartActions.ts#clearCart",
+      "kind": "function",
+      "line": 5,
+      "name": "clearCart",
+      "namespace": "src/actions"
+    },
+    {
+      "endLine": 5,
+      "file": "src/app/App.tsx",
+      "id": "src/app/App.tsx#App",
+      "kind": "function",
+      "line": 3,
+      "name": "App",
+      "namespace": "src/app"
+    },
+    {
+      "endLine": 36,
+      "file": "src/bulk/refill.ts",
+      "id": "src/bulk/refill.ts#refillAll",
+      "kind": "function",
+      "line": 3,
+      "name": "refillAll",
+      "namespace": "src/bulk"
+    },
+    {
+      "endLine": 6,
+      "file": "src/components/CartBadge.tsx",
+      "id": "src/components/CartBadge.tsx#CartBadge",
+      "kind": "function",
+      "line": 3,
+      "name": "CartBadge",
+      "namespace": "src/components"
+    },
+    {
+      "endLine": 8,
+      "file": "src/hooks/useCart.ts",
+      "id": "src/hooks/useCart.ts#useCart",
+      "kind": "function",
+      "line": 4,
+      "name": "useCart",
+      "namespace": "src/hooks"
+    },
+    {
+      "endLine": 5,
+      "file": "src/legacy/cartLegacy.js",
+      "id": "src/legacy/cartLegacy.js#run",
+      "kind": "function",
+      "line": 3,
+      "name": "run",
+      "namespace": "src/legacy"
+    },
+    {
+      "endLine": 4,
+      "file": "src/model/cart.ts",
+      "id": "src/model/cart.ts#CartItem",
+      "kind": "interface",
+      "line": 1,
+      "name": "CartItem",
+      "namespace": "src/model"
+    },
+    {
+      "endLine": 6,
+      "file": "src/model/cart.ts",
+      "id": "src/model/cart.ts#CartId",
+      "kind": "type",
+      "line": 6,
+      "name": "CartId",
+      "namespace": "src/model"
+    },
+    {
+      "endLine": 10,
+      "file": "src/model/cart.ts",
+      "id": "src/model/cart.ts#emptyCart",
+      "kind": "function",
+      "line": 8,
+      "name": "emptyCart",
+      "namespace": "src/model"
+    },
+    {
+      "endLine": 11,
+      "file": "src/pages/CartPage.tsx",
+      "id": "src/pages/CartPage.tsx#CartPage",
+      "kind": "function",
+      "line": 6,
+      "name": "CartPage",
+      "namespace": "src/pages"
+    },
+    {
+      "endLine": 3,
+      "file": "src/services/audit.ts",
+      "id": "src/services/audit.ts#auditLabel",
+      "kind": "const",
+      "line": 3,
+      "name": "auditLabel",
+      "namespace": "src/services"
+    },
+    {
+      "endLine": 7,
+      "file": "src/services/checkout.ts",
+      "id": "src/services/checkout.ts#checkout",
+      "kind": "function",
+      "line": 4,
+      "name": "checkout",
+      "namespace": "src/services"
+    },
+    {
+      "endLine": 5,
+      "file": "src/store/cartStore.ts",
+      "id": "src/store/cartStore.ts#CartStore",
+      "kind": "class",
+      "line": 1,
+      "name": "CartStore",
+      "namespace": "src/store"
+    },
+    {
+      "endLine": 5,
+      "file": "src/store/cartStore__tests__.ts",
+      "id": "src/store/cartStore__tests__.ts#sampleStore",
+      "kind": "function",
+      "line": 3,
+      "name": "sampleStore",
+      "namespace": "src/store"
+    },
+    {
+      "endLine": 3,
+      "file": "src/tree/walk.ts",
+      "id": "src/tree/walk.ts#walkTree",
+      "kind": "function",
+      "line": 1,
+      "name": "walkTree",
+      "namespace": "src/tree"
+    },
+    {
+      "endLine": 5,
+      "file": "tests/cartStore.ts",
+      "id": "tests/cartStore.ts#makeStore",
+      "kind": "function",
+      "line": 3,
+      "name": "makeStore",
+      "namespace": "tests"
+    }
+  ],
+  "edges": [
+    {
+      "bound_defs": [
+        "src/actions/cartActions.ts#loadCart"
+      ],
+      "from_file": "src/actions/cartActions.test.js",
+      "from_line": 1,
+      "kind": "import",
+      "target": "./cartActions",
+      "to_file": "src/actions/cartActions.ts"
+    },
+    {
+      "from_file": "src/actions/cartActions.test.js",
+      "from_line": 4,
+      "kind": "call",
+      "to": "src/actions/cartActions.ts#loadCart",
+      "to_file": "src/actions/cartActions.ts"
+    },
+    {
+      "bound_defs": [
+        "src/actions/cartActions.ts#loadCart"
+      ],
+      "from_file": "src/actions/cartActions.test.ts",
+      "from_line": 1,
+      "kind": "import",
+      "target": "./cartActions",
+      "to_file": "src/actions/cartActions.ts"
+    },
+    {
+      "from_file": "src/actions/cartActions.test.ts",
+      "from_line": 4,
+      "kind": "call",
+      "to": "src/actions/cartActions.ts#loadCart",
+      "to_file": "src/actions/cartActions.ts"
+    },
+    {
+      "bound_defs": [
+        "src/pages/CartPage.tsx#CartPage"
+      ],
+      "from_file": "src/app/App.tsx",
+      "from_line": 1,
+      "kind": "import",
+      "target": "../pages/CartPage",
+      "to_file": "src/pages/CartPage.tsx"
+    },
+    {
+      "from_file": "src/app/App.tsx",
+      "from_line": 4,
+      "kind": "jsx-use",
+      "to": "src/pages/CartPage.tsx#CartPage",
+      "to_file": "src/pages/CartPage.tsx"
+    },
+    {
+      "bound_defs": [
+        "src/actions/cartActions.ts#loadCart"
+      ],
+      "from_file": "src/bulk/refill.ts",
+      "from_line": 1,
+      "kind": "import",
+      "target": "../actions/cartActions",
+      "to_file": "src/actions/cartActions.ts"
+    },
+    {
+      "from_file": "src/bulk/refill.ts",
+      "from_line": 4,
+      "kind": "call",
+      "to": "src/actions/cartActions.ts#loadCart",
+      "to_file": "src/actions/cartActions.ts"
+    },
+    {
+      "from_file": "src/bulk/refill.ts",
+      "from_line": 5,
+      "kind": "call",
+      "to": "src/actions/cartActions.ts#loadCart",
+      "to_file": "src/actions/cartActions.ts"
+    },
+    {
+      "from_file": "src/bulk/refill.ts",
+      "from_line": 6,
+      "kind": "call",
+      "to": "src/actions/cartActions.ts#loadCart",
+      "to_file": "src/actions/cartActions.ts"
+    },
+    {
+      "from_file": "src/bulk/refill.ts",
+      "from_line": 7,
+      "kind": "call",
+      "to": "src/actions/cartActions.ts#loadCart",
+      "to_file": "src/actions/cartActions.ts"
+    },
+    {
+      "from_file": "src/bulk/refill.ts",
+      "from_line": 8,
+      "kind": "call",
+      "to": "src/actions/cartActions.ts#loadCart",
+      "to_file": "src/actions/cartActions.ts"
+    },
+    {
+      "from_file": "src/bulk/refill.ts",
+      "from_line": 9,
+      "kind": "call",
+      "to": "src/actions/cartActions.ts#loadCart",
+      "to_file": "src/actions/cartActions.ts"
+    },
+    {
+      "from_file": "src/bulk/refill.ts",
+      "from_line": 10,
+      "kind": "call",
+      "to": "src/actions/cartActions.ts#loadCart",
+      "to_file": "src/actions/cartActions.ts"
+    },
+    {
+      "from_file": "src/bulk/refill.ts",
+      "from_line": 11,
+      "kind": "call",
+      "to": "src/actions/cartActions.ts#loadCart",
+      "to_file": "src/actions/cartActions.ts"
+    },
+    {
+      "from_file": "src/bulk/refill.ts",
+      "from_line": 12,
+      "kind": "call",
+      "to": "src/actions/cartActions.ts#loadCart",
+      "to_file": "src/actions/cartActions.ts"
+    },
+    {
+      "from_file": "src/bulk/refill.ts",
+      "from_line": 13,
+      "kind": "call",
+      "to": "src/actions/cartActions.ts#loadCart",
+      "to_file": "src/actions/cartActions.ts"
+    },
+    {
+      "from_file": "src/bulk/refill.ts",
+      "from_line": 14,
+      "kind": "call",
+      "to": "src/actions/cartActions.ts#loadCart",
+      "to_file": "src/actions/cartActions.ts"
+    },
+    {
+      "from_file": "src/bulk/refill.ts",
+      "from_line": 15,
+      "kind": "call",
+      "to": "src/actions/cartActions.ts#loadCart",
+      "to_file": "src/actions/cartActions.ts"
+    },
+    {
+      "from_file": "src/bulk/refill.ts",
+      "from_line": 16,
+      "kind": "call",
+      "to": "src/actions/cartActions.ts#loadCart",
+      "to_file": "src/actions/cartActions.ts"
+    },
+    {
+      "from_file": "src/bulk/refill.ts",
+      "from_line": 17,
+      "kind": "call",
+      "to": "src/actions/cartActions.ts#loadCart",
+      "to_file": "src/actions/cartActions.ts"
+    },
+    {
+      "from_file": "src/bulk/refill.ts",
+      "from_line": 18,
+      "kind": "call",
+      "to": "src/actions/cartActions.ts#loadCart",
+      "to_file": "src/actions/cartActions.ts"
+    },
+    {
+      "from_file": "src/bulk/refill.ts",
+      "from_line": 19,
+      "kind": "call",
+      "to": "src/actions/cartActions.ts#loadCart",
+      "to_file": "src/actions/cartActions.ts"
+    },
+    {
+      "from_file": "src/bulk/refill.ts",
+      "from_line": 20,
+      "kind": "call",
+      "to": "src/actions/cartActions.ts#loadCart",
+      "to_file": "src/actions/cartActions.ts"
+    },
+    {
+      "from_file": "src/bulk/refill.ts",
+      "from_line": 21,
+      "kind": "call",
+      "to": "src/actions/cartActions.ts#loadCart",
+      "to_file": "src/actions/cartActions.ts"
+    },
+    {
+      "from_file": "src/bulk/refill.ts",
+      "from_line": 22,
+      "kind": "call",
+      "to": "src/actions/cartActions.ts#loadCart",
+      "to_file": "src/actions/cartActions.ts"
+    },
+    {
+      "from_file": "src/bulk/refill.ts",
+      "from_line": 23,
+      "kind": "call",
+      "to": "src/actions/cartActions.ts#loadCart",
+      "to_file": "src/actions/cartActions.ts"
+    },
+    {
+      "from_file": "src/bulk/refill.ts",
+      "from_line": 24,
+      "kind": "dispatch",
+      "to": "src/actions/cartActions.ts#loadCart",
+      "to_file": "src/actions/cartActions.ts"
+    },
+    {
+      "from_file": "src/bulk/refill.ts",
+      "from_line": 25,
+      "kind": "dispatch",
+      "to": "src/actions/cartActions.ts#loadCart",
+      "to_file": "src/actions/cartActions.ts"
+    },
+    {
+      "from_file": "src/bulk/refill.ts",
+      "from_line": 26,
+      "kind": "dispatch",
+      "to": "src/actions/cartActions.ts#loadCart",
+      "to_file": "src/actions/cartActions.ts"
+    },
+    {
+      "from_file": "src/bulk/refill.ts",
+      "from_line": 27,
+      "kind": "dispatch",
+      "to": "src/actions/cartActions.ts#loadCart",
+      "to_file": "src/actions/cartActions.ts"
+    },
+    {
+      "from_file": "src/bulk/refill.ts",
+      "from_line": 28,
+      "kind": "dispatch",
+      "to": "src/actions/cartActions.ts#loadCart",
+      "to_file": "src/actions/cartActions.ts"
+    },
+    {
+      "from_file": "src/bulk/refill.ts",
+      "from_line": 29,
+      "kind": "dispatch",
+      "to": "src/actions/cartActions.ts#loadCart",
+      "to_file": "src/actions/cartActions.ts"
+    },
+    {
+      "from_file": "src/bulk/refill.ts",
+      "from_line": 30,
+      "kind": "dispatch",
+      "to": "src/actions/cartActions.ts#loadCart",
+      "to_file": "src/actions/cartActions.ts"
+    },
+    {
+      "from_file": "src/bulk/refill.ts",
+      "from_line": 31,
+      "kind": "dispatch",
+      "to": "src/actions/cartActions.ts#loadCart",
+      "to_file": "src/actions/cartActions.ts"
+    },
+    {
+      "from_file": "src/bulk/refill.ts",
+      "from_line": 32,
+      "kind": "dispatch",
+      "to": "src/actions/cartActions.ts#loadCart",
+      "to_file": "src/actions/cartActions.ts"
+    },
+    {
+      "from_file": "src/bulk/refill.ts",
+      "from_line": 33,
+      "kind": "dispatch",
+      "to": "src/actions/cartActions.ts#loadCart",
+      "to_file": "src/actions/cartActions.ts"
+    },
+    {
+      "from_file": "src/bulk/refill.ts",
+      "from_line": 34,
+      "kind": "dispatch",
+      "to": "src/actions/cartActions.ts#loadCart",
+      "to_file": "src/actions/cartActions.ts"
+    },
+    {
+      "from_file": "src/bulk/refill.ts",
+      "from_line": 35,
+      "kind": "dispatch",
+      "to": "src/actions/cartActions.ts#loadCart",
+      "to_file": "src/actions/cartActions.ts"
+    },
+    {
+      "bound_defs": [
+        "src/components/CartBadge.tsx#CartBadge"
+      ],
+      "from_file": "src/components/CartBadge.spec.tsx",
+      "from_line": 1,
+      "kind": "import",
+      "target": "./CartBadge",
+      "to_file": "src/components/CartBadge.tsx"
+    },
+    {
+      "from_file": "src/components/CartBadge.spec.tsx",
+      "from_line": 4,
+      "kind": "jsx-use",
+      "to": "src/components/CartBadge.tsx#CartBadge",
+      "to_file": "src/components/CartBadge.tsx"
+    },
+    {
+      "bound_defs": [
+        "src/hooks/useCart.ts#useCart"
+      ],
+      "from_file": "src/components/CartBadge.tsx",
+      "from_line": 1,
+      "kind": "import",
+      "target": "../hooks/useCart",
+      "to_file": "src/hooks/useCart.ts"
+    },
+    {
+      "from_file": "src/components/CartBadge.tsx",
+      "from_line": 4,
+      "kind": "call",
+      "to": "src/hooks/useCart.ts#useCart",
+      "to_file": "src/hooks/useCart.ts"
+    },
+    {
+      "bound_defs": [
+        "src/hooks/useCart.ts#useCart"
+      ],
+      "from_file": "src/hooks/useCart.spec.ts",
+      "from_line": 1,
+      "kind": "import",
+      "target": "./useCart",
+      "to_file": "src/hooks/useCart.ts"
+    },
+    {
+      "from_file": "src/hooks/useCart.spec.ts",
+      "from_line": 4,
+      "kind": "call",
+      "to": "src/hooks/useCart.ts#useCart",
+      "to_file": "src/hooks/useCart.ts"
+    },
+    {
+      "bound_defs": [
+        "src/store/cartStore.ts#CartStore"
+      ],
+      "from_file": "src/hooks/useCart.ts",
+      "from_line": 1,
+      "kind": "import",
+      "target": "../store/cartStore",
+      "to_file": "src/store/cartStore.ts"
+    },
+    {
+      "from_file": "src/hooks/useCart.ts",
+      "from_line": 2,
+      "kind": "import",
+      "target": "../model",
+      "to_file": "src/model/index.ts"
+    },
+    {
+      "bound_defs": [
+        "src/model/cart.ts#CartItem"
+      ],
+      "from_file": "src/hooks/useCart.ts",
+      "from_line": 2,
+      "kind": "import",
+      "target": "../model",
+      "to_file": "src/model/cart.ts",
+      "via": "src/model/index.ts"
+    },
+    {
+      "from_file": "src/hooks/useCart.ts",
+      "from_line": 5,
+      "kind": "call",
+      "to": "src/store/cartStore.ts#CartStore",
+      "to_file": "src/store/cartStore.ts"
+    },
+    {
+      "bound_defs": [
+        "src/actions/cartActions.ts#loadCart"
+      ],
+      "from_file": "src/legacy/cartLegacy.js",
+      "from_line": 1,
+      "kind": "import",
+      "target": "../actions/cartActions",
+      "to_file": "src/actions/cartActions.ts"
+    },
+    {
+      "from_file": "src/legacy/cartLegacy.js",
+      "from_line": 4,
+      "kind": "call",
+      "to": "src/actions/cartActions.ts#loadCart",
+      "to_file": "src/actions/cartActions.ts"
+    },
+    {
+      "from_file": "src/model/index.ts",
+      "from_line": 1,
+      "kind": "import",
+      "target": "./cart",
+      "to_file": "src/model/cart.ts"
+    },
+    {
+      "bound_defs": [
+        "src/pages/CartPage.tsx#CartPage"
+      ],
+      "from_file": "src/pages/CartPage.test.tsx",
+      "from_line": 1,
+      "kind": "import",
+      "target": "./CartPage",
+      "to_file": "src/pages/CartPage.tsx"
+    },
+    {
+      "from_file": "src/pages/CartPage.test.tsx",
+      "from_line": 4,
+      "kind": "jsx-use",
+      "to": "src/pages/CartPage.tsx#CartPage",
+      "to_file": "src/pages/CartPage.tsx"
+    },
+    {
+      "bound_defs": [
+        "src/components/CartBadge.tsx#CartBadge"
+      ],
+      "from_file": "src/pages/CartPage.tsx",
+      "from_line": 1,
+      "kind": "import",
+      "target": "../components/CartBadge",
+      "to_file": "src/components/CartBadge.tsx"
+    },
+    {
+      "bound_defs": [
+        "src/actions/cartActions.ts#loadCart"
+      ],
+      "from_file": "src/pages/CartPage.tsx",
+      "from_line": 2,
+      "kind": "import",
+      "target": "../actions/cartActions",
+      "to_file": "src/actions/cartActions.ts"
+    },
+    {
+      "bound_defs": [
+        "src/model/cart.ts#emptyCart"
+      ],
+      "from_file": "src/pages/CartPage.tsx",
+      "from_line": 3,
+      "kind": "import",
+      "target": "../model/cart",
+      "to_file": "src/model/cart.ts"
+    },
+    {
+      "bound_defs": [
+        "src/model/cart.ts#CartId",
+        "src/model/cart.ts#CartItem"
+      ],
+      "from_file": "src/pages/CartPage.tsx",
+      "from_line": 4,
+      "kind": "import",
+      "target": "../model/cart",
+      "to_file": "src/model/cart.ts"
+    },
+    {
+      "from_file": "src/pages/CartPage.tsx",
+      "from_line": 7,
+      "kind": "dispatch",
+      "to": "src/actions/cartActions.ts#loadCart",
+      "to_file": "src/actions/cartActions.ts"
+    },
+    {
+      "from_file": "src/pages/CartPage.tsx",
+      "from_line": 8,
+      "kind": "call",
+      "to": "src/model/cart.ts#emptyCart",
+      "to_file": "src/model/cart.ts"
+    },
+    {
+      "from_file": "src/pages/CartPage.tsx",
+      "from_line": 10,
+      "kind": "jsx-use",
+      "to": "src/components/CartBadge.tsx#CartBadge",
+      "to_file": "src/components/CartBadge.tsx"
+    },
+    {
+      "bound_defs": [
+        "src/store/cartStore.ts#CartStore"
+      ],
+      "from_file": "src/public/index.ts",
+      "from_line": 1,
+      "kind": "import",
+      "target": "../store/cartStore",
+      "to_file": "src/store/cartStore.ts"
+    },
+    {
+      "from_file": "src/public/index.ts",
+      "from_line": 2,
+      "kind": "import",
+      "target": "../model",
+      "to_file": "src/model/index.ts"
+    },
+    {
+      "from_file": "src/services/audit.ts",
+      "from_line": 1,
+      "kind": "import",
+      "target": "../actions/cartActions",
+      "to_file": "src/actions/cartActions.ts"
+    },
+    {
+      "from_file": "src/services/checkout.ts",
+      "from_line": 1,
+      "kind": "import",
+      "target": "../actions/cartActions",
+      "to_file": "src/actions/cartActions.ts"
+    },
+    {
+      "bound_defs": [
+        "src/store/cartStore.ts#CartStore"
+      ],
+      "from_file": "src/services/checkout.ts",
+      "from_line": 2,
+      "kind": "import",
+      "target": "../store/cartStore",
+      "to_file": "src/store/cartStore.ts"
+    },
+    {
+      "from_file": "src/services/checkout.ts",
+      "from_line": 5,
+      "kind": "call",
+      "to": "src/actions/cartActions.ts#clearCart",
+      "to_file": "src/actions/cartActions.ts"
+    },
+    {
+      "from_file": "src/services/checkout.ts",
+      "from_line": 6,
+      "kind": "call",
+      "to": "src/store/cartStore.ts#CartStore",
+      "to_file": "src/store/cartStore.ts"
+    },
+    {
+      "from_file": "src/setup/polyfills.ts",
+      "from_line": 1,
+      "kind": "import",
+      "target": "../store/cartStore",
+      "to_file": "src/store/cartStore.ts"
+    },
+    {
+      "bound_defs": [
+        "src/store/cartStore.ts#CartStore"
+      ],
+      "from_file": "src/store/__tests__/deep/total.ts",
+      "from_line": 1,
+      "kind": "import",
+      "target": "../../cartStore",
+      "to_file": "src/store/cartStore.ts"
+    },
+    {
+      "from_file": "src/store/__tests__/deep/total.ts",
+      "from_line": 4,
+      "kind": "call",
+      "to": "src/store/cartStore.ts#CartStore",
+      "to_file": "src/store/cartStore.ts"
+    },
+    {
+      "bound_defs": [
+        "src/store/cartStore.ts#CartStore"
+      ],
+      "from_file": "src/store/cartStore__tests__.ts",
+      "from_line": 1,
+      "kind": "import",
+      "target": "./cartStore",
+      "to_file": "src/store/cartStore.ts"
+    },
+    {
+      "from_file": "src/store/cartStore__tests__.ts",
+      "from_line": 4,
+      "kind": "call",
+      "to": "src/store/cartStore.ts#CartStore",
+      "to_file": "src/store/cartStore.ts"
+    },
+    {
+      "from_file": "src/tree/walk.ts",
+      "from_line": 2,
+      "kind": "call",
+      "to": "src/tree/walk.ts#walkTree",
+      "to_file": "src/tree/walk.ts"
+    },
+    {
+      "bound_defs": [
+        "src/store/cartStore.ts#CartStore"
+      ],
+      "from_file": "tests/cartStore.ts",
+      "from_line": 1,
+      "kind": "import",
+      "target": "../src/store/cartStore",
+      "to_file": "src/store/cartStore.ts"
+    },
+    {
+      "from_file": "tests/cartStore.ts",
+      "from_line": 4,
+      "kind": "call",
+      "to": "src/store/cartStore.ts#CartStore",
+      "to_file": "src/store/cartStore.ts"
+    }
+  ],
+  "manifest": {
+    "src/actions/cartActions.test.js": {
+      "purpose": "const { loadCart } = require('./cartActions');",
+      "source": "ast-none"
+    },
+    "src/actions/cartActions.test.ts": {
+      "purpose": "import { loadCart } from './cartActions';",
+      "source": "ast-none"
+    },
+    "src/actions/cartActions.ts": {
+      "purpose": "function loadCart | function clearCart",
+      "source": "ast"
+    },
+    "src/app/App.tsx": {
+      "purpose": "function App",
+      "source": "ast"
+    },
+    "src/bulk/refill.ts": {
+      "purpose": "function refillAll",
+      "source": "ast"
+    },
+    "src/components/CartBadge.spec.tsx": {
+      "purpose": "import { CartBadge } from './CartBadge';",
+      "source": "ast-none"
+    },
+    "src/components/CartBadge.tsx": {
+      "purpose": "function CartBadge",
+      "source": "ast"
+    },
+    "src/hooks/useCart.spec.ts": {
+      "purpose": "import { useCart } from './useCart';",
+      "source": "ast-none"
+    },
+    "src/hooks/useCart.ts": {
+      "purpose": "function useCart",
+      "source": "ast"
+    },
+    "src/legacy/cartLegacy.js": {
+      "purpose": "function run",
+      "source": "ast"
+    },
+    "src/model/cart.ts": {
+      "purpose": "interface CartItem | type CartId | default emptyCart",
+      "source": "ast"
+    },
+    "src/model/index.ts": {
+      "purpose": "reexports *",
+      "source": "ast"
+    },
+    "src/pages/CartPage.test.tsx": {
+      "purpose": "import { CartPage } from './CartPage';",
+      "source": "ast-none"
+    },
+    "src/pages/CartPage.tsx": {
+      "purpose": "function CartPage",
+      "source": "ast"
+    },
+    "src/public/index.ts": {
+      "purpose": "reexports CartStore, CartItem",
+      "source": "ast"
+    },
+    "src/services/audit.ts": {
+      "purpose": "const auditLabel",
+      "source": "ast"
+    },
+    "src/services/checkout.ts": {
+      "purpose": "function checkout",
+      "source": "ast"
+    },
+    "src/setup/polyfills.ts": {
+      "purpose": "import '../store/cartStore';",
+      "source": "ast-none"
+    },
+    "src/store/__tests__/deep/total.ts": {
+      "purpose": "import { CartStore } from '../../cartStore';",
+      "source": "ast-none"
+    },
+    "src/store/cartStore.ts": {
+      "purpose": "class CartStore; total",
+      "source": "ast"
+    },
+    "src/store/cartStore__tests__.ts": {
+      "purpose": "function sampleStore",
+      "source": "ast"
+    },
+    "src/tree/walk.ts": {
+      "purpose": "function walkTree",
+      "source": "ast"
+    },
+    "tests/cartStore.ts": {
+      "purpose": "function makeStore",
+      "source": "ast"
+    }
+  },
+  "tsStats": {
+    "external_import_count": 0,
+    "ts_def_count": 17,
+    "ts_file_count": 23,
+    "unresolved_ref_count": 0
+  }
+}

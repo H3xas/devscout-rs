@@ -17,7 +17,7 @@ use super::impact_seed::{resolve_impact_seed, SeedResolution};
 use super::index::GraphIndex;
 use super::member::{resolve_member_seed, MemberSeedResolution};
 use super::refs::RefsModel;
-use super::symbol::{resolve_symbol, Resolution};
+use super::symbol::{resolve_local_symbol, resolve_symbol, Resolution};
 
 /// One runnable suggestion: the argv a caller would type, WITHOUT the binary
 /// name. The binary is the caller's to know -- it is not always `devscout`.
@@ -35,10 +35,13 @@ fn symbol_target_resolves(index: &GraphIndex, seed: &str) -> bool {
     match resolve_symbol(index, seed) {
         Resolution::Resolved(_) => true,
         Resolution::Ambiguous(_) => false,
-        Resolution::NotFound => matches!(
-            resolve_member_seed(index, seed),
-            MemberSeedResolution::Resolved(_)
-        ),
+        Resolution::NotFound => match resolve_member_seed(index, seed) {
+            MemberSeedResolution::Resolved(_) => true,
+            MemberSeedResolution::Ambiguous(_) => false,
+            MemberSeedResolution::NotFound => {
+                matches!(resolve_local_symbol(index, seed), Resolution::Resolved(_))
+            }
+        },
     }
 }
 
