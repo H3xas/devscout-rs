@@ -27,8 +27,21 @@ use crate::extract::TsFragment;
 use crate::graph::{Def, Edge, OrderedMap};
 
 mod bindings;
+mod build_output;
+mod config;
+mod declared;
+mod disclosure;
+mod extend;
+mod modes;
+mod package_map;
+mod packages;
+mod workspaces;
 
 use bindings::{file_imports, resolve_reexports, Exports};
+pub use config::{read_ts_resolution, ModuleConfig};
+use declared::Resolver;
+pub use disclosure::{RefusedConfigRecord, UnresolvedImport, UnsupportedModeScope};
+pub(crate) use extend::extend_graph;
 
 const DEF_SEPARATOR: char = '#';
 // Extension probe order for a specifier that names no extension. TypeScript
@@ -662,6 +675,22 @@ pub struct TsStats {
     pub external_import_count: usize,
     /// The unresolved ref count value.
     pub unresolved_ref_count: usize,
+    /// Counts by closed unresolved-import reason, in vocabulary order.
+    #[serde(default, skip_serializing_if = "OrderedMap::is_empty")]
+    pub unresolved_import_reasons: OrderedMap<usize>,
+    /// Paths whose nearest declaring mode is classic.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unsupported_mode_scopes: Vec<UnsupportedModeScope>,
+    /// Configuration documents refused by the module reader.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub refused_config: Vec<RefusedConfigRecord>,
+    /// Dynamic import calls without a literal module specifier.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub non_literal_dynamic_import_count: usize,
+}
+
+fn is_zero(value: &usize) -> bool {
+    *value == 0
 }
 
 /// Represents `TsGraph`.
@@ -674,15 +703,31 @@ pub struct TsGraph {
     pub edges_by_kind: TsEdgeCounts,
     /// The stats value.
     pub stats: TsStats,
+    /// Declared-mode imports that could not resolve inside this graph.
+    pub unresolved_imports: Vec<UnresolvedImport>,
 }
 
 /// Resolves the TS/TSX graph: every file's reference fragments into edges.
+pub fn resolve_ts_graph(fragments: &[(String, TsFragment)], alias: &TsAliasScopes) -> TsGraph {
+    resolve_ts_graph_in(fragments, alias, &ModuleConfig::default())
+}
+
+/// Resolves TypeScript-family imports with the repository's declared module settings.
 #[allow(
     clippy::too_many_lines,
     reason = "one ordered pass building every def, export and edge table the resolution below reads from, all over the same fragment set"
 )]
-pub fn resolve_ts_graph(fragments: &[(String, TsFragment)], alias: &TsAliasScopes) -> TsGraph {
+pub fn resolve_ts_graph_in(
+    fragments: &[(String, TsFragment)],
+    alias: &TsAliasScopes,
+    config: &ModuleConfig,
+) -> TsGraph {
     let file_set: HashSet<&str> = fragments.iter().map(|(f, _)| f.as_str()).collect();
+    let resolver = Resolver {
+        files: &file_set,
+        alias,
+        config,
+    };
 
     let mut defs: Vec<Def> = Vec::new();
     let mut exports_by_file: HashMap<&str, HashMap<String, usize>> = HashMap::new();
@@ -725,18 +770,20 @@ pub fn resolve_ts_graph(fragments: &[(String, TsFragment)], alias: &TsAliasScope
 
     let exports = Exports {
         by_file: exports_by_file,
-        reexports_by_file: resolve_reexports(fragments, &file_set, alias),
+        reexports_by_file: resolve_reexports(fragments, &resolver),
     };
 
     let mut edges: Vec<Edge> = Vec::new();
     let mut counts = TsEdgeCounts::default();
     let mut external_imports = 0usize;
     let mut unresolved_refs = 0usize;
+    let mut unresolved_imports = Vec::new();
 
     for (file, frag) in fragments {
-        let imports = file_imports(file, frag, &file_set, alias, &defs, &exports);
+        let imports = file_imports(file, frag, &resolver, &defs, &exports);
         counts.import += imports.edges.len();
         external_imports += imports.external;
+        unresolved_imports.extend(imports.unresolved);
         edges.extend(imports.edges);
         let bindings = imports.bindings;
 
@@ -813,12 +860,56 @@ pub fn resolve_ts_graph(fragments: &[(String, TsFragment)], alias: &TsAliasScope
         ts_def_count: defs.len(),
         external_import_count: external_imports,
         unresolved_ref_count: unresolved_refs,
+        unresolved_import_reasons: {
+            let mut counts = OrderedMap::new();
+            for reason in disclosure::REASONS {
+                let count = unresolved_imports
+                    .iter()
+                    .filter(|row| row.reason == reason.as_str())
+                    .count();
+                if count > 0 {
+                    counts.insert(reason.as_str().to_string(), count);
+                }
+            }
+            counts
+        },
+        unsupported_mode_scopes: {
+            let mut configs: Vec<String> = config
+                .modes
+                .by_file
+                .values()
+                .filter(|scope| scope.mode == modes::Mode::Classic)
+                .map(|scope| scope.config.clone())
+                .collect();
+            configs.sort();
+            configs.dedup();
+            configs
+                .into_iter()
+                .map(|config| UnsupportedModeScope {
+                    config,
+                    mode: "classic".into(),
+                })
+                .collect()
+        },
+        refused_config: config
+            .refused
+            .iter()
+            .map(|refused| RefusedConfigRecord {
+                file: refused.file.clone(),
+                field: refused.field.clone(),
+            })
+            .collect(),
+        non_literal_dynamic_import_count: fragments
+            .iter()
+            .map(|(_, fragment)| fragment.non_literal_dynamic_imports)
+            .sum(),
     };
     TsGraph {
         defs,
         edges,
         edges_by_kind: counts,
         stats,
+        unresolved_imports,
     }
 }
 

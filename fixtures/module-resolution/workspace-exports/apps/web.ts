@@ -1,0 +1,18 @@
+import { value } from '@sample/map';
+import { one } from '@sample/map/util/one';
+import { hidden } from '@sample/map/hidden';
+import { absent } from '@sample/map/missing';
+import { one as array } from '@sample/map/array';
+import { one as folder } from '@sample/map/folder/one';
+import { one as custom } from '@sample/map/custom';
+import { declaration } from '@sample/map/declaration';
+import { unmatched } from '@sample/map/unmatched';
+value();
+one();
+hidden();
+absent();
+array();
+folder();
+custom();
+declaration();
+unmatched();

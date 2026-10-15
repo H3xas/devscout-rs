@@ -9,7 +9,9 @@ use std::collections::{HashMap, HashSet};
 use crate::extract::TsFragment;
 use crate::graph::{Def, Edge};
 
-use super::{resolve_specifier, TsAliasScopes, BARREL_HOPS};
+use super::declared::{Resolution, Resolver, Usage};
+use super::disclosure::Reason;
+use super::{UnresolvedImport, BARREL_HOPS};
 
 pub(super) struct ResolvedReexport {
     spec: String,
@@ -18,6 +20,7 @@ pub(super) struct ResolvedReexport {
     names: Vec<(String, String)>,
     namespace: Option<String>,
     to: Option<String>,
+    reason: Option<Reason>,
 }
 
 /// Every file's own exports (name -> def index) and its resolved re-export
@@ -31,25 +34,33 @@ pub(super) struct Exports<'a> {
 /// file paths rather than re-resolving specifiers at every hop.
 pub(super) fn resolve_reexports<'a>(
     fragments: &'a [(String, TsFragment)],
-    file_set: &HashSet<&str>,
-    alias: &TsAliasScopes,
+    resolver: &Resolver<'_>,
 ) -> HashMap<&'a str, Vec<ResolvedReexport>> {
     let mut reexports_by_file: HashMap<&str, Vec<ResolvedReexport>> = HashMap::new();
     for (file, frag) in fragments {
         let rows = frag
             .reexports
             .iter()
-            .map(|rx| ResolvedReexport {
-                spec: rx.spec.clone(),
-                line: rx.line,
-                star: rx.star,
-                names: rx
-                    .names
-                    .iter()
-                    .map(|n| (n.exported.clone(), n.imported.clone()))
-                    .collect(),
-                namespace: rx.namespace.clone(),
-                to: resolve_specifier(file, &rx.spec, file_set, alias),
+            .map(|rx| {
+                let (to, reason) =
+                    match resolver.resolve(file, &rx.spec, resolver.static_usage(file)) {
+                        Resolution::Resolved(to) => (Some(to), None),
+                        Resolution::Unresolved(reason) => (None, Some(reason)),
+                        Resolution::LegacyExternal => (None, None),
+                    };
+                ResolvedReexport {
+                    spec: rx.spec.clone(),
+                    line: rx.line,
+                    star: rx.star,
+                    names: rx
+                        .names
+                        .iter()
+                        .map(|n| (n.exported.clone(), n.imported.clone()))
+                        .collect(),
+                    namespace: rx.namespace.clone(),
+                    to,
+                    reason,
+                }
             })
             .collect();
         reexports_by_file.insert(file.as_str(), rows);
@@ -188,6 +199,7 @@ pub(super) struct FileImports {
     pub(super) edges: Vec<Edge>,
     pub(super) external: usize,
     pub(super) bindings: HashMap<String, (String, String)>,
+    pub(super) unresolved: Vec<UnresolvedImport>,
 }
 
 /// Emit `file`'s `import` edges: one per resolved import statement, one more
@@ -196,8 +208,7 @@ pub(super) struct FileImports {
 pub(super) fn file_imports(
     file: &str,
     frag: &TsFragment,
-    file_set: &HashSet<&str>,
-    alias: &TsAliasScopes,
+    resolver: &Resolver<'_>,
     defs: &[Def],
     exports: &Exports,
 ) -> FileImports {
@@ -205,12 +216,26 @@ pub(super) fn file_imports(
         edges: Vec::new(),
         external: 0,
         bindings: HashMap::new(),
+        unresolved: Vec::new(),
     };
     for imp in &frag.imports {
-        let to = resolve_specifier(file, &imp.spec, file_set, alias);
-        let Some(to) = to else {
-            out.external += 1;
-            continue;
+        let usage = if imp.require {
+            Usage::Require
+        } else {
+            resolver.static_usage(file)
+        };
+        let to = match resolver.resolve(file, &imp.spec, usage) {
+            Resolution::Resolved(to) => to,
+            Resolution::Unresolved(reason) => {
+                out.external += 1;
+                out.unresolved
+                    .push(unresolved(file, imp.line, &imp.spec, reason));
+                continue;
+            }
+            Resolution::LegacyExternal => {
+                out.external += 1;
+                continue;
+            }
         };
         out.edges.push(Edge::Import {
             from_file: file.to_string(),
@@ -271,9 +296,20 @@ pub(super) fn file_imports(
             bind(&mut out.edges[slot], &defs[target].id);
         }
     }
+    append_dynamic_imports(file, frag, resolver, &mut out);
+    append_reexports(file, exports, defs, &mut out);
+    out
+}
+
+fn append_dynamic_imports(
+    file: &str,
+    frag: &TsFragment,
+    resolver: &Resolver<'_>,
+    out: &mut FileImports,
+) {
     for imp in &frag.dynamic_imports {
-        match resolve_specifier(file, &imp.spec, file_set, alias) {
-            Some(to) => out.edges.push(Edge::Import {
+        match resolver.resolve(file, &imp.spec, Usage::Import) {
+            Resolution::Resolved(to) => out.edges.push(Edge::Import {
                 from_file: file.to_string(),
                 from_line: imp.line,
                 target: imp.spec.clone(),
@@ -281,9 +317,17 @@ pub(super) fn file_imports(
                 via: None,
                 bound_defs: Vec::new(),
             }),
-            None => out.external += 1,
+            Resolution::Unresolved(reason) => {
+                out.external += 1;
+                out.unresolved
+                    .push(unresolved(file, imp.line, &imp.spec, reason));
+            }
+            Resolution::LegacyExternal => out.external += 1,
         }
     }
+}
+
+fn append_reexports(file: &str, exports: &Exports<'_>, defs: &[Def], out: &mut FileImports) {
     for rx in exports
         .reexports_by_file
         .get(file)
@@ -291,7 +335,13 @@ pub(super) fn file_imports(
         .unwrap_or(&[])
     {
         match &rx.to {
-            None => out.external += 1,
+            None => {
+                out.external += 1;
+                if let Some(reason) = rx.reason {
+                    out.unresolved
+                        .push(unresolved(file, rx.line, &rx.spec, reason));
+                }
+            }
             Some(to) => {
                 // A named re-export names the symbol it hands on, so it binds
                 // like an import -- but only a name `to` itself declares: one
@@ -318,7 +368,15 @@ pub(super) fn file_imports(
             }
         }
     }
-    out
+}
+
+fn unresolved(file: &str, line: usize, spec: &str, reason: Reason) -> UnresolvedImport {
+    UnresolvedImport {
+        from_file: file.to_string(),
+        from_line: line,
+        target: spec.to_string(),
+        reason: reason.as_str().to_string(),
+    }
 }
 
 // Append `id` to an import edge's bound definitions unless it is already

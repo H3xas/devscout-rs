@@ -1,0 +1,14 @@
+import chosen from './barrel';
+import { named, ns } from './barrel';
+import * as direct from './target';
+const lazy = import('./target');
+const absent = import('./missing');
+const variable = './target';
+const unknown = import(variable);
+chosen();
+named();
+ns.member();
+direct.member();
+void lazy;
+void absent;
+void unknown;

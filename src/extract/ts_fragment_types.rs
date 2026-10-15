@@ -54,7 +54,7 @@ pub struct TsImport {
     pub line: usize,
     /// The bindings value.
     pub bindings: Vec<TsBinding>,
-    /// Whether resolution uses the CommonJS require condition.
+    /// Whether resolution uses the `CommonJS` require condition.
     #[serde(default, skip_serializing_if = "is_false")]
     pub require: bool,
 }
