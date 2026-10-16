@@ -263,9 +263,63 @@ fn candidate_sections_ac_1_the_refusal_json_lists_the_same_candidates_in_the_sam
 }
 
 #[test]
-fn candidate_sections_ac_2_each_section_is_that_candidates_pick_answer() {
+fn candidate_sections_ac_2_every_other_flag_leaves_each_section_that_candidates_pick_answer() {
     let fx = Fixture::build();
 
+    // `--pick all` is decided before the answer is built, so every flag the
+    // verb already took reaches each candidate the same way it reaches a
+    // single-seed run.
+    for (verb, extra) in [
+        ("refs", vec!["--out"]),
+        ("refs", vec!["--all"]),
+        ("refs", vec!["--out", "--all"]),
+        ("read", vec!["--no-guess"]),
+        ("tests", vec!["--no-dispatch"]),
+        ("impact", vec!["--hops", "3"]),
+        ("impact", vec!["--no-iface"]),
+        ("impact", vec!["--iface-max-fanin", "0"]),
+        ("impact", vec!["--hub-max-indegree", "0"]),
+    ] {
+        for seed in [MEMBER_SEED, TYPE_SEED] {
+            let mut args = vec![verb, seed, "--pick", "all"];
+            args.extend_from_slice(&extra);
+            let all = fx.run(&args);
+            assert!(all.status.success(), "{args:?}: {all:?}");
+
+            let sections = sections_of(&stdout_of(&all), 2);
+            for (i, (_, body)) in sections.iter().enumerate() {
+                assert_eq!(
+                    body,
+                    &pick_stdout(&fx, verb, seed, i + 1, &extra),
+                    "{args:?}: section {} is that candidate's own answer",
+                    i + 1
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn candidate_sections_ac_2_the_first_pick_flag_counts() {
+    let fx = Fixture::build();
+
+    let first_nth = fx.run(&["refs", MEMBER_SEED, "--pick", "1", "--pick", "all"]);
+    assert_eq!(
+        stdout_of(&first_nth),
+        stdout_of(&fx.run(&["refs", MEMBER_SEED, "--pick", "1"])),
+        "a repeated `--pick` is not a second narrowing: the first one counts"
+    );
+
+    let first_all = fx.run(&["refs", MEMBER_SEED, "--pick", "all", "--pick", "1"]);
+    assert!(
+        stdout_of(&first_all).starts_with("candidate 1 of 2: "),
+        "{first_all:?}"
+    );
+}
+
+#[test]
+fn candidate_sections_ac_2_each_section_is_that_candidates_pick_answer() {
+    let fx = Fixture::build();
     for (seed, rows) in [
         (
             MEMBER_SEED,
