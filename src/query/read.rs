@@ -97,16 +97,30 @@ fn read_span(root: &Path, model: &RefsModel, end_line: usize) -> Option<ReadSpan
 /// wholesale (`out` stays off -- the verb answers "what declares this and
 /// what points at it"), plus the one new fact: the declaration span.
 pub fn build_read_model(index: &GraphIndex, query: &str) -> ReadResult {
-    match build_refs_model_inner(
+    read_result_from_refs(
         index,
-        query,
-        false,
-        DEFAULT_CAP,
-        INBOUND_CAP,
-        OUTBOUND_CAP,
-        false,
-        true,
-    ) {
+        build_refs_model_inner(
+            index,
+            query,
+            false,
+            DEFAULT_CAP,
+            INBOUND_CAP,
+            OUTBOUND_CAP,
+            false,
+            true,
+        ),
+    )
+}
+
+/// The `read` answer for an ALREADY RESOLVED `refs` result: every
+/// non-resolved arm is `refs`' own outcome under a different name, and the
+/// resolved arm adds the one fact `read` has that `refs` does not.
+///
+/// Split so a caller that resolved the refs side itself -- a `--pick`
+/// candidate -- reaches the declaration span through the same mapping a
+/// typed seed does, rather than a second copy of it.
+pub(super) fn read_result_from_refs(index: &GraphIndex, refs: RefsResult) -> ReadResult {
+    match refs {
         RefsResult::Resolved(m) => {
             let end_line = index.def(&m.id).map(|d| d.end_line).unwrap_or(0);
             let span = if end_line > 0 {

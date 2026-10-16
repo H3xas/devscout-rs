@@ -186,7 +186,18 @@ pub fn build_tests_model(index: &GraphIndex, query: &str) -> TestsResult {
             MemberSeedResolution::NotFound => return TestsResult::NotFound,
         },
     };
-    let refs = symbol_refs(index, &id);
+    tests_model_for_id(index, &id, query)
+}
+
+/// The `tests` answer for an ALREADY RESOLVED def id.
+///
+/// `query_echo` is what the answer reports as the seed it answered: the
+/// caller's own query string when the seed was typed, or the def id a
+/// `--pick` candidate selected. Split from the resolution above so a picked
+/// candidate reaches test coverage through the same collection, vouch filter
+/// and bus-hop lookup a typed seed does.
+pub(super) fn tests_model_for_id(index: &GraphIndex, id: &str, query_echo: &str) -> TestsResult {
+    let refs = symbol_refs(index, id);
 
     let precise = collect_test_rows(
         index,
@@ -229,15 +240,15 @@ pub fn build_tests_model(index: &GraphIndex, query: &str) -> TestsResult {
     rows.extend(heuristic);
 
     TestsResult::Resolved(TestsModel {
-        query: query.to_string(),
-        symbol: id.clone(),
-        def_files: def_files(index, &id),
+        query: query_echo.to_string(),
+        symbol: id.to_string(),
+        def_files: def_files(index, id),
         rows,
         test_file_count,
         ref_count,
         heuristic_file_count,
         heuristic_ref_count,
-        bus: test_bus_rows(index, &id),
+        bus: test_bus_rows(index, id),
     })
 }
 

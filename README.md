@@ -76,7 +76,8 @@ Under `--json` the totals arrive as table fields and the suggestions as a `next`
 no `--json` shape.
 
 Run `devscout map` after edits; only changed files are re-parsed. An ambiguous name lists every
-candidate, and `--pick N` chooses one ([Concepts](docs/concepts.md#seeds)).
+candidate: `--pick N` answers the nth one, and `--pick all` answers each in its own section
+([Concepts](docs/concepts.md#seeds)).
 
 ## Language support
 

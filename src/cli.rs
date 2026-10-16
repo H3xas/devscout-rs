@@ -22,6 +22,7 @@ mod import_edges;
 mod read;
 mod refs;
 mod root;
+mod sections;
 
 pub(crate) use answer::freshness_json;
 pub use dispatch::dispatch;
