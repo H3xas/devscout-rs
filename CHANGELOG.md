@@ -133,10 +133,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   local-function parameter, `foreach`, `catch` and query variable, and pattern or `out`
   designation is also scoped to the construct that declares it: a use outside every such
   construct -- a field read before a nested block declares a local of the same name, or a lambda
-  parameter's name read after the lambda -- records no type rather than the local's. Both apply to
-  a call argument, whose type no longer vetoes the overload C# selects, and to a call receiver; a
-  use inside its declaring construct keeps the type it had. The fragment cache moves to
-  `fragments-v40.json`, so an existing cache re-extracts once.
+  parameter's name read after the lambda -- records no type rather than the local's. A `foreach`
+  over a generic type whose argument is a name (`foreach (Box<Item> x in xs)`), which the parser
+  misreads, now declares its variable too. These rules apply to a call argument, whose type no
+  longer vetoes the overload C# selects, and to a call receiver; a use inside its declaring
+  construct keeps the type it had. The fragment cache moves to `fragments-v40.json`, so an
+  existing cache re-extracts once.
 
 ### Changed
 
