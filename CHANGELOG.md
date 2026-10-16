@@ -67,6 +67,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **An invariant generic parameter no longer declines a call over how its type arguments are
+  spelled.** Two spellings of one type — a `using` alias, `Nullable<T>` against `T?`, `object`
+  against `dynamic`, at any argument position or nesting depth, array element types included — now
+  compare equal, so the call binds the overload whose declaring type C# picks instead of falling
+  through to an extension or another overload; type arguments naming different types keep
+  declining. A generic argument the extractor could not read (a tuple, a pointer, a function
+  pointer) also admits, because a placeholder that names no type cannot prove a mismatch.
+
 - **Two environment-reference corrections.** `SCOUT_MTIME_REUSE` no longer claims to be read for
   an existing script's sake: the variable is not read at all, and the page lists it as retired
   with no effect. `SCOUT_EDGE_PROVENANCE`, which `map` writes and which had no row, is documented

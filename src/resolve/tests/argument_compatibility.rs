@@ -75,6 +75,118 @@ fn known_arguments_still_admit_dynamic_nullable_and_unknown_external_pairs() {
     assert_eq!(targets(&files), vec!["App.Receiver"; 3]);
 }
 
+// --- spelling-equivalent generic type arguments ---------------------------
+
+#[test]
+fn generic_argument_spelling_ac_1_a_parameter_alias_admits_the_written_argument() {
+    let files = [
+        ("Domain/Types.cs", "using O = App.Order; namespace App { public class Order {} public class Envelope<T> {} public class Svc { public void Save(Envelope<O> e) {} } }"),
+        ("Use/Run.cs", "namespace App { public class Runner { public void Run(Svc s, Envelope<Order> e) { s.Save(e); } } }"),
+    ];
+    assert_eq!(targets(&files), vec!["App.Svc"]);
+}
+
+#[test]
+fn generic_argument_spelling_ac_1_an_alias_on_the_argument_side_admits() {
+    let files = [
+        ("Domain/Types.cs", "namespace App { public class Order {} public class Envelope<T> {} public class Svc { public void Save(Envelope<Order> e) {} } }"),
+        ("Use/Run.cs", "using O = App.Order; namespace App { public class Runner { public void Run(Svc s, Envelope<O> e) { s.Save(e); } } }"),
+    ];
+    assert_eq!(targets(&files), vec!["App.Svc"]);
+}
+
+#[test]
+fn generic_argument_spelling_ac_1_two_alias_names_for_one_type_admit() {
+    let files = [
+        ("Domain/Types.cs", "using A = App.Order; namespace App { public class Order {} public class Envelope<T> {} public class Svc { public void Save(Envelope<A> e) {} } }"),
+        ("Use/Run.cs", "using B = App.Order; namespace App { public class Runner { public void Run(Svc s, Envelope<B> e) { s.Save(e); } } }"),
+    ];
+    assert_eq!(targets(&files), vec!["App.Svc"]);
+}
+
+#[test]
+fn generic_argument_spelling_ac_1_a_namespace_level_alias_admits() {
+    let files = [
+        ("Domain/Types.cs", "namespace App { using O = App.Order; public class Order {} public class Envelope<T> {} public class Svc { public void Save(Envelope<O> e) {} } }"),
+        ("Use/Run.cs", "namespace App { public class Runner { public void Run(Svc s, Envelope<Order> e) { s.Save(e); } } }"),
+    ];
+    assert_eq!(targets(&files), vec!["App.Svc"]);
+}
+
+#[test]
+fn generic_argument_spelling_ac_1_a_global_alias_from_another_file_admits() {
+    let files = [
+        ("Domain/Global.cs", "global using O = App.Order;"),
+        ("Domain/Types.cs", "namespace App { public class Order {} public class Envelope<T> {} public class Svc { public void Save(Envelope<O> e) {} } }"),
+        ("Use/Run.cs", "namespace App { public class Runner { public void Run(Svc s, Envelope<Order> e) { s.Save(e); } } }"),
+    ];
+    assert_eq!(targets(&files), vec!["App.Svc"]);
+}
+
+#[test]
+fn generic_argument_spelling_ac_1_aliases_of_primitive_and_bcl_types_admit() {
+    let files = [
+        ("Domain/Types.cs", "namespace App { public class Envelope<T> {} public class Svc { public void SaveLong(Envelope<long> e) {} public void SaveString(Envelope<string> e) {} } }"),
+        ("Use/Run.cs", "using Millis = System.Int64; using Text = System.String; namespace App { public class Runner { public void Run(Svc s, Envelope<Millis> ms, Envelope<Text> text) { s.SaveLong(ms); s.SaveString(text); } } }"),
+    ];
+    assert_eq!(targets(&files), vec!["App.Svc"; 2]);
+}
+
+#[test]
+fn generic_argument_spelling_ac_1_an_alias_of_a_closed_generic_admits() {
+    let files = [
+        ("Domain/Types.cs", "using System.Collections.Generic; namespace App { public class Order {} public class Envelope<T> {} public class Svc { public void Save(Envelope<List<Order>> e) {} } }"),
+        ("Use/Run.cs", "using Orders = System.Collections.Generic.List<App.Order>; namespace App { public class Runner { public void Run(Svc s, Envelope<Orders> e) { s.Save(e); } } }"),
+    ];
+    assert_eq!(targets(&files), vec!["App.Svc"]);
+}
+
+#[test]
+fn generic_argument_spelling_ac_2_nullable_spellings_admit() {
+    let files = [
+        ("Domain/Types.cs", "namespace App { public class Envelope<T> {} public class Svc { public void SaveNullable(Envelope<System.Nullable<int>> e) {} public void SaveQuestion(Envelope<int?> e) {} } }"),
+        ("Use/Run.cs", "namespace App { public class Runner { public void Run(Svc s, Envelope<int?> q, Envelope<System.Nullable<int>> n) { s.SaveNullable(q); s.SaveQuestion(n); } } }"),
+    ];
+    assert_eq!(targets(&files), vec!["App.Svc"; 2]);
+}
+
+#[test]
+fn generic_argument_spelling_ac_2_object_and_dynamic_spellings_admit() {
+    let files = [
+        ("Domain/Types.cs", "namespace App { public class Envelope<T> {} public class Svc { public void SaveObject(Envelope<object> e) {} public void SaveDynamic(Envelope<dynamic> e) {} public void SaveQualified(Envelope<System.Object> e) {} } }"),
+        ("Use/Run.cs", "namespace App { public class Runner { public void Run(Svc s, Envelope<dynamic> d, Envelope<object> o, Envelope<dynamic> q) { s.SaveObject(d); s.SaveDynamic(o); s.SaveQualified(q); } } }"),
+    ];
+    assert_eq!(targets(&files), vec!["App.Svc"; 3]);
+}
+
+#[test]
+fn generic_argument_spelling_ac_3_positions_depths_arrays_and_placeholder_admit() {
+    let files = [
+        ("Domain/Types.cs", "namespace App { public class Order {} public class Bag<T> {} public class Envelope<T> {} public class Pair<TFirst, TSecond> {} public class Svc { public void SaveBag(Envelope<Bag<Order>> e) {} public void SaveDynamicBag(Envelope<Bag<object>> e) {} public void SaveArray(Envelope<Order[]> e) {} public void SaveTuple(Envelope<System.ValueTuple<int, int>> e) {} public void SavePair(Pair<Order, object> p) {} } }"),
+        ("Use/Run.cs", "using O = App.Order; namespace App { public class Runner { public void Run(Svc s, Envelope<Bag<O>> bag, Envelope<Bag<dynamic>> dynamicBag, Envelope<O[]> array, Envelope<(int, int)> tuple, Pair<O, dynamic> pair) { s.SaveBag(bag); s.SaveDynamicBag(dynamicBag); s.SaveArray(array); s.SaveTuple(tuple); s.SavePair(pair); } } }"),
+    ];
+    assert_eq!(targets(&files), vec!["App.Svc"; 5]);
+}
+
+#[test]
+fn generic_argument_spelling_ac_4_distinct_spellings_bind_the_other_overload() {
+    let files = [
+        ("Domain/Types.cs", "namespace App { public class Order {} public class Customer {} public class Envelope<T> {} public class Svc { public void Save(Envelope<Customer> e) {} } }"),
+        ("Ext/Save.cs", "namespace App { public static class SvcExtensions { public static void Save(this Svc s, Envelope<Order> e) {} } }"),
+        ("Use/Run.cs", "using O = App.Order; namespace App { public class Runner { public void Run(Svc s, Envelope<O> e) { s.Save(e); } } }"),
+    ];
+    assert_eq!(targets(&files), vec!["App.SvcExtensions"]);
+}
+
+#[test]
+fn generic_argument_spelling_ac_4_distinct_type_arguments_still_decline() {
+    let files = [
+        ("Domain/Types.cs", "namespace App { public class Order {} public class Customer {} public class Bag<T> {} public class Envelope<T> {} public class Pair<TFirst, TSecond> {} public class Svc { public void SaveNullable(Envelope<System.Nullable<int>> e) {} public void SaveObject(Envelope<object> e) {} public void SaveBag(Envelope<Bag<Order>> e) {} public void SavePair(Pair<long, Order> p) {} public void SaveOrder(Envelope<Customer> e) {} } }"),
+        ("Use/Run.cs", "using O = App.Order; namespace App { public class Runner { public void Run(Svc s, Envelope<int?> ok, Envelope<long> wide, Envelope<string> text, Envelope<Bag<Customer>> bag, Pair<int, Order> pair, Envelope<O> aliased) { s.SaveNullable(wide); s.SaveObject(text); s.SaveBag(bag); s.SavePair(pair); s.SaveOrder(aliased); s.SaveNullable(ok); } } }"),
+    ];
+    assert_eq!(targets(&files), vec!["App.Svc"]);
+}
+
 // --- interpolated string handler parameters -------------------------------
 
 #[test]
