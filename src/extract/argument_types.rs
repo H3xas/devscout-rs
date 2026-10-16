@@ -88,7 +88,9 @@ fn expression_type(
             .and_then(|inner| expression_type(inner, src, scope, type_stack)),
         "identifier" => {
             let name = text(expression, src);
-            scope.argument_fact_for(&name, src).and_then(fact_type)
+            scope
+                .argument_fact_for(&name, expression.start_byte(), src)
+                .and_then(fact_type)
         }
         "member_access_expression" => member_type(expression, false, src, scope, type_stack),
         "invocation_expression" => {

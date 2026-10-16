@@ -26,6 +26,7 @@ mod lambda_parameters;
 mod level_walk_reach;
 mod member_hiding;
 mod member_qualifiers;
+mod member_scope;
 mod method_type_arity;
 mod nested_end_to_end;
 mod nested_step;

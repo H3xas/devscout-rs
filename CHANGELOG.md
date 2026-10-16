@@ -125,6 +125,19 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   behind an instance overload taking a `StopContext` bind it as before. The fragment cache moves to
   `fragments-v35.json`, so an existing cache re-extracts once.
 
+- **A bare name a member's own declarations cannot vouch for at its use no longer takes a type.**
+  Every name a `var (…)` deconstruction designates -- a local `var (a, b) = …`, nested
+  designations, `foreach (var (k, v) in …)`, a `var (x, y)` pattern in `is` or a switch arm, and
+  each `var` element of `(var a, var b) = …` -- is now a declared name of unknown type, so it no
+  longer falls through to a same-named field. Each local, lambda, anonymous-method and
+  local-function parameter, `foreach`, `catch` and query variable, and pattern or `out`
+  designation is also scoped to the construct that declares it: a use outside every such
+  construct -- a field read before a nested block declares a local of the same name, or a lambda
+  parameter's name read after the lambda -- records no type rather than the local's. Both apply to
+  a call argument, whose type no longer vetoes the overload C# selects, and to a call receiver; a
+  use inside its declaring construct keeps the type it had. The fragment cache moves to
+  `fragments-v40.json`, so an existing cache re-extracts once.
+
 ### Changed
 
 - An index belongs to one worktree at a time. A `map` records the worktree that published it, and a

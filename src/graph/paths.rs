@@ -205,6 +205,13 @@ pub fn rust_crates_path(root: &Path) -> PathBuf {
 // its newly admitted calls would still produce no hop until re-extracted.
 // v38 appends import-equals, export-equals, namespace re-export and dynamic
 // import facts to TS fragments. Older fragments cannot supply those facts.
+// v39 is another extractor change's generation (file-scope TS/JS
+// declarations), so it is skipped here rather than reused for different facts.
+// v40 scopes every C# member-table entry to the constructs that declare it and
+// enters `var (…)` deconstruction names as taken-but-unknown. A cached v38
+// fragment of an unchanged file still types a bare argument or receiver from a
+// declaration its use never sees, so a map reusing it would keep vetoing the
+// overload C# selects.
 // The rename IS the invalidation mechanism:
 // pre-bump caches stop being found, every file reparses
 // once, no reader carries version-compat logic. Writers delete every
@@ -308,6 +315,10 @@ pub(crate) const SUPERSEDED_CACHE_FILES: &[&str] = &[
     "fragments-index-v36.json",
     "fragments-v37.json",
     "fragments-index-v37.json",
+    "fragments-v38.json",
+    "fragments-index-v38.json",
+    "fragments-v39.json",
+    "fragments-index-v39.json",
 ];
 
 pub(crate) fn remove_superseded_caches(root: &Path) {
