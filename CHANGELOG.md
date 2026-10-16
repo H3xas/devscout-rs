@@ -9,6 +9,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `devscout tests` answers a symbol that no test file references with `no test references found`.
+  A test file in the index named after the symbol adds a name hint to that answer. The hint,
+  `hint (file name only, not a test reference):` in text and `nameHint` in `--json`, names each
+  matching file and the production symbols that file really references. A file name is not a test
+  reference, so the hint is an observation and never evidence: it adds no row and changes no count,
+  no outcome and no `schema_version`. When no file matches, `--json` omits the key.
+  [`json-output.md`](docs/reference/json-output.md) documents it.
+
 - `devscout --help`, `devscout -h` and `devscout help` end with the documentation URL of the
   running version's tag, composed from the crate metadata at compile time, so a released binary
   points at the documentation for the release it is rather than at whatever the branch says now.

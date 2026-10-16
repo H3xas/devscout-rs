@@ -381,6 +381,13 @@ pub fn cli_page(help: &str) -> String {
         "The seed spellings these verbs accept are described in \
          [Concepts](../concepts.md#seeds).\n\n",
     );
+    page.push_str(
+        "`tests` answers a symbol that no test file references with `no test references found`, \
+         and then a `hint (file name only, not a test reference):` block when a test file in the \
+         index is named after the symbol. Each hint row names the production symbols that file \
+         really references. A file name is not a test reference, so the block is a hint and never \
+         evidence, and it leaves every row, count and outcome untouched.\n\n",
+    );
     page.push_str("### import-edges\n\n");
     page.push_str(&usage_block("IMPORT_EDGES_USAGE"));
     page.push_str(

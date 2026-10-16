@@ -16,7 +16,9 @@ use super::{j_bus_row, j_table, push_heuristic, J};
 // ONLY when the row's vouch is the project model -- an attribute-vouched row
 // emits no `via` key at all, so today's bytes for every graph without a
 // project model are unchanged. `outcome` is always `"hit"`: reaching this
-// builder means the seed already resolved.
+// builder means the seed already resolved. An optional `nameHint` sits after
+// `heuristicRefCount` and before `outcome`, present only on the zero case
+// with a matching test file, so every other answer keeps its bytes.
 #[cfg(test)]
 #[cfg(test)]
 pub(crate) fn tests_model_to_json(model: &query::TestsModel) -> String {
@@ -98,6 +100,35 @@ pub(super) fn tests_model_fields(model: &query::TestsModel) -> Vec<(&'static str
     if model.bus.total != 0 {
         fields.push(("bus-hop", j_table(&model.bus, j_bus_row)));
     }
+    // The name hint, when the answer is the zero case and a test file's own
+    // name matches the symbol. Same additive rule as `bus-hop` above: an
+    // empty hint leaves the key out, so every other answer's bytes are
+    // unchanged. `next` is spliced in after it, so the key order is
+    // `heuristicRefCount`, `nameHint`, `next`, `outcome`.
+    if !model.name_hint.is_empty() {
+        fields.push(("nameHint", name_hint_json(&model.name_hint)));
+    }
     fields.push(("outcome", J::Str(query::Outcome::Hit.as_str().to_string())));
     fields
+}
+
+// `nameHint`: one object per matching file, in path order, each naming the
+// production symbols that file references and how many distinct ones there
+// are -- so a reader sees a capped `references` list next to its own total
+// rather than having to guess whether the list is complete.
+fn name_hint_json(hint: &[query::NameHintRow]) -> J {
+    J::Arr(
+        hint.iter()
+            .map(|row| {
+                J::Obj(vec![
+                    ("file", J::Str(row.file.clone())),
+                    (
+                        "references",
+                        J::Arr(row.references.iter().map(|r| J::Str(r.clone())).collect()),
+                    ),
+                    ("referenceTotal", J::UInt(row.reference_total as u64)),
+                ])
+            })
+            .collect(),
+    )
 }
