@@ -9,6 +9,21 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `devscout --help`, `devscout -h` and `devscout help` end with the documentation URL of the
+  running version's tag, composed from the crate metadata at compile time, so a released binary
+  points at the documentation for the release it is rather than at whatever the branch says now.
+
+- The CLI, environment-variable, exit-code and storage references —
+  [`docs/reference/cli.md`](docs/reference/cli.md),
+  [`environment.md`](docs/reference/environment.md),
+  [`exit-codes.md`](docs/reference/exit-codes.md) and
+  [`storage.md`](docs/reference/storage.md) — are written by `tests/docs_sync.rs` from the
+  definitions the binary itself uses, and `cargo test` fails when a committed page and the code
+  disagree: a changed help text, usage line, environment read, exit status, artifact name or
+  schema version has to be regenerated with `BLESS=1 cargo test --test docs_sync`. The pages are
+  no longer hand-maintained, and the usage lines, exit statuses, artifact names and the fragment
+  generation each have one definition in the source.
+
 - `devscout export` writes the current repository's whole fact set as one versioned NDJSON
   stream: a header carrying input provenance, the release's coverage table and the freshness
   observed at export time; one line per definition, edge, publish site, handler and dependency
@@ -36,6 +51,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `tests` and `impact` commands count these files when they reference the queried code.
 
 ### Fixed
+
+- **Two environment-reference corrections.** `SCOUT_MTIME_REUSE` no longer claims to be read for
+  an existing script's sake: the variable is not read at all, and the page lists it as retired
+  with no effect. `SCOUT_EDGE_PROVENANCE`, which `map` writes and which had no row, is documented
+  with its effect and default, and the environment page's table is now checked against the names
+  the source actually reads, in both directions.
 
 - **The two committed .NET oracle snapshots are now reproducible from one declared SDK install,
   and the tests that build temporary projects select it explicitly.** `compiler-facts.json` and
