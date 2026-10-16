@@ -19,6 +19,7 @@ mod dotted_suffix;
 mod explicit_implementations;
 mod extension_generics;
 mod extension_tier;
+mod generic_receiver_path;
 mod graph_invariants;
 mod ladder;
 mod lambda_applicability;

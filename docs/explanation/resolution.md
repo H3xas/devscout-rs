@@ -79,8 +79,14 @@ in-tree `JsonSerializer`, and `expr.Member.Name` does not bind a nested type nam
 `Outer.Inner` still reaches `Outer+Inner`, `Box<string>.Slot` and `global::App.Widget` are read as
 the def paths they spell, `Derived.Item` reaches an `Item` declared inside a base of `Derived`, and
 a `using` alias at the head of a dotted name is rewritten to its target and looked up exactly. A
-text that several def paths end with stays ambiguous. The scored `guess` tier is unchanged, so a
-foreign dotted qualifier can still carry a tagged heuristic edge.
+receiver declared with a qualified generic type (`Widgets.Box<int> b`) takes that same
+exact-qualified step with its final segment's type-argument list removed, held to the argument
+count the declaration recorded or, with none recorded, to the count the written list carries, so
+it binds what the non-generic twin `Widgets.Gadget g` binds. Only the final segment's list comes
+off, because a nested type's id joins its container with `+` and a dot-joined candidate can never
+name one: a list on an earlier segment, an alias-qualified path, an unbalanced or empty list keeps
+the lookup verbatim. A text that several def paths end with stays ambiguous. The scored `guess`
+tier is unchanged, so a foreign dotted qualifier can still carry a tagged heuristic edge.
 
 ## Nested-type qualifiers
 
