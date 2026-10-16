@@ -417,3 +417,12 @@ fn primitive_named_type_ac_2_a_system_qualified_alias_target_stays_the_keyword()
     ];
     assert_eq!(targets(&files), vec!["App.Svc"; 2]);
 }
+
+#[test]
+fn primitive_named_type_ac_1_an_array_of_a_derived_string_binds_the_base_array() {
+    let files = [
+        ("Domain/Types.cs", "namespace App { public class Base {} public class String : Base {} public class Svc { public void Take(Base[] values) {} } }"),
+        ("Use/Run.cs", "namespace App { public class Runner { public void Run(Svc s, String[] values) { s.Take(values); } } }"),
+    ];
+    assert_eq!(targets(&files), vec!["App.Svc"]);
+}
