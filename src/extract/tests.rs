@@ -22,6 +22,7 @@ mod generic_arity;
 mod handler_registration_fact;
 mod lambda_shape_fact;
 mod lambda_slot_fact;
+mod member_scope_facts;
 mod method_params_fact;
 mod method_type_arity_facts;
 mod misc_ref_edge_cases;

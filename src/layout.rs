@@ -61,10 +61,10 @@ pub const GRAPH_FILE: &str = "graph.json";
 /// the extractor starts recording something cached fragments lack; the rename
 /// IS the invalidation mechanism, so the number a reader reports can only be
 /// the one this name carries.
-pub const FRAGMENT_CACHE_FILE: &str = "fragments-v38.json";
+pub const FRAGMENT_CACHE_FILE: &str = "fragments-v40.json";
 
 /// The fragment cache's own index of what it holds, at the same generation.
-pub const FRAGMENT_INDEX_FILE: &str = "fragments-index-v38.json";
+pub const FRAGMENT_INDEX_FILE: &str = "fragments-index-v40.json";
 
 /// csproj staleness sidecar, written only with a project model.
 pub const PROJECT_UNITS_FILE: &str = "project-units.json";

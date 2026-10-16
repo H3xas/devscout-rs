@@ -18,10 +18,14 @@ use super::types::{Fact, LambdaSlot};
 // turns into a `LambdaSlot`. When both are set, the collection-element
 // fact wins and the slot is never consulted (see the deferred-lambda loop
 // in `collect_member_facts`).
+// `at` is the parameter's own offset: the lambda is a direct argument of the
+// invocation whose receiver or callee qualifier is read, so no declaring
+// construct can hold one of the two without the other.
 pub(super) struct DeferredLambdaParam {
     pub(super) name: String,
     pub(super) collection: Option<String>,
     pub(super) slot: Option<PendingSlot>,
+    pub(super) at: usize,
 }
 
 // One untyped lambda parameter's callee coordinates, read purely
@@ -190,6 +194,12 @@ pub(super) fn lambda_argument_slot(n: Node, src: &[u8]) -> Option<PendingSlot> {
 // deferred-call loop's own qualifier refusal). A `None` qualifier (a bare
 // `M(...)` or `this.M(...)` callee) reads `owner` off `enclosing_type`
 // directly instead.
+impl PendingSlot {
+    pub(super) fn qualifier(&self) -> Option<&str> {
+        self.qualifier.as_deref()
+    }
+}
+
 pub(super) fn lambda_slot_fact(
     table: &FactTable,
     type_facts: &FactTable,

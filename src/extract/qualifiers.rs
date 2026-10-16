@@ -4,15 +4,17 @@ use std::rc::Rc;
 
 use tree_sitter::Node;
 
+use super::member_scope::MemberTable;
 use super::receivers::{collect_member_facts, collect_type_facts, FactTable};
 use super::refs::{member_qualifier_info, type_parameter_names};
 use super::text::{declared_name, named_children, text};
 use super::types::Fact;
 
 // Declarations that own a body a local can be declared in. A local function
-// is deliberately NOT here: its locals belong to the enclosing member's flat
-// table (collect_member_facts already walked into it), and giving it its own
-// scope would hide the enclosing method's locals from it.
+// is deliberately NOT here: its locals belong to the enclosing member's table
+// (collect_member_facts already walked into it, scoping each to its declaring
+// construct), and giving it its own scope would hide the enclosing method's
+// locals from it.
 pub(super) const MEMBER_SCOPE_NODES: &[&str] = &[
     "method_declaration",
     "constructor_declaration",
@@ -46,7 +48,7 @@ pub(super) struct Scope<'a> {
     /// real file contain no bare-identifier member access at all, and the
     /// scan is a second traversal of the member's subtree. Laziness is
     /// invisible in the output -- the same table, only built on demand.
-    member_facts: OnceCell<Option<FactTable>>,
+    member_facts: OnceCell<Option<MemberTable>>,
 }
 
 impl<'a> Scope<'a> {
@@ -82,31 +84,35 @@ impl<'a> Scope<'a> {
         }
     }
 
-    // A member-table entry answers even when its
-    // value is `None` -- a local whose type nothing vouches for must NOT
-    // fall through to a same-named field of a different type.
-    pub(super) fn argument_fact_for(&self, name: &str, src: &[u8]) -> Option<Fact> {
-        let locals = self.member_facts.get_or_init(|| {
-            self.node.map(|n| {
-                collect_member_facts(
-                    n,
-                    src,
-                    &self.type_params,
-                    &self.type_facts,
-                    self.type_name.as_deref(),
-                )
+    fn member_table(&self, src: &[u8]) -> Option<&MemberTable> {
+        self.member_facts
+            .get_or_init(|| {
+                self.node.map(|n| {
+                    collect_member_facts(
+                        n,
+                        src,
+                        &self.type_params,
+                        &self.type_facts,
+                        self.type_name.as_deref(),
+                    )
+                })
             })
-        });
-        if let Some(table) = locals {
-            if let Some(found) = table.get(name) {
-                return found.clone();
-            }
+            .as_ref()
+    }
+
+    // `at` is the use site's byte offset. A member-table entry answers even
+    // when its value is `None` -- a local whose type nothing vouches for, or
+    // one whose declaring constructs do not contain the use, must NOT fall
+    // through to a same-named field of a different type.
+    pub(super) fn argument_fact_for(&self, name: &str, at: usize, src: &[u8]) -> Option<Fact> {
+        if let Some(found) = self.member_table(src).and_then(|t| t.lookup(name, at)) {
+            return found;
         }
         self.type_facts.get(name).cloned().flatten()
     }
 
-    fn receiver_fact_for(&self, name: &str, src: &[u8]) -> Option<Fact> {
-        self.argument_fact_for(name, src)
+    fn receiver_fact_for(&self, name: &str, at: usize, src: &[u8]) -> Option<Fact> {
+        self.argument_fact_for(name, at, src)
             .filter(|fact| fact.receiver_admissible)
     }
 
@@ -120,20 +126,8 @@ impl<'a> Scope<'a> {
     // `receiver_fact_for` already answers the latter. This is `receiver_local`'s
     // one source of truth.
     fn has_local_fact(&self, name: &str, src: &[u8]) -> bool {
-        let locals = self.member_facts.get_or_init(|| {
-            self.node.map(|n| {
-                collect_member_facts(
-                    n,
-                    src,
-                    &self.type_params,
-                    &self.type_facts,
-                    self.type_name.as_deref(),
-                )
-            })
-        });
-        locals
-            .as_ref()
-            .is_some_and(|table| table.contains_key(name))
+        self.member_table(src)
+            .is_some_and(|table| table.contains(name))
     }
 
     // `true` when SOME declaration in scope claims `name` at all -- a local
@@ -275,7 +269,7 @@ pub(super) fn resolve_member_qualifier(
     let dot_at = if generic { None } else { qt.find('.') };
     let bare = dot_at.is_none() && !generic;
     let receiver = if bare {
-        scope.receiver_fact_for(&qt, src)
+        scope.receiver_fact_for(&qt, node.start_byte(), src)
     } else {
         None
     };
@@ -306,7 +300,7 @@ pub(super) fn resolve_member_qualifier(
     // head no property lookup can start from.
     let property_owner = dot_at
         .filter(|d| !qt[d + 1..].contains('.'))
-        .and_then(|d| scope.receiver_fact_for(&qt[..d], src))
+        .and_then(|d| scope.receiver_fact_for(&qt[..d], node.start_byte(), src))
         .filter(|fact| fact.call.is_none() && fact.lambda.is_none())
         .map(|fact| fact.type_name);
     Some(QualifierResolution {
@@ -329,8 +323,8 @@ pub(super) fn resolve_member_qualifier(
 // a chain); the bare name itself when nothing in scope claims it at all
 // (the static-qualifier shape, `Repo.Load().Validate()`); `None` when
 // something claims the name but vouches for no type.
-fn chain_tail_receiver_type(a_text: &str, scope: &Scope, src: &[u8]) -> Option<String> {
-    match scope.receiver_fact_for(a_text, src) {
+fn chain_tail_receiver_type(a_text: &str, at: usize, scope: &Scope, src: &[u8]) -> Option<String> {
+    match scope.receiver_fact_for(a_text, at, src) {
         Some(Fact {
             type_name,
             call: None,
@@ -397,6 +391,6 @@ pub(super) fn resolve_call_chain_tail(
     if inner_member.is_empty() {
         return None;
     }
-    let owner = chain_tail_receiver_type(&a_text, scope, src)?;
+    let owner = chain_tail_receiver_type(&a_text, function.start_byte(), scope, src)?;
     Some((owner, inner_member, head_is_base))
 }

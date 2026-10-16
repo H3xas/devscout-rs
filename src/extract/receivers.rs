@@ -6,6 +6,7 @@ use super::lambdas::{
     lambda_argument_slot, lambda_first_arg_receiver, lambda_receiver_element_fact,
     lambda_slot_fact, DeferredLambdaParam,
 };
+use super::member_scope::{untyped_declared_names, MemberTable};
 use super::refs::{
     base_type_identifier, generic_arg_descriptors, member_qualifier_info, type_descriptor,
     type_parameter_names,
@@ -22,14 +23,16 @@ use super::types::Fact;
 // every local declared anywhere inside it). The member table shadows the type
 // table: a local or parameter (innermost) wins over a field.
 //
-// The member table is deliberately FLAT -- a permitted simplification -- so
+// The member table keeps one fact per name -- a permitted simplification -- so
 // two sibling blocks each declaring `x` with a different type
 // collapse to one CONFLICTED entry rather than to a per-block answer. A
 // conflicted entry, and an entry whose type yields no fact at all
 // (`var x = SomeCall()`, `string s`), are both stored as `None`: the name is
 // taken, and nothing vouches for its type, so no fact is produced. Storing
 // them rather than omitting them is what keeps a local from silently falling
-// through to a same-named field of a different type.
+// through to a same-named field of a different type. Each entry also carries
+// the constructs that declare it (see `member_scope`), and a use outside all
+// of them reads as taken-but-unknown too.
 // ---------------------------------------------------------------------------
 
 // name -> `Some(fact)` when exactly one fact vouches for it, `None` when the
@@ -37,7 +40,7 @@ use super::types::Fact;
 // entries live in one map; the `Option<Fact>` value is that empty slot.
 pub(super) type FactTable = HashMap<String, Option<Fact>>;
 
-fn add_fact(table: &mut FactTable, name: Option<String>, fact: Option<Fact>) {
+pub(super) fn add_fact(table: &mut FactTable, name: Option<String>, fact: Option<Fact>) {
     let Some(name) = name.filter(|n| !n.is_empty()) else {
         return;
     };
@@ -312,10 +315,10 @@ pub(super) fn collect_member_facts(
     class_type_params: &HashSet<String>,
     type_facts: &FactTable,
     enclosing_type: Option<&str>,
-) -> FactTable {
+) -> MemberTable {
     let mut type_params = class_type_params.clone();
     type_params.extend(type_parameter_names(node, src));
-    let mut table = FactTable::new();
+    let mut table = MemberTable::new();
     // `var x = Q.M(...)` is settled in a SECOND pass over the
     // collected declarations rather than during the walk: `Q`'s own fact has to
     // be FINAL before it can be read, and the table is flat, so a sibling block
@@ -340,6 +343,7 @@ pub(super) fn collect_member_facts(
         &mut deferred_foreach,
         &mut deferred_lambda,
     );
+    table.settle_misread_loops();
     if !deferred.is_empty() {
         let pending: HashSet<&str> = deferred.iter().map(|d| d.name.as_str()).collect();
         for d in &deferred {
@@ -347,11 +351,12 @@ pub(super) fn collect_member_facts(
             // than read from a half-settled table: one hop, never a chain. The
             // refusal still stores the name as TAKEN, which is what keeps it
             // from falling through to a same-named field of a different type.
-            let owner = if pending.contains(d.qualifier.as_str()) {
-                None
-            } else {
-                qualifier_type_name(&table, type_facts, &d.qualifier)
-            };
+            let owner =
+                if pending.contains(d.qualifier.as_str()) || table.withholds(&d.qualifier, d.at) {
+                    None
+                } else {
+                    qualifier_type_name(&table.facts, type_facts, &d.qualifier)
+                };
             let fact = owner.map(|type_name| Fact {
                 type_name,
                 qualified_type: None,
@@ -364,7 +369,7 @@ pub(super) fn collect_member_facts(
                 nullable: false,
                 lambda: None,
             });
-            add_fact(&mut table, Some(d.name.clone()), fact);
+            table.settle(&d.name, fact);
         }
     }
     for d in &deferred_foreach {
@@ -376,8 +381,12 @@ pub(super) fn collect_member_facts(
         // both read as "no single type argument", the same refusal an
         // ordinary unresolvable collection gets. Order among these entries
         // therefore cannot change the answer.
-        let fact = collection_element_fact(&table, type_facts, &d.collection);
-        add_fact(&mut table, Some(d.name.clone()), fact);
+        let fact = if table.withholds(&d.collection, d.at) {
+            None
+        } else {
+            collection_element_fact(&table.facts, type_facts, &d.collection)
+        };
+        table.settle(&d.name, fact);
     }
     // Same "refuse a half-settled sibling" rule as the deferred-call loop
     // above, over the deferred lambda parameters' own names: a slot's
@@ -395,16 +404,27 @@ pub(super) fn collect_member_facts(
         // (Unit C) is tried FIRST and, when it declines, the callee slot
         // is the fallback -- `orders.Where(o => o.Validate())`
         // types `o` as the element and never records a slot for it.
+        let in_scope = |name: &str| !table.withholds(name, d.at);
         let fact = d
             .collection
             .as_deref()
-            .and_then(|c| lambda_receiver_element_fact(&table, type_facts, c))
+            .filter(|c| in_scope(c))
+            .and_then(|c| lambda_receiver_element_fact(&table.facts, type_facts, c))
             .or_else(|| {
-                d.slot.as_ref().and_then(|s| {
-                    lambda_slot_fact(&table, type_facts, enclosing_type, &pending_lambda, s)
-                })
+                d.slot
+                    .as_ref()
+                    .filter(|s| s.qualifier().is_none_or(in_scope))
+                    .and_then(|s| {
+                        lambda_slot_fact(
+                            &table.facts,
+                            type_facts,
+                            enclosing_type,
+                            &pending_lambda,
+                            s,
+                        )
+                    })
             });
-        add_fact(&mut table, Some(d.name.clone()), fact);
+        table.settle(&d.name, fact);
     }
     table
 }
@@ -418,6 +438,7 @@ struct DeferredCall {
     qualifier: String,
     member: String,
     awaited: bool,
+    at: usize,
 }
 
 // One `foreach (var item in collection)` local awaiting the
@@ -426,51 +447,7 @@ struct DeferredCall {
 struct DeferredForeach {
     name: String,
     collection: String,
-}
-
-// The names one LINQ query clause BINDS -- `from d in xs`, `join o in ys`,
-// `join ... into g`, `let n = ...`, and the query continuation `... into g`.
-// Every one is a range variable: a name the rest of the query reads and the
-// enclosing type never declared. Nothing here vouches for its TYPE (the
-// element type of the source sequence is exactly what this extractor cannot
-// compute), so the caller records each as taken-but-unknown -- which is the
-// whole point: without an entry, the resolver's bare-identifier fallback
-// would type `d` from a same-named field of the enclosing type or one of its
-// bases and emit a precise edge the language never binds.
-fn query_binding_names(n: Node, src: &[u8]) -> Vec<String> {
-    match n.kind() {
-        // `from [T] d in xs` -- the only clause that names its range
-        // variable with a field.
-        "from_clause" => n
-            .child_by_field_name("name")
-            .map(|x| text(x, src))
-            .into_iter()
-            .collect(),
-        // `join [T] o in ys on a equals b`, `let n = ...`, `into g`: the
-        // bound name is the FIRST bare identifier child that is not the
-        // optional type node (a type can itself be an `identifier`).
-        // Everything after it -- a `let`'s value, a join's source and its
-        // two key expressions -- is an expression this must not claim.
-        "join_clause" | "let_clause" | "join_into_clause" => {
-            let type_id = n.child_by_field_name("type").map(|t| t.id());
-            named_children(n)
-                .into_iter()
-                .find(|c| c.kind() == "identifier" && Some(c.id()) != type_id)
-                .map(|c| text(c, src))
-                .into_iter()
-                .collect()
-        }
-        // The query continuation `... into g` has no node of its own -- the
-        // grammar's query-body rule is hidden -- so its identifier sits as a
-        // direct child of the `query_expression`, the one place a bare
-        // identifier can appear there at all.
-        "query_expression" => named_children(n)
-            .into_iter()
-            .filter(|c| c.kind() == "identifier")
-            .map(|c| text(c, src))
-            .collect(),
-        _ => Vec::new(),
-    }
+    at: usize,
 }
 
 #[allow(
@@ -481,62 +458,32 @@ fn visit_member_facts(
     n: Node,
     src: &[u8],
     type_params: &HashSet<String>,
-    table: &mut FactTable,
+    table: &mut MemberTable,
     deferred: &mut Vec<DeferredCall>,
     deferred_foreach: &mut Vec<DeferredForeach>,
     deferred_lambda: &mut Vec<DeferredLambdaParam>,
 ) {
-    if n.kind() == "parameter" {
-        let name = n.child_by_field_name("name").map(|x| text(x, src));
-        let receiver = lambda_first_arg_receiver(n);
-        let slot = lambda_argument_slot(n, src);
-        // Deferred to the second pass instead of recorded as
-        // taken-but-unknown here whenever EITHER shape matched: recording
-        // it now (even as `None`) would permanently conflict with the
-        // settled element/slot fact `add_fact` writes later for the SAME
-        // name.
-        if receiver.is_some() || slot.is_some() {
-            if let Some(name) = name.filter(|nm| !nm.is_empty()) {
-                deferred_lambda.push(DeferredLambdaParam {
-                    name,
-                    collection: receiver.map(|r| text(r, src)),
-                    slot,
-                });
-            }
+    if matches!(n.kind(), "parameter" | "implicit_parameter") {
+        // An implicit lambda parameter (`x => ...`) has no `parameter` node:
+        // the node itself is its name, and it has no type node.
+        let name = if n.kind() == "parameter" {
+            n.child_by_field_name("name").map(|x| text(x, src))
         } else {
-            add_fact(
-                table,
+            Some(text(n, src))
+        };
+        // Outside a qualifying invocation neither lambda rule types an
+        // untyped parameter -- but the name is still DECLARED here, so it is
+        // taken-but-unknown rather than unentered. A lambda parameter that
+        // shares its name with a field of the enclosing type shadows that
+        // field in C#, and without the entry the resolver's bare-identifier
+        // fallback would type it from the field and emit a precise edge to a
+        // member the call can never reach.
+        if !defer_lambda_parameter(n, name.as_deref(), src, table, deferred_lambda) {
+            table.declare(
                 name,
                 type_fact(n.child_by_field_name("type"), src, type_params),
+                n,
             );
-        }
-    } else if n.kind() == "implicit_parameter" {
-        // An implicit lambda parameter (`x => ...`) has no `parameter` node
-        // at all, so it never reaches the branch above.
-        let name = text(n, src);
-        let receiver = lambda_first_arg_receiver(n);
-        let slot = lambda_argument_slot(n, src);
-        // Deferred for the reason the `parameter` branch defers: an entry
-        // written now would conflict with the element/slot fact the second
-        // pass settles for this very name.
-        if receiver.is_some() || slot.is_some() {
-            if !name.is_empty() {
-                deferred_lambda.push(DeferredLambdaParam {
-                    name,
-                    collection: receiver.map(|r| text(r, src)),
-                    slot,
-                });
-            }
-        } else {
-            // Outside a qualifying invocation neither rule types anything
-            // -- but the name is still DECLARED here, so it is
-            // taken-but-unknown rather than unentered. A lambda parameter
-            // that shares its name with a field of the enclosing type
-            // shadows that field in C#, and without the entry the
-            // resolver's bare-identifier fallback would type it from the
-            // field and emit a precise edge to a member the call can
-            // never reach.
-            add_fact(table, Some(name), None);
         }
     } else if n.kind() == "variable_declaration" {
         let type_node = n.child_by_field_name("type");
@@ -551,6 +498,9 @@ fn visit_member_facts(
                 continue;
             }
             let name = decl.child_by_field_name("name").map(|x| text(x, src));
+            if name.is_none() {
+                continue;
+            }
             let fact = if is_var {
                 new_expression_fact(decl, src, type_params)
                     .or_else(|| cast_expression_fact(decl, src, type_params))
@@ -563,13 +513,18 @@ fn visit_member_facts(
                 _ => None,
             };
             match call {
-                Some((qualifier, member, awaited)) => deferred.push(DeferredCall {
-                    name: name.unwrap_or_default(),
-                    qualifier,
-                    member,
-                    awaited,
-                }),
-                None => add_fact(table, name, fact),
+                Some((qualifier, member, awaited)) => {
+                    let name = name.unwrap_or_default();
+                    table.reserve(&name, n);
+                    deferred.push(DeferredCall {
+                        name,
+                        qualifier,
+                        member,
+                        awaited,
+                        at: decl.start_byte(),
+                    });
+                }
+                None => table.declare(name, fact, n),
             }
         }
     } else if n.kind() == "foreach_statement" {
@@ -579,9 +534,8 @@ fn visit_member_facts(
         // exactly like any other declaration; a `var` loop variable is
         // answered by the COLLECTION's own fact, when that fact carries
         // exactly one top-level type argument (settled below, second pass);
-        // anything else stays taken-but-unknown. A destructuring
-        // `foreach (var (a, b) in ...)` has no single name to record and is
-        // left alone entirely -- neither a fact nor a taken slot.
+        // anything else stays taken-but-unknown, and so does every name a
+        // destructuring `foreach (var (a, b) in ...)` designates.
         let left = n.child_by_field_name("left");
         let name = left
             .filter(|l| l.kind() == "identifier")
@@ -592,15 +546,19 @@ fn visit_member_facts(
                 .map(|t| t.kind() == "implicit_type")
                 .unwrap_or(true);
             if !is_var {
-                add_fact(table, Some(name), type_fact(type_node, src, type_params));
+                table.declare(Some(name), type_fact(type_node, src, type_params), n);
             } else {
                 let right = n.child_by_field_name("right");
                 match right.filter(|r| r.kind() == "identifier") {
-                    Some(r) => deferred_foreach.push(DeferredForeach {
-                        name,
-                        collection: text(r, src),
-                    }),
-                    None => add_fact(table, Some(name), None),
+                    Some(r) => {
+                        table.reserve(&name, n);
+                        deferred_foreach.push(DeferredForeach {
+                            name,
+                            collection: text(r, src),
+                            at: r.start_byte(),
+                        });
+                    }
+                    None => table.declare(Some(name), None, n),
                 }
             }
         }
@@ -623,23 +581,16 @@ fn visit_member_facts(
         // `None` for -- recorded as taken-but-unknown rather than left
         // unentered, which is what lets it shadow a same-named field
         // instead of silently inheriting that field's type.
-        add_fact(
-            table,
+        table.declare(
             n.child_by_field_name("name").map(|x| text(x, src)),
             type_fact(n.child_by_field_name("type"), src, type_params),
+            n,
         );
-    } else if matches!(
-        n.kind(),
-        "from_clause" | "join_clause" | "join_into_clause" | "let_clause" | "query_expression"
-    ) {
-        // Every name a LINQ query binds is taken-but-unknown: in scope for
-        // the rest of the query, never a field of the enclosing type, and
-        // with no type this extractor can read off the syntax. See
-        // `query_binding_names`.
-        for name in query_binding_names(n, src) {
-            add_fact(table, Some(name), None);
-        }
     }
+    for name in untyped_declared_names(n, src) {
+        table.declare(Some(name), None, n);
+    }
+    table.note_misread_loop(n, src);
     for c in named_children(n) {
         visit_member_facts(
             c,
@@ -651,6 +602,34 @@ fn visit_member_facts(
             deferred_lambda,
         );
     }
+}
+
+// Defers an untyped lambda parameter whose element or callee-slot shape
+// matched to the second pass, and reports whether it did. Recording it now
+// (even as `None`) would permanently conflict with the settled element/slot
+// fact the second pass writes for the SAME name.
+fn defer_lambda_parameter(
+    n: Node,
+    name: Option<&str>,
+    src: &[u8],
+    table: &mut MemberTable,
+    deferred_lambda: &mut Vec<DeferredLambdaParam>,
+) -> bool {
+    let receiver = lambda_first_arg_receiver(n);
+    let slot = lambda_argument_slot(n, src);
+    if receiver.is_none() && slot.is_none() {
+        return false;
+    }
+    if let Some(name) = name.filter(|nm| !nm.is_empty()) {
+        table.reserve(name, n);
+        deferred_lambda.push(DeferredLambdaParam {
+            name: name.to_string(),
+            collection: receiver.map(|r| text(r, src)),
+            slot,
+            at: n.start_byte(),
+        });
+    }
+    true
 }
 
 // The (qualifier, member, awaited) triple of a `var x = Q.M(...)`

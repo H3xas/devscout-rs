@@ -53,6 +53,7 @@ mod dump;
 mod json;
 mod lambda_shape;
 mod lambdas;
+mod member_scope;
 mod members;
 mod qualifiers;
 mod receivers;
