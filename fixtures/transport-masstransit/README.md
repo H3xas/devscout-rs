@@ -18,6 +18,7 @@ the facts `graph.json` and `devscout export` record.
 | static entry points | `src/Service/Program.cs`, `src/Billing/BillingBus.cs` | `EndpointConvention.Map` and `Bus.Factory.CreateUsingRabbitMq`. |
 | out-of-scope lookalike | `src/Worker/WorkerBus.cs`, `src/Refusals/Fakes.cs` | A chain start on `new ServiceCollection()` keeps its fact, because the repository's own `ServiceCollection` is in a namespace the file does not import. |
 | declared receivers | `src/Billing/BillingBus.cs`, `src/Billing/Values.cs`, `src/Service/Consumers/Consumers.cs` | A field, a property, a constructor-assigned field, a typed local, a method parameter and a `ConsumeContext<T>` parameter. |
+| this-qualified receivers | `src/Billing/ThisQualified.cs` | A field and a property reached through `this.`, and a `this.` field that a parameter of the same name shadows. An instance field read through `this.` as an address reads `field`. |
 | registrations | `src/Service/Program.cs` | A consumer, a consumer with its definition, a state machine, a namespace scan and three request clients. |
 | receive endpoint types | `src/Service/Program.cs` | A configured consumer, a handler and a configured saga, each with its own line. |
 | endpoint names | `src/Service/Consumers/Consumers.cs` | `EndpointName` and `Endpoint(e => e.Name = …)` in a consumer definition. |
@@ -30,6 +31,8 @@ the facts `graph.json` and `devscout export` record.
 | unknown values | `src/Billing/Values.cs`, `src/Billing/BillingBus.cs`, `src/Contracts/QueueNames.cs` | One value for each reason word. The source forms are an interpolated string, a parameter, a local, a `static readonly` field, an instance field, a method call, `nameof` and an expression. The other forms are a package constant, an unresolved constant, a cycle, an unknown scheme, a malformed URI, an unreadable value and disagreeing overloads. |
 | scopes | `src/Service/Program.cs`, `src/Billing/BillingBus.cs`, `src/Worker/WorkerBus.cs` | One queue name on three buses with different scopes. A URI host over the bus host, two host calls, and a bus with no host call. |
 | secrets | `src/Service/appsettings.json`, `src/Service/appsettings.Development.json`, `src/Billing/appsettings.json`, `src/Billing/BillingBus.cs` | Passwords in an unmarked key, in a connection string, in URI user information and in a marked key whose value fails its grammar. |
+| joined secrets | `src/Billing/JoinedAddresses.cs` | URI user information written as a string literal that a constant joins to its host: in a send address, in the middle of a send address and in a host URI. |
+| named arguments | `src/Billing/NamedArguments.cs` | A host call whose named arguments are out of their declared order, a host call whose first argument is positional and whose second is named, and a formatter constructor with a named second argument. |
 | test substitution | `tests/Fixture.Tests/OrderFlowTests.cs`, `src/Service/LocalHarness.cs` | `AddMassTransitTestHarness` inside a `WebApplicationFactory` host in a test project, and the same call in a production file. |
 | lookalike type | `src/Refusals/Fakes.cs`, `src/Refusals/LookalikeType.cs` | A repository type with a catalogue type's simple name, in scope beside `MassTransit`. |
 | missing using | `src/Refusals/MissingUsing.cs` | A catalogue receiver type in a file that imports no catalogue namespace. |

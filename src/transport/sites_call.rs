@@ -4,9 +4,9 @@
 use tree_sitter::Node;
 
 use super::catalogue::{self, Form, Member, Overload, Ty, Val, P};
-use super::site_types::{Piece, RawValue, SiteFormatter, SiteValue};
+use super::site_types::{Part, RawValue, SiteFormatter, SiteValue};
 use super::sites::{apply_receiver, catalogue_type, site_type, Origin, Recv, Walk};
-use super::syntax::{field, line, named, pieces, string_literal};
+use super::syntax::{field, line, named, pieces, string_literal, Piece};
 use super::values::{classify, is_name, UNREAD};
 
 /// The syntactic form of one argument, which is all overload matching reads.
@@ -109,6 +109,41 @@ fn unknown(reason: &str) -> RawValue {
     RawValue::Unknown {
         reason: reason.to_string(),
     }
+}
+
+// C# binds a named argument by its parameter name, which the catalogue does
+// not keep, and every argument after one out of its place is named too. So
+// no value from the first named argument on is read by its position.
+fn read_unbound(site: &mut super::site_types::TransportSite, plan: &Plan) {
+    let role = match plan {
+        Plan::Value(Val::Ignore, _) => return,
+        Plan::Value(role, _) => *role,
+        Plan::Section => Val::Key,
+        Plan::Disagree(Some(role)) => *role,
+        Plan::Formatter => {
+            site.formatter = Some(SiteFormatter {
+                written: None,
+                args: Vec::new(),
+            });
+            return;
+        }
+        Plan::Filter => {
+            site.filtered = true;
+            return;
+        }
+        Plan::TypeOf(_) | Plan::Skip | Plan::Lambda(_) | Plan::Disagree(None) => return,
+    };
+    site.values.push(SiteValue {
+        role: role.word().to_string(),
+        wrapper: None,
+        value: unknown("overload"),
+    });
+}
+
+fn is_named(expression: Node) -> bool {
+    expression
+        .parent()
+        .is_some_and(|a| a.kind() == "argument" && field(a, "name").is_some())
 }
 
 /// The argument expressions of an argument list, in order.
@@ -287,8 +322,13 @@ impl Walk<'_> {
                 site.types.push(site_type(*role, written));
             }
         }
-        for (arg, plan) in args.iter().zip(&plans) {
-            self.read_plan(&mut site, *arg, *plan);
+        let named_from = args.iter().position(|a| is_named(*a));
+        for (i, (arg, plan)) in args.iter().zip(&plans).enumerate() {
+            if named_from.is_some_and(|from| i >= from) {
+                read_unbound(&mut site, plan);
+            } else {
+                self.read_plan(&mut site, *arg, *plan);
+            }
         }
         Some((self.push(site), plans))
     }
@@ -359,11 +399,11 @@ impl Walk<'_> {
                 }
             }
         }
-        if all.iter().all(|p| matches!(p, Piece::Lit(_))) {
+        if all.iter().all(|p| matches!(p, Piece::Lit(..))) {
             let joined: String = all
                 .iter()
                 .map(|p| match p {
-                    Piece::Lit(t) | Piece::Ref(t) => t.as_str(),
+                    Piece::Lit(t, _) | Piece::Ref(t) => t.as_str(),
                 })
                 .collect();
             return match classify(&joined, val) {
@@ -373,17 +413,27 @@ impl Walk<'_> {
         }
         if all
             .iter()
-            .any(|p| matches!(p, Piece::Lit(t) if !is_name(t)))
+            .any(|p| matches!(p, Piece::Lit(t, _) if !is_name(t)))
         {
             return unknown(UNREAD);
         }
-        RawValue::Pieces { pieces: all }
+        let pieces = all
+            .into_iter()
+            .map(|p| match p {
+                Piece::Lit(_, at) => Part::Lit(at),
+                Piece::Ref(path) => Part::Ref(path),
+            })
+            .collect();
+        RawValue::Pieces { pieces }
     }
 
     // A reference through a parameter, a local or an instance field is
-    // never a constant.
+    // never a constant, and `this.` reaches only instance members.
     fn reference_reason(&self, path: &str) -> Option<&'static str> {
         let first = path.split('.').next().unwrap_or(path);
+        if first == "this" {
+            return Some("field");
+        }
         match self.lookup(first).map(|v| v.origin) {
             Some(Origin::Param) => Some("parameter"),
             Some(Origin::Local) => Some("local"),
@@ -430,13 +480,24 @@ impl Walk<'_> {
                     args: Vec::new(),
                 }
             }
-            "object_creation_expression" => SiteFormatter {
-                written: field(arg, "type").map(|t| self.compact(t)),
-                args: arguments(field(arg, "arguments"))
-                    .into_iter()
-                    .map(|a| self.formatter_argument(a))
-                    .collect(),
-            },
+            "object_creation_expression" => {
+                let args = arguments(field(arg, "arguments"));
+                let named_from = args.iter().position(|a| is_named(*a)).unwrap_or(args.len());
+                SiteFormatter {
+                    written: field(arg, "type").map(|t| self.compact(t)),
+                    args: args
+                        .iter()
+                        .enumerate()
+                        .map(|(i, a)| {
+                            if i < named_from {
+                                self.formatter_argument(*a)
+                            } else {
+                                unknown("overload")
+                            }
+                        })
+                        .collect(),
+                }
+            }
             _ => SiteFormatter {
                 written: None,
                 args: Vec::new(),

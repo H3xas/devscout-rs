@@ -156,6 +156,21 @@ fn transport_facts_ac_2_every_receiver_shape_gives_its_fact() {
 }
 
 #[test]
+fn transport_facts_ac_2_a_this_qualified_member_keeps_its_declared_type() {
+    let facts = facts(shared());
+    for value in [
+        "this-field-refunds",
+        "this-property-refunds",
+        "this-shadowed-refunds",
+    ] {
+        assert_eq!(addressed(&facts, "send-address", value).len(), 1, "{value}");
+    }
+    let sends = in_file(&facts, "src/Billing/ThisQualified.cs", "send-address");
+    assert_eq!(sends.len(), 4);
+    assert_eq!(sends[3]["address"]["reason"], "field");
+}
+
+#[test]
 fn transport_facts_ac_2_a_lookalike_type_out_of_scope_refuses_nothing() {
     let facts = facts(shared());
     let buses: Vec<&str> = in_file(&facts, "src/Worker/WorkerBus.cs", "bus")
@@ -552,6 +567,40 @@ fn transport_facts_ac_5_addresses_and_hosts_state_their_scope() {
 }
 
 #[test]
+fn transport_facts_ac_5_a_named_argument_is_never_read_by_position() {
+    let facts = facts(shared());
+    let hosts = in_file(&facts, "src/Billing/NamedArguments.cs", "host");
+    assert_eq!(hosts.len(), 2);
+    for part in ["host", "virtualHost"] {
+        assert_eq!(scope_part(hosts[0], part)["class"], "unknown", "{part}");
+        assert_eq!(scope_part(hosts[0], part)["reason"], "overload", "{part}");
+    }
+    assert_eq!(scope_part(hosts[1], "host")["class"], "literal");
+    assert_eq!(
+        scope_part(hosts[1], "host")["value"],
+        "ordered-broker.internal"
+    );
+    assert_eq!(scope_part(hosts[1], "virtualHost")["reason"], "overload");
+
+    let reordered = addressed(&facts, "receive-endpoint", "named-intake");
+    assert_eq!(scope_part(reordered[0], "host")["reason"], "overload");
+    assert_eq!(
+        scope_part(reordered[0], "virtualHost")["reason"],
+        "overload"
+    );
+
+    let formatter = in_file(
+        &facts,
+        "src/Billing/NamedArguments.cs",
+        "configure-endpoints",
+    );
+    assert_eq!(formatter.len(), 1);
+    assert_eq!(formatter[0]["formatter"], "kebab-case");
+    assert_eq!(formatter[0]["formatterArguments"][0]["value"], "ordered");
+    assert_eq!(formatter[0]["formatterArguments"][1]["reason"], "overload");
+}
+
+#[test]
 fn transport_facts_ac_6_no_secret_reaches_an_artifact_or_the_export() {
     let fixture = shared();
     let secrets = [
@@ -562,6 +611,9 @@ fn transport_facts_ac_6_no_secret_reaches_an_artifact_or_the_export() {
         "s3cret-config-pass",
         "s3cret-uri-pass",
         "s3cret-amqp-pass",
+        "s3cret-joined-send",
+        "s3cret-joined-middle",
+        "s3cret-joined-host",
     ];
     let state = fixture.state_dir();
     let mut stack = vec![state];
@@ -583,6 +635,45 @@ fn transport_facts_ac_6_no_secret_reaches_an_artifact_or_the_export() {
     for secret in secrets {
         assert!(!export.contains(secret), "the export holds {secret}");
     }
+}
+
+#[test]
+fn transport_facts_ac_6_user_information_joined_to_a_constant_still_resolves() {
+    let facts = facts(shared());
+    for (value, fields) in [
+        (
+            "joined-invoices",
+            vec!["Fixture.Billing.BrokerParts.SendTail"],
+        ),
+        (
+            "joined-refunds",
+            vec![
+                "Fixture.Billing.BrokerParts.Scheme",
+                "Fixture.Billing.BrokerParts.User",
+                "Fixture.Billing.BrokerParts.RefundTail",
+            ],
+        ),
+    ] {
+        let found = addressed(&facts, "send-address", value);
+        assert_eq!(found.len(), 1, "{value}");
+        let address = &found[0]["address"];
+        assert_eq!(address["class"], "constant", "{value}");
+        assert_eq!(address["scheme"], "rabbitmq", "{value}");
+        let named: Vec<&str> = address["fields"]
+            .as_array()
+            .expect("fields")
+            .iter()
+            .filter_map(|f| f["field"].as_str())
+            .collect();
+        assert_eq!(named, fields, "{value}");
+        assert_eq!(scope_part(found[0], "host")["value"], "broker.internal");
+        assert_eq!(scope_part(found[0], "virtualHost")["value"], "billing");
+    }
+    let host = in_file(&facts, "src/Billing/JoinedAddresses.cs", "host");
+    assert_eq!(host.len(), 1);
+    assert_eq!(scope_part(host[0], "host")["class"], "constant");
+    assert_eq!(scope_part(host[0], "host")["value"], "broker.internal");
+    assert_eq!(scope_part(host[0], "virtualHost")["value"], "joined");
 }
 
 #[test]

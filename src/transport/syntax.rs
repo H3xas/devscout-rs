@@ -3,8 +3,17 @@
 
 use tree_sitter::{Node, Parser};
 
-use super::site_types::Piece;
+use super::site_types::Position;
 use super::values::UNREAD;
+
+/// One piece of a joined value as the source states it.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum Piece {
+    /// A string literal's text and where the literal starts.
+    Lit(String, Position),
+    /// A field reference path as written.
+    Ref(String),
+}
 
 pub(crate) fn parser() -> Parser {
     let mut parser = Parser::new();
@@ -38,6 +47,37 @@ pub(crate) fn field<'t>(node: Node<'t>, name: &str) -> Option<Node<'t>> {
 
 pub(crate) fn line(node: Node) -> usize {
     node.start_position().row + 1
+}
+
+pub(crate) fn position(node: Node) -> Position {
+    Position {
+        line: line(node),
+        column: node.start_position().column,
+    }
+}
+
+/// The string literal node that starts at `at`, if any.
+pub(crate) fn literal_at(node: Node, at: Position) -> Option<Node> {
+    if position(node) == at && string_literal_kind(node) {
+        return Some(node);
+    }
+    let point = tree_sitter::Point {
+        row: at.line.checked_sub(1)?,
+        column: at.column,
+    };
+    if point < node.start_position() || point >= node.end_position() {
+        return None;
+    }
+    named(node)
+        .into_iter()
+        .find_map(|child| literal_at(child, at))
+}
+
+fn string_literal_kind(node: Node) -> bool {
+    matches!(
+        node.kind(),
+        "string_literal" | "verbatim_string_literal" | "raw_string_literal"
+    )
 }
 
 /// Whether `path` is one or more identifiers joined by dots.
@@ -83,7 +123,7 @@ pub(crate) fn string_literal(node: Node, src: &[u8]) -> Option<Result<String, &'
 /// joined with `+`, or the reason word for any other form.
 pub(crate) fn pieces(node: Node, src: &[u8]) -> Result<Vec<Piece>, &'static str> {
     if let Some(literal) = string_literal(node, src) {
-        return literal.map(|t| vec![Piece::Lit(t)]);
+        return literal.map(|t| vec![Piece::Lit(t, position(node))]);
     }
     match node.kind() {
         "binary_expression" => {
@@ -122,3 +162,7 @@ pub(crate) fn pieces(node: Node, src: &[u8]) -> Result<Vec<Piece>, &'static str>
         _ => Err("expression"),
     }
 }
+
+#[cfg(test)]
+#[path = "syntax_tests.rs"]
+mod tests;

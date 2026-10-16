@@ -11,9 +11,11 @@ use tree_sitter::{Node, Tree};
 use super::catalogue::Val;
 use super::fact_types::{FieldRef, ValueObj};
 use super::qualify::{nested_id, Ctx, Qual};
-use super::site_types::{Parsed, Piece, RawValue};
-use super::syntax::{compact, field, line, named, parser, pieces, text};
-use super::values::classify;
+use super::site_types::{Parsed, Part, RawValue};
+use super::syntax::{
+    compact, field, line, literal_at, named, parser, pieces, string_literal, text, Piece,
+};
+use super::values::{classify, is_name, UNREAD};
 
 const MAX_DEPTH: usize = 8;
 
@@ -81,9 +83,13 @@ impl<'c, 'a> Constants<'c, 'a> {
             RawValue::Unknown { reason } => Resolved::unknown(reason),
             RawValue::Literal(parsed) => finish(parsed.clone(), val, Vec::new()),
             RawValue::Pieces { pieces } => {
+                let pieces = match self.reread(pieces, place.file) {
+                    Ok(pieces) => pieces,
+                    Err(reason) => return Resolved::unknown(reason),
+                };
                 let mut fields = Vec::new();
                 let mut seen = HashSet::new();
-                match self.join(pieces, place, 0, &mut seen, &mut fields) {
+                match self.join(&pieces, place, 0, &mut seen, &mut fields) {
                     Ok(joined) => match classify(&joined, val) {
                         Ok(parsed) => finish(parsed, val, fields),
                         Err(reason) => Resolved::unknown(reason),
@@ -92,6 +98,32 @@ impl<'c, 'a> Constants<'c, 'a> {
                 }
             }
         }
+    }
+
+    // The pieces a cached value names, each literal read again at its
+    // position in `file`. A literal that is gone, or that no longer reads
+    // as a name, makes the value unknown.
+    fn reread(&self, parts: &[Part], file: &str) -> Result<Vec<Piece>, &'static str> {
+        let mut sources = self.sources.borrow_mut();
+        let source = sources
+            .entry(file.to_string())
+            .or_insert_with(|| self.parse(file));
+        let Some(source) = source else {
+            return Err(UNREAD);
+        };
+        parts
+            .iter()
+            .map(|part| match part {
+                Part::Ref(path) => Ok(Piece::Ref(path.clone())),
+                Part::Lit(at) => {
+                    let node = literal_at(source.tree.root_node(), *at).ok_or(UNREAD)?;
+                    match string_literal(node, &source.bytes) {
+                        Some(Ok(text)) if is_name(&text) => Ok(Piece::Lit(text, *at)),
+                        _ => Err(UNREAD),
+                    }
+                }
+            })
+            .collect()
     }
 
     fn join(
@@ -105,7 +137,7 @@ impl<'c, 'a> Constants<'c, 'a> {
         let mut out = String::new();
         for piece in all {
             match piece {
-                Piece::Lit(t) => out.push_str(t),
+                Piece::Lit(t, _) => out.push_str(t),
                 Piece::Ref(path) => {
                     out.push_str(&self.reference(path, place, depth, seen, fields)?)
                 }

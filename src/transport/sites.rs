@@ -460,7 +460,7 @@ impl<'s> Walk<'s> {
                 Some(index) => self.returned(index),
                 None => Recv::Untyped,
             },
-            "this_expression" | "base_expression" => self.implicit_this(),
+            "this" | "base" => self.implicit_this(),
             "parenthesized_expression" => match named(node).first() {
                 Some(inner) => self.expr(*inner),
                 None => Recv::Untyped,
@@ -491,7 +491,24 @@ impl<'s> Walk<'s> {
     }
 
     fn lookup_receiver(&self, name: &str) -> Recv {
-        match self.lookup(name).map(|v| v.ty.clone()) {
+        self.var_receiver(name, self.lookup(name).map(|v| v.ty.clone()))
+    }
+
+    // `this.name` names a member of the enclosing type even where a
+    // parameter or local of the same name hides it.
+    fn this_member(&self, name: &str) -> Option<Recv> {
+        let var = self
+            .frames
+            .iter()
+            .rev()
+            .flat_map(|f| f.iter().rev())
+            .find(|(n, v)| n == name && v.origin == Origin::Field)
+            .map(|(_, v)| v.ty.clone())?;
+        Some(self.var_receiver(name, Some(var)))
+    }
+
+    fn var_receiver(&self, name: &str, ty: Option<VarTy>) -> Recv {
+        match ty {
             Some(VarTy::Cat(ty, site)) => Recv::Typed {
                 ty,
                 parent: Some(site),
@@ -525,8 +542,13 @@ impl<'s> Walk<'s> {
             self.children(node);
             return Recv::Untyped;
         };
-        let receiver = self.expr(inner);
         let name = self.text(name);
+        if inner.kind() == "this" {
+            if let Some(member) = self.this_member(&name) {
+                return member;
+            }
+        }
+        let receiver = self.expr(inner);
         self.property_site(node, &name, receiver)
     }
 

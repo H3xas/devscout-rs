@@ -87,7 +87,7 @@ pub enum RawValue {
     /// reference alone.
     Pieces {
         /// The pieces in reading order.
-        pieces: Vec<Piece>,
+        pieces: Vec<Part>,
     },
     /// A form the rules do not read.
     Unknown {
@@ -96,14 +96,29 @@ pub enum RawValue {
     },
 }
 
-/// One piece of a joined value.
+/// One piece of a joined value as the cache stores it.
+///
+/// A string literal keeps only where it starts, and its text is read again
+/// from the source when the value is resolved: until the constants are
+/// joined, no rule can tell whether that text ends up as URI user
+/// information, which no artifact may hold.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum Piece {
-    /// A string literal's text.
-    Lit(String),
+pub enum Part {
+    /// Where a string literal starts.
+    Lit(Position),
     /// A field reference path as written.
     Ref(String),
+}
+
+/// A start position as the parser reports it for the file's UTF-16 text:
+/// a 1-based line and a byte column.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Position {
+    /// The 1-based line.
+    pub line: usize,
+    /// The byte column within the line.
+    pub column: usize,
 }
 
 /// The parts one value states. A URI never keeps its user information,

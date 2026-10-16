@@ -122,6 +122,7 @@ impl Reader<'_> {
             match self.chars.next()? {
                 '"' => return Some(out),
                 '\\' => out.push(self.escape()?),
+                c if c < ' ' => return None,
                 c => out.push(c),
             }
         }
@@ -134,26 +135,80 @@ impl Reader<'_> {
             'r' => '\r',
             'b' => '\u{8}',
             'f' => '\u{c}',
+            c @ ('"' | '\\' | '/') => c,
             'u' => {
-                let hex: String = (0..4).filter_map(|_| self.chars.next()).collect();
-                char::from_u32(u32::from_str_radix(&hex, 16).ok()?)?
+                let unit = self.hex4()?;
+                if !(0xD800..0xDC00).contains(&unit) {
+                    return char::from_u32(unit);
+                }
+                if self.chars.next()? != '\\' || self.chars.next()? != 'u' {
+                    return None;
+                }
+                let low = self.hex4()?;
+                if !(0xDC00..0xE000).contains(&low) {
+                    return None;
+                }
+                char::from_u32(0x10000 + ((unit - 0xD800) << 10) + (low - 0xDC00))?
             }
-            c => c,
+            _ => return None,
         })
     }
 
+    fn hex4(&mut self) -> Option<u32> {
+        let mut unit = 0;
+        for _ in 0..4 {
+            unit = unit * 16 + self.chars.next()?.to_digit(16)?;
+        }
+        Some(unit)
+    }
+
+    // `true`, `false`, `null` or a number, which the JSON grammar alone
+    // allows outside quotes; any other token makes the file unreadable.
     fn scalar(&mut self) -> Option<Json> {
-        let mut any = false;
-        while self
+        let mut token = String::new();
+        while let Some(c) = self
             .chars
             .peek()
-            .is_some_and(|c| c.is_ascii_alphanumeric() || "+-.".contains(*c))
+            .copied()
+            .filter(|c| c.is_ascii_alphanumeric() || "+-.".contains(*c))
         {
+            token.push(c);
             self.chars.next();
-            any = true;
         }
-        any.then_some(Json::Other)
+        (matches!(token.as_str(), "true" | "false" | "null") || is_number(&token))
+            .then_some(Json::Other)
     }
+}
+
+// `-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?`
+fn is_number(token: &str) -> bool {
+    fn digits(text: &str) -> (usize, &str) {
+        let n = text.bytes().take_while(u8::is_ascii_digit).count();
+        (n, &text[n..])
+    }
+    let rest = token.strip_prefix('-').unwrap_or(token);
+    let (n, rest) = digits(rest);
+    if n == 0 || (n > 1 && token.trim_start_matches('-').starts_with('0')) {
+        return false;
+    }
+    let rest = match rest.strip_prefix('.') {
+        Some(fraction) => match digits(fraction) {
+            (0, _) => return false,
+            (_, rest) => rest,
+        },
+        None => rest,
+    };
+    let rest = match rest.strip_prefix(['e', 'E']) {
+        Some(exponent) => {
+            let exponent = exponent.strip_prefix(['+', '-']).unwrap_or(exponent);
+            match digits(exponent) {
+                (0, _) => return false,
+                (_, rest) => rest,
+            }
+        }
+        None => rest,
+    };
+    rest.is_empty()
 }
 
 fn parse(text: &str) -> Option<Json> {

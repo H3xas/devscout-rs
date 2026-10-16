@@ -32,7 +32,9 @@ pub use fact_types::{
 };
 pub(crate) use inputs::{discover, sidecar_differs, write_sidecar};
 pub use inputs::{SettingsFile, TransportInputs, UnitInputs};
-pub use site_types::{Parsed, Piece, RawValue, SiteFormatter, SiteType, SiteValue, TransportSite};
+pub use site_types::{
+    Parsed, Part, Position, RawValue, SiteFormatter, SiteType, SiteValue, TransportSite,
+};
 pub use sites::sites;
 
 /// One catalogue entry as the catalogue declares it.

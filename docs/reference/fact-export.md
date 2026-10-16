@@ -320,7 +320,11 @@ reason `unread-value`:
 | region | `[a-z]{2}(-[a-z]+)+-[0-9]+` |
 | account | 12 digits |
 
-A URI never keeps its user information, port, query or fragment. No
+A URI never keeps its user information, port, query or fragment, in the
+export or in any index file. A value joined from string literals and constants
+keeps its literals in the fragment cache only as source positions, and the
+graph rebuild reads them again, because only the joined value shows which
+part is user information. No
 configuration value is read except for an options property listed above, and no
 credential property is ever listed.
 
@@ -335,7 +339,8 @@ The reason words are a closed list:
 | calls | `overload`, `multiple-hosts` |
 
 A `static readonly` field reads `unknown`, because its value can change at run
-time. A cycle of constants reads `unresolved-constant`. A settings file that
+time. A value at or after a call's first named argument reads `overload`,
+because the catalogue keeps parameter positions, not parameter names. A cycle of constants reads `unresolved-constant`. A settings file that
 does not parse, two keys that match one name without regard to ASCII case, and a
 value that is no string read `unreadable-configuration` with the key.
 
