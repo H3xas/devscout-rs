@@ -15,6 +15,8 @@ pub mod audit;
 pub mod bus_seed;
 /// Command-line argument parsing and dispatch.
 pub mod cli;
+/// The versioned NDJSON export of one repository's whole fact set.
+pub mod export;
 /// C#, TypeScript and Rust declaration extraction, and C# and TypeScript
 /// reference extraction.
 pub mod extract;

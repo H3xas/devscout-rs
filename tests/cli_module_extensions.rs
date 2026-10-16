@@ -1,6 +1,7 @@
 //! CLI coverage for the `.mjs`/`.cjs`/`.mts`/`.cts` module suffixes: the files
-//! they let a map discover, the imports they resolve to, the queries an
-//! all-`.mjs` repository answers, and the JavaScript test-path rule.
+//! they let a map discover, the imports they resolve to, the queries a
+//! repository mixing every module suffix answers, and the JavaScript
+//! test-path rule.
 //!
 //! Fixture: `fixtures/module-extensions` (its README lists every declaration,
 //! reference form and near miss the repository carries).
@@ -329,8 +330,8 @@ fn module_extensions_ac_2_resolves_relative_imports_to_the_new_suffixes() {
 }
 
 #[test]
-fn module_extensions_ac_3_answers_every_query_on_an_all_mjs_repository() {
-    let fx = Fixture::build("all-mjs");
+fn module_extensions_ac_3_answers_every_query_on_the_mixed_module_repository() {
+    let fx = Fixture::build("mixed");
 
     assert!(
         fx.map_stdout.contains("mapped 31 files"),

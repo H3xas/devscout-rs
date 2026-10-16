@@ -11,6 +11,7 @@ Plain Markdown, versioned with the code: the copy under a release tag describes 
 | Know what devscout does not do | [Limitations](limitations.md) |
 | Look up a command or flag | [CLI reference](reference/cli.md) |
 | Parse `--json` output | [JSON output](reference/json-output.md) |
+| Read a whole repository's facts in one pass | [Fact export](reference/fact-export.md) |
 | Find where the index is stored | [Storage](reference/storage.md) |
 | Set an environment variable | [Environment variables](reference/environment.md) |
 | Install or remove the agent hooks | [Agent hooks](guides/agent-hooks.md) |
@@ -36,6 +37,8 @@ Plain Markdown, versioned with the code: the copy under a release tag describes 
 
 - [CLI](reference/cli.md): every command and flag.
 - [JSON output](reference/json-output.md): the `--json` answer contract.
+- [Fact export](reference/fact-export.md): the versioned NDJSON stream `export` writes, its
+  schema and its refusals.
 - [Storage](reference/storage.md): where artifacts and stores live.
 - [Environment variables](reference/environment.md).
 - [C# constructs](reference/csharp-constructs.md): which C# constructs produce facts.

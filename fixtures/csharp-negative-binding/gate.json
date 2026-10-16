@@ -1,0 +1,10 @@
+{
+  "contract": "csharp-negative-binding-gate-v1",
+  "recallFloor": 13,
+  "deviations": [
+    { "case": "shadow-namespace-member-over-using", "outcome": "precise-wrong" },
+    { "case": "negative-ambiguous-numeric-overload", "outcome": "precise-wrong" },
+    { "case": "negative-ambiguous-no-applicable-overload", "outcome": "precise-wrong" },
+    { "case": "negative-inaccessible-private-field", "outcome": "precise-wrong" }
+  ]
+}

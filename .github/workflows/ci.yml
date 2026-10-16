@@ -91,6 +91,17 @@ jobs:
       - name: Test
         run: cargo test --all-targets
 
+      # The export contract's second reader: a dependency-free Node check
+      # streams each pinned export, validates every line against the committed
+      # schema and recomputes the trailer's payload digest, then refuses each
+      # negative fixture for its own named reason. It runs on the runner's own
+      # node rather than through a pinned `actions/setup-node`.
+      - name: Fact export round trip (node)
+        run: |
+          node --version
+          node tools/fact-export/check.mjs --selftest
+          node tools/fact-export/check.mjs fixtures/fact-export/*.ndjson
+
       # v0.1.0: fmt/clippy gates are intentionally skipped so first release
       # isn't blocked on style convergence. fmt only runs, and only as a
       # check, once the project has opted into a convention via rustfmt.toml.
@@ -288,6 +299,33 @@ jobs:
 
       - name: Compiler-facts output matches the committed snapshot
         run: diff -u fixtures/csharp-compiler-facts/compiler-facts.json out/compiler-facts/csharp-compiler-facts.json
+
+      # The second pinned compiler-facts snapshot, produced the same way from
+      # the same dedicated root: the negative-binding fixture's labels name
+      # what the compiler binds and what it refuses to bind, so the document
+      # they are sealed against has to reproduce here or the labels are being
+      # read against bytes nobody regenerated.
+      - name: Restore the negative-binding fixture (package-free)
+        env:
+          SNAPSHOT_DOTNET_ROOT: ${{ runner.temp }}/dotnet-snapshot-sdk
+        run: |
+          export DOTNET_ROOT="$SNAPSHOT_DOTNET_ROOT"
+          export PATH="$SNAPSHOT_DOTNET_ROOT:$PATH"
+          "$SNAPSHOT_DOTNET_ROOT/dotnet" restore fixtures/csharp-negative-binding/Fixture.csproj
+
+      - name: Run the oracle in compiler-facts protocol mode on the negative-binding fixture
+        env:
+          SNAPSHOT_DOTNET_ROOT: ${{ runner.temp }}/dotnet-snapshot-sdk
+        run: |
+          export DOTNET_ROOT="$SNAPSHOT_DOTNET_ROOT"
+          export PATH="$SNAPSHOT_DOTNET_ROOT:$PATH"
+          "$SNAPSHOT_DOTNET_ROOT/dotnet" run --project tools/scout-semantic --no-build -c Release -- \
+            fixtures/csharp-negative-binding/Fixture.csproj --root fixtures/csharp-negative-binding \
+            --emit compiler-facts --compiler-facts out/compiler-facts/csharp-negative-binding.json \
+            --tfm net9.0 -p Configuration=Debug -p Platform=AnyCPU --no-git
+
+      - name: Negative-binding oracle output matches the committed snapshot
+        run: diff -u fixtures/csharp-negative-binding/compiler-facts.json out/compiler-facts/csharp-negative-binding.json
 
       # The committed snapshot is the engine's own unflagged default (which
       # now includes occurrences); this proves the byte identity of every
