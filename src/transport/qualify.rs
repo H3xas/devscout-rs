@@ -227,7 +227,7 @@ impl<'a> Ctx<'a> {
         match self.qualify(written, file, ns, &[]) {
             Qual::Catalogue(ty) => catalogue::derives(ty, on),
             Qual::Repo(_) | Qual::Ambiguous => false,
-            Qual::Nothing => !self.declares_type(catalogue::simple(&base)),
+            Qual::Nothing => true,
         }
     }
 }

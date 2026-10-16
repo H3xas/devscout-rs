@@ -18,6 +18,11 @@ public static class WorkerBus
         services.Configure<AmazonSqsTransportOptions>(configuration.GetSection("Sqs"));
     }
 
+    public static void Local()
+    {
+        new ServiceCollection().AddMassTransit(x => x.UsingInMemory());
+    }
+
     public static async Task Forward(ISendEndpointProvider provider)
     {
         await provider.GetSendEndpoint(new Uri("amazonsqs://us-east-2/ledger/order-archive"));

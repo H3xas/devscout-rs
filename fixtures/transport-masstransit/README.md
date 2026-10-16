@@ -16,6 +16,7 @@ the facts `graph.json` and `devscout export` record.
 | nested lambdas | `src/Service/Program.cs` | `AddMassTransit`, then `UsingRabbitMq`, then `ReceiveEndpoint`, each lambda parameter typed by the catalogue entry that holds it. |
 | dotted chain start | `src/Service/Program.cs` | `builder.Services.AddMassTransit(…)` starts a chain on an untyped receiver. |
 | static entry points | `src/Service/Program.cs`, `src/Billing/BillingBus.cs` | `EndpointConvention.Map` and `Bus.Factory.CreateUsingRabbitMq`. |
+| out-of-scope lookalike | `src/Worker/WorkerBus.cs`, `src/Refusals/Fakes.cs` | A chain start on `new ServiceCollection()` keeps its fact, because the repository's own `ServiceCollection` is in a namespace the file does not import. |
 | declared receivers | `src/Billing/BillingBus.cs`, `src/Billing/Values.cs`, `src/Service/Consumers/Consumers.cs` | A field, a property, a constructor-assigned field, a typed local, a method parameter and a `ConsumeContext<T>` parameter. |
 | registrations | `src/Service/Program.cs` | A consumer, a consumer with its definition, a state machine, a namespace scan and three request clients. |
 | receive endpoint types | `src/Service/Program.cs` | A configured consumer, a handler and a configured saga, each with its own line. |

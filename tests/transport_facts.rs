@@ -156,6 +156,16 @@ fn transport_facts_ac_2_every_receiver_shape_gives_its_fact() {
 }
 
 #[test]
+fn transport_facts_ac_2_a_lookalike_type_out_of_scope_refuses_nothing() {
+    let facts = facts(shared());
+    let buses: Vec<&str> = in_file(&facts, "src/Worker/WorkerBus.cs", "bus")
+        .iter()
+        .filter_map(|f| f["transport"].as_str())
+        .collect();
+    assert!(buses.contains(&"in-memory"), "{buses:?}");
+}
+
+#[test]
 fn transport_facts_ac_2_each_refusal_gives_no_fact() {
     let facts = facts(shared());
     let refused: Vec<&Value> = facts

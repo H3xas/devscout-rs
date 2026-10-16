@@ -18,4 +18,8 @@ namespace Fixture.Refusals.Fakes
     public class RouterBuilder
     {
     }
+
+    public class ServiceCollection
+    {
+    }
 }
