@@ -129,6 +129,7 @@ fn argument_positions_admit(
                 param_file: &overload.file,
                 reference: r,
                 owner_idx: idx,
+                reading: Reading::Keyword,
             },
             &arg_type,
             &param_type,
@@ -136,6 +137,7 @@ fn argument_positions_admit(
     })
 }
 
+#[derive(Clone, Copy)]
 struct CompareContext<'a> {
     index: &'a DefIndex,
     contexts: &'a HashMap<String, FileContext>,
@@ -143,12 +145,64 @@ struct CompareContext<'a> {
     param_file: &'a str,
     reference: &'a FragRef,
     owner_idx: usize,
+    reading: Reading,
+}
+
+// A descriptor drops a `System.` qualifier, so a bare CLR primitive name can be
+// the BCL type or an in-graph type of that name. The keyword reading takes the
+// BCL type everywhere; the in-graph reading keeps a name that resolves to an
+// in-graph type. A pair either reading admits stays admitted, so the in-graph
+// reading only turns a decline into an admission.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Reading {
+    Keyword,
+    InGraph,
+}
+
+#[derive(Clone, Copy)]
+enum Side {
+    Argument,
+    Parameter,
+}
+
+impl<'a> CompareContext<'a> {
+    fn scope(&self, side: Side) -> (&'a str, &'a str, &'a [String]) {
+        match side {
+            Side::Argument => (
+                self.source_file,
+                self.reference.namespace.as_deref().unwrap_or_default(),
+                &self.reference.outer_types,
+            ),
+            Side::Parameter => (
+                self.param_file,
+                &self.index.defs[self.owner_idx].namespace,
+                &[],
+            ),
+        }
+    }
 }
 
 fn can_accept(cx: &CompareContext<'_>, arg: &str, param: &str) -> bool {
-    let arg = canonical_primitives(arg);
-    let param = canonical_primitives(param);
-    let (arg, param) = (arg.as_str(), param.as_str());
+    if accepts(cx, &canonical_primitives(arg), &canonical_primitives(param)) {
+        return true;
+    }
+    if !graph_declares_primitive_name(cx.index) {
+        return false;
+    }
+    let (Some(arg), Some(param)) = (
+        in_graph_primitives(cx, arg, Side::Argument),
+        in_graph_primitives(cx, param, Side::Parameter),
+    ) else {
+        return false;
+    };
+    let cx = CompareContext {
+        reading: Reading::InGraph,
+        ..*cx
+    };
+    accepts(&cx, &arg, &param)
+}
+
+fn accepts(cx: &CompareContext<'_>, arg: &str, param: &str) -> bool {
     let CompareContext {
         index,
         contexts,
@@ -156,6 +210,7 @@ fn can_accept(cx: &CompareContext<'_>, arg: &str, param: &str) -> bool {
         param_file,
         reference: r,
         owner_idx: idx,
+        ..
     } = cx;
     let idx = *idx;
     if arg == param || arg == "?" || param == "?" || arg.contains('*') || param.contains('*') {
@@ -339,7 +394,13 @@ fn canonical(
         .and_then(|ctx| ctx.aliases.get(head))
         .cloned()
     {
-        return canonical(cx, &normalize_alias_target(&target), file, ns, outer);
+        return canonical(
+            cx,
+            &normalize_alias_target(&target, cx.reading),
+            file,
+            ns,
+            outer,
+        );
     }
     if bare_head(head) == "Nullable" && arguments.len() == 1 && suffix.is_empty() {
         return arguments.into_iter().next();
@@ -352,7 +413,7 @@ fn canonical(
         ));
     }
     Some(Canon::Generic(
-        head.to_string(),
+        primitive_keyword(head).unwrap_or(head).to_string(),
         arguments,
         suffix.to_string(),
     ))
@@ -421,8 +482,9 @@ fn is_array_suffix(text: &str) -> bool {
 // An alias target rendered the way `type_descriptor` renders a type: every
 // dotted name reduced to its last segment, an alias qualifier (`global::Ns.T`)
 // dropped with its namespace, spacing removed, CLR primitive names as
-// keywords.
-fn normalize_alias_target(target: &str) -> String {
+// keywords. The in-graph reading rewrites only a name the target writes
+// `System.`-qualified and leaves a bare one for `canonical` to resolve.
+fn normalize_alias_target(target: &str, reading: Reading) -> String {
     let mut out = String::with_capacity(target.len());
     let mut token = String::new();
     let mut chars = target.chars().peekable();
@@ -440,17 +502,23 @@ fn normalize_alias_target(target: &str) -> String {
             continue;
         }
         if !ch.is_whitespace() {
-            flush_segment(&mut out, &mut token);
+            flush_segment(&mut out, &mut token, reading);
             out.push(ch);
         }
     }
-    flush_segment(&mut out, &mut token);
-    canonical_primitives(&out)
+    flush_segment(&mut out, &mut token, reading);
+    match reading {
+        Reading::Keyword => canonical_primitives(&out),
+        Reading::InGraph => out,
+    }
 }
 
-fn flush_segment(out: &mut String, token: &mut String) {
+fn flush_segment(out: &mut String, token: &mut String, reading: Reading) {
     if !token.is_empty() {
-        out.push_str(bare_head(token));
+        let qualified_keyword = (reading == Reading::InGraph && token.starts_with("System."))
+            .then(|| primitive_keyword(token))
+            .flatten();
+        out.push_str(qualified_keyword.unwrap_or_else(|| bare_head(token)));
         token.clear();
     }
 }
@@ -545,29 +613,98 @@ fn fixed_bcl(name: &str) -> Option<&str> {
     }
 }
 
+const CLR_PRIMITIVES: [(&str, &str); 15] = [
+    ("SByte", "sbyte"),
+    ("Byte", "byte"),
+    ("Int16", "short"),
+    ("UInt16", "ushort"),
+    ("Int32", "int"),
+    ("UInt32", "uint"),
+    ("Int64", "long"),
+    ("UInt64", "ulong"),
+    ("Single", "float"),
+    ("Double", "double"),
+    ("Decimal", "decimal"),
+    ("Char", "char"),
+    ("Boolean", "bool"),
+    ("String", "string"),
+    ("Object", "object"),
+];
+
+fn primitive_keyword(token: &str) -> Option<&'static str> {
+    let bare = token.strip_prefix("System.").unwrap_or(token);
+    CLR_PRIMITIVES
+        .iter()
+        .find(|(name, _)| *name == bare)
+        .map(|(_, keyword)| *keyword)
+}
+
+fn graph_declares_primitive_name(index: &DefIndex) -> bool {
+    CLR_PRIMITIVES
+        .iter()
+        .any(|(name, _)| index.simple_name_to_defs.contains_key(*name))
+}
+
 fn canonical_primitives(descriptor: &str) -> String {
-    fn primitive(token: &str) -> &str {
-        let bare = token.strip_prefix("System.").unwrap_or(token);
-        match bare {
-            "SByte" => "sbyte",
-            "Byte" => "byte",
-            "Int16" => "short",
-            "UInt16" => "ushort",
-            "Int32" => "int",
-            "UInt32" => "uint",
-            "Int64" => "long",
-            "UInt64" => "ulong",
-            "Single" => "float",
-            "Double" => "double",
-            "Decimal" => "decimal",
-            "Char" => "char",
-            "Boolean" => "bool",
-            "String" => "string",
-            "Object" => "object",
+    rewrite_names(descriptor, |token| {
+        primitive_keyword(token).unwrap_or(token)
+    })
+}
+
+// The in-graph reading of one side's descriptor: a CLR primitive name stays
+// where it resolves to an in-graph type from that side's scope, and becomes its
+// keyword where it does not or where it is written `System.`-qualified. `None`
+// -- no in-graph claim -- for type arguments that are not balanced and
+// non-empty.
+fn in_graph_primitives(cx: &CompareContext<'_>, descriptor: &str, side: Side) -> Option<String> {
+    if !balanced_arguments(descriptor) {
+        return None;
+    }
+    let (file, ns, outer) = cx.scope(side);
+    Some(rewrite_names(descriptor, |token| {
+        match primitive_keyword(token) {
+            Some(keyword)
+                if token.starts_with("System.")
+                    || resolve_type(cx.index, cx.contexts, file, ns, outer, token).is_none() =>
+            {
+                keyword
+            }
             _ => token,
         }
-    }
+    }))
+}
 
+fn balanced_arguments(descriptor: &str) -> bool {
+    let mut depth = 0usize;
+    let mut empty = false;
+    for ch in descriptor.chars().filter(|ch| !ch.is_whitespace()) {
+        match ch {
+            '<' => {
+                depth += 1;
+                empty = true;
+            }
+            ',' if depth > 0 => {
+                if empty {
+                    return false;
+                }
+                empty = true;
+            }
+            '>' => {
+                if empty {
+                    return false;
+                }
+                let Some(outer) = depth.checked_sub(1) else {
+                    return false;
+                };
+                depth = outer;
+            }
+            _ => empty = false,
+        }
+    }
+    depth == 0
+}
+
+fn rewrite_names<'t>(descriptor: &'t str, mut rename: impl FnMut(&'t str) -> &'t str) -> String {
     let mut result = String::with_capacity(descriptor.len());
     let mut rest = descriptor;
     while !rest.is_empty() {
@@ -576,7 +713,7 @@ fn canonical_primitives(descriptor: &str) -> String {
             .take_while(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'.'))
             .count();
         if token_len > 0 {
-            result.push_str(primitive(&rest[..token_len]));
+            result.push_str(rename(&rest[..token_len]));
             rest = &rest[token_len..];
         } else {
             let ch = rest.chars().next().expect("nonempty descriptor");
