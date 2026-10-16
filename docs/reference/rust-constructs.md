@@ -28,7 +28,8 @@ encoding of the input.
 Every `.rs` file in the mapped scope is indexed, in every repository. Nothing gates it: there is
 no `Cargo.toml` probe, flag or setting. The walk's usual skip list applies, so a `.rs` file under
 a directory named `target`, `bin`, `obj`, `dist`, `coverage`, `node_modules`, `.next`, `.git` or
-`.scout` is not indexed; that includes a crate's `src/bin/` directory. To keep Rust out of a
+`.scout` is not indexed; that includes a crate's `src/bin/` directory. In a Git root an untracked
+`.rs` file Git ignores is skipped as well, while a tracked one is kept. To keep Rust out of a
 mixed repository, map a narrower scope (`devscout map <dir>`, or the scope given to `init`).
 
 ## The item model

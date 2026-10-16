@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 
 use crate::freshness::record::sha256_hex;
 use crate::repo;
+use crate::walk::Ignored;
 
 /// Relative path -> SHA-256 of the bytes discovery parsed, for every
 /// configuration input the `.csproj` model read.
@@ -37,14 +38,46 @@ pub(super) fn ancestors_up_to(root: &Path, dir: &Path) -> Vec<PathBuf> {
     out
 }
 
+// Each scope directory's ancestors up to `root`, checked non-recursively (one
+// `read_dir` per ancestor, no descent into siblings).
+pub(super) fn scan_ancestor_dirs(
+    root: &Path,
+    scope: &[String],
+    ignored: &Ignored,
+    csproj_files: &mut std::collections::HashSet<PathBuf>,
+    props_by_dir: &mut HashMap<PathBuf, String>,
+    digests: &mut ConfigDigests,
+) {
+    for d in scope {
+        let scope_abs = if d == "." {
+            root.to_path_buf()
+        } else {
+            root.join(d)
+        };
+        for ancestor in ancestors_up_to(root, &scope_abs) {
+            scan_ancestor_dir(
+                root,
+                &ancestor,
+                ignored,
+                csproj_files,
+                props_by_dir,
+                digests,
+            );
+        }
+    }
+}
+
 // Non-recursive `.csproj`/`Directory.Build.props` scan of a single
 // directory's direct entries. A missing or unreadable directory (e.g. an
 // ancestor computed lexically from a scope element that does not exist on
 // disk) is silently skipped, matching `walk`'s "nonexistent scope element"
-// behavior rather than failing the whole discovery.
+// behavior rather than failing the whole discovery. A direct child the run's
+// ignore set covers is skipped too, so the model cannot read a project file
+// the source walk left out.
 pub(super) fn scan_ancestor_dir(
     root: &Path,
     dir: &Path,
+    ignored: &Ignored,
     csproj_files: &mut std::collections::HashSet<PathBuf>,
     props_by_dir: &mut HashMap<PathBuf, String>,
     digests: &mut ConfigDigests,
@@ -60,6 +93,9 @@ pub(super) fn scan_ancestor_dir(
             continue;
         }
         let path = entry.path();
+        if !ignored.is_empty() && ignored.covers(&repo::rel_path(root, &path)) {
+            continue;
+        }
         if path
             .file_name()
             .and_then(|n| n.to_str())

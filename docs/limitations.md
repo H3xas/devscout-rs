@@ -24,7 +24,7 @@ Known, rather than hidden. One line per limit; each links the page that details 
 - Artifact ordering is deterministic but not a stability promise across minor versions: [Storage](reference/storage.md#ordering).
 - Freshness validation is bounded by three caps — 5,000 `git status` entries, 2,048 candidate paths and 16 MiB of candidate bytes — and answers `unknown` with reason `validation-budget` past any of them: [Freshness](reference/json-output.md#freshness).
 - The index belongs to one worktree at a time: a query from any other worktree reports `unknown` with reason `other-worktree` until it runs `map`: [Storage](reference/storage.md#one-owner-per-index).
-- Freshness is undefended for files Git ignores, which the walk can still index, so their edits and their new ones go undetected: [Freshness](concepts.md#freshness).
+- In a Git root the walk skips untracked files Git ignores, so build output cannot duplicate a source definition; an ignore-rule edit waits for the next `map`, submodules and nested non-submodule repositories follow only the outer repository's answer, and a root with no `.git` entry ignores nothing: [Freshness](concepts.md#freshness).
 - Freshness is undefended for paths `git status` cannot see — `assume-unchanged`, `skip-worktree`, sparse checkout, submodules, or a stale `core.fsmonitor` answer: [Freshness](concepts.md#freshness).
 - Freshness is undefended outside a Git repository, in a bare repository, and under `GIT_DIR`/`GIT_WORK_TREE` overrides: [Freshness](concepts.md#freshness).
 - Freshness is undefended for an edit made after validation starts while a query runs, for manifest entries an earlier broader `map` left outside the published scope, and for deliberately colliding digests: [Freshness](concepts.md#freshness).
