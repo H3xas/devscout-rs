@@ -127,20 +127,24 @@ pub fn exit_constants(files: &[Scanned]) -> BTreeMap<String, i64> {
     constants
 }
 
-/// A bare integer used as a status: the first element of a tuple returned by a
-/// status function, or an argument to `process::exit`.
+/// A bare integer used as a status: the first element of a tuple a status
+/// function returns, an integer a status function returns or yields from a match
+/// arm, an error value that is a bare integer, or an argument to `process::exit`.
 pub fn numeric_status_sites(files: &[Scanned]) -> Vec<Located> {
     let mut found = Vec::new();
     for scanned in files {
         for (start, end) in status_functions(&scanned.blanked) {
             let body = &scanned.blanked[start..end];
-            for offset in tuple_status_literals(body) {
+            let mut shapes = tuple_status_literals(body);
+            shapes.extend(bare_status_literals(body));
+            shapes.sort_unstable();
+            for offset in shapes {
                 let line = scanned.line_of(start + offset);
                 found.push(Located {
                     file: scanned.path.clone(),
                     line,
                     detail: format!(
-                        "integer literal returned as a status: {}",
+                        "integer literal used as a status: {}",
                         excerpt(body, offset)
                     ),
                 });
@@ -318,4 +322,102 @@ pub fn names_outside_their_constant(
         }
     }
     found
+}
+
+// The other ways a status function can hand back a bare number: `return 1;`, a
+// match arm whose value is a literal (`Ok(()) => 0,`), and an error value that
+// is one (`Err(1)`).
+fn bare_status_literals(body: &str) -> Vec<usize> {
+    let bytes = body.as_bytes();
+    let mut found = Vec::new();
+    for (offset, pattern) in [("return ", 0usize), ("=> ", 0usize)].into_iter() {
+        let _ = pattern;
+        let mut search_from = 0usize;
+        while let Some(at) = body[search_from..].find(offset) {
+            let start = search_from + at + offset.len();
+            let mut cursor = start;
+            while matches!(bytes.get(cursor), Some(b' ') | Some(b'\n')) {
+                cursor += 1;
+            }
+            let digits_start = cursor;
+            while matches!(bytes.get(cursor), Some(byte) if byte.is_ascii_digit()) {
+                cursor += 1;
+            }
+            if cursor > digits_start {
+                let next = bytes.get(cursor).copied();
+                let ends_a_value = matches!(next, Some(b';') | Some(b',') | Some(b'}') | None);
+                if ends_a_value {
+                    found.push(digits_start);
+                }
+            }
+            search_from = cursor.max(start + 1);
+        }
+    }
+    // A block whose whole value is a literal: `if ok { 0 } else { 1 }`.
+    let mut search_from = 0usize;
+    while let Some(at) = body[search_from..].find('{') {
+        let start = search_from + at + 1;
+        let mut cursor = start;
+        while matches!(bytes.get(cursor), Some(b' ') | Some(b'\n')) {
+            cursor += 1;
+        }
+        let digits_start = cursor;
+        while matches!(bytes.get(cursor), Some(byte) if byte.is_ascii_digit()) {
+            cursor += 1;
+        }
+        if cursor > digits_start {
+            let mut after = cursor;
+            while matches!(bytes.get(after), Some(b' ') | Some(b'\n')) {
+                after += 1;
+            }
+            if bytes.get(after) == Some(&b'}') {
+                found.push(digits_start);
+            }
+        }
+        search_from = cursor.max(start);
+    }
+    let mut search_from = 0usize;
+    while let Some(at) = body[search_from..].find("Err(") {
+        let start = search_from + at + "Err(".len();
+        let mut cursor = start;
+        while matches!(bytes.get(cursor), Some(b' ') | Some(b'\n')) {
+            cursor += 1;
+        }
+        let digits_start = cursor;
+        while matches!(bytes.get(cursor), Some(byte) if byte.is_ascii_digit()) {
+            cursor += 1;
+        }
+        if cursor > digits_start {
+            let mut after = cursor;
+            while matches!(bytes.get(after), Some(b' ') | Some(b'\n')) {
+                after += 1;
+            }
+            if bytes.get(after) == Some(&b')') {
+                found.push(digits_start);
+            }
+        }
+        search_from = cursor.max(start + 1);
+    }
+    found
+}
+
+/// The `pub const` declarations of one scanned module, by name: what the module
+/// says its own constants are called.
+pub fn usage_declarations(scanned: &Scanned) -> BTreeMap<String, String> {
+    let mut declared = BTreeMap::new();
+    for literal in &scanned.literals {
+        let before = &scanned.blanked[..literal.offset];
+        let Some(at) = before.rfind("pub const ") else {
+            continue;
+        };
+        let rest = &before[at + "pub const ".len()..];
+        let name: String = rest
+            .chars()
+            .take_while(|character| character.is_alphanumeric() || *character == '_')
+            .collect();
+        if !name.is_empty() {
+            declared.insert(name, literal.value.clone());
+        }
+    }
+    declared
 }

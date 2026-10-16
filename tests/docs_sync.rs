@@ -128,6 +128,24 @@ fn usage_failures(files: &[Scanned]) -> Vec<String> {
             ));
         }
     }
+    // Comparing values alone would accept a second constant holding a line the
+    // page already renders, under a name nothing renders. The criterion is a
+    // named constant per line, so the declared names are compared too.
+    if let Some(module) = files
+        .iter()
+        .find(|file| file.path == PathBuf::from("usage.rs"))
+    {
+        let found = facts::usage_declarations(module);
+        let expected: BTreeMap<String, String> = declared
+            .iter()
+            .map(|(name, value)| ((*name).to_string(), (*value).to_string()))
+            .collect();
+        if found != expected {
+            failures.push(format!(
+                "the usage module declares {found:?}, and the page renders {expected:?}"
+            ));
+        }
+    }
     failures
 }
 
@@ -153,6 +171,9 @@ fn environment_failures(files: &[Scanned]) -> Vec<String> {
                 "the environment page documents {name}, and no source literal carries it"
             ));
         }
+    }
+    for problem in pages::incomplete_environment_rows() {
+        failures.push(format!("the environment page is incomplete: {problem}"));
     }
     for row in pages::RETIRED {
         if scanned.contains(row.name) {
@@ -389,6 +410,22 @@ fn docs_sync_ac_1_flag_spellings_only_in_verbatim_blocks() {
 }
 
 #[test]
+fn docs_sync_ac_1_the_embedded_text_carries_no_fence_marker() {
+    let help = stdout_of(&["--help"]);
+    let markers = pages::fence_markers(&help);
+    assert!(
+        markers.is_empty(),
+        "the help text carries a fence marker, which would close the page's own block: {markers:?}"
+    );
+    // The shape a help text with a fence marker in it would trip.
+    let hostile = "devscout --help\n```\nnot the help text\n```\n".to_string();
+    assert!(
+        !pages::fence_markers(&hostile).is_empty(),
+        "a fence marker in the embedded text was not reported"
+    );
+}
+
+#[test]
 fn docs_sync_ac_1_drift_names_the_page_and_the_command() {
     let directory = temp_dir("drift");
     let path = directory.join("cli.md");
@@ -554,6 +591,23 @@ fn docs_sync_ac_3_every_usage_literal_is_a_rendered_constant() {
 }
 
 #[test]
+fn docs_sync_ac_3_a_second_constant_for_one_line_fails() {
+    let tree = synthetic_tree(&[(
+        "usage.rs",
+        "pub const ONE_USAGE: &str = \"usage: devscout one\";\n\
+         pub const ONE_AGAIN_USAGE: &str = \"usage: devscout one\";\n",
+    )]);
+    let failures = structural_failures(&tree);
+    assert!(
+        failures
+            .iter()
+            .any(|failure| failure.contains("usage module declares")),
+        "a second constant holding a line the page already renders passed: {failures:?}"
+    );
+    std::fs::remove_dir_all(&tree).ok();
+}
+
+#[test]
 fn docs_sync_ac_3_stray_usage_literal_fails_under_bless() {
     let tree = synthetic_tree(&[
         (
@@ -692,7 +746,7 @@ fn docs_sync_ac_5_no_numeric_status_in_source() {
 
 #[test]
 fn docs_sync_ac_5_numeric_status_fails() {
-    let cases: [(&str, &str); 5] = [
+    let cases: [(&str, &str); 9] = [
         ("exit.rs", "fn f() { process::exit(1); }\n"),
         (
             "tuple.rs",
@@ -709,6 +763,22 @@ fn docs_sync_ac_5_numeric_status_fails() {
         (
             "closure.rs",
             "fn f() -> (i32, String) { let g = || (2, String::new()); g() }\n",
+        ),
+        (
+            "bare.rs",
+            "fn f(ok: bool) -> i32 { if ok { 0 } else { 1 } }\n",
+        ),
+        (
+            "arm.rs",
+            "fn f(r: Result<(), String>) -> i32 { match r { Ok(()) => 0, Err(_) => 1 } }\n",
+        ),
+        (
+            "returned.rs",
+            "fn f(bad: bool) -> i32 { if bad { return 1; } 0 }\n",
+        ),
+        (
+            "err.rs",
+            "fn f() -> Result<i32, i32> { if true { return Err(2); } Ok(0) }\n",
         ),
     ];
     for (file, text) in cases {

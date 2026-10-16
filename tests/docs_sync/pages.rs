@@ -853,3 +853,28 @@ pub const USAGE_SECTIONS: &[(&str, &str)] = &[
     ("spans", "SPANS_USAGE"),
     ("extract-dump", "EXTRACT_DUMP_USAGE"),
 ];
+
+/// Fence markers inside a body a page embeds verbatim: one would close the
+/// block early and leave the rest of the page outside its own fence.
+pub fn fence_markers(text: &str) -> Vec<String> {
+    text.lines()
+        .filter(|line| line.trim_start().starts_with("```") || line.trim_start().starts_with("~~~"))
+        .map(|line| line.trim().to_string())
+        .collect()
+}
+
+/// Every environment row missing a name, an effect or a default: the page has
+/// to state all three for each variable it documents.
+pub fn incomplete_environment_rows() -> Vec<String> {
+    let mut problems = Vec::new();
+    for row in ENVIRONMENT {
+        if row.name.trim().is_empty() || row.effect.trim().is_empty() {
+            problems.push(format!("{} has no effect", row.name));
+        }
+        let default_value = default_of(&row.default_value);
+        if default_value.trim().is_empty() || default_value.trim() == "``" {
+            problems.push(format!("{} has no default", row.name));
+        }
+    }
+    problems
+}
