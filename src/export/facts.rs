@@ -23,7 +23,7 @@ use super::snapshot::Snapshot;
 
 /// The families in canonical order, which is also the order of the trailer's
 /// counts and of the coverage table.
-pub(crate) const FAMILY_ORDER: [&str; 7] = [
+pub(crate) const FAMILY_ORDER: [&str; 8] = [
     "definition",
     "edge",
     "publish-site",
@@ -31,6 +31,7 @@ pub(crate) const FAMILY_ORDER: [&str; 7] = [
     "di-registration",
     "unresolved-import",
     "test-file",
+    "transport-address",
 ];
 
 /// One serialized fact line plus the three keys the canonical order sorts on.
@@ -46,7 +47,12 @@ pub(crate) struct Fact {
 }
 
 impl Fact {
-    fn new(rank: usize, file: String, line: usize, line_struct: &impl Serialize) -> Fact {
+    pub(super) fn new(
+        rank: usize,
+        file: String,
+        line: usize,
+        line_struct: &impl Serialize,
+    ) -> Fact {
         Fact {
             rank,
             file,
@@ -525,13 +531,15 @@ pub(crate) fn collect(snapshot: &Snapshot) -> Vec<Fact> {
         snapshot.graph.defs.len()
             + snapshot.graph.edges.len()
             + snapshot.graph.unresolved_imports.len()
-            + snapshot.test_via.len(),
+            + snapshot.test_via.len()
+            + snapshot.graph.transport.len(),
     );
     collect_definitions(snapshot, &mut facts);
     collect_edges(snapshot, &mut facts);
     collect_messaging(snapshot, &mut facts);
     collect_unresolved_imports(snapshot, &mut facts);
     collect_test_files(snapshot, &mut facts);
+    super::transport::collect_transport(snapshot, &mut facts);
     facts
 }
 

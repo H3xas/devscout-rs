@@ -501,7 +501,7 @@ pub fn extraction_to_json(e: &Extraction) -> String {
         Some(p) => Json::Str(p.clone()),
         None => Json::Null,
     };
-    let root = Json::Obj(vec![
+    let mut fields = vec![
         ("purpose", purpose_json),
         ("defs", Json::Arr(e.defs.iter().map(def_to_json).collect())),
         (
@@ -526,8 +526,32 @@ pub fn extraction_to_json(e: &Extraction) -> String {
                     .collect(),
             ),
         ),
-    ]);
-    root.to_pretty_string()
+    ];
+    // Omitted when empty, so a file that states no transport site dumps
+    // exactly as it did before the key existed.
+    if !e.transport.is_empty() {
+        let sites = serde_json::to_value(&e.transport).unwrap_or_default();
+        fields.push(("transport", from_serde(&sites)));
+    }
+    Json::Obj(fields).to_pretty_string()
+}
+
+fn from_serde(value: &serde_json::Value) -> Json {
+    match value {
+        serde_json::Value::Null => Json::Null,
+        serde_json::Value::Bool(b) => Json::Bool(*b),
+        serde_json::Value::Number(n) => match n.as_u64() {
+            Some(u) => Json::Num(usize::try_from(u).unwrap_or(usize::MAX)),
+            None => Json::Int(n.as_i64().unwrap_or_default()),
+        },
+        serde_json::Value::String(s) => Json::Str(s.clone()),
+        serde_json::Value::Array(items) => Json::Arr(items.iter().map(from_serde).collect()),
+        serde_json::Value::Object(map) => Json::Map(
+            map.iter()
+                .map(|(k, v)| (k.clone(), from_serde(v)))
+                .collect(),
+        ),
+    }
 }
 
 /// Render a TS/JS file's dump-extract JSON. The reader expects

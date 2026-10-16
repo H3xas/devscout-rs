@@ -590,6 +590,9 @@ pub struct Extraction {
     /// record, appended LAST after `publishes`. See
     /// `HandlerRegistrationRecord`.
     pub handler_registrations: Vec<HandlerRegistrationRecord>,
+    /// Every provisional transport site the file states, appended LAST
+    /// after `handler_registrations`. See `transport::TransportSite`.
+    pub transport: Vec<crate::transport::TransportSite>,
 }
 
 /// One one-type-argument handler registration: an invocation whose name

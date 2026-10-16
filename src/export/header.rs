@@ -147,7 +147,7 @@ pub(super) fn coverage() -> Coverage {
         di_registration: csharp_only,
         unresolved_import: typescript_only,
         test_file: all,
-        transport_address: none,
+        transport_address: csharp_only,
         http_route: none,
         http_client: none,
     }

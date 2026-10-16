@@ -112,6 +112,7 @@ fn graph_omits_units_when_empty_and_appends_them_after_names_otherwise() {
         }],
         units: Vec::new(),
         unresolved_imports: Vec::new(),
+        transport: Vec::new(),
     };
 
     const WITHOUT_UNITS: &str = concat!(
@@ -187,6 +188,7 @@ fn module_resolution_ac_6_unresolved_imports_append_after_units_and_default_empt
         names: Vec::new(),
         units: Vec::new(),
         unresolved_imports: Vec::new(),
+        transport: Vec::new(),
     };
     let without = serde_json::to_string(&graph).unwrap();
     assert!(!without.contains("unresolved_imports"));

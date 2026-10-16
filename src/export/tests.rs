@@ -77,6 +77,7 @@ pub(super) fn indexed_root(label: &str) -> PathBuf {
         names: Vec::new(),
         units: Vec::new(),
         unresolved_imports: Vec::new(),
+        transport: Vec::new(),
     };
     crate::graph::write_graph(&root, &graph).expect("write graph");
     crate::graph::write_fragments_cache(&root, &crate::graph::OrderedMap::default())
@@ -321,7 +322,12 @@ fn fact_export_ac_3_the_coverage_table_states_what_this_release_extracts() {
             );
         }
     }
-    for family in ["publish-site", "handler-registration", "di-registration"] {
+    for family in [
+        "publish-site",
+        "handler-registration",
+        "di-registration",
+        "transport-address",
+    ] {
         assert_eq!(coverage[family]["csharp"], "extracted", "{family}");
         assert_eq!(coverage[family]["typescript"], "not-extracted", "{family}");
         assert_eq!(coverage[family]["rust"], "not-extracted", "{family}");
@@ -329,7 +335,7 @@ fn fact_export_ac_3_the_coverage_table_states_what_this_release_extracts() {
     assert_eq!(coverage["unresolved-import"]["typescript"], "extracted");
     assert_eq!(coverage["unresolved-import"]["csharp"], "not-extracted");
     assert_eq!(coverage["unresolved-import"]["rust"], "not-extracted");
-    for family in ["transport-address", "http-route", "http-client"] {
+    for family in ["http-route", "http-client"] {
         for language in ["csharp", "typescript", "rust"] {
             assert_eq!(
                 coverage[family][language], "not-extracted",

@@ -22,10 +22,37 @@ pub struct FragmentCacheEntry {
 // them. The owner rides inside the payload rather than in the file name so a
 // reader can tell "someone else's cache" from "no cache" in one parse, and so
 // nothing needs to be renamed when a worktree takes the cache over.
+//
+// The payload stamp is required, so a pair an earlier build of the same
+// generation wrote in another shape fails to parse. The index is what reuse
+// planning trusts, and an index that still parsed would keep fragments the
+// rebuild then cannot read: their files would drop out of the graph, and the
+// old cache would stay on disk unreplaced.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct OwnerStamped<V> {
+    payload: u32,
     owner: Option<String>,
     entries: OrderedMap<V>,
+}
+
+/// The fragment payload's form within the current generation; it changes when
+/// the cached shape changes without a generation move.
+pub(super) const PAYLOAD_FORM: u32 = 1;
+
+impl<V> OwnerStamped<V> {
+    fn of(root: &Path, entries: OrderedMap<V>) -> Self {
+        OwnerStamped {
+            payload: PAYLOAD_FORM,
+            owner: owning_worktree(root),
+            entries,
+        }
+    }
+}
+
+fn parse_stamped<V: serde::de::DeserializeOwned>(text: &str) -> Option<OwnerStamped<V>> {
+    serde_json::from_str::<OwnerStamped<V>>(text)
+        .ok()
+        .filter(|stamped| stamped.payload == PAYLOAD_FORM)
 }
 
 fn owning_worktree(root: &Path) -> Option<String> {
@@ -36,7 +63,7 @@ pub(crate) fn read_fragments_cache(root: &Path) -> OrderedMap<FragmentCacheEntry
     let Ok(text) = fs::read_to_string(fragments_cache_path(root)) else {
         return OrderedMap::default();
     };
-    let Ok(stamped) = serde_json::from_str::<OwnerStamped<FragmentCacheEntry>>(&text) else {
+    let Some(stamped) = parse_stamped::<FragmentCacheEntry>(&text) else {
         return OrderedMap::default();
     };
     if stamped.owner != owning_worktree(root) {
@@ -49,11 +76,10 @@ pub(crate) fn write_fragments_cache(
     root: &Path,
     cache: &OrderedMap<FragmentCacheEntry>,
 ) -> io::Result<()> {
-    let stamped = OwnerStamped {
-        owner: owning_worktree(root),
-        entries: cache.clone(),
-    };
-    atomic_write_json(&fragments_cache_path(root), &stamped)
+    atomic_write_json(
+        &fragments_cache_path(root),
+        &OwnerStamped::of(root, cache.clone()),
+    )
 }
 
 /// Read the fragments index (rel -> reuse key). Used for the per-file reuse
@@ -62,7 +88,7 @@ pub fn read_fragments_index(root: &Path) -> OrderedMap<i64> {
     let Ok(text) = fs::read_to_string(fragments_index_path(root)) else {
         return OrderedMap::default();
     };
-    let Ok(stamped) = serde_json::from_str::<OwnerStamped<i64>>(&text) else {
+    let Some(stamped) = parse_stamped::<i64>(&text) else {
         return OrderedMap::default();
     };
     if stamped.owner != owning_worktree(root) {
@@ -79,11 +105,7 @@ pub(crate) fn write_fragments_index(
     for (rel, entry) in cache.iter() {
         index.insert(rel.clone(), entry.mtime);
     }
-    let stamped = OwnerStamped {
-        owner: owning_worktree(root),
-        entries: index,
-    };
-    atomic_write_json(&fragments_index_path(root), &stamped)
+    atomic_write_json(&fragments_index_path(root), &OwnerStamped::of(root, index))
 }
 
 /// Whether the fragments index is stale for the given graph files (any key
@@ -162,8 +184,7 @@ pub(crate) fn read_fragments_messaging(
     let path = fragments_cache_path(root);
     let before = crate::freshness::record::ArtifactIdentity::of(&path);
     let text = fs::read_to_string(&path).map_err(|_| StrictCacheError::Missing)?;
-    let stamped: OwnerStamped<LightEntry> =
-        serde_json::from_str(&text).map_err(|_| StrictCacheError::Unreadable)?;
+    let stamped = parse_stamped::<LightEntry>(&text).ok_or(StrictCacheError::Unreadable)?;
     if stamped.owner.as_deref() != Some(owner) {
         return Err(StrictCacheError::ForeignOwner);
     }

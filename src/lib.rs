@@ -66,6 +66,9 @@ pub mod store;
 pub mod suggest;
 /// Query-verb telemetry: one JSON line per invocation under `SCOUT_TELEMETRY=1`.
 pub mod telemetry;
+/// MassTransit transport configuration facts, recognized through a closed
+/// catalogue of package types.
+pub mod transport;
 /// The independent semantic-truth, profile, and falsification harness.
 pub mod truth;
 /// Resolution of extracted TypeScript fragments into a graph.

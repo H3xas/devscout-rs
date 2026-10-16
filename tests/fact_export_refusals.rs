@@ -140,7 +140,7 @@ fn fact_export_ac_6_an_older_graph_schema_refuses_with_unknown_generation() {
 fn fact_export_ac_6_a_cache_of_another_generation_refuses_with_unknown_generation() {
     let fixture = Fixture::build("csharp");
     let cache = fixture.cache_path();
-    let older = cache.with_file_name("fragments-v39.json");
+    let older = cache.with_file_name("fragments-v40.json");
     fs::rename(&cache, &older).expect("rename the cache to an older generation");
     assert_refused(&fixture, "unknown-generation", None);
 }

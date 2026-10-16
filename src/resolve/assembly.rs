@@ -1309,6 +1309,7 @@ pub fn resolve_graph_with_model(
         // csproj-less repo's graph.json byte-identical to what it was.
         units: model.map(crate::project::graph_units).unwrap_or_default(),
         unresolved_imports: Vec::new(),
+        transport: Vec::new(),
     };
     crate::tsgraph::extend_graph(root, ts_fragments_by_file, &mut graph);
     graph
