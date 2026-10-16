@@ -85,8 +85,31 @@ fn carrier_files(key: &str) -> Vec<(String, Fragment)> {
     ]
 }
 
+// The carrier's second partial declaration, in a file of its own, declaring
+// one method `name` with the given parameter descriptors.
+fn second_part(name: &str, params: &[&str]) -> (String, Fragment) {
+    let mut part = def(
+        "App.Shoal.ShoalIndexer",
+        "ShoalIndexer",
+        "App.Shoal",
+        "class",
+    );
+    part.method_params.insert(
+        name.to_string(),
+        vec![params.iter().map(|p| p.to_string()).collect()],
+    );
+    (
+        "Shoal/CarriersMore.cs".to_string(),
+        frag(vec![part], vec![], vec![]),
+    )
+}
+
 fn carrier_hops(key: &str) -> Vec<(String, String, String)> {
-    let g = resolve_graph(&no_git_root(), &carrier_files(key));
+    hops_of(&carrier_files(key))
+}
+
+fn hops_of(files: &[(String, Fragment)]) -> Vec<(String, String, String)> {
+    let g = resolve_graph(&no_git_root(), files);
     g.edges
         .iter()
         .filter_map(|e| match e {
@@ -128,5 +151,28 @@ fn reserved_param_keys_ac_2_the_same_descriptor_under_a_method_name_admits_the_b
             "App.Shoal.ShoalNotice".to_string(),
             "base-arg".to_string()
         )]
+    );
+}
+
+#[test]
+fn reserved_param_keys_ac_2_a_partial_declaration_merges_no_reserved_entry_into_a_parameter() {
+    let mut files = carrier_files("@result:Index");
+    files.push(second_part("Index", &[]));
+    assert_eq!(
+        hops_of(&files),
+        Vec::<(String, String, String)>::new(),
+        "the other part's parameterless Index does not turn the result into a parameter"
+    );
+
+    let mut files = carrier_files("@result:Index");
+    files.push(second_part("Watch", &["ShoalNotice"]));
+    assert_eq!(
+        hops_of(&files),
+        vec![(
+            "App.Shoal.ShoalIndexer".to_string(),
+            "App.Shoal.ShoalNotice".to_string(),
+            "base-arg".to_string()
+        )],
+        "a real parameter in another part still admits"
     );
 }
