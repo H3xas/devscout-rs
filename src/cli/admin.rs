@@ -4,8 +4,11 @@
 
 use std::path::Path;
 
+use crate::exit::{EXIT_FAILURE, EXIT_OK, EXIT_USAGE};
+use crate::layout;
 use crate::mapcmd;
 use crate::store;
+use crate::usage::{CLEAR_OLDER_THAN_USAGE, CLEAR_SESSION_USAGE};
 
 use super::args::parse_int_js;
 use super::root::require_repo;
@@ -24,7 +27,7 @@ use super::root::require_repo;
 pub(crate) fn cmd_map(cwd: &Path, args: &[String]) -> (i32, String) {
     let root = match require_repo(cwd) {
         Ok(r) => r,
-        Err(e) => return (1, format!("error: {e}")),
+        Err(e) => return (EXIT_FAILURE, format!("error: {e}")),
     };
     let no_semantic = args.iter().any(|a| a.as_str() == "--no-semantic");
     let dirs: Vec<String> = args
@@ -38,10 +41,13 @@ pub(crate) fn cmd_map(cwd: &Path, args: &[String]) -> (i32, String) {
     };
     match mapcmd::map_repo(&root, &dirs, opts) {
         Ok(report) => match &report.lane {
-            Some(lane) => (0, format!("{}\n{}", report.summary_line(), lane.line())),
-            None => (0, report.summary_line()),
+            Some(lane) => (
+                EXIT_OK,
+                format!("{}\n{}", report.summary_line(), lane.line()),
+            ),
+            None => (EXIT_OK, report.summary_line()),
         },
-        Err(e) => (1, format!("error: {e}")),
+        Err(e) => (EXIT_FAILURE, format!("error: {e}")),
     }
 }
 
@@ -53,15 +59,15 @@ pub(crate) fn cmd_map(cwd: &Path, args: &[String]) -> (i32, String) {
 pub(crate) fn cmd_stats(cwd: &Path) -> (i32, String) {
     let root = match require_repo(cwd) {
         Ok(r) => r,
-        Err(e) => return (1, format!("error: {e}")),
+        Err(e) => return (EXIT_FAILURE, format!("error: {e}")),
     };
     let db = match store::open_store(&root) {
         Ok(c) => c,
-        Err(e) => return (1, format!("error: {e}")),
+        Err(e) => return (EXIT_FAILURE, format!("error: {e}")),
     };
     let s = match store::stats_for(&db) {
         Ok(s) => s,
-        Err(e) => return (1, format!("error: {e}")),
+        Err(e) => return (EXIT_FAILURE, format!("error: {e}")),
     };
 
     let mut lines = vec![
@@ -78,7 +84,7 @@ pub(crate) fn cmd_stats(cwd: &Path) -> (i32, String) {
 
     let b = match store::bash_stats_for(&db) {
         Ok(b) => b,
-        Err(e) => return (1, format!("error: {e}")),
+        Err(e) => return (EXIT_FAILURE, format!("error: {e}")),
     };
     if b.commands_tracked > 0 {
         lines.push(format!("  bash commands tracked: {}", b.commands_tracked));
@@ -107,7 +113,7 @@ pub(crate) fn cmd_stats(cwd: &Path) -> (i32, String) {
 
     let per_session = match store::session_stats(&db) {
         Ok(v) => v,
-        Err(e) => return (1, format!("error: {e}")),
+        Err(e) => return (EXIT_FAILURE, format!("error: {e}")),
     };
     if !per_session.is_empty() {
         lines.push(String::new());
@@ -128,7 +134,7 @@ pub(crate) fn cmd_stats(cwd: &Path) -> (i32, String) {
 
     let top = match store::top_stubbed(&db, 5) {
         Ok(v) => v,
-        Err(e) => return (1, format!("error: {e}")),
+        Err(e) => return (EXIT_FAILURE, format!("error: {e}")),
     };
     if !top.is_empty() {
         lines.push(String::new());
@@ -142,7 +148,7 @@ pub(crate) fn cmd_stats(cwd: &Path) -> (i32, String) {
         }
     }
 
-    (0, lines.join("\n"))
+    (EXIT_OK, lines.join("\n"))
 }
 
 // `clear`. Three forms, checked in this exact order so the first flag present
@@ -156,26 +162,26 @@ pub(crate) fn cmd_stats(cwd: &Path) -> (i32, String) {
 pub(crate) fn cmd_clear(cwd: &Path, args: &[String]) -> (i32, String) {
     let root = match require_repo(cwd) {
         Ok(r) => r,
-        Err(e) => return (1, format!("error: {e}")),
+        Err(e) => return (EXIT_FAILURE, format!("error: {e}")),
     };
 
     if let Some(idx) = args.iter().position(|a| a == "--older-than") {
         let raw = args.get(idx + 1).map(String::as_str).unwrap_or("");
         let days = match parse_int_js(raw) {
             Some(d) if d >= 0 => d,
-            _ => return (2, "usage: devscout clear --older-than <days>".to_string()),
+            _ => return (EXIT_USAGE, CLEAR_OLDER_THAN_USAGE.to_string()),
         };
         let db = match store::open_store(&root) {
             Ok(c) => c,
-            Err(e) => return (1, format!("error: {e}")),
+            Err(e) => return (EXIT_FAILURE, format!("error: {e}")),
         };
         let deleted = match store::prune(&db, Some(days as f64), None) {
             Ok(n) => n,
-            Err(e) => return (1, format!("error: {e}")),
+            Err(e) => return (EXIT_FAILURE, format!("error: {e}")),
         };
         let suffix = if deleted == 1 { "" } else { "s" };
         return (
-            0,
+            EXIT_OK,
             format!("deleted {deleted} row{suffix} older than {days}d"),
         );
     }
@@ -183,25 +189,22 @@ pub(crate) fn cmd_clear(cwd: &Path, args: &[String]) -> (i32, String) {
     if let Some(idx) = args.iter().position(|a| a == "--session") {
         let prefix = args.get(idx + 1).map(String::as_str).unwrap_or("");
         if prefix.is_empty() {
-            return (
-                2,
-                "usage: devscout clear --session <id-or-prefix>".to_string(),
-            );
+            return (EXIT_USAGE, CLEAR_SESSION_USAGE.to_string());
         }
         let db = match store::open_store(&root) {
             Ok(c) => c,
-            Err(e) => return (1, format!("error: {e}")),
+            Err(e) => return (EXIT_FAILURE, format!("error: {e}")),
         };
         let matches = match store::session_ids_by_prefix(&db, prefix) {
             Ok(v) => v,
-            Err(e) => return (1, format!("error: {e}")),
+            Err(e) => return (EXIT_FAILURE, format!("error: {e}")),
         };
         if matches.is_empty() {
-            return (0, format!("no sessions match \"{prefix}\""));
+            return (EXIT_OK, format!("no sessions match \"{prefix}\""));
         }
         if matches.len() > 1 {
             return (
-                2,
+                EXIT_USAGE,
                 format!(
                     "ambiguous session prefix \"{prefix}\": {}",
                     matches.join(", ")
@@ -210,23 +213,23 @@ pub(crate) fn cmd_clear(cwd: &Path, args: &[String]) -> (i32, String) {
         }
         let deleted = match store::prune(&db, None, Some(matches[0].as_str())) {
             Ok(n) => n,
-            Err(e) => return (1, format!("error: {e}")),
+            Err(e) => return (EXIT_FAILURE, format!("error: {e}")),
         };
         let suffix = if deleted == 1 { "" } else { "s" };
         let session = &matches[0];
         return (
-            0,
+            EXIT_OK,
             format!("deleted {deleted} row{suffix} for session {session}"),
         );
     }
 
-    let db_path = crate::repo::scout_dir(&root).join("cache.db");
+    let db_path = crate::repo::scout_dir(&root).join(layout::CACHE_DB_FILE);
     if db_path.exists() {
         if let Err(e) = std::fs::remove_file(&db_path) {
-            return (1, format!("error: {e}"));
+            return (EXIT_FAILURE, format!("error: {e}"));
         }
     }
-    (0, "cache cleared".to_string())
+    (EXIT_OK, "cache cleared".to_string())
 }
 
 // `Math.round`-style rounding: `floor(x + 0.5)`, NOT Rust's `f64::round` (which

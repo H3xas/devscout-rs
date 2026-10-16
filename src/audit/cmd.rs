@@ -2,6 +2,9 @@
 
 use std::path::Path;
 
+use crate::exit::{EXIT_FAILURE, EXIT_OK};
+use crate::usage::AUDIT_USAGE;
+
 use super::assert_check::evaluate_assert;
 use super::load::load;
 use super::model::AuditOptions;
@@ -31,15 +34,13 @@ pub(crate) fn cmd_audit(cwd: &Path, args: &[String]) -> (i32, String) {
         Ok(outcome) => outcome,
         Err(message) if json_mode => {
             eprintln!("{message}");
-            (1, String::new())
+            (EXIT_FAILURE, String::new())
         }
-        Err(message) => (1, message),
+        Err(message) => (EXIT_FAILURE, message),
     }
 }
 
 fn run(cwd: &Path, args: &[String]) -> Result<(i32, String), String> {
-    const USAGE: &str = "usage: devscout audit --semantic <refs.jsonl> [--units F] [--defs F] [--json] [--assert F] [--fp-sites F]";
-
     let mut semantic: Option<String> = None;
     let mut units: Option<String> = None;
     let mut defs: Option<String> = None;
@@ -55,7 +56,7 @@ fn run(cwd: &Path, args: &[String]) -> Result<(i32, String), String> {
             "--semantic" | "--units" | "--defs" | "--assert" | "--fp-sites"
         ) {
             let Some(val) = args.get(i + 1) else {
-                return Err(format!("error: missing value for '{flag}'\n{USAGE}"));
+                return Err(format!("error: missing value for '{flag}'\n{AUDIT_USAGE}"));
             };
             match flag {
                 "--semantic" => semantic = Some(val.clone()),
@@ -70,12 +71,14 @@ fn run(cwd: &Path, args: &[String]) -> Result<(i32, String), String> {
             json = true;
             i += 1;
         } else {
-            return Err(format!("error: unrecognized argument '{flag}'\n{USAGE}"));
+            return Err(format!(
+                "error: unrecognized argument '{flag}'\n{AUDIT_USAGE}"
+            ));
         }
     }
     let Some(semantic) = semantic else {
         return Err(format!(
-            "error: --semantic <refs.jsonl> is required\n{USAGE}"
+            "error: --semantic <refs.jsonl> is required\n{AUDIT_USAGE}"
         ));
     };
 
@@ -119,8 +122,8 @@ fn run(cwd: &Path, args: &[String]) -> Result<(i32, String), String> {
                 out.push('\n');
                 out.push_str(&violations.join("\n"));
             }
-            return Ok((1, out));
+            return Ok((EXIT_FAILURE, out));
         }
     }
-    Ok((0, out))
+    Ok((EXIT_OK, out))
 }

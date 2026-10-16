@@ -102,9 +102,9 @@ pub use cache::{index_is_stale, read_fragments_index, FragMessaging, FragmentCac
 pub(crate) use cache::{read_fragments_messaging, superseded_cache_present, StrictCacheError};
 pub use call_shape_types::{FragDelegateSignature, FragLambdaShape};
 pub use compiler_facts::{
-    admit, admit_and_publish, compiler_facts_json_path, expectations_for, locate_engine,
-    read_compiler_facts, run_engine, AdmissionExpectations, AdmittedFacts, CompilationTally,
-    Coverage, IncompleteUnit, Profile, PublishError, RefusalReason,
+    admit, admit_and_publish, compiler_facts_file_name, compiler_facts_json_path, expectations_for,
+    locate_engine, read_compiler_facts, run_engine, AdmissionExpectations, AdmittedFacts,
+    CompilationTally, Coverage, IncompleteUnit, Profile, PublishError, RefusalReason,
     COMPILER_FACTS_ARTIFACT_SCHEMA_VERSION, COMPILER_FACTS_CONTRACT_VERSION, COMPILER_FACTS_FORMAT,
     DEFAULT_OUTPUT_CAP, DEFAULT_TIMEOUT, EXPECTED_CONTEXT_SCHEMA_VERSION,
     EXPECTED_DEPENDENCY_FINGERPRINT, EXPECTED_ENGINE_REVISION, EXPECTED_PRODUCER_NAME,
@@ -124,12 +124,13 @@ pub use fragment_types::{
 };
 pub use imports::{
     imported_edges_json_path, parse_imported_edges, read_imported_edges, write_imported_edges,
-    EdgeEnd, ImportRecord, ImportedEdges, Provenance, IMPORTED_EDGES_FORMAT,
-    IMPORTED_EDGES_SCHEMA_VERSION, IMPORTED_EDGE_KINDS,
+    EdgeEnd, ImportRecord, ImportedEdges, Provenance, IMPORTED_EDGES_ARTIFACT_SCHEMA_VERSION,
+    IMPORTED_EDGES_FORMAT, IMPORTED_EDGES_SCHEMA_VERSION, IMPORTED_EDGE_KINDS,
 };
 pub use lane::{LaneCompilations, LaneReason, LaneStats};
 pub use ordered::{OrderedMap, Percent1};
-pub(crate) use paths::{fragment_generation, fragments_cache_path};
+pub use paths::fragment_generation;
+pub(crate) use paths::fragments_cache_path;
 pub use paths::{graph_json_path, project_units_path, rust_crates_path};
 pub use rebuild::{rebuild_graph, rebuild_graph_with_crates, GraphFile, RebuildOutcome};
 

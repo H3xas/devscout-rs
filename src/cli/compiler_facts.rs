@@ -11,14 +11,14 @@ use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
 
+use crate::exit::{EXIT_FAILURE, EXIT_OK, EXIT_USAGE};
 use crate::graph;
+use crate::usage::{
+    COMPILER_FACTS_IMPORT_USAGE, COMPILER_FACTS_RUN_USAGE, COMPILER_FACTS_STATUS_USAGE,
+    COMPILER_FACTS_USAGE,
+};
 
 use super::root::require_repo;
-
-const RUN_USAGE: &str = "usage: devscout compiler-facts run --solution <path.sln|path.csproj> [--target T] [--configuration C] [--platform P] [--capabilities a,b] [--timeout-ms N] [--output-cap-bytes N]";
-const IMPORT_USAGE: &str =
-    "usage: devscout compiler-facts import <file> [--target T] [--configuration C] [--platform P]";
-const STATUS_USAGE: &str = "usage: devscout compiler-facts status";
 
 fn flag_value<'a>(args: &'a [String], flag: &str) -> Option<&'a str> {
     let idx = args.iter().position(|a| a == flag)?;
@@ -60,10 +60,10 @@ fn parse_positive_usize(args: &[String], flag: &str, default: usize) -> Option<u
 
 fn publish_outcome(result: Result<graph::AdmittedFacts, graph::PublishError>) -> (i32, String) {
     match result {
-        Ok(facts) => (0, coverage_line(&facts)),
-        Err(graph::PublishError::Refused(reason)) => (1, format!("refused: {reason}")),
+        Ok(facts) => (EXIT_OK, coverage_line(&facts)),
+        Err(graph::PublishError::Refused(reason)) => (EXIT_FAILURE, format!("refused: {reason}")),
         Err(graph::PublishError::Io(e)) => (
-            1,
+            EXIT_FAILURE,
             format!("error: cannot write compiler-facts artifact: {e}"),
         ),
     }
@@ -187,11 +187,11 @@ fn engine_command(engine: &Path, root: &Path, solution: &Path, args: &[String]) 
 pub(crate) fn cmd_compiler_facts_run(cwd: &Path, args: &[String]) -> (i32, String) {
     let root = match require_repo(cwd) {
         Ok(r) => r,
-        Err(e) => return (1, format!("error: {e}")),
+        Err(e) => return (EXIT_FAILURE, format!("error: {e}")),
     };
     let Some(engine) = graph::locate_engine() else {
         return (
-            1,
+            EXIT_FAILURE,
             format!(
                 "error: no engine located; set {} to the built engine executable",
                 graph::SCOUT_COMPILER_ENGINE
@@ -203,15 +203,15 @@ pub(crate) fn cmd_compiler_facts_run(cwd: &Path, args: &[String]) -> (i32, Strin
         "--timeout-ms",
         graph::DEFAULT_TIMEOUT.as_millis() as usize,
     ) else {
-        return (2, RUN_USAGE.to_string());
+        return (EXIT_USAGE, COMPILER_FACTS_RUN_USAGE.to_string());
     };
     let Some(output_cap) =
         parse_positive_usize(args, "--output-cap-bytes", graph::DEFAULT_OUTPUT_CAP)
     else {
-        return (2, RUN_USAGE.to_string());
+        return (EXIT_USAGE, COMPILER_FACTS_RUN_USAGE.to_string());
     };
     let Some(solution) = flag_value(args, "--solution") else {
-        return (2, RUN_USAGE.to_string());
+        return (EXIT_USAGE, COMPILER_FACTS_RUN_USAGE.to_string());
     };
     let solution_abs = crate::repo::resolve_from(cwd, Path::new(solution));
 
@@ -222,7 +222,7 @@ pub(crate) fn cmd_compiler_facts_run(cwd: &Path, args: &[String]) -> (i32, Strin
         output_cap,
     ) {
         Ok(b) => b,
-        Err(reason) => return (1, format!("refused: {reason}")),
+        Err(reason) => return (EXIT_FAILURE, format!("refused: {reason}")),
     };
 
     let expected = graph::expectations_for(&root, requested_profile(args));
@@ -233,16 +233,16 @@ pub(crate) fn cmd_compiler_facts_run(cwd: &Path, args: &[String]) -> (i32, Strin
 /// artifact through the same `graph::admit_and_publish` call `run` uses.
 pub(crate) fn cmd_compiler_facts_import(cwd: &Path, args: &[String]) -> (i32, String) {
     let Some(path) = args.iter().find(|a| !a.starts_with("--")) else {
-        return (2, IMPORT_USAGE.to_string());
+        return (EXIT_USAGE, COMPILER_FACTS_IMPORT_USAGE.to_string());
     };
     let root = match require_repo(cwd) {
         Ok(r) => r,
-        Err(e) => return (1, format!("error: {e}")),
+        Err(e) => return (EXIT_FAILURE, format!("error: {e}")),
     };
     let abs = crate::repo::resolve_from(cwd, Path::new(path));
     let bytes = match fs::read(&abs) {
         Ok(b) => b,
-        Err(e) => return (1, format!("error: cannot read \"{path}\": {e}")),
+        Err(e) => return (EXIT_FAILURE, format!("error: cannot read \"{path}\": {e}")),
     };
     let expected = graph::expectations_for(&root, requested_profile(args));
     publish_outcome(graph::admit_and_publish(&root, &bytes, &expected))
@@ -254,12 +254,12 @@ pub(crate) fn cmd_compiler_facts_import(cwd: &Path, args: &[String]) -> (i32, St
 pub(crate) fn cmd_compiler_facts_status(cwd: &Path, _args: &[String]) -> (i32, String) {
     let root = match require_repo(cwd) {
         Ok(r) => r,
-        Err(e) => return (1, format!("error: {e}")),
+        Err(e) => return (EXIT_FAILURE, format!("error: {e}")),
     };
     match graph::read_compiler_facts(&root) {
-        Some(facts) => (0, coverage_line(&facts)),
+        Some(facts) => (EXIT_OK, coverage_line(&facts)),
         None => (
-            0,
+            EXIT_OK,
             "coverage: syntax-only (no compiler-facts artifact admitted)".to_string(),
         ),
     }
@@ -272,8 +272,14 @@ pub(crate) fn cmd_compiler_facts(cwd: &Path, args: &[String]) -> (i32, String) {
         Some("import") => cmd_compiler_facts_import(cwd, &args[1..]),
         Some("status") => cmd_compiler_facts_status(cwd, &args[1..]),
         _ => (
-            2,
-            format!("usage: devscout compiler-facts <run|import|status>\n{RUN_USAGE}\n{IMPORT_USAGE}\n{STATUS_USAGE}"),
+            EXIT_USAGE,
+            format!(
+                "{}\n{}\n{}\n{}",
+                COMPILER_FACTS_USAGE,
+                COMPILER_FACTS_RUN_USAGE,
+                COMPILER_FACTS_IMPORT_USAGE,
+                COMPILER_FACTS_STATUS_USAGE
+            ),
         ),
     }
 }

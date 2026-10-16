@@ -40,7 +40,7 @@ pub use expectations::{
     expectations_for, AdmissionExpectations, EXPECTED_CONTEXT_SCHEMA_VERSION,
     EXPECTED_DEPENDENCY_FINGERPRINT, EXPECTED_ENGINE_REVISION, EXPECTED_PRODUCER_NAME,
 };
-pub use paths::compiler_facts_json_path;
+pub use paths::{compiler_facts_file_name, compiler_facts_json_path};
 pub use reasons::RefusalReason;
 pub use run::{run_engine, DEFAULT_OUTPUT_CAP, DEFAULT_TIMEOUT};
 

@@ -1,6 +1,8 @@
 use std::fs;
 use std::process;
 
+use crate::exit::EXIT_FAILURE;
+
 use super::json::{extraction_to_json, ts_extraction_to_json};
 use super::ts_fragment::extract_ts_file;
 use super::ts_fragment_types::TsFragment;
@@ -14,7 +16,7 @@ use super::walk::extract;
 pub fn run_extract_dump(path: &str) {
     let source = fs::read_to_string(path).unwrap_or_else(|err| {
         eprintln!("failed to read {path}: {err}");
-        process::exit(1);
+        process::exit(EXIT_FAILURE);
     });
     // The dump path dispatches on extension: a C# file yields a fragment read
     // as `{purpose, defs, usings, refs, names}`, while a TS/JS file yields a

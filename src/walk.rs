@@ -49,6 +49,7 @@ use std::fs::{self, DirEntry};
 use std::io;
 use std::path::Path;
 
+use crate::layout;
 use crate::repo;
 
 /// Directory names skipped outright (and never recursed into), regardless
@@ -57,7 +58,7 @@ use crate::repo;
 pub const SKIP_DIRS: &[&str] = &[
     "node_modules",
     ".git",
-    ".scout",
+    layout::FALLBACK_DIR,
     "bin",
     "obj",
     "dist",

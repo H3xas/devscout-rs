@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::Serialize;
 
+use crate::layout;
 use crate::repo::{git_common_dir, scout_dir};
 
 // ---------------------------------------------------------------------------
@@ -16,14 +17,14 @@ use crate::repo::{git_common_dir, scout_dir};
 // back to `<root>/.scout/graph/`.
 pub(crate) fn graph_dir(root: &Path) -> PathBuf {
     match git_common_dir(root) {
-        Some(common) => common.join("scout").join("graph"),
-        None => scout_dir(root).join("graph"),
+        Some(common) => common.join(layout::SCOUT_DIR).join(layout::GRAPH_DIR),
+        None => scout_dir(root).join(layout::GRAPH_DIR),
     }
 }
 
 /// Path to the graph artifact (`graph.json`) for `root`.
 pub fn graph_json_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("graph.json")
+    graph_dir(root).join(layout::GRAPH_FILE)
 }
 
 /// Path to the project-model staleness sidecar for `root`.
@@ -37,7 +38,7 @@ pub fn graph_json_path(root: &Path) -> PathBuf {
 /// so a repo that never had a `.csproj` never grows the file and one whose
 /// last `.csproj` was removed still sees a difference on the next run.
 pub fn project_units_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("project-units.json")
+    graph_dir(root).join(layout::PROJECT_UNITS_FILE)
 }
 
 /// Path to the Rust crate-model sidecar for `root`.
@@ -48,7 +49,7 @@ pub fn project_units_path(root: &Path) -> PathBuf {
 /// walked mtime. Written only when a package is in scope and deleted
 /// otherwise, the same rule as `project_units_path`.
 pub fn rust_crates_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("rust-crates.json")
+    graph_dir(root).join(layout::RUST_CRATES_FILE)
 }
 
 // The version in both cache filenames is the fragment SCHEMA version, bumped
@@ -209,19 +210,16 @@ pub fn rust_crates_path(root: &Path) -> PathBuf {
 // once, no reader carries version-compat logic. Writers delete every
 // superseded generation (see `remove_superseded_caches`).
 pub(crate) fn fragments_cache_path(root: &Path) -> PathBuf {
-    graph_dir(root).join(FRAGMENT_CACHE_FILE)
+    graph_dir(root).join(layout::FRAGMENT_CACHE_FILE)
 }
 
-// The current generation's cache file name, the one place its number is
-// spelled. A consumer of the export states the generation it read, and the
-// name is what says which one that is.
-pub(crate) const FRAGMENT_CACHE_FILE: &str = "fragments-v38.json";
-
-/// The fragment generation this build reads and writes, parsed from the cache
-/// file name above. The rename IS the invalidation mechanism, so the number a
-/// reader reports can only ever be the one this build's own path carries.
-pub(crate) fn fragment_generation() -> u32 {
-    FRAGMENT_CACHE_FILE
+/// The fragment generation this build reads and writes.
+///
+/// Parsed from the cache file name: the rename IS the invalidation mechanism,
+/// so the number a reader reports can only ever be the one this build's own
+/// path carries.
+pub fn fragment_generation() -> u32 {
+    layout::FRAGMENT_CACHE_FILE
         .trim_start_matches("fragments-v")
         .trim_end_matches(".json")
         .parse()
@@ -229,7 +227,7 @@ pub(crate) fn fragment_generation() -> u32 {
 }
 
 pub(crate) fn fragments_index_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-index-v38.json")
+    graph_dir(root).join(layout::FRAGMENT_INDEX_FILE)
 }
 
 // Every generation below the current one, not just the immediately previous:

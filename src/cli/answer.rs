@@ -8,6 +8,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
+use crate::exit::{EXIT_FAILURE, EXIT_NO_RESULT};
 use crate::freshness::{validate, FreshnessState};
 use crate::graph;
 use crate::query;
@@ -16,11 +17,6 @@ use crate::suggest;
 use crate::telemetry;
 
 use super::root::require_repo;
-
-// A zero-hit answer is neither success nor failure: the index was read and the
-// answer is empty. Distinct from 1 (environment, refusal) and 2 (usage) so a
-// caller can branch on it instead of rephrasing the query.
-pub(crate) const EXIT_NO_RESULT: i32 = 3;
 
 // These four notes go to STDERR, never stdout, so a zero hit leaves stdout
 // exactly as empty as it was -- a caller parsing stdout sees no difference, and
@@ -204,14 +200,14 @@ pub(crate) fn ambiguous_candidates_out(
                 ])
             })
             .collect();
-        return (1, ambiguous_json(q, candidates));
+        return (EXIT_FAILURE, ambiguous_json(q, candidates));
     }
     let mut out = vec![format!(
         "ambiguous symbol \"{q}\" — {} candidates:",
         rows.len()
     )];
     out.extend(rows.into_iter().map(|(row, _, _)| row));
-    (1, out.join("\n"))
+    (EXIT_FAILURE, out.join("\n"))
 }
 
 // Renders a member-ambiguous outcome (`RefsResult::MemberAmbiguous` and its
@@ -237,7 +233,7 @@ pub(crate) fn member_ambiguous_out(
                 ])
             })
             .collect();
-        return (1, ambiguous_json(q, rows));
+        return (EXIT_FAILURE, ambiguous_json(q, rows));
     }
     let mut out = vec![format!(
         "ambiguous member \"{q}\" — {} candidates:",
@@ -246,7 +242,7 @@ pub(crate) fn member_ambiguous_out(
     for c in candidates {
         out.push(format!("{}.{}  {}:{}", c.owner, c.name, c.file, c.line));
     }
-    (1, out.join("\n"))
+    (EXIT_FAILURE, out.join("\n"))
 }
 
 // Renders a fully-unresolved query (`NotFound` on every one of `refs`/`read`/

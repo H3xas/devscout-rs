@@ -15,6 +15,8 @@ pub mod audit;
 pub mod bus_seed;
 /// Command-line argument parsing and dispatch.
 pub mod cli;
+/// The process exit statuses every command returns.
+pub mod exit;
 /// The versioned NDJSON export of one repository's whole fact set.
 pub mod export;
 /// C#, TypeScript and Rust declaration extraction, and C# and TypeScript
@@ -28,6 +30,8 @@ pub mod graph;
 pub mod hookio;
 /// Repository initialization commands.
 pub mod initcmd;
+/// The artifact file names and directory segments devscout writes.
+pub mod layout;
 /// Manifest persistence, search, and index-freshness checks.
 pub mod manifest;
 /// Repository mapping and incremental fragment-cache updates.
@@ -66,6 +70,8 @@ pub mod telemetry;
 pub mod truth;
 /// Resolution of extracted TypeScript fragments into a graph.
 pub mod tsgraph;
+/// The usage line each verb prints when its own arguments do not parse.
+pub mod usage;
 /// Source-tree walking and default file-purpose generation.
 pub mod walk;
 

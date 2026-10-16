@@ -3,6 +3,7 @@
 // `--hub-max-indegree` all use, `--no-guess`, and the `--json`/`--compact`
 // conflict check.
 
+use crate::exit::EXIT_FAILURE;
 use crate::query;
 
 // The first non-flag argument -- the symbol `refs`/`read`/`tests` take.
@@ -95,7 +96,7 @@ pub(crate) fn output_flags(verb: &str, args: &[String]) -> Result<(bool, bool), 
     let compact = args.iter().any(|a| a == "--compact");
     if json && compact {
         return Err((
-            1,
+            EXIT_FAILURE,
             format!("devscout {verb}: --compact and --json are mutually exclusive"),
         ));
     }

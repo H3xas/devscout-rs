@@ -7,6 +7,8 @@ use std::process;
 
 use tree_sitter::{Node, Parser};
 
+use crate::exit::EXIT_FAILURE;
+
 const TYPE_KINDS: &[&str] = &[
     "class_declaration",
     "interface_declaration",
@@ -83,7 +85,7 @@ pub fn utf16_index(byte: usize) -> usize {
 pub fn run_parse(path: &str) {
     let source = fs::read_to_string(path).unwrap_or_else(|err| {
         eprintln!("failed to read {path}: {err}");
-        process::exit(1);
+        process::exit(EXIT_FAILURE);
     });
 
     let mut parser = new_parser();
@@ -190,7 +192,7 @@ pub struct SpanRecord {
 pub fn run_spans(path: &str) {
     let source = fs::read_to_string(path).unwrap_or_else(|err| {
         eprintln!("failed to read {path}: {err}");
-        process::exit(1);
+        process::exit(EXIT_FAILURE);
     });
     let records = collect_spans(&source);
     println!("{}", spans_json(&records));

@@ -5,8 +5,10 @@
 use std::path::Path;
 use std::time::Instant;
 
+use crate::exit::{EXIT_FAILURE, EXIT_OK, EXIT_USAGE};
 use crate::query;
 use crate::render;
+use crate::usage::READ_USAGE;
 
 use super::answer::{
     ambiguous_candidates_out, begin_validation, fallback_advised_out, finish_query,
@@ -22,8 +24,6 @@ use super::root::{require_graph, require_repo};
 // a name becomes an answer -- so the ambiguity and zero-hit discipline
 // cannot drift between the two verbs; only the resolved arm grows the
 // declaration span.
-const READ_USAGE: &str =
-    "usage: devscout read <symbol> [--no-guess] [--no-dispatch] [--no-bus] [--pick N] [--json|--compact]";
 
 pub(crate) fn cmd_read(cwd: &Path, args: &[String]) -> (i32, String, Option<&'static str>) {
     let start = Instant::now();
@@ -32,14 +32,14 @@ pub(crate) fn cmd_read(cwd: &Path, args: &[String]) -> (i32, String, Option<&'st
         Err((code, out)) => return (code, out, None),
     };
     let Ok(pick) = parse_pick(args) else {
-        return (2, READ_USAGE.to_string(), None);
+        return (EXIT_USAGE, READ_USAGE.to_string(), None);
     };
     let Some(q) = first_positional(args) else {
-        return (2, READ_USAGE.to_string(), None);
+        return (EXIT_USAGE, READ_USAGE.to_string(), None);
     };
     let root = match require_repo(cwd) {
         Ok(r) => r,
-        Err(e) => return (1, format!("error: {e}"), None),
+        Err(e) => return (EXIT_FAILURE, format!("error: {e}"), None),
     };
     // One validation per invocation, opened before any index artifact is read.
     begin_validation(&root, cwd);
@@ -57,7 +57,7 @@ pub(crate) fn cmd_read(cwd: &Path, args: &[String]) -> (i32, String, Option<&'st
             Some(n) if n <= candidates.len() => {
                 query::build_read_model(&index, &query::qualified_seed(&candidates[n - 1]))
             }
-            Some(_) => return (2, READ_USAGE.to_string(), None),
+            Some(_) => return (EXIT_USAGE, READ_USAGE.to_string(), None),
             None => query::ReadResult::MemberAmbiguous(candidates),
         },
         other => other,
@@ -94,7 +94,7 @@ pub(crate) fn cmd_read(cwd: &Path, args: &[String]) -> (i32, String, Option<&'st
             } else {
                 with_next_trailer(render::render_read_text(&model), &next)
             };
-            (0, out, query::Outcome::Hit, count)
+            (EXIT_OK, out, query::Outcome::Hit, count)
         }
     };
     let note = (answer.2 != query::Outcome::ZeroHit).then_some(ZERO_HIT_READ);

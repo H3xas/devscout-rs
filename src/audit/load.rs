@@ -4,6 +4,8 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
+use crate::layout;
+
 use super::lane::AuditLane;
 use super::model::{AuditOptions, DefRow, EdgeRow, Inputs, OracleRef, Tier, Unit};
 
@@ -12,11 +14,15 @@ use super::model::{AuditOptions, DefRow, EdgeRow, Inputs, OracleRef, Tier, Unit}
 pub fn load(root: &Path, opts: &AuditOptions) -> Result<Inputs, String> {
     let graph_path = crate::graph::graph_json_path(root);
     let graph_text = std::fs::read_to_string(&graph_path).map_err(|_| {
-        "no graph.json for this repo — run `devscout map` on a C# scope first".to_string()
+        format!(
+            "no {} for this repo — run `devscout map` on a C# scope first",
+            layout::GRAPH_FILE
+        )
     })?;
     let graph_value: serde_json::Value = serde_json::from_str(&graph_text).map_err(|e| {
         format!(
-            "graph.json at {} is not valid JSON: {e}",
+            "{} at {} is not valid JSON: {e}",
+            layout::GRAPH_FILE,
             graph_path.display()
         )
     })?;
@@ -134,7 +140,7 @@ pub fn parse_graph(v: &serde_json::Value) -> Result<(Vec<DefRow>, Vec<EdgeRow>),
     let defs_arr = v
         .get("defs")
         .and_then(|d| d.as_array())
-        .ok_or("graph.json has no 'defs' array")?;
+        .ok_or_else(|| format!("{} has no 'defs' array", layout::GRAPH_FILE))?;
     let mut defs = Vec::with_capacity(defs_arr.len());
     for d in defs_arr {
         defs.push(DefRow {
@@ -151,7 +157,7 @@ pub fn parse_graph(v: &serde_json::Value) -> Result<(Vec<DefRow>, Vec<EdgeRow>),
     let edges_arr = v
         .get("edges")
         .and_then(|e| e.as_array())
-        .ok_or("graph.json has no 'edges' array")?;
+        .ok_or_else(|| format!("{} has no 'edges' array", layout::GRAPH_FILE))?;
     let mut edges = Vec::new();
     for e in edges_arr {
         if e.get("kind").and_then(|k| k.as_str()) != Some("uses-member") {

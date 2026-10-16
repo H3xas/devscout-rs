@@ -26,6 +26,8 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::layout;
+
 use super::paths::{atomic_write_json, graph_dir};
 
 /// The export format `import-edges` accepts.
@@ -213,7 +215,7 @@ pub fn parse_imported_edges(bytes: &[u8], mapped_repo: &str) -> Result<ImportedE
 /// Path to the imported-edges artifact for `root`, beside `graph.json` under
 /// the same graph directory.
 pub fn imported_edges_json_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("imported-edges.json")
+    graph_dir(root).join(layout::IMPORTED_EDGES_FILE)
 }
 
 /// Reads the imported-edges artifact for `root`, or `None` when absent or
