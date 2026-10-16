@@ -60,8 +60,8 @@ therefore be run as it stands -- it exits `0`, or `3` with `outcome: "zero-hit"`
 names turns out to resolve to nothing. Nothing here can exit `1` or `2`.
 
 `next` is present on `hit` and `zero-hit` answers, on the wrapper object and on every member object
-of a `members` answer, and it is absent from the `ambiguous` envelope, from the `fallback-advised`
-answer and from `freshness`.
+of a `members` answer, on the `sections` wrapper and on every section answer under it, and it is
+absent from the `ambiguous` envelope, from the `fallback-advised` answer and from `freshness`.
 
 ## The text count line
 
@@ -130,6 +130,50 @@ devscout refs Run --json
   ]
 }
 ```
+
+## The `sections` envelope
+
+`--pick all` answers every candidate of an ambiguous seed, each in its own section, on all four
+verbs. The `--json` shape is `schema_version` first, `status: "sections"`, the `query` string as
+typed, a `sections` array, `next`, `outcome`, and `freshness` once at the end -- the key order the
+`members` wrapper already uses, so a consumer learns one arrangement.
+
+Each `sections` entry carries `pick` (its one-based number, matching `--pick N`), `candidate` (the
+refusal's own candidate object at that position, in the refusal's own order) and `answer` (that
+candidate's `--json` answer, byte for byte what `--pick N --json` prints, minus the `freshness`
+key the wrapper carries once). The sections are never merged, deduplicated or reordered, so a row
+always belongs to exactly one candidate.
+
+`next` is the union of the sections' own `next` lists, by the same merge the `members` wrapper
+applies to its members. `outcome` is `hit` when at least one section is, and `zero-hit` otherwise,
+with exit code 0 or 3 to match. `schema_version` stays 1 and the `outcome` set keeps its four
+values: `sections` is a `status`, not a fifth outcome.
+
+```json
+{
+  "schema_version": 1,
+  "status": "sections",
+  "query": "Run",
+  "sections": [
+    {
+      "pick": 1,
+      "candidate": { "owner": "App.Alpha.Widget", "name": "Run", "file": "src/A.cs", "line": 5 },
+      "answer": { "schema_version": 1, "status": "members", "query": "App.Alpha.Widget.Run", "members": [], "next": [], "outcome": "hit" }
+    },
+    {
+      "pick": 2,
+      "candidate": { "owner": "App.Beta.Widget", "name": "Run", "file": "src/B.cs", "line": 5 },
+      "answer": { "schema_version": 1, "status": "members", "query": "App.Beta.Widget.Run", "members": [], "next": [], "outcome": "hit" }
+    }
+  ],
+  "next": [],
+  "outcome": "hit",
+  "freshness": { "state": "fresh" }
+}
+```
+
+Without `--pick`, the same seed still refuses under the `ambiguous` envelope above. `--pick N`
+alone answers candidate `N` and prints that candidate's own shape, with no wrapper.
 
 ## `why`
 

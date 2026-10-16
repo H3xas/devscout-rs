@@ -55,7 +55,16 @@ own inbound references.
 A member seed carried by more than one type lists one row per **candidate** — its declaring type,
 file, and line — rather than guessing between them or printing a bare list of types. Pass
 `--pick N` (one-based) to select the nth row from that list; an out-of-range `N` is a usage error
-(exit code 2).
+(exit code 2). A type name more than one def shares is a candidate list of the same kind, and
+`--pick N` narrows that too.
+
+Pass `--pick all` to answer every candidate instead of one, each in its own section. A section
+opens with a label line, `candidate <i> of <n>: <the refusal's own row>`, and its body is exactly
+what `--pick <i>` prints for that candidate. One blank line separates two sections, and no row
+moves between them. The answer as a whole is a hit when at least one section is, and a
+[zero hit](reference/json-output.md#outcome) otherwise. Under `--json` the sections arrive as a
+`sections` array rather than as one merged answer
+([JSON output](reference/json-output.md#the-sections-envelope)).
 
 A Rust item is named by its name, by its id (`src/shelf.rs#Widget::new`), or by a `::` path such
 as `Widget::new` or `cabinet::Hinge::oil`; a path two items share within a file (two trait impls

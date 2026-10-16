@@ -23,6 +23,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the trailer counts the new family. The fragment cache moves to `fragments-v41.json`, so an
   existing cache re-extracts once.
 
+- `--pick all` on `refs`, `read`, `impact` and `tests` answers every candidate of an ambiguous
+  seed in its own labelled section rather than refusing, and no section is merged with another.
+  Section `i` is byte-for-byte what `--pick i` prints for that candidate, and `--json` states the
+  same sections as a `sections` array
+  ([JSON output](docs/reference/json-output.md#the-sections-envelope)). `--pick` refuses any value
+  that is neither a positive integer nor `all`, before the graph is read.
+
 - `devscout --help`, `devscout -h` and `devscout help` end with the documentation URL of the
   running version's tag, composed from the crate metadata at compile time, so a released binary
   points at the documentation for the release it is rather than at whatever the branch says now.
@@ -65,6 +72,15 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `tests` and `impact` commands count these files when they reference the queried code.
 
 ### Changed
+
+- **`--pick N` now narrows an ambiguous type name, and answers an owner a dotted suffix used to
+  send back to the refusal.** `refs`, `read`, `impact` and `tests` treated `--pick N` as inert
+  unless the seed named a member declared by several types, so a type name several defs share
+  still refused. It now answers candidate `N` of either kind of ambiguity. A member candidate also
+  resolves by its own declaring type rather than by re-running the seed ladder, so two owners whose
+  ids end with the same segments -- `Nautical.Crew.Galley` and `Fleet.Nautical.Crew.Galley`, say --
+  each answer their own owner instead of listing the same pair again. The default refusal, and
+  every `--json` key it carries, is unchanged.
 
 - **A Git root's `map` now skips the untracked files and directories Git reports as ignored.** A
   local build into `build/`, `lib/` or `out/` no longer duplicates a source definition, so

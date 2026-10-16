@@ -4,6 +4,11 @@
 //! where it would print the line, `cli.md` renders these values as the
 //! verbatim blocks under each verb's heading, and no verb keeps a second copy
 //! of its own usage text.
+//!
+//! A verb taking `--pick` states what its two values ask for on a SECOND
+//! line. The first line therefore stays exactly what it was before `all`
+//! existed, which is what a caller's own parser keys off, and the second line
+//! carries the whole explanation rather than crowding the first.
 
 /// `devscout audit`, the semantic-oracle scorer.
 pub const AUDIT_USAGE: &str =
@@ -31,8 +36,7 @@ pub const COMPILER_FACTS_IMPORT_USAGE: &str =
 pub const COMPILER_FACTS_STATUS_USAGE: &str = "usage: devscout compiler-facts status";
 
 /// `devscout tests <symbol>`.
-pub const TESTS_USAGE: &str =
-    "usage: devscout tests <symbol> [--no-guess] [--no-dispatch] [--no-bus] [--pick N] [--json|--compact]";
+pub const TESTS_USAGE: &str = "usage: devscout tests <symbol> [--no-guess] [--no-dispatch] [--no-bus] [--pick N] [--json|--compact]\n       --pick <n> answers candidate <n> of an ambiguous seed, and --pick all answers every candidate in its own section";
 
 /// `devscout parse <file.cs>`.
 pub const PARSE_USAGE: &str = "usage: devscout parse <file.cs>";
@@ -56,14 +60,13 @@ pub const EXPORT_USAGE: &str = "usage: devscout export [--out FILE]";
 pub const FIND_USAGE: &str = "usage: devscout find <query> [--resources]";
 
 /// `devscout impact <file|symbol>`.
-pub const IMPACT_USAGE: &str = "usage: devscout impact <file|symbol> [--hops N] [--no-iface] [--no-guess] [--no-dispatch] [--no-bus] [--no-imports] [--iface-max-fanin N] [--hub-max-indegree N] [--pick N] [--json|--compact]";
+pub const IMPACT_USAGE: &str = "usage: devscout impact <file|symbol> [--hops N] [--no-iface] [--no-guess] [--no-dispatch] [--no-bus] [--no-imports] [--iface-max-fanin N] [--hub-max-indegree N] [--pick N] [--json|--compact]\n       --pick <n> answers candidate <n> of an ambiguous seed, and --pick all answers every candidate in its own section";
 
 /// `devscout import-edges <file>`.
 pub const IMPORT_EDGES_USAGE: &str = "usage: devscout import-edges <file> --repo <id>";
 
 /// `devscout read <symbol>`.
-pub const READ_USAGE: &str =
-    "usage: devscout read <symbol> [--no-guess] [--no-dispatch] [--no-bus] [--pick N] [--json|--compact]";
+pub const READ_USAGE: &str = "usage: devscout read <symbol> [--no-guess] [--no-dispatch] [--no-bus] [--pick N] [--json|--compact]\n       --pick <n> answers candidate <n> of an ambiguous seed, and --pick all answers every candidate in its own section";
 
 /// `devscout refs <symbol>`.
-pub const REFS_USAGE: &str = "usage: devscout refs <symbol> [--out] [--all] [--no-guess] [--no-dispatch] [--no-bus] [--pick N] [--json|--compact]";
+pub const REFS_USAGE: &str = "usage: devscout refs <symbol> [--out] [--all] [--no-guess] [--no-dispatch] [--no-bus] [--pick N] [--json|--compact]\n       --pick <n> answers candidate <n> of an ambiguous seed, and --pick all answers every candidate in its own section";

@@ -26,6 +26,11 @@ out-of-range `N` is a usage error (exit code 2). A Rust path two items share wit
 ambiguous too; name the second one by its id, which carries a `-1` suffix
 ([Seeds](../concepts.md#seeds)).
 
+Pass `--pick all` when the sweep wants every candidate rather than one. Each candidate is answered
+in its own section, and no section is merged with another. Each section equals the `--pick N` answer
+for its number, so a caller can compare them or parse the `sections` array under `--json`
+([JSON output](../reference/json-output.md#the-sections-envelope)).
+
 ## Paths under `/tmp` print as `/private/tmp`
 
 macOS resolves `/tmp` to `/private/tmp`, so `init` and `map` print the resolved path.
