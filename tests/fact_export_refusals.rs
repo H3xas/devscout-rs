@@ -226,7 +226,10 @@ fn fact_export_ac_6_a_cache_stamped_by_the_wrong_worktree_refuses_with_index_cha
     let cache = fixture.cache_path();
     let mut value = read_json(&cache);
     value["owner"] = Value::from("/elsewhere/.git");
-    fs::write(&cache, serde_json::to_vec(&value).expect("serialize the cache"))
-        .expect("restamp the cache");
+    fs::write(
+        &cache,
+        serde_json::to_vec(&value).expect("serialize the cache"),
+    )
+    .expect("restamp the cache");
     assert_refused(&fixture, "index-changed", None);
 }

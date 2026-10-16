@@ -413,3 +413,113 @@ fn fact_export_ac_4_the_payload_digest_covers_the_fact_lines_alone() {
     );
     assert_eq!(trailer["counts"]["definition"], 0);
 }
+
+// The temporary name beside `--out` is predictable -- a pid and a counter, the
+// same shape the repository's other atomic writers use -- so a local actor can
+// put an entry there first. Following that entry would write through it: onto a
+// symlink's target, or over an unrelated file. Every candidate is therefore
+// created exclusively, and one that already exists is skipped rather than
+// opened, so a leftover or a planted name costs an attempt, never a write.
+
+#[test]
+fn fact_export_ac_1_an_occupied_temporary_name_is_never_opened_or_truncated() {
+    let dir = scratch("tmp-taken");
+    let target = dir.join("stream.ndjson");
+    fs::write(&target, b"the previous stream\n").expect("write the destination");
+    // Every name this run can pick is already taken by an unrelated file.
+    let pid = std::process::id();
+    let mut planted = Vec::new();
+    for counter in 0..512u64 {
+        let path = dir.join(format!(".stream.ndjson.tmp.{pid}.{counter}"));
+        fs::write(&path, format!("unrelated {counter}\n")).expect("plant a file");
+        planted.push(path);
+    }
+    let error = stream::write_out(&target, b"the new stream\n")
+        .expect_err("every temporary name is taken, so nothing may be written");
+    assert_eq!(error.kind(), std::io::ErrorKind::AlreadyExists);
+    for path in &planted {
+        let content = fs::read_to_string(path).expect("the planted file is still readable");
+        assert!(
+            content.starts_with("unrelated "),
+            "{} was truncated: {content}",
+            path.display()
+        );
+    }
+    assert_eq!(
+        fs::read(&target).expect("read the destination"),
+        b"the previous stream\n",
+        "the destination keeps its previous bytes"
+    );
+    assert_eq!(
+        fs::read_dir(&dir).expect("read the directory").count(),
+        planted.len() + 1,
+        "this run leaves no temporary entry of its own"
+    );
+}
+
+#[test]
+fn fact_export_ac_1_an_occupied_temporary_name_does_not_block_the_next_one() {
+    let dir = scratch("tmp-reuse");
+    let stale = dir.join(".stream.ndjson.tmp.claim.0");
+    fs::write(&stale, b"a crashed run's leftover\n").expect("plant the leftover");
+    let free = dir.join(".stream.ndjson.tmp.claim.1");
+    let target = dir.join("stream.ndjson");
+    fs::write(&target, b"the previous stream\n").expect("write the destination");
+    stream::write_out_via(
+        &target,
+        b"the new stream\n",
+        vec![stale.clone(), free.clone()].into_iter(),
+    )
+    .expect("the next free name is used");
+    assert_eq!(
+        fs::read(&stale).expect("read the leftover"),
+        b"a crashed run's leftover\n",
+        "an entry this run did not create is left alone"
+    );
+    assert_eq!(
+        fs::read(&target).expect("read the destination"),
+        b"the new stream\n"
+    );
+    assert!(
+        !free.exists(),
+        "the used name was renamed onto the destination"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn fact_export_ac_1_a_temporary_name_that_is_a_symlink_is_skipped_not_followed() {
+    let dir = scratch("tmp-symlink");
+    let victim = dir.join("sentinel.txt");
+    fs::write(&victim, b"PREEXISTING USER DATA\n").expect("write the sentinel");
+    let taken = dir.join(".stream.ndjson.tmp.claim.0");
+    std::os::unix::fs::symlink(&victim, &taken).expect("plant the symlink");
+    let free = dir.join(".stream.ndjson.tmp.claim.1");
+    let target = dir.join("stream.ndjson");
+    stream::write_out_via(
+        &target,
+        b"the new stream\n",
+        vec![taken.clone(), free.clone()].into_iter(),
+    )
+    .expect("the next free name is used");
+    assert_eq!(
+        fs::read(&victim).expect("read the sentinel"),
+        b"PREEXISTING USER DATA\n",
+        "the symlink's target is untouched"
+    );
+    assert!(
+        fs::symlink_metadata(&taken)
+            .expect("stat the planted entry")
+            .file_type()
+            .is_symlink(),
+        "the planted entry is left as it was"
+    );
+    assert_eq!(
+        fs::read(&target).expect("read the destination"),
+        b"the new stream\n"
+    );
+    assert!(
+        !free.exists(),
+        "the used name was renamed onto the destination"
+    );
+}

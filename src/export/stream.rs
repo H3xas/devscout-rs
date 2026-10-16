@@ -13,8 +13,8 @@
 //! that differ in nothing keep both their lines, adjacent.
 
 use std::fs;
-use std::io;
-use std::path::Path;
+use std::io::{self, Write};
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::Serialize;
@@ -137,30 +137,81 @@ pub(crate) fn render(snapshot: &Snapshot) -> Stream {
 
 static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+/// How many temporary names one run may try before it gives up. Every attempt
+/// is an exclusive create, so a name that is already taken costs an attempt
+/// rather than a write.
+const TMP_ATTEMPTS: u64 = 64;
+
 /// Writes `bytes` to `path` through a temporary file in the same directory and
 /// a rename, so a reader sees either the previous file or the complete new one
 /// and never a partial write.
 ///
-/// The temporary file is removed on ANY failure, the rename included, and the
-/// target's directory is never created: `--out` into a path that does not exist
-/// is a usage-level mistake, not a request to build the tree.
+/// The temporary file is removed on ANY failure, the rename included, and only
+/// when this run created it -- an entry that was already at the name belongs to
+/// whoever put it there. The target's directory is never created: `--out` into
+/// a path that does not exist is a usage-level mistake, not a request to build
+/// the tree.
 pub(crate) fn write_out(path: &Path, bytes: &[u8]) -> io::Result<()> {
     let dir = path.parent().filter(|p| !p.as_os_str().is_empty());
     let name = path
         .file_name()
         .and_then(|n| n.to_str())
-        .unwrap_or("export.ndjson");
-    let counter = TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let tmp = dir
-        .unwrap_or_else(|| Path::new("."))
-        .join(format!(".{name}.tmp.{}.{counter}", std::process::id()));
-    if let Err(error) = fs::write(&tmp, bytes) {
-        let _ = fs::remove_file(&tmp);
-        return Err(error);
+        .unwrap_or("export.ndjson")
+        .to_string();
+    write_out_via(path, bytes, tmp_candidates(dir, name))
+}
+
+/// One candidate temporary name per attempt, in the target's own directory so
+/// the final rename stays same-filesystem.
+fn tmp_candidates(dir: Option<&Path>, name: String) -> impl Iterator<Item = PathBuf> {
+    let dir = dir.unwrap_or_else(|| Path::new(".")).to_path_buf();
+    let pid = std::process::id();
+    (0..TMP_ATTEMPTS).map(move |_| {
+        let counter = TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+        dir.join(format!(".{name}.tmp.{pid}.{counter}"))
+    })
+}
+
+/// Writes through the first candidate name this run can create exclusively.
+///
+/// The name is predictable -- a pid and a counter, the shape the repository's
+/// other atomic writers use -- so another local actor sharing the output
+/// directory can put an entry there first. Exclusive creation is what makes
+/// that harmless: an existing entry is skipped, never opened, so a symlink
+/// planted at the name is not followed and an unrelated file is not truncated,
+/// and a leftover from a crashed run does not block the export forever.
+pub(super) fn write_out_via(
+    path: &Path,
+    bytes: &[u8],
+    names: impl Iterator<Item = PathBuf>,
+) -> io::Result<()> {
+    for tmp in names {
+        let mut file = match create_exclusive(&tmp) {
+            Ok(file) => file,
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error),
+        };
+        let write = file.write_all(bytes).and_then(|()| file.flush());
+        drop(file);
+        if let Err(error) = write {
+            let _ = fs::remove_file(&tmp);
+            return Err(error);
+        }
+        if let Err(error) = fs::rename(&tmp, path) {
+            let _ = fs::remove_file(&tmp);
+            return Err(error);
+        }
+        return Ok(());
     }
-    if let Err(error) = fs::rename(&tmp, path) {
-        let _ = fs::remove_file(&tmp);
-        return Err(error);
-    }
-    Ok(())
+    Err(io::Error::new(
+        io::ErrorKind::AlreadyExists,
+        "every temporary name beside the output is taken",
+    ))
+}
+
+fn create_exclusive(path: &Path) -> io::Result<fs::File> {
+    fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
 }

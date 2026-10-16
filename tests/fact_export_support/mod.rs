@@ -385,10 +385,9 @@ fn replace_scalar(line: &str, key: &str, placeholder: &str) -> String {
     };
     let value_start = start + marker.len();
     let rest = &line[value_start..];
-    let end = if rest.starts_with('"') {
-        rest[1..].find('"').map(|i| i + 2).unwrap_or(rest.len())
-    } else {
-        rest.find([',', '}']).unwrap_or(rest.len())
+    let end = match rest.strip_prefix('"') {
+        Some(quoted) => quoted.find('"').map(|i| i + 2).unwrap_or(rest.len()),
+        None => rest.find([',', '}']).unwrap_or(rest.len()),
     };
     format!(
         "{}{}{}",
