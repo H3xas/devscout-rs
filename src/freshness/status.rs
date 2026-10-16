@@ -127,12 +127,34 @@ mod tests {
 
     fn scratch(label: &str) -> PathBuf {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-        let dir = std::env::temp_dir().join(format!(
+        let wanted = std::env::temp_dir().join(format!(
             "scout-freshness-status-{label}-{}-{n}",
             std::process::id()
         ));
-        fs::create_dir_all(&dir).unwrap();
-        fs::canonicalize(&dir).unwrap()
+        fs::canonicalize(claim(wanted)).unwrap()
+    }
+
+    // Claims a new directory at `wanted`, or at the first free `-<n>` variant: a
+    // repeated process id and counter must not reopen an earlier run's directory
+    // and with it the files a test expects to have created itself.
+    fn claim(wanted: PathBuf) -> PathBuf {
+        let name = wanted
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        for attempt in 0..10_000u32 {
+            let candidate = if attempt == 0 {
+                wanted.clone()
+            } else {
+                wanted.with_file_name(format!("{name}-{attempt}"))
+            };
+            match fs::create_dir(&candidate) {
+                Ok(()) => return candidate,
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+                Err(e) => panic!("create scratch dir {}: {e}", candidate.display()),
+            }
+        }
+        panic!("no free scratch directory name for {}", wanted.display());
     }
 
     fn git(dir: &Path, args: &[&str]) {
@@ -246,5 +268,24 @@ mod tests {
         commit_all(&dir);
         fs::write(dir.join("a.cs"), "class A { int X; }\n").unwrap();
         assert!(is_working_tree_dirty(&dir, &[".".to_string()]));
+    }
+
+    #[test]
+    fn a_scratch_directory_left_by_an_earlier_run_is_never_reopened() {
+        let base = scratch("reuse");
+        let stale = base.join("stale");
+        fs::create_dir(&stale).unwrap();
+        fs::write(stale.join("a.cs"), "class A { }\n").unwrap();
+
+        let claimed = claim(stale.clone());
+
+        assert_ne!(
+            claimed, stale,
+            "a directory an earlier run holds is not reused"
+        );
+        assert!(
+            !claimed.join("a.cs").exists(),
+            "a claimed scratch directory holds no earlier run's file"
+        );
     }
 }
