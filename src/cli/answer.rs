@@ -276,7 +276,9 @@ pub(crate) fn fallback_advised_out(q: &str, json: bool, plain: String) -> (i32, 
 // `indexedHead`/`currentHead` mirror `freshness_warning`'s own truncated
 // stderr wording in spirit but are written full-length here -- a
 // programmatic consumer should not have to guess where a short hash was cut.
-fn freshness_json(state: &FreshnessState) -> J {
+// `pub(crate)`: the fact export states the same freshness the queries answer
+// with, through this one renderer, so the two can never drift apart.
+pub(crate) fn freshness_json(state: &FreshnessState) -> J {
     match state {
         FreshnessState::Fresh => J::Obj(vec![("state", J::Str("fresh".to_string()))]),
         FreshnessState::Stale {

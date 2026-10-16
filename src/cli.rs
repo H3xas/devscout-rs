@@ -15,6 +15,7 @@ mod args;
 mod compiler_facts;
 mod coverage;
 mod dispatch;
+mod export;
 mod find;
 mod impact;
 mod import_edges;
@@ -22,6 +23,7 @@ mod read;
 mod refs;
 mod root;
 
+pub(crate) use answer::freshness_json;
 pub use dispatch::dispatch;
 pub(crate) use root::require_repo;
 

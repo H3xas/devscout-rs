@@ -17,6 +17,7 @@ contains the current directory, or the one `-C <dir>` names.
 | `devscout impact <file\|symbol>` | Blast radius: the files reachable from a seed within N hops |
 | `devscout import-edges <file> --repo <id>` | Load a versioned cross-repo edge export; `impact` then reports files reached only through it (`--no-imports` to skip it). See [Cross-repo impact](../guides/cross-repo-impact.md) |
 | `devscout compiler-facts run\|import\|status` | Optional: acquire or import a versioned compiler-derived fact artifact (see [Compiler facts](../guides/compiler-facts.md)); `map` and every query never need it and never start it |
+| `devscout export [--out FILE]` | Write the current repository's whole fact set as one versioned NDJSON stream — the contract downstream tools read instead of querying symbol by symbol. See [Fact export](fact-export.md) |
 | `devscout tests <symbol>` | The test files that reach a symbol |
 | `devscout <verb> <symbol> --pick N` | On `refs`, `read`, `impact` and `tests`, narrows a member seed with several declaring types to its nth candidate |
 | `devscout <verb> <seed> --no-bus` | On `refs`, `read`, `impact` and `tests`, skips `bus-hop` edges and restores the traversal and hub classification those verbs had before them |
@@ -128,6 +129,24 @@ devscout compiler-facts status
 
 See [Compiler facts](../guides/compiler-facts.md) for what each sub-command admits and reports.
 
+### export
+
+```text
+devscout export [--out FILE]
+```
+
+Writes the header line, one line per fact and the trailer to stdout, or to
+`FILE` through a temporary file in the same directory and a rename. The stream
+is documented in [Fact export](fact-export.md).
+
+| Flag | Effect |
+| --- | --- |
+| `--out FILE` | Write the stream to `FILE` instead of stdout. The directory must already exist; a failed run leaves no file at the path and keeps any file already there |
+
+Any other argument — a positional, an unknown flag, `--out` with no value or
+with a value that is itself a flag, or `--out` given twice — is a usage error
+(exit 2) with the usage line on stderr and nothing on stdout.
+
 ### audit
 
 `devscout audit --semantic <refs.jsonl> [--units F] [--defs F] [--json] [--assert F] [--fp-sites F]`;
@@ -174,6 +193,10 @@ argv arrays, without the binary name; see [JSON output](json-output.md#next).
 A usage error, such as a missing argument or an out-of-range `--pick N`, exits 2. On `refs`,
 `read`, `impact` and `tests` the exit code otherwise follows the answer's outcome, as
 [JSON output](json-output.md#outcome) describes; an ambiguous answer exits 1.
+
+`export` exits 0 for a written stream, 2 for a malformed invocation, and 1 when it refuses to
+publish the index as it stands or cannot write where `--out` asked; see
+[Fact export](fact-export.md#freshness-and-refusals).
 
 ## read
 

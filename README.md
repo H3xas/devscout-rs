@@ -21,6 +21,7 @@ never touch the network.
 | Show the declaration and everything that points at it | `devscout read OrderService.Place` |
 | What can break if I change this file or symbol? | `devscout impact src/OrderRepository.cs` |
 | Which tests reach this symbol? | `devscout tests OrderService` |
+| Give another tool every fact about this repository | `devscout export` |
 
 Add `--json` for a versioned, machine-readable answer
 ([JSON output](docs/reference/json-output.md)). Every command and flag:
@@ -123,6 +124,7 @@ with a one-line marker. The index works the same without them.
 | Understand the graph, edges, tiers and seeds | [Concepts](docs/concepts.md) |
 | Look up a command, flag or variable | [Reference](docs/README.md#reference) |
 | Enrich C# with compiler-verified facts | [Compiler facts](docs/guides/compiler-facts.md) |
+| Read the whole fact set as a versioned stream | [Fact export](docs/reference/fact-export.md) |
 | Connect impact across repositories | [Cross-repo impact](docs/guides/cross-repo-impact.md) |
 | Upgrade from an earlier version | [Upgrading](docs/guides/upgrading.md) |
 | Fix a stale, empty or ambiguous answer | [Troubleshooting](docs/guides/troubleshooting.md) |

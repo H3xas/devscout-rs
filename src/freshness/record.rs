@@ -231,12 +231,38 @@ pub struct DigestTable {
 /// Reads the digest table, `None` when it is absent or in any way unusable.
 #[must_use]
 pub fn read_digests(root: &Path) -> Option<DigestTable> {
-    let text = fs::read_to_string(digest_path(root)).ok()?;
-    let raw: RawDigests = serde_json::from_str(&text).ok()?;
+    read_digests_strict(root).ok()
+}
+
+/// Why a strict read of the digest table found nothing usable. A caller that
+/// republishes what it read needs the three apart: a table that was never
+/// written, one that is corrupt, and one of another format all send a reader
+/// somewhere different.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DigestReadError {
+    /// No digest table file at all.
+    Missing,
+    /// The file is there but does not parse.
+    Unreadable,
+    /// The file parses but is not this format and version.
+    UnknownFormat,
+    /// The file's identity changed between the reads bracketing the parse.
+    Changed,
+}
+
+/// Reads and validates the digest table, naming what stopped it.
+pub(crate) fn read_digests_strict(root: &Path) -> Result<DigestTable, DigestReadError> {
+    let path = digest_path(root);
+    let before = ArtifactIdentity::of(&path);
+    let text = fs::read_to_string(&path).map_err(|_| DigestReadError::Missing)?;
+    let raw: RawDigests = serde_json::from_str(&text).map_err(|_| DigestReadError::Unreadable)?;
     if raw.format != DIGESTS_FORMAT || raw.version != 1 {
-        return None;
+        return Err(DigestReadError::UnknownFormat);
     }
-    Some(DigestTable {
+    if before.is_none() || before != ArtifactIdentity::of(&path) {
+        return Err(DigestReadError::Changed);
+    }
+    Ok(DigestTable {
         generation: raw.generation,
         files: raw.files,
     })

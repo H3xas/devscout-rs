@@ -134,6 +134,7 @@ pub use refs_tables::{
 pub use seq::{SeqMap, SeqSet};
 pub use symbol::{resolve_symbol, Resolution};
 pub use symbol_refs::{symbol_refs, SymbolRefs};
+pub(crate) use test_path::test_via;
 pub use ts_edges::TsKinds;
 pub use why::Why;
 
