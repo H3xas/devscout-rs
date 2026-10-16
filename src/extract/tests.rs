@@ -19,6 +19,7 @@ mod extension_method_facts;
 mod foreach_element_fact;
 mod fqn;
 mod generic_arity;
+mod handler_registration_fact;
 mod lambda_shape_fact;
 mod lambda_slot_fact;
 mod method_params_fact;
