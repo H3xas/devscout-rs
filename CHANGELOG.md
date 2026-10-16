@@ -9,6 +9,20 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `devscout map` records the MassTransit transport configuration a C# repository states, and
+  `devscout export` writes it as the `transport-address` family: bus transports and hosts,
+  receive endpoints and the types configured on them, `ConfigureEndpoints` with the endpoint
+  name formatter in force, registrations, endpoint names, send and request addresses,
+  endpoint conventions, entity names, options bindings with the values the project's
+  `appsettings` files state, and outbox registrations. Recognition reads a closed catalogue of
+  fully qualified package types, so no compiler is needed and a repository type with a
+  catalogue name never matches. Each address and scope value carries its evidence class
+  (`literal`, `constant`, `configuration` or `unknown` with a reason word), and each bus and
+  address carries its broker scope. No queue name is derived from a formatter, and no
+  publish-to-consume hop is built. The export's coverage table reads `extracted` for C#, and
+  the trailer counts the new family. The fragment cache moves to `fragments-v41.json`, so an
+  existing cache re-extracts once.
+
 - `--pick all` on `refs`, `read`, `impact` and `tests` answers every candidate of an ambiguous
   seed in its own labelled section rather than refusing, and no section is merged with another.
   Section `i` is byte-for-byte what `--pick i` prints for that candidate, and `--json` states the

@@ -561,10 +561,14 @@ pub fn map_repo(root: &Path, scope_dirs: &[String], opts: MapOptions) -> io::Res
         && prior_record
             .as_ref()
             .is_none_or(|r| r.artifacts.graph == graph_on_disk);
+    // The settings files and project usings transport facts read are no
+    // graph source either; their sidecar is what notices an edit to one.
+    let transport_inputs = crate::transport::discover(root, project_model.as_ref(), &files);
     let changed = !graph_trusted
         || graph::index_is_stale(&graph_index, &graph_files)
         || project::sidecar_differs(root, project_model.as_ref())
         || crate::rsgraph::crates::sidecar_differs(root, crates.as_ref())
+        || crate::transport::sidecar_differs(root, &transport_inputs)
         || lane.forces_rebuild();
 
     // From here every write belongs to the new generation, so the record
@@ -583,6 +587,7 @@ pub fn map_repo(root: &Path, scope_dirs: &[String], opts: MapOptions) -> io::Res
         project_model.as_ref(),
         Some(&lane),
         crates.as_ref(),
+        Some(&transport_inputs),
     )?;
     let graph_seconds = graph_start.elapsed().as_secs_f64();
 

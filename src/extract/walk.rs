@@ -610,6 +610,7 @@ pub fn extract(source: &str) -> Extraction {
         registrations: Vec::new(),
         publishes: Vec::new(),
         handler_registrations: Vec::new(),
+        transport: Vec::new(),
     };
     walk_list(
         named_children(root),
@@ -621,6 +622,7 @@ pub fn extract(source: &str) -> Extraction {
     );
 
     out.purpose = format_segments(purpose_parts);
+    out.transport = crate::transport::sites(source, root, src);
 
     out
 }

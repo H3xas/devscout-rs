@@ -31,8 +31,8 @@ static COUNTER: AtomicU64 = AtomicU64::new(0);
 /// `indexedHead` differs only by content.
 const AUTHOR_DATE: &str = "2026-01-01T00:00:00+00:00";
 
-/// The three fixture trees, by the name their pinned export carries.
-pub const LANGUAGES: [&str; 3] = ["csharp", "typescript", "rust"];
+/// The four fixture trees, by the name their pinned export carries.
+pub const LANGUAGES: [&str; 4] = ["csharp", "typescript", "rust", "transport"];
 
 pub struct Fixture {
     pub root: PathBuf,
@@ -73,11 +73,17 @@ fn copy_tree(src: &Path, dst: &Path) {
 impl Fixture {
     /// A committed, mapped copy of one fixture tree.
     pub fn build(language: &'static str) -> Fixture {
+        Fixture::build_from(&fixture_root(language), language)
+    }
+
+    /// A committed, mapped copy of the repository tree at `source`, named
+    /// `language` in the scratch path.
+    pub fn build_from(source: &Path, language: &'static str) -> Fixture {
         let base = scratch(language);
         let root = base.join("repo");
         let home = base.join("home");
         fs::create_dir_all(&home).expect("create home dir");
-        copy_tree(&fixture_root(language), &root);
+        copy_tree(source, &root);
         let fixture = Fixture {
             root,
             home,
@@ -171,6 +177,11 @@ impl Fixture {
         let mut files = BTreeMap::new();
         walk(&state, &state, &mut files);
         files
+    }
+
+    /// The repository's artifact directory: every generation and sidecar.
+    pub fn state_dir(&self) -> PathBuf {
+        git_common_dir(&self.root).join("scout")
     }
 
     pub fn graph(&self) -> Value {
@@ -267,6 +278,10 @@ pub fn oracle_counts(fixture: &Fixture) -> BTreeMap<String, usize> {
     counts.insert(
         "unresolved-import".to_string(),
         array_len(&graph, "unresolved_imports"),
+    );
+    counts.insert(
+        "transport-address".to_string(),
+        array_len(&graph, "transport"),
     );
     let (publishes, handlers, registrations) = fragment_messaging(fixture);
     counts.insert("publish-site".to_string(), publishes);

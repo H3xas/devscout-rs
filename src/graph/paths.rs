@@ -52,6 +52,17 @@ pub fn rust_crates_path(root: &Path) -> PathBuf {
     graph_dir(root).join(layout::RUST_CRATES_FILE)
 }
 
+/// Path to the transport-input sidecar for `root`.
+///
+/// Holds the serialized `transport::TransportInputs` the last rebuild read.
+/// `map` compares it with freshly discovered inputs to notice an edit of a
+/// settings file or of a project's implicit usings, which moves no graph
+/// source. Written only when a fragment holds a transport site and deleted
+/// otherwise.
+pub fn transport_inputs_path(root: &Path) -> PathBuf {
+    graph_dir(root).join(layout::TRANSPORT_INPUTS_FILE)
+}
+
 // The version in both cache filenames is the fragment SCHEMA version, bumped
 // whenever the extractor starts recording something old cached fragments
 // lack -- v10 added def `type_params`/`base_generic_args` and the new
@@ -212,6 +223,9 @@ pub fn rust_crates_path(root: &Path) -> PathBuf {
 // fragment of an unchanged file still types a bare argument or receiver from a
 // declaration its use never sees, so a map reusing it would keep vetoing the
 // overload C# selects.
+// v41 appends the transport configuration sites a C# file states. A cached v40
+// fragment of an unchanged file carries none, so a map reusing it would record
+// no transport fact for that file.
 // The rename IS the invalidation mechanism:
 // pre-bump caches stop being found, every file reparses
 // once, no reader carries version-compat logic. Writers delete every
@@ -319,6 +333,8 @@ pub(crate) const SUPERSEDED_CACHE_FILES: &[&str] = &[
     "fragments-index-v38.json",
     "fragments-v39.json",
     "fragments-index-v39.json",
+    "fragments-v40.json",
+    "fragments-index-v40.json",
 ];
 
 pub(crate) fn remove_superseded_caches(root: &Path) {
