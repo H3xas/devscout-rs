@@ -87,6 +87,7 @@ mod fragment;
 mod fragment_types;
 mod imports;
 mod lane;
+mod messaging_types;
 mod ordered;
 mod paths;
 mod rebuild;
