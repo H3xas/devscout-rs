@@ -167,6 +167,15 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   construct keeps the type it had. The fragment cache moves to `fragments-v40.json`, so an
   existing cache re-extracts once.
 
+- **A sent message in a method result, property or field type no longer admits a registered
+  type's handler base.** A registered type's generic base joins the handler vocabulary only when
+  the type declares a parameter of the sent message or binds it through a property. A member such
+  as `Dictionary<OrderPlaced, TKey> Index<TKey>()` on a registered type no longer counts, so the
+  wrong `bus-hop` edges to that type and to other carriers of its base go away. A method with a
+  verbatim name, such as `@event(OrderPlaced order)`, still counts. The fragment cache and the
+  graph schema do not change, so an existing `graph.json` keeps the wrong edges until a source
+  file changes or the graph is mapped again from a clean cache.
+
 ### Changed
 
 - An index belongs to one worktree at a time. A `map` records the worktree that published it, and a

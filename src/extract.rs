@@ -93,10 +93,10 @@ pub use ts_purpose::{
     compose_hybrid_ts_purpose, extract_ts_purpose, extract_ts_purpose_with_heuristic,
 };
 pub use types::{
-    ArgTypeRecord, DefRecord, DelegateSignature, EnclosingCallFact, ExtensionMethod, Extraction,
-    Fact, HandlerRegistrationRecord, LambdaShape, LambdaSlot, NameRecord, OverloadTypeParamSites,
-    PublishRecord, RefRecord, RegistrationRecord, UsingRecord, INTERPOLATED_ARG_DESCRIPTOR,
-    INTERPOLATED_HANDLER_MARK,
+    is_reserved_method_params_key, ArgTypeRecord, DefRecord, DelegateSignature, EnclosingCallFact,
+    ExtensionMethod, Extraction, Fact, HandlerRegistrationRecord, LambdaShape, LambdaSlot,
+    NameRecord, OverloadTypeParamSites, PublishRecord, RefRecord, RegistrationRecord, UsingRecord,
+    INTERPOLATED_ARG_DESCRIPTOR, INTERPOLATED_HANDLER_MARK,
 };
 pub use walk::extract;
 
