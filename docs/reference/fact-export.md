@@ -40,6 +40,7 @@ wrote it: a later release may append keys, never reorder them.
 | `di-registration` | two-type-argument service registration in C# | `file`, `line`, `service`, `implementation`, `namespace` |
 | `unresolved-import` | module import a declared TypeScript module mode could not resolve | `file`, `line`, `target`, `reason` |
 | `test-file` | file the test classification vouches for | `file`, `via` |
+| `transport-address` | MassTransit transport configuration fact in C# | `file`, `line`, `kind`, `member`, then the keys that kind states (see [Transport address](#transport-address)) |
 
 `test-file` carries no line: the classification is a fact about the file, not
 about a position in it.
@@ -104,11 +105,11 @@ repository has none" from "this release cannot see them".
 | Family | C# | TypeScript/JavaScript | Rust |
 | --- | --- | --- | --- |
 | `definition`, `edge`, `test-file` | extracted | extracted | extracted |
-| `publish-site`, `handler-registration`, `di-registration` | extracted | not-extracted | not-extracted |
+| `publish-site`, `handler-registration`, `di-registration`, `transport-address` | extracted | not-extracted | not-extracted |
 | `unresolved-import` | not-extracted | extracted | not-extracted |
-| `transport-address`, `http-route`, `http-client` | not-extracted | not-extracted | not-extracted |
+| `http-route`, `http-client` | not-extracted | not-extracted | not-extracted |
 
-The last row's three names are reserved: this release extracts none of them, so
+The last row's two names are reserved. This release extracts neither of them, so
 they appear in the coverage table with no fact lines anywhere in the stream. A
 later release adds them as additive families under `schemaVersion: 1`.
 
@@ -155,7 +156,7 @@ change when only the freshness observation or the publishing generation does.
 {"trailer":"devscout-facts","counts":{"definition":19,...},"facts":96,"payloadDigest":"sha256:..."}
 ```
 
-`counts` carries one key per family, in the family order below, always all seven
+`counts` carries one key per family, in the family order below, always all eight
 of them, and `facts` is the total number of fact lines.
 
 ## Canonical order
@@ -163,7 +164,7 @@ of them, and `facts` is the total number of fact lines.
 Facts follow one total order: family rank, then `file` (byte order), then `line`
 (numeric, `0` where a family records none), then the whole serialized line (byte
 order). The rank is `definition`, `edge`, `publish-site`, `handler-registration`,
-`di-registration`, `unresolved-import`, `test-file`.
+`di-registration`, `unresolved-import`, `test-file`, `transport-address`.
 
 Two exports over an unchanged index are therefore byte-identical, and two
 identical facts keep both their lines, adjacent, rather than being collapsed.
@@ -231,6 +232,135 @@ The schema lives at `docs/reference/fact-export.schema.json` (JSON Schema
 so a reader knows a validator outside this repository cannot quietly skip a
 constraint it does not implement. A schema reaching for another keyword is
 refused rather than partly applied.
+
+## Transport address
+
+A `transport-address` line records one MassTransit transport configuration fact
+that a C# file states. The leading `evidence` word is always `declared`. The
+evidence class of each address and scope value is in that value's own `class`
+key, as `hopEvidence` is for a `bus-hop` edge.
+
+devscout recognizes a fact through a closed catalogue of package types and
+members, written by fully qualified name. A call is a fact only when its
+receiver is one of these:
+
+- a lambda parameter that a catalogue signature types, through nested lambdas
+- a field, property, parameter or explicitly typed local whose written type
+  qualifies to a catalogue type
+- a static catalogue type, or the return value of another catalogue call
+- for a chain start (`AddMassTransit`, `AddMassTransitTestHarness`,
+  `AddOptions<T>`, `Configure<T>`), any receiver, also a dotted or untyped one
+
+A written name qualifies through the enclosing namespaces, the file's `using`
+directives, the project's `global using` directives, the SDK's implicit usings
+when `ImplicitUsings` is `enable` or `true`, and the project's `<Using Include>`
+items. The name must qualify to exactly one candidate, and that candidate must
+be the catalogue type. A repository type in scope with the same name makes the
+name ambiguous, and the call gives no fact. A chain start gives no fact when a
+repository extension method of the same name is in a namespace that the file
+imports, or when its declared receiver is a repository type.
+
+The keys follow `family` and `evidence` in this order. A kind omits every key it
+does not state.
+
+| Key | On kinds | Value |
+| --- | --- | --- |
+| `file`, `line` | all | The repository path and 1-based line of the site. |
+| `kind` | all | One of the kinds below. |
+| `member` | all | The fully qualified declaring type and member, or the attribute type. A generic declaring type carries its arity after a backtick. |
+| `busFile`, `busLine` | facts inside a bus fact | The position of the bus fact that holds this fact. |
+| `transport` | `bus` | `rabbitmq`, `amazon-sqs`, `in-memory`, `test-harness` or `not-stated`. |
+| `registration` | `registration` | `consumer`, `saga`, `state-machine`, `consumer-namespace`, `saga-namespace`, `state-machine-namespace` or `assembly-scan`. |
+| `types` | kinds that state types | An array of `{role, type, resolved, resolvedFile, line}`. `type` is the name as written. `resolved` and `resolvedFile` name the one repository definition that the name qualifies to, and are absent otherwise. `line` is present only on a type configured on a receive endpoint. |
+| `formatter` | `configure-endpoints` | `kebab-case`, `snake-case`, `default` or `unknown`. |
+| `formatterSource` | `configure-endpoints` | `argument`, `bus` or `default`. |
+| `formatterArguments` | `configure-endpoints` | The formatter's stated constructor arguments, as value objects in order. |
+| `filtered` | `configure-endpoints` | `true` when the call states a registration filter. |
+| `address` | `receive-endpoint`, `endpoint-name`, `send-address`, `request-address`, `endpoint-convention`, `entity-name` | A value object. A request client with no address has no `address` key. |
+| `key` | `options-binding` | The bound configuration key, as a value object. A chain that binds no key has no `key` key. |
+| `properties` | `options-binding` | An array of `{name, role, value}` for the options properties that hold an address or a scope part. `role` is `host`, `virtual-host` or `region`. |
+| `scope` | `bus`, `host` and each kind with `address` | `{host, virtualHost, region, account}`, each part a scope value object. |
+
+The kinds are `bus`, `host`, `receive-endpoint`, `configure-endpoints`,
+`registration`, `endpoint-name`, `send-address`, `request-address`,
+`endpoint-convention`, `entity-name`, `options-binding` and `outbox`. The type
+roles are `message`, `consumer`, `saga`, `state-machine`, `state`, `handler`,
+`definition`, `anchor`, `options`, `db-context` and `bus`.
+
+A bus fact is the root call: `AddMassTransit`, `AddMassTransitTestHarness` or
+`Bus.Factory.CreateUsing*`. Its `transport` comes from the nested `Using*` call
+or from the `CreateUsing*` member. `AddMassTransitTestHarness` gives
+`test-harness`, and the file's `test-file` line, when it has one, says that the
+file is a test file. A configure-endpoints fact states the formatter in force
+and the bus's registrations are their own facts. No queue name is ever derived
+from a formatter.
+
+### Value objects
+
+Each value object has exactly one `class`:
+
+| Class | Keys | Meaning |
+| --- | --- | --- |
+| `literal` | `value`, `scheme` | A string literal. `scheme` is `queue`, `exchange`, `topic`, `rabbitmq`, `rabbitmqs`, `amazonsqs` or `arn` for the URI and AWS resource name forms, and `value` is the entity name that form states. |
+| `constant` | `value`, `scheme`, `fields[{field,file,line}]` | Repository `const string` fields, alone or joined with literals by `+`. `fields` lists each field read, constants of constants included, in reading order. |
+| `configuration` | `key`, `values[{file,value}]` | A configuration key, and each value that an `appsettings.json` or `appsettings.*.json` file in the binding's project directory states for it, sorted by file. `values` is empty when no file states one. The key object of an options binding never carries values; its properties do. |
+| `unknown` | `reason`, `key` | A form the rules do not read. `key` is present when the source states a configuration key. |
+
+A scope value object is a `literal`, `constant` or `unknown` object with no
+`scheme`, or `{"class":"not-stated"}`.
+
+Each value must match the grammar of its kind, or it reads `unknown` with the
+reason `unread-value`:
+
+| Kind | Grammar |
+| --- | --- |
+| queue, endpoint and entity names | `[A-Za-z0-9._:/-]+` |
+| host | `[A-Za-z0-9.-]+` |
+| virtual host | `[A-Za-z0-9._/-]+` |
+| region | `[a-z]{2}(-[a-z]+)+-[0-9]+` |
+| account | 12 digits |
+
+A URI never keeps its user information, port, query or fragment, in the
+export or in any index file. A value joined from string literals and constants
+keeps its literals in the fragment cache only as source positions, and the
+graph rebuild reads them again, because only the joined value shows which
+part is user information. The cache pair carries a payload stamp. A pair that
+an earlier build of the same generation wrote in another form is never reused.
+The next `map` extracts every file again and replaces that pair. Until then,
+`export` refuses it. No
+configuration value is read except for an options property listed above, and no
+credential property is ever listed.
+
+The reason words are a closed list:
+
+| Group | Words |
+| --- | --- |
+| source forms | `interpolated-string`, `parameter`, `local`, `static-readonly`, `field`, `method-call`, `nameof`, `expression` |
+| constants | `package-constant`, `unresolved-constant` |
+| URIs and values | `uri-scheme`, `malformed-uri`, `unread-value` |
+| configuration | `unreadable-configuration` |
+| calls | `overload`, `multiple-hosts` |
+
+A `static readonly` field reads `unknown`, because its value can change at run
+time. A value at or after a call's first named argument reads `overload`,
+because the catalogue keeps parameter positions, not parameter names. A cycle of constants reads `unresolved-constant`. A settings file that
+does not parse, two keys that match one name without regard to ASCII case, and a
+value that is no string read `unreadable-configuration` with the key.
+
+### Scope
+
+- A bus fact gets its scope from its own host call. With no host call, every
+  part reads `not-stated`. With two or more, each part the transport uses reads
+  `unknown` with the reason `multiple-hosts`.
+- An address fact gets each part from its own URI or resource name first, and
+  then from its bus. With no bus, a part its value does not state reads
+  `not-stated`.
+- A part the transport does not use reads `not-stated`. RabbitMQ uses `host`
+  and `virtualHost`. Amazon SQS uses `region` and `account`.
+- For `rabbitmq://host/vhost/name`, two or more path segments make the first one
+  the virtual host. For `amazonsqs://region/…`, the host is the region.
+- An options binding keeps its properties on its own fact. They never merge into
+  a bus scope.
 
 ## Known limitations
 

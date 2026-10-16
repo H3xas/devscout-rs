@@ -159,8 +159,17 @@ fn a_rebuild_writes_the_sidecar_and_removes_it_when_no_package_remains() {
     }];
     let files: Vec<crate::graph::GraphFile> = Vec::new();
     let fresh = std::collections::HashMap::new();
-    crate::graph::rebuild_graph_with_crates(&dir, &files, &fresh, true, None, None, Some(&model))
-        .unwrap();
+    crate::graph::rebuild_graph_with_crates(
+        &dir,
+        &files,
+        &fresh,
+        true,
+        None,
+        None,
+        Some(&model),
+        None,
+    )
+    .unwrap();
     let path = crate::graph::rust_crates_path(&dir);
     assert!(path.exists());
     crate::graph::rebuild_graph(&dir, &files, &fresh, true, None, None).unwrap();

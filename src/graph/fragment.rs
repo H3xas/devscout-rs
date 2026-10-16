@@ -287,6 +287,7 @@ pub fn fragment_from_extraction(e: &extract::Extraction) -> Fragment {
                 line: r.line,
             })
             .collect(),
+        transport: e.transport.clone(),
     }
 }
 
@@ -394,5 +395,6 @@ pub fn markup_fragment_text(rel: &str, text: &str) -> Fragment {
         registrations: Vec::new(),
         publishes: Vec::new(),
         handler_registrations: Vec::new(),
+        transport: Vec::new(),
     }
 }

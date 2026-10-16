@@ -143,12 +143,21 @@ pub fn rebuild_graph(
         model,
         lane,
         None,
+        None,
     )
 }
 
 /// `rebuild_graph` with the Cargo package model `map` discovered: Rust
 /// paths resolve against its crate roots, and it is mirrored into the
 /// `rust_crates_path` sidecar. `None` means no package is in scope.
+///
+/// `transport` is the run's transport inputs, mirrored into the
+/// `transport_inputs_path` sidecar; `None` leaves that sidecar untouched and
+/// assembles transport facts with no SDK usings and no settings files.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the rebuild takes each independently discovered model `map` folded into `changed`"
+)]
 pub fn rebuild_graph_with_crates(
     root: &Path,
     graph_files: &[GraphFile],
@@ -157,6 +166,7 @@ pub fn rebuild_graph_with_crates(
     model: Option<&crate::project::ProjectModel>,
     lane: Option<&crate::semantic::LaneDecision>,
     crates: Option<&crate::rsgraph::crates::RustCrates>,
+    transport: Option<&crate::transport::TransportInputs>,
 ) -> io::Result<RebuildOutcome> {
     if !changed && graph_json_path(root).exists() && graph_schema_is_current(root) {
         return Ok(RebuildOutcome::NotRebuilt);
@@ -203,7 +213,17 @@ pub fn rebuild_graph_with_crates(
     crate::semantic::record_lane(lane, &mut graph.stats);
     crate::rsgraph::append_rust(&mut graph, &merged_rs);
     crate::rsgraph::append_rust_edges(&mut graph, &merged_rs, crates);
+    let no_inputs = crate::transport::TransportInputs::default();
+    graph.transport = crate::transport::assemble(
+        root,
+        &merged_cs,
+        &graph,
+        model,
+        transport.unwrap_or(&no_inputs),
+    );
+    let any_site = merged_cs.iter().any(|(_, f)| !f.transport.is_empty());
     write_graph(root, &graph)?;
+    crate::transport::write_sidecar(root, transport, any_site)?;
     write_project_units(root, model)?;
     write_rust_crates(root, crates)?;
     write_fragments_cache(root, &new_cache)?;

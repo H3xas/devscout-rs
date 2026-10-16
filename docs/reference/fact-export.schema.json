@@ -12,7 +12,8 @@
     { "$ref": "#/$defs/handler-registration" },
     { "$ref": "#/$defs/di-registration" },
     { "$ref": "#/$defs/unresolved-import" },
-    { "$ref": "#/$defs/test-file" }
+    { "$ref": "#/$defs/test-file" },
+    { "$ref": "#/$defs/transport-address" }
   ],
   "$defs": {
     "header": {
@@ -468,6 +469,217 @@
         "via": { "enum": ["attribute", "project", "path"] }
       }
     },
+    "transport-address": {
+      "title": "Transport address",
+      "description": "One MassTransit transport configuration fact a C# file states, recognized through a closed catalogue of package types. A nested fact names its bus fact by `busFile` and `busLine`. No queue name is derived from an endpoint name formatter.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["family", "evidence", "file", "line", "kind", "member"],
+      "properties": {
+        "family": { "const": "transport-address" },
+        "evidence": { "const": "declared" },
+        "file": { "type": "string" },
+        "line": { "type": "integer", "minimum": 1 },
+        "kind": {
+          "enum": [
+            "bus",
+            "host",
+            "receive-endpoint",
+            "configure-endpoints",
+            "registration",
+            "endpoint-name",
+            "send-address",
+            "request-address",
+            "endpoint-convention",
+            "entity-name",
+            "options-binding",
+            "outbox"
+          ]
+        },
+        "member": { "type": "string" },
+        "busFile": { "type": "string" },
+        "busLine": { "type": "integer", "minimum": 1 },
+        "transport": { "enum": ["rabbitmq", "amazon-sqs", "in-memory", "test-harness", "not-stated"] },
+        "registration": {
+          "enum": [
+            "consumer",
+            "saga",
+            "state-machine",
+            "consumer-namespace",
+            "saga-namespace",
+            "state-machine-namespace",
+            "assembly-scan"
+          ]
+        },
+        "types": { "type": "array", "items": { "$ref": "#/$defs/transportType" } },
+        "formatter": { "enum": ["kebab-case", "snake-case", "default", "unknown"] },
+        "formatterSource": { "enum": ["argument", "bus", "default"] },
+        "formatterArguments": { "type": "array", "items": { "$ref": "#/$defs/transportValue" } },
+        "filtered": { "const": true },
+        "address": { "$ref": "#/$defs/transportValue" },
+        "key": { "$ref": "#/$defs/transportValue" },
+        "properties": { "type": "array", "items": { "$ref": "#/$defs/transportProperty" } },
+        "scope": { "$ref": "#/$defs/transportScope" }
+      }
+    },
+    "transportType": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "type"],
+      "properties": {
+        "role": {
+          "enum": [
+            "message",
+            "consumer",
+            "saga",
+            "state-machine",
+            "state",
+            "handler",
+            "definition",
+            "anchor",
+            "options",
+            "db-context",
+            "bus"
+          ]
+        },
+        "type": { "type": "string" },
+        "resolved": { "type": "string" },
+        "resolvedFile": { "type": "string" },
+        "line": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "transportValue": {
+      "description": "An address or name with exactly one evidence class.",
+      "oneOf": [
+        { "$ref": "#/$defs/transportLiteral" },
+        { "$ref": "#/$defs/transportConstant" },
+        { "$ref": "#/$defs/transportConfiguration" },
+        { "$ref": "#/$defs/transportUnknown" }
+      ]
+    },
+    "transportScheme": { "enum": ["queue", "exchange", "topic", "rabbitmq", "rabbitmqs", "amazonsqs", "arn"] },
+    "transportLiteral": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["class", "value"],
+      "properties": {
+        "class": { "const": "literal" },
+        "value": { "type": "string" },
+        "scheme": { "$ref": "#/$defs/transportScheme" }
+      }
+    },
+    "transportConstant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["class", "value", "fields"],
+      "properties": {
+        "class": { "const": "constant" },
+        "value": { "type": "string" },
+        "scheme": { "$ref": "#/$defs/transportScheme" },
+        "fields": { "type": "array", "items": { "$ref": "#/$defs/transportField" } }
+      }
+    },
+    "transportField": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["field", "file", "line"],
+      "properties": {
+        "field": { "type": "string" },
+        "file": { "type": "string" },
+        "line": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "transportConfiguration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["class", "key", "values"],
+      "properties": {
+        "class": { "const": "configuration" },
+        "key": { "type": "string" },
+        "values": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["file", "value"],
+            "properties": {
+              "file": { "type": "string" },
+              "value": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "transportUnknown": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["class", "reason"],
+      "properties": {
+        "class": { "const": "unknown" },
+        "reason": {
+          "enum": [
+            "interpolated-string",
+            "parameter",
+            "local",
+            "static-readonly",
+            "field",
+            "method-call",
+            "nameof",
+            "expression",
+            "package-constant",
+            "unresolved-constant",
+            "uri-scheme",
+            "malformed-uri",
+            "unread-value",
+            "unreadable-configuration",
+            "overload",
+            "multiple-hosts"
+          ]
+        },
+        "key": { "type": "string" }
+      }
+    },
+    "transportNotStated": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["class"],
+      "properties": { "class": { "const": "not-stated" } }
+    },
+    "transportScopeValue": {
+      "description": "A scope part: a value without a scheme, or `not-stated`.",
+      "oneOf": [
+        { "$ref": "#/$defs/transportLiteral" },
+        { "$ref": "#/$defs/transportConstant" },
+        { "$ref": "#/$defs/transportUnknown" },
+        { "$ref": "#/$defs/transportNotStated" }
+      ]
+    },
+    "transportScope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["host", "virtualHost", "region", "account"],
+      "properties": {
+        "host": { "$ref": "#/$defs/transportScopeValue" },
+        "virtualHost": { "$ref": "#/$defs/transportScopeValue" },
+        "region": { "$ref": "#/$defs/transportScopeValue" },
+        "account": { "$ref": "#/$defs/transportScopeValue" }
+      }
+    },
+    "transportProperty": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "role", "value"],
+      "properties": {
+        "name": { "type": "string" },
+        "role": { "enum": ["host", "virtual-host", "region"] },
+        "value": {
+          "oneOf": [
+            { "$ref": "#/$defs/transportConfiguration" },
+            { "$ref": "#/$defs/transportUnknown" }
+          ]
+        }
+      }
+    },
     "trailer": {
       "title": "Trailer",
       "type": "object",
@@ -485,7 +697,8 @@
             "handler-registration",
             "di-registration",
             "unresolved-import",
-            "test-file"
+            "test-file",
+            "transport-address"
           ],
           "properties": {
             "definition": { "type": "integer", "minimum": 0 },
@@ -494,7 +707,8 @@
             "handler-registration": { "type": "integer", "minimum": 0 },
             "di-registration": { "type": "integer", "minimum": 0 },
             "unresolved-import": { "type": "integer", "minimum": 0 },
-            "test-file": { "type": "integer", "minimum": 0 }
+            "test-file": { "type": "integer", "minimum": 0 },
+            "transport-address": { "type": "integer", "minimum": 0 }
           }
         },
         "facts": { "type": "integer", "minimum": 0 },

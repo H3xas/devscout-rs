@@ -61,10 +61,10 @@ pub const GRAPH_FILE: &str = "graph.json";
 /// the extractor starts recording something cached fragments lack; the rename
 /// IS the invalidation mechanism, so the number a reader reports can only be
 /// the one this name carries.
-pub const FRAGMENT_CACHE_FILE: &str = "fragments-v40.json";
+pub const FRAGMENT_CACHE_FILE: &str = "fragments-v41.json";
 
 /// The fragment cache's own index of what it holds, at the same generation.
-pub const FRAGMENT_INDEX_FILE: &str = "fragments-index-v40.json";
+pub const FRAGMENT_INDEX_FILE: &str = "fragments-index-v41.json";
 
 /// csproj staleness sidecar, written only with a project model.
 pub const PROJECT_UNITS_FILE: &str = "project-units.json";
@@ -72,6 +72,12 @@ pub const PROJECT_UNITS_FILE: &str = "project-units.json";
 /// Cargo crate-model staleness sidecar, written only with a Cargo package in
 /// scope.
 pub const RUST_CRATES_FILE: &str = "rust-crates.json";
+
+/// Transport-input staleness sidecar, written only with a transport site.
+///
+/// It holds the namespaces each project's SDK and `Using` items import, and
+/// the digest of each settings file a transport binding reads.
+pub const TRANSPORT_INPUTS_FILE: &str = "transport-inputs.json";
 
 /// The imported cross-repo edge set `import-edges` writes.
 pub const IMPORTED_EDGES_FILE: &str = "imported-edges.json";

@@ -22,6 +22,7 @@ mod header;
 mod refusal;
 mod snapshot;
 mod stream;
+mod transport;
 
 #[cfg(test)]
 mod tests;

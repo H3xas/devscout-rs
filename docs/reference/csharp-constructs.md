@@ -277,3 +277,14 @@ the missing shape; a `silent` or `leaks` row is not asserted in either direction
   caught exception type; `using` aliases (the alias name is dropped) and alias-typed locals.
 - **Leak**: a type declared inside a dead `#if` branch, all of its member names, and every
   member reference inside a dead body.
+- **Transport shapes with no fact**: receivers typed only by a `var` from a package call, a
+  `using` alias, a `using static` import or a framework property chain the catalogue does not
+  list; values written as `nameof`, an interpolated string, a `static readonly` field, a
+  configuration indexer, an argument at or after a call's first named argument or an `amqp://`,
+  `amqps://`, `http(s)://` or other URI scheme (each reads `unknown`); configuration from sources other than `appsettings.json` and
+  `appsettings.*.json` in the project directory (environment variables, compose files, user
+  secrets, the command line, vaults, infrastructure as code), from `Directory.Build.props`
+  `ImplicitUsings` or `Using` items, and the Amazon SQS `Scope` and RabbitMQ `Port` options
+  properties; queue names derived from an endpoint name formatter and the output of a custom
+  formatter; AWS SDK SNS and SQS calls, Lambda event handlers, Azure Service Bus and raw
+  RabbitMQ.Client. See [Transport address](fact-export.md#transport-address).
