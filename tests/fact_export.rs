@@ -23,6 +23,7 @@ fn expected_test_files(language: &str) -> Vec<(&'static str, &'static str)> {
         ],
         "typescript" => vec![("src/page.spec.ts", "path")],
         "rust" => vec![("src/lib.rs", "attribute")],
+        "transport" => vec![("tests/HarnessTests.cs", "attribute")],
         other => panic!("no expectation for {other}"),
     }
 }
@@ -287,7 +288,7 @@ fn fact_export_ac_3_an_extracted_family_with_no_facts_reads_extracted() {
         "the C# family is extracted by THIS release even here"
     );
     assert_eq!(
-        header["coverage"]["transport-address"]["csharp"], "not-extracted",
+        header["coverage"]["http-route"]["csharp"], "not-extracted",
         "a family this release does not extract reads differently"
     );
 }

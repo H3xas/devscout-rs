@@ -15,16 +15,17 @@ Inside a git repository, artifacts live under the git common directory, so they 
 <git-common-dir>/scout/index-digests.json              per-file content digest for every indexed file, for this generation
 <git-common-dir>/scout/map.lock                        the lock a `map` holds while it publishes
 <git-common-dir>/scout/graph/graph.json                definitions, edges, and project units
-<git-common-dir>/scout/graph/fragments-v40.json        per-file extraction cache (incremental map), stamped with its owning worktree
-<git-common-dir>/scout/graph/fragments-index-v40.json  the fragment cache's own index of what it holds
+<git-common-dir>/scout/graph/fragments-v41.json        per-file extraction cache (incremental map), stamped with its owning worktree
+<git-common-dir>/scout/graph/fragments-index-v41.json  the fragment cache's own index of what it holds
 <git-common-dir>/scout/graph/project-units.json        csproj staleness sidecar (present only with a project model)
 <git-common-dir>/scout/graph/rust-crates.json          Cargo crate-model staleness sidecar (present only with a Cargo package in scope)
+<git-common-dir>/scout/graph/transport-inputs.json     transport-input staleness sidecar (present only with a transport site)
 <git-common-dir>/scout/graph/imported-edges.json       the imported cross-repo edge set `import-edges` writes
 <git-common-dir>/scout/graph/compiler-facts-v1.json    optional versioned compiler-fact artifact; absent unless `compiler-facts run|import` has admitted one
 <git-common-dir>/scout/log/queries.jsonl               query-verb telemetry, one JSON line per answered invocation (opt-in; SCOUT_TELEMETRY=1)
 ```
 
-Every name above is a literal, and every one of them comes from a named constant in the source, so the fragment generation is the `fragments-v40.json` this build writes rather than a placeholder. The [upgrading guide](../guides/upgrading.md) covers what to do when a release changes the layout.
+Every name above is a literal, and every one of them comes from a named constant in the source, so the fragment generation is the `fragments-v41.json` this build writes rather than a placeholder. The [upgrading guide](../guides/upgrading.md) covers what to do when a release changes the layout.
 
 ## Schema versions
 
@@ -35,7 +36,7 @@ Every name above is a literal, and every one of them comes from a named constant
 | `index-digests.json` | 1 |
 | `imported-edges.json` | 1 |
 | `compiler-facts-v1.json` | artifact 2, contract 1 |
-| `fragments-v40.json` | generation 40 in the name |
+| `fragments-v41.json` | generation 41 in the name |
 | `queries.jsonl` | 1 |
 
 The fragment pair and the compiler-facts artifact carry their version in the name; the rest carry a `version` field. `manifest.json` carries none: the manifest is an ordered JSON object whose own shape is its schema.

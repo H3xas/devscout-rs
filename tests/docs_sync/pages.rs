@@ -652,6 +652,10 @@ pub fn storage_page() -> String {
             "Cargo crate-model staleness sidecar (present only with a Cargo package in scope)",
         ),
         (
+            format!("{graph_dir}{}", layout::TRANSPORT_INPUTS_FILE),
+            "transport-input staleness sidecar (present only with a transport site)",
+        ),
+        (
             format!("{graph_dir}{}", layout::IMPORTED_EDGES_FILE),
             "the imported cross-repo edge set `import-edges` writes",
         ),
@@ -835,6 +839,7 @@ pub fn listed_artifact_names() -> Vec<String> {
         layout::FRAGMENT_INDEX_FILE.to_string(),
         layout::PROJECT_UNITS_FILE.to_string(),
         layout::RUST_CRATES_FILE.to_string(),
+        layout::TRANSPORT_INPUTS_FILE.to_string(),
         layout::IMPORTED_EDGES_FILE.to_string(),
         layout::QUERIES_LOG_FILE.to_string(),
         layout::DEBUG_LOG_FILE.to_string(),

@@ -90,6 +90,7 @@ fn rebuild_graph_reuses_a_cached_fragment_at_matching_mtime() {
         registrations: vec![],
         publishes: vec![],
         handler_registrations: vec![],
+        transport: vec![],
     };
     // First build: nothing cached, comes from fresh_fragments.
     let mut fresh = HashMap::new();

@@ -45,6 +45,8 @@ struct CountedFamilies {
     unresolved_import: usize,
     #[serde(rename = "test-file")]
     test_file: usize,
+    #[serde(rename = "transport-address")]
+    transport_address: usize,
 }
 
 impl CountedFamilies {
@@ -57,6 +59,7 @@ impl CountedFamilies {
             di_registration: counts[4],
             unresolved_import: counts[5],
             test_file: counts[6],
+            transport_address: counts[7],
         }
     }
 }

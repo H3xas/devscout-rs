@@ -172,6 +172,11 @@ pub struct Graph {
     /// Imports left unresolved by a declared TypeScript module mode.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub unresolved_imports: Vec<crate::tsgraph::UnresolvedImport>,
+    /// The transport configuration facts, appended LAST and omitted when
+    /// empty, so a repository that states none keeps its bytes. See
+    /// `transport::TransportFact`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub transport: Vec<crate::transport::TransportFact>,
 }
 
 /// Reads and deserializes the repository graph, returning `None` on failure.

@@ -33,6 +33,7 @@ fn frag_with_registrations(defs: Vec<FragDef>, registrations: Vec<FragRegistrati
         registrations,
         publishes: vec![],
         handler_registrations: vec![],
+        transport: vec![],
     }
 }
 

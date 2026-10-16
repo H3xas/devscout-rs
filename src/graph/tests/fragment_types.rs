@@ -404,6 +404,7 @@ fn any_fragment_round_trips_both_shapes_and_never_reads_one_as_the_other() {
         registrations: Vec::new(),
         publishes: Vec::new(),
         handler_registrations: Vec::new(),
+        transport: Vec::new(),
     });
     let cs_json = serde_json::to_string(&cs).unwrap();
     assert_eq!(cs_json, r#"{"defs":[],"usings":[],"refs":[],"names":[]}"#);

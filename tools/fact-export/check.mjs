@@ -55,6 +55,7 @@ const FAMILIES = [
   "di-registration",
   "unresolved-import",
   "test-file",
+  "transport-address",
 ];
 
 // One named defect per negative fixture, so the selftest asserts WHY a stream

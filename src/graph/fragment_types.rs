@@ -667,6 +667,11 @@ pub struct Fragment {
         skip_serializing_if = "Vec::is_empty"
     )]
     pub handler_registrations: Vec<FragHandlerRegistration>,
+    /// The file's provisional transport sites, appended LAST after
+    /// `handlerRegistrations` and omitted when empty. Joined the schema with
+    /// the v41 cache bump.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub transport: Vec<crate::transport::TransportSite>,
 }
 
 /// The three shapes a cached fragment can have. Each rel is keyed to
