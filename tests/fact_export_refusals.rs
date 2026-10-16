@@ -219,3 +219,14 @@ fn fact_export_ac_6_another_worktree_s_index_exports_with_its_label_and_keeps_th
         "the messaging facts are keyed to the record's owner, not the reading worktree"
     );
 }
+
+#[test]
+fn fact_export_ac_6_a_cache_stamped_by_the_wrong_worktree_refuses_with_index_changed() {
+    let fixture = Fixture::build("csharp");
+    let cache = fixture.cache_path();
+    let mut value = read_json(&cache);
+    value["owner"] = Value::from("/elsewhere/.git");
+    fs::write(&cache, serde_json::to_vec(&value).expect("serialize the cache"))
+        .expect("restamp the cache");
+    assert_refused(&fixture, "index-changed", None);
+}
