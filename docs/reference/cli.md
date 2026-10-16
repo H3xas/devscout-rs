@@ -72,6 +72,16 @@ included.
 | `--refresh` | Accepted and ignored; every `map` is incremental |
 | `--no-semantic` | Skip an admitted compiler-facts artifact and rebuild the syntax-only graph |
 
+In a Git root, `map` also skips the untracked files and directories Git reports
+as ignored -- `.gitignore` at any depth, `.git/info/exclude`, `core.excludesFile`,
+with negations and tracked-file exceptions exactly as Git answers them -- so a
+local build into `build/`, `lib/` or `out/` cannot duplicate a source
+definition. A tracked file is always indexed, and a root with no `.git` entry is
+walked by the fixed directory-name list alone, with no `git` needed. In a Git
+root the ignore query is required: when `git` cannot be run, or its answer
+cannot be read, `map` exits 1 with `error: ignore query failed (…)` and leaves
+the previous index in place.
+
 ### clear
 
 `devscout clear --older-than <days>` drops freshness rows older than N days;

@@ -20,14 +20,23 @@ const PATH_RESOLVED_EXT: &[&str] = &[".rs"];
 // ---------------------------------------------------------------------------
 // Language census. Rather than a second, independent recursive walker, this
 // counts extensions over exactly the file set `walk::list_source_files` already
-// enumerates (its `SKIP_DIRS`/`SOURCE_EXT` contract). Bounded consequence, noted
+// enumerates (its `SKIP_DIRS`/`SOURCE_EXT` contract, in a Git root minus the
+// paths Git reports as ignored). Bounded consequence, noted
 // rather than solved: a real-but-unsupported language outside `walk::SOURCE_EXT`
 // entirely (Python, Go, ...) is invisible to this census, same as it is
 // invisible to `devscout map` itself.
 // ---------------------------------------------------------------------------
 
+// The census's own walk: it needs the same ignore set `map` uses, and the
+// query's failure is reported in the census line rather than failing `init`.
+fn walked_files(root: &Path) -> std::io::Result<Vec<String>> {
+    let scope = [".".to_string()];
+    let ignored = walk::Ignored::for_scope(root, &scope)?;
+    walk::list_source_files(root, &scope, &ignored)
+}
+
 pub(super) fn census_line(root: &Path) -> String {
-    let files = match walk::list_source_files(root, &[".".to_string()]) {
+    let files = match walked_files(root) {
         Ok(f) => f,
         Err(e) => return format!("languages: error walking sources ({e})"),
     };
