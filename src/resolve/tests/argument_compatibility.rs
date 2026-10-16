@@ -283,3 +283,137 @@ fn interpolated_handler_ac_4_a_declared_string_conversion_keeps_the_handler_over
     ];
     assert_eq!(targets(&files), vec!["App.Logger"]);
 }
+
+// --- in-graph types named like CLR primitives ------------------------------
+
+#[test]
+fn primitive_named_type_ac_1_a_derived_string_binds_the_base_parameter() {
+    let files = [
+        ("Domain/Types.cs", "namespace App { public class Base {} public class String : Base {} public class Svc { public void Take(Base value) {} } }"),
+        ("Use/Run.cs", "namespace App { public class Runner { public void Run(Svc s) { s.Take(new String()); } } }"),
+    ];
+    assert_eq!(targets(&files), vec!["App.Svc"]);
+}
+
+#[test]
+fn primitive_named_type_ac_1_a_boolean_struct_binds_its_interface_parameter() {
+    let files = [
+        ("Domain/Types.cs", "namespace App { public interface IFlag {} public struct Boolean : IFlag {} public class Svc { public void Set(IFlag flag) {} } }"),
+        ("Use/Run.cs", "namespace App { public class Runner { public void Run(Svc s, Boolean flag) { s.Set(flag); } } }"),
+    ];
+    assert_eq!(targets(&files), vec!["App.Svc"]);
+}
+
+#[test]
+fn primitive_named_type_ac_1_cast_and_member_result_arguments_bind() {
+    let files = [
+        ("Domain/Types.cs", "namespace App { public class Base {} public class String : Base {} public class Holder { public String Value { get; set; } } public class Svc { public void Take(Base value) {} } }"),
+        ("Use/Run.cs", "namespace App { public class Runner { public void Run(Svc s, Holder h, object o) { s.Take((String)o); s.Take(h.Value); } } }"),
+    ];
+    let mut found = targets(&files);
+    found.sort();
+    assert_eq!(found, vec!["App.Holder", "App.Svc", "App.Svc"]);
+}
+
+#[test]
+fn primitive_named_type_ac_1_an_imported_string_binds_its_interface_parameter() {
+    let files = [
+        ("Lib/Text.cs", "namespace Lib { public interface IText {} public class String : IText {} }"),
+        ("Domain/Types.cs", "using Lib; namespace App { public class Svc { public void Take(IText value) {} } }"),
+        ("Use/Run.cs", "using Lib; namespace App { public class Runner { public void Run(Svc s, String text) { s.Take(text); } } }"),
+    ];
+    assert_eq!(targets(&files), vec!["App.Svc"]);
+}
+
+#[test]
+fn primitive_named_type_ac_1_a_declared_conversion_binds_the_base_parameter() {
+    let files = [
+        ("Domain/Types.cs", "namespace App { public class Base {} public class String { public static implicit operator Base(String value) => new Base(); } public class Svc { public void Take(Base value) {} } }"),
+        ("Use/Run.cs", "namespace App { public class Runner { public void Run(Svc s) { s.Take(new String()); } } }"),
+    ];
+    assert_eq!(targets(&files), vec!["App.Svc"]);
+}
+
+#[test]
+fn primitive_named_type_ac_1_the_instance_overload_wins_over_the_extension() {
+    let files = [
+        ("Domain/Types.cs", "namespace App { public class Base {} public class String : Base {} public class Svc { public void Take(Base value) {} } }"),
+        ("Ext/Take.cs", "namespace App { public static class Ext { public static void Take(this Svc s, String value) {} } }"),
+        ("Use/Run.cs", "namespace App { public class Runner { public void Run(Svc s) { s.Take(new String()); } } }"),
+    ];
+    assert_eq!(targets(&files), vec!["App.Svc"]);
+}
+
+#[test]
+fn primitive_named_type_ac_2_a_parameter_type_conversion_admits_the_argument() {
+    let files = [
+        ("Domain/Types.cs", "namespace App { public class Foo {} public struct Int32 { public static implicit operator Int32(Foo value) => default; } public class Svc { public void Count(Int32 value) {} } }"),
+        ("Use/Run.cs", "namespace App { public class Runner { public void Run(Svc s) { s.Count(new Foo()); } } }"),
+    ];
+    assert_eq!(targets(&files), vec!["App.Svc"]);
+}
+
+#[test]
+fn primitive_named_type_ac_2_type_arguments_compare_by_in_graph_identity() {
+    let files = [
+        ("Domain/Types.cs", "using Text = App.String; namespace App { public class String {} public class Bag<T> {} public class Envelope<T> {} public class Svc { public void Save(Envelope<Text> e) {} public void SaveBag(Envelope<Bag<Text>> e) {} } }"),
+        ("Use/Run.cs", "namespace App { public class Runner { public void Run(Svc s, Envelope<String> e, Envelope<Bag<String>> bag) { s.Save(e); s.SaveBag(bag); } } }"),
+    ];
+    assert_eq!(targets(&files), vec!["App.Svc"; 2]);
+}
+
+#[test]
+fn primitive_named_type_ac_2_an_argument_alias_target_keeps_the_in_graph_name() {
+    let files = [
+        ("Domain/Types.cs", "using System.Collections.Generic; using Text = App.String; namespace App { public class String {} public class Envelope<T> {} public class Svc { public void Save(Envelope<List<Text>> e) {} } }"),
+        ("Use/Run.cs", "using Names = System.Collections.Generic.List<App.String>; namespace App { public class Runner { public void Run(Svc s, Envelope<Names> e) { s.Save(e); } } }"),
+    ];
+    assert_eq!(targets(&files), vec!["App.Svc"]);
+}
+
+#[test]
+fn primitive_named_type_ac_3_keyword_spellings_beside_an_in_graph_string_admit() {
+    let files = [
+        ("Domain/Types.cs", "namespace App { public class String {} public class Svc { public void Name(System.String value) {} public void Text(string value) {} } }"),
+        ("Use/Run.cs", "namespace App { public class Runner { public void Run(Svc s, System.String v) { s.Name(\"x\"); s.Text(v); } } }"),
+    ];
+    assert_eq!(targets(&files), vec!["App.Svc"; 2]);
+}
+
+#[test]
+fn primitive_named_type_ac_3_a_system_string_local_beside_an_unimported_string_admits() {
+    let files = [
+        ("Lib/Text.cs", "namespace Lib { public class String {} }"),
+        ("Domain/Types.cs", "namespace App { public class Svc { public void Name(string value) {} } }"),
+        ("Use/Run.cs", "using System; namespace App { public class Runner { public void Run(Svc s, String v) { s.Name(v); } } }"),
+    ];
+    assert_eq!(targets(&files), vec!["App.Svc"]);
+}
+
+#[test]
+fn primitive_named_type_ac_4_unrelated_primitive_named_types_bind_the_extension() {
+    let files = [
+        ("Domain/Types.cs", "namespace App { public class Base {} public interface IFlag {} public class Order {} public class String {} public struct Boolean {} public class Envelope<T> {} public class Svc { public void Take(Base value) {} public void Set(IFlag flag) {} public void Save(Envelope<Order> e) {} } }"),
+        ("Ext/Svc.cs", "namespace App { public static class Ext { public static void Take(this Svc s, String value) {} public static void Set(this Svc s, Boolean flag) {} public static void Save(this Svc s, Envelope<String> e) {} } }"),
+        ("Use/Run.cs", "namespace App { public class Runner { public void Run(Svc s, Boolean flag, Envelope<String> e) { s.Take(new String()); s.Set(flag); s.Save(e); } } }"),
+    ];
+    assert_eq!(targets(&files), vec!["App.Ext"; 3]);
+}
+
+#[test]
+fn primitive_named_type_ac_4_clr_names_without_an_in_graph_type_still_decline() {
+    let files = [
+        ("Domain/Types.cs", "namespace App { public class Svc { public void Name(String value) {} public void Code(Char value) {} } }"),
+        ("Use/Run.cs", "namespace App { public class Runner { public void Run(Svc s) { s.Name(5); s.Code(\"a\"); s.Name(\"ok\"); } } }"),
+    ];
+    assert_eq!(targets(&files), vec!["App.Svc"]);
+}
+
+#[test]
+fn primitive_named_type_ac_2_a_system_qualified_alias_target_stays_the_keyword() {
+    let files = [
+        ("Domain/Types.cs", "using Name = App.String; namespace App { public class String {} public class Pair<TFirst, TSecond> {} public class Svc { public void Save(Pair<Name, string> p) {} public void SaveGlobal(Pair<Name, string> p) {} } }"),
+        ("Use/Run.cs", "using Text = System.String; using Rooted = global::System.String; namespace App { public class Runner { public void Run(Svc s, Pair<String, Text> p, Pair<String, Rooted> g) { s.Save(p); s.SaveGlobal(g); } } }"),
+    ];
+    assert_eq!(targets(&files), vec!["App.Svc"; 2]);
+}

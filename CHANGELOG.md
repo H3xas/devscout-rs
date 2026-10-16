@@ -75,6 +75,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   declining. A generic argument the extractor could not read (a tuple, a pointer, a function
   pointer) also admits, because a placeholder that names no type cannot prove a mismatch.
 
+- **A type of your own named like a CLR primitive keeps its identity in overload checks.** Before,
+  a class or struct named `String`, `Boolean`, `Int32` or a similar name was compared as the
+  built-in `string`, `bool` or `int`. Thus a call that passed it to its base class, to its
+  interface or to a type it converts to was refused. The call then bound an extension or
+  nothing. Now such a name also compares as the in-graph type it resolves to. This applies at
+  the top level, in generic type arguments and in `using` alias targets. The call binds the
+  overload that C# picks. A call that bound before still binds. Unrelated types still decline.
+
 - **A receiver declared with a qualified generic type now resolves through its enclosing
   namespaces like a non-generic one.** `Widgets.Box<int> b` reached the exact-qualified lookup
   with its type-argument list still attached, and since no definition is stored with one, only the
