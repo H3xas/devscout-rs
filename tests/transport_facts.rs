@@ -676,6 +676,112 @@ fn transport_facts_ac_6_user_information_joined_to_a_constant_still_resolves() {
     assert_eq!(scope_part(host[0], "virtualHost")["value"], "joined");
 }
 
+const EARLIER_FORM_SECRET: &str = "s3cret-earlier-form";
+
+// The cache pair as an earlier build of this generation wrote it: no payload
+// stamp, and each joined literal cached as its text rather than its position.
+fn rewrite_cache_in_earlier_form(fixture: &Fixture) {
+    fn literal_text(value: &mut Value, replaced: &mut usize) {
+        match value {
+            Value::Object(map) => {
+                if let Some(lit) = map.get_mut("lit") {
+                    if lit.is_object() {
+                        *lit = Value::String(format!("amqp://ops:{EARLIER_FORM_SECRET}@"));
+                        *replaced += 1;
+                        return;
+                    }
+                }
+                map.values_mut().for_each(|v| literal_text(v, replaced));
+            }
+            Value::Array(items) => items.iter_mut().for_each(|v| literal_text(v, replaced)),
+            _ => {}
+        }
+    }
+    let cache = fixture.cache_path();
+    let name = cache.file_name().and_then(|n| n.to_str()).expect("name");
+    let index = cache.with_file_name(name.replacen("fragments-", "fragments-index-", 1));
+    for path in [&cache, &index] {
+        let mut stamped: Value =
+            serde_json::from_str(&fs::read_to_string(path).expect("read")).expect("json");
+        let map = stamped.as_object_mut().expect("a stamped object");
+        map.retain(|key, _| key == "owner" || key == "entries");
+        if path == &cache {
+            let mut replaced = 0;
+            literal_text(&mut stamped, &mut replaced);
+            assert!(replaced > 0, "the fixture caches a joined literal");
+        }
+        fs::write(path, serde_json::to_vec(&stamped).expect("json")).expect("write");
+    }
+}
+
+fn assert_no_earlier_form_secret(fixture: &Fixture) {
+    let mut stack = vec![fixture.state_dir()];
+    while let Some(dir) = stack.pop() {
+        for entry in fs::read_dir(&dir).expect("read state").flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else {
+                let text = String::from_utf8_lossy(&fs::read(&path).expect("read")).into_owned();
+                assert!(
+                    !text.contains(EARLIER_FORM_SECRET),
+                    "{} holds the earlier form's literal",
+                    path.display()
+                );
+            }
+        }
+    }
+}
+
+fn graph_shape(fixture: &Fixture) -> (usize, usize, usize) {
+    let graph = fixture.graph();
+    let count = |key: &str| graph[key].as_array().map_or(0, Vec::len);
+    (count("defs"), count("edges"), count("transport"))
+}
+
+#[test]
+fn transport_facts_ac_6_a_cache_in_an_earlier_form_is_replaced_by_the_next_map() {
+    let fixture = Fixture::build_from(&source(), "transport-earlier-form");
+    let before = graph_shape(&fixture);
+    assert!(before.2 > 0);
+    rewrite_cache_in_earlier_form(&fixture);
+
+    let refused = fixture.run(&["export"]);
+    assert!(
+        !refused.status.success(),
+        "export must refuse a cache it cannot read in full"
+    );
+
+    fixture.map();
+    assert_no_earlier_form_secret(&fixture);
+    assert_eq!(graph_shape(&fixture), before);
+    let export = String::from_utf8(fixture.export(&[])).expect("utf-8 export");
+    assert!(!export.contains(EARLIER_FORM_SECRET));
+}
+
+#[test]
+fn transport_facts_ac_6_a_settings_edit_over_an_earlier_form_keeps_the_graph() {
+    let fixture = Fixture::build_from(&source(), "transport-earlier-form-settings");
+    let before = graph_shape(&fixture);
+    rewrite_cache_in_earlier_form(&fixture);
+    rewrite(
+        &fixture,
+        "src/Service/appsettings.json",
+        "\"broker.internal\"",
+        "\"broker.edited\"",
+    );
+
+    fixture.map();
+    assert_no_earlier_form_secret(&fixture);
+    assert_eq!(graph_shape(&fixture), before);
+    let facts = facts(&fixture);
+    let binding = in_file(&facts, "src/Service/Program.cs", "options-binding");
+    assert_eq!(
+        binding[0]["properties"][0]["value"]["values"][1]["value"],
+        "broker.edited"
+    );
+}
+
 #[test]
 fn transport_facts_ac_7_a_test_substitution_stays_a_test_fact() {
     let fixture = shared();

@@ -397,11 +397,13 @@ fn cs_fragment(value: serde_json::Value) -> AnyFragment {
     serde_json::from_value(value).unwrap()
 }
 
-// Plants a cache pair in the CURRENT file shape: the owner stamp plus the
-// entries. The test roots have no Git directory, so the owning worktree is
-// `null` and a payload planted here is one this reader is willing to reuse.
+// Plants a cache pair in the CURRENT file shape: the payload and owner stamps
+// plus the entries. The test roots have no Git directory, so the owning
+// worktree is `null` and a payload planted here is one this reader is willing
+// to reuse.
 fn plant_cache_pair(dir: &std::path::Path, payload: &str, index: &str, generation: &str) {
-    let stamp = |entries: &str| format!(r#"{{"owner":null,"entries":{entries}}}"#);
+    let form = crate::graph::cache::PAYLOAD_FORM;
+    let stamp = |entries: &str| format!(r#"{{"payload":{form},"owner":null,"entries":{entries}}}"#);
     fs::write(
         graph_dir(dir).join(format!("fragments{generation}.json")),
         stamp(payload),
@@ -477,6 +479,48 @@ fn a_pre_bump_fragment_cache_cannot_leave_a_supported_hop_unfound() {
     let g = rebuilt(&reused);
     assert_eq!(hop_count(&g), 0);
     assert_eq!(g.stats.edges_by_kind.bus_hop, None);
+}
+
+#[test]
+fn a_current_generation_pair_without_this_payload_form_is_never_reused() {
+    let stale = serde_json::to_string(&serde_json::json!({
+        "Bus/Publisher.cs": {"mtime": 7, "fragment": publisher_without_publishes()},
+    }))
+    .unwrap();
+    let index = r#"{"Bus/Publisher.cs":7}"#;
+    let other_form = crate::graph::cache::PAYLOAD_FORM + 1;
+    for (label, stamp) in [
+        ("no-payload-stamp", String::new()),
+        ("other-payload-form", format!(r#""payload":{other_form},"#)),
+    ] {
+        let dir = temp_dir(label);
+        fs::create_dir_all(graph_dir(&dir)).unwrap();
+        fs::write(
+            fragments_cache_path(&dir),
+            format!(r#"{{{stamp}"owner":null,"entries":{stale}}}"#),
+        )
+        .unwrap();
+        fs::write(
+            fragments_index_path(&dir),
+            format!(r#"{{{stamp}"owner":null,"entries":{index}}}"#),
+        )
+        .unwrap();
+        assert!(read_fragments_index(&dir).is_empty(), "{label}");
+        assert!(
+            crate::graph::cache::read_fragments_cache(&dir).is_empty(),
+            "{label}"
+        );
+        let g = rebuilt(&dir);
+        assert_eq!(hop_count(&g), 1, "{label}");
+        let rewritten = fs::read_to_string(fragments_index_path(&dir)).unwrap();
+        assert!(
+            rewritten.starts_with(&format!(
+                r#"{{"payload":{}"#,
+                crate::graph::cache::PAYLOAD_FORM
+            )),
+            "{label}: {rewritten}"
+        );
+    }
 }
 
 #[test]

@@ -324,7 +324,10 @@ A URI never keeps its user information, port, query or fragment, in the
 export or in any index file. A value joined from string literals and constants
 keeps its literals in the fragment cache only as source positions, and the
 graph rebuild reads them again, because only the joined value shows which
-part is user information. No
+part is user information. The cache pair carries a payload stamp. A pair that
+an earlier build of the same generation wrote in another form is never reused.
+The next `map` extracts every file again and replaces that pair. Until then,
+`export` refuses it. No
 configuration value is read except for an options property listed above, and no
 credential property is ever listed.
 
