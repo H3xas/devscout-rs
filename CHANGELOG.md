@@ -67,6 +67,17 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A receiver declared with a qualified generic type now resolves through its enclosing
+  namespaces like a non-generic one.** `Widgets.Box<int> b` reached the exact-qualified lookup
+  with its type-argument list still attached, and since no definition is stored with one, only the
+  dotted-suffix step could answer it -- which is a decision about the enclosing namespace that the
+  declaration itself had already made. The list comes off that lookup now, held to the argument
+  count the declaration recorded or, with none recorded, to the count the written list carries, so
+  `Widgets.Box<int>` binds exactly what `Box` with one type parameter binds and never a
+  same-named definition of another count. A written path that is not one well-formed list closing
+  its final segment -- a list on an earlier segment, an alias-qualified path, an unbalanced or
+  empty list -- keeps the previous lookup.
+
 - **Two environment-reference corrections.** `SCOUT_MTIME_REUSE` no longer claims to be read for
   an existing script's sake: the variable is not read at all, and the page lists it as retired
   with no effect. `SCOUT_EDGE_PROVENANCE`, which `map` writes and which had no row, is documented
