@@ -219,7 +219,8 @@ fn designation_construct(decl: Node) -> Option<Span> {
 
 // The names `node` declares that no type this walk reads vouches for: every
 // name a `var (…)` deconstruction designates, in a declarator, a `foreach`, a
-// pattern, or the misparsed `is var (…)`, and every name a LINQ query binds --
+// pattern, or the misparsed `is var (…)`, the designation of a `var` or
+// property/positional pattern, and every name a LINQ query binds --
 // in scope for the rest of the query, never a field of the enclosing type, and
 // with no type readable off the syntax.
 pub(super) fn untyped_declared_names(node: Node, src: &[u8]) -> Vec<String> {
@@ -237,7 +238,15 @@ pub(super) fn untyped_declared_names(node: Node, src: &[u8]) -> Vec<String> {
             .map(|l| designated_names(l, src))
             .unwrap_or_default(),
         "invocation_expression" => misparsed_var_pattern_names(node, src),
-        "declaration_pattern" | "var_pattern" => pattern_designated_names(node, src),
+        "declaration_pattern" => pattern_designated_names(node, src),
+        // `var x` and `T { … } x` designate names whose type this walk does
+        // not read off the pattern.
+        "var_pattern" => designated_names(node, src),
+        "recursive_pattern" => node
+            .child_by_field_name("name")
+            .map(|n| text(n, src))
+            .into_iter()
+            .collect(),
         _ => query_binding_names(node, src),
     }
 }
@@ -307,8 +316,8 @@ fn argument_identifiers(list: Node, src: &[u8]) -> Vec<String> {
     names
 }
 
-// `case var (x, y):`, a `var (x, y)` switch-expression arm and a nested
-// `var (x, y)` subpattern: the parenthesized designation of a pattern.
+// `case var (x, y):` and a `var (x, y)` switch-expression arm: the
+// parenthesized designation of a declaration pattern.
 fn pattern_designated_names(node: Node, src: &[u8]) -> Vec<String> {
     named_children(node)
         .into_iter()

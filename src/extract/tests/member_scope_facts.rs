@@ -103,6 +103,7 @@ fn member_scope_ac_2_a_use_outside_every_declaring_construct_withholds() {
         "{ Make(out Gadget v); } s.Use(v); v.Touch();",
         "switch (o) { case Gadget v: break; } s.Use(v); v.Touch();",
         "foreach (Box<Gadget> v in boxes) { } s.Use(v); v.Touch();",
+        "{ if (o is Gadget { } v) { } } s.Use(v); v.Touch();",
     ];
     for body in bodies {
         let source = runner(
