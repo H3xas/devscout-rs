@@ -200,11 +200,11 @@ pub(super) fn untyped_declared_names(node: Node, src: &[u8]) -> Vec<String> {
             })
             .flat_map(|d| designated_names(d, src))
             .collect(),
-        "foreach_statement" => node
-            .child_by_field_name("left")
-            .filter(|l| l.kind() == "tuple_pattern")
-            .map(|l| designated_names(l, src))
-            .unwrap_or_default(),
+        "foreach_statement" => match node.child_by_field_name("left") {
+            Some(l) if l.kind() == "tuple_pattern" => designated_names(l, src),
+            Some(l) => misparsed_generic_variable(l, src).into_iter().collect(),
+            None => Vec::new(),
+        },
         "invocation_expression" => misparsed_var_pattern_names(node, src),
         "declaration_pattern" | "var_pattern" => pattern_designated_names(node, src),
         _ => query_binding_names(node, src),
@@ -230,6 +230,20 @@ fn designated_names(node: Node, src: &[u8]) -> Vec<String> {
         }
     }
     names
+}
+
+// The grammar reads `foreach (Box<Item> x in xs)` -- a generic type whose
+// argument is a name -- as the comparison `(Box < Item) > x` with no type node,
+// so the loop variable is the comparison's right-hand identifier.
+fn misparsed_generic_variable(left: Node, src: &[u8]) -> Option<String> {
+    let is_op = |n: Node, op: &str| {
+        n.kind() == "binary_expression"
+            && n.child_by_field_name("operator")
+                .is_some_and(|o| o.kind() == op)
+    };
+    let opened = left.child_by_field_name("left")?;
+    let name = left.child_by_field_name("right")?;
+    (is_op(left, ">") && is_op(opened, "<") && name.kind() == "identifier").then(|| text(name, src))
 }
 
 // The grammar has no rule for `e is var (x, y)` and reads it as an invocation

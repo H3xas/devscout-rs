@@ -102,6 +102,7 @@ fn member_scope_ac_2_a_use_outside_every_declaring_construct_withholds() {
         "{ if (o is Gadget v) { } } s.Use(v); v.Touch();",
         "{ Make(out Gadget v); } s.Use(v); v.Touch();",
         "switch (o) { case Gadget v: break; } s.Use(v); v.Touch();",
+        "foreach (Box<Gadget> v in boxes) { } s.Use(v); v.Touch();",
     ];
     for body in bodies {
         let source = runner(
@@ -242,4 +243,15 @@ fn member_scope_ac_2_a_declaration_with_no_placeable_construct_is_unknown_everyw
         Some(None)
     ));
     assert!(matches!(table.lookup("v", 0), Some(None)));
+}
+
+#[test]
+fn member_scope_ac_2_a_generic_foreach_variable_the_grammar_misreads_is_taken_but_unknown() {
+    let source = runner(
+        "Widget v;",
+        "",
+        "foreach (Box<Gadget> v in boxes) { s.Use(v); v.Touch(); }",
+    );
+    assert_eq!(use_args(&source), vec![None]);
+    assert_eq!(touch_receivers(&source), vec![(None, true)]);
 }
