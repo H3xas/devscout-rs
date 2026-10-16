@@ -125,7 +125,7 @@ them against different things.
 | `scope` | The directories the map covered |
 | `dirtyAtMap` | The relevant paths already changed when the map read them, each with `path` and the recorded `digest` (`null` for a path whose bytes the index kept no digest of) |
 | `fileCount` | How many manifest entries the index holds |
-| `fileDigests` | A SHA-256 over the digest table as an array of `[path, "sha256:<hex>"]` pairs sorted by path |
+| `fileDigests` | A SHA256 over the digest table as an array of `[path, "sha256:<hex>"]` pairs sorted by path |
 
 `analysis` — the inputs the analysis depended on: `devscoutVersion`,
 `graphSchemaVersion`, `fragmentGeneration`, `indexStateVersion`, `configInputs`
@@ -146,7 +146,7 @@ publishing worktree's Git directory, is never part of the stream.
 
 ## Payload digest
 
-The trailer carries `payloadDigest`: the SHA-256 over the exact bytes of the
+The trailer carries `payloadDigest`: the SHA256 over the exact bytes of the
 fact lines, each with its terminating `\n`, in stream order. The header and the
 trailer are excluded, so the digest changes when a fact changes and does not
 change when only the freshness observation or the publishing generation does.
