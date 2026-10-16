@@ -96,12 +96,10 @@ pub use artifact::{read_graph, Graph, GraphName, GraphUnit, Stats, GRAPH_SCHEMA_
 // a direct writer.
 #[cfg(test)]
 pub(crate) use artifact::write_graph;
-pub use cache::{index_is_stale, read_fragments_index, FragMessaging, FragmentCacheEntry};
-pub(crate) use cache::{
-    read_fragments_messaging, superseded_cache_present, StrictCacheError,
-};
 #[cfg(test)]
 pub(crate) use cache::write_fragments_cache;
+pub use cache::{index_is_stale, read_fragments_index, FragMessaging, FragmentCacheEntry};
+pub(crate) use cache::{read_fragments_messaging, superseded_cache_present, StrictCacheError};
 pub use call_shape_types::{FragDelegateSignature, FragLambdaShape};
 pub use compiler_facts::{
     admit, admit_and_publish, compiler_facts_json_path, expectations_for, locate_engine,
@@ -131,8 +129,8 @@ pub use imports::{
 };
 pub use lane::{LaneCompilations, LaneReason, LaneStats};
 pub use ordered::{OrderedMap, Percent1};
-pub use paths::{graph_json_path, project_units_path, rust_crates_path};
 pub(crate) use paths::{fragment_generation, fragments_cache_path};
+pub use paths::{graph_json_path, project_units_path, rust_crates_path};
 pub use rebuild::{rebuild_graph, rebuild_graph_with_crates, GraphFile, RebuildOutcome};
 
 #[cfg(test)]

@@ -265,38 +265,123 @@ fn source_word(source: SemanticProvenance) -> &'static str {
     }
 }
 
-fn edge_line(edge: &Edge) -> Fact {
-    let evidence = evidence::edge_evidence(edge);
-    let line = match edge {
+// The edge view is built in three small passes rather than one long match: the
+// position every kind carries, the kind's own word, and the fields that kind
+// adds. Each match is exhaustive with no wildcard arm, so a new `Edge` variant
+// fails to compile until all three know about it.
+fn edge_position(edge: &Edge) -> (&str, usize) {
+    match edge {
         Edge::Inherits {
             from_file,
             from_line,
-            to,
-            to_file,
-            heuristic,
-        } => {
-            let mut line = EdgeLine::new(evidence, "inherits", from_file.clone(), *from_line);
-            line.to = Some(to.clone());
-            line.to_file = Some(to_file.clone());
-            line.heuristic = Some(*heuristic);
-            line
+            ..
         }
-        Edge::UsesType {
+        | Edge::UsesType {
             from_file,
             from_line,
+            ..
+        }
+        | Edge::UsesMember {
+            from_file,
+            from_line,
+            ..
+        }
+        | Edge::Imports {
+            from_file,
+            from_line,
+            ..
+        }
+        | Edge::Ambiguous {
+            from_file,
+            from_line,
+            ..
+        }
+        | Edge::CtorDi {
+            from_file,
+            from_line,
+            ..
+        }
+        | Edge::Import {
+            from_file,
+            from_line,
+            ..
+        }
+        | Edge::Call {
+            from_file,
+            from_line,
+            ..
+        }
+        | Edge::JsxUse {
+            from_file,
+            from_line,
+            ..
+        }
+        | Edge::Dispatch {
+            from_file,
+            from_line,
+            ..
+        }
+        | Edge::Implements {
+            from_file,
+            from_line,
+            ..
+        }
+        | Edge::Overrides {
+            from_file,
+            from_line,
+            ..
+        }
+        | Edge::BusHop {
+            from_file,
+            from_line,
+            ..
+        } => (from_file, *from_line),
+    }
+}
+
+fn edge_kind(edge: &Edge) -> &'static str {
+    match edge {
+        Edge::Inherits { .. } => "inherits",
+        Edge::UsesType { .. } => "uses-type",
+        Edge::UsesMember { .. } => "uses-member",
+        Edge::Imports { .. } => "imports",
+        Edge::Ambiguous { .. } => "ambiguous",
+        Edge::CtorDi { .. } => "ctor-di",
+        Edge::Import { .. } => "import",
+        Edge::Call { .. } => "call",
+        Edge::JsxUse { .. } => "jsx-use",
+        Edge::Dispatch { .. } => "dispatch",
+        Edge::Implements { .. } => "implements",
+        Edge::Overrides { .. } => "overrides",
+        Edge::BusHop { .. } => "bus-hop",
+    }
+}
+
+/// The target pair most kinds carry, set in one place so the arms below stay
+/// short.
+fn set_target(row: &mut EdgeLine, to: &str, to_file: &str) {
+    row.to = Some(to.to_string());
+    row.to_file = Some(to_file.to_string());
+}
+
+fn fill_kind_fields(edge: &Edge, row: &mut EdgeLine) {
+    match edge {
+        Edge::Inherits {
             to,
             to_file,
             heuristic,
+            ..
+        }
+        | Edge::UsesType {
+            to,
+            to_file,
+            heuristic,
+            ..
         } => {
-            let mut line = EdgeLine::new(evidence, "uses-type", from_file.clone(), *from_line);
-            line.to = Some(to.clone());
-            line.to_file = Some(to_file.clone());
-            line.heuristic = Some(*heuristic);
-            line
+            set_target(row, to, to_file);
+            row.heuristic = Some(*heuristic);
         }
         Edge::UsesMember {
-            from_file,
-            from_line,
             to,
             to_file,
             heuristic,
@@ -304,149 +389,124 @@ fn edge_line(edge: &Edge) -> Fact {
             member,
             source,
             overload_signature,
-        } => {
-            let mut line = EdgeLine::new(evidence, "uses-member", from_file.clone(), *from_line);
-            line.to = Some(to.clone());
-            line.to_file = Some(to_file.clone());
-            line.tier = tier.map(tier_word);
-            line.heuristic = Some(*heuristic);
-            line.source = source.map(source_word);
-            line.member = member.clone();
-            line.overload_signature = overload_signature.clone();
-            line
-        }
-        Edge::Imports {
-            from_file,
-            from_line,
-            target,
-        } => {
-            let mut line = EdgeLine::new(evidence, "imports", from_file.clone(), *from_line);
-            line.target = Some(target.clone());
-            line
-        }
+            ..
+        } => set_uses_member(
+            row,
+            (to, to_file),
+            (*heuristic, *tier),
+            (member, *source, overload_signature),
+        ),
+        Edge::Imports { target, .. } => row.target = Some(target.clone()),
         Edge::Ambiguous {
             origin,
-            from_file,
-            from_line,
             raw,
             candidates,
             candidate_count,
-        } => {
-            let mut line = EdgeLine::new(evidence, "ambiguous", from_file.clone(), *from_line);
-            line.origin = Some(origin.clone());
-            line.raw = Some(raw.clone());
-            line.candidates = candidates.iter().map(CandidateRow::from).collect();
-            line.candidate_count = Some(*candidate_count);
-            line
-        }
+            ..
+        } => set_ambiguous(row, origin, raw, candidates, *candidate_count),
         Edge::CtorDi {
-            from_file,
-            from_line,
             iface,
             resolution,
             args,
             to,
             candidates,
-        } => {
-            let mut line = EdgeLine::new(evidence, "ctor-di", from_file.clone(), *from_line);
-            line.iface = Some(iface.clone());
-            line.resolution = Some(resolution.clone());
-            line.args = args.clone().unwrap_or_default();
-            line.to = to.clone();
-            line.candidates = candidates.iter().map(CandidateRow::from).collect();
-            line
-        }
+            ..
+        } => set_ctor_di(row, iface, resolution, args, to, candidates),
         Edge::Import {
-            from_file,
-            from_line,
             target,
             to_file,
             via,
             bound_defs,
+            ..
         } => {
-            let mut line = EdgeLine::new(evidence, "import", from_file.clone(), *from_line);
-            line.target = Some(target.clone());
-            line.to_file = Some(to_file.clone());
-            line.via = via.clone();
-            line.bound_defs = bound_defs.clone();
-            line
+            row.target = Some(target.clone());
+            row.to_file = Some(to_file.clone());
+            row.via = via.clone();
+            row.bound_defs = bound_defs.clone();
         }
-        Edge::Call {
-            from_file,
-            from_line,
-            to,
-            to_file,
-        } => {
-            let mut line = EdgeLine::new(evidence, "call", from_file.clone(), *from_line);
-            line.to = Some(to.clone());
-            line.to_file = Some(to_file.clone());
-            line
-        }
-        Edge::JsxUse {
-            from_file,
-            from_line,
-            to,
-            to_file,
-        } => {
-            let mut line = EdgeLine::new(evidence, "jsx-use", from_file.clone(), *from_line);
-            line.to = Some(to.clone());
-            line.to_file = Some(to_file.clone());
-            line
-        }
-        Edge::Dispatch {
-            from_file,
-            from_line,
-            to,
-            to_file,
-        } => {
-            let mut line = EdgeLine::new(evidence, "dispatch", from_file.clone(), *from_line);
-            line.to = Some(to.clone());
-            line.to_file = Some(to_file.clone());
-            line
-        }
+        Edge::Call { to, to_file, .. }
+        | Edge::JsxUse { to, to_file, .. }
+        | Edge::Dispatch { to, to_file, .. } => set_target(row, to, to_file),
         Edge::Implements {
-            from_file,
-            from_line,
             to,
             to_file,
             member,
-        } => {
-            let mut line = EdgeLine::new(evidence, "implements", from_file.clone(), *from_line);
-            line.to = Some(to.clone());
-            line.to_file = Some(to_file.clone());
-            line.member = member.clone();
-            line
+            ..
         }
-        Edge::Overrides {
-            from_file,
-            from_line,
+        | Edge::Overrides {
             to,
             to_file,
             member,
+            ..
         } => {
-            let mut line = EdgeLine::new(evidence, "overrides", from_file.clone(), *from_line);
-            line.to = Some(to.clone());
-            line.to_file = Some(to_file.clone());
-            line.member = member.clone();
-            line
+            set_target(row, to, to_file);
+            row.member = member.clone();
         }
         Edge::BusHop {
-            from_file,
-            from_line,
             message,
             to,
             to_file,
-            evidence: hop_evidence,
+            evidence,
+            ..
         } => {
-            let mut line = EdgeLine::new(evidence, "bus-hop", from_file.clone(), *from_line);
-            line.message = Some(message.clone());
-            line.to = Some(to.clone());
-            line.to_file = Some(to_file.clone());
-            line.hop_evidence = Some(hop_evidence.clone());
-            line
+            row.message = Some(message.clone());
+            set_target(row, to, to_file);
+            row.hop_evidence = Some(evidence.clone());
         }
-    };
-    Fact::new(1, line.file.clone(), line.line, &line)
+    }
+}
+
+// The kinds whose arm would otherwise be the longest in the match. Each takes
+// the fields the sub-pattern bound, so the dispatch itself stays one line per
+// kind.
+fn set_uses_member(
+    row: &mut EdgeLine,
+    target: (&String, &String),
+    guess: (bool, Option<HeuristicTier>),
+    fields: (&Option<String>, Option<SemanticProvenance>, &Option<String>),
+) {
+    set_target(row, target.0, target.1);
+    row.heuristic = Some(guess.0);
+    row.tier = guess.1.map(tier_word);
+    row.source = fields.1.map(source_word);
+    row.member = fields.0.clone();
+    row.overload_signature = fields.2.clone();
+}
+
+fn set_ambiguous(
+    row: &mut EdgeLine,
+    origin: &str,
+    raw: &str,
+    candidates: &[Candidate],
+    candidate_count: usize,
+) {
+    row.origin = Some(origin.to_string());
+    row.raw = Some(raw.to_string());
+    row.candidates = candidates.iter().map(CandidateRow::from).collect();
+    row.candidate_count = Some(candidate_count);
+}
+
+fn set_ctor_di(
+    row: &mut EdgeLine,
+    iface: &str,
+    resolution: &str,
+    args: &Option<Vec<String>>,
+    to: &Option<String>,
+    candidates: &[Candidate],
+) {
+    row.iface = Some(iface.to_string());
+    row.resolution = Some(resolution.to_string());
+    row.args = args.clone().unwrap_or_default();
+    row.to = to.clone();
+    row.candidates = candidates.iter().map(CandidateRow::from).collect();
+}
+
+fn edge_line(edge: &Edge) -> Fact {
+    let evidence = evidence::edge_evidence(edge);
+    let (file, line) = edge_position(edge);
+    let mut row = EdgeLine::new(evidence, edge_kind(edge), file.to_string(), line);
+    fill_kind_fields(edge, &mut row);
+    Fact::new(1, row.file.clone(), row.line, &row)
 }
 
 fn test_via_word(via: TestVia) -> &'static str {
@@ -467,6 +527,15 @@ pub(crate) fn collect(snapshot: &Snapshot) -> Vec<Fact> {
             + snapshot.graph.unresolved_imports.len()
             + snapshot.test_via.len(),
     );
+    collect_definitions(snapshot, &mut facts);
+    collect_edges(snapshot, &mut facts);
+    collect_messaging(snapshot, &mut facts);
+    collect_unresolved_imports(snapshot, &mut facts);
+    collect_test_files(snapshot, &mut facts);
+    facts
+}
+
+fn collect_definitions(snapshot: &Snapshot, facts: &mut Vec<Fact>) {
     for def in &snapshot.graph.defs {
         facts.push(Fact::new(
             0,
@@ -488,9 +557,17 @@ pub(crate) fn collect(snapshot: &Snapshot) -> Vec<Fact> {
             },
         ));
     }
+}
+
+fn collect_edges(snapshot: &Snapshot, facts: &mut Vec<Fact>) {
     for edge in &snapshot.graph.edges {
         facts.push(edge_line(edge));
     }
+}
+
+// The messaging families, one line per recorded fact in the cache's own file
+// order. A TypeScript or Rust entry carries none of the three arrays.
+fn collect_messaging(snapshot: &Snapshot, facts: &mut Vec<Fact>) {
     for (file, entry) in &snapshot.messaging {
         for publish in &entry.publishes {
             facts.push(Fact::new(
@@ -532,6 +609,9 @@ pub(crate) fn collect(snapshot: &Snapshot) -> Vec<Fact> {
             ));
         }
     }
+}
+
+fn collect_unresolved_imports(snapshot: &Snapshot, facts: &mut Vec<Fact>) {
     for import in &snapshot.graph.unresolved_imports {
         facts.push(Fact::new(
             5,
@@ -547,6 +627,11 @@ pub(crate) fn collect(snapshot: &Snapshot) -> Vec<Fact> {
             },
         ));
     }
+}
+
+// One line per file the classification vouches for; a file it does not classify
+// gets no line at all, which is what tells "not a test file" from "no data".
+fn collect_test_files(snapshot: &Snapshot, facts: &mut Vec<Fact>) {
     for (file, via) in &snapshot.test_via {
         let evidence = match via {
             TestVia::Attribute | TestVia::Project => evidence::DECLARED,
@@ -564,7 +649,6 @@ pub(crate) fn collect(snapshot: &Snapshot) -> Vec<Fact> {
             },
         ));
     }
-    facts
 }
 
 fn handler_registration_fact(file: &str, registration: &FragHandlerRegistration) -> Fact {

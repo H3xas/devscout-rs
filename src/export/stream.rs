@@ -81,9 +81,8 @@ pub(crate) struct Stream {
 impl Stream {
     /// The whole stream's bytes: header, facts, trailer, one `\n` each.
     pub(crate) fn bytes(&self) -> Vec<u8> {
-        let mut bytes = Vec::with_capacity(
-            self.header.len() + self.body.len() + self.trailer.len() + 2,
-        );
+        let mut bytes =
+            Vec::with_capacity(self.header.len() + self.body.len() + self.trailer.len() + 2);
         bytes.extend_from_slice(self.header.as_bytes());
         bytes.push(b'\n');
         bytes.extend_from_slice(&self.body);

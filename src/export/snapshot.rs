@@ -86,9 +86,8 @@ pub(crate) fn load_bracketed(
     let bytes = fs::read(&graph_path).map_err(|_| {
         ExportRefusal::ArtifactUnreadable("graph.json could not be read".to_string())
     })?;
-    let graph: Graph = serde_json::from_slice(&bytes).map_err(|_| {
-        ExportRefusal::ArtifactUnreadable("graph.json does not parse".to_string())
-    })?;
+    let graph: Graph = serde_json::from_slice(&bytes)
+        .map_err(|_| ExportRefusal::ArtifactUnreadable("graph.json does not parse".to_string()))?;
     if graph.schema_version != GRAPH_SCHEMA_VERSION {
         return Err(ExportRefusal::UnknownGeneration(format!(
             "graph.json is schema version {}, this build writes {GRAPH_SCHEMA_VERSION}",
@@ -99,7 +98,8 @@ pub(crate) fn load_bracketed(
         || ArtifactIdentity::of(&manifest_path) != record.artifacts.manifest
     {
         return Err(ExportRefusal::IndexChanged(
-            "graph.json or manifest.json is not the artifact the index record certifies".to_string(),
+            "graph.json or manifest.json is not the artifact the index record certifies"
+                .to_string(),
         ));
     }
 
@@ -225,9 +225,7 @@ fn classify_test_files(
     let index = query::load_graph_index(graph, root);
     messaging
         .iter()
-        .filter_map(|(file, _)| {
-            query::test_via(&index, file).map(|via| (file.clone(), via))
-        })
+        .filter_map(|(file, _)| query::test_via(&index, file).map(|via| (file.clone(), via)))
         .collect()
 }
 

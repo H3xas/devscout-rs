@@ -11,7 +11,7 @@ use std::fs;
 
 use serde_json::Value;
 use support::{
-    family_lines, facts_of, families_of, header_of, normalize, oracle_counts, pin_path, schema,
+    facts_of, families_of, family_lines, header_of, normalize, oracle_counts, pin_path, schema,
     schema_subset_violation, trailer_of, validate, Fixture, LANGUAGES,
 };
 
@@ -32,7 +32,10 @@ fn fact_export_ac_1_the_stream_is_a_header_fact_lines_and_a_trailer() {
     for language in LANGUAGES {
         let fixture = Fixture::build(language);
         let lines = fixture.lines();
-        assert!(lines.len() >= 3, "{language}: a stream has at least three lines");
+        assert!(
+            lines.len() >= 3,
+            "{language}: a stream has at least three lines"
+        );
 
         let header = header_of(&lines);
         assert_eq!(header["format"], "devscout-facts", "{language}");
@@ -58,7 +61,11 @@ fn fact_export_ac_1_the_stream_is_a_header_fact_lines_and_a_trailer() {
         let observed = families_of(&facts);
         for (family, count) in trailer["counts"].as_object().expect("counts") {
             let seen = observed.get(family).copied().unwrap_or(0);
-            assert_eq!(count.as_u64().expect("a count") as usize, seen, "{language}/{family}");
+            assert_eq!(
+                count.as_u64().expect("a count") as usize,
+                seen,
+                "{language}/{family}"
+            );
         }
     }
 }
@@ -70,7 +77,10 @@ fn fact_export_ac_1_out_writes_the_stdout_bytes_through_a_temporary_file() {
     let target = fixture.root.join("stream.ndjson");
     let out = fixture.run(&["export", "--out", target.to_str().expect("utf-8 path")]);
     assert!(out.status.success(), "export --out: {out:?}");
-    assert!(out.stdout.is_empty(), "--out writes the stream to the file, not stdout");
+    assert!(
+        out.stdout.is_empty(),
+        "--out writes the stream to the file, not stdout"
+    );
     let written = fs::read(&target).expect("read the written stream");
     assert_eq!(written, stdout, "--out writes the same bytes as stdout");
     let leftover: Vec<String> = fs::read_dir(&fixture.root)
@@ -79,7 +89,10 @@ fn fact_export_ac_1_out_writes_the_stdout_bytes_through_a_temporary_file() {
         .map(|entry| entry.file_name().to_string_lossy().to_string())
         .filter(|name| name.contains(".tmp."))
         .collect();
-    assert!(leftover.is_empty(), "a successful run leaves no temp file: {leftover:?}");
+    assert!(
+        leftover.is_empty(),
+        "a successful run leaves no temp file: {leftover:?}"
+    );
 }
 
 #[test]
@@ -89,7 +102,10 @@ fn fact_export_ac_1_a_failed_out_leaves_no_file_and_keeps_an_existing_one() {
     let missing_dir = fixture.root.join("nowhere/stream.ndjson");
     let out = fixture.run(&["export", "--out", missing_dir.to_str().expect("utf-8 path")]);
     assert!(!out.status.success(), "a missing directory is not created");
-    assert!(!missing_dir.exists(), "no file appears at the requested path");
+    assert!(
+        !missing_dir.exists(),
+        "no file appears at the requested path"
+    );
 
     let onto_a_directory = fixture.root.join("target-dir");
     fs::create_dir(&onto_a_directory).expect("create the target directory");
@@ -98,7 +114,10 @@ fn fact_export_ac_1_a_failed_out_leaves_no_file_and_keeps_an_existing_one() {
         "--out",
         onto_a_directory.to_str().expect("utf-8 path"),
     ]);
-    assert!(!out.status.success(), "a directory is not replaced by a stream");
+    assert!(
+        !out.status.success(),
+        "a directory is not replaced by a stream"
+    );
     assert!(onto_a_directory.is_dir(), "the directory is still there");
 
     let kept = fixture.root.join("kept.ndjson");
@@ -106,7 +125,11 @@ fn fact_export_ac_1_a_failed_out_leaves_no_file_and_keeps_an_existing_one() {
     let out = fixture.run(&[
         "export",
         "--out",
-        fixture.root.join("nowhere/again.ndjson").to_str().expect("utf-8 path"),
+        fixture
+            .root
+            .join("nowhere/again.ndjson")
+            .to_str()
+            .expect("utf-8 path"),
     ]);
     assert!(!out.status.success());
     assert_eq!(
@@ -123,7 +146,10 @@ fn fact_export_ac_1_a_failed_out_leaves_no_file_and_keeps_an_existing_one() {
             }
         }
     }
-    assert!(stray.is_empty(), "no temporary file survives a failure: {stray:?}");
+    assert!(
+        stray.is_empty(),
+        "no temporary file survives a failure: {stray:?}"
+    );
 }
 
 #[test]
@@ -181,9 +207,15 @@ fn fact_export_ac_2_two_calls_on_one_line_export_as_two_lines() {
     let lines = fixture.lines();
     let doubled: Vec<&String> = lines
         .iter()
-        .filter(|line| line.contains("\"kind\":\"uses-member\"") && line.contains("\"member\":\"Now\""))
+        .filter(|line| {
+            line.contains("\"kind\":\"uses-member\"") && line.contains("\"member\":\"Now\"")
+        })
         .collect();
-    assert_eq!(doubled.len(), 2, "one call site is two occurrences: {doubled:?}");
+    assert_eq!(
+        doubled.len(),
+        2,
+        "one call site is two occurrences: {doubled:?}"
+    );
     assert_eq!(doubled[0], doubled[1], "the two lines are identical");
     let adjacent = lines
         .windows(2)
@@ -213,7 +245,10 @@ fn fact_export_ac_2_the_test_classification_matches_the_fixture() {
             .into_iter()
             .map(|(file, via)| (file.to_string(), via.to_string()))
             .collect();
-        assert_eq!(seen, expected, "{language}: the test-file set and its vouches");
+        assert_eq!(
+            seen, expected,
+            "{language}: the test-file set and its vouches"
+        );
     }
 }
 
@@ -221,7 +256,8 @@ fn fact_export_ac_2_the_test_classification_matches_the_fixture() {
 fn fact_export_ac_2_imported_edges_are_not_exported() {
     let fixture = Fixture::build("csharp");
     let before = fixture.lines();
-    let imported = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/import-edges/export.json");
+    let imported =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/import-edges/export.json");
     let out = fixture.run(&[
         "import-edges",
         imported.to_str().expect("utf-8 path"),
@@ -230,7 +266,10 @@ fn fact_export_ac_2_imported_edges_are_not_exported() {
     ]);
     assert!(out.status.success(), "import-edges failed: {out:?}");
     let after = fixture.lines();
-    assert_eq!(before, after, "one repository per export, no imported edges");
+    assert_eq!(
+        before, after,
+        "one repository per export, no imported edges"
+    );
 }
 
 #[test]
@@ -268,7 +307,10 @@ fn fact_export_ac_3_every_evidence_word_is_one_the_schema_declares() {
         for fact in facts_of(&lines) {
             let evidence = fact["evidence"].as_str().expect("a word");
             if fact["family"] == "edge" {
-                assert!(declared.contains(&evidence.to_string()), "{language}: {evidence}");
+                assert!(
+                    declared.contains(&evidence.to_string()),
+                    "{language}: {evidence}"
+                );
             }
         }
         let guess = family_lines(&lines, "edge")
@@ -293,10 +335,19 @@ fn fact_export_ac_4_provenance_separates_source_analysis_and_index() {
         let record = fixture.record();
         let graph = fixture.graph();
 
-        assert_eq!(provenance["source"]["indexedHead"], record["indexed_head"], "{language}");
+        assert_eq!(
+            provenance["source"]["indexedHead"], record["indexed_head"],
+            "{language}"
+        );
         assert_eq!(provenance["source"]["scope"], record["scope"], "{language}");
-        assert_eq!(provenance["source"]["fileCount"], record["file_count"], "{language}");
-        assert_eq!(provenance["analysis"]["graphSchemaVersion"], graph["schema_version"], "{language}");
+        assert_eq!(
+            provenance["source"]["fileCount"], record["file_count"],
+            "{language}"
+        );
+        assert_eq!(
+            provenance["analysis"]["graphSchemaVersion"], graph["schema_version"],
+            "{language}"
+        );
         assert_eq!(
             provenance["analysis"]["devscoutVersion"],
             env!("CARGO_PKG_VERSION"),
@@ -307,13 +358,21 @@ fn fact_export_ac_4_provenance_separates_source_analysis_and_index() {
             cache_generation(&fixture),
             "{language}"
         );
-        assert_eq!(provenance["analysis"]["compilerFacts"], "none", "{language}");
+        assert_eq!(
+            provenance["analysis"]["compilerFacts"], "none",
+            "{language}"
+        );
         assert_eq!(provenance["analysis"]["semanticLane"], "none", "{language}");
-        assert_eq!(provenance["index"]["generation"], record["generation"], "{language}");
-        assert_eq!(provenance["index"]["indexedAt"], record["indexed_at"], "{language}");
+        assert_eq!(
+            provenance["index"]["generation"], record["generation"],
+            "{language}"
+        );
+        assert_eq!(
+            provenance["index"]["indexedAt"], record["indexed_at"],
+            "{language}"
+        );
 
-        let config: Vec<Value> = fixture
-            .record()["config_inputs"]
+        let config: Vec<Value> = fixture.record()["config_inputs"]
             .as_object()
             .expect("config inputs")
             .iter()
@@ -330,8 +389,7 @@ fn fact_export_ac_4_provenance_separates_source_analysis_and_index() {
             "{language}: configuration digests, sorted by path"
         );
 
-        let pairs: Vec<Value> = fixture
-            .digests()["files"]
+        let pairs: Vec<Value> = fixture.digests()["files"]
             .as_object()
             .expect("the digest table")
             .iter()
@@ -354,7 +412,10 @@ fn fact_export_ac_4_provenance_separates_source_analysis_and_index() {
             !encoded.contains(fixture.root.to_str().expect("utf-8 root")),
             "{language}: no absolute path reaches the stream"
         );
-        assert!(!encoded.contains("owner"), "{language}: the record's owner is never written");
+        assert!(
+            !encoded.contains("owner"),
+            "{language}: the record's owner is never written"
+        );
     }
 }
 
@@ -387,19 +448,24 @@ fn fact_export_ac_4_an_edited_tree_changes_the_payload_digest_and_a_remap_keeps_
     fs::write(&source, edited).expect("edit the fixture source");
     let stale = fixture.lines();
     assert_eq!(
-        trailer_of(&stale)["payloadDigest"].as_str().expect("a digest"),
+        trailer_of(&stale)["payloadDigest"]
+            .as_str()
+            .expect("a digest"),
         first,
         "an unmapped edit is not in the facts: freshness changes, the payload does not"
     );
     assert_eq!(
-        header_of(&stale)["freshness"]["state"], "stale",
+        header_of(&stale)["freshness"]["state"],
+        "stale",
         "the stale index is labelled, not refused"
     );
 
     fixture.map();
     let remapped = fixture.lines();
     assert_ne!(
-        trailer_of(&remapped)["payloadDigest"].as_str().expect("a digest"),
+        trailer_of(&remapped)["payloadDigest"]
+            .as_str()
+            .expect("a digest"),
         first,
         "one edited fact changes the payload digest"
     );
@@ -413,7 +479,8 @@ fn fact_export_ac_4_a_remap_of_an_unchanged_tree_keeps_the_payload_digest() {
     fixture.map();
     let second = fixture.lines();
     assert_eq!(
-        trailer_of(&first)["payloadDigest"], trailer_of(&second)["payloadDigest"],
+        trailer_of(&first)["payloadDigest"],
+        trailer_of(&second)["payloadDigest"],
         "a re-map of an unchanged tree records the same facts"
     );
     assert_eq!(
@@ -433,8 +500,17 @@ fn fact_export_ac_5_two_exports_of_one_index_are_byte_identical() {
     );
     let header = String::from_utf8(fixture.export(&[])).expect("UTF-8");
     let header = header.lines().next().expect("a header").to_string();
-    for key in ["exportedAt", "exportTime", "generatedAt", "timestamp", "now"] {
-        assert!(!header.contains(key), "no export-time clock reaches the header: {key}");
+    for key in [
+        "exportedAt",
+        "exportTime",
+        "generatedAt",
+        "timestamp",
+        "now",
+    ] {
+        assert!(
+            !header.contains(key),
+            "no export-time clock reaches the header: {key}"
+        );
     }
 }
 
@@ -456,7 +532,10 @@ fn fact_export_ac_5_the_fact_lines_follow_the_canonical_order() {
             "test-file",
         ];
         (
-            order.iter().position(|name| *name == family).expect("a ranked family"),
+            order
+                .iter()
+                .position(|name| *name == family)
+                .expect("a ranked family"),
             fact["file"].as_str().unwrap_or_default().to_string(),
             fact["line"].as_u64().unwrap_or(0),
             line.to_string(),
@@ -464,7 +543,10 @@ fn fact_export_ac_5_the_fact_lines_follow_the_canonical_order() {
     };
     let mut sorted = facts.clone();
     sorted.sort_by_key(|line| rank(line));
-    assert_eq!(facts, sorted, "the stream's own order is the documented one");
+    assert_eq!(
+        facts, sorted,
+        "the stream's own order is the documented one"
+    );
 }
 
 #[test]
@@ -477,7 +559,8 @@ fn fact_export_ac_7_every_pinned_line_validates_against_the_schema() {
     );
     for language in LANGUAGES {
         let pin = pin_path(language);
-        let text = fs::read_to_string(&pin).unwrap_or_else(|e| panic!("read {}: {e}", pin.display()));
+        let text =
+            fs::read_to_string(&pin).unwrap_or_else(|e| panic!("read {}: {e}", pin.display()));
         for (index, line) in text.lines().enumerate() {
             let value: Value = serde_json::from_str(line)
                 .unwrap_or_else(|e| panic!("{language} line {index}: {e}"));
@@ -525,10 +608,12 @@ fn fact_export_ac_7_a_pin_normalizes_only_the_per_run_header_values() {
         );
         let header = header_of(&pinned);
         assert_eq!(header["schemaVersion"], 1, "{language}");
-        assert_eq!(header["provenance"]["analysis"]["devscoutVersion"], "devscoutVersion");
         assert_eq!(
-            header["provenance"]["analysis"]["fragmentGeneration"],
-            0,
+            header["provenance"]["analysis"]["devscoutVersion"],
+            "devscoutVersion"
+        );
+        assert_eq!(
+            header["provenance"]["analysis"]["fragmentGeneration"], 0,
             "{language}: the fragment generation a pin carries is a placeholder"
         );
         assert_eq!(
@@ -560,7 +645,11 @@ fn fact_export_ac_9_a_refused_export_leaves_the_index_byte_identical() {
     let before = fixture.state_snapshot();
     let out = fixture.run(&["export"]);
     assert!(!out.status.success(), "a truncated graph refuses");
-    assert_eq!(before, fixture.state_snapshot(), "a refusal changes nothing");
+    assert_eq!(
+        before,
+        fixture.state_snapshot(),
+        "a refusal changes nothing"
+    );
 }
 
 #[test]

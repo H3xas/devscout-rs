@@ -62,3 +62,15 @@ Two stores live outside the repo:
 
 Artifact ordering is fixed and deterministic by design; do not rely on it staying
 byte-identical across minor versions. Ordering is load-bearing but not a stability promise.
+
+## What is a contract and what is not
+
+None of the files above is a contract. They are this tool's own storage: their
+shape, their key order and even their names change between releases, and a
+consumer that reads them is reading an implementation detail.
+
+[`devscout export`](fact-export.md) is the contract. It reads these artifacts
+and writes one versioned, schema-described stream, so a storage change stays an
+internal change rather than becoming a release every consumer has to follow. A
+fact that is not in that stream is not published, whatever the private files
+happen to contain.

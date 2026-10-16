@@ -23,8 +23,8 @@ mod read;
 mod refs;
 mod root;
 
-pub use dispatch::dispatch;
 pub(crate) use answer::freshness_json;
+pub use dispatch::dispatch;
 pub(crate) use root::require_repo;
 
 #[cfg(test)]

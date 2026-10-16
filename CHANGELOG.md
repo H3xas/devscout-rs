@@ -9,6 +9,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `devscout export` writes the current repository's whole fact set as one versioned NDJSON
+  stream: a header carrying input provenance, the release's coverage table and the freshness
+  observed at export time; one line per definition, edge, publish site, handler and dependency
+  registration, unresolved import and test file; and a trailer carrying per-family counts and a
+  digest of the fact lines alone. The export is a view over the index rather than a promoted
+  storage file, and it reads one published generation or refuses with a reason word.
+  [Fact export](docs/reference/fact-export.md) documents the grammar, the schema at
+  `docs/reference/fact-export.schema.json`, and the refusals; `tools/fact-export/check.mjs`
+  validates a stream without a build step.
+
 - House publish verbs with an unguarded dispatch root word now reach registered handlers in generic,
   constructed and plain identifier argument calls. The fragment cache advances to v37 so unchanged
   source files are re-extracted once for identifier-argument publish sites.

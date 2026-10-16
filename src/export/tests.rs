@@ -23,10 +23,7 @@ static COUNTER: AtomicU64 = AtomicU64::new(0);
 
 fn scratch(label: &str) -> PathBuf {
     let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-    let dir = std::env::temp_dir().join(format!(
-        "scout-export-{label}-{}-{n}",
-        std::process::id()
-    ));
+    let dir = std::env::temp_dir().join(format!("scout-export-{label}-{}-{n}", std::process::id()));
     fs::create_dir_all(&dir).expect("create scratch dir");
     fs::canonicalize(&dir).expect("canonicalize scratch dir")
 }
@@ -232,7 +229,10 @@ fn fact_export_ac_3_every_edge_kind_and_resolution_word_maps_onto_one_evidence_c
     assert_eq!(evidence::edge_evidence(&ctor_di("closed")), "exact");
     assert_eq!(evidence::edge_evidence(&ctor_di("open-generic")), "exact");
     assert_eq!(evidence::edge_evidence(&ctor_di("ambiguous")), "ambiguous");
-    assert_eq!(evidence::edge_evidence(&ctor_di("unresolved")), "unresolved");
+    assert_eq!(
+        evidence::edge_evidence(&ctor_di("unresolved")),
+        "unresolved"
+    );
     assert_eq!(evidence::edge_evidence(&ctor_di("infra")), "unresolved");
     assert_eq!(
         evidence::edge_evidence(&ctor_di("a-word-a-later-release-adds")),
@@ -315,14 +315,13 @@ fn fact_export_ac_3_the_coverage_table_states_what_this_release_extracts() {
     let coverage: serde_json::Value = serde_json::from_str(&text).expect("coverage parses");
     for family in ["definition", "edge", "test-file"] {
         for language in ["csharp", "typescript", "rust"] {
-            assert_eq!(coverage[family][language], "extracted", "{family}/{language}");
+            assert_eq!(
+                coverage[family][language], "extracted",
+                "{family}/{language}"
+            );
         }
     }
-    for family in [
-        "publish-site",
-        "handler-registration",
-        "di-registration",
-    ] {
+    for family in ["publish-site", "handler-registration", "di-registration"] {
         assert_eq!(coverage[family]["csharp"], "extracted", "{family}");
         assert_eq!(coverage[family]["typescript"], "not-extracted", "{family}");
         assert_eq!(coverage[family]["rust"], "not-extracted", "{family}");
@@ -344,10 +343,7 @@ fn fact_export_ac_3_the_coverage_table_states_what_this_release_extracts() {
 fn fact_export_ac_6_every_refusal_variant_renders_one_line_naming_the_reason_and_map() {
     for refusal in ExportRefusal::every_variant() {
         let line = refusal.line();
-        assert!(
-            !line.contains('\n'),
-            "a refusal is one stderr line: {line}"
-        );
+        assert!(!line.contains('\n'), "a refusal is one stderr line: {line}");
         assert!(
             line.contains(&format!("({})", refusal.reason())),
             "the reason word is stated: {line}"

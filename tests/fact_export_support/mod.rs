@@ -241,7 +241,9 @@ pub fn facts_of(lines: &[String]) -> Vec<Value> {
 pub fn families_of(facts: &[Value]) -> BTreeMap<String, usize> {
     let mut counts = BTreeMap::new();
     for fact in facts {
-        let family = fact["family"].as_str().expect("every fact names its family");
+        let family = fact["family"]
+            .as_str()
+            .expect("every fact names its family");
         *counts.entry(family.to_string()).or_insert(0) += 1;
     }
     counts
@@ -290,10 +292,7 @@ pub fn fragment_messaging(fixture: &Fixture) -> (usize, usize, usize) {
 }
 
 pub fn array_len(value: &Value, key: &str) -> usize {
-    value
-        .get(key)
-        .and_then(Value::as_array)
-        .map_or(0, Vec::len)
+    value.get(key).and_then(Value::as_array).map_or(0, Vec::len)
 }
 
 fn git_common_dir(root: &Path) -> PathBuf {

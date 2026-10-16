@@ -4,9 +4,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use super::fragment_types::{
-    AnyFragment, FragHandlerRegistration, FragPublish, FragRegistration,
-};
+use super::fragment_types::{AnyFragment, FragHandlerRegistration, FragPublish, FragRegistration};
 use super::ordered::OrderedMap;
 use super::paths::{atomic_write_json, fragments_cache_path, fragments_index_path};
 use super::rebuild::GraphFile;

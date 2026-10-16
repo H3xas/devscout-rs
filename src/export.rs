@@ -53,7 +53,11 @@ impl From<ExportRefusal> for ExportError {
 ///
 /// The whole stream is rendered before anything is written, so a refusal never
 /// leaves a partial stream on stdout and never leaves a file at `out`.
-pub(crate) fn run(root: &Path, invocation_dir: &Path, out: Option<&Path>) -> Result<(), ExportError> {
+pub(crate) fn run(
+    root: &Path,
+    invocation_dir: &Path,
+    out: Option<&Path>,
+) -> Result<(), ExportError> {
     let snapshot = snapshot::load(root, invocation_dir)?;
     // The freshness warning goes to stderr, as it does for every query: stdout
     // is the stream, and a warning is advice for a human reading alongside it.

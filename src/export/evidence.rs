@@ -10,8 +10,8 @@
 
 use crate::graph::Edge;
 
-use crate::graph::SemanticProvenance;
 use crate::graph::HeuristicTier;
+use crate::graph::SemanticProvenance;
 
 /// The whole closed vocabulary, in the order the schema lists it. Read by the
 /// unit tests, which hold the mapping and the schema's enum to it.

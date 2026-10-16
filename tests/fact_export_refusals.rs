@@ -24,7 +24,10 @@ fn assert_refused(fixture: &Fixture, expected: &str, target: Option<&PathBuf>) {
         Some(1),
         "{expected}: a refusal is an environment failure, not a usage error"
     );
-    assert!(out.stdout.is_empty(), "{expected}: a refusal writes no stream");
+    assert!(
+        out.stdout.is_empty(),
+        "{expected}: a refusal writes no stream"
+    );
     let stderr = String::from_utf8(out.stderr).expect("stderr is UTF-8");
     let stderr = stderr.trim_end();
     assert_eq!(
@@ -53,7 +56,8 @@ fn fact_export_ac_6_an_unmapped_repository_refuses_with_no_index() {
 
 #[test]
 fn fact_export_ac_6_a_directory_outside_any_repository_refuses_with_no_index() {
-    let dir = std::env::temp_dir().join(format!("scout-fact-export-outside-{}", std::process::id()));
+    let dir =
+        std::env::temp_dir().join(format!("scout-fact-export-outside-{}", std::process::id()));
     fs::create_dir_all(&dir).expect("create the outside directory");
     let out = std::process::Command::new(env!("CARGO_BIN_EXE_devscout"))
         .args(["export"])
@@ -182,7 +186,8 @@ fn fact_export_ac_6_a_stale_index_exports_with_its_label() {
 }
 
 #[test]
-fn fact_export_ac_6_another_worktree_s_index_exports_with_its_label_and_keeps_the_messaging_facts() {
+fn fact_export_ac_6_another_worktree_s_index_exports_with_its_label_and_keeps_the_messaging_facts()
+{
     let fixture = Fixture::build("csharp");
     let linked = fixture.root.join("linked");
     fixture.git(&[
@@ -200,7 +205,10 @@ fn fact_export_ac_6_another_worktree_s_index_exports_with_its_label_and_keeps_th
         .env("SCOUT_CONTENT_DB", fixture.home.join("content.db"))
         .output()
         .expect("devscout must run");
-    assert!(out.status.success(), "another worktree's index still exports");
+    assert!(
+        out.status.success(),
+        "another worktree's index still exports"
+    );
     let text = String::from_utf8(out.stdout).expect("UTF-8");
     let lines: Vec<String> = text.lines().map(str::to_string).collect();
     let freshness = header_of(&lines)["freshness"].clone();
