@@ -506,6 +506,23 @@ pub const INTERPOLATED_ARG_DESCRIPTOR: &str = "@interpolated-string";
 /// reads parameters from it.
 pub const INTERPOLATED_HANDLER_MARK: &str = "@interpolated-string-handler";
 
+/// Whether a `methodParams` key is a reserved entry rather than a declared
+/// method: a method result, property or field type, or a type mark.
+///
+/// This is the one list of reserved spellings; a new reserved key joins it
+/// here. A bare `@` test is wrong: a verbatim method name such as `@event`
+/// keeps its `@` in the key, and `@result` is itself a legal verbatim name,
+/// so each prefix carries its colon.
+pub fn is_reserved_method_params_key(key: &str) -> bool {
+    ["@result:", "@property:", "@field:"]
+        .iter()
+        .any(|prefix| key.starts_with(prefix))
+        || matches!(
+            key,
+            "@variant" | "@implicit-conversion" | INTERPOLATED_HANDLER_MARK
+        )
+}
+
 /// A type known at extraction, or a member whose declared type needs the
 /// resolver's cross-file declaration index.
 #[derive(Debug, Clone, PartialEq, Eq)]

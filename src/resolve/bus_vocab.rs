@@ -40,6 +40,7 @@ use super::ladder::{resolve_ref, Resolution};
 use super::receiver::def_outer_types;
 use super::scope::FileContext;
 use crate::bus_seed::{CONSUMER_BASES, PUBLISH_VERBS};
+use crate::extract::is_reserved_method_params_key;
 use crate::graph::{FragDef, Fragment};
 
 // Both sets below are the shared seed plus whatever this corpus says about
@@ -393,7 +394,9 @@ fn descriptor_type_texts(descriptor: &str) -> Vec<String> {
 // namespace and enclosing-type chain (a partial class shares both across
 // its declarations) but that OVERLOAD's own declaring file's
 // usings/aliases, mirroring how a merged field or property fact elsewhere
-// in this resolver is read against the file that actually wrote it.
+// in this resolver is read against the file that actually wrote it. A
+// reserved entry is a result, property or field type or a type mark, never
+// a declared parameter, so it cannot show that the type receives anything.
 fn def_receives_message(
     def_idx: usize,
     message: MessageIdentity,
@@ -403,7 +406,12 @@ fn def_receives_message(
     let def = &index.defs[def_idx];
     let ns = &def.namespace;
     let outer_types = def_outer_types(def);
-    for overloads in index.member_lists[def_idx].method_params.values() {
+    let method_params = &index.member_lists[def_idx].method_params;
+    let declared = method_params
+        .iter()
+        .filter(|(key, _)| !is_reserved_method_params_key(key))
+        .map(|(_, overloads)| overloads);
+    for overloads in declared {
         for overload in overloads {
             let Some(file_ctx) = file_contexts.get(&overload.file) else {
                 continue;
