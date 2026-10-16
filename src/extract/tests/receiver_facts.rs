@@ -640,6 +640,67 @@ fn stage2b_the_surviving_header_arm_supplies_receiver_facts_at_both_nesting_leve
 }
 
 #[test]
+fn qualified_receiver_control_ac_2_a_containing_segments_type_arguments_stay_in_the_written_path() {
+    // Only the FINAL segment's list is dropped for the simple name, so a list
+    // on a containing segment survives in the written path -- the only text
+    // that can tell `Outer<int>.Inner` apart from a namespace-level `Inner`.
+    let e = extract_src(
+        r#"
+namespace App;
+
+public class Site
+{
+  private Outer<int>.Inner _field;
+
+  public void Run(Outer<int>.Inner parameter)
+  {
+    Outer<int>.Inner local = null;
+    Inner bare = null;
+    parameter.Go();
+    local.Go();
+    _field.Go();
+    bare.Go();
+    if (parameter is Outer<int>.Inner pattern)
+    {
+      pattern.Go();
+    }
+  }
+}
+"#,
+    );
+    let facts: Vec<(String, Option<String>, Option<String>)> = receiver_facts_with_qualifier(&e)
+        .into_iter()
+        .map(|(name, _, simple, written)| (name, simple, written))
+        .collect();
+    assert_eq!(
+        facts,
+        vec![
+            (
+                "parameter".to_string(),
+                Some("Inner".to_string()),
+                Some("Outer<int>.Inner".to_string())
+            ),
+            (
+                "local".to_string(),
+                Some("Inner".to_string()),
+                Some("Outer<int>.Inner".to_string())
+            ),
+            (
+                "_field".to_string(),
+                Some("Inner".to_string()),
+                Some("Outer<int>.Inner".to_string())
+            ),
+            ("bare".to_string(), Some("Inner".to_string()), None),
+            (
+                "pattern".to_string(),
+                Some("Inner".to_string()),
+                Some("Outer<int>.Inner".to_string())
+            ),
+        ]
+    );
+}
+
+#[test]
 fn the_dump_carries_the_qualified_receiver_keys_and_omits_them_when_absent() {
     let e = extract_src(
         r#"
@@ -649,9 +710,12 @@ public class Host
 {
   public Widgets.Widget Dial { get; }
 
-  public void Run(Widgets.Widget param)
+  public Widget Plain { get; }
+
+  public void Run(Widgets.Widget param, Widget bare)
   {
     param.Go();
+    bare.Go();
   }
 }
 "#,
@@ -666,13 +730,23 @@ public class Host
         "and so does the declared type fact the resolver reads: {json}"
     );
     assert_eq!(
+        json.matches(r#""receiverType": "Widget""#).count(),
+        2,
+        "both receivers keep the simple name, the qualified one and the bare one alike: {json}"
+    );
+    assert_eq!(
+        json.matches(r#""type": "Widget""#).count(),
+        2,
+        "and both declared property facts do: {json}"
+    );
+    assert_eq!(
         json.matches("receiverTypeQualified").count(),
         1,
-        "the unqualified receiver adds no key at all: {json}"
+        "one of the two receivers omits the key, so the count above is not vacuous: {json}"
     );
     assert_eq!(
         json.matches("qualifiedType").count(),
         1,
-        "and neither does an unqualified declaration: {json}"
+        "and one of the two declarations omits it: {json}"
     );
 }
