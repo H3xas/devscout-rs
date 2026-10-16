@@ -247,10 +247,219 @@ fn same_head_admits(cx: &CompareContext<'_>, arg: &str, param: &str, head: &str)
         &[],
         head,
     );
-    !matches!((a,p), (Some(a),Some(p)) if a == p
+    let declines = matches!((a,p), (Some(a),Some(p)) if a == p
         && !cx.index.member_lists[a].type_params.is_empty()
         && !cx.index.member_lists[a].method_params.contains_key("@variant")
-        && !has_conversion(cx.index, a))
+        && !has_conversion(cx.index, a));
+    !declines || canonically_equal(cx, arg, param)
+}
+
+// A same-head decline holds only when the two argument lists name different
+// types. Each side's descriptor is rewritten to one canonical identity in that
+// side's own file context, so two spellings of one type -- a `using` alias,
+// `Nullable<T>` against `T?`, `object` against `dynamic` -- compare equal and
+// the call binds the declaring type again. The comparison can only turn a
+// decline into an admission: whole descriptors with equal text never reach
+// `same_head_admits`, and a descriptor this cannot canonicalize keeps the
+// text comparison it got before.
+fn canonically_equal(cx: &CompareContext<'_>, arg: &str, param: &str) -> bool {
+    let argument = canonical(
+        cx,
+        arg,
+        cx.source_file,
+        cx.reference.namespace.as_deref().unwrap_or_default(),
+        &cx.reference.outer_types,
+    );
+    let parameter = canonical(
+        cx,
+        param,
+        cx.param_file,
+        &cx.index.defs[cx.owner_idx].namespace,
+        &[],
+    );
+    matches!((argument, parameter), (Some(a), Some(p)) if a.same_as(&p))
+}
+
+// One type descriptor as a canonical identity, with every type argument
+// rewritten recursively inside its own argument list.
+enum Canon {
+    // `?` is the extractor's placeholder for a descriptor it could not read (a
+    // tuple, a pointer, a function pointer) and `*` the wildcard a type
+    // parameter leaves. Neither names a type, so neither can prove a mismatch.
+    Placeholder,
+    // A head -- an in-graph def's identity, or the normalized text of a name
+    // the graph does not hold -- with its canonical arguments and array
+    // suffix.
+    Generic(String, Vec<Canon>, String),
+}
+
+impl Canon {
+    fn same_as(&self, other: &Canon) -> bool {
+        match (self, other) {
+            (Canon::Placeholder, _) | (_, Canon::Placeholder) => true,
+            (Canon::Generic(ah, aa, asuffix), Canon::Generic(bh, ba, bsuffix)) => {
+                ah == bh
+                    && asuffix == bsuffix
+                    && aa.len() == ba.len()
+                    && aa.iter().zip(ba).all(|(x, y)| x.same_as(y))
+            }
+        }
+    }
+}
+
+fn canonical(
+    cx: &CompareContext<'_>,
+    descriptor: &str,
+    file: &str,
+    ns: &str,
+    outer: &[String],
+) -> Option<Canon> {
+    let descriptor = descriptor.trim();
+    if descriptor == "?" || descriptor == "*" {
+        return Some(Canon::Placeholder);
+    }
+    let (head, arguments, suffix) = split_descriptor(descriptor)?;
+    let arguments = arguments
+        .iter()
+        .map(|argument| canonical(cx, argument, file, ns, outer))
+        .collect::<Option<Vec<Canon>>>()?;
+    if let Some(idx) = resolve_type(cx.index, cx.contexts, file, ns, outer, head) {
+        return Some(Canon::Generic(
+            format!("@{}", cx.index.defs[idx].id),
+            arguments,
+            suffix.to_string(),
+        ));
+    }
+    // An alias whose target is no in-graph type still names that target, so it
+    // becomes the target's own normalized text and its names are canonicalized
+    // from here.
+    if let Some(target) = cx
+        .contexts
+        .get(file)
+        .and_then(|ctx| ctx.aliases.get(head))
+        .cloned()
+    {
+        return canonical(cx, &normalize_alias_target(&target), file, ns, outer);
+    }
+    if bare_head(head) == "Nullable" && arguments.len() == 1 && suffix.is_empty() {
+        return arguments.into_iter().next();
+    }
+    if bare_head(head) == "dynamic" {
+        return Some(Canon::Generic(
+            "object".to_string(),
+            Vec::new(),
+            String::new(),
+        ));
+    }
+    Some(Canon::Generic(
+        head.to_string(),
+        arguments,
+        suffix.to_string(),
+    ))
+}
+
+fn bare_head(head: &str) -> &str {
+    head.rsplit('.').next().unwrap_or(head)
+}
+
+// `Head<A,B>[]` split into its head text, its top-level type arguments and the
+// array suffix after the argument list. `None` -- no spelling claim -- for a
+// head that is not a name, an unbalanced argument list, an empty argument and
+// text after the list that is not an array suffix.
+fn split_descriptor(descriptor: &str) -> Option<(&str, Vec<&str>, &str)> {
+    let open = match descriptor.find('<') {
+        Some(at) => at,
+        None => descriptor.find('[').unwrap_or(descriptor.len()),
+    };
+    let (head, rest) = descriptor.split_at(open);
+    if head.is_empty() || !head.chars().all(is_name_char) {
+        return None;
+    }
+    if !rest.starts_with('<') {
+        return is_array_suffix(rest).then_some((head, Vec::new(), rest));
+    }
+    let mut depth = 0usize;
+    let mut arguments = Vec::new();
+    let mut start = 1;
+    for (at, ch) in rest.char_indices() {
+        match ch {
+            '<' => depth += 1,
+            '>' => {
+                depth = depth.checked_sub(1)?;
+                if depth == 0 {
+                    let last = &rest[start..at];
+                    if last.is_empty() {
+                        return None;
+                    }
+                    arguments.push(last);
+                    let suffix = &rest[at + ch.len_utf8()..];
+                    return is_array_suffix(suffix).then_some((head, arguments, suffix));
+                }
+            }
+            ',' if depth == 1 => {
+                let argument = &rest[start..at];
+                if argument.is_empty() {
+                    return None;
+                }
+                arguments.push(argument);
+                start = at + ch.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn is_name_char(ch: char) -> bool {
+    ch.is_ascii_alphanumeric() || matches!(ch, '_' | '.')
+}
+
+fn is_array_suffix(text: &str) -> bool {
+    text.chars().all(|ch| matches!(ch, '[' | ']'))
+}
+
+// An alias target rendered the way `type_descriptor` renders a type: every
+// dotted name reduced to its last segment, an alias qualifier (`global::Ns.T`)
+// dropped with its namespace, spacing removed, CLR primitive names as
+// keywords.
+fn normalize_alias_target(target: &str) -> String {
+    let mut out = String::with_capacity(target.len());
+    let mut token = String::new();
+    let mut chars = target.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if is_name_char(ch) {
+            token.push(ch);
+            continue;
+        }
+        if ch == ':' {
+            while chars.peek() == Some(&':') {
+                chars.next();
+            }
+            token.clear();
+            drop_last_segment(&mut out);
+            continue;
+        }
+        if !ch.is_whitespace() {
+            flush_segment(&mut out, &mut token);
+            out.push(ch);
+        }
+    }
+    flush_segment(&mut out, &mut token);
+    canonical_primitives(&out)
+}
+
+fn flush_segment(out: &mut String, token: &mut String) {
+    if !token.is_empty() {
+        out.push_str(bare_head(token));
+        token.clear();
+    }
+}
+
+fn drop_last_segment(out: &mut String) {
+    let cut = out
+        .rfind(|ch: char| !is_name_char(ch))
+        .map_or(0, |at| at + 1);
+    out.truncate(cut);
 }
 
 fn has_conversion(index: &DefIndex, idx: usize) -> bool {
