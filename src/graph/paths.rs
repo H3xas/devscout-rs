@@ -209,7 +209,23 @@ pub fn rust_crates_path(root: &Path) -> PathBuf {
 // once, no reader carries version-compat logic. Writers delete every
 // superseded generation (see `remove_superseded_caches`).
 pub(crate) fn fragments_cache_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-v38.json")
+    graph_dir(root).join(FRAGMENT_CACHE_FILE)
+}
+
+// The current generation's cache file name, the one place its number is
+// spelled. A consumer of the export states the generation it read, and the
+// name is what says which one that is.
+pub(crate) const FRAGMENT_CACHE_FILE: &str = "fragments-v38.json";
+
+/// The fragment generation this build reads and writes, parsed from the cache
+/// file name above. The rename IS the invalidation mechanism, so the number a
+/// reader reports can only ever be the one this build's own path carries.
+pub(crate) fn fragment_generation() -> u32 {
+    FRAGMENT_CACHE_FILE
+        .trim_start_matches("fragments-v")
+        .trim_end_matches(".json")
+        .parse()
+        .expect("the fragment cache file name carries its generation")
 }
 
 pub(crate) fn fragments_index_path(root: &Path) -> PathBuf {

@@ -92,7 +92,16 @@ mod paths;
 mod rebuild;
 
 pub use artifact::{read_graph, Graph, GraphName, GraphUnit, Stats, GRAPH_SCHEMA_VERSION};
-pub use cache::{index_is_stale, read_fragments_index, FragmentCacheEntry};
+// Test-only: production code writes these artifacts through `map`, never through
+// a direct writer.
+#[cfg(test)]
+pub(crate) use artifact::write_graph;
+pub use cache::{index_is_stale, read_fragments_index, FragMessaging, FragmentCacheEntry};
+pub(crate) use cache::{
+    read_fragments_messaging, superseded_cache_present, StrictCacheError,
+};
+#[cfg(test)]
+pub(crate) use cache::write_fragments_cache;
 pub use call_shape_types::{FragDelegateSignature, FragLambdaShape};
 pub use compiler_facts::{
     admit, admit_and_publish, compiler_facts_json_path, expectations_for, locate_engine,
@@ -111,8 +120,9 @@ pub use edge::{
 };
 pub use fragment::{fragment_from_extraction, markup_fragment, markup_fragment_text};
 pub use fragment_types::{
-    AnyFragment, FragArgType, FragDef, FragExtensionMethod, FragFact, FragLambdaSlot, FragName,
-    FragRef, FragRegistration, FragUsing, Fragment,
+    AnyFragment, FragArgType, FragDef, FragEnclosingCall, FragExtensionMethod, FragFact,
+    FragHandlerRegistration, FragLambdaSlot, FragName, FragPublish, FragRef, FragRegistration,
+    FragUsing, Fragment,
 };
 pub use imports::{
     imported_edges_json_path, parse_imported_edges, read_imported_edges, write_imported_edges,
@@ -122,6 +132,7 @@ pub use imports::{
 pub use lane::{LaneCompilations, LaneReason, LaneStats};
 pub use ordered::{OrderedMap, Percent1};
 pub use paths::{graph_json_path, project_units_path, rust_crates_path};
+pub(crate) use paths::{fragment_generation, fragments_cache_path};
 pub use rebuild::{rebuild_graph, rebuild_graph_with_crates, GraphFile, RebuildOutcome};
 
 #[cfg(test)]

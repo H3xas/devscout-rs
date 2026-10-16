@@ -15,6 +15,7 @@ mod args;
 mod compiler_facts;
 mod coverage;
 mod dispatch;
+mod export;
 mod find;
 mod impact;
 mod import_edges;
@@ -23,6 +24,7 @@ mod refs;
 mod root;
 
 pub use dispatch::dispatch;
+pub(crate) use answer::freshness_json;
 pub(crate) use root::require_repo;
 
 #[cfg(test)]

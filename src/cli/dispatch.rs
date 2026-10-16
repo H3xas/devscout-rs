@@ -69,6 +69,7 @@ query
   tests <symbol>             tests reaching a symbol  [--no-guess --no-dispatch --no-bus --pick N --json|--compact]
   import-edges <file> --repo <id>  load a cross-repo edge export for `impact` to read
   compiler-facts run|import|status  optional engine-derived facts [--target --configuration --platform]
+  export [--out FILE]        write this repository's whole fact set as NDJSON
   stats                      index + cache summary for this repo
 
 plumbing
@@ -199,6 +200,9 @@ pub fn dispatch(args: Vec<String>) {
             print_out(&out);
             process::exit(code);
         }
+        // The one verb that writes its own output: `print_out` appends a
+        // newline, and the export already terminates every line it writes.
+        Some("export") => process::exit(super::export::cmd_export(&cwd, &args[2..])),
         Some("map") => {
             let (code, out) = cmd_map(&cwd, &args[2..]);
             print_out(&out);
@@ -220,7 +224,7 @@ pub fn dispatch(args: Vec<String>) {
             process::exit(code);
         }
         _ => {
-            eprintln!("usage: devscout <noop|parse|spans|extract-dump|hook|refs|read|impact|tests|find|import-edges|compiler-facts|map|stats|clear|init> [args]");
+            eprintln!("usage: devscout <noop|parse|spans|extract-dump|hook|refs|read|impact|tests|find|import-edges|compiler-facts|export|map|stats|clear|init> [args]");
             process::exit(1);
         }
     }

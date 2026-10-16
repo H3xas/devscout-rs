@@ -1,0 +1,505 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/H3xas/devscout-rs/docs/reference/fact-export.schema.json",
+  "title": "devscout fact export line",
+  "description": "One line of `devscout export`: the header, one fact, or the trailer. The stream is NDJSON, so every line is validated on its own. Keys this schema does not declare are refused, and so is a schema keyword outside the documented subset -- see docs/reference/fact-export.md.",
+  "oneOf": [
+    { "$ref": "#/$defs/header" },
+    { "$ref": "#/$defs/trailer" },
+    { "$ref": "#/$defs/definition" },
+    { "$ref": "#/$defs/edge" },
+    { "$ref": "#/$defs/publish-site" },
+    { "$ref": "#/$defs/handler-registration" },
+    { "$ref": "#/$defs/di-registration" },
+    { "$ref": "#/$defs/unresolved-import" },
+    { "$ref": "#/$defs/test-file" }
+  ],
+  "$defs": {
+    "header": {
+      "title": "Header",
+      "description": "The first line: what the facts were read from, what this release extracts, and the freshness observed.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["format", "schemaVersion", "provenance", "coverage", "freshness"],
+      "properties": {
+        "format": { "const": "devscout-facts" },
+        "schemaVersion": { "const": 1 },
+        "provenance": { "$ref": "#/$defs/provenance" },
+        "coverage": { "$ref": "#/$defs/coverage" },
+        "freshness": { "$ref": "#/$defs/freshness" }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "analysis", "index"],
+      "properties": {
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["indexedHead", "scope", "dirtyAtMap", "fileCount", "fileDigests"],
+          "properties": {
+            "indexedHead": { "type": ["string", "null"] },
+            "scope": { "type": "array", "items": { "type": "string" } },
+            "dirtyAtMap": { "type": "array", "items": { "$ref": "#/$defs/fileDigest" } },
+            "fileCount": { "type": "integer", "minimum": 0 },
+            "fileDigests": { "$ref": "#/$defs/digest" }
+          }
+        },
+        "analysis": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "devscoutVersion",
+            "graphSchemaVersion",
+            "fragmentGeneration",
+            "indexStateVersion",
+            "configInputs",
+            "compilerFacts",
+            "semanticLane"
+          ],
+          "properties": {
+            "devscoutVersion": { "type": "string" },
+            "graphSchemaVersion": { "type": "integer", "minimum": 1 },
+            "fragmentGeneration": { "type": "integer", "minimum": 0 },
+            "indexStateVersion": { "type": "integer", "minimum": 1 },
+            "configInputs": { "type": "array", "items": { "$ref": "#/$defs/fileDigest" } },
+            "compilerFacts": {
+              "oneOf": [{ "$ref": "#/$defs/digest" }, { "const": "none" }]
+            },
+            "semanticLane": { "type": "string" }
+          }
+        },
+        "index": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["generation", "indexedAt"],
+          "properties": {
+            "generation": { "type": "string" },
+            "indexedAt": { "type": "string" }
+          }
+        }
+      }
+    },
+    "fileDigest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "digest"],
+      "properties": {
+        "path": { "type": "string" },
+        "digest": {
+          "oneOf": [{ "$ref": "#/$defs/digest" }, { "type": "null" }]
+        }
+      }
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "definition",
+        "edge",
+        "publish-site",
+        "handler-registration",
+        "di-registration",
+        "unresolved-import",
+        "test-file",
+        "transport-address",
+        "http-route",
+        "http-client"
+      ],
+      "properties": {
+        "definition": { "$ref": "#/$defs/languageCoverage" },
+        "edge": { "$ref": "#/$defs/languageCoverage" },
+        "publish-site": { "$ref": "#/$defs/languageCoverage" },
+        "handler-registration": { "$ref": "#/$defs/languageCoverage" },
+        "di-registration": { "$ref": "#/$defs/languageCoverage" },
+        "unresolved-import": { "$ref": "#/$defs/languageCoverage" },
+        "test-file": { "$ref": "#/$defs/languageCoverage" },
+        "transport-address": { "$ref": "#/$defs/languageCoverage" },
+        "http-route": { "$ref": "#/$defs/languageCoverage" },
+        "http-client": { "$ref": "#/$defs/languageCoverage" }
+      }
+    },
+    "languageCoverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["csharp", "typescript", "rust"],
+      "properties": {
+        "csharp": { "$ref": "#/$defs/extraction" },
+        "typescript": { "$ref": "#/$defs/extraction" },
+        "rust": { "$ref": "#/$defs/extraction" }
+      }
+    },
+    "extraction": {
+      "enum": ["extracted", "not-extracted"]
+    },
+    "freshness": {
+      "title": "Freshness",
+      "description": "The query vocabulary, observed at export time.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state"],
+          "properties": { "state": { "const": "fresh" } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "indexedHead", "currentHead", "changedFiles"],
+          "properties": {
+            "state": { "const": "stale" },
+            "indexedHead": { "type": "string" },
+            "currentHead": { "type": "string" },
+            "changedFiles": { "type": "integer", "minimum": 0 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "reason"],
+          "properties": {
+            "state": { "const": "unknown" },
+            "reason": { "type": "string" }
+          }
+        }
+      ]
+    },
+    "definition": {
+      "title": "Definition",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["family", "evidence", "id", "name", "namespace", "kind", "file", "line", "methods"],
+      "properties": {
+        "family": { "const": "definition" },
+        "evidence": { "const": "declared" },
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "namespace": { "type": "string" },
+        "kind": { "type": "string" },
+        "file": { "type": "string" },
+        "line": { "type": "integer", "minimum": 1 },
+        "endLine": { "type": "integer", "minimum": 1 },
+        "methods": { "type": "array", "items": { "type": "string" } },
+        "testMethods": { "type": "array", "items": { "type": "string" } },
+        "alsoIn": { "type": "array", "items": { "$ref": "#/$defs/site" } }
+      }
+    },
+    "site": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "line"],
+      "properties": {
+        "file": { "type": "string" },
+        "line": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "edge": {
+      "title": "Edge",
+      "description": "One reference, or one fact the resolver derived from recorded references. Its kind decides which keys the line carries.",
+      "oneOf": [
+        { "$ref": "#/$defs/edge-targeted" },
+        { "$ref": "#/$defs/edge-uses-member" },
+        { "$ref": "#/$defs/edge-imports" },
+        { "$ref": "#/$defs/edge-ambiguous" },
+        { "$ref": "#/$defs/edge-ctor-di" },
+        { "$ref": "#/$defs/edge-import" },
+        { "$ref": "#/$defs/edge-implements" },
+        { "$ref": "#/$defs/edge-bus-hop" }
+      ]
+    },
+    "edgeBase": {
+      "type": "object",
+      "required": ["family", "evidence", "file", "line", "kind"],
+      "properties": {
+        "family": { "const": "edge" },
+        "evidence": { "$ref": "#/$defs/edgeEvidence" },
+        "file": { "type": "string" },
+        "line": { "type": "integer", "minimum": 1 },
+        "kind": { "type": "string" }
+      }
+    },
+    "edgeEvidence": {
+      "enum": [
+        "exact",
+        "semantic",
+        "semantic-discovered",
+        "heuristic-ext",
+        "heuristic-guess",
+        "heuristic",
+        "ambiguous",
+        "unresolved",
+        "declared",
+        "derived"
+      ]
+    },
+    "edge-targeted": {
+      "title": "inherits, uses-type, call, jsx-use, dispatch",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["family", "evidence", "file", "line", "kind", "to", "toFile"],
+      "properties": {
+        "family": { "const": "edge" },
+        "evidence": { "$ref": "#/$defs/edgeEvidence" },
+        "file": { "type": "string" },
+        "line": { "type": "integer", "minimum": 1 },
+        "kind": { "enum": ["inherits", "uses-type", "call", "jsx-use", "dispatch"] },
+        "to": { "type": "string" },
+        "toFile": { "type": "string" },
+        "heuristic": { "type": "boolean" }
+      }
+    },
+    "edge-uses-member": {
+      "title": "uses-member",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["family", "evidence", "file", "line", "kind", "to", "toFile", "heuristic"],
+      "properties": {
+        "family": { "const": "edge" },
+        "evidence": { "$ref": "#/$defs/edgeEvidence" },
+        "file": { "type": "string" },
+        "line": { "type": "integer", "minimum": 1 },
+        "kind": { "const": "uses-member" },
+        "to": { "type": "string" },
+        "toFile": { "type": "string" },
+        "heuristic": { "type": "boolean" },
+        "tier": { "enum": ["ext", "guess"] },
+        "source": { "enum": ["semantic", "semantic-discovered"] },
+        "member": { "type": "string" },
+        "overloadSignature": { "type": "string" }
+      }
+    },
+    "edge-imports": {
+      "title": "imports",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["family", "evidence", "file", "line", "kind", "target"],
+      "properties": {
+        "family": { "const": "edge" },
+        "evidence": { "const": "declared" },
+        "file": { "type": "string" },
+        "line": { "type": "integer", "minimum": 1 },
+        "kind": { "const": "imports" },
+        "target": { "type": "string" }
+      }
+    },
+    "edge-ambiguous": {
+      "title": "ambiguous",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["family", "evidence", "file", "line", "kind", "origin", "raw", "candidates", "candidateCount"],
+      "properties": {
+        "family": { "const": "edge" },
+        "evidence": { "const": "ambiguous" },
+        "file": { "type": "string" },
+        "line": { "type": "integer", "minimum": 1 },
+        "kind": { "const": "ambiguous" },
+        "origin": { "type": "string" },
+        "raw": { "type": "string" },
+        "candidates": { "type": "array", "items": { "$ref": "#/$defs/candidate" } },
+        "candidateCount": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "file"],
+      "properties": {
+        "id": { "type": "string" },
+        "file": { "type": "string" }
+      }
+    },
+    "edge-ctor-di": {
+      "title": "ctor-di",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["family", "evidence", "file", "line", "kind", "iface", "resolution"],
+      "properties": {
+        "family": { "const": "edge" },
+        "evidence": { "$ref": "#/$defs/edgeEvidence" },
+        "file": { "type": "string" },
+        "line": { "type": "integer", "minimum": 1 },
+        "kind": { "const": "ctor-di" },
+        "iface": { "type": "string" },
+        "resolution": {
+          "enum": ["plain", "closed", "open-generic", "ambiguous", "infra", "unresolved"]
+        },
+        "args": { "type": "array", "items": { "type": "string" } },
+        "to": { "type": "string" },
+        "candidates": { "type": "array", "items": { "$ref": "#/$defs/candidate" } }
+      }
+    },
+    "edge-import": {
+      "title": "import",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["family", "evidence", "file", "line", "kind", "target", "toFile"],
+      "properties": {
+        "family": { "const": "edge" },
+        "evidence": { "$ref": "#/$defs/edgeEvidence" },
+        "file": { "type": "string" },
+        "line": { "type": "integer", "minimum": 1 },
+        "kind": { "const": "import" },
+        "target": { "type": "string" },
+        "toFile": { "type": "string" },
+        "via": { "type": "string" },
+        "boundDefs": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "edge-implements": {
+      "title": "implements, overrides",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["family", "evidence", "file", "line", "kind", "to", "toFile"],
+      "properties": {
+        "family": { "const": "edge" },
+        "evidence": { "$ref": "#/$defs/edgeEvidence" },
+        "file": { "type": "string" },
+        "line": { "type": "integer", "minimum": 1 },
+        "kind": { "enum": ["implements", "overrides"] },
+        "to": { "type": "string" },
+        "toFile": { "type": "string" },
+        "member": { "type": "string" }
+      }
+    },
+    "edge-bus-hop": {
+      "title": "bus-hop",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["family", "evidence", "file", "line", "kind", "message", "to", "toFile", "hopEvidence"],
+      "properties": {
+        "family": { "const": "edge" },
+        "evidence": { "const": "derived" },
+        "file": { "type": "string" },
+        "line": { "type": "integer", "minimum": 1 },
+        "kind": { "const": "bus-hop" },
+        "message": { "type": "string" },
+        "to": { "type": "string" },
+        "toFile": { "type": "string" },
+        "hopEvidence": { "type": "string" }
+      }
+    },
+    "publish-site": {
+      "title": "Publish site",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["family", "evidence", "file", "line", "verb", "message", "namespace"],
+      "properties": {
+        "family": { "const": "publish-site" },
+        "evidence": { "const": "declared" },
+        "file": { "type": "string" },
+        "line": { "type": "integer", "minimum": 1 },
+        "verb": { "type": "string" },
+        "message": { "type": "string" },
+        "namespace": { "type": "string" },
+        "outerTypes": { "type": "array", "items": { "type": "string" } },
+        "enclosingMethod": { "type": "string" },
+        "argCount": { "type": "integer", "minimum": 1 },
+        "enclosingCall": { "$ref": "#/$defs/enclosingCall" }
+      }
+    },
+    "enclosingCall": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["verb", "argPosition", "argCount"],
+      "properties": {
+        "verb": { "type": "string" },
+        "argPosition": { "type": "integer", "minimum": 0 },
+        "argCount": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "handler-registration": {
+      "title": "Handler registration",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["family", "evidence", "file", "line", "handler", "namespace"],
+      "properties": {
+        "family": { "const": "handler-registration" },
+        "evidence": { "const": "declared" },
+        "file": { "type": "string" },
+        "line": { "type": "integer", "minimum": 1 },
+        "handler": { "type": "string" },
+        "namespace": { "type": "string" }
+      }
+    },
+    "di-registration": {
+      "title": "Dependency-injection registration",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["family", "evidence", "file", "line", "service", "implementation", "namespace"],
+      "properties": {
+        "family": { "const": "di-registration" },
+        "evidence": { "const": "declared" },
+        "file": { "type": "string" },
+        "line": { "type": "integer", "minimum": 1 },
+        "service": { "type": "string" },
+        "implementation": { "type": "string" },
+        "namespace": { "type": "string" }
+      }
+    },
+    "unresolved-import": {
+      "title": "Unresolved module import",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["family", "evidence", "file", "line", "target", "reason"],
+      "properties": {
+        "family": { "const": "unresolved-import" },
+        "evidence": { "const": "unresolved" },
+        "file": { "type": "string" },
+        "line": { "type": "integer", "minimum": 1 },
+        "target": { "type": "string" },
+        "reason": { "type": "string" }
+      }
+    },
+    "test-file": {
+      "title": "Test file",
+      "description": "Carries no line: the classification is a fact about the file, not about a position in it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["family", "evidence", "file", "via"],
+      "properties": {
+        "family": { "const": "test-file" },
+        "evidence": { "enum": ["declared", "convention"] },
+        "file": { "type": "string" },
+        "via": { "enum": ["attribute", "project", "path"] }
+      }
+    },
+    "trailer": {
+      "title": "Trailer",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["trailer", "counts", "facts", "payloadDigest"],
+      "properties": {
+        "trailer": { "const": "devscout-facts" },
+        "counts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "definition",
+            "edge",
+            "publish-site",
+            "handler-registration",
+            "di-registration",
+            "unresolved-import",
+            "test-file"
+          ],
+          "properties": {
+            "definition": { "type": "integer", "minimum": 0 },
+            "edge": { "type": "integer", "minimum": 0 },
+            "publish-site": { "type": "integer", "minimum": 0 },
+            "handler-registration": { "type": "integer", "minimum": 0 },
+            "di-registration": { "type": "integer", "minimum": 0 },
+            "unresolved-import": { "type": "integer", "minimum": 0 },
+            "test-file": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "facts": { "type": "integer", "minimum": 0 },
+        "payloadDigest": { "$ref": "#/$defs/digest" }
+      }
+    }
+  }
+}
