@@ -676,3 +676,83 @@ fn fact_export_ac_9_the_existing_answers_are_unchanged() {
         );
     }
 }
+
+#[test]
+fn fact_export_ac_1_the_global_directory_option_exports_the_named_root() {
+    let fixture = Fixture::build("rust");
+    // Run from OUTSIDE the repository: only `-C` names the tree to export.
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_devscout"))
+        .args(["-C", fixture.root.to_str().expect("utf-8 path"), "export"])
+        .current_dir(&fixture.home)
+        .env("HOME", &fixture.home)
+        .env("SCOUT_REGISTRY", fixture.home.join("repos.json"))
+        .env("SCOUT_CONTENT_DB", fixture.home.join("content.db"))
+        .output()
+        .expect("devscout must run");
+    assert!(
+        out.status.success(),
+        "-C export failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        out.stdout,
+        fixture.export(&[]),
+        "the named root exports exactly what the root itself would"
+    );
+}
+
+#[test]
+fn fact_export_ac_1_an_out_path_with_spaces_is_written_whole() {
+    let fixture = Fixture::build("rust");
+    let target = fixture.root.join("with space.ndjson");
+    let out = fixture.run(&["export", "--out", target.to_str().expect("utf-8 path")]);
+    assert!(out.status.success(), "export --out with a space: {out:?}");
+    assert_eq!(
+        fs::read(&target).expect("read the written stream"),
+        fixture.export(&[]),
+        "a path with a space is one argument, not two"
+    );
+}
+
+#[test]
+fn fact_export_ac_4_a_dirty_path_the_index_kept_no_digest_of_reads_null() {
+    let fixture = Fixture::build("rust");
+    let edited = fs::read_to_string(fixture.root.join("src/lib.rs")).expect("read the source");
+    fs::write(
+        fixture.root.join("src/lib.rs"),
+        format!("{edited}\n// a change the map is about to see\n"),
+    )
+    .expect("edit a mapped file");
+    fs::remove_file(fixture.root.join("src/shelf.rs")).expect("delete a mapped file");
+    fixture.map();
+
+    let lines = fixture.lines();
+    let header = header_of(&lines);
+    let dirty = header["provenance"]["source"]["dirtyAtMap"]
+        .as_array()
+        .expect("dirtyAtMap is an array")
+        .clone();
+    let recorded = dirty
+        .iter()
+        .find(|entry| entry["path"] == "src/lib.rs")
+        .expect("the edited file was dirty when the map read it");
+    let table = fixture.digests();
+    assert_eq!(
+        recorded["digest"],
+        Value::String(format!(
+            "sha256:{}",
+            table["files"]["src/lib.rs"]
+                .as_str()
+                .expect("the digest table holds the edited file")
+        )),
+        "a path the map read gets its recorded content digest"
+    );
+    let deleted = dirty
+        .iter()
+        .find(|entry| entry["path"] == "src/shelf.rs")
+        .expect("the deleted file was dirty when the map read it");
+    assert!(
+        deleted["digest"].is_null(),
+        "a path whose bytes the index kept no digest of reads null, never a fabricated digest: {deleted}"
+    );
+}
