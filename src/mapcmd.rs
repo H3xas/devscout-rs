@@ -377,7 +377,12 @@ pub fn map_repo(root: &Path, scope_dirs: &[String], opts: MapOptions) -> io::Res
     let head0 = manifest::git_head(root);
     // T0: what Git already reports as changed before this run reads anything.
     let status0 = freshness::status::git_status_paths(root, &pathspecs, None).ok();
-    let files = walk::list_source_files(root, &scope)?;
+    // One ignore set for the whole run, so the source walk and both model
+    // discoveries cannot disagree about a path. It is computed before the first
+    // artifact write, so a query that cannot be answered fails the run and
+    // leaves the prior publication as it was.
+    let ignored = walk::Ignored::for_scope(root, &scope)?;
+    let files = walk::list_source_files(root, &scope, &ignored)?;
 
     // A missing manifest, or one with no `entries` object, both collapse to "no
     // prior entries" (no error either way; `find_in_manifest`'s stricter
@@ -528,7 +533,8 @@ pub fn map_repo(root: &Path, scope_dirs: &[String], opts: MapOptions) -> io::Res
     // parsed, which are the bytes the record will certify.
     let mut config_digests: std::collections::BTreeMap<String, String> =
         std::collections::BTreeMap::new();
-    let project_model = project::discover_with_digests(root, &scope, &mut config_digests)?;
+    let project_model =
+        project::discover_with_digests(root, &scope, &ignored, &mut config_digests)?;
     // The enriched-lane decision (`semantic::decide_lane`): the layer
     // resolution may use, if any, and the `stats.lane` record this run owes.
     let lane = crate::semantic::decide_lane(root, opts.no_semantic);
@@ -541,6 +547,7 @@ pub fn map_repo(root: &Path, scope_dirs: &[String], opts: MapOptions) -> io::Res
     let crates = crate::rsgraph::crates::discover_with_digests(
         root,
         &scope,
+        &ignored,
         &rs_files,
         &mut config_digests,
     )?;

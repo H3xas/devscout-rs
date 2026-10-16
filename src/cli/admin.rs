@@ -247,15 +247,17 @@ mod tests {
 
     static COUNTER: AtomicU64 = AtomicU64::new(0);
 
-    // A bare `.git` marker directory is all `require_repo` needs to resolve a
-    // root -- no real git repository has to exist for `cmd_map` itself.
+    // A bare `.scout` marker directory is all `require_repo` needs to resolve a
+    // root, and it keeps the run a plain root: a `.git` entry would mean a Git
+    // root, where `cmd_map` runs the ignore query against a repository that
+    // does not exist here.
     fn fake_repo(label: &str) -> std::path::PathBuf {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
         let dir = std::env::temp_dir().join(format!(
             "scout-admin-test-{label}-{}-{n}",
             std::process::id()
         ));
-        std::fs::create_dir_all(dir.join(".git")).expect("create fake repo root");
+        std::fs::create_dir_all(dir.join(".scout")).expect("create fake repo root");
         dir
     }
 

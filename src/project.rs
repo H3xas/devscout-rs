@@ -123,7 +123,8 @@ pub struct ProjectModel {
 /// See the module docs for the full discovery, ownership, test-detection and
 /// closure rules.
 pub fn discover(root: &Path, scope: &[String]) -> io::Result<Option<ProjectModel>> {
-    discover_with_digests(root, scope, &mut ConfigDigests::new())
+    let ignored = walk::Ignored::for_scope(root, scope)?;
+    discover_with_digests(root, scope, &ignored, &mut ConfigDigests::new())
 }
 
 /// [`discover`] recording a content digest for every configuration file it
@@ -131,16 +132,20 @@ pub fn discover(root: &Path, scope: &[String]) -> io::Result<Option<ProjectModel
 ///
 /// A caller that has to certify what the model was built from then reads the
 /// same bytes discovery read, rather than reading them again.
+///
+/// `ignored` is the caller's one ignore set for the run, so a project file the
+/// source walk skipped cannot enter the model.
 pub fn discover_with_digests(
     root: &Path,
     scope: &[String],
+    ignored: &walk::Ignored,
     digests: &mut ConfigDigests,
 ) -> io::Result<Option<ProjectModel>> {
     let mut csproj_files: HashSet<PathBuf> = HashSet::new();
     let mut props_by_dir: HashMap<PathBuf, String> = HashMap::new();
 
     // Recursive walk of each scope directory.
-    let found = walk::list_files_with_ext(root, scope, &[".csproj", ".props"])?;
+    let found = walk::list_files_with_ext(root, scope, &[".csproj", ".props"], ignored)?;
     for rel in found {
         let abs = root.join(&rel);
         if rel.ends_with(".csproj") {
@@ -152,24 +157,14 @@ pub fn discover_with_digests(
         }
     }
 
-    // Each scope dir's ancestors up to root, checked non-recursively (one
-    // `read_dir` per ancestor, no descent into siblings).
-    for d in scope {
-        let scope_abs = if d == "." {
-            root.to_path_buf()
-        } else {
-            root.join(d)
-        };
-        for ancestor in scan::ancestors_up_to(root, &scope_abs) {
-            scan::scan_ancestor_dir(
-                root,
-                &ancestor,
-                &mut csproj_files,
-                &mut props_by_dir,
-                digests,
-            );
-        }
-    }
+    scan::scan_ancestor_dirs(
+        root,
+        scope,
+        ignored,
+        &mut csproj_files,
+        &mut props_by_dir,
+        digests,
+    );
 
     if csproj_files.is_empty() {
         return Ok(None);

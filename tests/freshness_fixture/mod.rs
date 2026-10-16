@@ -188,6 +188,10 @@ impl Fixture {
             .args(args)
             .current_dir(dir)
             .env("HOME", &self.home)
+            // Pinned too: with `HOME` moved but `XDG_CONFIG_HOME` inherited, Git
+            // would still read the developer's own global config and ignore
+            // file, so a rule the fixture never wrote could decide the run.
+            .env("XDG_CONFIG_HOME", &self.home)
             .env("SCOUT_REGISTRY", self.home.join("repos.json"))
             .env("SCOUT_CONTENT_DB", self.home.join("content.db"))
             .output()

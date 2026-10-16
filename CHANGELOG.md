@@ -50,6 +50,21 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   path for `.mts`, `.cts` and `.jsx` as well as `.ts`, `.tsx`, `.js`, `.mjs` and `.cjs`. The
   `tests` and `impact` commands count these files when they reference the queried code.
 
+### Changed
+
+- **A Git root's `map` now skips the untracked files and directories Git reports as ignored.** A
+  local build into `build/`, `lib/` or `out/` no longer duplicates a source definition, so
+  `find` and `refs` name one definition again; admitting `.js`, `.mjs` and `.cjs` had widened the
+  problem. The rule is Git's own -- `.gitignore` at any depth, `.git/info/exclude`,
+  `core.excludesFile`, with negations and the tracked-file exception as Git answers them -- so a
+  checked-in source under an ignored pattern stays indexed, and the same set reaches the
+  `.csproj`/`Directory.Build.props` and `Cargo.toml` discovery and the `init` language census. A
+  root with no `.git` entry is walked by the fixed directory-name list alone, exactly as before,
+  and needs no `git`. In a Git root the ignore query is now required: when `git` cannot be run or
+  its answer cannot be read, `map` exits non-zero with `error: ignore query failed (…)` and
+  leaves the previous index in place. No artifact format, fragment cache version or skip list
+  changes.
+
 ### Fixed
 
 - **Two environment-reference corrections.** `SCOUT_MTIME_REUSE` no longer claims to be read for

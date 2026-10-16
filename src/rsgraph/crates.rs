@@ -76,21 +76,27 @@ pub fn discover(
     scope: &[String],
     rs_files: &[String],
 ) -> io::Result<Option<RustCrates>> {
-    discover_with_digests(root, scope, rs_files, &mut BTreeMap::new())
+    let ignored = crate::walk::Ignored::for_scope(root, scope)?;
+    discover_with_digests(root, scope, &ignored, rs_files, &mut BTreeMap::new())
 }
 
 /// [`discover`] recording a content digest for every manifest it parsed into
 /// `digests`, so a caller certifying the Cargo model reads the bytes this scan
 /// read rather than reading the file again.
+///
+/// `ignored` is the caller's one ignore set for the run: a manifest the source
+/// walk skipped is neither parsed nor digested, so it never enters
+/// `config_inputs`.
 pub fn discover_with_digests(
     root: &Path,
     scope: &[String],
+    ignored: &crate::walk::Ignored,
     rs_files: &[String],
     digests: &mut BTreeMap<String, String>,
 ) -> io::Result<Option<RustCrates>> {
     let walked: HashSet<&str> = rs_files.iter().map(String::as_str).collect();
     let mut packages = Vec::new();
-    for rel in crate::walk::list_files_with_ext(root, scope, &[".toml"])? {
+    for rel in crate::walk::list_files_with_ext(root, scope, &[".toml"], ignored)? {
         if rel != "Cargo.toml" && !rel.ends_with("/Cargo.toml") {
             continue;
         }
