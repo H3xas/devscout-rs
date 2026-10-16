@@ -33,6 +33,7 @@ fn span(node: Node) -> Option<Span> {
 pub(super) struct MemberTable {
     pub(super) facts: FactTable,
     constructs: HashMap<String, Vec<Span>>,
+    misread_loops: Vec<(String, Span)>,
 }
 
 impl MemberTable {
@@ -40,6 +41,7 @@ impl MemberTable {
         MemberTable {
             facts: FactTable::new(),
             constructs: HashMap::new(),
+            misread_loops: Vec::new(),
         }
     }
 
@@ -70,6 +72,35 @@ impl MemberTable {
             add_fact(&mut self.facts, Some(name.to_string()), None);
         }
         placed.is_some()
+    }
+
+    // Notes the variable of a `foreach` whose generic type the grammar misreads
+    // (see `misparsed_generic_variable`); applied once the walk has seen every
+    // other declaration.
+    pub(super) fn note_misread_loop(&mut self, node: Node, src: &[u8]) {
+        if node.kind() != "foreach_statement" {
+            return;
+        }
+        let name = node
+            .child_by_field_name("left")
+            .and_then(|l| misparsed_generic_variable(l, src));
+        if let (Some(name), Some(loop_span)) = (name, span(node)) {
+            self.misread_loops.push((name, loop_span));
+        }
+    }
+
+    // A misread loop declares its variable with a type this walk cannot read.
+    // When another declaration of the name exists, the loop only adds where
+    // that entry applies, so a use in the loop body keeps the fact the
+    // member's other declaration supplies, as the table always gave it; with
+    // no other declaration the name is taken-but-unknown.
+    pub(super) fn settle_misread_loops(&mut self) {
+        for (name, loop_span) in std::mem::take(&mut self.misread_loops) {
+            if !self.constructs.contains_key(&name) {
+                add_fact(&mut self.facts, Some(name.clone()), None);
+            }
+            self.constructs.entry(name).or_default().push(loop_span);
+        }
     }
 
     pub(super) fn settle(&mut self, name: &str, fact: Option<Fact>) {
@@ -200,11 +231,11 @@ pub(super) fn untyped_declared_names(node: Node, src: &[u8]) -> Vec<String> {
             })
             .flat_map(|d| designated_names(d, src))
             .collect(),
-        "foreach_statement" => match node.child_by_field_name("left") {
-            Some(l) if l.kind() == "tuple_pattern" => designated_names(l, src),
-            Some(l) => misparsed_generic_variable(l, src).into_iter().collect(),
-            None => Vec::new(),
-        },
+        "foreach_statement" => node
+            .child_by_field_name("left")
+            .filter(|l| l.kind() == "tuple_pattern")
+            .map(|l| designated_names(l, src))
+            .unwrap_or_default(),
         "invocation_expression" => misparsed_var_pattern_names(node, src),
         "declaration_pattern" | "var_pattern" => pattern_designated_names(node, src),
         _ => query_binding_names(node, src),

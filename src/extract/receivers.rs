@@ -343,6 +343,7 @@ pub(super) fn collect_member_facts(
         &mut deferred_foreach,
         &mut deferred_lambda,
     );
+    table.settle_misread_loops();
     if !deferred.is_empty() {
         let pending: HashSet<&str> = deferred.iter().map(|d| d.name.as_str()).collect();
         for d in &deferred {
@@ -589,6 +590,7 @@ fn visit_member_facts(
     for name in untyped_declared_names(n, src) {
         table.declare(Some(name), None, n);
     }
+    table.note_misread_loop(n, src);
     for c in named_children(n) {
         visit_member_facts(
             c,

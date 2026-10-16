@@ -255,3 +255,23 @@ fn member_scope_ac_2_a_generic_foreach_variable_the_grammar_misreads_is_taken_bu
     assert_eq!(use_args(&source), vec![None]);
     assert_eq!(touch_receivers(&source), vec![(None, true)]);
 }
+
+#[test]
+fn member_scope_ac_3_a_misread_generic_loop_keeps_the_fact_another_declaration_supplies() {
+    let source = runner(
+        "Widget v;",
+        "",
+        "{ if (Take(out Gadget v)) { s.Use(v); v.Touch(); } } \
+         foreach (Box<Gadget> v in boxes) { s.Use(v); v.Touch(); } \
+         s.Use(v); v.Touch();",
+    );
+    let gadget = Some("Gadget".to_string());
+    assert_eq!(
+        use_args(&source),
+        vec![gadget.clone(), gadget.clone(), None]
+    );
+    assert_eq!(
+        touch_receivers(&source),
+        vec![(gadget.clone(), true), (gadget, true), (None, true)]
+    );
+}
