@@ -1,0 +1,188 @@
+{
+  "contract": "csharp-negative-binding-v1",
+  "cases": [
+    {
+      "id": "shadow-inner-namespace-type",
+      "category": "namespace-shadowing",
+      "site": { "file": "Shadowing.cs", "line": 20, "member": "Paint" },
+      "intent": "resolvable",
+      "declaringType": "NegativeBinding.Shadow.Inner.Panel",
+      "overloadParameters": [],
+      "plausibleWrong": "NegativeBinding.Shadow.Panel"
+    },
+    {
+      "id": "shadow-namespace-member-over-using",
+      "category": "namespace-shadowing",
+      "site": { "file": "Shadowing.cs", "line": 61, "member": "Press" },
+      "intent": "resolvable",
+      "declaringType": "NegativeBinding.Host.Seal",
+      "overloadParameters": [],
+      "plausibleWrong": "NegativeBinding.Tools.Seal"
+    },
+    {
+      "id": "shadow-using-alias-over-directive",
+      "category": "namespace-shadowing",
+      "site": { "file": "Shadowing.cs", "line": 76, "member": "Press" },
+      "intent": "resolvable",
+      "declaringType": "NegativeBinding.Tools.Live.Seal",
+      "overloadParameters": [],
+      "plausibleWrong": "NegativeBinding.Tools.Seal"
+    },
+    {
+      "id": "shadow-global-qualified-over-using",
+      "category": "namespace-shadowing",
+      "site": { "file": "Shadowing.cs", "line": 90, "member": "Read" },
+      "intent": "resolvable",
+      "declaringType": "NegativeBinding.Tools.Gauge",
+      "overloadParameters": [],
+      "plausibleWrong": "NegativeBinding.Tools.Live.Gauge"
+    },
+    {
+      "id": "receiver-declared-base-hides-new",
+      "category": "receiver-overload",
+      "site": { "file": "Overloads.cs", "line": 19, "member": "Write" },
+      "intent": "resolvable",
+      "declaringType": "NegativeBinding.Overload.Sink",
+      "overloadParameters": ["int"],
+      "plausibleWrong": "NegativeBinding.Overload.BufferedSink"
+    },
+    {
+      "id": "receiver-virtual-override-declaring-type",
+      "category": "receiver-overload",
+      "site": { "file": "Overloads.cs", "line": 39, "member": "Send" },
+      "intent": "resolvable",
+      "declaringType": "NegativeBinding.Overload.Emitter",
+      "overloadParameters": ["string"],
+      "plausibleWrong": "NegativeBinding.Overload.JsonEmitter"
+    },
+    {
+      "id": "receiver-narrowed-by-as-cast",
+      "category": "receiver-overload",
+      "site": { "file": "Overloads.cs", "line": 60, "member": "Read" },
+      "intent": "resolvable",
+      "declaringType": "NegativeBinding.Overload.Buffer",
+      "overloadParameters": [],
+      "plausibleWrong": "NegativeBinding.Overload.Source"
+    },
+    {
+      "id": "receiver-interface-parameter",
+      "category": "receiver-overload",
+      "site": { "file": "Overloads.cs", "line": 78, "member": "Push" },
+      "intent": "resolvable",
+      "declaringType": "NegativeBinding.Overload.IChannel",
+      "overloadParameters": ["string"],
+      "plausibleWrong": "NegativeBinding.Overload.Channel"
+    },
+    {
+      "id": "extension-instance-member-wins",
+      "category": "extension-instance",
+      "site": { "file": "Extensions.cs", "line": 20, "member": "Stamp" },
+      "intent": "resolvable",
+      "declaringType": "NegativeBinding.Ext.Marker",
+      "overloadParameters": [],
+      "plausibleWrong": "NegativeBinding.Ext.MarkerExtensions"
+    },
+    {
+      "id": "extension-inapplicable-instance-member",
+      "category": "extension-instance",
+      "site": { "file": "Extensions.cs", "line": 39, "member": "Scale" },
+      "intent": "resolvable",
+      "declaringType": "NegativeBinding.Ext.MeterExtensions",
+      "overloadParameters": ["Meter", "string"],
+      "plausibleWrong": "NegativeBinding.Ext.Meter"
+    },
+    {
+      "id": "extension-closer-namespace-wins",
+      "category": "extension-instance",
+      "site": { "file": "Extensions.cs", "line": 55, "member": "Tune" },
+      "intent": "resolvable",
+      "declaringType": "NegativeBinding.Ext.LocalHooks",
+      "overloadParameters": ["Tuner"],
+      "plausibleWrong": "NegativeBinding.Ext.Far.DistantHooks"
+    },
+    {
+      "id": "extension-more-specific-receiver-wins",
+      "category": "extension-instance",
+      "site": { "file": "Extensions.cs", "line": 78, "member": "Prime" },
+      "intent": "resolvable",
+      "declaringType": "NegativeBinding.Ext.LoaderHooks",
+      "overloadParameters": ["Loader"],
+      "plausibleWrong": "NegativeBinding.Ext.LoadableHooks"
+    },
+    {
+      "id": "generic-inferred-over-object",
+      "category": "generic-binding",
+      "site": { "file": "Generics.cs", "line": 14, "member": "Route" },
+      "intent": "resolvable",
+      "declaringType": "NegativeBinding.Generics.Router",
+      "overloadParameters": ["T"],
+      "typeArguments": { "T": "string" },
+      "plausibleWrong": "NegativeBinding.Generics.Router.Route(object)"
+    },
+    {
+      "id": "generic-base-hidden-by-derived-member",
+      "category": "generic-binding",
+      "site": { "file": "Generics.cs", "line": 33, "member": "Attach" },
+      "intent": "resolvable",
+      "declaringType": "NegativeBinding.Generics.RobotAssembler",
+      "overloadParameters": ["string"],
+      "plausibleWrong": "NegativeBinding.Generics.Assembler.Attach<T>"
+    },
+    {
+      "id": "generic-two-arity-inference",
+      "category": "generic-binding",
+      "site": { "file": "Generics.cs", "line": 48, "member": "Join" },
+      "intent": "resolvable",
+      "declaringType": "NegativeBinding.Generics.Pairer",
+      "overloadParameters": ["T1", "T2"],
+      "typeArguments": { "T1": "int", "T2": "string" },
+      "plausibleWrong": "NegativeBinding.Generics.Pairer.Join<T>(T, T)"
+    },
+    {
+      "id": "generic-constraint-satisfying-over-object",
+      "category": "generic-binding",
+      "site": { "file": "Generics.cs", "line": 63, "member": "Rank" },
+      "intent": "resolvable",
+      "declaringType": "NegativeBinding.Generics.Sorter",
+      "overloadParameters": ["T"],
+      "typeArguments": { "T": "int" },
+      "plausibleWrong": "NegativeBinding.Generics.Sorter.Rank(object)"
+    },
+    {
+      "id": "negative-ambiguous-numeric-overload",
+      "category": "negative",
+      "site": { "file": "Negative.cs", "line": 35, "member": "Choose" },
+      "intent": "negative",
+      "oracleState": "ambiguous",
+      "diagnostic": "CS0121",
+      "acceptedOutcomes": ["absent", "tiered"]
+    },
+    {
+      "id": "negative-ambiguous-no-applicable-overload",
+      "category": "negative",
+      "site": { "file": "Negative.cs", "line": 38, "member": "Deliver" },
+      "intent": "negative",
+      "oracleState": "ambiguous",
+      "diagnostic": "CS1503",
+      "acceptedOutcomes": ["absent", "tiered"]
+    },
+    {
+      "id": "negative-inaccessible-private-method",
+      "category": "negative",
+      "site": { "file": "Negative.cs", "line": 41, "member": "Open" },
+      "intent": "negative",
+      "oracleState": "inaccessible",
+      "diagnostic": "CS0122",
+      "acceptedOutcomes": ["absent", "tiered"]
+    },
+    {
+      "id": "negative-inaccessible-private-field",
+      "category": "negative",
+      "site": { "file": "Negative.cs", "line": 44, "member": "code" },
+      "intent": "negative",
+      "oracleState": "inaccessible",
+      "diagnostic": "CS0122",
+      "acceptedOutcomes": ["absent", "tiered"]
+    }
+  ]
+}
