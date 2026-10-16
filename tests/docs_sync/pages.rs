@@ -162,9 +162,10 @@ pub const EXIT_CODES: &[ExitRow] = &[
                   environment it cannot read.",
         produced_by: "an ambiguous or unresolved seed; a refusal (`export`); an unreadable \
                       environment; `--json` together with `--compact`; a `-C <dir>` that cannot \
-                      be applied; and the usage paths of the plumbing verbs — `parse`, `spans` \
-                      and `extract-dump` with no file, `hook` with no filter, an `audit` argument \
-                      error, and the unknown-command line.",
+                      be applied; a Git ignore query that cannot be run or read, which stops \
+                      `map` before it writes; and the usage paths of the plumbing verbs — \
+                      `parse`, `spans` and `extract-dump` with no file, `hook` with no filter, an \
+                      `audit` argument error, and the unknown-command line.",
     },
     ExitRow {
         constant: "EXIT_USAGE",
@@ -308,6 +309,16 @@ pub fn cli_page(help: &str) -> String {
     page.push_str(
         "| `--no-semantic` | Skip an admitted compiler-facts artifact and rebuild the \
          syntax-only graph |\n\n",
+    );
+    page.push_str(
+        "In a Git root, `map` also skips the untracked files and directories Git reports as \
+         ignored -- `.gitignore` at any depth, `.git/info/exclude`, `core.excludesFile`, with \
+         negations and tracked-file exceptions exactly as Git answers them -- so a local build \
+         into `build/`, `lib/` or `out/` cannot duplicate a source definition. A tracked file is \
+         always indexed, and a root with no `.git` entry is walked by the fixed directory-name \
+         list alone, with no `git` needed. In a Git root the ignore query is required: when \
+         `git` cannot be run, or its answer cannot be read, `map` exits 1 with `error: ignore \
+         query failed (…)` and leaves the previous index in place.\n\n",
     );
     page.push_str("### clear\n\n");
     page.push_str(&usage_block("CLEAR_OLDER_THAN_USAGE"));
