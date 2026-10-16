@@ -51,7 +51,13 @@ fn print_out(out: &str) {
 // `devscout help` / `--help`. Written to stdout with exit 0 so a shell
 // `devscout --help` is a success, unlike the usage line the unknown-command
 // arm sends to stderr.
-const HELP: &str = "\
+//
+// The footer's URL is folded from the crate metadata at compile time, so a
+// released binary points at the documentation of its own tag rather than at a
+// page that has moved on since. The version bump is therefore also a
+// regeneration of the CLI reference, which carries this text verbatim.
+const HELP: &str = concat!(
+    "\
 devscout -- fast code index for C# and TypeScript codebases.
 
 usage: devscout <command> [args]
@@ -85,7 +91,14 @@ plumbing
   -C <dir>                   run as if devscout started in <dir>
   -h, --help                 show this help
   -V, --version              show the version
-";
+
+",
+    "docs: ",
+    env!("CARGO_PKG_REPOSITORY"),
+    "/tree/v",
+    env!("CARGO_PKG_VERSION"),
+    "/docs\n",
+);
 
 /// Parses and executes a `devscout` command from its argument vector.
 #[allow(
