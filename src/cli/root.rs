@@ -5,7 +5,9 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::exit::EXIT_FAILURE;
 use crate::graph;
+use crate::layout;
 use crate::query;
 
 pub(crate) fn current_dir() -> PathBuf {
@@ -108,8 +110,11 @@ pub(crate) fn apply_global_options(
 pub(crate) fn require_graph(root: &Path) -> Result<graph::Graph, (i32, String)> {
     graph::read_graph(root).ok_or_else(|| {
         (
-            1,
-            "no graph.json for this repo — run `devscout map` on a C# scope first".to_string(),
+            EXIT_FAILURE,
+            format!(
+                "no {} for this repo — run `devscout map` on a C# scope first",
+                layout::GRAPH_FILE
+            ),
         )
     })
 }

@@ -35,8 +35,8 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::manifest::{self, Value as JVal};
-use crate::repo;
 use crate::store;
+use crate::{layout, repo};
 
 type HookResult<T> = Result<T, Box<dyn std::error::Error>>;
 
@@ -231,7 +231,7 @@ fn debug_enabled(root: &Path) -> bool {
     if env::var("SCOUT_DEBUG").ok().as_deref() == Some("1") {
         return true;
     }
-    repo::scout_dir(root).join("debug").exists()
+    repo::scout_dir(root).join(layout::DEBUG_MARKER).exists()
 }
 
 // Appends one JSON line to the debug log. Must never throw or otherwise disturb
@@ -250,7 +250,7 @@ fn debug_log(root: &Path, event: &str, fields: Vec<(&str, JVal)>) {
         Ok(s) => s,
         Err(_) => return,
     };
-    let log_path = repo::scout_dir(root).join("debug.log");
+    let log_path = repo::scout_dir(root).join(layout::DEBUG_LOG_FILE);
     if let Ok(mut f) = fs::OpenOptions::new()
         .create(true)
         .append(true)

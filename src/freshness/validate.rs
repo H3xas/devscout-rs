@@ -23,6 +23,7 @@ use std::path::{Path, PathBuf};
 use rayon::prelude::*;
 
 use crate::graph::graph_json_path;
+use crate::layout;
 
 use super::record::{
     self, ArtifactIdentity, DigestTable, Record, RecordState, RECORD_FORMAT, RECORD_VERSION,
@@ -310,7 +311,7 @@ fn end_changed(root: &Path, published: &Record, id: &str) -> Option<Validation> 
 /// beside the record.
 #[must_use]
 pub fn manifest_artifact_path(root: &Path) -> PathBuf {
-    record::state_dir(root).join("manifest.json")
+    record::state_dir(root).join(layout::MANIFEST_FILE)
 }
 
 // The pathspecs a query's status read covers: the published scope, every

@@ -6,22 +6,17 @@
 use std::path::Path;
 use std::time::Instant;
 
+use crate::exit::{EXIT_FAILURE, EXIT_NO_RESULT, EXIT_OK, EXIT_USAGE};
 use crate::query;
 use crate::render;
+use crate::usage::REFS_USAGE;
 
 use super::answer::{
     ambiguous_candidates_out, begin_validation, fallback_advised_out, finish_query,
-    member_ambiguous_out, with_next_trailer, EXIT_NO_RESULT, ZERO_HIT_REFS,
+    member_ambiguous_out, with_next_trailer, ZERO_HIT_REFS,
 };
 use super::args::{first_positional, index_options, output_flags, parse_pick};
 use super::root::{require_graph, require_repo};
-
-// `refs`. Check order: `--compact`+`--json` conflict, then missing query, THEN
-// `require_repo`, THEN the graph-present check -- a query run with no repo
-// present reports the missing-repo error even if the query itself is also
-// absent-adjacent.
-const REFS_USAGE: &str =
-    "usage: devscout refs <symbol> [--out] [--all] [--no-guess] [--no-dispatch] [--no-bus] [--pick N] [--json|--compact]";
 
 // The row count `refs`/`read` telemetry reports for a resolved answer: every
 // inbound row plus, under `--out`, every outbound row -- the same rows the
@@ -63,7 +58,7 @@ pub(crate) fn member_models_out(
     let (code, outcome) = if models.iter().all(|m| m.inbound.uses_member.total == 0) {
         (EXIT_NO_RESULT, query::Outcome::ZeroHit)
     } else {
-        (0, query::Outcome::Hit)
+        (EXIT_OK, query::Outcome::Hit)
     };
     // Each member answers for itself; the union is what the answer as a whole
     // suggests, and it is what the text trailer states once, after every block.
@@ -85,6 +80,10 @@ pub(crate) fn member_models_out(
     (code, out, outcome, count)
 }
 
+// `refs`. Check order: `--compact`+`--json` conflict, then missing query, THEN
+// `require_repo`, THEN the graph-present check -- a query run with no repo
+// present reports the missing-repo error even if the query itself is also
+// absent-adjacent.
 pub(crate) fn cmd_refs(cwd: &Path, args: &[String]) -> (i32, String, Option<&'static str>) {
     let start = Instant::now();
     let (json, compact) = match output_flags("refs", args) {
@@ -92,10 +91,10 @@ pub(crate) fn cmd_refs(cwd: &Path, args: &[String]) -> (i32, String, Option<&'st
         Err((code, out)) => return (code, out, None),
     };
     let Ok(pick) = parse_pick(args) else {
-        return (2, REFS_USAGE.to_string(), None);
+        return (EXIT_USAGE, REFS_USAGE.to_string(), None);
     };
     let Some(q) = first_positional(args) else {
-        return (2, REFS_USAGE.to_string(), None);
+        return (EXIT_USAGE, REFS_USAGE.to_string(), None);
     };
     let out = args.iter().any(|a| a == "--out");
     // `--all` lifts only `query::OUTBOUND_CAP`; it is otherwise inert without
@@ -103,7 +102,7 @@ pub(crate) fn cmd_refs(cwd: &Path, args: &[String]) -> (i32, String, Option<&'st
     let all_out = args.iter().any(|a| a == "--all");
     let root = match require_repo(cwd) {
         Ok(r) => r,
-        Err(e) => return (1, format!("error: {e}"), None),
+        Err(e) => return (EXIT_FAILURE, format!("error: {e}"), None),
     };
     // One validation per invocation, opened before any index artifact is read.
     begin_validation(&root, cwd);
@@ -132,7 +131,7 @@ pub(crate) fn cmd_refs(cwd: &Path, args: &[String]) -> (i32, String, Option<&'st
     let result = match build(q) {
         query::RefsResult::MemberAmbiguous(candidates) => match pick {
             Some(n) if n <= candidates.len() => build(&query::qualified_seed(&candidates[n - 1])),
-            Some(_) => return (2, REFS_USAGE.to_string(), None),
+            Some(_) => return (EXIT_USAGE, REFS_USAGE.to_string(), None),
             None => query::RefsResult::MemberAmbiguous(candidates),
         },
         other => other,
@@ -180,7 +179,7 @@ fn refs_result_out(
             } else {
                 with_next_trailer(render::render_refs_text(&model), &next)
             };
-            (0, out, query::Outcome::Hit, count)
+            (EXIT_OK, out, query::Outcome::Hit, count)
         }
     }
 }

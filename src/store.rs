@@ -231,7 +231,7 @@ fn add_agent_scope(
 /// branch -- the `CREATE TABLE` already has every column the migrations would
 /// otherwise add.
 pub fn open_store(root: &Path) -> rusqlite::Result<Connection> {
-    let db_path = repo::scout_dir(root).join("cache.db");
+    let db_path = repo::scout_dir(root).join(crate::layout::CACHE_DB_FILE);
     let conn = Connection::open(db_path)?;
     conn.execute_batch("PRAGMA journal_mode = WAL")?;
     conn.execute_batch("PRAGMA busy_timeout = 5000")?;
@@ -674,10 +674,10 @@ pub fn content_db_path() -> PathBuf {
 fn default_content_db_path() -> PathBuf {
     match env::var("HOME") {
         Ok(home) => PathBuf::from(home)
-            .join(".claude")
-            .join("scout")
-            .join("content.db"),
-        Err(_) => PathBuf::from("content.db"),
+            .join(crate::layout::AGENT_DIR)
+            .join(crate::layout::SCOUT_DIR)
+            .join(crate::layout::CONTENT_DB_FILE),
+        Err(_) => PathBuf::from(crate::layout::CONTENT_DB_FILE),
     }
 }
 

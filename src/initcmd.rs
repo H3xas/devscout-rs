@@ -33,6 +33,8 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::exit::{EXIT_FAILURE, EXIT_OK, EXIT_USAGE};
+use crate::layout;
 use crate::manifest;
 use crate::mapcmd;
 use crate::repo;
@@ -234,7 +236,7 @@ fn write_registry_value(value: &manifest::Value) -> Result<(), String> {
         "{}.tmp.{}.{suffix}",
         path.file_name()
             .and_then(|n| n.to_str())
-            .unwrap_or("repos.json"),
+            .unwrap_or(layout::REGISTRY_FILE),
         std::process::id()
     );
     let tmp_path = path.with_file_name(tmp_name);
@@ -362,7 +364,7 @@ pub fn cmd_init(cwd: &Path, args: &[String]) -> (i32, String) {
         match nested_git_repos(&root) {
             Ok(nested) if !nested.is_empty() => {
                 return (
-                    2,
+                    EXIT_USAGE,
                     format!(
                         "refusing to init {}: it contains git repos ({}).\nA .scout above several repos has no single HEAD, so manifest staleness detection silently stops firing. Run devscout init inside each repo instead.",
                         root.display(),
@@ -371,7 +373,7 @@ pub fn cmd_init(cwd: &Path, args: &[String]) -> (i32, String) {
                 );
             }
             Ok(_) => {}
-            Err(e) => return (1, format!("error: {e}")),
+            Err(e) => return (EXIT_FAILURE, format!("error: {e}")),
         }
     }
 
@@ -395,7 +397,7 @@ pub fn cmd_init(cwd: &Path, args: &[String]) -> (i32, String) {
             // This aborts with an error rather than panicking.
             None => {
                 return (
-                    1,
+                    EXIT_FAILURE,
                     format!(
                         "error: unable to resolve git common dir for {}",
                         git_root.display()
@@ -404,16 +406,16 @@ pub fn cmd_init(cwd: &Path, args: &[String]) -> (i32, String) {
             }
         };
         if let Err(e) = ensure_scout_excluded(&common.join("info")) {
-            return (1, format!("error: {e}"));
+            return (EXIT_FAILURE, format!("error: {e}"));
         }
         if let Err(e) = fs::create_dir_all(&scout_dir) {
-            return (1, format!("error: {e}"));
+            return (EXIT_FAILURE, format!("error: {e}"));
         }
         if let Err(e) = register_root(&root_abs, "git", label.as_deref(), &scope) {
-            return (1, format!("error: {e}"));
+            return (EXIT_FAILURE, format!("error: {e}"));
         }
         return (
-            0,
+            EXIT_OK,
             format!(
                 "devscout initialized at {}{scope_note}",
                 scout_dir.display()
@@ -422,13 +424,13 @@ pub fn cmd_init(cwd: &Path, args: &[String]) -> (i32, String) {
     }
 
     if let Err(e) = fs::create_dir_all(&scout_dir) {
-        return (1, format!("error: {e}"));
+        return (EXIT_FAILURE, format!("error: {e}"));
     }
     if let Err(e) = register_root(&root_abs, "plain", label.as_deref(), &scope) {
-        return (1, format!("error: {e}"));
+        return (EXIT_FAILURE, format!("error: {e}"));
     }
     (
-        0,
+        EXIT_OK,
         format!(
             "devscout initialized at {} (non-git root: {}){scope_note}",
             scout_dir.display(),
@@ -491,7 +493,7 @@ pub fn cmd_init_full(cwd: &Path, args: &[String]) -> (i32, String) {
         hooks_line(no_hooks),
         map_line(&root, no_map),
     ];
-    (0, lines.join("\n"))
+    (EXIT_OK, lines.join("\n"))
 }
 
 // ---------------------------------------------------------------------------
@@ -544,7 +546,9 @@ fn hooks_line(no_hooks: bool) -> String {
 // no `HOME`, there is no path to touch).
 fn settings_path() -> Result<PathBuf, String> {
     let home = std::env::var("HOME").map_err(|_| "HOME is not set".to_string())?;
-    Ok(PathBuf::from(home).join(".claude").join("settings.json"))
+    Ok(PathBuf::from(home)
+        .join(layout::AGENT_DIR)
+        .join("settings.json"))
 }
 
 // The absolute path to the CURRENTLY RUNNING binary -- what the installed hook

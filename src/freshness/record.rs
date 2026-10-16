@@ -24,6 +24,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use crate::layout;
 use crate::repo::{git_common_dir, git_dir_for, scout_dir};
 
 /// The record's `format` discriminator.
@@ -32,6 +33,8 @@ pub const RECORD_FORMAT: &str = "devscout-index-state";
 pub const RECORD_VERSION: u32 = 2;
 /// The digest table's `format` discriminator.
 pub const DIGESTS_FORMAT: &str = "devscout-index-digests";
+/// The digest table's own version, bumped only when its shape changes.
+pub const DIGESTS_VERSION: u32 = 1;
 
 /// The identity of one artifact file, as the filesystem reports it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -173,7 +176,7 @@ pub enum RecordState {
 #[must_use]
 pub fn state_dir(root: &Path) -> PathBuf {
     match git_common_dir(root) {
-        Some(common) => common.join("scout"),
+        Some(common) => common.join(layout::SCOUT_DIR),
         None => scout_dir(root),
     }
 }
@@ -181,19 +184,19 @@ pub fn state_dir(root: &Path) -> PathBuf {
 /// The record file's path.
 #[must_use]
 pub fn record_path(root: &Path) -> PathBuf {
-    state_dir(root).join("index-state.json")
+    state_dir(root).join(layout::INDEX_STATE_FILE)
 }
 
 /// The digest table's path.
 #[must_use]
 pub fn digest_path(root: &Path) -> PathBuf {
-    state_dir(root).join("index-digests.json")
+    state_dir(root).join(layout::INDEX_DIGESTS_FILE)
 }
 
 /// The `map` lock file's path.
 #[must_use]
 pub fn lock_path(root: &Path) -> PathBuf {
-    state_dir(root).join("map.lock")
+    state_dir(root).join(layout::MAP_LOCK_FILE)
 }
 
 /// The canonical Git administrative directory naming the worktree that owns an
@@ -256,7 +259,7 @@ pub(crate) fn read_digests_strict(root: &Path) -> Result<DigestTable, DigestRead
     let before = ArtifactIdentity::of(&path);
     let text = fs::read_to_string(&path).map_err(|_| DigestReadError::Missing)?;
     let raw: RawDigests = serde_json::from_str(&text).map_err(|_| DigestReadError::Unreadable)?;
-    if raw.format != DIGESTS_FORMAT || raw.version != 1 {
+    if raw.format != DIGESTS_FORMAT || raw.version != DIGESTS_VERSION {
         return Err(DigestReadError::UnknownFormat);
     }
     if before.is_none() || before != ArtifactIdentity::of(&path) {
@@ -276,7 +279,7 @@ pub fn write_digests(
 ) -> io::Result<()> {
     let raw = RawDigests {
         format: DIGESTS_FORMAT.to_string(),
-        version: 1,
+        version: DIGESTS_VERSION,
         generation: generation.to_string(),
         files: files.clone(),
     };

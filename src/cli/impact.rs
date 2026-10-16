@@ -6,18 +6,18 @@
 use std::path::Path;
 use std::time::Instant;
 
+use crate::exit::{EXIT_FAILURE, EXIT_NO_RESULT, EXIT_OK, EXIT_USAGE};
 use crate::graph;
 use crate::query;
 use crate::render;
+use crate::usage::IMPACT_USAGE;
 
 use super::answer::{
     ambiguous_candidates_out, begin_validation, fallback_advised_out, finish_query,
-    member_ambiguous_out, with_next_trailer, EXIT_NO_RESULT,
+    member_ambiguous_out, with_next_trailer,
 };
 use super::args::{index_options, output_flags, parse_int_js, parse_pick};
 use super::root::{repo_relative_arg, require_graph, require_repo_for_path};
-
-const IMPACT_USAGE: &str = "usage: devscout impact <file|symbol> [--hops N] [--no-iface] [--no-guess] [--no-dispatch] [--no-bus] [--no-imports] [--iface-max-fanin N] [--hub-max-indegree N] [--pick N] [--json|--compact]";
 
 /// The output flags the resolved answer reads, gathered so the answer builder
 /// takes one value rather than three positional booleans.
@@ -40,7 +40,7 @@ struct ImpactArgs<'a> {
 }
 
 fn parse_impact_args(args: &[String]) -> Result<ImpactArgs<'_>, (i32, String)> {
-    let usage_err = || (2, IMPACT_USAGE.to_string());
+    let usage_err = || (EXIT_USAGE, IMPACT_USAGE.to_string());
 
     let mut hops: u32 = query::DEFAULT_HOPS;
     if let Some(idx) = args.iter().position(|a| a == "--hops") {
@@ -137,7 +137,7 @@ pub(crate) fn cmd_impact(cwd: &Path, args: &[String]) -> (i32, String) {
     };
     let root = match require_repo_for_path(cwd, Some(q)) {
         Ok(r) => r,
-        Err(e) => return (1, format!("error: {e}")),
+        Err(e) => return (EXIT_FAILURE, format!("error: {e}")),
     };
     // One validation per invocation, opened before any index artifact is read.
     begin_validation(&root, cwd);
@@ -165,7 +165,7 @@ pub(crate) fn cmd_impact(cwd: &Path, args: &[String]) -> (i32, String) {
     let result = match build(q) {
         query::ImpactResult::MemberAmbiguous(candidates) => match pick {
             Some(n) if n <= candidates.len() => build(&query::qualified_seed(&candidates[n - 1])),
-            Some(_) => return (2, IMPACT_USAGE.to_string()),
+            Some(_) => return (EXIT_USAGE, IMPACT_USAGE.to_string()),
             None => query::ImpactResult::MemberAmbiguous(candidates),
         },
         other => other,
@@ -242,6 +242,6 @@ fn resolved_out(
     if count == 0 {
         (EXIT_NO_RESULT, out, query::Outcome::ZeroHit, 0)
     } else {
-        (0, out, query::Outcome::Hit, count)
+        (EXIT_OK, out, query::Outcome::Hit, count)
     }
 }

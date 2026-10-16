@@ -7,20 +7,18 @@
 
 use std::path::Path;
 
+use crate::exit::{EXIT_FAILURE, EXIT_OK, EXIT_USAGE};
 use crate::export::{self, ExportError, ExportRefusal};
+use crate::usage::EXPORT_USAGE;
 
 use super::root::require_repo;
 
-const USAGE: &str = "usage: devscout export [--out FILE]";
-
-// Exit codes: 0 for a written stream, 1 for a refusal or a write that failed,
-// 2 for a malformed invocation. A refusal is not a usage error -- the
-// invocation was well formed and the index cannot be published as it stands.
-const EXIT_REFUSED: i32 = 1;
-const EXIT_USAGE: i32 = 2;
-
+// A refusal is not a usage error -- the invocation was well formed and the
+// index cannot be published as it stands -- so a refusal and a write that
+// failed both report EXIT_FAILURE, and only a malformed invocation reports
+// EXIT_USAGE.
 fn usage_error(message: &str) -> i32 {
-    eprintln!("devscout export: {message}\n{USAGE}");
+    eprintln!("devscout export: {message}\n{EXPORT_USAGE}");
     EXIT_USAGE
 }
 
@@ -60,19 +58,19 @@ pub(crate) fn cmd_export(cwd: &Path, args: &[String]) -> i32 {
         Ok(root) => root,
         Err(message) => {
             eprintln!("{}", ExportRefusal::NoIndex(message).line());
-            return EXIT_REFUSED;
+            return EXIT_FAILURE;
         }
     };
     match export::run(&root, cwd, out.as_deref().map(Path::new)) {
-        Ok(()) => 0,
+        Ok(()) => EXIT_OK,
         Err(ExportError::Refused(refusal)) => {
             eprintln!("{}", refusal.line());
-            EXIT_REFUSED
+            EXIT_FAILURE
         }
         Err(ExportError::Output(message)) => {
             eprintln!("devscout export: {message}");
-            EXIT_REFUSED
+            EXIT_FAILURE
         }
-        Err(ExportError::Stdout) => EXIT_REFUSED,
+        Err(ExportError::Stdout) => EXIT_FAILURE,
     }
 }

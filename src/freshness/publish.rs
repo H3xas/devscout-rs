@@ -20,6 +20,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use crate::graph::graph_json_path;
+use crate::layout;
 
 use super::record::{
     new_generation, owner_of, record_path, remove_state, state_dir, write_digests, write_marker,
@@ -85,7 +86,7 @@ impl MapSession {
             config_inputs,
             artifacts: Artifacts {
                 graph: ArtifactIdentity::of(&graph_json_path(&self.root)),
-                manifest: ArtifactIdentity::of(&state_dir(&self.root).join("manifest.json")),
+                manifest: ArtifactIdentity::of(&state_dir(&self.root).join(layout::MANIFEST_FILE)),
             },
         };
         write_record(&self.root, &record)

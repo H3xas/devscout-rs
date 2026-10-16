@@ -24,6 +24,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::de::{Deserialize, Deserializer, MapAccess, SeqAccess, Visitor};
 use serde::ser::{Serialize, SerializeMap, SerializeSeq, Serializer};
 
+use crate::layout::{MANIFEST_FILE, SCOUT_DIR};
 use crate::repo::{entry_for, git_common_dir, scout_dir, RegistryEntry, RegistryError};
 
 // ---------------------------------------------------------------------------
@@ -226,7 +227,7 @@ impl Serialize for Value {
 // path), else `legacy_manifest_path(root)`. Kept private deliberately.
 fn manifest_path(root: &Path) -> PathBuf {
     match git_common_dir(root) {
-        Some(common) => common.join("scout").join("manifest.json"),
+        Some(common) => common.join(SCOUT_DIR).join(MANIFEST_FILE),
         None => legacy_manifest_path(root),
     }
 }
@@ -234,7 +235,7 @@ fn manifest_path(root: &Path) -> PathBuf {
 /// `<root>/.scout/manifest.json`, still consulted on read so pre-existing
 /// enriched manifests are not orphaned by the shared-path move.
 pub fn legacy_manifest_path(root: &Path) -> PathBuf {
-    scout_dir(root).join("manifest.json")
+    scout_dir(root).join(MANIFEST_FILE)
 }
 
 // ---------------------------------------------------------------------------
@@ -330,7 +331,7 @@ pub fn write_manifest(root: &Path, value: &Value) -> io::Result<()> {
         "{}.tmp.{}.{suffix}",
         path.file_name()
             .and_then(|n| n.to_str())
-            .unwrap_or("manifest.json"),
+            .unwrap_or(MANIFEST_FILE),
         std::process::id(),
     );
     let tmp_path = path.with_file_name(tmp_name);
@@ -409,11 +410,9 @@ struct Scored {
 }
 
 /// AND across whitespace-split, lowercased tokens over `path + ' ' + purpose`;
-/// when no entry matches every token, fall back to entries matching ANY token,
-/// ranked by hit count descending.
+/// no all-token match falls back to ANY-token matches, best hit first.
 ///
-/// Reads every entry's inbound-edge count at 0 -- see
-/// `find_in_manifest_detailed` for the ranked variant.
+/// Reads every entry's inbound-edge count at 0 -- see `find_in_manifest_detailed`.
 pub fn find_in_manifest(root: &Path, query: &str) -> Result<Vec<FindHit>, FindError> {
     Ok(find_in_manifest_detailed(root, query, &HashMap::new())?.hits)
 }

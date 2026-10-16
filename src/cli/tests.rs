@@ -6,12 +6,12 @@ use crate::query::json::*;
 
 use std::path::PathBuf;
 
+use crate::exit::EXIT_NO_RESULT;
 use crate::graph;
 use crate::query;
 use crate::store;
 
 use super::admin::{cmd_clear, js_math_round};
-use super::answer::EXIT_NO_RESULT;
 use super::args::parse_int_js;
 use super::find::cmd_find;
 

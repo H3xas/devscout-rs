@@ -27,6 +27,7 @@ use crate::freshness::record::{
 use crate::freshness::validate;
 use crate::freshness::{FreshnessState, UnknownReason};
 use crate::graph::{self, FragMessaging, Graph, StrictCacheError, GRAPH_SCHEMA_VERSION};
+use crate::layout;
 use crate::query::{self, TestVia};
 
 use super::refusal::ExportRefusal;
@@ -74,33 +75,38 @@ pub(crate) fn load_bracketed(
     let graph_path = graph::graph_json_path(root);
     let manifest_path = validate::manifest_artifact_path(root);
     let expected_graph = record.artifacts.graph.ok_or_else(|| {
-        ExportRefusal::ArtifactMissing("the index certifies no graph.json".to_string())
+        ExportRefusal::ArtifactMissing(format!("the index certifies no {}", layout::GRAPH_FILE))
     })?;
 
     if !graph_path.is_file() {
-        return Err(ExportRefusal::ArtifactMissing("graph.json".to_string()));
+        return Err(ExportRefusal::ArtifactMissing(
+            layout::GRAPH_FILE.to_string(),
+        ));
     }
     // The artifact is read and parsed BEFORE its identity is compared with the
     // record's: a truncated or half-written graph is named as the unreadable
     // artifact it is, rather than only as an identity that moved.
     let bytes = fs::read(&graph_path).map_err(|_| {
-        ExportRefusal::ArtifactUnreadable("graph.json could not be read".to_string())
+        ExportRefusal::ArtifactUnreadable(format!("{} could not be read", layout::GRAPH_FILE))
     })?;
-    let graph: Graph = serde_json::from_slice(&bytes)
-        .map_err(|_| ExportRefusal::ArtifactUnreadable("graph.json does not parse".to_string()))?;
+    let graph: Graph = serde_json::from_slice(&bytes).map_err(|_| {
+        ExportRefusal::ArtifactUnreadable(format!("{} does not parse", layout::GRAPH_FILE))
+    })?;
     if graph.schema_version != GRAPH_SCHEMA_VERSION {
         return Err(ExportRefusal::UnknownGeneration(format!(
-            "graph.json is schema version {}, this build writes {GRAPH_SCHEMA_VERSION}",
+            "{} is schema version {}, this build writes {GRAPH_SCHEMA_VERSION}",
+            layout::GRAPH_FILE,
             graph.schema_version
         )));
     }
     if ArtifactIdentity::of(&graph_path) != Some(expected_graph)
         || ArtifactIdentity::of(&manifest_path) != record.artifacts.manifest
     {
-        return Err(ExportRefusal::IndexChanged(
-            "graph.json or manifest.json is not the artifact the index record certifies"
-                .to_string(),
-        ));
+        return Err(ExportRefusal::IndexChanged(format!(
+            "{} or {} is not the artifact the index record certifies",
+            layout::GRAPH_FILE,
+            layout::MANIFEST_FILE
+        )));
     }
 
     let messaging = read_messaging(root, &record)?;
@@ -142,9 +148,10 @@ fn published_record(root: &Path) -> Result<Record, ExportRefusal> {
     match record::read_record(root) {
         RecordState::Published(record) => Ok(*record),
         RecordState::Missing => Err(if graph::graph_json_path(root).is_file() {
-            ExportRefusal::NoIndexState(
-                "a graph.json is here with no published index record".to_string(),
-            )
+            ExportRefusal::NoIndexState(format!(
+                "a {} is here with no published index record",
+                layout::GRAPH_FILE
+            ))
         } else {
             ExportRefusal::NoIndex("this repository has no index".to_string())
         }),

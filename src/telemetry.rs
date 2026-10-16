@@ -14,13 +14,14 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use crate::hookio::iso8601_now;
+use crate::layout;
 use crate::query::Outcome;
 use crate::repo::{git_common_dir, scout_dir};
 
 /// This record's own schema version -- independent of `graph::GRAPH_SCHEMA_VERSION`
 /// and of any `--json` answer schema, bumped only when this line's own shape
 /// changes.
-const SCHEMA_VERSION: u64 = 1;
+pub const TELEMETRY_SCHEMA_VERSION: u64 = 1;
 
 /// What one query-verb invocation reports about itself: the seed the caller
 /// asked for, the closed-vocabulary outcome the verb already resolved, and the
@@ -43,10 +44,10 @@ pub(crate) struct QueryEvent<'a> {
 // outside a git repo.
 fn log_path(root: &Path) -> PathBuf {
     let dir = match git_common_dir(root) {
-        Some(common) => common.join("scout").join("log"),
-        None => scout_dir(root).join("log"),
+        Some(common) => common.join(layout::SCOUT_DIR).join(layout::LOG_DIR),
+        None => scout_dir(root).join(layout::LOG_DIR),
     };
-    dir.join("queries.jsonl")
+    dir.join(layout::QUERIES_LOG_FILE)
 }
 
 /// Whether telemetry is switched on: exactly `SCOUT_TELEMETRY=1`. Unset,
@@ -85,7 +86,7 @@ fn format_line(event: &QueryEvent, elapsed: Duration, result_bytes: usize) -> St
     format!(
         "{{\"ts\":{ts},\"schema_version\":{sv},\"verb\":{verb},\"seed\":{seed},\"outcome\":{outcome},\"elapsed_ms\":{ms},\"result_bytes\":{bytes},\"candidate_count\":{cc}}}",
         ts = json_str(&iso8601_now()),
-        sv = SCHEMA_VERSION,
+        sv = TELEMETRY_SCHEMA_VERSION,
         verb = json_str(event.verb),
         seed = json_str(event.seed),
         outcome = json_str(event.outcome.as_str()),

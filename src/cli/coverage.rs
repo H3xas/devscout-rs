@@ -5,8 +5,10 @@
 use std::path::Path;
 use std::time::Instant;
 
+use crate::exit::{EXIT_FAILURE, EXIT_OK, EXIT_USAGE};
 use crate::query;
 use crate::render;
+use crate::usage::TESTS_USAGE;
 
 use super::answer::{
     ambiguous_candidates_out, begin_validation, fallback_advised_out, finish_query,
@@ -14,9 +16,6 @@ use super::answer::{
 };
 use super::args::{first_positional, index_options, output_flags, parse_pick};
 use super::root::{require_graph, require_repo};
-
-const TESTS_USAGE: &str =
-    "usage: devscout tests <symbol> [--no-guess] [--no-dispatch] [--no-bus] [--pick N] [--json|--compact]";
 
 // `tests`. Mirrors `cmd_refs` -- same flag conflict, same missing-query usage
 // error, same `require_repo`/graph-present order, same notfound/ambiguous exits.
@@ -27,14 +26,14 @@ pub(crate) fn cmd_tests(cwd: &Path, args: &[String]) -> (i32, String) {
         Err(e) => return e,
     };
     let Ok(pick) = parse_pick(args) else {
-        return (2, TESTS_USAGE.to_string());
+        return (EXIT_USAGE, TESTS_USAGE.to_string());
     };
     let Some(q) = first_positional(args) else {
-        return (2, TESTS_USAGE.to_string());
+        return (EXIT_USAGE, TESTS_USAGE.to_string());
     };
     let root = match require_repo(cwd) {
         Ok(r) => r,
-        Err(e) => return (1, format!("error: {e}")),
+        Err(e) => return (EXIT_FAILURE, format!("error: {e}")),
     };
     // One validation per invocation, opened before any index artifact is read.
     begin_validation(&root, cwd);
@@ -51,7 +50,7 @@ pub(crate) fn cmd_tests(cwd: &Path, args: &[String]) -> (i32, String) {
             Some(n) if n <= candidates.len() => {
                 query::build_tests_model(&index, &query::qualified_seed(&candidates[n - 1]))
             }
-            Some(_) => return (2, TESTS_USAGE.to_string()),
+            Some(_) => return (EXIT_USAGE, TESTS_USAGE.to_string()),
             None => query::TestsResult::MemberAmbiguous(candidates),
         },
         other => other,
@@ -82,7 +81,7 @@ pub(crate) fn cmd_tests(cwd: &Path, args: &[String]) -> (i32, String) {
             } else {
                 with_next_trailer(render::render_tests_text(&model), &next)
             };
-            (0, out, query::Outcome::Hit, count)
+            (EXIT_OK, out, query::Outcome::Hit, count)
         }
     };
     finish_query(&root, "tests", q, start, json, answer)

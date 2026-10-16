@@ -15,14 +15,18 @@ use super::artifact::COMPILER_FACTS_CONTRACT_VERSION;
 /// is, the moment a second contract version ships.
 pub const SUPERSEDED_COMPILER_FACTS_FILES: &[&str] = &[];
 
-/// Path to the compiler-facts artifact for `root`, beside `graph.json`. The
-/// contract version is part of the filename, so a future contract bump
-/// writes a new file rather than overwriting this one -- a v2-only reader
-/// is inert to a stale v1 file by construction.
+/// The compiler-facts artifact's file name: the contract version is part of
+/// it, so a future contract bump writes a new file rather than overwriting
+/// this one -- a v2-only reader is inert to a stale v1 file by construction.
+/// The one place the name is spelled.
+#[must_use]
+pub fn compiler_facts_file_name() -> String {
+    format!("compiler-facts-v{COMPILER_FACTS_CONTRACT_VERSION}.json")
+}
+
+/// Path to the compiler-facts artifact for `root`, beside `graph.json`.
 pub fn compiler_facts_json_path(root: &Path) -> PathBuf {
-    graph_json_path(root).with_file_name(format!(
-        "compiler-facts-v{COMPILER_FACTS_CONTRACT_VERSION}.json"
-    ))
+    graph_json_path(root).with_file_name(compiler_facts_file_name())
 }
 
 /// Removes every superseded compiler-facts generation for `root`. Called
