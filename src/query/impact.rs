@@ -641,7 +641,35 @@ pub fn build_impact_model(
             return ImpactResult::MemberAmbiguous(candidates)
         }
     };
+    impact_model_for_seed(
+        index,
+        kind,
+        seed_ids,
+        hops,
+        cap,
+        iface,
+        iface_max_fanin,
+        hub_max_indegree,
+    )
+}
 
+/// The impact model for an ALREADY RESOLVED seed kind and def ids.
+///
+/// Split from the resolution above so a caller that resolved the seed itself
+/// -- a `--pick` candidate, whose type id [`resolve_impact_seed`] would send
+/// to the file branch through `looks_like_file_path` -- reaches the walk,
+/// the ranking and the caps through the same path a typed symbol seed does.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn impact_model_for_seed(
+    index: &GraphIndex,
+    kind: SeedKind,
+    seed_ids: Vec<String>,
+    hops: u32,
+    cap: usize,
+    iface: bool,
+    iface_max_fanin: usize,
+    hub_max_indegree: usize,
+) -> ImpactResult {
     let walk = impact_walk(
         index,
         &seed_ids,

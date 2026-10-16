@@ -24,6 +24,7 @@ mod index;
 mod member;
 mod name_hint;
 mod next;
+mod pick;
 mod read;
 mod refs_bare_member;
 mod refs_enum;

@@ -17,6 +17,7 @@ use super::answer::{
 };
 use super::args::{first_positional, index_options, output_flags, parse_pick};
 use super::root::{require_graph, require_repo};
+use super::sections::{self, SectionAnswer};
 
 // The row count `refs`/`read` telemetry reports for a resolved answer: every
 // inbound row plus, under `--out`, every outbound row -- the same rows the
@@ -54,7 +55,7 @@ pub(crate) fn member_models_out(
     json: bool,
     compact: bool,
     models: &[query::RefsModel],
-) -> (i32, String, query::Outcome, usize) {
+) -> SectionAnswer {
     let (code, outcome) = if models.iter().all(|m| m.inbound.uses_member.total == 0) {
         (EXIT_NO_RESULT, query::Outcome::ZeroHit)
     } else {
@@ -77,7 +78,7 @@ pub(crate) fn member_models_out(
         with_next_trailer(body, &union)
     };
     let count = models.iter().map(refs_model_row_count).sum();
-    (code, out, outcome, count)
+    SectionAnswer::new(code, out, outcome, count, union)
 }
 
 // `refs`. Check order: `--compact`+`--json` conflict, then missing query, THEN
@@ -123,50 +124,98 @@ pub(crate) fn cmd_refs(cwd: &Path, args: &[String]) -> (i32, String, Option<&'st
             all_out,
         )
     };
-    // `--pick n` only ever narrows a `MemberAmbiguous` answer: it re-resolves
-    // against the SAME synthetic `Owner.Member` seed a caller could have typed
-    // by hand, rather than adding a second resolution path only `--pick`
-    // takes. An out-of-range `n` is a usage error; `--pick` is silently
-    // inert on every other outcome.
-    let result = match build(q) {
-        query::RefsResult::MemberAmbiguous(candidates) => match pick {
-            Some(n) if n <= candidates.len() => build(&query::qualified_seed(&candidates[n - 1])),
-            Some(_) => return (EXIT_USAGE, REFS_USAGE.to_string(), None),
-            None => query::RefsResult::MemberAmbiguous(candidates),
-        },
-        other => other,
+    // A `--pick` answer narrows ONE candidate of an ambiguous seed: a member
+    // name several types declare, or a type name several defs carry. Both
+    // `--pick <n>` and a `--pick all` section go through the same per-candidate
+    // builder below, so the two cannot disagree about a candidate. Without
+    // `--pick`, an ambiguous seed still refuses and lists its candidates.
+    let answer = match (pick, build(q)) {
+        (Some(pick), query::RefsResult::MemberAmbiguous(candidates)) => {
+            let picked = sections::narrow(
+                sections::Candidates::from_members(q, &candidates),
+                pick,
+                json,
+                REFS_USAGE,
+                |picked| refs_candidate_out(&index, q, json, compact, picked, out, all_out),
+            );
+            match picked {
+                Ok(a) => a,
+                Err(e) => return (e.0, e.1, None),
+            }
+        }
+        (Some(pick), query::RefsResult::Ambiguous(ids)) => {
+            let picked = sections::narrow(
+                sections::Candidates::from_types(q, &index, &ids),
+                pick,
+                json,
+                REFS_USAGE,
+                |picked| refs_candidate_out(&index, q, json, compact, picked, out, all_out),
+            );
+            match picked {
+                Ok(a) => a,
+                Err(e) => return (e.0, e.1, None),
+            }
+        }
+        (_, result) => refs_answer(&index, q, json, compact, result),
     };
 
-    let answer = refs_result_out(&index, q, json, compact, result);
-    let note = (answer.2 != query::Outcome::ZeroHit).then_some(ZERO_HIT_REFS);
-    let (code, out) = finish_query(&root, "refs", q, start, json, answer);
+    let note = (answer.outcome != query::Outcome::ZeroHit).then_some(ZERO_HIT_REFS);
+    let (code, out) = finish_query(&root, "refs", q, start, json, answer.into_tuple());
     (code, out, note)
 }
 
-// The rendering AND telemetry facts (`Outcome`, row count) for a `refs`
-// answer, derived together at the single point the answer is rendered so the
-// telemetry line can never disagree with the bytes that went to stdout.
-fn refs_result_out(
+// One `--pick` candidate's answer: the candidate's own seed run through the
+// same model builder the typed seed uses.
+fn refs_candidate_out(
+    index: &query::GraphIndex,
+    q: &str,
+    json: bool,
+    compact: bool,
+    picked: &query::PickedSeed,
+    out: bool,
+    all_out: bool,
+) -> SectionAnswer {
+    refs_answer(
+        index,
+        q,
+        json,
+        compact,
+        query::pick_refs(
+            index,
+            picked,
+            out,
+            query::DEFAULT_CAP,
+            query::INBOUND_CAP,
+            query::OUTBOUND_CAP,
+            all_out,
+        ),
+    )
+}
+
+// The rendering AND telemetry facts (`Outcome`, row count, suggestions) for a
+// `refs` answer, derived together at the single point the answer is rendered
+// so the telemetry line can never disagree with the bytes that went to stdout.
+fn refs_answer(
     index: &query::GraphIndex,
     q: &str,
     json: bool,
     compact: bool,
     result: query::RefsResult,
-) -> (i32, String, query::Outcome, usize) {
+) -> SectionAnswer {
     match result {
         query::RefsResult::NotFound => {
             let (code, out) = fallback_advised_out(q, json, format!("no symbol matches \"{q}\""));
-            (code, out, query::Outcome::FallbackAdvised, 0)
+            SectionAnswer::new(code, out, query::Outcome::FallbackAdvised, 0, Vec::new())
         }
         query::RefsResult::Ambiguous(ids) => {
             let count = ids.len();
             let (code, out) = ambiguous_candidates_out(index, q, &ids, json);
-            (code, out, query::Outcome::Ambiguous, count)
+            SectionAnswer::new(code, out, query::Outcome::Ambiguous, count, Vec::new())
         }
         query::RefsResult::MemberAmbiguous(candidates) => {
             let count = candidates.len();
             let (code, out) = member_ambiguous_out(q, &candidates, json);
-            (code, out, query::Outcome::Ambiguous, count)
+            SectionAnswer::new(code, out, query::Outcome::Ambiguous, count, Vec::new())
         }
         query::RefsResult::Members(models) => member_models_out(index, q, json, compact, &models),
         query::RefsResult::Resolved(model) => {
@@ -179,7 +228,7 @@ fn refs_result_out(
             } else {
                 with_next_trailer(render::render_refs_text(&model), &next)
             };
-            (EXIT_OK, out, query::Outcome::Hit, count)
+            SectionAnswer::new(EXIT_OK, out, query::Outcome::Hit, count, next)
         }
     }
 }

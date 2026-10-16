@@ -71,10 +71,10 @@ index
 
 query
   find <query> [--resources] search the manifest by name or purpose
-  refs <symbol>              references to a symbol   [--out --all --no-guess --no-dispatch --no-bus --pick N --json|--compact]
-  read <symbol>              decl span + inbound refs [--no-guess --no-dispatch --no-bus --pick N --json|--compact]
-  impact <file|symbol>       blast radius             [--hops N --no-guess --no-dispatch --no-bus --no-imports --pick N --json|--compact]
-  tests <symbol>             tests reaching a symbol  [--no-guess --no-dispatch --no-bus --pick N --json|--compact]
+  refs <symbol>              references to a symbol   [--out --all --no-guess --no-dispatch --no-bus --pick N|all --json|--compact]
+  read <symbol>              decl span + inbound refs [--no-guess --no-dispatch --no-bus --pick N|all --json|--compact]
+  impact <file|symbol>       blast radius             [--hops N --no-guess --no-dispatch --no-bus --no-imports --pick N|all --json|--compact]
+  tests <symbol>             tests reaching a symbol  [--no-guess --no-dispatch --no-bus --pick N|all --json|--compact]
   import-edges <file> --repo <id>  load a cross-repo edge export for `impact` to read
   compiler-facts run|import|status  optional engine-derived facts [--target --configuration --platform]
   export [--out FILE]        write this repository's whole fact set as NDJSON
@@ -146,25 +146,29 @@ usage: devscout find <query> [--resources]
 
 ```text
 usage: devscout refs <symbol> [--out] [--all] [--no-guess] [--no-dispatch] [--no-bus] [--pick N] [--json|--compact]
+       --pick <n> answers candidate <n> of an ambiguous seed, and --pick all answers every candidate in its own section
 ```
 
 ```text
 usage: devscout read <symbol> [--no-guess] [--no-dispatch] [--no-bus] [--pick N] [--json|--compact]
+       --pick <n> answers candidate <n> of an ambiguous seed, and --pick all answers every candidate in its own section
 ```
 
 ```text
 usage: devscout impact <file|symbol> [--hops N] [--no-iface] [--no-guess] [--no-dispatch] [--no-bus] [--no-imports] [--iface-max-fanin N] [--hub-max-indegree N] [--pick N] [--json|--compact]
+       --pick <n> answers candidate <n> of an ambiguous seed, and --pick all answers every candidate in its own section
 ```
 
 ```text
 usage: devscout tests <symbol> [--no-guess] [--no-dispatch] [--no-bus] [--pick N] [--json|--compact]
+       --pick <n> answers candidate <n> of an ambiguous seed, and --pick all answers every candidate in its own section
 ```
 
 | Flag | Verbs | Effect |
 | --- | --- | --- |
 | `--json` | all four | A versioned, machine-readable answer; see [JSON output](json-output.md) |
 | `--compact` | all four | One line per hit, for piping; heuristic rows are marked `x` (`ext`) and `h` (`guess`) |
-| `--pick N` | all four | Select the nth (one-based) candidate of an ambiguous member seed — a member seed with several declaring types; an out-of-range `N` is a usage error (exit code 2) |
+| `--pick N`, `all` | all four | Answer the nth (one-based) candidate of an ambiguous seed, or every candidate in its own section with `all`. A member seed's candidates are its declaring types, and a type seed's are the defs its name matches; an out-of-range `N` and a value that is neither a positive integer nor `all` are usage errors (exit code 2) |
 | `--no-guess` | all four | Drop the `guess` tier, keeping `ext` |
 | `--no-dispatch` | all four | Drop the `implements` and `overrides` edges that dependency-injection registrations record |
 | `--no-bus` | all four | Skip `bus-hop` edges and restore the traversal and hub classification these verbs had before them |

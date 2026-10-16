@@ -173,7 +173,8 @@ pub const EXIT_CODES: &[ExitRow] = &[
         meaning: "The invocation was malformed, and the verb printed its usage line instead of \
                   doing any work.",
         produced_by: "a query verb's missing argument or unknown flag; an out-of-range \
-                      `--pick N`; `init` refusing a directory that itself contains git \
+                      `--pick N`, or a `--pick` value that is neither a positive integer nor \
+                      `all`; `init` refusing a directory that itself contains git \
                       repositories; an ambiguous `clear --session` prefix; a malformed `export` \
                       invocation.",
     },
@@ -348,9 +349,11 @@ pub fn cli_page(help: &str) -> String {
          (`ext`) and `h` (`guess`) |\n",
     );
     page.push_str(
-        "| `--pick N` | all four | Select the nth (one-based) candidate of an ambiguous member \
-         seed — a member seed with several declaring types; an out-of-range `N` is a usage \
-         error (exit code 2) |\n",
+        "| `--pick N`, `all` | all four | Answer the nth (one-based) candidate of an ambiguous \
+         seed, or every candidate in its own section with `all`. A member seed's candidates are \
+         its declaring types, and a type seed's are the defs its name matches; an out-of-range \
+         `N` and a value that is neither a positive integer nor `all` are usage errors (exit \
+         code 2) |\n",
     );
     page.push_str("| `--no-guess` | all four | Drop the `guess` tier, keeping `ext` |\n");
     page.push_str(

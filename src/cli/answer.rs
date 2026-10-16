@@ -160,6 +160,29 @@ fn ambiguous_json(q: &str, candidates: Vec<J>) -> String {
     .to_json_string()
 }
 
+// The refusal's own candidate objects, one per row, in the SAME order the
+// rows print -- both are built from `query::pick`'s own refusal order, so the
+// list a caller reads and the numbers `--pick` answers with cannot disagree.
+pub(crate) fn type_candidate_object(index: &query::GraphIndex, id: &str) -> J {
+    let d = query::candidate_def(index, id);
+    J::Obj(vec![
+        ("id", J::Str(id.to_string())),
+        ("file", J::Str(d.file.clone())),
+        ("line", J::UInt(d.line as u64)),
+        ("kind", J::Str(d.kind.clone())),
+    ])
+}
+
+// One member candidate as the refusal's own JSON object.
+pub(crate) fn member_candidate_object(c: &query::MemberCandidate) -> J {
+    J::Obj(vec![
+        ("owner", J::Str(c.owner.clone())),
+        ("name", J::Str(c.name.clone())),
+        ("file", J::Str(c.file.clone())),
+        ("line", J::UInt(c.line as u64)),
+    ])
+}
+
 // Shared by the four graph-reading verbs -- the "never guess" house rule: name
 // every candidate's `{id, def site, kind}` and exit 1. `--compact` is inert here
 // (a candidate list has no wide form to narrow); `--json` carries the same facts
@@ -170,43 +193,23 @@ pub(crate) fn ambiguous_candidates_out(
     ids: &[String],
     json: bool,
 ) -> (i32, String) {
-    let mut rows: Vec<(String, &String, &graph::Def)> = ids
-        .iter()
-        .map(|id| {
-            // Every id here was sourced from `index.by_simple_name`/
-            // `by_lower_name`, both built from `index.by_id`'s own keys during
-            // construction -- `index.def(id)` cannot miss. `.expect` fails loud
-            // if that invariant ever broke.
-            let d = index
-                .def(id)
-                .expect("ambiguous candidate id must resolve to a graph def");
-            (format!("{id}  {}:{}  {}", d.file, d.line, d.kind), id, d)
-        })
-        .collect();
-    // Sorting on the rendered row compares by UTF-8 byte order, which for the
-    // ASCII identifier/path/kind text these rows are built from is a stable,
-    // total order (the same seam resolve.rs's candidate sort documents), and
-    // gives the JSON array below the order the text list prints.
-    rows.sort_by(|a, b| a.0.cmp(&b.0));
+    let ordered = query::type_candidates_in_refusal_order(index, ids);
     if json {
-        let candidates = rows
+        let candidates = ordered
             .iter()
-            .map(|(_, id, d)| {
-                J::Obj(vec![
-                    ("id", J::Str((*id).clone())),
-                    ("file", J::Str(d.file.clone())),
-                    ("line", J::UInt(d.line as u64)),
-                    ("kind", J::Str(d.kind.clone())),
-                ])
-            })
+            .map(|id| type_candidate_object(index, id))
             .collect();
         return (EXIT_FAILURE, ambiguous_json(q, candidates));
     }
     let mut out = vec![format!(
         "ambiguous symbol \"{q}\" — {} candidates:",
-        rows.len()
+        ordered.len()
     )];
-    out.extend(rows.into_iter().map(|(row, _, _)| row));
+    out.extend(
+        ordered
+            .iter()
+            .map(|id| query::type_candidate_row(id, query::candidate_def(index, id))),
+    );
     (EXIT_FAILURE, out.join("\n"))
 }
 
@@ -222,26 +225,14 @@ pub(crate) fn member_ambiguous_out(
     json: bool,
 ) -> (i32, String) {
     if json {
-        let rows = candidates
-            .iter()
-            .map(|c| {
-                J::Obj(vec![
-                    ("owner", J::Str(c.owner.clone())),
-                    ("name", J::Str(c.name.clone())),
-                    ("file", J::Str(c.file.clone())),
-                    ("line", J::UInt(c.line as u64)),
-                ])
-            })
-            .collect();
+        let rows = candidates.iter().map(member_candidate_object).collect();
         return (EXIT_FAILURE, ambiguous_json(q, rows));
     }
     let mut out = vec![format!(
         "ambiguous member \"{q}\" — {} candidates:",
         candidates.len()
     )];
-    for c in candidates {
-        out.push(format!("{}.{}  {}:{}", c.owner, c.name, c.file, c.line));
-    }
+    out.extend(candidates.iter().map(query::member_candidate_row));
     (EXIT_FAILURE, out.join("\n"))
 }
 

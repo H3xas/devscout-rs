@@ -92,6 +92,7 @@ mod name_hint;
 mod next;
 mod occurrence;
 mod outcome;
+mod pick;
 mod rank;
 mod read;
 mod refs;
@@ -121,12 +122,16 @@ pub use index::{
 };
 pub use infra::{is_infra_file, DEFAULT_HUB_MAX_INDEGREE};
 pub use member::{
-    qualified_member_owners, qualified_seed, resolve_member_seed, MemberCandidate,
-    MemberSeedResolution,
+    exact_member_owner, qualified_member_owners, qualified_seed, resolve_member_seed,
+    MemberCandidate, MemberSeedResolution,
 };
 pub use name_hint::{stem_matches, NameHintRow, NAME_HINT_REFERENCE_CAP};
 pub use next::{find_next, impact_next, merge_suggestions, refs_next, tests_next, NextArgv};
 pub use outcome::{Outcome, SCHEMA_VERSION};
+pub use pick::{
+    candidate_def, member_candidate_row, pick_impact, pick_read, pick_refs, pick_tests,
+    type_candidate_row, type_candidates_in_refusal_order, PickedSeed,
+};
 pub use rank::{personalized_page_rank, DEFAULT_DAMPING, DEFAULT_ITERATIONS};
 pub use read::{build_read_model, ReadModel, ReadResult, ReadSpan};
 pub use refs::{build_refs_model, LineCache, RefsModel, RefsResult};

@@ -166,10 +166,10 @@ pub(super) fn line_has_token(line: &str, token: &str) -> bool {
     false
 }
 
-// The two non-empty outcomes of `build_member_refs_models`: a plain models
+// The two non-empty outcomes of `member_refs_from_owners`: a plain models
 // array, or an ambiguity -- more than one declaring type surviving edge-line
 // verification is reported, never turned into several models.
-enum MemberRefsOutcome {
+pub(super) enum MemberRefsOutcome {
     Models(Vec<RefsModel>),
     Ambiguous(Vec<MemberCandidate>),
 }
@@ -318,6 +318,22 @@ fn build_member_refs_models(
 ) -> Option<MemberRefsOutcome> {
     let (name, qualifier) = member::split_member_seed(seed);
     let owners = member::qualified_member_owners(index, name, qualifier);
+    member_refs_from_owners(index, seed, name, owners, inbound_cap)
+}
+
+// The answer for an ALREADY RESOLVED owner set: `build_member_refs_models`
+// hands it the owners a typed seed's qualifier admits, and a caller holding
+// one chosen candidate hands it that one owner. Splitting the two apart here
+// is what lets a `--pick` candidate answer through the very same
+// verification, ranking, budget and grouping the typed seed runs -- the only
+// difference between the two callers is which owners they resolved.
+pub(super) fn member_refs_from_owners(
+    index: &GraphIndex,
+    seed: &str,
+    name: &str,
+    owners: Vec<(String, Vec<DefSite>)>,
+    inbound_cap: usize,
+) -> Option<MemberRefsOutcome> {
     if owners.is_empty() {
         return None;
     }
