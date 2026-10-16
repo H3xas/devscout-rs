@@ -22,7 +22,7 @@ namespace NegativeBinding.Generics
 
     public class RobotAssembler : Assembler
     {
-        public new void Attach(string part) { }
+        public void Attach(string part) { }
     }
 
     public class Assembling

@@ -91,3 +91,11 @@ namespace NegativeBinding.Workshop
         }
     }
 }
+
+namespace NegativeBinding.Tools
+{
+    public class Gauge
+    {
+        public void Read() { }
+    }
+}

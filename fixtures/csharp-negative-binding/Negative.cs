@@ -2,8 +2,8 @@ namespace NegativeBinding.Negative
 {
     public class Picker
     {
-        public void Choose(short value) { }
-        public void Choose(long value) { }
+        public void Choose(int left, double right) { }
+        public void Choose(double left, int right) { }
     }
 
     public class Sender
@@ -24,7 +24,7 @@ namespace NegativeBinding.Negative
 
     public class Locker
     {
-        private int code;
+        private int code { get; set; }
     }
 
     public class Calling
@@ -32,7 +32,7 @@ namespace NegativeBinding.Negative
         public void Go()
         {
             var picker = new Picker();
-            picker.Choose(1);
+            picker.Choose(1, 1);
 
             var sender = new Sender();
             sender.Deliver(true);
