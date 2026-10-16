@@ -82,6 +82,18 @@ fn handler_registration_name_boundary() {
             admitted_entry_facts(method)
         );
     }
+    // Matching is byte-level, so what follows a match decides it however it is
+    // encoded: a multi-byte letter after an admitted prefix changes nothing,
+    // and one after a role suffix is a further letter like any other.
+    assert_eq!(
+        admitted_entry_facts("AddLoom\u{e9}").len(),
+        1,
+        "a prefix still begins the name whatever follows it"
+    );
+    assert!(
+        admitted_entry_facts("ShelfWorker\u{e9}").is_empty(),
+        "a role suffix followed by a multi-byte letter is still a suffix followed by more"
+    );
 }
 
 #[test]
