@@ -37,6 +37,29 @@ fn write_many(root: &Path, dir: &str, count: usize, body: &str) {
 }
 
 #[test]
+fn a_fixture_directory_left_by_an_earlier_run_is_never_reopened() {
+    let base = fixture::temp_dir("reuse");
+    let stale = base.join("stale");
+    fs::create_dir(&stale).unwrap();
+    fs::write(
+        stale.join("F0.cs"),
+        "namespace App.Bulk\n{\n    public class F { }\n}\n",
+    )
+    .unwrap();
+
+    let claimed = fixture::fresh_dir(stale.clone());
+
+    assert_ne!(
+        claimed, stale,
+        "a directory an earlier run holds is not reused"
+    );
+    assert!(
+        !claimed.join("F0.cs").exists(),
+        "a claimed fixture directory holds no earlier run's file"
+    );
+}
+
+#[test]
 fn index_freshness_ac_6_two_maps_started_together_leave_one_valid_generation() {
     let (fx, _sha) = Fixture::mapped("ac6-race", BASELINE);
     let baseline = stdout_of(&fx.run(&["refs", "IWidget"]));

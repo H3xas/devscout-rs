@@ -164,6 +164,7 @@ fn tests_suggests_the_blast_radius_of_the_declaring_file() {
         heuristic_file_count: 0,
         heuristic_ref_count: 0,
         bus: empty_bus(),
+        name_hint: Vec::new(),
     };
 
     assert_eq!(

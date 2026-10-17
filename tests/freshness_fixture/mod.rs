@@ -38,12 +38,37 @@ pub const BASELINE: &[(&str, &str)] = &[
 
 pub fn temp_dir(prefix: &str) -> PathBuf {
     let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-    let dir = env::temp_dir().join(format!(
+    let wanted = env::temp_dir().join(format!(
         "scout-freshness-it-{prefix}-{}-{n}",
         std::process::id()
     ));
-    fs::create_dir_all(&dir).expect("create temp dir");
-    fs::canonicalize(&dir).expect("canonicalize temp dir")
+    fs::canonicalize(fresh_dir(wanted)).expect("canonicalize temp dir")
+}
+
+/// Claims a new directory at `wanted`, or at the first free `-<n>` variant.
+///
+/// A name is never reopened, because a run whose process id and counter repeat
+/// an earlier run's would otherwise reopen that run's directory: its fixtures,
+/// its `git add -A`, and the files this test writes would then agree, so a query
+/// would answer `fresh` where the test expects a budget answer.
+pub fn fresh_dir(wanted: PathBuf) -> PathBuf {
+    let name = wanted
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    for attempt in 0..10_000u32 {
+        let candidate = if attempt == 0 {
+            wanted.clone()
+        } else {
+            wanted.with_file_name(format!("{name}-{attempt}"))
+        };
+        match fs::create_dir(&candidate) {
+            Ok(()) => return candidate,
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(e) => panic!("create fixture dir {}: {e}", candidate.display()),
+        }
+    }
+    panic!("no free fixture directory name for {}", wanted.display());
 }
 
 pub fn rust_bin() -> PathBuf {

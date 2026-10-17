@@ -88,6 +88,15 @@ fn admitted(e: &graph::Edge) -> Option<Admitted<'_>> {
     })
 }
 
+/// The def ids an admitted TS edge names, or `None` for a kind the adjacency
+/// does not admit (a non-TS kind, and an `import` edge binding no definition).
+/// `record_ts_edge` keys its inbound entries by exactly these targets, so a
+/// caller that wants them without pushing an edge into a list reads them here
+/// rather than reaching into `Admitted` for the one field it needs.
+pub(super) fn admitted_targets(e: &graph::Edge) -> Option<Vec<&str>> {
+    admitted(e).map(|a| a.targets.iter().map(|t| t.as_str()).collect())
+}
+
 /// Admit TS edge `e` (index `i`) into the adjacency: inbound under the def it
 /// names -- every bound definition, for an `import` edge -- and outbound under
 /// its source file. Returns the `(from_file, to_file)` pair the caller notes

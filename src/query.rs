@@ -67,6 +67,9 @@
 // (`record_bus_edge`, the provenance row `refs.rs` renders) -- `impact`'s
 // own reach needs no code here at all, since `bus_hop` joining
 // `inbound_walk_kinds` (`dispatch.rs`) is enough.
+// `name_hint` is the same kind of split off `coverage`: the zero case's
+// file-name observation, which reads the index but changes no row, count or
+// outcome.
 // Every public item keeps the path it had before the split via the
 // `pub use`s below.
 
@@ -85,6 +88,7 @@ mod infra;
 // it as `query::json::...`.
 pub(crate) mod json;
 mod member;
+mod name_hint;
 mod next;
 mod occurrence;
 mod outcome;
@@ -121,6 +125,7 @@ pub use member::{
     exact_member_owner, qualified_member_owners, qualified_seed, resolve_member_seed,
     MemberCandidate, MemberSeedResolution,
 };
+pub use name_hint::{stem_matches, NameHintRow, NAME_HINT_REFERENCE_CAP};
 pub use next::{find_next, impact_next, merge_suggestions, refs_next, tests_next, NextArgv};
 pub use outcome::{Outcome, SCHEMA_VERSION};
 pub use pick::{

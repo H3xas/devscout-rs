@@ -637,3 +637,24 @@ xUnit's `[Fact]` attribute -- `why: "test-attribute"`. The other ways a `tests` 
 `test-project` (the file's unit is in a project marked `test`, with no attributed def of its own)
 and `test-path` (a TypeScript/JavaScript file with one of the eight listed suffixes
 named as a test, with neither of the other two).
+
+#### `nameHint`
+
+`nameHint` is additive. When the answer has no row and no possible route, the key can appear. A
+matching test file in the index is the other condition. The value is one object per matching file,
+in path order:
+
+```json
+"nameHint": [
+  {
+    "file": "FooTests.cs",
+    "references": ["App.Bar"],
+    "referenceTotal": 1
+  }
+]
+```
+
+The key is a file-name hint and not test evidence. A name match means the file and the symbol share
+a stem. It does not mean that the file tests the symbol. A consumer must not read `nameHint` as
+coverage. A symbol with at least one row carries no `nameHint` key at all. So does a file reached
+over a possible route. `schema_version` stays `1`.

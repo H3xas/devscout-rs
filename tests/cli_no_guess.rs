@@ -330,11 +330,19 @@ fn no_guess_leaves_a_test_file_reached_by_an_extension_call_and_drops_one_reache
 
     let guess = stdout_of(&fx.run(&["tests", "Counter"]));
     assert!(guess.contains("Tests/CounterTests.cs (guess)"), "{guess}");
+    assert!(
+        !guess.contains("hint ("),
+        "a guessed row is still a row, so no file-name hint joins it: {guess}"
+    );
     assert_eq!(
         stdout_of(&fx.run(&["tests", "Counter", "--no-guess"])),
         "tests for App.Core.Counter  0 files (showing 0)\nno test references found\n\
+         hint (file name only, not a test reference):\n\
+         \x20 Tests/CounterTests.cs  references App.Other.Widget\n\
          next: devscout impact Core/Targets.cs\n",
-        "nothing but a scored guess reached this symbol from a test file"
+        "nothing but a scored guess reached this symbol from a test file, so the \
+         zero case stands -- and `Tests/CounterTests.cs` is named after `Counter`, \
+         so the hint names it and the one production symbol it really references"
     );
 }
 

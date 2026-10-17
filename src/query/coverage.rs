@@ -5,6 +5,7 @@ use crate::graph;
 use super::bus::{self, BusDirection, BusHopRow};
 use super::index::{def_files, GraphIndex};
 use super::member::{self, MemberCandidate, MemberSeedResolution};
+use super::name_hint::{self, NameHintRow};
 use super::refs_tables::{cap_rows, edge_loc, row_tier, Table, DEFAULT_CAP};
 use super::symbol::{resolve_symbol, Resolution};
 use super::symbol_refs::symbol_refs;
@@ -87,6 +88,13 @@ pub struct TestsModel {
     /// field entirely, not a flag on an existing row -- so nothing has to
     /// remember to exclude it. `--json` omits the key entirely when empty.
     pub bus: Table<BusHopRow>,
+    /// Test files whose own NAME matches this symbol, with the production
+    /// symbols each references. A file name is an observation about a name,
+    /// never coverage evidence, so this field is filled on the zero case
+    /// alone -- where an empty answer gave the caller no way to see that a
+    /// same-named test file tests something else. It changes no row, no count
+    /// and no outcome, and `--json` omits the key entirely when empty.
+    pub name_hint: Vec<NameHintRow>,
 }
 
 /// The outcome of a `tests` query: resolved, ambiguous, or not found.
@@ -239,6 +247,17 @@ pub(super) fn tests_model_for_id(index: &GraphIndex, id: &str, query_echo: &str)
     let mut rows = precise;
     rows.extend(heuristic);
 
+    let bus = test_bus_rows(index, &id);
+    // The hint is the answer to the zero case, not a second opinion on a
+    // populated one: any row, heuristic included, or any possible route is
+    // already a statement about what reaches this symbol, and a name
+    // observation beside it would read as weaker evidence of the same kind.
+    let name_hint = if rows.is_empty() && bus.total == 0 {
+        name_hint::name_hint_rows(index, &id)
+    } else {
+        Vec::new()
+    };
+
     TestsResult::Resolved(TestsModel {
         query: query_echo.to_string(),
         symbol: id.to_string(),
@@ -248,7 +267,8 @@ pub(super) fn tests_model_for_id(index: &GraphIndex, id: &str, query_echo: &str)
         ref_count,
         heuristic_file_count,
         heuristic_ref_count,
-        bus: test_bus_rows(index, id),
+        bus,
+        name_hint,
     })
 }
 

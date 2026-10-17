@@ -182,6 +182,8 @@ usage: devscout tests <symbol> [--no-guess] [--no-dispatch] [--no-bus] [--pick N
 
 The seed spellings these verbs accept are described in [Concepts](../concepts.md#seeds).
 
+`tests` answers a symbol that no test file references with `no test references found`, and then a `hint (file name only, not a test reference):` block when a test file in the index is named after the symbol. Each hint row names the production symbols that file really references. A file name is not a test reference, so the block is a hint and never evidence, and it leaves every row, count and outcome untouched.
+
 ### import-edges
 
 ```text
