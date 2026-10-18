@@ -433,6 +433,102 @@ fn file_scope_defs_ac_8_invalid_local_cache_value_reextracts() {
         .contains("\"local\":true"));
 }
 
+fn component_cases() -> [(
+    &'static str,
+    &'static str,
+    &'static str,
+    usize,
+    &'static str,
+); 4] {
+    [
+        (
+            "TideChart",
+            "tideChart.tsx",
+            "tideChart.tsx#TideChart",
+            12,
+            "class TideChart extends",
+        ),
+        (
+            "AnchorButton",
+            "anchorButton.tsx",
+            "anchorButton.tsx#AnchorButton",
+            5,
+            "const AnchorButton =",
+        ),
+        (
+            "BuoyBadge",
+            "buoyBadge.tsx",
+            "buoyBadge.tsx#BuoyBadge",
+            1,
+            "export default function BuoyBadge",
+        ),
+        (
+            "HarborBanner",
+            "harborBanner.tsx",
+            "harborBanner.tsx#HarborBanner",
+            1,
+            "export const HarborBanner",
+        ),
+    ]
+}
+
+fn assert_bare_read(fixture: &Fixture, name: &str, file: &str, id: &str, line: usize) {
+    let out = fixture.ok(&["read", name]);
+    assert!(out.starts_with(id), "{name}: {out}");
+    assert!(
+        out.contains(&format!("def: {file}:{line}-")),
+        "{name}: {out}"
+    );
+    assert!(!out.contains("no symbol matches"), "{name}: {out}");
+}
+
+#[test]
+fn tsx_component_lookups_ac_1_file_local_components_resolve_by_bare_name() {
+    let fixture = fresh("components");
+    let graph = fixture.graph();
+    for (name, file, id, line, _) in component_cases().into_iter().take(2) {
+        assert_eq!(def(&graph, id)["local"], true, "{id}");
+        assert_bare_read(&fixture, name, file, id, line);
+    }
+}
+
+#[test]
+fn tsx_component_lookups_ac_2_exported_components_resolve_by_bare_name() {
+    let fixture = fresh("components");
+    let graph = fixture.graph();
+    for (name, file, id, line, _) in component_cases().into_iter().skip(2) {
+        assert!(def(&graph, id).get("local").is_none(), "{id}");
+        assert_bare_read(&fixture, name, file, id, line);
+    }
+}
+
+#[test]
+fn tsx_component_lookups_ac_3_file_component_form_resolves() {
+    let fixture = fresh("components");
+    for (name, _, id, _, _) in component_cases() {
+        for query in [id, name] {
+            let out = fixture.ok(&["refs", query]);
+            assert!(out.starts_with(id), "{query}: {out}");
+            assert!(!out.contains("no symbol matches"), "{query}: {out}");
+        }
+        let out = fixture.ok(&["read", id]);
+        assert!(out.starts_with(id), "{id}: {out}");
+        assert!(!out.contains("no symbol matches"), "{id}: {out}");
+    }
+}
+
+#[test]
+fn tsx_component_lookups_ac_4_find_prints_declaration_rows() {
+    let fixture = fresh("components");
+    for (name, file, _, line, source) in component_cases() {
+        let out = fixture.ok(&["find", name]);
+        assert!(
+            out.contains(&format!("{file}:{line}  {source}")),
+            "{name}: {out}"
+        );
+    }
+}
+
 #[test]
 fn file_scope_defs_ac_9_userscript_wrappers_map_to_local_defs() {
     let fixture = fresh("userscript");
