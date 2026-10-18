@@ -215,3 +215,11 @@ fn angular_templates_ac_2_text_that_only_looks_like_markup() {
         ["t"]
     );
 }
+
+#[test]
+fn angular_templates_ac_7_non_ascii_text_and_names_never_split_a_character() {
+    let t = "<p title=\"żółw {{ caption }}\" data-ł=\"ü\">zażółć 🐢 {{ greeting }}</p>\n\
+             @ł <i>{{ naïve }}</i> <b é>{{ '🐢' }}</b>";
+    assert_eq!(names(t), ["caption", "greeting"]);
+    assert_eq!(gaps(t), [(2, GapReason::UnparsedExpression)]);
+}

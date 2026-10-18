@@ -563,3 +563,20 @@ fn angular_templates_ac_8_an_earlier_cache_generation_is_not_read() {
     assert!(!graph_dir.join("fragments-index-v41.json").exists());
     assert_eq!(rows(&fx.refs_json("caption")), [site(CARD_HTML, 8)]);
 }
+
+#[test]
+fn angular_templates_ac_8_a_deleted_template_becomes_an_unresolved_row() {
+    let fx = Fixture::build("ac8-deleted");
+    fs::remove_file(fx.repo.join(MOTTO_HTML)).unwrap();
+    let rebuilt = fx.expect_ok(&["map", "."]);
+    assert!(rebuilt.contains("graph rebuilt"), "{rebuilt}");
+    assert_eq!(rows(&fx.refs_json("motto")), []);
+    let graph = fx.graph();
+    assert!(graph["template_unsupported"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|r| r["file"] == MOTTO_TS
+            && r["line"] == 5
+            && r["reason"] == "template-url-unresolved"));
+}
