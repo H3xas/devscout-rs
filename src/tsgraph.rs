@@ -35,6 +35,7 @@ mod extend;
 mod modes;
 mod package_map;
 mod packages;
+mod templates;
 mod workspaces;
 
 use bindings::{file_imports, resolve_reexports, Exports};
@@ -42,6 +43,8 @@ pub use config::{read_ts_resolution, ModuleConfig};
 use declared::Resolver;
 pub use disclosure::{RefusedConfigRecord, UnresolvedImport, UnsupportedModeScope};
 pub(crate) use extend::extend_graph;
+pub(crate) use templates::append_templates;
+pub use templates::TemplateUnsupported;
 
 const DEF_SEPARATOR: char = '#';
 // Extension probe order for a specifier that names no extension. TypeScript
@@ -687,6 +690,9 @@ pub struct TsStats {
     /// Dynamic import calls without a literal module specifier.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub non_literal_dynamic_import_count: usize,
+    /// The row count of graph.json `template_unsupported`.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub template_unsupported_count: usize,
 }
 
 fn is_zero(value: &usize) -> bool {
@@ -903,6 +909,7 @@ pub fn resolve_ts_graph_in(
             .iter()
             .map(|(_, fragment)| fragment.non_literal_dynamic_imports)
             .sum(),
+        template_unsupported_count: 0,
     };
     TsGraph {
         defs,

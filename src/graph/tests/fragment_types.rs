@@ -2,6 +2,7 @@ use super::*;
 use crate::extract;
 
 mod argument_types;
+mod html_fragment;
 
 // --- FragDef's new keys, appended last, omitted when empty ----------------------
 

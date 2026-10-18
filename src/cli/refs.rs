@@ -43,6 +43,20 @@ fn ts_row_count<R>(tables: &query::TsTables<R>) -> usize {
     tables.named().iter().map(|(_, t)| t.rows.len()).sum()
 }
 
+// The rows of a member answer whose owner is a TypeScript class come from
+// Angular templates alone, because the index reads no TypeScript member
+// access. The answer says so, so that zero rows never reads as "unused".
+const TEMPLATE_READS_NOTE: &str =
+    "note: rows are Angular template reads only. TypeScript member reads are not indexed.";
+
+fn template_reads_only(index: &query::GraphIndex, model: &query::RefsModel) -> bool {
+    model
+        .id
+        .rsplit_once('.')
+        .and_then(|(owner, _)| index.by_id.get(owner))
+        .is_some_and(|&i| crate::parse::ts_grammar_for(&index.graph.defs[i].file).is_some())
+}
+
 // A bare member answers with one ordinary refs model per declaring type, so
 // each block renders through the very renderer a type uses and `--json` wraps
 // those same objects in an array rather than reshaping them. A member the
@@ -66,15 +80,29 @@ pub(crate) fn member_models_out(
     let member_next: Vec<Vec<query::NextArgv>> =
         models.iter().map(|m| query::refs_next(index, m)).collect();
     let union = query::merge_suggestions(member_next.clone());
+    let template_only: Vec<bool> = models
+        .iter()
+        .map(|m| template_reads_only(index, m))
+        .collect();
     let out = if json {
-        query::json::member_refs_to_json_with_next(q, models, outcome, &member_next, &union)
+        query::json::member_refs_to_json_with_next(
+            q,
+            models,
+            outcome,
+            &member_next,
+            &union,
+            &template_only,
+        )
     } else {
         let render: fn(&query::RefsModel) -> String = if compact {
             render::render_refs_compact
         } else {
             render::render_refs_text
         };
-        let body = models.iter().map(render).collect::<Vec<_>>().join("\n");
+        let mut body = models.iter().map(render).collect::<Vec<_>>().join("\n");
+        if template_only.contains(&true) {
+            body = format!("{}\n{TEMPLATE_READS_NOTE}", body.trim_end_matches('\n'));
+        }
         with_next_trailer(body, &union)
     };
     let count = models.iter().map(refs_model_row_count).sum();

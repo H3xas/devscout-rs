@@ -177,6 +177,11 @@ pub struct Graph {
     /// `transport::TransportFact`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub transport: Vec<crate::transport::TransportFact>,
+    /// The Angular template sites the index could not bind, appended LAST
+    /// and omitted when empty, so a repository with no component keeps its
+    /// bytes. See `tsgraph::TemplateUnsupported`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub template_unsupported: Vec<crate::tsgraph::TemplateUnsupported>,
 }
 
 /// Reads and deserializes the repository graph, returning `None` on failure.

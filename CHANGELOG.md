@@ -9,6 +9,19 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `devscout map` reads Angular templates. Each member of an exported `@Component({...})` class
+  becomes a name row, and each member read in the component's `templateUrl` file or inline
+  `template` becomes a precise `uses-member` edge from the template line. `refs <member>` and
+  `refs <Component>.<member>` list those template lines. Template locals (`#ref`, `let-x`, the
+  `let` and `as` names of a structural directive, and `$event`) hide a member with the same name.
+  A member answer whose owner is a TypeScript class prints a note, and `--json` carries
+  `memberReads`, because TypeScript member reads are not indexed. `graph.json` appends
+  `template_unsupported` rows with six reasons and `stats.ts.template_unsupported_count`, both
+  omitted when empty ([JSON output](docs/reference/json-output.md#angular-template-reads)).
+  `.html` joins the walked extensions, so an `.html` file gets a manifest entry, counts in the
+  index digests and the export `fileCount`, and its edits are seen by the freshness check. The
+  fragment cache moves to `fragments-v42.json`, so an existing cache re-extracts once.
+
 - `devscout map` records the MassTransit transport configuration a C# repository states, and
   `devscout export` writes it as the `transport-address` family: bus transports and hosts,
   receive endpoints and the types configured on them, `ConfigureEndpoints` with the endpoint

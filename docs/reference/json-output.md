@@ -326,6 +326,32 @@ or implied an `occurrenceIndex` -- truncation stays truncation, never a silent m
 This key is additive under the forward-compatibility rule above: it is new, appended last, and
 `schema_version` does not move.
 
+## Angular template reads
+
+A `refs` or `read` member answer whose owner is a TypeScript class carries
+`"memberReads":"angular-templates-only"` in each member object, just before `next`. Its rows are
+Angular template reads only, because TypeScript member reads are not indexed. The text and
+`--compact` answers print one line before the `next:` trailer:
+`note: rows are Angular template reads only. TypeScript member reads are not indexed.` The key and
+the line are absent from every other answer, C# member answers included.
+
+`graph.json` appends `template_unsupported` last, only when it has a row. Each row is
+`{file, line, reason}`, sorted by file, then line, then reason in the order below:
+
+| `reason` | The site |
+|---|---|
+| `control-flow-block` | a line that opens a built-in control flow block (`@if`, `@for`, `@switch`, `@defer`, `@let`, ...). The markup inside the block is still scanned. |
+| `unparsed-expression` | a binding or interpolation expression the scanner cannot parse |
+| `template-url-unresolved` | a literal `templateUrl` that names no file in the indexed root |
+| `template-url-non-literal` | a `templateUrl` whose value is not one plain string literal |
+| `unknown-member` | a read that is not a template local, not `true`, `false`, `null`, `undefined`, `this` or `$any`, and not a member of the component class. A member inherited from a base class is one. |
+| `inline-template-substitution` | a `template` whose value is not one plain string literal |
+
+`stats.ts.template_unsupported_count` is the row count, also omitted when zero. A repository
+without a component class has neither key. Template edges count in
+`stats.edges_by_kind.uses-member`. These graph additions do not change the graph schema version,
+and `schema_version` stays `1`.
+
 ## `bus-hop`
 
 `refs`/`read`'s `bus` table is a separate, always-built table (`RefsModel.bus`, after `memberRefs`

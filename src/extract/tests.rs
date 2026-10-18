@@ -46,6 +46,7 @@ mod rs_purpose;
 mod rs_sites;
 mod stage4_receivers;
 mod test_methods_fact;
+mod ts_component;
 mod ts_purpose;
 mod ts_ref_fragment;
 mod type_param_site_facts;

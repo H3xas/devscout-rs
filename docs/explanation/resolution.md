@@ -183,6 +183,41 @@ outside the repository's workspace and aliases remain external. JavaScript query
 but have not had a separate query-level parity measurement. Editing configuration alone does not
 re-resolve the existing graph; run `map` again.
 
+## Angular templates
+
+A component is a class in a `.ts` file with a `@Component({...})` decorator. The decorator is
+matched on the identifier `Component`, and its argument must be an object literal. Each field, get
+or set accessor, method and constructor parameter property of an exported component class is a
+name row. Its kind is `field`, `property` or `method`, and its owner is the class def id
+`file#Class`. A static member gets no row.
+
+The template is the `templateUrl` file or the inline `template` string. A `templateUrl` is read
+relative to the component file's directory, with or without `./`, and `../` is allowed. Both
+values must be one plain string literal. An external template is its own graph source, so an edit
+to only the `.html` file is seen by the next `map`. An inline template counts its lines from the
+line where its string starts.
+
+The scanner reads `*ngIf`, `*ngFor` and other structural directives, `[x]`, `[attr.x]`,
+`[class.x]`, `[style.x]`, `(x)`, `[(x)]`, and `{{ }}` in text and in plain attribute values. The
+root identifier of each expression is the read: `user.profile.name` reads `user`, `this.x` reads
+`x`, and a pipe name is not a read. A read of a member is a precise `uses-member` edge from the
+template line to the component class.
+
+Template locals hide a member with the same name. A `#ref` covers the whole template. The locals
+of a structural directive and `let-x` on `ng-template` cover the host element and its children.
+`$event` covers its own event binding.
+
+A site the index cannot bind is a `template_unsupported` row in graph.json, with one of six
+reasons: `control-flow-block`, `unparsed-expression`, `template-url-unresolved`,
+`template-url-non-literal`, `unknown-member` and `inline-template-substitution`
+([JSON output](../reference/json-output.md#angular-template-reads)). A built-in control flow block
+gives a row on the line that opens it, and its body is still scanned without the block's locals.
+A member inherited from a base class is an `unknown-member` row, because the base is not followed.
+
+TypeScript member reads are not indexed. A `refs` member answer whose owner is a TypeScript class
+prints a note that its rows are Angular template reads only, and `--json` carries
+`memberReads`.
+
 ## Rust paths
 
 Rust (`.rs`) is indexed and graphed: every `.rs` file in the mapped scope, in every repository,

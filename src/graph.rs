@@ -3,7 +3,7 @@
 // a mismatch makes reuse break silently.
 //
 // This module owns every serde struct for graph.json + the fragments-cache
-// pair (fragments-v41.json, fragments-index-v41.json), plus their path resolution,
+// pair (fragments-v42.json, fragments-index-v42.json), plus their path resolution,
 // atomic I/O, and the cache-then-resolve-then-write orchestration
 // (`rebuild_graph`). The pure resolution ladder that
 // turns fragments into `defs`/`edges` lives in `resolve.rs` and returns the
@@ -121,7 +121,7 @@ pub use fragment::{fragment_from_extraction, markup_fragment, markup_fragment_te
 pub use fragment_types::{
     AnyFragment, FragArgType, FragDef, FragEnclosingCall, FragExtensionMethod, FragFact,
     FragHandlerRegistration, FragLambdaSlot, FragName, FragPublish, FragRef, FragRegistration,
-    FragUsing, Fragment,
+    FragUsing, Fragment, HtmlFragment,
 };
 pub use imports::{
     imported_edges_json_path, parse_imported_edges, read_imported_edges, write_imported_edges,

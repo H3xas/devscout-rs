@@ -702,6 +702,7 @@ pub fn extract_ts_fragment(program_node: Node, src: &[u8]) -> TsFragment {
         export_equals: export_equals.filter(|name| decls.contains_key(name)),
         dynamic_imports,
         non_literal_dynamic_imports,
+        components: super::ts_component::components(program_node, src),
     }
 }
 

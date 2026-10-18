@@ -38,6 +38,9 @@ pub mod manifest;
 pub mod mapcmd;
 /// XAML and XML markup declaration and reference extraction.
 pub mod markup;
+/// Angular template scanning: the component member reads of a template and
+/// the sites it cannot bind.
+pub mod ngtemplate;
 /// Tree-sitter parsing and source-span collection.
 pub mod parse;
 /// C# conditional-compilation pre-pass: blanks the inactive arms of

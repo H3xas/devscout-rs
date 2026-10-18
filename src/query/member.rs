@@ -28,9 +28,12 @@ pub(crate) fn split_member_seed(seed: &str) -> (&str, Option<&str>) {
 // applies to a type id (see `symbol.rs`), so `Type.Member` and
 // `Namespace.Type.Member` both reach a def however deeply its own namespace
 // nests, without this module restating what "named by a dotted qualifier"
-// means.
+// means. A TypeScript owner id is `file#Class`, so `Class.member` names it by
+// the part after the `#`; a C# id never holds a `#`.
 fn owner_matches_qualifier(owner_id: &str, qualifier: &str) -> bool {
-    owner_id == qualifier || owner_id.ends_with(&format!(".{qualifier}"))
+    owner_id == qualifier
+        || owner_id.ends_with(&format!(".{qualifier}"))
+        || owner_id.ends_with(&format!("#{qualifier}"))
 }
 
 /// Every type declaring a member named `name`, in name-index order, each with
@@ -216,5 +219,16 @@ mod tests {
             !owner_matches_qualifier("Acme.Storage.Bin", "torage.Bin"),
             "a suffix match starts on a dot boundary, not mid-segment"
         );
+    }
+
+    #[test]
+    fn angular_templates_ac_1_a_typescript_owner_matches_its_class_name() {
+        let owner = "src/app/card.component.ts#ProfileCard";
+        assert!(owner_matches_qualifier(owner, "ProfileCard"));
+        assert!(owner_matches_qualifier(owner, owner));
+        assert!(!owner_matches_qualifier(owner, "Card"));
+        assert!(!owner_matches_qualifier(owner, "component.ts"));
+        assert!(!owner_matches_qualifier("Acme.ProfileCard", "#ProfileCard"));
+        assert!(owner_matches_qualifier("Acme.ProfileCard", "ProfileCard"));
     }
 }

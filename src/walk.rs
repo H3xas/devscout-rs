@@ -85,7 +85,7 @@ pub const SKIP_DIRS: &[&str] = &[
 /// file name onward.
 pub const SOURCE_EXT: &[&str] = &[
     ".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".mjs", ".cjs", ".cs", ".rs", ".json", ".md",
-    ".xaml", ".resw", ".resx",
+    ".xaml", ".resw", ".resx", ".html",
 ];
 
 /// Enumerates source files (`SOURCE_EXT`) under each scope directory.

@@ -69,6 +69,7 @@ mod rs_scope;
 mod rs_sites;
 mod rs_uses;
 mod text;
+mod ts_component;
 mod ts_fragment;
 mod ts_fragment_forms;
 mod ts_fragment_types;
@@ -84,6 +85,7 @@ pub use json::{extraction_to_json, ts_extraction_to_json};
 pub use rs_facts_types::{RsBlock, RsImpl, RsModPath, RsRole, RsSite, RsUse};
 pub use rs_fragment::extract_rs_file;
 pub use rs_fragment_types::{RsFileExtraction, RsFragment, RsItem};
+pub use ts_component::{TsComponent, TsMember, TsTemplateUrl};
 pub use ts_fragment::{extract_ts_file, extract_ts_fragment, TsFileExtraction};
 pub use ts_fragment_types::{
     TsBinding, TsDynamicImport, TsFragment, TsFragmentDef, TsImport, TsReexport, TsReexportName,

@@ -212,7 +212,14 @@ fn verified_member_edges(
                 .map(|&e| (e, true)),
         )
         .collect();
+    // A template line can hold a local named like another member of the same
+    // component, so a TypeScript owner's rows also match the member each
+    // template edge names. A C# owner keeps the line check alone.
+    let by_member = crate::parse::ts_grammar_for(&owner_def.file).is_some();
     kept.retain(|&(e, _)| {
+        if by_member && edge_member(&edges[e]) != Some(name) {
+            return false;
+        }
         let (file, line) = edge_loc(&edges[e]);
         line_has_token(&cached_line(&index.root, file, line, cache), name)
     });
@@ -223,6 +230,13 @@ fn verified_member_edges(
             .then_with(|| loc_cmp(&edges[a.0], &edges[b.0]))
     });
     kept
+}
+
+fn edge_member(edge: &graph::Edge) -> Option<&str> {
+    match edge {
+        graph::Edge::UsesMember { member, .. } => member.as_deref(),
+        _ => None,
+    }
 }
 
 fn empty_table<R>() -> Table<R> {

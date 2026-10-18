@@ -1310,6 +1310,7 @@ pub fn resolve_graph_with_model(
         units: model.map(crate::project::graph_units).unwrap_or_default(),
         unresolved_imports: Vec::new(),
         transport: Vec::new(),
+        template_unsupported: Vec::new(),
     };
     crate::tsgraph::extend_graph(root, ts_fragments_by_file, &mut graph);
     graph

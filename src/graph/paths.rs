@@ -226,6 +226,9 @@ pub fn transport_inputs_path(root: &Path) -> PathBuf {
 // v41 appends the transport configuration sites a C# file states. A cached v40
 // fragment of an unchanged file carries none, so a map reusing it would record
 // no transport fact for that file.
+// v42 appends the `@Component` facts of a TS file and adds the `.html`
+// template fragment. A cached v41 fragment of an unchanged component carries
+// no members and no template, so a map reusing it would give no template edge.
 // The rename IS the invalidation mechanism:
 // pre-bump caches stop being found, every file reparses
 // once, no reader carries version-compat logic. Writers delete every
@@ -335,6 +338,8 @@ pub(crate) const SUPERSEDED_CACHE_FILES: &[&str] = &[
     "fragments-index-v39.json",
     "fragments-v40.json",
     "fragments-index-v40.json",
+    "fragments-v41.json",
+    "fragments-index-v41.json",
 ];
 
 pub(crate) fn remove_superseded_caches(root: &Path) {

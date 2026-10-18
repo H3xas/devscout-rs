@@ -10,7 +10,7 @@ use super::artifact::{write_graph, Graph, GRAPH_SCHEMA_VERSION};
 use super::cache::{
     read_fragments_cache, write_fragments_cache, write_fragments_index, FragmentCacheEntry,
 };
-use super::fragment_types::{AnyFragment, Fragment};
+use super::fragment_types::{AnyFragment, Fragment, HtmlFragment};
 use super::lane::LaneStats;
 use super::ordered::OrderedMap;
 use super::paths::{
@@ -24,8 +24,8 @@ use super::paths::{
 
 /// One file that contributes a graph fragment: C# (defs, refs, member names),
 /// markup (`x:Class`/`x:Name`, `.resw` keys -- names only), TS/JS
-/// (imports, exported declarations, call/JSX/dispatch references) or Rust
-/// (items with spans).
+/// (imports, exported declarations, call/JSX/dispatch references), Rust
+/// (items with spans) or an `.html` template (reads).
 #[derive(Debug, Clone)]
 pub struct GraphFile {
     /// The rel value.
@@ -182,6 +182,7 @@ pub fn rebuild_graph_with_crates(
     let mut merged_cs: Vec<(String, Fragment)> = Vec::new();
     let mut merged_ts: Vec<(String, extract::TsFragment)> = Vec::new();
     let mut merged_rs: Vec<(String, extract::RsFragment)> = Vec::new();
+    let mut merged_html: Vec<(String, HtmlFragment)> = Vec::new();
     let mut new_cache: OrderedMap<FragmentCacheEntry> = OrderedMap::new();
     for f in graph_files {
         let fragment = match cache.get(&f.rel) {
@@ -193,6 +194,7 @@ pub fn rebuild_graph_with_crates(
             AnyFragment::Cs(c) => merged_cs.push((f.rel.clone(), c.clone())),
             AnyFragment::Ts(t) => merged_ts.push((f.rel.clone(), t.clone())),
             AnyFragment::Rs(r) => merged_rs.push((f.rel.clone(), r.clone())),
+            AnyFragment::Html(h) => merged_html.push((f.rel.clone(), h.clone())),
         }
         new_cache.insert(
             f.rel.clone(),
@@ -210,6 +212,7 @@ pub fn rebuild_graph_with_crates(
         model,
         lane.and_then(crate::semantic::LaneDecision::layer),
     );
+    crate::tsgraph::append_templates(&merged_ts, &merged_html, &mut graph);
     crate::semantic::record_lane(lane, &mut graph.stats);
     crate::rsgraph::append_rust(&mut graph, &merged_rs);
     crate::rsgraph::append_rust_edges(&mut graph, &merged_rs, crates);

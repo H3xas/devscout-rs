@@ -31,6 +31,12 @@ JavaScript files answer through the same edges but that surface is not measured.
 from path resolution. How each
 language's references become edges is in [How names resolve](explanation/resolution.md).
 
+An Angular component's members are name rows too. A member read in the component's template is a
+`uses-member` edge from the template line to the component class. The template is the
+component's `templateUrl` file or its inline `template` string. TypeScript member reads are not
+indexed, so the rows of such a member answer are Angular template reads only
+([Angular templates](explanation/resolution.md#angular-templates)).
+
 ## Tiers
 
 A `uses-member` edge is either **precise** or heuristic. A heuristic edge carries a **tier**:
@@ -65,6 +71,10 @@ moves between them. The answer as a whole is a hit when at least one section is,
 [zero hit](reference/json-output.md#outcome) otherwise. Under `--json` the sections arrive as a
 `sections` array rather than as one merged answer
 ([JSON output](reference/json-output.md#the-sections-envelope)).
+
+A member of an Angular component takes the class name as its qualifier (`ProfileCard.caption`),
+because the component's def id is `file#ProfileCard`. Use the qualified seed when two components
+declare a member with the same name.
 
 A Rust item is named by its name, by its id (`src/shelf.rs#Widget::new`), or by a `::` path such
 as `Widget::new` or `cabinet::Hinge::oil`; a path two items share within a file (two trait impls

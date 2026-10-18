@@ -93,6 +93,13 @@ indexed for `find` and file purposes and graphed with imports (tsconfig `paths` 
 barrels), calls, JSX usage and dispatch. `refs`, `read`, `impact` and `tests` read those edges for
 TypeScript and JavaScript alike; JavaScript query quality is not measured.
 
+**Angular templates** (`.html`) are read for the components that name them. Each member of an
+exported `@Component({...})` class gets a name row. A member read in the component's
+`templateUrl` file or inline `template` becomes a `uses-member` edge from the template line, so
+`refs <member>` lists the template lines that read it. TypeScript member reads (`this.x` in a
+class) are not indexed, and the `refs` answer prints a note that says so
+([Angular templates](docs/explanation/resolution.md#angular-templates)).
+
 **Rust** (`.rs`) is indexed and graphed through path resolution: modules, `use` scope, calls,
 type uses, trait impls and `#[test]` functions, with no method-call typing
 ([Rust constructs](docs/reference/rust-constructs.md)).

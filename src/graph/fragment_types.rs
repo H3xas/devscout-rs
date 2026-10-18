@@ -674,14 +674,41 @@ pub struct Fragment {
     pub transport: Vec<crate::transport::TransportSite>,
 }
 
-/// The three shapes a cached fragment can have. Each rel is keyed to
+/// An external Angular template's fragment: the scan of the file alone.
+/// Which component the template belongs to is decided at graph time, so an
+/// edit to only the template moves only this file's cache key.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HtmlFragment {
+    /// The routing tag, always `1` and always FIRST, as `ts` is for a TS
+    /// fragment.
+    pub html: u8,
+    /// The reads no template local hides, omitted when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reads: Vec<crate::ngtemplate::TemplateRead>,
+    /// The scanner's own gaps, omitted when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub gaps: Vec<crate::ngtemplate::TemplateGap>,
+}
+
+impl HtmlFragment {
+    /// The fragment of one template scan.
+    pub fn from_scan(scan: crate::ngtemplate::TemplateScan) -> Self {
+        HtmlFragment {
+            html: 1,
+            reads: scan.reads,
+            gaps: scan.gaps,
+        }
+    }
+}
+
+/// The four shapes a cached fragment can have. Each rel is keyed to
 /// whichever shape the file's grammar produced; a required key tells them
-/// apart, on disk and at the resolver's door. Untagged, TS first, Rust last:
-/// a TS fragment carries `ts`, a C#/markup fragment carries `usings` (and
-/// `defs`, `refs`), and a Rust fragment carries `rs` and neither of the
-/// others' required keys. Each arm fails on the other two shapes, so the
-/// discrimination is total in every direction, never a first-match-wins
-/// guess.
+/// apart, on disk and at the resolver's door. Untagged, TS first, template
+/// last: a TS fragment carries `ts`, a C#/markup fragment carries `usings`
+/// (and `defs`, `refs`), a Rust fragment carries `rs`, and a template
+/// fragment carries `html` and none of the others' required keys. Each arm
+/// fails on the other shapes, so the discrimination is total in every
+/// direction, never a first-match-wins guess.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum AnyFragment {
@@ -691,6 +718,8 @@ pub enum AnyFragment {
     Cs(Fragment),
     /// A Rust fragment: items with spans, no references.
     Rs(extract::RsFragment),
+    /// An external Angular template: reads and gaps, no defs.
+    Html(HtmlFragment),
 }
 
 impl From<Fragment> for AnyFragment {
@@ -708,5 +737,11 @@ impl From<extract::TsFragment> for AnyFragment {
 impl From<extract::RsFragment> for AnyFragment {
     fn from(f: extract::RsFragment) -> Self {
         AnyFragment::Rs(f)
+    }
+}
+
+impl From<HtmlFragment> for AnyFragment {
+    fn from(f: HtmlFragment) -> Self {
+        AnyFragment::Html(f)
     }
 }

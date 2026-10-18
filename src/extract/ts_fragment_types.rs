@@ -158,6 +158,10 @@ pub struct TsFragment {
         skip_serializing_if = "is_zero"
     )]
     pub non_literal_dynamic_imports: usize,
+    /// The file's `@Component` classes, appended LAST and omitted when the
+    /// file declares none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub components: Vec<super::ts_component::TsComponent>,
 }
 
 fn is_zero(value: &usize) -> bool {
@@ -180,6 +184,7 @@ impl Default for TsFragment {
             export_equals: None,
             dynamic_imports: Vec::new(),
             non_literal_dynamic_imports: 0,
+            components: Vec::new(),
         }
     }
 }

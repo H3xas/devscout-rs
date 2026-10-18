@@ -78,6 +78,7 @@ pub(super) fn indexed_root(label: &str) -> PathBuf {
         units: Vec::new(),
         unresolved_imports: Vec::new(),
         transport: Vec::new(),
+        template_unsupported: Vec::new(),
     };
     crate::graph::write_graph(&root, &graph).expect("write graph");
     crate::graph::write_fragments_cache(&root, &crate::graph::OrderedMap::default())

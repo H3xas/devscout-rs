@@ -98,6 +98,7 @@ fn make_graph(defs: Vec<graph::Def>, edges: Vec<graph::Edge>) -> graph::Graph {
         units: Vec::new(),
         unresolved_imports: Vec::new(),
         transport: Vec::new(),
+        template_unsupported: Vec::new(),
     }
 }
 

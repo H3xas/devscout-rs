@@ -1,0 +1,10 @@
+<input #searchBox>
+<ng-template let-entry>{{ entry }}</ng-template>
+<ul>
+  <li *ngFor="let item of items; index as position">
+    {{ item }} {{ position }}
+  </li>
+</ul>
+<p *ngIf="pending as job">{{ job }}</p>
+<button (click)="search(searchBox.value, $event)">go</button>
+<span>{{ item }}</span>

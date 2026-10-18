@@ -9,7 +9,7 @@
 use std::collections::HashMap;
 
 use crate::extract;
-use crate::graph::{self, AnyFragment, Fragment};
+use crate::graph::{self, AnyFragment, Fragment, HtmlFragment};
 use crate::manifest::Value;
 use crate::markup;
 use crate::parse;
@@ -19,10 +19,16 @@ fn is_csharp(rel: &str) -> bool {
     rel.ends_with(".cs")
 }
 
+// Whether `rel` is a template a component can name (`.html`).
+fn is_template(rel: &str) -> bool {
+    rel.ends_with(".html")
+}
+
 // The files that contribute a graph fragment: C# (defs, refs, member names),
 // markup (`x:Class`/`x:Name`, `.resw` keys -- names only), TS/JS (imports,
 // exported declarations, call/JSX/dispatch references) and Rust (items with
-// spans, nothing else). The TS/JS arm is
+// spans, nothing else) and `.html` templates (reads, joined to a component at
+// graph time). The TS/JS arm is
 // `parse::ts_grammar_for`'s own extension gate rather than a second list -- a
 // file this predicate calls a graph source but the reparse dispatch below cannot
 // hand a grammar would be a rel `graph_files` names and `rebuild_graph` can never
@@ -33,6 +39,7 @@ pub(super) fn is_graph_source(rel: &str) -> bool {
         || markup::is_markup(rel)
         || parse::ts_grammar_for(rel).is_some()
         || parse::is_rust(rel)
+        || is_template(rel)
 }
 
 // ---------------------------------------------------------------------------
@@ -92,6 +99,10 @@ pub(super) enum ParsedFile {
     // comment nor a file-level item) and its item fragment, written either way
     // for the same reason as the TS/JS branch.
     Rust(String, Option<String>, extract::RsFragment),
+    // An `.html` file: its template scan, and no purpose. Every `.html` file
+    // gets one, also a file no component names, so the cache holds an entry
+    // for each graph source.
+    Html(String, HtmlFragment),
 }
 
 // One non-reusable plan entry's reparse: each file is dispatched to the C#
@@ -124,6 +135,13 @@ pub(super) fn reparse(rel: &str, text: &str) -> Option<ParsedFile> {
     if parse::is_rust(rel) {
         let rs = extract::extract_rs_file(text);
         return Some(ParsedFile::Rust(rel.to_string(), rs.purpose, rs.fragment));
+    }
+    if is_template(rel) {
+        let scan = crate::ngtemplate::scan_template(text, 1);
+        return Some(ParsedFile::Html(
+            rel.to_string(),
+            HtmlFragment::from_scan(scan),
+        ));
     }
     let grammar = parse::ts_grammar_for(rel)?;
     // The leading-comment prefix rides inside `extract_ts_file` (not the
@@ -178,6 +196,9 @@ pub(super) fn fold(
                     purposes.insert(rel.clone(), p);
                 }
                 fresh_fragments.insert(rel, AnyFragment::Rs(fragment));
+            }
+            ParsedFile::Html(rel, fragment) => {
+                fresh_fragments.insert(rel, AnyFragment::Html(fragment));
             }
         }
     }
@@ -254,6 +275,17 @@ mod tests {
             "C# never produces ast-none; an entry claiming it must still be reparsed"
         );
         assert!(!carries_best_source(&e, "a.json"));
+    }
+
+    #[test]
+    fn angular_templates_ac_8_an_html_file_is_a_graph_source_with_a_heuristic_entry() {
+        assert!(is_graph_source("src/app/card.html"));
+        assert!(!is_graph_source("src/app/card.htm"));
+        let e = Value::object(vec![("source", Value::string("heuristic"))]);
+        assert!(carries_best_source(&e, "src/app/card.html"));
+        assert_eq!(fallback_source("src/app/card.html"), "heuristic");
+        let parsed = reparse("src/app/card.html", "<p>{{ title }}</p>");
+        assert!(matches!(parsed, Some(ParsedFile::Html(_, f)) if f.reads.len() == 1));
     }
 
     #[test]

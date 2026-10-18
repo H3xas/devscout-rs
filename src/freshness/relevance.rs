@@ -168,6 +168,18 @@ mod tests {
     }
 
     #[test]
+    fn angular_templates_ac_8_a_template_path_is_indexed() {
+        assert!(is_indexed_path(
+            "src/app/card.component.html",
+            &scope(&["src"])
+        ));
+        assert!(!is_indexed_path(
+            "src/app/card.component.htm",
+            &scope(&["src"])
+        ));
+    }
+
+    #[test]
     fn a_file_with_no_extension_is_never_indexed() {
         // `walk::extension_of` reads the whole name for a leading-dot file, so
         // `.gitignore` is not a `.gitignore` extension and never matches.
