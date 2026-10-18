@@ -16,6 +16,7 @@ fn file(defs: &[&str], imports: Vec<TsImport>, reexports: Vec<TsReexport>) -> Ts
                 kind: "function".into(),
                 line: i + 1,
                 end_line: i + 1,
+                local: false,
             })
             .collect(),
         imports,

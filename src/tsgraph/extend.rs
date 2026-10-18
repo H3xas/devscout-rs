@@ -12,6 +12,7 @@ pub(crate) fn extend_graph(root: &Path, fragments: &[(String, TsFragment)], grap
     let (alias, config) = read_ts_resolution(root, fragments.iter().map(|(file, _)| file.as_str()));
     let ts = resolve_ts_graph_in(fragments, &alias, &config);
     graph.defs.extend(ts.defs);
+    graph.names.extend(ts.names);
     graph.edges.extend(ts.edges);
     graph.stats.def_count = graph.defs.len();
     graph.stats.edges_by_kind.import = Some(ts.edges_by_kind.import);

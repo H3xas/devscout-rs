@@ -76,6 +76,22 @@ impl Exports<'_> {
         lookup_export(file, name, 0, self, &mut visited)
     }
 
+    /// `ns.member` through a binding that names a namespace re-export, else
+    /// the binding's own export.
+    pub(super) fn lookup_member(
+        &self,
+        file: &str,
+        name: &str,
+        member: Option<&str>,
+    ) -> Option<usize> {
+        member
+            .and_then(|m| {
+                self.namespace_target(file, name)
+                    .and_then(|ns| self.lookup(&ns, m))
+            })
+            .or_else(|| self.lookup(file, name))
+    }
+
     pub(super) fn namespace_target(&self, file: &str, name: &str) -> Option<String> {
         let mut visited = HashSet::new();
         self.namespace_target_in(file, name, 0, &mut visited)

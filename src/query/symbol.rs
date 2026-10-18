@@ -15,37 +15,23 @@ pub enum Resolution {
     NotFound,
 }
 
-/// "Never guess" resolution ladder over the graph's defs.
+/// Resolve an exact id or run the prior bare-name ladder over non-local defs.
 ///
-/// Exact id, then unique exact name, then unique case-insensitive name, then
-/// a dotted id tail, then a `::` path of a Rust item; two-or-more candidates
-/// at any step is reported as ambiguous, not resolved further.
+/// A step with multiple non-local candidates includes its local candidates in
+/// the ambiguity; callers try member and local fallbacks after a miss.
 pub fn resolve_symbol(index: &GraphIndex, query: &str) -> Resolution {
     if index.by_id.contains_key(query) {
         return Resolution::Resolved(query.to_string());
     }
     if let Some(exact) = index.by_simple_name.get(query) {
-        if exact.len() == 1 {
-            return Resolution::Resolved(index.graph.defs[exact[0]].id.clone());
-        }
-        if exact.len() > 1 {
-            return Resolution::Ambiguous(
-                exact
-                    .iter()
-                    .map(|&i| index.graph.defs[i].id.clone())
-                    .collect(),
-            );
+        if let Some(result) = non_local_step(index, exact) {
+            return result;
         }
     }
     let lower = query.to_lowercase();
     if let Some(ci) = index.by_lower_name.get(&lower) {
-        if ci.len() == 1 {
-            return Resolution::Resolved(index.graph.defs[ci[0]].id.clone());
-        }
-        if ci.len() > 1 {
-            return Resolution::Ambiguous(
-                ci.iter().map(|&i| index.graph.defs[i].id.clone()).collect(),
-            );
+        if let Some(result) = non_local_step(index, ci) {
+            return result;
         }
     }
     // A TAIL of a def id, which is how a caller spells an enum member:
@@ -60,18 +46,16 @@ pub fn resolve_symbol(index: &GraphIndex, query: &str) -> Resolution {
     // order) rather than the unordered `by_id` map.
     if query.contains('.') {
         let suffix = format!(".{query}");
-        let tail: Vec<String> = index
+        let tail: Vec<usize> = index
             .graph
             .defs
             .iter()
-            .filter(|d| d.id.ends_with(&suffix))
-            .map(|d| d.id.clone())
+            .enumerate()
+            .filter(|(_, d)| d.id.ends_with(&suffix))
+            .map(|(i, _)| i)
             .collect();
-        if tail.len() == 1 {
-            return Resolution::Resolved(tail.into_iter().next().expect("one tail match"));
-        }
-        if tail.len() > 1 {
-            return Resolution::Ambiguous(tail);
+        if let Some(result) = non_local_step(index, &tail) {
+            return result;
         }
     }
     // A `::` path of a Rust item: `Type::item` or `module::Type::item`, a
@@ -80,11 +64,12 @@ pub fn resolve_symbol(index: &GraphIndex, query: &str) -> Resolution {
     // contains `::`, so no query that resolved before resolves differently.
     if query.contains("::") {
         let tail = format!("::{query}");
-        let matches: Vec<String> = index
+        let matches: Vec<usize> = index
             .graph
             .defs
             .iter()
-            .filter(|d| {
+            .enumerate()
+            .filter(|(_, d)| {
                 d.id.rfind('#').is_some_and(|hash| {
                     let path = &d.id[hash + 1..];
                     [path, strip_repeat_suffix(path)]
@@ -92,16 +77,81 @@ pub fn resolve_symbol(index: &GraphIndex, query: &str) -> Resolution {
                         .any(|p| *p == query || p.ends_with(&tail))
                 })
             })
-            .map(|d| d.id.clone())
+            .map(|(i, _)| i)
             .collect();
-        if matches.len() == 1 {
-            return Resolution::Resolved(matches.into_iter().next().expect("one path match"));
-        }
-        if matches.len() > 1 {
-            return Resolution::Ambiguous(matches);
+        if let Some(result) = non_local_step(index, &matches) {
+            return result;
         }
     }
     Resolution::NotFound
+}
+
+fn non_local_step(index: &GraphIndex, candidates: &[usize]) -> Option<Resolution> {
+    let count = candidates
+        .iter()
+        .filter(|&&i| !index.graph.defs[i].local)
+        .count();
+    match count {
+        0 => None,
+        1 => Some(Resolution::Resolved(
+            index.graph.defs[*candidates.iter().find(|&&i| !index.graph.defs[i].local)?]
+                .id
+                .clone(),
+        )),
+        _ => {
+            let mut ids: Vec<String> = candidates
+                .iter()
+                .map(|&i| index.graph.defs[i].id.clone())
+                .collect();
+            ids.sort();
+            Some(Resolution::Ambiguous(ids))
+        }
+    }
+}
+
+/// Resolve a file-local declaration after graph and member lookup miss.
+pub fn resolve_local_symbol(index: &GraphIndex, query: &str) -> Resolution {
+    if let Some(exact) = index.by_simple_name.get(query) {
+        if let Some(result) = local_step(index, exact) {
+            return result;
+        }
+    }
+    if let Some(ci) = index.by_lower_name.get(&query.to_lowercase()) {
+        if let Some(result) = local_step(index, ci) {
+            return result;
+        }
+    }
+    if query.contains('.') {
+        let suffix = format!(".{query}");
+        let matches: Vec<usize> = index
+            .graph
+            .defs
+            .iter()
+            .enumerate()
+            .filter(|(_, d)| d.local && d.id.ends_with(&suffix))
+            .map(|(i, _)| i)
+            .collect();
+        if let Some(result) = local_step(index, &matches) {
+            return result;
+        }
+    }
+    Resolution::NotFound
+}
+
+fn local_step(index: &GraphIndex, candidates: &[usize]) -> Option<Resolution> {
+    let mut matches: Vec<String> = candidates
+        .iter()
+        .filter_map(|&i| {
+            let d = &index.graph.defs[i];
+            d.local.then(|| d.id.clone())
+        })
+        .collect();
+    matches.sort();
+    match matches.len() {
+        0 => None,
+        1 => Some(Resolution::Resolved(matches[0].clone())),
+        _ => Some(Resolution::Ambiguous(matches)),
+    }
 }
 
 // `Gadget::fmt-1` without its `-1`. A path segment is an identifier, which

@@ -129,6 +129,7 @@ fn def(id: &str, name: &str, namespace: &str, kind: &str, file: &str, line: usiz
         test_methods: vec![],
         also_in: vec![],
         end_line: 0,
+        local: false,
     }
 }
 
@@ -158,6 +159,7 @@ fn def_also(
             })
             .collect(),
         end_line: 0,
+        local: false,
     }
 }
 
@@ -650,21 +652,6 @@ fn hub_fixture_root() -> PathBuf {
 // own the question of WHICH edges get tagged; these own what the
 // query+render layers do once they are.
 // ========================================================================
-
-fn widget_def() -> graph::Def {
-    graph::Def {
-        id: "App.Core.Widget".into(),
-        name: "Widget".into(),
-        namespace: "App.Core".into(),
-        kind: "class".into(),
-        file: "Core/Widget.cs".into(),
-        line: 3,
-        methods: vec!["Render".to_string()],
-        test_methods: vec![],
-        also_in: vec![],
-        end_line: 0,
-    }
-}
 
 /// A manifest listing every def file and every edge's from_file, so
 /// `manifest_gap` stays 0 and the rendered bytes carry no trailing gap line.

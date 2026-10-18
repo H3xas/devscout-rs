@@ -220,6 +220,12 @@ definition of one statement, so a statement binding two names is two rows, each 
 `to`. The kinds are read by edge kind, not by the file's language, so a JavaScript caller answers
 too; that surface is not measured.
 
+**`local`.** A TS/JS file-scope definition that is not exported carries `"local": true` after
+`endLine` in `graph.json` and the fragment cache. Exported definitions omit the key, as do C# and
+Rust definitions. Each TS/JS definition also contributes a `names` row with its declaration line
+and no `owner`; this lets `find` show the declaration. `read` and `refs` do not add a local marker
+to their output. An exported definition wins a bare-name tie, while an exact id selects the local.
+
 **`bound_defs`.** In `graph.json`, a TS `import` edge carries `bound_defs` after `via`, present
 only when non-empty: the ids of the definitions its named, default and type-only bindings (or a
 named re-export's names) resolve to, in binding order with duplicates dropped. Each id is declared

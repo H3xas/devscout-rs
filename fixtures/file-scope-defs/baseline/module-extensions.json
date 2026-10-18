@@ -1,0 +1,882 @@
+{
+  "defs": [
+    {
+      "endLine": 9,
+      "file": "src/app.mjs",
+      "id": "src/app.mjs#summarize",
+      "kind": "function",
+      "line": 7,
+      "name": "summarize",
+      "namespace": "src"
+    },
+    {
+      "endLine": 13,
+      "file": "src/app.mjs",
+      "id": "src/app.mjs#makeWallet",
+      "kind": "function",
+      "line": 11,
+      "name": "makeWallet",
+      "namespace": "src"
+    },
+    {
+      "endLine": 17,
+      "file": "src/app.mjs",
+      "id": "src/app.mjs#runTool",
+      "kind": "function",
+      "line": 15,
+      "name": "runTool",
+      "namespace": "src"
+    },
+    {
+      "endLine": 21,
+      "file": "src/app.mjs",
+      "id": "src/app.mjs#readRow",
+      "kind": "function",
+      "line": 19,
+      "name": "readRow",
+      "namespace": "src"
+    },
+    {
+      "endLine": 5,
+      "file": "src/broken/missing.mjs",
+      "id": "src/broken/missing.mjs#broken",
+      "kind": "function",
+      "line": 3,
+      "name": "broken",
+      "namespace": "src/broken"
+    },
+    {
+      "endLine": 3,
+      "file": "src/build/tool.mjs",
+      "id": "src/build/tool.mjs#tool",
+      "kind": "function",
+      "line": 1,
+      "name": "tool",
+      "namespace": "src/build"
+    },
+    {
+      "endLine": 3,
+      "file": "src/build/tool.mts",
+      "id": "src/build/tool.mts#tool",
+      "kind": "function",
+      "line": 1,
+      "name": "tool",
+      "namespace": "src/build"
+    },
+    {
+      "endLine": 5,
+      "file": "src/case/__Tests__/check.mjs",
+      "id": "src/case/__Tests__/check.mjs#casedSegment",
+      "kind": "function",
+      "line": 3,
+      "name": "casedSegment",
+      "namespace": "src/case/__Tests__"
+    },
+    {
+      "endLine": 5,
+      "file": "src/core/__tests__/deep/check.cjs",
+      "id": "src/core/__tests__/deep/check.cjs#cjsDeepTotal",
+      "kind": "function",
+      "line": 3,
+      "name": "cjsDeepTotal",
+      "namespace": "src/core/__tests__/deep"
+    },
+    {
+      "endLine": 5,
+      "file": "src/core/__tests__/deep/check.js",
+      "id": "src/core/__tests__/deep/check.js#jsDeepTotal",
+      "kind": "function",
+      "line": 3,
+      "name": "jsDeepTotal",
+      "namespace": "src/core/__tests__/deep"
+    },
+    {
+      "endLine": 5,
+      "file": "src/core/__tests__/deep/check.mjs",
+      "id": "src/core/__tests__/deep/check.mjs#deepTotal",
+      "kind": "function",
+      "line": 3,
+      "name": "deepTotal",
+      "namespace": "src/core/__tests__/deep"
+    },
+    {
+      "endLine": 5,
+      "file": "src/core/__tests__x/check.mjs",
+      "id": "src/core/__tests__x/check.mjs#partialSegment",
+      "kind": "function",
+      "line": 3,
+      "name": "partialSegment",
+      "namespace": "src/core/__tests__x"
+    },
+    {
+      "endLine": 3,
+      "file": "src/core/money.mjs",
+      "id": "src/core/money.mjs#total",
+      "kind": "function",
+      "line": 1,
+      "name": "total",
+      "namespace": "src/core"
+    },
+    {
+      "endLine": 13,
+      "file": "src/core/money.mjs",
+      "id": "src/core/money.mjs#Wallet",
+      "kind": "class",
+      "line": 5,
+      "name": "Wallet",
+      "namespace": "src/core"
+    },
+    {
+      "endLine": 5,
+      "file": "src/core/money.spec.cjs",
+      "id": "src/core/money.spec.cjs#checksTotal",
+      "kind": "function",
+      "line": 3,
+      "name": "checksTotal",
+      "namespace": "src/core"
+    },
+    {
+      "endLine": 5,
+      "file": "src/core/money.spec.js",
+      "id": "src/core/money.spec.js#specTotal",
+      "kind": "function",
+      "line": 3,
+      "name": "specTotal",
+      "namespace": "src/core"
+    },
+    {
+      "endLine": 5,
+      "file": "src/core/money.spec.mjs",
+      "id": "src/core/money.spec.mjs#checksTotal",
+      "kind": "function",
+      "line": 3,
+      "name": "checksTotal",
+      "namespace": "src/core"
+    },
+    {
+      "endLine": 5,
+      "file": "src/core/money.test.cjs",
+      "id": "src/core/money.test.cjs#checksEmpty",
+      "kind": "function",
+      "line": 3,
+      "name": "checksEmpty",
+      "namespace": "src/core"
+    },
+    {
+      "endLine": 5,
+      "file": "src/core/money.test.js",
+      "id": "src/core/money.test.js#jsSuite",
+      "kind": "function",
+      "line": 3,
+      "name": "jsSuite",
+      "namespace": "src/core"
+    },
+    {
+      "endLine": 5,
+      "file": "src/core/money.test.jsx",
+      "id": "src/core/money.test.jsx#jsxSuite",
+      "kind": "function",
+      "line": 3,
+      "name": "jsxSuite",
+      "namespace": "src/core"
+    },
+    {
+      "endLine": 5,
+      "file": "src/core/money.test.mts",
+      "id": "src/core/money.test.mts#mtsSuite",
+      "kind": "function",
+      "line": 3,
+      "name": "mtsSuite",
+      "namespace": "src/core"
+    },
+    {
+      "endLine": 3,
+      "file": "src/dual/emitted.mts",
+      "id": "src/dual/emitted.mts#emitted",
+      "kind": "function",
+      "line": 1,
+      "name": "emitted",
+      "namespace": "src/dual"
+    },
+    {
+      "endLine": 3,
+      "file": "src/dual/flagged.cts",
+      "id": "src/dual/flagged.cts#flagged",
+      "kind": "function",
+      "line": 1,
+      "name": "flagged",
+      "namespace": "src/dual"
+    },
+    {
+      "endLine": 7,
+      "file": "src/dual/pick.mjs",
+      "id": "src/dual/pick.mjs#picked",
+      "kind": "function",
+      "line": 5,
+      "name": "picked",
+      "namespace": "src/dual"
+    },
+    {
+      "endLine": 3,
+      "file": "src/dual/thing.mjs",
+      "id": "src/dual/thing.mjs#thing",
+      "kind": "function",
+      "line": 1,
+      "name": "thing",
+      "namespace": "src/dual"
+    },
+    {
+      "endLine": 3,
+      "file": "src/dual/thing.mts",
+      "id": "src/dual/thing.mts#thing",
+      "kind": "function",
+      "line": 1,
+      "name": "thing",
+      "namespace": "src/dual"
+    },
+    {
+      "endLine": 5,
+      "file": "src/legacy/report.cjs",
+      "id": "src/legacy/report.cjs#report",
+      "kind": "function",
+      "line": 3,
+      "name": "report",
+      "namespace": "src/legacy"
+    },
+    {
+      "endLine": 3,
+      "file": "src/legacy/totals.cjs",
+      "id": "src/legacy/totals.cjs#grandTotal",
+      "kind": "function",
+      "line": 1,
+      "name": "grandTotal",
+      "namespace": "src/legacy"
+    },
+    {
+      "endLine": 5,
+      "file": "src/naming/Total.TEST.mjs",
+      "id": "src/naming/Total.TEST.mjs#casedName",
+      "kind": "function",
+      "line": 3,
+      "name": "casedName",
+      "namespace": "src/naming"
+    },
+    {
+      "endLine": 3,
+      "file": "src/typed/schema.mts",
+      "id": "src/typed/schema.mts#Row",
+      "kind": "interface",
+      "line": 1,
+      "name": "Row",
+      "namespace": "src/typed"
+    },
+    {
+      "endLine": 7,
+      "file": "src/typed/schema.mts",
+      "id": "src/typed/schema.mts#parseRow",
+      "kind": "function",
+      "line": 5,
+      "name": "parseRow",
+      "namespace": "src/typed"
+    },
+    {
+      "endLine": 3,
+      "file": "src/typed/settings.cts",
+      "id": "src/typed/settings.cts#readSettings",
+      "kind": "function",
+      "line": 1,
+      "name": "readSettings",
+      "namespace": "src/typed"
+    },
+    {
+      "endLine": 3,
+      "file": "src/util/format.mjs",
+      "id": "src/util/format.mjs#formatAmount",
+      "kind": "function",
+      "line": 1,
+      "name": "formatAmount",
+      "namespace": "src/util"
+    },
+    {
+      "endLine": 5,
+      "file": "tests/helpers.js",
+      "id": "tests/helpers.js#helper",
+      "kind": "function",
+      "line": 3,
+      "name": "helper",
+      "namespace": "tests"
+    }
+  ],
+  "edges": [
+    {
+      "bound_defs": [
+        "src/core/money.mjs#total"
+      ],
+      "from_file": "src/app.mjs",
+      "from_line": 1,
+      "kind": "import",
+      "target": "./core/money.mjs",
+      "to_file": "src/core/money.mjs"
+    },
+    {
+      "from_file": "src/app.mjs",
+      "from_line": 2,
+      "kind": "import",
+      "target": "./core",
+      "to_file": "src/core/index.mjs"
+    },
+    {
+      "bound_defs": [
+        "src/core/money.mjs#Wallet"
+      ],
+      "from_file": "src/app.mjs",
+      "from_line": 2,
+      "kind": "import",
+      "target": "./core",
+      "to_file": "src/core/money.mjs",
+      "via": "src/core/index.mjs"
+    },
+    {
+      "bound_defs": [
+        "src/util/format.mjs#formatAmount"
+      ],
+      "from_file": "src/app.mjs",
+      "from_line": 3,
+      "kind": "import",
+      "target": "./util/format",
+      "to_file": "src/util/format.mjs"
+    },
+    {
+      "bound_defs": [
+        "src/build/tool.mts#tool"
+      ],
+      "from_file": "src/app.mjs",
+      "from_line": 4,
+      "kind": "import",
+      "target": "./build/tool",
+      "to_file": "src/build/tool.mts"
+    },
+    {
+      "bound_defs": [
+        "src/typed/schema.mts#parseRow"
+      ],
+      "from_file": "src/app.mjs",
+      "from_line": 5,
+      "kind": "import",
+      "target": "./typed/schema.mts",
+      "to_file": "src/typed/schema.mts"
+    },
+    {
+      "from_file": "src/app.mjs",
+      "from_line": 8,
+      "kind": "call",
+      "to": "src/util/format.mjs#formatAmount",
+      "to_file": "src/util/format.mjs"
+    },
+    {
+      "from_file": "src/app.mjs",
+      "from_line": 8,
+      "kind": "call",
+      "to": "src/core/money.mjs#total",
+      "to_file": "src/core/money.mjs"
+    },
+    {
+      "from_file": "src/app.mjs",
+      "from_line": 12,
+      "kind": "call",
+      "to": "src/core/money.mjs#Wallet",
+      "to_file": "src/core/money.mjs"
+    },
+    {
+      "from_file": "src/app.mjs",
+      "from_line": 16,
+      "kind": "call",
+      "to": "src/build/tool.mts#tool",
+      "to_file": "src/build/tool.mts"
+    },
+    {
+      "from_file": "src/app.mjs",
+      "from_line": 20,
+      "kind": "call",
+      "to": "src/typed/schema.mts#parseRow",
+      "to_file": "src/typed/schema.mts"
+    },
+    {
+      "bound_defs": [
+        "src/core/money.mjs#total"
+      ],
+      "from_file": "src/case/__Tests__/check.mjs",
+      "from_line": 1,
+      "kind": "import",
+      "target": "../../core/money.mjs",
+      "to_file": "src/core/money.mjs"
+    },
+    {
+      "from_file": "src/case/__Tests__/check.mjs",
+      "from_line": 4,
+      "kind": "call",
+      "to": "src/core/money.mjs#total",
+      "to_file": "src/core/money.mjs"
+    },
+    {
+      "bound_defs": [
+        "src/core/money.mjs#total"
+      ],
+      "from_file": "src/core/__tests__/deep/check.cjs",
+      "from_line": 1,
+      "kind": "import",
+      "target": "../../money.mjs",
+      "to_file": "src/core/money.mjs"
+    },
+    {
+      "from_file": "src/core/__tests__/deep/check.cjs",
+      "from_line": 4,
+      "kind": "call",
+      "to": "src/core/money.mjs#total",
+      "to_file": "src/core/money.mjs"
+    },
+    {
+      "bound_defs": [
+        "src/core/money.mjs#total"
+      ],
+      "from_file": "src/core/__tests__/deep/check.js",
+      "from_line": 1,
+      "kind": "import",
+      "target": "../../money.mjs",
+      "to_file": "src/core/money.mjs"
+    },
+    {
+      "from_file": "src/core/__tests__/deep/check.js",
+      "from_line": 4,
+      "kind": "call",
+      "to": "src/core/money.mjs#total",
+      "to_file": "src/core/money.mjs"
+    },
+    {
+      "bound_defs": [
+        "src/core/money.mjs#total"
+      ],
+      "from_file": "src/core/__tests__/deep/check.mjs",
+      "from_line": 1,
+      "kind": "import",
+      "target": "../../money.mjs",
+      "to_file": "src/core/money.mjs"
+    },
+    {
+      "from_file": "src/core/__tests__/deep/check.mjs",
+      "from_line": 4,
+      "kind": "call",
+      "to": "src/core/money.mjs#total",
+      "to_file": "src/core/money.mjs"
+    },
+    {
+      "bound_defs": [
+        "src/core/money.mjs#total"
+      ],
+      "from_file": "src/core/__tests__x/check.mjs",
+      "from_line": 1,
+      "kind": "import",
+      "target": "../money.mjs",
+      "to_file": "src/core/money.mjs"
+    },
+    {
+      "from_file": "src/core/__tests__x/check.mjs",
+      "from_line": 4,
+      "kind": "call",
+      "to": "src/core/money.mjs#total",
+      "to_file": "src/core/money.mjs"
+    },
+    {
+      "from_file": "src/core/index.mjs",
+      "from_line": 1,
+      "kind": "import",
+      "target": "./money.mjs",
+      "to_file": "src/core/money.mjs"
+    },
+    {
+      "from_file": "src/core/money.mjs",
+      "from_line": 11,
+      "kind": "call",
+      "to": "src/core/money.mjs#total",
+      "to_file": "src/core/money.mjs"
+    },
+    {
+      "bound_defs": [
+        "src/core/money.mjs#total"
+      ],
+      "from_file": "src/core/money.spec.cjs",
+      "from_line": 1,
+      "kind": "import",
+      "target": "./money.mjs",
+      "to_file": "src/core/money.mjs"
+    },
+    {
+      "from_file": "src/core/money.spec.cjs",
+      "from_line": 4,
+      "kind": "call",
+      "to": "src/core/money.mjs#total",
+      "to_file": "src/core/money.mjs"
+    },
+    {
+      "bound_defs": [
+        "src/core/money.mjs#total"
+      ],
+      "from_file": "src/core/money.spec.js",
+      "from_line": 1,
+      "kind": "import",
+      "target": "./money.mjs",
+      "to_file": "src/core/money.mjs"
+    },
+    {
+      "from_file": "src/core/money.spec.js",
+      "from_line": 4,
+      "kind": "call",
+      "to": "src/core/money.mjs#total",
+      "to_file": "src/core/money.mjs"
+    },
+    {
+      "bound_defs": [
+        "src/core/money.mjs#total"
+      ],
+      "from_file": "src/core/money.spec.mjs",
+      "from_line": 1,
+      "kind": "import",
+      "target": "./money.mjs",
+      "to_file": "src/core/money.mjs"
+    },
+    {
+      "from_file": "src/core/money.spec.mjs",
+      "from_line": 4,
+      "kind": "call",
+      "to": "src/core/money.mjs#total",
+      "to_file": "src/core/money.mjs"
+    },
+    {
+      "bound_defs": [
+        "src/core/money.mjs#total"
+      ],
+      "from_file": "src/core/money.test.cjs",
+      "from_line": 1,
+      "kind": "import",
+      "target": "./money.mjs",
+      "to_file": "src/core/money.mjs"
+    },
+    {
+      "from_file": "src/core/money.test.cjs",
+      "from_line": 4,
+      "kind": "call",
+      "to": "src/core/money.mjs#total",
+      "to_file": "src/core/money.mjs"
+    },
+    {
+      "bound_defs": [
+        "src/core/money.mjs#total"
+      ],
+      "from_file": "src/core/money.test.js",
+      "from_line": 1,
+      "kind": "import",
+      "target": "./money.mjs",
+      "to_file": "src/core/money.mjs"
+    },
+    {
+      "from_file": "src/core/money.test.js",
+      "from_line": 4,
+      "kind": "call",
+      "to": "src/core/money.mjs#total",
+      "to_file": "src/core/money.mjs"
+    },
+    {
+      "bound_defs": [
+        "src/core/money.mjs#total"
+      ],
+      "from_file": "src/core/money.test.jsx",
+      "from_line": 1,
+      "kind": "import",
+      "target": "./money.mjs",
+      "to_file": "src/core/money.mjs"
+    },
+    {
+      "from_file": "src/core/money.test.jsx",
+      "from_line": 4,
+      "kind": "call",
+      "to": "src/core/money.mjs#total",
+      "to_file": "src/core/money.mjs"
+    },
+    {
+      "bound_defs": [
+        "src/core/money.mjs#total",
+        "src/core/money.mjs#Wallet"
+      ],
+      "from_file": "src/core/money.test.mjs",
+      "from_line": 3,
+      "kind": "import",
+      "target": "./money.mjs",
+      "to_file": "src/core/money.mjs"
+    },
+    {
+      "from_file": "src/core/money.test.mjs",
+      "from_line": 6,
+      "kind": "call",
+      "to": "src/core/money.mjs#total",
+      "to_file": "src/core/money.mjs"
+    },
+    {
+      "from_file": "src/core/money.test.mjs",
+      "from_line": 10,
+      "kind": "call",
+      "to": "src/core/money.mjs#Wallet",
+      "to_file": "src/core/money.mjs"
+    },
+    {
+      "bound_defs": [
+        "src/core/money.mjs#total"
+      ],
+      "from_file": "src/core/money.test.mts",
+      "from_line": 1,
+      "kind": "import",
+      "target": "./money.mjs",
+      "to_file": "src/core/money.mjs"
+    },
+    {
+      "from_file": "src/core/money.test.mts",
+      "from_line": 4,
+      "kind": "call",
+      "to": "src/core/money.mjs#total",
+      "to_file": "src/core/money.mjs"
+    },
+    {
+      "bound_defs": [
+        "src/dual/thing.mjs#thing"
+      ],
+      "from_file": "src/dual/pick.mjs",
+      "from_line": 1,
+      "kind": "import",
+      "target": "./thing.mjs",
+      "to_file": "src/dual/thing.mjs"
+    },
+    {
+      "bound_defs": [
+        "src/dual/emitted.mts#emitted"
+      ],
+      "from_file": "src/dual/pick.mjs",
+      "from_line": 2,
+      "kind": "import",
+      "target": "./emitted.mjs",
+      "to_file": "src/dual/emitted.mts"
+    },
+    {
+      "bound_defs": [
+        "src/dual/flagged.cts#flagged"
+      ],
+      "from_file": "src/dual/pick.mjs",
+      "from_line": 3,
+      "kind": "import",
+      "target": "./flagged.cjs",
+      "to_file": "src/dual/flagged.cts"
+    },
+    {
+      "from_file": "src/dual/pick.mjs",
+      "from_line": 6,
+      "kind": "call",
+      "to": "src/dual/thing.mjs#thing",
+      "to_file": "src/dual/thing.mjs"
+    },
+    {
+      "from_file": "src/dual/pick.mjs",
+      "from_line": 6,
+      "kind": "call",
+      "to": "src/dual/emitted.mts#emitted",
+      "to_file": "src/dual/emitted.mts"
+    },
+    {
+      "from_file": "src/dual/pick.mjs",
+      "from_line": 6,
+      "kind": "call",
+      "to": "src/dual/flagged.cts#flagged",
+      "to_file": "src/dual/flagged.cts"
+    },
+    {
+      "bound_defs": [
+        "src/legacy/totals.cjs#grandTotal"
+      ],
+      "from_file": "src/legacy/report.cjs",
+      "from_line": 1,
+      "kind": "import",
+      "target": "./totals",
+      "to_file": "src/legacy/totals.cjs"
+    },
+    {
+      "from_file": "src/legacy/report.cjs",
+      "from_line": 4,
+      "kind": "call",
+      "to": "src/legacy/totals.cjs#grandTotal",
+      "to_file": "src/legacy/totals.cjs"
+    },
+    {
+      "bound_defs": [
+        "src/core/money.mjs#total"
+      ],
+      "from_file": "src/naming/Total.TEST.mjs",
+      "from_line": 1,
+      "kind": "import",
+      "target": "../core/money.mjs",
+      "to_file": "src/core/money.mjs"
+    },
+    {
+      "from_file": "src/naming/Total.TEST.mjs",
+      "from_line": 4,
+      "kind": "call",
+      "to": "src/core/money.mjs#total",
+      "to_file": "src/core/money.mjs"
+    },
+    {
+      "bound_defs": [
+        "src/core/money.mjs#total"
+      ],
+      "from_file": "tests/helpers.js",
+      "from_line": 1,
+      "kind": "import",
+      "target": "../src/core/money.mjs",
+      "to_file": "src/core/money.mjs"
+    },
+    {
+      "from_file": "tests/helpers.js",
+      "from_line": 4,
+      "kind": "call",
+      "to": "src/core/money.mjs#total",
+      "to_file": "src/core/money.mjs"
+    }
+  ],
+  "manifest": {
+    "src/app.mjs": {
+      "purpose": "function summarize | function makeWallet | function runTool | function readRow",
+      "source": "ast"
+    },
+    "src/broken/missing.mjs": {
+      "purpose": "function broken",
+      "source": "ast"
+    },
+    "src/build/tool.mjs": {
+      "purpose": "function tool",
+      "source": "ast"
+    },
+    "src/build/tool.mts": {
+      "purpose": "function tool",
+      "source": "ast"
+    },
+    "src/case/__Tests__/check.mjs": {
+      "purpose": "function casedSegment",
+      "source": "ast"
+    },
+    "src/core/__tests__/deep/check.cjs": {
+      "purpose": "function cjsDeepTotal",
+      "source": "ast"
+    },
+    "src/core/__tests__/deep/check.js": {
+      "purpose": "function jsDeepTotal",
+      "source": "ast"
+    },
+    "src/core/__tests__/deep/check.mjs": {
+      "purpose": "function deepTotal",
+      "source": "ast"
+    },
+    "src/core/__tests__x/check.mjs": {
+      "purpose": "function partialSegment",
+      "source": "ast"
+    },
+    "src/core/index.mjs": {
+      "purpose": "reexports *",
+      "source": "ast"
+    },
+    "src/core/money.mjs": {
+      "purpose": "class Wallet; balance | function total",
+      "source": "ast"
+    },
+    "src/core/money.spec.cjs": {
+      "purpose": "function checksTotal",
+      "source": "ast"
+    },
+    "src/core/money.spec.js": {
+      "purpose": "function specTotal",
+      "source": "ast"
+    },
+    "src/core/money.spec.mjs": {
+      "purpose": "function checksTotal",
+      "source": "ast"
+    },
+    "src/core/money.test.cjs": {
+      "purpose": "function checksEmpty",
+      "source": "ast"
+    },
+    "src/core/money.test.js": {
+      "purpose": "function jsSuite",
+      "source": "ast"
+    },
+    "src/core/money.test.jsx": {
+      "purpose": "function jsxSuite",
+      "source": "ast"
+    },
+    "src/core/money.test.mjs": {
+      "purpose": "import { test } from 'node:test';",
+      "source": "ast-none"
+    },
+    "src/core/money.test.mts": {
+      "purpose": "function mtsSuite",
+      "source": "ast"
+    },
+    "src/dual/emitted.mts": {
+      "purpose": "function emitted",
+      "source": "ast"
+    },
+    "src/dual/flagged.cts": {
+      "purpose": "function flagged",
+      "source": "ast"
+    },
+    "src/dual/pick.mjs": {
+      "purpose": "function picked",
+      "source": "ast"
+    },
+    "src/dual/thing.mjs": {
+      "purpose": "function thing",
+      "source": "ast"
+    },
+    "src/dual/thing.mts": {
+      "purpose": "function thing",
+      "source": "ast"
+    },
+    "src/legacy/report.cjs": {
+      "purpose": "function report",
+      "source": "ast"
+    },
+    "src/legacy/totals.cjs": {
+      "purpose": "function grandTotal",
+      "source": "ast"
+    },
+    "src/naming/Total.TEST.mjs": {
+      "purpose": "function casedName",
+      "source": "ast"
+    },
+    "src/typed/schema.mts": {
+      "purpose": "function parseRow | interface Row",
+      "source": "ast"
+    },
+    "src/typed/settings.cts": {
+      "purpose": "function readSettings",
+      "source": "ast"
+    },
+    "src/util/format.mjs": {
+      "purpose": "function formatAmount",
+      "source": "ast"
+    },
+    "tests/helpers.js": {
+      "purpose": "function helper",
+      "source": "ast"
+    }
+  },
+  "tsStats": {
+    "external_import_count": 3,
+    "ts_def_count": 34,
+    "ts_file_count": 31,
+    "unresolved_ref_count": 4
+  }
+}

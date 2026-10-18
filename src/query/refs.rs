@@ -14,7 +14,7 @@ use super::refs_tables::{
     ambiguous_row, build_table, cap_rows, edge_loc, loc_cmp, row_tier, AmbiguousTables, InboundRow,
     InboundTables, OutboundTables, Table, TsTables, SOURCE_MAX,
 };
-use super::symbol::{resolve_symbol, Resolution};
+use super::symbol::{resolve_local_symbol, resolve_symbol, Resolution};
 use super::symbol_refs::symbol_refs;
 
 /// The resolved `refs` result for one symbol.
@@ -459,15 +459,17 @@ pub(super) fn build_refs_model_inner(
         // member still answers as the type. `out` has no member reading (a
         // type's outbound edges are the type's answer, not the member's) and is
         // ignored here.
-        Resolution::NotFound => {
-            return match build_member_refs_models(index, query, inbound_cap) {
-                Some(MemberRefsOutcome::Models(models)) => RefsResult::Members(models),
-                Some(MemberRefsOutcome::Ambiguous(candidates)) => {
-                    RefsResult::MemberAmbiguous(candidates)
-                }
-                None => RefsResult::NotFound,
-            };
-        }
+        Resolution::NotFound => match build_member_refs_models(index, query, inbound_cap) {
+            Some(MemberRefsOutcome::Models(models)) => return RefsResult::Members(models),
+            Some(MemberRefsOutcome::Ambiguous(candidates)) => {
+                return RefsResult::MemberAmbiguous(candidates)
+            }
+            None => match resolve_local_symbol(index, query) {
+                Resolution::Resolved(id) => id,
+                Resolution::Ambiguous(ids) => return RefsResult::Ambiguous(ids),
+                Resolution::NotFound => return RefsResult::NotFound,
+            },
+        },
     };
     let def_idx = *index
         .by_id

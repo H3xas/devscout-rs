@@ -70,6 +70,7 @@ mod rs_sites;
 mod rs_uses;
 mod text;
 mod ts_component;
+mod ts_file_scope;
 mod ts_fragment;
 mod ts_fragment_forms;
 mod ts_fragment_types;

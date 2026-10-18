@@ -777,13 +777,12 @@ mod tests {
             "A.cs and note.ts both compose a purpose; internal.ts has no exported declaration"
         );
         assert!(report.graph_rebuilt);
-        // `A.cs`'s class AND `note.ts`'s exported `const x` -- TS/JS files
-        // contribute graph defs. `internal.ts` exports nothing, so it still
-        // contributes a cached fragment and no def.
+        // The local helper in `internal.ts` is a graph def even though the
+        // file has no export and keeps its heuristic purpose.
         assert_eq!(
             report.graph_def_count,
-            Some(2),
-            "A.cs's class plus note.ts's exported const"
+            Some(3),
+            "class, exported const, and local helper"
         );
 
         let manifest = manifest::read_manifest(&root).unwrap().unwrap();

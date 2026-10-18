@@ -421,6 +421,7 @@ fn any_fragment_round_trips_both_shapes_and_never_reads_one_as_the_other() {
             kind: "const".into(),
             line: 1,
             end_line: 1,
+            local: false,
         }],
         imports: Vec::new(),
         reexports: Vec::new(),

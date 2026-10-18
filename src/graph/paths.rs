@@ -229,6 +229,9 @@ pub fn transport_inputs_path(root: &Path) -> PathBuf {
 // v42 appends the `@Component` facts of a TS file and adds the `.html`
 // template fragment. A cached v41 fragment of an unchanged component carries
 // no members and no template, so a map reusing it would give no template edge.
+// v43 joins the v42 facts with the file-scope TS/JS declarations and local
+// references that v39 carried on its own. A cached v42 fragment has no local
+// declarations, and a cached v39 one has no v40-v42 facts, so neither is reused.
 // The rename IS the invalidation mechanism:
 // pre-bump caches stop being found, every file reparses
 // once, no reader carries version-compat logic. Writers delete every
@@ -340,6 +343,8 @@ pub(crate) const SUPERSEDED_CACHE_FILES: &[&str] = &[
     "fragments-index-v40.json",
     "fragments-v41.json",
     "fragments-index-v41.json",
+    "fragments-v42.json",
+    "fragments-index-v42.json",
 ];
 
 pub(crate) fn remove_superseded_caches(root: &Path) {

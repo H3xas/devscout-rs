@@ -91,6 +91,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Test files named `*.test.*` or `*.spec.*`, or placed below `__tests__`, are now classified by
   path for `.mts`, `.cts` and `.jsx` as well as `.ts`, `.tsx`, `.js`, `.mjs` and `.cjs`. The
   `tests` and `impact` commands count these files when they reference the queried code.
+- Index TypeScript and JavaScript file-scope declarations, including declarations in top-level
+  IIFE bodies, as definitions. Calls, JSX tags and dispatch references to them resolve within the
+  same file; imported names remain bound to exported definitions only. An exported definition wins
+  a bare-name tie, and an exact file-qualified id selects a local declaration. `find` now prints
+  TS/JS declaration rows. `graph.json` and the fragment cache mark non-exported definitions with
+  `"local": true`, while exported rows keep their earlier shape; `extract-dump` also lists local
+  declarations. The `fragments-v43.json` cache generation re-extracts unchanged files once.
 
 ### Changed
 

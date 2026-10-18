@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::extract::TsFragment;
-use crate::graph::{Def, Edge, OrderedMap};
+use crate::graph::{Def, Edge, GraphName, OrderedMap};
 
 mod bindings;
 mod build_output;
@@ -703,6 +703,8 @@ fn is_zero(value: &usize) -> bool {
 pub struct TsGraph {
     /// The defs value.
     pub defs: Vec<Def>,
+    /// Declaration rows for TS/JS definitions.
+    pub names: Vec<GraphName>,
     /// The edges value.
     pub edges: Vec<Edge>,
     /// The edges by kind value.
@@ -736,14 +738,27 @@ pub fn resolve_ts_graph_in(
     };
 
     let mut defs: Vec<Def> = Vec::new();
+    let mut names: Vec<GraphName> = Vec::new();
     let mut exports_by_file: HashMap<&str, HashMap<String, usize>> = HashMap::new();
+    let mut scope_by_file: HashMap<&str, HashMap<String, usize>> = HashMap::new();
     for (file, frag) in fragments {
-        let mut by_name: HashMap<String, usize> = HashMap::new();
+        let mut scope: HashMap<String, usize> = HashMap::new();
+        let mut importable: HashMap<String, usize> = HashMap::new();
         for d in &frag.defs {
-            if by_name.contains_key(&d.name) {
+            if scope.contains_key(&d.name) {
                 continue;
             }
-            by_name.insert(d.name.clone(), defs.len());
+            scope.insert(d.name.clone(), defs.len());
+            if !d.local {
+                importable.insert(d.name.clone(), defs.len());
+            }
+            names.push(GraphName {
+                name: d.name.clone(),
+                kind: d.kind.clone(),
+                file: file.clone(),
+                line: d.line,
+                owner: String::new(),
+            });
             defs.push(Def {
                 id: ts_def_id(file, &d.name),
                 name: d.name.clone(),
@@ -755,23 +770,25 @@ pub fn resolve_ts_graph_in(
                 test_methods: Vec::new(),
                 also_in: Vec::new(),
                 end_line: d.end_line,
+                local: d.local,
             });
         }
         // `export default Foo` makes the SAME declaration importable under the
         // name `default` -- one def, two names, never a second row on one
         // declaration.
         if let Some(dflt) = &frag.default {
-            if let Some(&i) = by_name.get(dflt) {
-                by_name.insert("default".to_string(), i);
+            if let Some(&i) = importable.get(dflt) {
+                importable.insert("default".to_string(), i);
             }
         }
         if let Some(name) = &frag.export_equals {
-            if let Some(&index) = by_name.get(name) {
-                by_name.entry("default".to_string()).or_insert(index);
-                by_name.insert("export=".to_string(), index);
+            if let Some(&index) = scope.get(name) {
+                importable.entry("default".to_string()).or_insert(index);
+                importable.insert("export=".to_string(), index);
             }
         }
-        exports_by_file.insert(file.as_str(), by_name);
+        exports_by_file.insert(file.as_str(), importable);
+        scope_by_file.insert(file.as_str(), scope);
     }
 
     let exports = Exports {
@@ -802,17 +819,8 @@ pub fn resolve_ts_graph_in(
                     Some(m) => exports.lookup(to, m),
                     None => exports.lookup(to, "export="),
                 },
-                Some((to, imported)) => r
-                    .member
-                    .as_ref()
-                    .and_then(|member| {
-                        exports
-                            .namespace_target(to, imported)
-                            .and_then(|ns| exports.lookup(&ns, member))
-                    })
-                    .or_else(|| exports.lookup(to, imported)),
-                None if r.member.is_none() => exports
-                    .by_file
+                Some((to, imported)) => exports.lookup_member(to, imported, r.member.as_deref()),
+                None if r.member.is_none() => scope_by_file
                     .get(file.as_str())
                     .and_then(|m| m.get(&r.name))
                     .copied(),
@@ -913,6 +921,7 @@ pub fn resolve_ts_graph_in(
     };
     TsGraph {
         defs,
+        names,
         edges,
         edges_by_kind: counts,
         stats,
@@ -941,6 +950,7 @@ mod tests {
                     kind: k.into(),
                     line: l,
                     end_line: l,
+                    local: false,
                 })
                 .collect(),
             imports,
