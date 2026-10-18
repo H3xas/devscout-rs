@@ -775,9 +775,10 @@ pub fn resolve_ts_graph_in(
         }
         // `export default Foo` makes the SAME declaration importable under the
         // name `default` -- one def, two names, never a second row on one
-        // declaration.
+        // declaration. The full scope map is read, not the importable one, so
+        // a file-local Foo gains the default alias while `Foo` stays private.
         if let Some(dflt) = &frag.default {
-            if let Some(&i) = importable.get(dflt) {
+            if let Some(&i) = scope.get(dflt) {
                 importable.insert("default".to_string(), i);
             }
         }

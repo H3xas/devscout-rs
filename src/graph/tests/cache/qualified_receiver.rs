@@ -135,7 +135,7 @@ fn a_prior_generation_cache_cannot_leave_a_qualified_receiver_on_its_bare_tail()
     // fails the moment the generation bump is reverted.
     let reused = temp_dir("qualified-receiver-current-generation-cache");
     fs::create_dir_all(graph_dir(&reused)).unwrap();
-    plant_cache_pair(&reused, &stale, index, "-v43");
+    plant_cache_pair(&reused, &stale, index, "-v44");
     let reused_graph = rebuild_qualified_receiver(&reused);
     assert_eq!(
         qualified_receiver_targets(&reused_graph),

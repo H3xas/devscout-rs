@@ -227,24 +227,37 @@ fn file_scope_defs_ac_3_same_file_call_jsx_dispatch_and_queries() {
 fn file_scope_defs_ac_4_imports_never_bind_local_defs() {
     let graph = fresh("cross").graph();
     let old = baseline("cross");
+    // The default import of a file-local declaration is the one supported
+    // binding, so exactly one reference stops being unresolved.
     assert_eq!(
         graph["stats"]["ts"]["unresolved_ref_count"],
-        old["tsStats"]["unresolved_ref_count"]
+        old["tsStats"]["unresolved_ref_count"].as_u64().unwrap() - 1
     );
     assert_eq!(
         graph["stats"]["ts"]["external_import_count"],
         old["tsStats"]["external_import_count"]
     );
+    let local = "source.ts#hidden";
+    let mut default_uses = 0;
     for edge in graph["edges"].as_array().unwrap() {
-        if edge["from_file"] != "source.ts" {
-            assert_ne!(edge["to"], "source.ts#hidden");
+        if edge["to"] == local && edge["from_file"] != "source.ts" {
+            assert_eq!(edge["kind"], "call", "{edge}");
+            assert_eq!(edge["from_file"], "consumer.ts", "{edge}");
+            assert_eq!(edge["from_line"], 4, "{edge}");
+            default_uses += 1;
         }
         if edge["kind"] == "import" {
-            assert!(!edge["bound_defs"]
+            let binds = edge["bound_defs"]
                 .as_array()
-                .is_some_and(|ids| ids.iter().any(|id| id == "source.ts#hidden")));
+                .is_some_and(|ids| ids.iter().any(|id| id == local));
+            if binds {
+                assert_eq!(edge["from_file"], "consumer.ts", "{edge}");
+                assert_eq!(edge["from_line"], 2, "{edge}");
+                assert_eq!(edge["bound_defs"], json!([local]), "{edge}");
+            }
         }
     }
+    assert_eq!(default_uses, 1);
 }
 
 #[test]
@@ -277,6 +290,30 @@ fn file_scope_defs_ac_5_exported_rows_edges_and_purposes_match_base() {
         );
         let mut edges = graph["edges"].as_array().unwrap().clone();
         for edge in old["edges"].as_array().unwrap() {
+            // The one edge the default-import binding changes: `consumer.ts`
+            // now binds `source.ts#hidden` through its default import.
+            let replaced = name == "cross"
+                && edge["kind"] == "import"
+                && edge["from_file"] == "consumer.ts"
+                && edge["from_line"] == 2;
+            if replaced {
+                let i = edges
+                    .iter()
+                    .position(|candidate| {
+                        candidate["kind"] == "import"
+                            && candidate["from_file"] == "consumer.ts"
+                            && candidate["from_line"] == 2
+                            && candidate["to_file"] == "source.ts"
+                    })
+                    .unwrap_or_else(|| panic!("{name} missing the default-import edge"));
+                assert_eq!(
+                    edges[i]["bound_defs"],
+                    json!(["source.ts#hidden"]),
+                    "{name}"
+                );
+                edges.remove(i);
+                continue;
+            }
             let i = edges
                 .iter()
                 .position(|candidate| candidate == edge)
@@ -294,7 +331,8 @@ fn file_scope_defs_ac_5_exported_rows_edges_and_purposes_match_base() {
             "{name} unexpected added edges: {edges:?}"
         );
         assert_eq!(
-            graph["stats"]["ts"]["unresolved_ref_count"], old["tsStats"]["unresolved_ref_count"],
+            graph["stats"]["ts"]["unresolved_ref_count"],
+            old["tsStats"]["unresolved_ref_count"].as_u64().unwrap() - u64::from(name == "cross"),
             "{name}"
         );
         assert_eq!(
@@ -313,6 +351,222 @@ fn file_scope_defs_ac_5_exported_rows_edges_and_purposes_match_base() {
             );
         }
     }
+}
+
+/// The `bound_defs` of the one `import` edge at `from:line -> to`. An edge
+/// that binds nothing carries no `bound_defs` key.
+fn bound_defs(graph: &Value, from: &str, line: u64, to: &str) -> Vec<String> {
+    let edges: Vec<&Value> = graph["edges"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| {
+            e["kind"] == "import"
+                && e["from_file"] == from
+                && e["from_line"] == line
+                && e["to_file"] == to
+        })
+        .collect();
+    assert_eq!(edges.len(), 1, "one import edge {from}:{line} -> {to}");
+    edges[0]
+        .get("bound_defs")
+        .and_then(Value::as_array)
+        .map(|ids| {
+            ids.iter()
+                .map(|id| id.as_str().unwrap().to_string())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn edge_count(graph: &Value, kind: &str, from: &str, line: u64, to: &str) -> usize {
+    graph["edges"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| {
+            e["kind"] == kind && e["from_file"] == from && e["from_line"] == line && e["to"] == to
+        })
+        .count()
+}
+
+fn ids(values: &[&str]) -> Vec<String> {
+    values.iter().map(|value| (*value).to_string()).collect()
+}
+
+#[test]
+fn default_import_local_ac_1_statement_form_binds_the_def() {
+    let fixture = fresh("components");
+    let graph = fixture.graph();
+    let refs = fixture.ok(&["refs", "AnchorButton"]);
+    assert!(refs.contains("dock.tsx:2  import"), "{refs}");
+    assert!(refs.contains("dock.tsx:10  jsx-use"), "{refs}");
+    assert_eq!(
+        bound_defs(&graph, "dock.tsx", 2, "anchorButton.tsx"),
+        ids(&["anchorButton.tsx#AnchorButton"])
+    );
+    assert_eq!(
+        def(&graph, "anchorButton.tsx#AnchorButton"),
+        &json!({
+            "id": "anchorButton.tsx#AnchorButton",
+            "name": "AnchorButton",
+            "namespace": "",
+            "kind": "const",
+            "file": "anchorButton.tsx",
+            "line": 5,
+            "methods": [],
+            "endLine": 7,
+            "local": true
+        })
+    );
+
+    let fixture = fresh("default-imports");
+    let graph = fixture.graph();
+    assert_eq!(
+        def(&graph, "spinner.js#spinWheel"),
+        &json!({
+            "id": "spinner.js#spinWheel",
+            "name": "spinWheel",
+            "namespace": "",
+            "kind": "function",
+            "file": "spinner.js",
+            "line": 1,
+            "methods": [],
+            "endLine": 3,
+            "local": true
+        })
+    );
+    assert_eq!(
+        bound_defs(&graph, "reader.js", 1, "spinner.js"),
+        ids(&["spinner.js#spinWheel"])
+    );
+    assert_eq!(
+        edge_count(&graph, "call", "reader.js", 5, "spinner.js#spinWheel"),
+        1
+    );
+    let refs = fixture.ok(&["refs", "spinWheel"]);
+    assert!(refs.contains("reader.js:1  import"), "{refs}");
+    assert!(refs.contains("reader.js:5  call"), "{refs}");
+}
+
+#[test]
+fn default_import_local_ac_2_clause_form_binds_the_def() {
+    let fixture = fresh("default-imports");
+    let graph = fixture.graph();
+    assert_eq!(
+        def(&graph, "dial.ts#dialReading"),
+        &json!({
+            "id": "dial.ts#dialReading",
+            "name": "dialReading",
+            "namespace": "",
+            "kind": "function",
+            "file": "dial.ts",
+            "line": 1,
+            "methods": [],
+            "endLine": 3
+        })
+    );
+    assert_eq!(
+        bound_defs(&graph, "reader.js", 2, "dial.ts"),
+        ids(&["dial.ts#dialReading"])
+    );
+    assert_eq!(
+        edge_count(&graph, "call", "reader.js", 5, "dial.ts#dialReading"),
+        1
+    );
+    let refs = fixture.ok(&["refs", "dialReading"]);
+    assert!(refs.contains("reader.js:2  import"), "{refs}");
+    assert!(refs.contains("reader.js:5  call"), "{refs}");
+}
+
+#[test]
+fn default_import_local_ac_3_barrels_and_namespace_members_reach_the_def() {
+    let fixture = fresh("default-imports");
+    let graph = fixture.graph();
+    let spinner = "spinner.js#spinWheel";
+    let dial = "dial.ts#dialReading";
+    assert_eq!(
+        bound_defs(&graph, "barrel-default.js", 1, "spinner.js"),
+        ids(&[spinner])
+    );
+    assert_eq!(
+        bound_defs(&graph, "barrel-consumer.ts", 1, "spinner.js"),
+        ids(&[spinner])
+    );
+    assert_eq!(
+        bound_defs(&graph, "barrel-bare.js", 1, "dial.ts"),
+        ids(&[dial])
+    );
+    assert_eq!(
+        bound_defs(&graph, "barrel-consumer.ts", 2, "dial.ts"),
+        ids(&[dial])
+    );
+    for target in [spinner, dial] {
+        assert_eq!(
+            edge_count(&graph, "call", "barrel-consumer.ts", 5, target),
+            1
+        );
+        assert_eq!(edge_count(&graph, "call", "namespace.js", 5, target), 1);
+    }
+}
+
+#[test]
+fn default_import_local_ac_4_access_by_the_local_name_stays_file_private() {
+    let fixture = fresh("default-imports");
+    let graph = fixture.graph();
+    let local = "spinner.js#spinWheel";
+    for edge in graph["edges"].as_array().unwrap() {
+        if edge["from_file"] == "private-reader.js" || edge["from_file"] == "private-barrel.js" {
+            assert_ne!(edge["to"], local, "{edge}");
+            assert!(!edge["bound_defs"]
+                .as_array()
+                .is_some_and(|ids| ids.iter().any(|id| id == local)));
+        }
+    }
+    let refs = fixture.ok(&["refs", "spinWheel"]);
+    assert!(!refs.contains("private-reader.js"), "{refs}");
+
+    let fixture = fresh("components");
+    let graph = fixture.graph();
+    assert_eq!(def(&graph, "tideChart.tsx#TideChart")["local"], true);
+    for edge in graph["edges"].as_array().unwrap() {
+        assert_ne!(edge["to"], "tideChart.tsx#TideChart", "{edge}");
+    }
+    let refs = fixture.ok(&["refs", "TideChart"]);
+    assert!(refs.contains("0 inbound"), "{refs}");
+    assert!(!refs.contains("dock.tsx"), "{refs}");
+}
+
+#[test]
+fn default_import_local_ac_6_unchanged_index_gains_the_binding_on_its_next_map() {
+    let fixture = fresh("default-imports");
+    let dir = fixture.repo.join(".scout/graph");
+    fs::rename(
+        dir.join("fragments-v44.json"),
+        dir.join("fragments-v43.json"),
+    )
+    .unwrap();
+    fs::rename(
+        dir.join("fragments-index-v44.json"),
+        dir.join("fragments-index-v43.json"),
+    )
+    .unwrap();
+    fixture.ok(&["map", "."]);
+    assert!(dir.join("fragments-v44.json").exists());
+    assert!(dir.join("fragments-index-v44.json").exists());
+    assert!(!dir.join("fragments-v43.json").exists());
+    assert!(!dir.join("fragments-index-v43.json").exists());
+    let cache = fs::read_to_string(dir.join("fragments-v44.json")).unwrap();
+    assert!(cache.contains("\"default\":\"dialReading\""), "{cache}");
+    let graph = fixture.graph();
+    assert_eq!(
+        bound_defs(&graph, "reader.js", 2, "dial.ts"),
+        ids(&["dial.ts#dialReading"])
+    );
+    assert_eq!(
+        edge_count(&graph, "call", "reader.js", 5, "dial.ts#dialReading"),
+        1
+    );
 }
 
 #[test]
@@ -398,18 +652,18 @@ fn file_scope_defs_ac_8_prior_cache_generation_reextracts() {
     let fixture = fresh("mixed");
     let dir = fixture.repo.join(".scout/graph");
     fs::rename(
-        dir.join("fragments-v43.json"),
+        dir.join("fragments-v44.json"),
         dir.join("fragments-v33.json"),
     )
     .unwrap();
     fs::rename(
-        dir.join("fragments-index-v43.json"),
+        dir.join("fragments-index-v44.json"),
         dir.join("fragments-index-v33.json"),
     )
     .unwrap();
     fixture.ok(&["map", "."]);
-    assert!(dir.join("fragments-v43.json").exists());
-    assert!(dir.join("fragments-index-v43.json").exists());
+    assert!(dir.join("fragments-v44.json").exists());
+    assert!(dir.join("fragments-index-v44.json").exists());
     assert!(!dir.join("fragments-v33.json").exists());
     assert!(!dir.join("fragments-index-v33.json").exists());
     assert_eq!(def(&fixture.graph(), "main.js#localFn")["local"], true);
@@ -418,7 +672,7 @@ fn file_scope_defs_ac_8_prior_cache_generation_reextracts() {
 #[test]
 fn file_scope_defs_ac_8_invalid_local_cache_value_reextracts() {
     let fixture = fresh("mixed");
-    let cache = fixture.repo.join(".scout/graph/fragments-v43.json");
+    let cache = fixture.repo.join(".scout/graph/fragments-v44.json");
     let text = fs::read_to_string(&cache).unwrap();
     assert!(text.contains("\"local\":true"));
     fs::write(

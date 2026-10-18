@@ -138,7 +138,7 @@ fn qualified_path_tokens_ac_6_a_prior_generation_cache_is_re_extracted() {
     // fails the moment the generation bump is reverted.
     let reused = temp_dir("qualified-path-tokens-current-generation-cache");
     fs::create_dir_all(graph_dir(&reused)).unwrap();
-    plant_cache_pair(&reused, &stale, index, "-v43");
+    plant_cache_pair(&reused, &stale, index, "-v44");
     let reused_graph = rebuild(&reused);
     assert!(
         edge_targets(&reused_graph, false).is_empty(),

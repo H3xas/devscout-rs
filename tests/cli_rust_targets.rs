@@ -287,8 +287,8 @@ fn an_unchanged_map_reuses_everything() {
     let artifacts = [
         "graph/graph.json",
         "manifest.json",
-        "graph/fragments-v43.json",
-        "graph/fragments-index-v43.json",
+        "graph/fragments-v44.json",
+        "graph/fragments-index-v44.json",
         "graph/rust-crates.json",
     ];
     let before: Vec<Vec<u8>> = artifacts

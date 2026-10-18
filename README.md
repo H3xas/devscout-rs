@@ -92,8 +92,11 @@ and the targets the compiler-fact path is qualified on in
 indexed for `find` and file purposes and graphed with imports (tsconfig `paths` and re-export
 barrels), calls, JSX usage and dispatch. `refs`, `read`, `impact` and `tests` read those edges for
 TypeScript and JavaScript alike. File-scope declarations, including declarations in a top-level
-IIFE body, are indexed even without an export. Their references resolve within the same file only;
-an exported definition wins a bare-name tie. JavaScript query quality is not measured.
+IIFE body, are indexed even without an export. Their references resolve within the same file only,
+except that a default import binds a declaration its file names in `export default <name>` or
+`export { <name> as default }`. The declaration keeps `"local": true`, so access by its own name
+from another file stays unbound. An exported definition wins a bare-name tie. JavaScript query
+quality is not measured.
 
 **Angular templates** (`.html`) are read for the components that name them. Each member of an
 exported `@Component({...})` class gets a name row. A member read in the component's

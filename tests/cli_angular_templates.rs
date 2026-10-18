@@ -544,17 +544,17 @@ fn angular_templates_ac_8_a_template_edit_is_seen_by_the_next_map() {
 fn angular_templates_ac_8_an_earlier_cache_generation_is_not_read() {
     let fx = Fixture::build("ac8-generation");
     let graph_dir = fx.repo.join(".scout/graph");
-    let current = graph_dir.join("fragments-v43.json");
+    let current = graph_dir.join("fragments-v44.json");
     let cached = fs::read_to_string(&current).expect("current cache");
     assert!(
         cached.contains("\"html\":1"),
         "templates are cached as their own shape"
     );
-    let index = fs::read_to_string(graph_dir.join("fragments-index-v43.json")).unwrap();
+    let index = fs::read_to_string(graph_dir.join("fragments-index-v44.json")).unwrap();
     fs::write(graph_dir.join("fragments-v41.json"), &cached).unwrap();
     fs::write(graph_dir.join("fragments-index-v41.json"), &index).unwrap();
     fs::remove_file(&current).unwrap();
-    fs::remove_file(graph_dir.join("fragments-index-v43.json")).unwrap();
+    fs::remove_file(graph_dir.join("fragments-index-v44.json")).unwrap();
 
     let out = fx.expect_ok(&["map", "."]);
     assert!(out.contains("graph rebuilt"), "{out}");

@@ -157,7 +157,15 @@ fn ts_reexport_entry(stmt: Node, src: &[u8]) -> Option<TsReexport> {
 
 fn ts_default_export_name(program_node: Node, src: &[u8]) -> Option<String> {
     for stmt in named_children(program_node) {
-        if stmt.kind() != "export_statement" || !is_default_export_statement(stmt) {
+        if stmt.kind() != "export_statement" {
+            continue;
+        }
+        if stmt.child_by_field_name("source").is_none() {
+            if let Some(name) = ts_fragment_forms::default_export_clause(stmt, src) {
+                return Some(name);
+            }
+        }
+        if !is_default_export_statement(stmt) {
             continue;
         }
         if let Some(decl) = stmt.child_by_field_name("declaration") {

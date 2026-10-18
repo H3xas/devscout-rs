@@ -35,6 +35,28 @@ pub(super) fn export_equals(stmt: Node, src: &[u8]) -> Option<String> {
     (value.kind() == "identifier").then(|| text(value, src))
 }
 
+// `export { Name as default }` publishes a local declaration under the
+// default export without the `default` token being a direct child of the
+// statement, so the statement-form reader never sees it.
+pub(super) fn default_export_clause(stmt: Node, src: &[u8]) -> Option<String> {
+    let clause = named_children(stmt)
+        .into_iter()
+        .find(|child| child.kind() == "export_clause")?;
+    for spec in named_children(clause) {
+        if spec.kind() != "export_specifier" {
+            continue;
+        }
+        let Some(name) = spec.child_by_field_name("name") else {
+            continue;
+        };
+        let exported = spec.child_by_field_name("alias").unwrap_or(name);
+        if text(exported, src) == "default" {
+            return Some(text(name, src));
+        }
+    }
+    None
+}
+
 pub(super) fn namespace_export(stmt: Node, src: &[u8]) -> Option<String> {
     let namespace = named_children(stmt)
         .into_iter()

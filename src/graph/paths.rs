@@ -232,6 +232,9 @@ pub fn transport_inputs_path(root: &Path) -> PathBuf {
 // v43 joins the v42 facts with the file-scope TS/JS declarations and local
 // references that v39 carried on its own. A cached v42 fragment has no local
 // declarations, and a cached v39 one has no v40-v42 facts, so neither is reused.
+// v44 moves how a default export binds: a cached v43 fragment of a file whose
+// `export { X as default }` clause names a local declaration carries no
+// `default` name, so a map reusing it would keep the importer unbound.
 // The rename IS the invalidation mechanism:
 // pre-bump caches stop being found, every file reparses
 // once, no reader carries version-compat logic. Writers delete every
@@ -345,6 +348,8 @@ pub(crate) const SUPERSEDED_CACHE_FILES: &[&str] = &[
     "fragments-index-v41.json",
     "fragments-v42.json",
     "fragments-index-v42.json",
+    "fragments-v43.json",
+    "fragments-index-v43.json",
 ];
 
 pub(crate) fn remove_superseded_caches(root: &Path) {
