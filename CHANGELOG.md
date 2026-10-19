@@ -27,8 +27,8 @@ describe the working tree.
   `template_unsupported` rows with six reasons and `stats.ts.template_unsupported_count`, both
   omitted when empty ([JSON output](docs/reference/json-output.md#angular-template-reads)).
   `.html` joins the walked extensions, so an `.html` file gets a manifest entry, counts in the
-  index digests and the export `fileCount`, and its edits are seen by the freshness check. The
-  fragment cache moves to `fragments-v42.json`, so an existing cache re-extracts once.
+  index digests and the export `fileCount`, and its edits are seen by the freshness check. This
+  slice used the `fragments-v42.json` cache generation, superseded by v44 in this release.
 
 - `devscout map` records the MassTransit transport configuration a C# repository states, and
   `devscout export` writes it as the `transport-address` family: bus transports and hosts,
@@ -41,8 +41,8 @@ describe the working tree.
   (`literal`, `constant`, `configuration` or `unknown` with a reason word), and each bus and
   address carries its broker scope. No queue name is derived from a formatter, and no
   publish-to-consume hop is built. The export's coverage table reads `extracted` for C#, and
-  the trailer counts the new family. The fragment cache moves to `fragments-v41.json`, so an
-  existing cache re-extracts once.
+  the trailer counts the new family. This slice used the `fragments-v41.json` cache generation,
+  superseded by v44 in this release.
 
 - `--pick all` on `refs`, `read`, `impact` and `tests` answers every candidate of an ambiguous
   seed in its own labelled section rather than refusing, and no section is merged with another.
@@ -85,16 +85,16 @@ describe the working tree.
   validates a stream without a build step.
 
 - House publish verbs with an unguarded dispatch root word now reach registered handlers in generic,
-  constructed and plain identifier argument calls. The fragment cache advances to v37 so unchanged
-  source files are re-extracted once for identifier-argument publish sites.
+  constructed and plain identifier argument calls. This slice used the `fragments-v37.json` cache
+  generation, superseded by v44 in this release.
 
 - TypeScript and JavaScript imports in a declared `node10`, `node16`, `nodenext` or `bundler`
   scope now follow package `type`, `main`, conditional `exports` and `imports`, npm/yarn/pnpm
   workspace names, and declared build-output mappings. Literal dynamic imports, import-equals,
   `export =` and namespace re-exports contribute their module bindings. `graph.json` discloses
-  unresolved imports and refused configuration; the fragment cache advances to v38, past the v37
-  above, and reparses once after upgrade. [Resolution rules](docs/reference/typescript-modules.md)
-  list the mode and syntax limits.
+  unresolved imports and refused configuration. This slice used the `fragments-v38.json` cache
+  generation, superseded by v44 in this release.
+  [Resolution rules](docs/reference/typescript-modules.md) list the mode and syntax limits.
 
 - Test files named `*.test.*` or `*.spec.*`, or placed below `__tests__`, are now classified by
   path for `.mts`, `.cts` and `.jsx` as well as `.ts`, `.tsx`, `.js`, `.mjs` and `.cjs`. The
@@ -105,7 +105,8 @@ describe the working tree.
   a bare-name tie, and an exact file-qualified id selects a local declaration. `find` now prints
   TS/JS declaration rows. `graph.json` and the fragment cache mark non-exported definitions with
   `"local": true`, while exported rows keep their earlier shape; `extract-dump` also lists local
-  declarations. The `fragments-v43.json` cache generation re-extracts unchanged files once.
+  declarations. This slice used the `fragments-v43.json` cache generation, superseded by v44 in
+  this release.
 - `devscout map` binds a default import of a TypeScript or JavaScript declaration. The file must
   name the declaration in `export default <name>` or `export { <name> as default }`. The importer's
   import row, calls, JSX uses and dispatch references then reach the declaration, including through
@@ -114,7 +115,7 @@ describe the working tree.
   `"local": true`. Named imports, named re-exports and access by its own name from another file
   stay unbound. The clause form `export { <name> as default }` exports the declaration, so its row
   omits `"local"`. An import by its own name binds it as for any exported definition. The
-  `fragments-v44.json` cache generation re-extracts unchanged files once.
+  fragment cache moves to `fragments-v44.json`, so an existing cache re-extracts once.
 
 ### Changed
 
@@ -142,8 +143,8 @@ describe the working tree.
 
 - An index belongs to one worktree at a time. A `map` records the worktree that published it, and a
   query from any other linked worktree answers `unknown` with reason `other-worktree` instead of
-  serving that index as `fresh`. Fragment reuse no longer crosses worktrees either, and the cache
-  generation moves on to `v36`, past both generations above.
+  serving that index as `fresh`. Fragment reuse no longer crosses worktrees either. This slice
+  used the `fragments-v36.json` cache generation, superseded by v44 in this release.
 - Freshness now compares content. The index records a SHA256 of the bytes it extracted for every
   indexed file and every configuration input it read, and validation hashes each candidate and
   compares. Size and modification time are budget estimates only. `changedFiles` counts files whose
@@ -241,9 +242,8 @@ describe the working tree.
   `Widgets./*c*/Widget` and `Widgets.` followed by a line break and `Widget` all read as
   `Widgets.Widget`. The raw source text used to reach the resolution ladder, match no def path, and
   drop a precise edge to a guess. A name whose subtree holds a parse error keeps its source text and
-  so binds nothing new. This first moved the fragment cache to the `fragments-v34.json` /
-  `fragments-index-v34.json` generation; the handler change below advances the release's current
-  cache to v35, so an existing cache re-extracts once.
+  so binds nothing new. This slice used the `fragments-v34.json` cache generation, superseded by
+  v44 in this release.
 
 - **An interpolated string argument binds an in-graph `[InterpolatedStringHandler]` parameter.** A call
   whose argument is written `$"…"` — regular, verbatim (`$@"…"`, `@$"…"`) or raw (`$"""…"""`), with or
@@ -254,8 +254,8 @@ describe the working tree.
   comparison still reads the argument as `string`: a string literal or a string-typed local against a
   handler parameter that declares no implicit conversion keeps the argument-type veto, an interpolated
   string against an unmarked in-graph parameter keeps it too, so the calls that bind an extension method
-  behind an instance overload taking a `StopContext` bind it as before. The fragment cache moves to
-  `fragments-v35.json`, so an existing cache re-extracts once.
+  behind an instance overload taking a `StopContext` bind it as before. This slice used the
+  `fragments-v35.json` cache generation, superseded by v44 in this release.
 
 - **A bare name a member's own declarations cannot vouch for at its use no longer takes a type.**
   Every name a `var (…)` deconstruction designates -- a local `var (a, b) = …`, nested
@@ -269,17 +269,17 @@ describe the working tree.
   over a generic type whose argument is a name (`foreach (Box<Item> x in xs)`), which the parser
   misreads, now declares its variable too. These rules apply to a call argument, whose type no
   longer vetoes the overload C# selects, and to a call receiver; a use inside its declaring
-  construct keeps the type it had. The fragment cache moves to `fragments-v40.json`, so an
-  existing cache re-extracts once.
+  construct keeps the type it had. This slice used the `fragments-v40.json` cache generation,
+  superseded by v44 in this release.
 
 - **A sent message in a method result, property or field type no longer admits a registered
   type's handler base.** A registered type's generic base joins the handler vocabulary only when
   the type declares a parameter of the sent message or binds it through a property. A member such
   as `Dictionary<OrderPlaced, TKey> Index<TKey>()` on a registered type no longer counts, so the
   wrong `bus-hop` edges to that type and to other carriers of its base go away. A method with a
-  verbatim name, such as `@event(OrderPlaced order)`, still counts. The fragment cache and the
-  graph schema do not change, so an existing `graph.json` keeps the wrong edges until a source
-  file changes or the graph is mapped again from a clean cache.
+  verbatim name, such as `@event(OrderPlaced order)`, still counts. The fix changes neither the
+  fragment format nor the graph schema. The release moves the fragment cache to
+  `fragments-v44.json`, so the first `map` after the upgrade rebuilds the graph.
 
 ## [0.9.0] - 2026-10-12
 
