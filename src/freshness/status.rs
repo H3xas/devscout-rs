@@ -167,8 +167,8 @@ mod tests {
         assert!(out.status.success(), "git {args:?}: {out:?}");
     }
 
-    // Commits the working tree the way the integration fixtures do -- never
-    // `git commit`, which would need an identity the test machine may not set.
+    // Commits the working tree the way the integration fixtures do. `commit-tree`
+    // still needs an identity, and a CI runner sets none, so `capture` supplies it.
     fn commit_all(dir: &Path) {
         git(dir, &["add", "-A"]);
         let tree = capture(dir, &["write-tree"]);
@@ -180,6 +180,10 @@ mod tests {
     fn capture(dir: &Path, args: &[&str]) -> String {
         let out = Command::new("git")
             .args(args)
+            .env("GIT_AUTHOR_NAME", "devscout-test")
+            .env("GIT_AUTHOR_EMAIL", "devscout-test@example.com")
+            .env("GIT_COMMITTER_NAME", "devscout-test")
+            .env("GIT_COMMITTER_EMAIL", "devscout-test@example.com")
             .current_dir(dir)
             .stdin(Stdio::null())
             .output()

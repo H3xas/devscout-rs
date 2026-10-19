@@ -417,6 +417,10 @@ mod tests {
         let git = |args: &[&str]| {
             let out = std::process::Command::new("git")
                 .args(args)
+                .env("GIT_AUTHOR_NAME", "devscout-test")
+                .env("GIT_AUTHOR_EMAIL", "devscout-test@example.com")
+                .env("GIT_COMMITTER_NAME", "devscout-test")
+                .env("GIT_COMMITTER_EMAIL", "devscout-test@example.com")
                 .current_dir(&dir)
                 .output()
                 .expect("git must be installed");
