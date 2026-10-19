@@ -436,6 +436,8 @@ mod tests {
         let tree = git(&["write-tree"]);
         let sha = git(&["commit-tree", &tree, "-m", "init"]);
         git(&["update-ref", "refs/heads/main", &sha]);
+        // `git init` names its first branch from configuration, which differs between machines.
+        git(&["symbolic-ref", "HEAD", "refs/heads/main"]);
 
         crate::mapcmd::map_repo(&dir, &scope, opts.clone()).unwrap();
 
