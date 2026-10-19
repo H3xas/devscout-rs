@@ -32,7 +32,7 @@ sha1 = "=0.11.0"
 # pinned tree-sitter runtime below and tree-sitter-c-sharp are a valid pair:
 # both implement/consume the same tree-sitter-language ABI, so there is no
 # version lock between them to satisfy beyond "recent enough".
-tree-sitter = "=0.27.0"
+tree-sitter = "=0.27.1"
 tree-sitter-c-sharp = "=0.23.5"
 # The TypeScript/JavaScript grammars, a second grammar set behind the same
 # seam. Both crates declare `tree-sitter-language` (^0.1) as their only
