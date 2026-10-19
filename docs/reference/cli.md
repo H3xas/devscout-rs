@@ -92,7 +92,7 @@ plumbing
   -h, --help                 show this help
   -V, --version              show the version
 
-docs: https://github.com/H3xas/devscout-rs/tree/v0.9.0/docs
+docs: https://github.com/H3xas/devscout-rs/tree/v0.10.0/docs
 ```
 
 ## Flags by verb
