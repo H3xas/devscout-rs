@@ -4,11 +4,13 @@
 use std::path::Path;
 use std::time::Instant;
 
+use crate::exit::{EXIT_FAILURE, EXIT_NO_RESULT, EXIT_OK, EXIT_USAGE};
 use crate::graph;
 use crate::manifest;
 use crate::query;
+use crate::usage::FIND_USAGE;
 
-use super::answer::{finish_query, EXIT_NO_RESULT};
+use super::answer::{begin_validation, finish_query};
 use super::root::require_repo;
 
 // Output caps: an uncapped find can dump the whole near-match pool (measured
@@ -34,10 +36,12 @@ pub(crate) fn cmd_find(cwd: &Path, query_str: &str, resources: bool) -> (i32, St
     let start = Instant::now();
     let root = match require_repo(cwd) {
         Ok(r) => r,
-        Err(e) => return (1, format!("error: {e}")),
+        Err(e) => return (EXIT_FAILURE, format!("error: {e}")),
     };
+    // One validation per invocation, opened before any index artifact is read.
+    begin_validation(&root, cwd);
     if query_str.is_empty() {
-        return (2, "usage: devscout find <query> [--resources]".to_string());
+        return (EXIT_USAGE, FIND_USAGE.to_string());
     }
     // The declaration block leads: a caller who named a member wants the site,
     // and the manifest block keeps its own tail line at the bottom where it
@@ -123,7 +127,7 @@ pub(crate) fn cmd_find(cwd: &Path, query_str: &str, resources: bool) -> (i32, St
             );
             finish_query(&root, "find", query_str, start, false, answer)
         }
-        Err(e) => (1, format!("error: {e}")),
+        Err(e) => (EXIT_FAILURE, format!("error: {e}")),
     }
 }
 
@@ -181,5 +185,10 @@ fn find_result_out(
     if let Some(line) = trailer {
         lines.push(line);
     }
-    (0, lines.join("\n"), query::Outcome::Hit, candidate_count)
+    (
+        EXIT_OK,
+        lines.join("\n"),
+        query::Outcome::Hit,
+        candidate_count,
+    )
 }

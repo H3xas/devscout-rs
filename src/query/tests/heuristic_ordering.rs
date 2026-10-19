@@ -1,5 +1,21 @@
 use super::*;
 
+pub(super) fn widget_def() -> graph::Def {
+    graph::Def {
+        id: "App.Core.Widget".into(),
+        name: "Widget".into(),
+        namespace: "App.Core".into(),
+        kind: "class".into(),
+        file: "Core/Widget.cs".into(),
+        line: 3,
+        methods: vec!["Render".to_string()],
+        test_methods: vec![],
+        also_in: vec![],
+        end_line: 0,
+        local: false,
+    }
+}
+
 fn stage4_impact_defs() -> Vec<graph::Def> {
     vec![
         widget_def(),

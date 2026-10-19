@@ -1,0 +1,106 @@
+{
+  "defs": [
+    {
+      "endLine": 5,
+      "file": "Widget.cs",
+      "id": "Demo.Widget",
+      "kind": "class",
+      "line": 2,
+      "name": "Widget",
+      "namespace": "Demo"
+    },
+    {
+      "endLine": 1,
+      "file": "a.ts",
+      "id": "a.ts#same",
+      "kind": "function",
+      "line": 1,
+      "name": "same",
+      "namespace": ""
+    },
+    {
+      "endLine": 2,
+      "file": "a.ts",
+      "id": "a.ts#many",
+      "kind": "function",
+      "line": 2,
+      "name": "many",
+      "namespace": ""
+    },
+    {
+      "endLine": 3,
+      "file": "a.ts",
+      "id": "a.ts#Config",
+      "kind": "class",
+      "line": 3,
+      "name": "Config",
+      "namespace": ""
+    },
+    {
+      "endLine": 1,
+      "file": "c.ts",
+      "id": "c.ts#many",
+      "kind": "function",
+      "line": 1,
+      "name": "many",
+      "namespace": ""
+    }
+  ],
+  "edges": [],
+  "manifest": {
+    "a.ts": {
+      "purpose": "class Config | function same | function many",
+      "source": "ast"
+    },
+    "b.ts": {
+      "purpose": "function same() {}",
+      "source": "ast-none"
+    },
+    "c.ts": {
+      "purpose": "function many",
+      "source": "ast"
+    },
+    "sub/deep.ts": {
+      "purpose": "function deepLocal() {}",
+      "source": "ast-none"
+    }
+  },
+  "queries": {
+    "impact Save": {
+      "exit": 3,
+      "stderr": "devscout impact: zero hits \u2014 the graph was searched and no affected file came back. Not an error; fall back to text search (rg/grep) rather than rephrasing.\n",
+      "stdout": "impact: Save  (symbol, seed files: Widget.cs)  hops<=2  0 files (showing 0)\naffected files: 0  shown: 0  dropped: 0\nfile  hops  via  top-symbols\n"
+    },
+    "read alone": {
+      "exit": 3,
+      "stderr": "devscout read: zero hits \u2014 the graph was searched and no symbol matched. Not an error; fall back to text search (rg/grep) rather than rephrasing.\n",
+      "stdout": "no symbol matches \"alone\"\n"
+    },
+    "read config": {
+      "exit": 0,
+      "stderr": "",
+      "stdout": "a.ts#Config  (class)  0 inbound (showing 0)\ndef: a.ts:3-3\nexport class Config {}\ninbound:\n  inherits (0):\n  uses-type (0):\n  uses-member (0):\nnext: devscout tests 'a.ts#Config' | devscout impact a.ts\n"
+    },
+    "read many": {
+      "exit": 1,
+      "stderr": "",
+      "stdout": "ambiguous symbol \"many\" \u2014 2 candidates:\na.ts#many  a.ts:2  function\nc.ts#many  c.ts:1  function\n"
+    },
+    "read same": {
+      "exit": 0,
+      "stderr": "",
+      "stdout": "a.ts#same  (function)  0 inbound (showing 0)\ndef: a.ts:1-1\nexport function same() {}\ninbound:\n  inherits (0):\n  uses-type (0):\n  uses-member (0):\nnext: devscout tests 'a.ts#same' | devscout impact a.ts\n"
+    },
+    "tests Save": {
+      "exit": 0,
+      "stderr": "",
+      "stdout": "tests for Demo.Widget  0 files (showing 0)\nno test references found\nnext: devscout impact Widget.cs\n"
+    }
+  },
+  "tsStats": {
+    "external_import_count": 0,
+    "ts_def_count": 4,
+    "ts_file_count": 4,
+    "unresolved_ref_count": 0
+  }
+}

@@ -1,4 +1,7 @@
-use crate::extract::{TsBinding, TsFragment, TsFragmentDef, TsImport, TsReexport, TsReexportName};
+use crate::extract::{
+    TsBinding, TsDynamicImport, TsFragment, TsFragmentDef, TsImport, TsReexport, TsReexportName,
+    TsRef,
+};
 use crate::graph::Edge;
 use crate::tsgraph::{resolve_ts_graph, TsAliasScopes};
 
@@ -13,12 +16,14 @@ fn file(defs: &[&str], imports: Vec<TsImport>, reexports: Vec<TsReexport>) -> Ts
                 kind: "function".into(),
                 line: i + 1,
                 end_line: i + 1,
+                local: false,
             })
             .collect(),
         imports,
         reexports,
         refs: Vec::new(),
         default: None,
+        ..TsFragment::default()
     }
 }
 
@@ -33,6 +38,7 @@ fn import(spec: &str, line: usize, bindings: &[(&str, &str)]) -> TsImport {
                 imported: (*imported).into(),
             })
             .collect(),
+        require: false,
     }
 }
 
@@ -48,6 +54,7 @@ fn reexport(spec: &str, line: usize, names: &[&str]) -> TsReexport {
                 imported: (*n).into(),
             })
             .collect(),
+        namespace: None,
     }
 }
 
@@ -110,6 +117,81 @@ fn consumer_imports(frags: &[(String, TsFragment)]) -> Vec<ImportSite> {
         .into_iter()
         .filter(|s| s.0 == "app/use.ts")
         .collect()
+}
+
+#[test]
+fn module_resolution_ac_5_export_equals_binds_import_equals_and_default() {
+    let mut source = file(&["Thing"], vec![], vec![]);
+    source.export_equals = Some("Thing".into());
+    let mut require = import("../lib/a", 1, &[("local", "*")]);
+    require.require = true;
+    let mut consumer = file(
+        &[],
+        vec![require, import("../lib/a", 2, &[("other", "default")])],
+        vec![],
+    );
+    consumer.refs.push(TsRef {
+        kind: "call".into(),
+        name: "local".into(),
+        member: None,
+        line: 3,
+    });
+    let fragments = vec![("lib/a.ts".into(), source), ("app/use.ts".into(), consumer)];
+    assert_eq!(
+        consumer_imports(&fragments),
+        vec![
+            site("app/use.ts", 1, "lib/a.ts", None, &["lib/a.ts#Thing"]),
+            site("app/use.ts", 2, "lib/a.ts", None, &["lib/a.ts#Thing"]),
+        ]
+    );
+    assert!(resolve_ts_graph(&fragments, &TsAliasScopes::default())
+        .edges
+        .iter()
+        .any(|edge| { matches!(edge, Edge::Call { to, .. } if to == "lib/a.ts#Thing") }));
+}
+
+#[test]
+fn module_resolution_ac_5_namespace_reexport_reaches_member() {
+    let mut namespace = reexport("./a", 1, &[]);
+    namespace.star = false;
+    namespace.namespace = Some("ns".into());
+    let mut consumer = file(
+        &[],
+        vec![import("../lib/index", 1, &[("ns", "ns")])],
+        vec![],
+    );
+    consumer.refs.push(TsRef {
+        kind: "call".into(),
+        name: "ns".into(),
+        member: Some("alpha".into()),
+        line: 2,
+    });
+    let fragments = vec![
+        ("lib/a.ts".into(), file(&["alpha"], vec![], vec![])),
+        ("lib/index.ts".into(), file(&[], vec![], vec![namespace])),
+        ("app/use.ts".into(), consumer),
+    ];
+    assert!(resolve_ts_graph(&fragments, &TsAliasScopes::default())
+        .edges
+        .iter()
+        .any(|edge| { matches!(edge, Edge::Call { to, .. } if to == "lib/a.ts#alpha") }));
+}
+
+#[test]
+fn module_resolution_ac_5_literal_dynamic_import_emits_an_import_edge() {
+    let mut consumer = file(&[], vec![], vec![]);
+    consumer.dynamic_imports.push(TsDynamicImport {
+        spec: "../lib/a".into(),
+        line: 2,
+    });
+    let fragments = vec![
+        ("lib/a.ts".into(), file(&[], vec![], vec![])),
+        ("app/use.ts".into(), consumer),
+    ];
+    assert_eq!(
+        consumer_imports(&fragments),
+        vec![site("app/use.ts", 2, "lib/a.ts", None, &[])]
+    );
 }
 
 #[test]

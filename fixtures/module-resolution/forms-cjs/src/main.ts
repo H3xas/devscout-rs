@@ -1,0 +1,12 @@
+import equal = require('./target');
+import absent = require('./missing');
+const whole = require('./target');
+import chosen from './target';
+const lazy = import('./target');
+const variable = './target';
+const unknown = import(variable);
+equal();
+whole();
+chosen();
+void lazy;
+void unknown;

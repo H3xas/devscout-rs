@@ -6,11 +6,18 @@ exactly one other input moves. Separate from `fixtures/csharp-context/` so this 
 project layout (several independent, sibling probe projects) never touches that fixture's five
 CI-diffed snapshots.
 
-None of the JSON under `pairs/` is regenerated or diffed by CI: every pair is generated once,
-locally, and committed as-is (the same "locally-generated, non-CI-regenerated" precedent this
-repository already used for cross-SDK evidence). `tests/context_fingerprint_pairs.rs` checks every
-pair offline, with no .NET toolchain, the same way `tests/context_envelope.rs` checks the sibling
-fixture.
+None of the JSON here is regenerated or diffed by CI: every pair is generated once, locally, and
+committed as-is (the same "locally-generated, non-CI-regenerated" precedent this repository already
+used for cross-SDK evidence). `tests/context_fingerprint_pairs.rs` checks every pair offline, with
+no .NET toolchain, the same way `tests/context_envelope.rs` checks the sibling fixture.
+
+These files are exempt from `tools/dotnet-snapshots.py`: the class-5 pair's whole subject is that
+two installed SDKs stamp different `versions` and register different MSBuild installs, the
+class-1 pair's is that two builds of one reference DLL carry different content hashes, and the
+class-7 pair's is that a dependency's own fingerprint moves -- so regenerating them would delete
+the evidence rather than refresh a capture. The `ac4/` pair is likewise static: two identities of
+one project kept side by side. `tools/scout-semantic/README.md` classifies every committed oracle
+snapshot the reproduction rule covers and every one it exempts.
 
 ## Projects
 

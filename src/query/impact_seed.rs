@@ -5,7 +5,7 @@
 use super::impact::SeedKind;
 use super::index::GraphIndex;
 use super::member::{self, MemberCandidate, MemberSeedResolution};
-use super::symbol::{resolve_symbol, Resolution};
+use super::symbol::{resolve_local_symbol, resolve_symbol, Resolution};
 
 /// Whether `arg` looks like a file path rather than a symbol query: a bare
 /// simple/qualified name with no path separator or file extension is a symbol
@@ -63,8 +63,18 @@ fn member_fallback(index: &GraphIndex, arg: &str, not_found_kind: SeedKind) -> S
             ids: vec![id],
         },
         MemberSeedResolution::Ambiguous(candidates) => SeedResolution::MemberAmbiguous(candidates),
-        MemberSeedResolution::NotFound => SeedResolution::NotFound {
-            kind: not_found_kind,
+        MemberSeedResolution::NotFound => match resolve_local_symbol(index, arg) {
+            Resolution::Resolved(id) => SeedResolution::Resolved {
+                kind: SeedKind::Symbol,
+                ids: vec![id],
+            },
+            Resolution::Ambiguous(ids) => SeedResolution::Ambiguous {
+                kind: SeedKind::Symbol,
+                ids,
+            },
+            Resolution::NotFound => SeedResolution::NotFound {
+                kind: not_found_kind,
+            },
         },
     }
 }
@@ -76,6 +86,12 @@ fn member_fallback(index: &GraphIndex, arg: &str, not_found_kind: SeedKind) -> S
 /// path under [`looks_like_file_path`], so it is tried on a file-path MISS
 /// instead: that branch never resolved a type before, so nothing changes.
 pub fn resolve_impact_seed(index: &GraphIndex, arg: &str) -> SeedResolution {
+    if index.by_id.contains_key(arg) {
+        return SeedResolution::Resolved {
+            kind: SeedKind::Symbol,
+            ids: vec![arg.to_string()],
+        };
+    }
     if looks_like_file_path(arg) {
         return match index.by_file.get(arg) {
             Some(ids) if !ids.is_empty() => SeedResolution::Resolved {

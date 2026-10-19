@@ -1,6 +1,7 @@
 //! CLI coverage for the `.mjs`/`.cjs`/`.mts`/`.cts` module suffixes: the files
-//! they let a map discover, the imports they resolve to, the queries an
-//! all-`.mjs` repository answers, and the JavaScript test-path rule.
+//! they let a map discover, the imports they resolve to, the queries a
+//! repository mixing every module suffix answers, and the JavaScript
+//! test-path rule.
 //!
 //! Fixture: `fixtures/module-extensions` (its README lists every declaration,
 //! reference form and near miss the repository carries).
@@ -329,8 +330,8 @@ fn module_extensions_ac_2_resolves_relative_imports_to_the_new_suffixes() {
 }
 
 #[test]
-fn module_extensions_ac_3_answers_every_query_on_an_all_mjs_repository() {
-    let fx = Fixture::build("all-mjs");
+fn module_extensions_ac_3_answers_every_query_on_the_mixed_module_repository() {
+    let fx = Fixture::build("mixed");
 
     assert!(
         fx.map_stdout.contains("mapped 31 files"),
@@ -402,7 +403,7 @@ fn module_extensions_ac_3_answers_every_query_on_an_all_mjs_repository() {
 
     let impact = fx.json(&["impact", MONEY, "--hops", "1", "--json"]);
     assert_eq!(impact["totalAffected"], 16);
-    assert_eq!(impact["testsAffected"], 9);
+    assert_eq!(impact["testsAffected"], 11);
 }
 
 /// `(file, lines, via, why)` of every `tests` row.
@@ -449,11 +450,13 @@ fn module_extensions_ac_4_vouches_javascript_test_paths_and_nothing_near_them() 
         path_row("src/core/money.spec.mjs", [1, 4]),
         path_row("src/core/money.test.cjs", [1, 4]),
         path_row("src/core/money.test.js", [1, 4]),
+        path_row("src/core/money.test.jsx", [1, 4]),
         path_row("src/core/money.test.mjs", [3, 6]),
+        path_row("src/core/money.test.mts", [1, 4]),
     ];
     assert_eq!(test_rows(&tests), expected);
-    assert_eq!(tests["testFileCount"], 9);
-    assert_eq!(tests["refCount"], 18);
+    assert_eq!(tests["testFileCount"], 11);
+    assert_eq!(tests["refCount"], 22);
     assert_eq!(tests["heuristicFileCount"], 0);
 
     let refs = fx.json(&["refs", "total", "--all", "--json"]);
@@ -464,8 +467,6 @@ fn module_extensions_ac_4_vouches_javascript_test_paths_and_nothing_near_them() 
         .map(|r| r["file"].as_str().unwrap().to_string())
         .collect();
     for not_a_test in [
-        "src/core/money.test.jsx",
-        "src/core/money.test.mts",
         "src/naming/Total.TEST.mjs",
         "src/core/__tests__x/check.mjs",
         "src/case/__Tests__/check.mjs",
@@ -478,7 +479,7 @@ fn module_extensions_ac_4_vouches_javascript_test_paths_and_nothing_near_them() 
     }
 
     let impact = fx.json(&["impact", MONEY, "--hops", "1", "--json"]);
-    assert_eq!(impact["testsAffected"], 9);
+    assert_eq!(impact["testsAffected"], 11);
     let affected: Vec<String> = impact["rows"]
         .as_array()
         .unwrap()

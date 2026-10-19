@@ -15,8 +15,8 @@ use super::refs::{
     record_base_list, record_single_type, registration_fact, type_parameter_names,
 };
 use super::text::{
-    declared_name, format_segments, named_children, namespace_level_types, new_parser, text,
-    type_kind_label, type_segment_parts, SegmentParts,
+    declared_name, format_segments, named_children, namespace_level_types, new_parser, path_text,
+    text, type_kind_label, type_segment_parts, SegmentParts,
 };
 use super::type_arity_facts::stamp_written_type_args;
 use super::type_defs::{record_enum_members, record_type_def, record_using};
@@ -41,7 +41,7 @@ fn walk_list<'a>(
         if node.kind() == "file_scoped_namespace_declaration" {
             let name = node
                 .child_by_field_name("name")
-                .map(|n| text(n, src))
+                .map(|n| path_text(n, src))
                 .unwrap_or_default();
             ns = if ns.is_empty() {
                 name
@@ -83,7 +83,7 @@ fn walk<'a>(
         "namespace_declaration" => {
             let name = node
                 .child_by_field_name("name")
-                .map(|n| text(n, src))
+                .map(|n| path_text(n, src))
                 .unwrap_or_default();
             let new_ns = if ns.is_empty() {
                 name
@@ -610,6 +610,7 @@ pub fn extract(source: &str) -> Extraction {
         registrations: Vec::new(),
         publishes: Vec::new(),
         handler_registrations: Vec::new(),
+        transport: Vec::new(),
     };
     walk_list(
         named_children(root),
@@ -621,6 +622,7 @@ pub fn extract(source: &str) -> Extraction {
     );
 
     out.purpose = format_segments(purpose_parts);
+    out.transport = crate::transport::sites(source, root, src);
 
     out
 }

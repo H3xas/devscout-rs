@@ -21,6 +21,7 @@ never touch the network.
 | Show the declaration and everything that points at it | `devscout read OrderService.Place` |
 | What can break if I change this file or symbol? | `devscout impact src/OrderRepository.cs` |
 | Which tests reach this symbol? | `devscout tests OrderService` |
+| Give another tool every fact about this repository | `devscout export` |
 
 Add `--json` for a versioned, machine-readable answer
 ([JSON output](docs/reference/json-output.md)). Every command and flag:
@@ -47,7 +48,7 @@ $ devscout init --no-hooks
 devscout initialized at ...
 languages: ...
 hooks: skipped (--no-hooks)
-map: mapped 14 files under . (preserved 0 agent purposes, downgraded 0 changed, 14 new, 0 removed, 14 ast signatures); graph rebuilt in ... (24 defs, 4 edges)
+map: mapped 14 files under . (preserved 0 agent purposes, downgraded 0 changed, 14 new, 0 removed, 14 ast signatures); graph rebuilt in ... (30 defs, 7 edges)
 
 $ devscout refs IOrderRepository
 Shop.Data.IOrderRepository  (interface)  1 inbound (showing 1)
@@ -75,7 +76,8 @@ Under `--json` the totals arrive as table fields and the suggestions as a `next`
 no `--json` shape.
 
 Run `devscout map` after edits; only changed files are re-parsed. An ambiguous name lists every
-candidate, and `--pick N` chooses one ([Concepts](docs/concepts.md#seeds)).
+candidate: `--pick N` answers the nth one, and `--pick all` answers each in its own section
+([Concepts](docs/concepts.md#seeds)).
 
 ## Language support
 
@@ -89,7 +91,21 @@ and the targets the compiler-fact path is qualified on in
 **TypeScript and JavaScript** (`.ts`, `.tsx`, `.mts`, `.cts`, `.js`, `.jsx`, `.mjs`, `.cjs`) are
 indexed for `find` and file purposes and graphed with imports (tsconfig `paths` and re-export
 barrels), calls, JSX usage and dispatch. `refs`, `read`, `impact` and `tests` read those edges for
-TypeScript and JavaScript alike; JavaScript query quality is not measured.
+TypeScript and JavaScript alike. File-scope declarations, including declarations in a top-level
+IIFE body, are indexed even without an export. Their references resolve within the same file only,
+except that a default import binds a declaration its file names in `export default <name>` or
+`export { <name> as default }`. Only the statement form `export default <name>` keeps the
+declaration `"local": true`. Access by its own name from another file stays unbound. The clause
+form `export { <name> as default }` exports the declaration, so its row omits `"local"`. An import
+by its own name binds it as for any exported definition. An exported definition wins a bare-name
+tie. JavaScript query quality is not measured.
+
+**Angular templates** (`.html`) are read for the components that name them. Each member of an
+exported `@Component({...})` class gets a name row. A member read in the component's
+`templateUrl` file or inline `template` becomes a `uses-member` edge from the template line, so
+`refs <member>` lists the template lines that read it. TypeScript member reads (`this.x` in a
+class) are not indexed, and the `refs` answer prints a note that says so
+([Angular templates](docs/explanation/resolution.md#angular-templates)).
 
 **Rust** (`.rs`) is indexed and graphed through path resolution: modules, `use` scope, calls,
 type uses, trait impls and `#[test]` functions, with no method-call typing
@@ -123,6 +139,7 @@ with a one-line marker. The index works the same without them.
 | Understand the graph, edges, tiers and seeds | [Concepts](docs/concepts.md) |
 | Look up a command, flag or variable | [Reference](docs/README.md#reference) |
 | Enrich C# with compiler-verified facts | [Compiler facts](docs/guides/compiler-facts.md) |
+| Read the whole fact set as a versioned stream | [Fact export](docs/reference/fact-export.md) |
 | Connect impact across repositories | [Cross-repo impact](docs/guides/cross-repo-impact.md) |
 | Upgrade from an earlier version | [Upgrading](docs/guides/upgrading.md) |
 | Fix a stale, empty or ambiguous answer | [Troubleshooting](docs/guides/troubleshooting.md) |

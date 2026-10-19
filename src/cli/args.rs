@@ -3,6 +3,7 @@
 // `--hub-max-indegree` all use, `--no-guess`, and the `--json`/`--compact`
 // conflict check.
 
+use crate::exit::EXIT_FAILURE;
 use crate::query;
 
 // The first non-flag argument -- the symbol `refs`/`read`/`tests` take.
@@ -29,20 +30,33 @@ pub(crate) fn first_positional(args: &[String]) -> Option<&str> {
     None
 }
 
-// `--pick <n>`, shared by `refs`/`read`/`impact`/`tests`: a strict positive
-// integer (unlike `--hops`'s lenient `parse_int_js` -- a candidate index is
-// never "close enough"). `Ok(None)` when the flag is absent, `Err(())` on a
-// missing, non-numeric, or zero value, which every call site turns into its
-// own usage error. Range-checking against the actual candidate count is the
-// caller's job: that count is only known once resolution has already
-// answered `MemberAmbiguous`.
-pub(crate) fn parse_pick(args: &[String]) -> Result<Option<usize>, ()> {
+// What a `--pick` value asks for: one candidate by its one-based number, or
+// every candidate of the same seed, each answered in its own section.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Pick {
+    Nth(usize),
+    All,
+}
+
+// `--pick <n|all>`, shared by `refs`/`read`/`impact`/`tests`: a strict
+// positive integer (unlike `--hops`'s lenient `parse_int_js` -- a candidate
+// index is never "close enough"), or exactly `all`. `Ok(None)` when the flag
+// is absent. `Err(())` on a missing, non-numeric, or zero value, and on every
+// other word -- `All` and `ALL` included, because one spelling keeps the flag
+// a closed set a caller can read off the usage line. Every call site turns
+// that into its own usage error, before the graph is read. Range-checking
+// against the actual candidate count is the caller's job: that count is only
+// known once resolution has already answered with its candidate list.
+pub(crate) fn parse_pick(args: &[String]) -> Result<Option<Pick>, ()> {
     let Some(idx) = args.iter().position(|a| a == "--pick") else {
         return Ok(None);
     };
     let raw = args.get(idx + 1).map(String::as_str).unwrap_or("");
+    if raw == "all" {
+        return Ok(Some(Pick::All));
+    }
     match raw.parse::<usize>() {
-        Ok(n) if n >= 1 => Ok(Some(n)),
+        Ok(n) if n >= 1 => Ok(Some(Pick::Nth(n))),
         _ => Err(()),
     }
 }
@@ -95,7 +109,7 @@ pub(crate) fn output_flags(verb: &str, args: &[String]) -> Result<(bool, bool), 
     let compact = args.iter().any(|a| a == "--compact");
     if json && compact {
         return Err((
-            1,
+            EXIT_FAILURE,
             format!("devscout {verb}: --compact and --json are mutually exclusive"),
         ));
     }

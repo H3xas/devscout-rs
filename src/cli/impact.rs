@@ -6,25 +6,30 @@
 use std::path::Path;
 use std::time::Instant;
 
+use crate::exit::{EXIT_FAILURE, EXIT_NO_RESULT, EXIT_OK, EXIT_USAGE};
 use crate::graph;
 use crate::query;
 use crate::render;
+use crate::usage::IMPACT_USAGE;
 
 use super::answer::{
-    ambiguous_candidates_out, fallback_advised_out, finish_query, member_ambiguous_out,
-    with_next_trailer, EXIT_NO_RESULT,
+    ambiguous_candidates_out, begin_validation, fallback_advised_out, finish_query,
+    member_ambiguous_out, with_next_trailer,
 };
-use super::args::{index_options, output_flags, parse_int_js, parse_pick};
+use super::args::{index_options, output_flags, parse_int_js, parse_pick, Pick};
 use super::root::{repo_relative_arg, require_graph, require_repo_for_path};
-
-const IMPACT_USAGE: &str = "usage: devscout impact <file|symbol> [--hops N] [--no-iface] [--no-guess] [--no-dispatch] [--no-bus] [--no-imports] [--iface-max-fanin N] [--hub-max-indegree N] [--pick N] [--json|--compact]";
+use super::sections::{self, SectionAnswer};
 
 /// The output flags the resolved answer reads, gathered so the answer builder
-/// takes one value rather than three positional booleans.
+/// takes one value rather than three positional booleans. `Copy` because the
+/// per-candidate builder behind a `--pick` narrowing reads the same flags for
+/// every section.
+#[derive(Clone, Copy)]
 struct ImpactFlags {
     json: bool,
     compact: bool,
     no_imports: bool,
+    no_iface: bool,
 }
 
 /// The numeric/positional argument parse `cmd_impact` needs before it can
@@ -35,12 +40,12 @@ struct ImpactArgs<'a> {
     hops: u32,
     iface_max_fanin: usize,
     hub_max_indegree: usize,
-    pick: Option<usize>,
+    pick: Option<Pick>,
     query: &'a str,
 }
 
 fn parse_impact_args(args: &[String]) -> Result<ImpactArgs<'_>, (i32, String)> {
-    let usage_err = || (2, IMPACT_USAGE.to_string());
+    let usage_err = || (EXIT_USAGE, IMPACT_USAGE.to_string());
 
     let mut hops: u32 = query::DEFAULT_HOPS;
     if let Some(idx) = args.iter().position(|a| a == "--hops") {
@@ -134,11 +139,14 @@ pub(crate) fn cmd_impact(cwd: &Path, args: &[String]) -> (i32, String) {
         json,
         compact,
         no_imports: args.iter().any(|a| a == "--no-imports"),
+        no_iface: args.iter().any(|a| a == "--no-iface"),
     };
     let root = match require_repo_for_path(cwd, Some(q)) {
         Ok(r) => r,
-        Err(e) => return (1, format!("error: {e}")),
+        Err(e) => return (EXIT_FAILURE, format!("error: {e}")),
     };
+    // One validation per invocation, opened before any index artifact is read.
+    begin_validation(&root, cwd);
     let q = repo_relative_arg(cwd, &root, q);
     let q = q.as_str();
     let g = match require_graph(&root) {
@@ -147,61 +155,145 @@ pub(crate) fn cmd_impact(cwd: &Path, args: &[String]) -> (i32, String) {
     };
     let index = query::load_graph_index_with(&g, &root, index_options(args));
 
-    let build = |seed: &str| {
-        query::build_impact_model(
-            &index,
-            seed,
-            hops,
-            query::DEFAULT_CAP,
-            !args.iter().any(|a| a == "--no-iface"),
-            iface_max_fanin,
-            hub_max_indegree,
-        )
+    let holds_iface = !args.iter().any(|a| a == "--no-iface");
+    // Same `--pick` narrowing rule `cmd_refs` applies: a `--pick` answer
+    // narrows one candidate of an ambiguous seed, and `--pick all` answers
+    // each in its own section. A type candidate starts from its def id rather
+    // than a seed spelling, because `looks_like_file_path` reads a dotted type
+    // id as a file path.
+    let build = query::build_impact_model(
+        &index,
+        q,
+        hops,
+        query::DEFAULT_CAP,
+        holds_iface,
+        iface_max_fanin,
+        hub_max_indegree,
+    );
+    let answer = match (pick, build) {
+        (Some(pick), query::ImpactResult::MemberAmbiguous(candidates)) => {
+            let picked = sections::narrow(
+                sections::Candidates::from_members(q, &candidates),
+                pick,
+                json,
+                IMPACT_USAGE,
+                |picked| {
+                    impact_candidate_out(
+                        &index,
+                        &root,
+                        q,
+                        picked,
+                        flags,
+                        hops,
+                        iface_max_fanin,
+                        hub_max_indegree,
+                    )
+                },
+            );
+            match picked {
+                Ok(a) => a,
+                Err(e) => return e,
+            }
+        }
+        (Some(pick), query::ImpactResult::Ambiguous { ids, .. }) => {
+            let picked = sections::narrow(
+                sections::Candidates::from_types(q, &index, &ids),
+                pick,
+                json,
+                IMPACT_USAGE,
+                |picked| {
+                    impact_candidate_out(
+                        &index,
+                        &root,
+                        q,
+                        picked,
+                        flags,
+                        hops,
+                        iface_max_fanin,
+                        hub_max_indegree,
+                    )
+                },
+            );
+            match picked {
+                Ok(a) => a,
+                Err(e) => return e,
+            }
+        }
+        (_, result) => impact_answer(&index, &root, q, result, flags),
     };
-    // Same `--pick` narrowing rule `cmd_refs` applies: only a `MemberAmbiguous`
-    // answer is ever re-resolved.
-    let result = match build(q) {
-        query::ImpactResult::MemberAmbiguous(candidates) => match pick {
-            Some(n) if n <= candidates.len() => build(&query::qualified_seed(&candidates[n - 1])),
-            Some(_) => return (2, IMPACT_USAGE.to_string()),
-            None => query::ImpactResult::MemberAmbiguous(candidates),
-        },
-        other => other,
-    };
+    finish_query(&root, "impact", q, start, json, answer.into_tuple())
+}
 
-    let answer = match result {
+/// One `--pick` candidate's `impact` answer.
+///
+/// Every candidate is walked as a single resolved SYMBOL seed, and the
+/// rendered answer echoes the seed the caller typed -- the same echo the
+/// query layer's own unique-type path produces, so a section and a `--pick
+/// <n>` answer are the same bytes.
+#[allow(clippy::too_many_arguments)]
+fn impact_candidate_out(
+    index: &query::GraphIndex,
+    root: &Path,
+    q: &str,
+    picked: &query::PickedSeed,
+    flags: ImpactFlags,
+    hops: u32,
+    iface_max_fanin: usize,
+    hub_max_indegree: usize,
+) -> SectionAnswer {
+    let model = query::pick_impact(
+        index,
+        picked,
+        hops,
+        query::DEFAULT_CAP,
+        !flags.no_iface,
+        iface_max_fanin,
+        hub_max_indegree,
+    );
+    impact_answer(index, root, q, model, flags)
+}
+
+/// The rendering AND telemetry facts for an `impact` answer.
+fn impact_answer(
+    index: &query::GraphIndex,
+    root: &Path,
+    q: &str,
+    result: query::ImpactResult,
+    flags: ImpactFlags,
+) -> SectionAnswer {
+    match result {
         query::ImpactResult::NotFound { kind } => {
             let (code, out) = fallback_advised_out(
                 q,
-                json,
+                flags.json,
                 format!("no {} match for \"{q}\"", render::seed_kind_str(kind)),
             );
-            (code, out, query::Outcome::FallbackAdvised, 0)
+            SectionAnswer::new(code, out, query::Outcome::FallbackAdvised, 0, Vec::new())
         }
         query::ImpactResult::Ambiguous { ids, .. } => {
             let count = ids.len();
-            let (code, out) = ambiguous_candidates_out(&index, q, &ids, json);
-            (code, out, query::Outcome::Ambiguous, count)
+            let (code, out) = ambiguous_candidates_out(index, q, &ids, flags.json);
+            SectionAnswer::new(code, out, query::Outcome::Ambiguous, count, Vec::new())
         }
         query::ImpactResult::MemberAmbiguous(candidates) => {
             let count = candidates.len();
-            let (code, out) = member_ambiguous_out(q, &candidates, json);
-            (code, out, query::Outcome::Ambiguous, count)
+            let (code, out) = member_ambiguous_out(q, &candidates, flags.json);
+            SectionAnswer::new(code, out, query::Outcome::Ambiguous, count, Vec::new())
         }
-        query::ImpactResult::Resolved(model) => resolved_out(&index, &root, q, &model, flags),
-    };
-    finish_query(&root, "impact", q, start, json, answer)
+        query::ImpactResult::Resolved(model) => resolved_out(index, root, q, &model, flags),
+    }
 }
 
 /// The resolved `impact` answer: the imported section when an import is
-/// configured, the rendered model, and the exit code the two together earn.
+/// configured, the rendered model, the exit code the two together earn, and
+/// the model's own suggestions.
 fn resolved_out(
     index: &query::GraphIndex,
     root: &Path,
     q: &str,
     model: &query::ImpactModel,
     flags: ImpactFlags,
-) -> (i32, String, query::Outcome, usize) {
+) -> SectionAnswer {
     // `--no-imports` answers exactly as if the artifact were absent -- it is
     // never even read, so this is the same "load nothing" path a repo with no
     // import configured always takes.
@@ -238,8 +330,8 @@ fn resolved_out(
     let imported_count = imported.as_ref().map_or(0, |(s, _)| s.rows.len());
     let count = model.rows.len() + imported_count;
     if count == 0 {
-        (EXIT_NO_RESULT, out, query::Outcome::ZeroHit, 0)
+        SectionAnswer::new(EXIT_NO_RESULT, out, query::Outcome::ZeroHit, 0, next)
     } else {
-        (0, out, query::Outcome::Hit, count)
+        SectionAnswer::new(EXIT_OK, out, query::Outcome::Hit, count, next)
     }
 }

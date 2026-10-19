@@ -1,0 +1,235 @@
+{
+  "cases": [
+    {
+      "category": "namespace-shadowing",
+      "edges": [
+        {
+          "target": "NegativeBinding.Shadow.Inner.Panel",
+          "tier": "precise"
+        }
+      ],
+      "id": "shadow-inner-namespace-type",
+      "outcome": "precise-correct"
+    },
+    {
+      "category": "namespace-shadowing",
+      "edges": [
+        {
+          "target": "NegativeBinding.Tools.Live.Seal",
+          "tier": "precise"
+        }
+      ],
+      "id": "shadow-namespace-member-over-using",
+      "outcome": "precise-wrong"
+    },
+    {
+      "category": "namespace-shadowing",
+      "edges": [
+        {
+          "target": "NegativeBinding.Tools.Live.Seal",
+          "tier": "precise"
+        }
+      ],
+      "id": "shadow-using-alias-over-directive",
+      "outcome": "precise-correct"
+    },
+    {
+      "category": "namespace-shadowing",
+      "edges": [
+        {
+          "target": "NegativeBinding.Tools.Gauge",
+          "tier": "precise"
+        }
+      ],
+      "id": "shadow-global-qualified-over-using",
+      "outcome": "precise-correct"
+    },
+    {
+      "category": "receiver-overload",
+      "edges": [
+        {
+          "target": "NegativeBinding.Overload.Sink",
+          "tier": "precise"
+        }
+      ],
+      "id": "receiver-declared-base-hides-new",
+      "outcome": "precise-correct"
+    },
+    {
+      "category": "receiver-overload",
+      "edges": [
+        {
+          "target": "NegativeBinding.Overload.Emitter",
+          "tier": "precise"
+        }
+      ],
+      "id": "receiver-virtual-override-declaring-type",
+      "outcome": "precise-correct"
+    },
+    {
+      "category": "receiver-overload",
+      "edges": [],
+      "id": "receiver-narrowed-by-as-cast",
+      "outcome": "absent"
+    },
+    {
+      "category": "receiver-overload",
+      "edges": [
+        {
+          "target": "NegativeBinding.Overload.IChannel",
+          "tier": "precise"
+        }
+      ],
+      "id": "receiver-interface-parameter",
+      "outcome": "precise-correct"
+    },
+    {
+      "category": "extension-instance",
+      "edges": [
+        {
+          "target": "NegativeBinding.Ext.Marker",
+          "tier": "precise"
+        }
+      ],
+      "id": "extension-instance-member-wins",
+      "outcome": "precise-correct"
+    },
+    {
+      "category": "extension-instance",
+      "edges": [
+        {
+          "target": "NegativeBinding.Ext.MeterExtensions",
+          "tier": "ext"
+        }
+      ],
+      "id": "extension-inapplicable-instance-member",
+      "outcome": "tiered"
+    },
+    {
+      "category": "extension-instance",
+      "edges": [],
+      "id": "extension-closer-namespace-wins",
+      "outcome": "absent"
+    },
+    {
+      "category": "extension-instance",
+      "edges": [
+        {
+          "target": "NegativeBinding.Ext.LoaderHooks",
+          "tier": "ext"
+        }
+      ],
+      "id": "extension-more-specific-receiver-wins",
+      "outcome": "tiered"
+    },
+    {
+      "category": "generic-binding",
+      "edges": [
+        {
+          "target": "NegativeBinding.Generics.Router",
+          "tier": "precise"
+        }
+      ],
+      "id": "generic-inferred-over-object",
+      "outcome": "precise-correct"
+    },
+    {
+      "category": "generic-binding",
+      "edges": [
+        {
+          "target": "NegativeBinding.Generics.RobotAssembler",
+          "tier": "precise"
+        }
+      ],
+      "id": "generic-base-hidden-by-derived-member",
+      "outcome": "precise-correct"
+    },
+    {
+      "category": "generic-binding",
+      "edges": [
+        {
+          "target": "NegativeBinding.Generics.Pairer",
+          "tier": "precise"
+        }
+      ],
+      "id": "generic-two-arity-inference",
+      "outcome": "precise-correct"
+    },
+    {
+      "category": "generic-binding",
+      "edges": [
+        {
+          "target": "NegativeBinding.Generics.Sorter",
+          "tier": "precise"
+        }
+      ],
+      "id": "generic-constraint-satisfying-over-object",
+      "outcome": "precise-correct"
+    },
+    {
+      "category": "negative",
+      "edges": [
+        {
+          "target": "NegativeBinding.Negative.Picker",
+          "tier": "precise"
+        }
+      ],
+      "id": "negative-ambiguous-numeric-overload",
+      "outcome": "precise-wrong"
+    },
+    {
+      "category": "negative",
+      "edges": [
+        {
+          "target": "NegativeBinding.Negative.Sender",
+          "tier": "precise"
+        }
+      ],
+      "id": "negative-ambiguous-no-applicable-overload",
+      "outcome": "precise-wrong"
+    },
+    {
+      "category": "negative",
+      "edges": [],
+      "id": "negative-inaccessible-private-method",
+      "outcome": "absent"
+    },
+    {
+      "category": "negative",
+      "edges": [
+        {
+          "target": "NegativeBinding.Negative.Locker",
+          "tier": "precise"
+        }
+      ],
+      "id": "negative-inaccessible-private-field",
+      "outcome": "precise-wrong"
+    }
+  ],
+  "contract": "csharp-negative-binding-observed-v1",
+  "totals": {
+    "byOutcome": [
+      {
+        "count": 11,
+        "outcome": "precise-correct"
+      },
+      {
+        "count": 4,
+        "outcome": "precise-wrong"
+      },
+      {
+        "count": 2,
+        "outcome": "tiered"
+      },
+      {
+        "count": 3,
+        "outcome": "absent"
+      }
+    ],
+    "cases": 20,
+    "negative": 4,
+    "preciseOnly": 11,
+    "recovered": 13,
+    "resolvable": 16
+  }
+}

@@ -1,0 +1,84 @@
+{
+  "defs": [
+    {
+      "endLine": 2,
+      "file": "source.ts",
+      "id": "source.ts#publicThing",
+      "kind": "function",
+      "line": 2,
+      "name": "publicThing",
+      "namespace": ""
+    }
+  ],
+  "edges": [
+    {
+      "from_file": "barrel.ts",
+      "from_line": 1,
+      "kind": "import",
+      "target": "./source",
+      "to_file": "source.ts"
+    },
+    {
+      "from_file": "common.js",
+      "from_line": 1,
+      "kind": "import",
+      "target": "./source",
+      "to_file": "source.ts"
+    },
+    {
+      "bound_defs": [
+        "source.ts#publicThing"
+      ],
+      "from_file": "consumer.ts",
+      "from_line": 1,
+      "kind": "import",
+      "target": "./source",
+      "to_file": "source.ts"
+    },
+    {
+      "from_file": "consumer.ts",
+      "from_line": 2,
+      "kind": "import",
+      "target": "./source",
+      "to_file": "source.ts"
+    },
+    {
+      "from_file": "consumer.ts",
+      "from_line": 3,
+      "kind": "import",
+      "target": "./source",
+      "to_file": "source.ts"
+    },
+    {
+      "from_file": "consumer.ts",
+      "from_line": 4,
+      "kind": "call",
+      "to": "source.ts#publicThing",
+      "to_file": "source.ts"
+    }
+  ],
+  "manifest": {
+    "barrel.ts": {
+      "purpose": "reexports hidden",
+      "source": "ast"
+    },
+    "common.js": {
+      "purpose": "const source = require('./source');",
+      "source": "ast-none"
+    },
+    "consumer.ts": {
+      "purpose": "import { hidden, publicThing } from './source';",
+      "source": "ast-none"
+    },
+    "source.ts": {
+      "purpose": "function publicThing | default hidden",
+      "source": "ast"
+    }
+  },
+  "tsStats": {
+    "external_import_count": 0,
+    "ts_def_count": 1,
+    "ts_file_count": 4,
+    "unresolved_ref_count": 4
+  }
+}

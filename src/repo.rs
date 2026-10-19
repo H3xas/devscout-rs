@@ -116,7 +116,7 @@ fn start_dir(start_path: &Path) -> PathBuf {
 
 /// Nearest ancestor of `start_path` containing a `.scout` entry, or `None`.
 pub fn find_scout_root(start_path: &Path) -> Option<PathBuf> {
-    climb(&start_dir(start_path), ".scout")
+    climb(&start_dir(start_path), crate::layout::FALLBACK_DIR)
 }
 
 /// Nearest ancestor of `start_path` containing a `.git` entry, or `None`. This
@@ -130,7 +130,7 @@ pub fn find_repo_root(start_path: &Path) -> Option<PathBuf> {
 
 /// The `.scout` directory for a repo at `root` -- `root.join(".scout")`. Never fails.
 pub fn scout_dir(root: &Path) -> PathBuf {
-    root.join(".scout")
+    root.join(crate::layout::FALLBACK_DIR)
 }
 
 /// Repo-relative path: resolves both paths, slices `abs_path` from
@@ -528,10 +528,10 @@ pub fn registry_path() -> PathBuf {
 fn default_registry_path() -> PathBuf {
     match env::var("HOME") {
         Ok(home) => PathBuf::from(home)
-            .join(".claude")
-            .join("scout")
-            .join("repos.json"),
-        Err(_) => PathBuf::from("repos.json"),
+            .join(crate::layout::AGENT_DIR)
+            .join(crate::layout::SCOUT_DIR)
+            .join(crate::layout::REGISTRY_FILE),
+        Err(_) => PathBuf::from(crate::layout::REGISTRY_FILE),
     }
 }
 

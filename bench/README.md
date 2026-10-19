@@ -8,6 +8,12 @@ here is wired into `cargo test`; it is run by hand, against a corpus pinned by S
 | `corpus.lock` | the pinned public corpora — repository, SHA, licence, status |
 | `clone-corpus.sh` | shallow-clones one locked corpus at its pin and removes `origin` |
 | `ts_parity.py`, `ts-parity.sh` | the TypeScript reference parity run: seed rule, truth, arm runner and scorer ([pre-registration](truth/typescript/preregistration.md)) |
+| `ts_resolution_sites.cjs` | TypeScript 5.9.3 truth for the import sites the extractor records |
+| `ts_resolution_envelope.py` | configuration-only site classification and base/head scoring ([registration](truth/module-resolution-2/preregistration.md)) |
+| `ts_resolution_envelope_report.py` | deterministic results with excluded sites and synthetic cases |
+| `test_ts_resolution_envelope.py`, `test_ts_resolution_envelope_report.py` | classifier, scorer and renderer checks |
+| `freshness-latency.sh` | what a query pays for certifying a dirty index, against the previous release at the same state |
+| `hook-latency.sh` | first-read offer latency against an identical read with the offer suppressed |
 | `peers/code-review-graph/` | the peer arm's hash-pinned requirements and its guarded install |
 
 ## Corpora
@@ -65,6 +71,34 @@ Cost without a model in the loop is payload bytes, reported as the proxy it is:
 
 `tokens = ceil(bytes / 4)`. Never place a byte-derived token figure in the same table as a
 harness per-agent counter figure from an agentic lane.
+
+## Freshness validation latency
+
+`freshness-latency.sh` measures the one cost a query pays that a `map` does not: certifying that
+the index still describes the working tree.
+
+```sh
+./bench/clone-corpus.sh typescript bench/clones/typescript
+sh bench/freshness-latency.sh bench/clones/typescript [baseline-binary]
+```
+
+Each arm gets its own state directory and its own copy of the clone. Two states are measured with
+`hyperfine --warmup 20 --runs 200` over `refs <seed> --json`: a clean tree, and a tree with the
+first 1,000 `.ts` files dirty at map time and 100 of them edited again afterwards. The script
+prints both arms' p95 for both states, the deltas, the dirty state's `freshness` object and the
+candidate byte total, and exits non-zero when a delta exceeds its budget or the dirty state does
+not answer `stale`.
+
+## Read-hook offer latency
+
+Run `sh bench/hook-latency.sh [binary]` to measure a release build on an isolated two-file C#
+fixture. Without a binary argument the harness builds the current branch. Each invocation gets
+a fresh session; preparation and output assertions run outside the timed command. Both arms
+use the same payload, and the suppressed arm changes one identifier on disk to another of the
+same length. A settle pass precedes the recorded `hyperfine --warmup 20 --runs 200` pass.
+The harness prints the environment, binary digest, distributions and verdict, and fails when
+an output assertion or a latency bound fails. Off-reference absolute latency is unbounded.
+Dated figures live in [the results index](../docs/benchmarks/README.md#results).
 
 ## Resolver precision (semantic oracle)
 

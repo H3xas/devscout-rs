@@ -1,0 +1,20 @@
+<section>
+  <p *ngIf="shown">visible</p>
+  <ul>
+    <li *ngFor="let row of rows;
+                trackBy: rowKey">{{ row }}</li>
+  </ul>
+  <b *appTint="tone">tinted</b>
+  <h3 [title]="caption">title</h3>
+  <span [attr.aria-label]="label">label</span>
+  <span [class.picked]="selected">class</span>
+  <div [style.width.px]="barWidth"></div>
+  <button (click)="save()">save</button>
+  <input [(ngModel)]="draft">
+  <p>{{ greeting }}</p>
+  <img alt="{{ altText }}">
+  <p>{{ account.owner.name }}</p>
+  <h2>{{ this.heading }}</h2>
+  <p>{{ 42 | currency:currencyCode }}</p>
+  <button (click)="remove(target)">remove</button>
+</section>

@@ -12,6 +12,7 @@ mod argument_compatibility;
 mod base_members;
 mod base_walk;
 mod bus;
+mod bus_reserved_param_keys;
 mod byte_identity;
 mod ctor_di;
 mod dispatch;
@@ -19,6 +20,7 @@ mod dotted_suffix;
 mod explicit_implementations;
 mod extension_generics;
 mod extension_tier;
+mod generic_receiver_path;
 mod graph_invariants;
 mod ladder;
 mod lambda_applicability;
@@ -26,11 +28,13 @@ mod lambda_parameters;
 mod level_walk_reach;
 mod member_hiding;
 mod member_qualifiers;
+mod member_scope;
 mod method_type_arity;
 mod nested_end_to_end;
 mod nested_step;
 mod project_admission;
 mod qualified_names;
+mod qualified_path_tokens;
 mod qualified_publish;
 mod qualified_receiver;
 mod receiver_hops;
@@ -206,6 +210,7 @@ fn frag(defs: Vec<FragDef>, usings: Vec<FragUsing>, refs: Vec<FragRef>) -> Fragm
         registrations: Vec::new(),
         publishes: Vec::new(),
         handler_registrations: Vec::new(),
+        transport: Vec::new(),
     }
 }
 

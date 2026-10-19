@@ -43,12 +43,26 @@
 //   "extension" (last `.` at index 0) and never matches `SOURCE_EXT`.
 // - **Nonexistent `dirs` scope elements are silently skipped**
 //   (`Path::exists()` is false -> no error).
+//
+// ## The ignore set
+//
+// In a Git root, an untracked path Git ignores is skipped before `SKIP_DIRS` is
+// even consulted: a scope element, a directory before it is read, and a file
+// before it is emitted. Tracked files are never in that set, so a checked-in
+// source under an ignored pattern stays indexed, and a root with no `.git`
+// entry walks by the fixed name list alone. See `ignored.rs` for the rule and
+// its fail-closed query.
+
+mod ignored;
+
+pub use ignored::{IgnoreQueryError, Ignored};
 
 use std::ffi::OsStr;
 use std::fs::{self, DirEntry};
 use std::io;
 use std::path::Path;
 
+use crate::layout;
 use crate::repo;
 
 /// Directory names skipped outright (and never recursed into), regardless
@@ -57,7 +71,7 @@ use crate::repo;
 pub const SKIP_DIRS: &[&str] = &[
     "node_modules",
     ".git",
-    ".scout",
+    layout::FALLBACK_DIR,
     "bin",
     "obj",
     "dist",
@@ -71,7 +85,7 @@ pub const SKIP_DIRS: &[&str] = &[
 /// file name onward.
 pub const SOURCE_EXT: &[&str] = &[
     ".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".mjs", ".cjs", ".cs", ".rs", ".json", ".md",
-    ".xaml", ".resw", ".resx",
+    ".xaml", ".resw", ".resx", ".html",
 ];
 
 /// Enumerates source files (`SOURCE_EXT`) under each scope directory.
@@ -79,10 +93,14 @@ pub const SOURCE_EXT: &[&str] = &[
 /// `root` must already be an absolute, normalized path (the caller's
 /// responsibility; root discovery always hands back an absolute path). Thin
 /// wrapper over `list_files_with_ext`; see that function for the full
-/// scope-resolution, ordering, symlink and error-propagation contract
-/// (identical here, just pinned to the source extension set).
-pub fn list_source_files(root: &Path, dirs: &[String]) -> io::Result<Vec<String>> {
-    list_files_with_ext(root, dirs, SOURCE_EXT)
+/// scope-resolution, ordering, symlink, ignore-set and error-propagation
+/// contract (identical here, just pinned to the source extension set).
+pub fn list_source_files(
+    root: &Path,
+    dirs: &[String],
+    ignored: &Ignored,
+) -> io::Result<Vec<String>> {
+    list_files_with_ext(root, dirs, SOURCE_EXT, ignored)
 }
 
 /// Enumerates files under each scope directory whose extension matches `exts`.
@@ -100,22 +118,40 @@ pub fn list_source_files(root: &Path, dirs: &[String]) -> io::Result<Vec<String>
 /// Returns `Err` and abandons the whole call on the first unreadable directory
 /// or non-directory scope element (see module docs). A nonexistent `dirs`
 /// scope element is silently skipped, not an error (also module docs).
-pub fn list_files_with_ext(root: &Path, dirs: &[String], exts: &[&str]) -> io::Result<Vec<String>> {
+///
+/// A path `ignored` covers is skipped as well: `dirs` elements and directories
+/// before they are read, files before they are emitted. An empty set skips
+/// nothing and costs nothing -- no relative path is computed for it.
+pub fn list_files_with_ext(
+    root: &Path,
+    dirs: &[String],
+    exts: &[&str],
+    ignored: &Ignored,
+) -> io::Result<Vec<String>> {
     let mut out = Vec::new();
     for d in dirs {
+        if d != "." && ignored.covers(d) {
+            continue;
+        }
         let abs = if d == "." {
             root.to_path_buf()
         } else {
             root.join(d)
         };
         if abs.exists() {
-            walk_with(root, &abs, exts, &mut out)?;
+            walk_with(root, &abs, exts, ignored, &mut out)?;
         }
     }
     Ok(out)
 }
 
-fn walk_with(root: &Path, dir: &Path, exts: &[&str], out: &mut Vec<String>) -> io::Result<()> {
+fn walk_with(
+    root: &Path,
+    dir: &Path,
+    exts: &[&str],
+    ignored: &Ignored,
+    out: &mut Vec<String>,
+) -> io::Result<()> {
     let mut entries: Vec<DirEntry> = fs::read_dir(dir)?.collect::<io::Result<Vec<_>>>()?;
     // Sort each directory's entries by name for a deterministic order (see
     // module docs). `OsStr`'s `Ord` is byte-wise UTF-8 comparison.
@@ -128,10 +164,16 @@ fn walk_with(root: &Path, dir: &Path, exts: &[&str], out: &mut Vec<String>) -> i
             if is_skip_dir(&name) {
                 continue;
             }
-            walk_with(root, &entry.path(), exts, out)?;
+            if is_ignored(root, &entry.path(), ignored) {
+                continue;
+            }
+            walk_with(root, &entry.path(), exts, ignored, out)?;
         } else if file_type.is_file() {
             let name_str = name.to_string_lossy();
             if exts.contains(&extension_of(&name_str)) {
+                if is_ignored(root, &entry.path(), ignored) {
+                    continue;
+                }
                 out.push(repo::rel_path(root, &entry.path()));
             }
         }
@@ -139,6 +181,12 @@ fn walk_with(root: &Path, dir: &Path, exts: &[&str], out: &mut Vec<String>) -> i
         // are silently skipped -- see module docs.
     }
     Ok(())
+}
+
+// The empty-set fast path: `repo::rel_path` resolves both paths, so it is only
+// worth computing when there is a set to test against.
+fn is_ignored(root: &Path, path: &Path, ignored: &Ignored) -> bool {
+    !ignored.is_empty() && ignored.covers(&repo::rel_path(root, path))
 }
 
 fn is_skip_dir(name: &OsStr) -> bool {
@@ -178,15 +226,21 @@ pub struct DefaultPurposeDetail {
 /// Decode is lossy so a strict UTF-8 read cannot drop real files carrying stray
 /// non-UTF-8 bytes (seen in the wild in comments).
 pub fn default_purpose_detailed(root: &Path, rel: &str) -> DefaultPurposeDetail {
-    let text = match fs::read(root.join(rel)) {
-        Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
-        Err(_) => {
-            return DefaultPurposeDetail {
-                text: String::new(),
-                is_comment: false,
-            }
-        }
-    };
+    match fs::read(root.join(rel)) {
+        Ok(bytes) => default_purpose_detailed_in(&String::from_utf8_lossy(&bytes)),
+        Err(_) => DefaultPurposeDetail {
+            text: String::new(),
+            is_comment: false,
+        },
+    }
+}
+
+/// [`default_purpose_detailed`] over bytes the caller already read.
+///
+/// A `map` that hashes a file derives its heuristic purpose from the same bytes
+/// the digest describes, instead of reading the file again.
+#[must_use]
+pub fn default_purpose_detailed_in(text: &str) -> DefaultPurposeDetail {
     for raw in text.split('\n').take(15) {
         // `char::is_whitespace` does not include U+FEFF (ZWNBSP/BOM), so a
         // BOM-prefixed first line would keep the BOM in the purpose text
@@ -329,7 +383,8 @@ mod tests {
         write_file(&root.join("src/node_modules/pkg/c.js"), "ignored");
         write_file(&root.join("src/bin/d.ts"), "ignored");
 
-        let mut files = list_source_files(&root, &["src".to_string()]).unwrap();
+        let mut files =
+            list_source_files(&root, &["src".to_string()], &Ignored::default()).unwrap();
         files.sort();
         assert_eq!(
             files,
@@ -347,7 +402,7 @@ mod tests {
         write_file(&root.join("target/debug/build/out.rs"), "ignored");
         write_file(&root.join("src/lib.rs.bak"), "ignored");
 
-        let mut files = list_source_files(&root, &[".".to_string()]).unwrap();
+        let mut files = list_source_files(&root, &[".".to_string()], &Ignored::default()).unwrap();
         files.sort();
         assert_eq!(
             files,
@@ -367,7 +422,8 @@ mod tests {
         write_file(&root.join("src/e.MJS"), "export const e = 1;\n");
         write_file(&root.join("src/f.mjsx"), "export const f = 1;\n");
 
-        let mut files = list_source_files(&root, &["src".to_string()]).unwrap();
+        let mut files =
+            list_source_files(&root, &["src".to_string()], &Ignored::default()).unwrap();
         files.sort();
         assert_eq!(
             files,
@@ -394,8 +450,14 @@ mod tests {
         write_file(&root.join("src/Z.cs"), "class Z {}\n");
         write_file(&root.join("src/bin/Skip.csproj"), "ignored");
 
-        let sources = list_source_files(&root, &["src".to_string()]).unwrap();
-        let csproj = list_files_with_ext(&root, &["src".to_string()], &[".csproj"]).unwrap();
+        let sources = list_source_files(&root, &["src".to_string()], &Ignored::default()).unwrap();
+        let csproj = list_files_with_ext(
+            &root,
+            &["src".to_string()],
+            &[".csproj"],
+            &Ignored::default(),
+        )
+        .unwrap();
 
         assert_eq!(
             sources,
@@ -409,7 +471,13 @@ mod tests {
         // Both extension sets in one pass come back in the same sorted
         // depth-first interleaving as the source-only and csproj-only lists
         // above, not grouped by extension.
-        let mixed = list_files_with_ext(&root, &["src".to_string()], &[".cs", ".csproj"]).unwrap();
+        let mixed = list_files_with_ext(
+            &root,
+            &["src".to_string()],
+            &[".cs", ".csproj"],
+            &Ignored::default(),
+        )
+        .unwrap();
         assert_eq!(
             mixed,
             vec![
@@ -499,7 +567,7 @@ mod tests {
         write_file(&root.join("bin2/kept.ts"), "kept");
         write_file(&root.join("bin/dropped.ts"), "dropped");
 
-        let files = list_source_files(&root, &[".".to_string()]).unwrap();
+        let files = list_source_files(&root, &[".".to_string()], &Ignored::default()).unwrap();
         assert_eq!(files, vec!["bin2/kept.ts".to_string()]);
 
         fs::remove_dir_all(&root).ok();
@@ -510,8 +578,12 @@ mod tests {
         let root = scratch_dir("nonexistent");
         write_file(&root.join("src/a.ts"), "x");
 
-        let files =
-            list_source_files(&root, &["src".to_string(), "does-not-exist".to_string()]).unwrap();
+        let files = list_source_files(
+            &root,
+            &["src".to_string(), "does-not-exist".to_string()],
+            &Ignored::default(),
+        )
+        .unwrap();
         assert_eq!(files, vec!["src/a.ts".to_string()]);
 
         fs::remove_dir_all(&root).ok();
@@ -530,7 +602,8 @@ mod tests {
             symlink(root.join("outside.ts"), root.join("linkfile.ts")).unwrap();
             symlink(root.join("does-not-exist"), root.join("broken.ts")).unwrap();
 
-            let mut files = list_source_files(&root, &[".".to_string()]).unwrap();
+            let mut files =
+                list_source_files(&root, &[".".to_string()], &Ignored::default()).unwrap();
             files.sort();
             assert_eq!(
                 files,
@@ -552,7 +625,7 @@ mod tests {
             write_file(&root.join("noperm/b.ts"), "x");
             fs::set_permissions(root.join("noperm"), fs::Permissions::from_mode(0o000)).unwrap();
 
-            let result = list_source_files(&root, &[".".to_string()]);
+            let result = list_source_files(&root, &[".".to_string()], &Ignored::default());
             assert!(result.is_err(), "expected an error, got {result:?}");
 
             // Restore perms so the scratch dir can be cleaned up.

@@ -14,17 +14,16 @@ use super::qualifiers::{member_name_text, resolve_member_qualifier, Scope};
 use super::refs::{
     base_type_identifier, invocation_arg_count, type_descriptor, type_parameter_names,
 };
-use super::text::{named_children, text};
+use super::text::{named_children, path_text};
 use super::types::{EnclosingCallFact, Fact, PublishRecord};
+use crate::bus_seed::{has_dispatch_root, is_publish_verb};
 
-// Verbs the local bus/mediator/scheduler stand-ins expose for handing a
-// message instance to another dispatch, checked on the invoked method's
-// bare name only -- the same shape-only rule `registration_fact` (refs.rs)
-// already applies to a DI registration call. Neither this list nor the rest
-// of this module validates the receiver's own declared type: a call this
-// shape-only test wrongly accepts simply earns no edge at the resolve
+// Which verbs count as a publish use the seed and its word rule, checked on the invoked
+// method's bare name only -- the same shape-only rule `registration_fact`
+// (refs.rs) already applies to a DI registration call. Neither that list nor
+// the rest of this module validates the receiver's own declared type: a call
+// this shape-only test wrongly accepts simply earns no edge at the resolve
 // layer, which needs a registered consumer before it builds one at all.
-const PUBLISH_VERBS: &[&str] = &["Publish", "PublishAsync", "SubmitJob", "Reply", "Send"];
 
 /// A publish-site fact for `function` when it is the callee of an
 /// invocation this module can read a message off. `function` must already
@@ -38,9 +37,9 @@ const PUBLISH_VERBS: &[&str] = &["Publish", "PublishAsync", "SubmitJob", "Reply"
 /// repository's own forwarding wrapper carries a name this engine cannot
 /// know in advance and the resolver is what decides which names its
 /// vocabulary ended up holding. The remaining shape, a plain identifier
-/// argument, stays gated on `PUBLISH_VERBS`: it is by far the most common
-/// call shape in any codebase, and recording every one of them would cost
-/// fragment bytes out of all proportion to the wrappers it would find.
+/// argument, stays gated on the seed's publish verbs and dispatch roots: it is by far the most
+/// common call shape in any codebase, and recording every one of them would
+/// cost fragment bytes out of all proportion to the wrappers it would find.
 pub(super) fn publish_fact(
     function: Node,
     ns: &str,
@@ -50,10 +49,12 @@ pub(super) fn publish_fact(
 ) -> Option<PublishRecord> {
     let name_node = function.child_by_field_name("name")?;
     let verb = member_name_text(Some(name_node), src)?;
-    let known_verb = PUBLISH_VERBS.contains(&verb.as_str());
+    let known_verb = is_publish_verb(&verb);
     let message = match named_message(function, name_node, src, &scope.type_params) {
         Some(message) => message,
-        None if known_verb => identifier_message(function, src, type_stack, scope)?,
+        None if known_verb || has_dispatch_root(&verb) => {
+            identifier_message(function, src, type_stack, scope)?
+        }
         None => return None,
     };
     // A message that is the enclosing METHOD's own type parameter is not a
@@ -356,9 +357,9 @@ fn implicit_array_message(node: Node, src: &[u8], type_params: &HashSet<String>)
 // A message type as the call writes it: `type_descriptor`'s rendering, with
 // the written qualifier kept in front when the type, under any nullable or
 // array wrapper, is a qualified name (`Ns.M`, `Ns.M[]`, `Outer.Inner`,
-// `Ns.Batch<M>`). The qualifier is rebuilt from its own tokens with the
-// trivia between them left out -- whitespace, line breaks, comments and any
-// other extra node -- so every call shape that reaches here names the same
+// `Ns.Batch<M>`). The qualifier is rebuilt through `text::path_text`, the
+// one token-path helper every extractor site that records a dotted name
+// shares, so every call shape that reaches here names the same
 // segments the same way: the resolver splits a message at its last dot, and
 // `Ns./*c*/M` or `Ns . M` would otherwise reach it as `/*c*/M` or ` M`.
 // `type_descriptor` drops the qualifier because method parameters and
@@ -374,31 +375,10 @@ fn written_message(node: Option<Node>, src: &[u8], type_params: &HashSet<String>
     let qualifier = core
         .filter(|n| n.kind() == "qualified_name")
         .and_then(|n| n.child_by_field_name("qualifier"))
-        .map(|q| {
-            let mut out = String::new();
-            push_tokens(q, src, &mut out);
-            out
-        });
+        .map(|q| path_text(q, src));
     match qualifier {
         Some(qualifier) => format!("{qualifier}.{rendered}"),
         None => rendered,
-    }
-}
-
-// Appends the source text of every token under `node`, in order, skipping
-// extra nodes (comments, preprocessor lines) and the whitespace between
-// tokens, which never belongs to a token.
-fn push_tokens(node: Node, src: &[u8], out: &mut String) {
-    if node.is_extra() {
-        return;
-    }
-    if node.child_count() == 0 {
-        out.push_str(&text(node, src));
-        return;
-    }
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        push_tokens(child, src, out);
     }
 }
 

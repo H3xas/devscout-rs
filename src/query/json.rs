@@ -785,6 +785,7 @@ pub(super) fn imported_section_fields(
 // Split into their own sibling modules to keep this file under its flat line
 // limit -- see `json/tests_model.rs`'s own doc comment.
 mod next;
+pub(crate) mod sections;
 mod tests_model;
 pub(crate) use next::{
     impact_model_to_json_with_imports_and_next, impact_model_to_json_with_next,

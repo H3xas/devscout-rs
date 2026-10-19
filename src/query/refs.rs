@@ -14,7 +14,7 @@ use super::refs_tables::{
     ambiguous_row, build_table, cap_rows, edge_loc, loc_cmp, row_tier, AmbiguousTables, InboundRow,
     InboundTables, OutboundTables, Table, TsTables, SOURCE_MAX,
 };
-use super::symbol::{resolve_symbol, Resolution};
+use super::symbol::{resolve_local_symbol, resolve_symbol, Resolution};
 use super::symbol_refs::symbol_refs;
 
 /// The resolved `refs` result for one symbol.
@@ -166,10 +166,10 @@ pub(super) fn line_has_token(line: &str, token: &str) -> bool {
     false
 }
 
-// The two non-empty outcomes of `build_member_refs_models`: a plain models
+// The two non-empty outcomes of `member_refs_from_owners`: a plain models
 // array, or an ambiguity -- more than one declaring type surviving edge-line
 // verification is reported, never turned into several models.
-enum MemberRefsOutcome {
+pub(super) enum MemberRefsOutcome {
     Models(Vec<RefsModel>),
     Ambiguous(Vec<MemberCandidate>),
 }
@@ -212,7 +212,14 @@ fn verified_member_edges(
                 .map(|&e| (e, true)),
         )
         .collect();
+    // A template line can hold a local named like another member of the same
+    // component, so a TypeScript owner's rows also match the member each
+    // template edge names. A C# owner keeps the line check alone.
+    let by_member = crate::parse::ts_grammar_for(&owner_def.file).is_some();
     kept.retain(|&(e, _)| {
+        if by_member && edge_member(&edges[e]) != Some(name) {
+            return false;
+        }
         let (file, line) = edge_loc(&edges[e]);
         line_has_token(&cached_line(&index.root, file, line, cache), name)
     });
@@ -223,6 +230,13 @@ fn verified_member_edges(
             .then_with(|| loc_cmp(&edges[a.0], &edges[b.0]))
     });
     kept
+}
+
+fn edge_member(edge: &graph::Edge) -> Option<&str> {
+    match edge {
+        graph::Edge::UsesMember { member, .. } => member.as_deref(),
+        _ => None,
+    }
 }
 
 fn empty_table<R>() -> Table<R> {
@@ -318,6 +332,22 @@ fn build_member_refs_models(
 ) -> Option<MemberRefsOutcome> {
     let (name, qualifier) = member::split_member_seed(seed);
     let owners = member::qualified_member_owners(index, name, qualifier);
+    member_refs_from_owners(index, seed, name, owners, inbound_cap)
+}
+
+// The answer for an ALREADY RESOLVED owner set: `build_member_refs_models`
+// hands it the owners a typed seed's qualifier admits, and a caller holding
+// one chosen candidate hands it that one owner. Splitting the two apart here
+// is what lets a `--pick` candidate answer through the very same
+// verification, ranking, budget and grouping the typed seed runs -- the only
+// difference between the two callers is which owners they resolved.
+pub(super) fn member_refs_from_owners(
+    index: &GraphIndex,
+    seed: &str,
+    name: &str,
+    owners: Vec<(String, Vec<DefSite>)>,
+    inbound_cap: usize,
+) -> Option<MemberRefsOutcome> {
     if owners.is_empty() {
         return None;
     }
@@ -429,15 +459,17 @@ pub(super) fn build_refs_model_inner(
         // member still answers as the type. `out` has no member reading (a
         // type's outbound edges are the type's answer, not the member's) and is
         // ignored here.
-        Resolution::NotFound => {
-            return match build_member_refs_models(index, query, inbound_cap) {
-                Some(MemberRefsOutcome::Models(models)) => RefsResult::Members(models),
-                Some(MemberRefsOutcome::Ambiguous(candidates)) => {
-                    RefsResult::MemberAmbiguous(candidates)
-                }
-                None => RefsResult::NotFound,
-            };
-        }
+        Resolution::NotFound => match build_member_refs_models(index, query, inbound_cap) {
+            Some(MemberRefsOutcome::Models(models)) => return RefsResult::Members(models),
+            Some(MemberRefsOutcome::Ambiguous(candidates)) => {
+                return RefsResult::MemberAmbiguous(candidates)
+            }
+            None => match resolve_local_symbol(index, query) {
+                Resolution::Resolved(id) => id,
+                Resolution::Ambiguous(ids) => return RefsResult::Ambiguous(ids),
+                Resolution::NotFound => return RefsResult::NotFound,
+            },
+        },
     };
     let def_idx = *index
         .by_id

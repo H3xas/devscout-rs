@@ -71,6 +71,7 @@ pub fn append_rust(graph: &mut Graph, fragments: &[(String, RsFragment)]) {
                 test_methods,
                 also_in: Vec::new(),
                 end_line: item.end_line,
+                local: false,
             });
             graph.names.push(GraphName {
                 name: item.name.clone(),
@@ -190,6 +191,7 @@ mod tests {
             test_methods: Vec::new(),
             also_in: Vec::new(),
             end_line: 3,
+            local: false,
         });
         g.stats.def_count = 1;
         g.stats.file_count = 1;

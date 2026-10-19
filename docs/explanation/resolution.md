@@ -79,8 +79,14 @@ in-tree `JsonSerializer`, and `expr.Member.Name` does not bind a nested type nam
 `Outer.Inner` still reaches `Outer+Inner`, `Box<string>.Slot` and `global::App.Widget` are read as
 the def paths they spell, `Derived.Item` reaches an `Item` declared inside a base of `Derived`, and
 a `using` alias at the head of a dotted name is rewritten to its target and looked up exactly. A
-text that several def paths end with stays ambiguous. The scored `guess` tier is unchanged, so a
-foreign dotted qualifier can still carry a tagged heuristic edge.
+receiver declared with a qualified generic type (`Widgets.Box<int> b`) takes that same
+exact-qualified step with its final segment's type-argument list removed, held to the argument
+count the declaration recorded or, with none recorded, to the count the written list carries, so
+it binds what the non-generic twin `Widgets.Gadget g` binds. Only the final segment's list comes
+off, because a nested type's id joins its container with `+` and a dot-joined candidate can never
+name one: a list on an earlier segment, an alias-qualified path, an unbalanced or empty list keeps
+the lookup verbatim. A text that several def paths end with stays ambiguous. The scored `guess`
+tier is unchanged, so a foreign dotted qualifier can still carry a tagged heuristic edge.
 
 ## Nested-type qualifiers
 
@@ -155,17 +161,74 @@ guide](../guides/compiler-facts.md#consuming-an-admitted-artifact).
 
 ## TypeScript imports
 
-Import specifiers resolve through the `paths` and `baseUrl` of the nearest `tsconfig.json` above the
-file (its `extends` chain included; a nested config that declares neither falls back to the root
-chain), and through re-export barrels up to eight hops deep, with the barrel the source names kept
-as `via` on the edge.
+TypeScript and JavaScript file-scope declarations, including declarations in a top-level IIFE body,
+become definitions even when they are not exported. Calls, JSX tags and dispatch references to
+those definitions resolve within the same file only, except for one binding. A default import
+binds a definition that its file names in `export default <name>` or `export { <name> as default }`,
+including through a default re-export barrel and through `ns.default`. Only the statement form
+`export default <name>` keeps the definition `"local": true`. A named import, a named re-export and
+a namespace member that use its own name bind it no more than before. The clause form
+`export { <name> as default }` exports the definition, so its row omits `"local"`. An import by its
+own name binds it as for any exported definition. A bare name shared by an exported definition and
+a file-local definition resolves to the exported one; an exact `<file>#<name>` id can name the
+local definition. Manifest purposes still describe exports only.
 
-**TypeScript references cover imports, calls, JSX tags and dispatches only.** A type annotation,
-an `extends`/`implements` clause, a value passed as an argument, a member reached through a chain or
-a local (`store.total()`), and a dynamic `import()` record no edge. A named re-export of a name its
-target module only re-exports again binds no definition. A package imported by name resolves only
-through the repository's own `tsconfig` `paths`/`baseUrl`, so a monorepo importing its own packages
-by package name leaves those imports external. JavaScript answers are read but not measured.
+Import specifiers use the owning `tsconfig.json` chain's `paths`, `baseUrl` and declared
+`moduleResolution`, then the package and workspace rules that mode selects. A nested config that
+declares no mode can inherit one from an ancestor. The resolver reads `package.json` format and
+entry points, conditional `exports` and `imports`, and npm, yarn or pnpm workspace members by name.
+It maps a declared build output to its source only through `outDir` with `rootDir` or `composite`.
+Node16 and nodenext ESM imports require an extension and forbid a directory import; bundler and
+node10 allow extensionless relatives. A declaration of `classic` or no mode retains the earlier
+resolution. A rejected configuration input is disclosed instead of supplying guessed package
+facts. The [mode table and reason vocabulary](../reference/typescript-modules.md) give the exact
+scope. Re-export barrels are followed up to eight hops, with the named barrel kept as `via`.
+
+**TypeScript references cover imports, calls, JSX tags and dispatches only.** A literal dynamic
+`import()` now records its module edge, as do import-equals and namespace re-exports. A non-literal
+dynamic import is counted without an edge. `require('name')` is recorded only as the direct
+initializer of a top-level, non-exported variable declaration; a nested or standalone `require`
+call is not. A type annotation, an `extends`/`implements` clause, a value passed as an argument,
+a member reached through a chain or a local (`store.total()`) still records no reference edge.
+A named re-export of a name its target module only re-exports again binds no definition. Packages
+outside the repository's workspace and aliases remain external. JavaScript query answers are read
+but have not had a separate query-level parity measurement. Editing configuration alone does not
+re-resolve the existing graph; run `map` again.
+
+## Angular templates
+
+A component is a class in a `.ts` file with a `@Component({...})` decorator. The decorator is
+matched on the identifier `Component`, and its argument must be an object literal. Each field, get
+or set accessor, method and constructor parameter property of an exported component class is a
+name row. Its kind is `field`, `property` or `method`, and its owner is the class def id
+`file#Class`. A static member gets no row.
+
+The template is the `templateUrl` file or the inline `template` string. A `templateUrl` is read
+relative to the component file's directory, with or without `./`, and `../` is allowed. Both
+values must be one plain string literal. An external template is its own graph source, so an edit
+to only the `.html` file is seen by the next `map`. An inline template counts its lines from the
+line where its string starts.
+
+The scanner reads `*ngIf`, `*ngFor` and other structural directives, `[x]`, `[attr.x]`,
+`[class.x]`, `[style.x]`, `(x)`, `[(x)]`, and `{{ }}` in text and in plain attribute values. The
+root identifier of each expression is the read: `user.profile.name` reads `user`, `this.x` reads
+`x`, and a pipe name is not a read. A read of a member is a precise `uses-member` edge from the
+template line to the component class.
+
+Template locals hide a member with the same name. A `#ref` covers the whole template. The locals
+of a structural directive and `let-x` on `ng-template` cover the host element and its children.
+`$event` covers its own event binding.
+
+A site the index cannot bind is a `template_unsupported` row in graph.json, with one of six
+reasons: `control-flow-block`, `unparsed-expression`, `template-url-unresolved`,
+`template-url-non-literal`, `unknown-member` and `inline-template-substitution`
+([JSON output](../reference/json-output.md#angular-template-reads)). A built-in control flow block
+gives a row on the line that opens it, and its body is still scanned without the block's locals.
+A member inherited from a base class is an `unknown-member` row, because the base is not followed.
+
+TypeScript member reads are not indexed. A `refs` member answer whose owner is a TypeScript class
+prints a note that its rows are Angular template reads only, and `--json` carries
+`memberReads`.
 
 ## Rust paths
 

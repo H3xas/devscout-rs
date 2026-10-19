@@ -27,6 +27,36 @@ kind = "web"
 status = "registered"
 note = "Pinned at tag 22.5.4 (2026-08-25). Sized for the web kind; first measured by the TypeScript reference parity run (docs/benchmarks/results/2026-10-11-typescript-reference-parity.md)."
 
+[typescript-module-node16]
+id = "typescript-module-node16"
+repo = "microsoft/pyright"
+url = "https://github.com/microsoft/pyright.git"
+sha = "f2e1a5344576ae07730fcca2c4497a9453a7ab11"
+license = "MIT"
+kind = "web"
+status = "registered"
+note = "Node16 module resolution fixture, packages/pyright-internal."
+
+[typescript-module-nodenext]
+id = "typescript-module-nodenext"
+repo = "nestjs/schematics"
+url = "https://github.com/nestjs/schematics.git"
+sha = "0fb879d759ce6effa73ce43ab703d7c772e8c5e6"
+license = "MIT"
+kind = "web"
+status = "registered"
+note = "NodeNext module resolution fixture, src/lib."
+
+[typescript-module-bundler]
+id = "typescript-module-bundler"
+repo = "vitejs/vite"
+url = "https://github.com/vitejs/vite.git"
+sha = "928e721b36690ac0f3f118290a21fc0cc4349055"
+license = "MIT"
+kind = "web"
+status = "registered"
+note = "Bundler module resolution fixture, packages/vite."
+
 [csharp-target-held-out]
 id = "csharp-target-held-out"
 repo = "serilog/serilog"

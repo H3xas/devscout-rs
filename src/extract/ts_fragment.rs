@@ -1,11 +1,13 @@
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
 
 use tree_sitter::Node;
 
 use super::text::{named_children, text, truncate};
+use super::ts_file_scope::{file_scope_decls, local_defs, require_spec, ts_decl_kind, TsDecl};
+use super::ts_fragment_forms;
 use super::ts_fragment_types::{
-    TsBinding, TsFragment, TsFragmentDef, TsImport, TsReexport, TsReexportName, TsRef,
+    TsBinding, TsDynamicImport, TsFragment, TsFragmentDef, TsImport, TsReexport, TsReexportName,
+    TsRef,
 };
 use super::ts_purpose::{
     common_js_export_target, compose_hybrid_ts_purpose, is_default_export_statement,
@@ -105,23 +107,17 @@ fn ts_import_bindings(stmt: Node, src: &[u8]) -> Vec<TsBinding> {
     out
 }
 
-// A bare `export * from 'm'` carries no names and is marked `star`. `export *
-// as NS from 'm'` binds a namespace OBJECT under NS -- resolving `NS.member`
-// through it would be a second hop past the one level the resolver follows,
-// so it contributes its import edge and no name mapping (neither `star` nor
-// any `names` entry).
+// A bare `export * from 'm'` carries no names and is marked `star`.
 fn ts_reexport_entry(stmt: Node, src: &[u8]) -> Option<TsReexport> {
     let spec = ts_string_literal(stmt.child_by_field_name("source"), src)?;
     let line = ts_line(stmt);
-    if named_children(stmt)
-        .iter()
-        .any(|c| c.kind() == "namespace_export")
-    {
+    if let Some(namespace) = ts_fragment_forms::namespace_export(stmt, src) {
         return Some(TsReexport {
             spec,
             line,
             star: false,
             names: Vec::new(),
+            namespace: Some(namespace),
         });
     }
     let Some(clause) = named_children(stmt)
@@ -133,6 +129,7 @@ fn ts_reexport_entry(stmt: Node, src: &[u8]) -> Option<TsReexport> {
             line,
             star: true,
             names: Vec::new(),
+            namespace: None,
         });
     };
     let mut names = Vec::new();
@@ -154,93 +151,21 @@ fn ts_reexport_entry(stmt: Node, src: &[u8]) -> Option<TsReexport> {
         line,
         star: false,
         names,
+        namespace: None,
     })
-}
-
-// The kind vocabulary is `TS_BUCKET_ORDER` so a TS def row reads
-// the same way a TS purpose segment does. `default` is not among them: a
-// default export keeps the kind of what it declares, and the file records the
-// local name it exported by default separately.
-fn ts_decl_kind(node: Node) -> Option<&'static str> {
-    match node.kind() {
-        "class_declaration" | "abstract_class_declaration" => Some("class"),
-        "function_declaration" | "generator_function_declaration" => Some("function"),
-        "interface_declaration" => Some("interface"),
-        "type_alias_declaration" => Some("type"),
-        "enum_declaration" => Some("enum"),
-        "lexical_declaration" | "variable_declaration" => Some("const"),
-        _ => None,
-    }
-}
-
-#[derive(Debug, Clone)]
-struct TsDecl {
-    kind: &'static str,
-    line: usize,
-    end_line: usize,
-}
-
-// Every top-level declaration with the line its NAME is declared on, whether
-// exported or not: `export { A }` names a local declaration that was written
-// without the keyword, and a CommonJS file exports by name only.
-fn ts_top_level_decls(program_node: Node, src: &[u8]) -> HashMap<String, TsDecl> {
-    let mut decls: HashMap<String, TsDecl> = HashMap::new();
-    fn add(
-        decls: &mut HashMap<String, TsDecl>,
-        name: String,
-        kind: &'static str,
-        line: usize,
-        end_line: usize,
-    ) {
-        if name.is_empty() {
-            return;
-        }
-        decls.entry(name).or_insert(TsDecl {
-            kind,
-            line,
-            end_line,
-        });
-    }
-    fn from_declaration(node: Node, src: &[u8], decls: &mut HashMap<String, TsDecl>) {
-        let Some(kind) = ts_decl_kind(node) else {
-            return;
-        };
-        if kind == "const" {
-            for d in named_children(node) {
-                if d.kind() != "variable_declarator" {
-                    continue;
-                }
-                let name_node = d.child_by_field_name("name");
-                let line = ts_line(name_node.unwrap_or(d));
-                for n in ts_pattern_names(name_node, src) {
-                    add(decls, n, "const", line, d.end_position().row + 1);
-                }
-            }
-            return;
-        }
-        add(
-            decls,
-            ts_declared_name(node, src),
-            kind,
-            ts_line(node),
-            node.end_position().row + 1,
-        );
-    }
-    for c in named_children(program_node) {
-        if c.kind() == "export_statement" {
-            if let Some(decl) = c.child_by_field_name("declaration") {
-                from_declaration(decl, src, &mut decls);
-            }
-            continue;
-        }
-        from_declaration(c, src, &mut decls);
-    }
-    decls
 }
 
 fn ts_default_export_name(program_node: Node, src: &[u8]) -> Option<String> {
     for stmt in named_children(program_node) {
-        if stmt.kind() != "export_statement" || !is_default_export_statement(stmt) {
+        if stmt.kind() != "export_statement" {
+            continue;
+        }
+        if stmt.child_by_field_name("source").is_none() {
+            if let Some(name) = ts_fragment_forms::default_export_clause(stmt, src) {
+                return Some(name);
+            }
+        }
+        if !is_default_export_statement(stmt) {
             continue;
         }
         if let Some(decl) = stmt.child_by_field_name("declaration") {
@@ -379,21 +304,7 @@ fn ts_require_import(decl_node: Node, src: &[u8]) -> Vec<TsImport> {
         if d.kind() != "variable_declarator" {
             continue;
         }
-        let Some(value) = d.child_by_field_name("value") else {
-            continue;
-        };
-        if value.kind() != "call_expression" {
-            continue;
-        }
-        let Some(fnode) = value.child_by_field_name("function") else {
-            continue;
-        };
-        if fnode.kind() != "identifier" || text(fnode, src) != "require" {
-            continue;
-        }
-        let args = value.child_by_field_name("arguments");
-        let first = args.and_then(|a| named_children(a).into_iter().next());
-        let Some(spec) = ts_string_literal(first, src) else {
+        let Some(spec) = require_spec(d, src) else {
             continue;
         };
         let name_node = d.child_by_field_name("name");
@@ -416,6 +327,7 @@ fn ts_require_import(decl_node: Node, src: &[u8]) -> Vec<TsImport> {
             spec,
             line: ts_line(d),
             bindings,
+            require: true,
         });
     }
     out
@@ -432,6 +344,7 @@ fn ts_record_ref(
     refs: &mut Vec<TsRef>,
     consumed: &mut HashSet<usize>,
     known: &HashSet<String>,
+    member_known: &HashSet<String>,
 ) {
     match node.kind() {
         "call_expression" => {
@@ -507,7 +420,7 @@ fn ts_record_ref(
                         // method def.
                         if let (Some(obj), Some(prop)) = (obj, prop) {
                             let name = text(obj, src);
-                            if obj.kind() == "identifier" && known.contains(&name) {
+                            if obj.kind() == "identifier" && member_known.contains(&name) {
                                 refs.push(TsRef {
                                     kind: "call".to_string(),
                                     name,
@@ -555,7 +468,7 @@ fn ts_record_ref(
                         let name = text(obj, src);
                         if obj.kind() == "identifier"
                             && is_component_tag_name(&name)
-                            && known.contains(&name)
+                            && member_known.contains(&name)
                         {
                             refs.push(TsRef {
                                 kind: "jsx-use".to_string(),
@@ -577,12 +490,27 @@ fn ts_record_ref(
 // is always seen before the argument it consumes, which is what lets the
 // consumed set suppress a duplicate plain-call ref for that argument.
 // Cursor-driven, materialising a `Node` only for the four reference kinds.
-fn ts_ref_walk(program_node: Node, src: &[u8], refs: &mut Vec<TsRef>, known: &HashSet<String>) {
+fn ts_ref_walk(
+    program_node: Node,
+    src: &[u8],
+    refs: &mut Vec<TsRef>,
+    known: &HashSet<String>,
+    member_known: &HashSet<String>,
+    dynamic_imports: &mut Vec<TsDynamicImport>,
+    non_literal_dynamic_imports: &mut usize,
+) {
     let mut consumed: HashSet<usize> = HashSet::new();
     let mut cursor = program_node.walk();
     loop {
         if TS_REFERENCE_NODES.contains(&cursor.node().kind()) {
-            ts_record_ref(cursor.node(), src, refs, &mut consumed, known);
+            ts_record_ref(cursor.node(), src, refs, &mut consumed, known, member_known);
+        }
+        if cursor.node().kind() == "call_expression" {
+            match ts_fragment_forms::dynamic_import(cursor.node(), src) {
+                Some(Some(import)) => dynamic_imports.push(import),
+                Some(None) => *non_literal_dynamic_imports += 1,
+                None => {}
+            }
         }
         if cursor.goto_first_child() {
             continue;
@@ -606,18 +534,23 @@ fn ts_ref_walk(program_node: Node, src: &[u8], refs: &mut Vec<TsRef>, known: &Ha
 /// Extract the reference fragment (imports, exports, refs) from a parsed TS/JS
 /// program node.
 pub fn extract_ts_fragment(program_node: Node, src: &[u8]) -> TsFragment {
-    let decls = ts_top_level_decls(program_node, src);
+    let (decls, inside) = file_scope_decls(program_node, src);
     let mut imports: Vec<TsImport> = Vec::new();
     let mut reexports: Vec<TsReexport> = Vec::new();
+    let mut export_equals = None;
     for stmt in named_children(program_node) {
         if stmt.kind() == "import_statement" {
             let Some(spec) = ts_string_literal(stmt.child_by_field_name("source"), src) else {
+                if let Some(import) = ts_fragment_forms::import_equals(stmt, src) {
+                    imports.push(import);
+                }
                 continue;
             };
             imports.push(TsImport {
                 spec,
                 line: ts_line(stmt),
                 bindings: ts_import_bindings(stmt, src),
+                require: false,
             });
         } else if stmt.kind() == "export_statement" && stmt.child_by_field_name("source").is_some()
         {
@@ -627,35 +560,61 @@ pub fn extract_ts_fragment(program_node: Node, src: &[u8]) -> TsFragment {
         } else if stmt.kind() == "lexical_declaration" || stmt.kind() == "variable_declaration" {
             imports.extend(ts_require_import(stmt, src));
         }
+        if export_equals.is_none() {
+            export_equals = ts_fragment_forms::export_equals(stmt, src);
+        }
     }
-    let defs: Vec<TsFragmentDef> = ts_exported_names(program_node, &decls, src)
-        .into_iter()
+    let mut exported = ts_exported_names(program_node, &decls.by_name, src);
+    if let Some(name) = export_equals
+        .as_ref()
+        .filter(|name| decls.by_name.contains_key(*name))
+    {
+        if !exported.contains(name) {
+            exported.push(name.clone());
+        }
+    }
+    let mut defs: Vec<TsFragmentDef> = exported
+        .iter()
+        .cloned()
         .map(|name| {
-            let d = &decls[&name];
+            let d = &decls.by_name[&name];
             TsFragmentDef {
                 name,
                 kind: d.kind.to_string(),
                 line: d.line,
                 end_line: d.end_line,
+                local: false,
             }
         })
         .collect();
-    // The only local names a cross-file resolver could ever land on: something
-    // this file imported, or something this file itself exports. A reference
-    // to anything else is unresolvable BY THE RESOLVER'S OWN RULE, so
-    // recording it would put a fact in the fragment cache that exists only to
-    // be discarded -- and it changes no edge the resolver would have emitted.
-    let mut known: HashSet<String> = defs.iter().map(|d| d.name.clone()).collect();
+    let mut member_known: HashSet<String> = defs.iter().map(|d| d.name.clone()).collect();
     for imp in &imports {
         for b in &imp.bindings {
-            known.insert(b.local.clone());
+            member_known.insert(b.local.clone());
         }
     }
+    defs.extend(local_defs(&decls, &inside, &exported, &member_known));
+    let known: HashSet<String> = defs
+        .iter()
+        .map(|d| d.name.clone())
+        .chain(member_known.iter().cloned())
+        .collect();
     let mut refs: Vec<TsRef> = Vec::new();
-    ts_ref_walk(program_node, src, &mut refs, &known);
+    let mut dynamic_imports = Vec::new();
+    let mut non_literal_dynamic_imports = 0;
+    ts_ref_walk(
+        program_node,
+        src,
+        &mut refs,
+        &known,
+        &member_known,
+        &mut dynamic_imports,
+        &mut non_literal_dynamic_imports,
+    );
     // Appended LAST and only when the file has one, the house rule for every
     // added fact -- a file with no default export keeps the shorter shape.
-    let default = ts_default_export_name(program_node, src).filter(|d| decls.contains_key(d));
+    let default =
+        ts_default_export_name(program_node, src).filter(|d| decls.by_name.contains_key(d));
     TsFragment {
         ts: 1,
         defs,
@@ -663,6 +622,10 @@ pub fn extract_ts_fragment(program_node: Node, src: &[u8]) -> TsFragment {
         reexports,
         refs,
         default,
+        export_equals: export_equals.filter(|name| decls.by_name.contains_key(name)),
+        dynamic_imports,
+        non_literal_dynamic_imports,
+        components: super::ts_component::components(program_node, src),
     }
 }
 
@@ -679,18 +642,13 @@ pub struct TsFileExtraction {
 /// Parses TypeScript-family source into its optional purpose and graph fragment.
 ///
 /// Returns `None` when the selected grammar cannot parse the source.
-pub fn extract_ts_file(
-    root: &Path,
-    rel: &str,
-    source: &str,
-    grammar: crate::parse::TsGrammar,
-) -> Option<TsFileExtraction> {
+pub fn extract_ts_file(source: &str, grammar: crate::parse::TsGrammar) -> Option<TsFileExtraction> {
     let units = crate::parse::utf16_units(source);
     let tree = crate::parse::parse_ts_js(&units, grammar)?;
     let src = crate::parse::utf16_bytes(&units);
     let root_node = tree.root_node();
     let purpose = ts_purpose_segments(root_node, &src).map(|raw| {
-        let detail = crate::walk::default_purpose_detailed(root, rel);
+        let detail = crate::walk::default_purpose_detailed_in(source);
         if detail.is_comment {
             compose_hybrid_ts_purpose(&detail.text, &raw)
         } else {

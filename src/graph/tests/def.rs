@@ -15,6 +15,7 @@ fn def_without_also_in_omits_the_key() {
         test_methods: vec![],
         also_in: vec![],
         end_line: 0,
+        local: false,
     };
     let json = serde_json::to_string(&d).unwrap();
     assert!(
@@ -36,6 +37,7 @@ fn def_end_line_serializes_last_and_defaults_when_absent() {
         test_methods: vec![],
         also_in: vec![],
         end_line: 0,
+        local: false,
     };
     assert!(!serde_json::to_string(&d).unwrap().contains("endLine"));
     d.end_line = 9;
@@ -60,6 +62,7 @@ fn def_with_also_in_includes_it_after_methods() {
             line: 5,
         }],
         end_line: 0,
+        local: false,
     };
     let json = serde_json::to_string(&d).unwrap();
     let methods_pos = json.find("\"methods\"").unwrap();
@@ -89,6 +92,7 @@ fn def_row_places_test_methods_between_methods_and_also_in() {
             line: 5,
         }],
         end_line: 0,
+        local: false,
     };
     let json = serde_json::to_string(&d).unwrap();
     assert_eq!(
@@ -110,6 +114,7 @@ fn def_row_omits_test_methods_when_the_def_declares_no_tests() {
         test_methods: vec![],
         also_in: vec![],
         end_line: 0,
+        local: false,
     };
     let json = serde_json::to_string(&d).unwrap();
     assert!(

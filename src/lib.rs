@@ -10,8 +10,15 @@
 /// `devscout audit --semantic`: scores `uses-member` graph edges against a
 /// Roslyn-derived oracle.
 pub mod audit;
+/// The message-bus names recognized before a repository has said anything
+/// about itself, shared by the extraction and resolution layers.
+pub mod bus_seed;
 /// Command-line argument parsing and dispatch.
 pub mod cli;
+/// The process exit statuses every command returns.
+pub mod exit;
+/// The versioned NDJSON export of one repository's whole fact set.
+pub mod export;
 /// C#, TypeScript and Rust declaration extraction, and C# and TypeScript
 /// reference extraction.
 pub mod extract;
@@ -23,12 +30,17 @@ pub mod graph;
 pub mod hookio;
 /// Repository initialization commands.
 pub mod initcmd;
+/// The artifact file names and directory segments devscout writes.
+pub mod layout;
 /// Manifest persistence, search, and index-freshness checks.
 pub mod manifest;
 /// Repository mapping and incremental fragment-cache updates.
 pub mod mapcmd;
 /// XAML and XML markup declaration and reference extraction.
 pub mod markup;
+/// Angular template scanning: the component member reads of a template and
+/// the sites it cannot bind.
+pub mod ngtemplate;
 /// Tree-sitter parsing and source-span collection.
 pub mod parse;
 /// C# conditional-compilation pre-pass: blanks the inactive arms of
@@ -57,10 +69,15 @@ pub mod store;
 pub mod suggest;
 /// Query-verb telemetry: one JSON line per invocation under `SCOUT_TELEMETRY=1`.
 pub mod telemetry;
+/// MassTransit transport configuration facts, recognized through a closed
+/// catalogue of package types.
+pub mod transport;
 /// The independent semantic-truth, profile, and falsification harness.
 pub mod truth;
 /// Resolution of extracted TypeScript fragments into a graph.
 pub mod tsgraph;
+/// The usage line each verb prints when its own arguments do not parse.
+pub mod usage;
 /// Source-tree walking and default file-purpose generation.
 pub mod walk;
 

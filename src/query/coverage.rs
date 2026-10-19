@@ -5,8 +5,9 @@ use crate::graph;
 use super::bus::{self, BusDirection, BusHopRow};
 use super::index::{def_files, GraphIndex};
 use super::member::{self, MemberCandidate, MemberSeedResolution};
+use super::name_hint::{self, NameHintRow};
 use super::refs_tables::{cap_rows, edge_loc, row_tier, Table, DEFAULT_CAP};
-use super::symbol::{resolve_symbol, Resolution};
+use super::symbol::{resolve_local_symbol, resolve_symbol, Resolution};
 use super::symbol_refs::symbol_refs;
 use super::test_path;
 
@@ -87,6 +88,13 @@ pub struct TestsModel {
     /// field entirely, not a flag on an existing row -- so nothing has to
     /// remember to exclude it. `--json` omits the key entirely when empty.
     pub bus: Table<BusHopRow>,
+    /// Test files whose own NAME matches this symbol, with the production
+    /// symbols each references. A file name is an observation about a name,
+    /// never coverage evidence, so this field is filled on the zero case
+    /// alone -- where an empty answer gave the caller no way to see that a
+    /// same-named test file tests something else. It changes no row, no count
+    /// and no outcome, and `--json` omits the key entirely when empty.
+    pub name_hint: Vec<NameHintRow>,
 }
 
 /// The outcome of a `tests` query: resolved, ambiguous, or not found.
@@ -183,10 +191,25 @@ pub fn build_tests_model(index: &GraphIndex, query: &str) -> TestsResult {
             MemberSeedResolution::Ambiguous(candidates) => {
                 return TestsResult::MemberAmbiguous(candidates)
             }
-            MemberSeedResolution::NotFound => return TestsResult::NotFound,
+            MemberSeedResolution::NotFound => match resolve_local_symbol(index, query) {
+                Resolution::Resolved(id) => id,
+                Resolution::Ambiguous(ids) => return TestsResult::Ambiguous(ids),
+                Resolution::NotFound => return TestsResult::NotFound,
+            },
         },
     };
-    let refs = symbol_refs(index, &id);
+    tests_model_for_id(index, &id, query)
+}
+
+/// The `tests` answer for an ALREADY RESOLVED def id.
+///
+/// `query_echo` is what the answer reports as the seed it answered: the
+/// caller's own query string when the seed was typed, or the def id a
+/// `--pick` candidate selected. Split from the resolution above so a picked
+/// candidate reaches test coverage through the same collection, vouch filter
+/// and bus-hop lookup a typed seed does.
+pub(super) fn tests_model_for_id(index: &GraphIndex, id: &str, query_echo: &str) -> TestsResult {
+    let refs = symbol_refs(index, id);
 
     let precise = collect_test_rows(
         index,
@@ -228,16 +251,28 @@ pub fn build_tests_model(index: &GraphIndex, query: &str) -> TestsResult {
     let mut rows = precise;
     rows.extend(heuristic);
 
+    let bus = test_bus_rows(index, &id);
+    // The hint is the answer to the zero case, not a second opinion on a
+    // populated one: any row, heuristic included, or any possible route is
+    // already a statement about what reaches this symbol, and a name
+    // observation beside it would read as weaker evidence of the same kind.
+    let name_hint = if rows.is_empty() && bus.total == 0 {
+        name_hint::name_hint_rows(index, &id)
+    } else {
+        Vec::new()
+    };
+
     TestsResult::Resolved(TestsModel {
-        query: query.to_string(),
-        symbol: id.clone(),
-        def_files: def_files(index, &id),
+        query: query_echo.to_string(),
+        symbol: id.to_string(),
+        def_files: def_files(index, id),
         rows,
         test_file_count,
         ref_count,
         heuristic_file_count,
         heuristic_ref_count,
-        bus: test_bus_rows(index, &id),
+        bus,
+        name_hint,
     })
 }
 

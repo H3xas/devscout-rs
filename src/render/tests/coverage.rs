@@ -15,6 +15,7 @@ fn tests_model(rows: Vec<TestRow>) -> TestsModel {
         heuristic_ref_count: guessed.iter().map(|r| r.ref_count).sum(),
         rows,
         bus: table(vec![], 0),
+        name_hint: vec![],
     }
 }
 
@@ -181,5 +182,87 @@ fn tests_compact_declares_heuristic_files_in_the_header_and_marks_their_lines() 
     assert_eq!(
         render_tests_compact(&model),
         "tests App.Orders.OrderService files=1 refs=1 heuristic=1  2 files (showing 2)\ntests/OrderServiceTests.cs 10\ntests/Partial.Extra.cs 9h,12h"
+    );
+}
+
+fn hint(file: &str, references: &[&str], reference_total: usize) -> query::NameHintRow {
+    query::NameHintRow {
+        file: file.to_string(),
+        references: references.iter().map(|r| (*r).to_string()).collect(),
+        reference_total,
+    }
+}
+
+#[test]
+fn tests_text_prints_the_name_hint_below_the_zero_case_and_says_what_it_is() {
+    let mut model = tests_model(vec![]);
+    model.symbol = "App.Orders.Untested".to_string();
+    model.name_hint = vec![hint(
+        "tests/UntestedTests.cs",
+        &["App.Orders.Other", "App.Orders.Third"],
+        2,
+    )];
+    let expected = concat!(
+        "tests for App.Orders.Untested  0 files (showing 0)\n",
+        "no test references found\n",
+        "hint (file name only, not a test reference):\n",
+        "  tests/UntestedTests.cs  references App.Orders.Other, App.Orders.Third",
+    );
+    assert_eq!(render_tests_text(&model), expected);
+}
+
+#[test]
+fn tests_text_states_a_truncated_reference_list_and_an_empty_one() {
+    let mut model = tests_model(vec![]);
+    model.symbol = "App.Orders.Untested".to_string();
+    model.name_hint = vec![
+        hint(
+            "tests/A/UntestedTests.cs",
+            &["App.Orders.A", "App.Orders.B"],
+            4,
+        ),
+        hint("tests/B/UntestedTests.cs", &[], 0),
+    ];
+    let expected = concat!(
+        "tests for App.Orders.Untested  0 files (showing 0)\n",
+        "no test references found\n",
+        "hint (file name only, not a test reference):\n",
+        "  tests/A/UntestedTests.cs  references App.Orders.A, App.Orders.B (+2 more)\n",
+        "  tests/B/UntestedTests.cs  references no indexed production symbol",
+    );
+    assert_eq!(render_tests_text(&model), expected);
+}
+
+#[test]
+fn tests_compact_prints_one_hint_line_per_file_after_its_header() {
+    let mut model = tests_model(vec![]);
+    model.symbol = "App.Orders.Untested".to_string();
+    model.name_hint = vec![
+        hint(
+            "tests/A/UntestedTests.cs",
+            &["App.Orders.A", "App.Orders.B"],
+            4,
+        ),
+        hint("tests/B/UntestedTests.cs", &[], 0),
+    ];
+    let expected = concat!(
+        "tests App.Orders.Untested files=0 refs=0  0 files (showing 0)\n",
+        "hint tests/A/UntestedTests.cs -> App.Orders.A,App.Orders.B (+2 more)\n",
+        "hint tests/B/UntestedTests.cs -> none",
+    );
+    assert_eq!(render_tests_compact(&model), expected);
+}
+
+#[test]
+fn an_empty_hint_leaves_the_zero_case_bytes_alone() {
+    let mut model = tests_model(vec![]);
+    model.symbol = "App.Orders.Untested".to_string();
+    assert_eq!(
+        render_tests_text(&model),
+        "tests for App.Orders.Untested  0 files (showing 0)\nno test references found"
+    );
+    assert_eq!(
+        render_tests_compact(&model),
+        "tests App.Orders.Untested files=0 refs=0  0 files (showing 0)"
     );
 }

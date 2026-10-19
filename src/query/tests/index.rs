@@ -1,3 +1,4 @@
+use super::heuristic_ordering::widget_def;
 use super::*;
 
 // --- 1: load_graph_index + manifest flagging ---

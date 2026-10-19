@@ -7,6 +7,280 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-19
+
+A traversal-facts release: `devscout export` writes a repository's whole fact set as one versioned
+NDJSON contract, `map` records MassTransit and AWS SNS/SQS transport facts on one bus vocabulary,
+TypeScript and JavaScript imports resolve through `package.json` and `tsconfig`, Angular templates and
+file-scope declarations are indexed, and a query no longer reports `fresh` for an index that does not
+describe the working tree.
+
+### Added
+
+- `devscout map` reads Angular templates. Each member of an exported `@Component({...})` class
+  becomes a name row, and each member read in the component's `templateUrl` file or inline
+  `template` becomes a precise `uses-member` edge from the template line. `refs <member>` and
+  `refs <Component>.<member>` list those template lines. Template locals (`#ref`, `let-x`, the
+  `let` and `as` names of a structural directive, and `$event`) hide a member with the same name.
+  A member answer whose owner is a TypeScript class prints a note, and `--json` carries
+  `memberReads`, because TypeScript member reads are not indexed. `graph.json` appends
+  `template_unsupported` rows with six reasons and `stats.ts.template_unsupported_count`, both
+  omitted when empty ([JSON output](docs/reference/json-output.md#angular-template-reads)).
+  `.html` joins the walked extensions, so an `.html` file gets a manifest entry, counts in the
+  index digests and the export `fileCount`, and its edits are seen by the freshness check. This
+  slice used the `fragments-v42.json` cache generation, superseded by v44 in this release.
+
+- `devscout map` records the MassTransit transport configuration a C# repository states, and
+  `devscout export` writes it as the `transport-address` family: bus transports and hosts,
+  receive endpoints and the types configured on them, `ConfigureEndpoints` with the endpoint
+  name formatter in force, registrations, endpoint names, send and request addresses,
+  endpoint conventions, entity names, options bindings with the values the project's
+  `appsettings` files state, and outbox registrations. Recognition reads a closed catalogue of
+  fully qualified package types, so no compiler is needed and a repository type with a
+  catalogue name never matches. Each address and scope value carries its evidence class
+  (`literal`, `constant`, `configuration` or `unknown` with a reason word), and each bus and
+  address carries its broker scope. No queue name is derived from a formatter, and no
+  publish-to-consume hop is built. The export's coverage table reads `extracted` for C#, and
+  the trailer counts the new family. This slice used the `fragments-v41.json` cache generation,
+  superseded by v44 in this release.
+
+- `--pick all` on `refs`, `read`, `impact` and `tests` answers every candidate of an ambiguous
+  seed in its own labelled section rather than refusing, and no section is merged with another.
+  Section `i` is byte-for-byte what `--pick i` prints for that candidate, and `--json` states the
+  same sections as a `sections` array
+  ([JSON output](docs/reference/json-output.md#the-sections-envelope)). `--pick` refuses any value
+  that is neither a positive integer nor `all`, before the graph is read.
+
+- `devscout tests` answers a symbol that no test file references with `no test references found`.
+  A test file in the index named after the symbol adds a name hint to that answer. The hint,
+  `hint (file name only, not a test reference):` in text and `nameHint` in `--json`, names each
+  matching file and the production symbols that file really references. A file name is not a test
+  reference, so the hint is an observation and never evidence: it adds no row and changes no count,
+  no outcome and no `schema_version`. When no file matches, `--json` omits the key.
+  [`json-output.md`](docs/reference/json-output.md) documents it.
+
+- `devscout --help`, `devscout -h` and `devscout help` end with the documentation URL of the
+  running version's tag, composed from the crate metadata at compile time, so a released binary
+  points at the documentation for the release it is rather than at whatever the branch says now.
+
+- The CLI, environment-variable, exit-code and storage references —
+  [`docs/reference/cli.md`](docs/reference/cli.md),
+  [`environment.md`](docs/reference/environment.md),
+  [`exit-codes.md`](docs/reference/exit-codes.md) and
+  [`storage.md`](docs/reference/storage.md) — are written by `tests/docs_sync.rs` from the
+  definitions the binary itself uses, and `cargo test` fails when a committed page and the code
+  disagree: a changed help text, usage line, environment read, exit status, artifact name or
+  schema version has to be regenerated with `BLESS=1 cargo test --test docs_sync`. The pages are
+  no longer hand-maintained, and the usage lines, exit statuses, artifact names and the fragment
+  generation each have one definition in the source.
+
+- `devscout export` writes the current repository's whole fact set as one versioned NDJSON
+  stream: a header carrying input provenance, the release's coverage table and the freshness
+  observed at export time; one line per definition, edge, publish site, handler and dependency
+  registration, unresolved import and test file; and a trailer carrying per-family counts and a
+  digest of the fact lines alone. The export is a view over the index rather than a promoted
+  storage file, and it reads one published generation or refuses with a reason word.
+  [Fact export](docs/reference/fact-export.md) documents the grammar, the schema at
+  `docs/reference/fact-export.schema.json`, and the refusals; `tools/fact-export/check.mjs`
+  validates a stream without a build step.
+
+- House publish verbs with an unguarded dispatch root word now reach registered handlers in generic,
+  constructed and plain identifier argument calls. This slice used the `fragments-v37.json` cache
+  generation, superseded by v44 in this release.
+
+- TypeScript and JavaScript imports in a declared `node10`, `node16`, `nodenext` or `bundler`
+  scope now follow package `type`, `main`, conditional `exports` and `imports`, npm/yarn/pnpm
+  workspace names, and declared build-output mappings. Literal dynamic imports, import-equals,
+  `export =` and namespace re-exports contribute their module bindings. `graph.json` discloses
+  unresolved imports and refused configuration. This slice used the `fragments-v38.json` cache
+  generation, superseded by v44 in this release.
+  [Resolution rules](docs/reference/typescript-modules.md) list the mode and syntax limits.
+
+- Test files named `*.test.*` or `*.spec.*`, or placed below `__tests__`, are now classified by
+  path for `.mts`, `.cts` and `.jsx` as well as `.ts`, `.tsx`, `.js`, `.mjs` and `.cjs`. The
+  `tests` and `impact` commands count these files when they reference the queried code.
+- Index TypeScript and JavaScript file-scope declarations, including declarations in top-level
+  IIFE bodies, as definitions. Calls, JSX tags and dispatch references to them resolve within the
+  same file; imported names remain bound to exported definitions only. An exported definition wins
+  a bare-name tie, and an exact file-qualified id selects a local declaration. `find` now prints
+  TS/JS declaration rows. `graph.json` and the fragment cache mark non-exported definitions with
+  `"local": true`, while exported rows keep their earlier shape; `extract-dump` also lists local
+  declarations. This slice used the `fragments-v43.json` cache generation, superseded by v44 in
+  this release.
+- `devscout map` binds a default import of a TypeScript or JavaScript declaration. The file must
+  name the declaration in `export default <name>` or `export { <name> as default }`. The importer's
+  import row, calls, JSX uses and dispatch references then reach the declaration, including through
+  an `export { default as <alias> } from` or `export { default } from` barrel and through
+  `ns.default`. Only the statement form `export default <name>` keeps the declaration
+  `"local": true`. Named imports, named re-exports and access by its own name from another file
+  stay unbound. The clause form `export { <name> as default }` exports the declaration, so its row
+  omits `"local"`. An import by its own name binds it as for any exported definition. The
+  fragment cache moves to `fragments-v44.json`, so an existing cache re-extracts once.
+
+### Changed
+
+- **`--pick N` now narrows an ambiguous type name, and answers an owner a dotted suffix used to
+  send back to the refusal.** `refs`, `read`, `impact` and `tests` treated `--pick N` as inert
+  unless the seed named a member declared by several types, so a type name several defs share
+  still refused. It now answers candidate `N` of either kind of ambiguity. A member candidate also
+  resolves by its own declaring type rather than by re-running the seed ladder, so two owners whose
+  ids end with the same segments -- `Nautical.Crew.Galley` and `Fleet.Nautical.Crew.Galley`, say --
+  each answer their own owner instead of listing the same pair again. The default refusal, and
+  every `--json` key it carries, is unchanged.
+
+- **A Git root's `map` now skips the untracked files and directories Git reports as ignored.** A
+  local build into `build/`, `lib/` or `out/` no longer duplicates a source definition, so
+  `find` and `refs` name one definition again; admitting `.js`, `.mjs` and `.cjs` had widened the
+  problem. The rule is Git's own -- `.gitignore` at any depth, `.git/info/exclude`,
+  `core.excludesFile`, with negations and the tracked-file exception as Git answers them -- so a
+  checked-in source under an ignored pattern stays indexed, and the same set reaches the
+  `.csproj`/`Directory.Build.props` and `Cargo.toml` discovery and the `init` language census. A
+  root with no `.git` entry is walked by the fixed directory-name list alone, exactly as before,
+  and needs no `git`. In a Git root the ignore query is now required: when `git` cannot be run or
+  its answer cannot be read, `map` exits non-zero with `error: ignore query failed (…)` and
+  leaves the previous index in place. No artifact format, fragment cache version or skip list
+  changes.
+
+- An index belongs to one worktree at a time. A `map` records the worktree that published it, and a
+  query from any other linked worktree answers `unknown` with reason `other-worktree` instead of
+  serving that index as `fresh`. Fragment reuse no longer crosses worktrees either. This slice
+  used the `fragments-v36.json` cache generation, superseded by v44 in this release.
+- Freshness now compares content. The index records a SHA256 of the bytes it extracted for every
+  indexed file and every configuration input it read, and validation hashes each candidate and
+  compares. Size and modification time are budget estimates only. `changedFiles` counts files whose
+  bytes differ, plus added and deleted relevant files and changed configuration inputs.
+- The `freshness` object gains three reason words -- `other-worktree`, `validation-budget` and
+  `index-changed` -- and `git-unavailable` widens to cover a `git status` run that fails or cannot be
+  parsed. No new state and no new key. Each new reason also gets its own stderr line; the stale line
+  keeps its earlier wording, and stderr stays silent for a missing record and for unavailable Git.
+- Stderr and `--json` come from one validation per invocation, so a query pays for one `git status`
+  and cannot describe two different moments.
+- Validation is bounded: 5,000 `git status` entries, 2,048 candidate paths and 16 MiB of candidate
+  bytes. Past a cap the state is `unknown` with reason `validation-budget`.
+- A `map` holds a lock in the shared scout directory and publishes the freshness record last, by
+  atomic rename, after an in-progress marker. A query racing a map, or reading a record whose
+  artifacts were replaced afterwards, answers `unknown` with reason `index-changed`.
+- `SCOUT_MTIME_REUSE` is accepted and ignored: reuse keys are content-derived unconditionally, so
+  there is no mtime mode left to select. The `MapOptions::hash_reuse` field stays for API
+  compatibility and no longer changes behavior.
+- The `manifest` module's re-exported `freshness_warning`, `read_index_state`, `write_index_state`,
+  `index_state_path`, `dirty_indexed_files_at` and `is_working_tree_dirty` move to the
+  `freshness` module's own submodules.
+- An index written by an earlier release, or by a different build of this one at the same tree, is
+  never certified. Queries answer `unknown` with reason `no-index-state` and a note to re-run `map`,
+  and the first `map` after an upgrade is cold. A downgrade needs a re-map too. See the
+  [upgrading guide](docs/guides/upgrading.md).
+
+### Fixed
+
+- **An invariant generic parameter no longer declines a call over how its type arguments are
+  spelled.** Two spellings of one type — a `using` alias, `Nullable<T>` against `T?`, `object`
+  against `dynamic`, at any argument position or nesting depth, array element types included — now
+  compare equal, so the call binds the overload whose declaring type C# picks instead of falling
+  through to an extension or another overload; type arguments naming different types keep
+  declining. A generic argument the extractor could not read (a tuple, a pointer, a function
+  pointer) also admits, because a placeholder that names no type cannot prove a mismatch.
+
+- **A type of your own named like a CLR primitive keeps its identity in overload checks.** Before,
+  a class or struct named `String`, `Boolean`, `Int32` or a similar name was compared as the
+  built-in `string`, `bool` or `int`. Thus a call that passed it to its base class, to its
+  interface or to a type it converts to was refused. The call then bound an extension or
+  nothing. Now such a name also compares as the in-graph type it resolves to. This applies at
+  the top level, in generic type arguments and in `using` alias targets. The call binds the
+  overload that C# picks. A call that bound before still binds. Unrelated types still decline.
+
+- **A receiver declared with a qualified generic type now resolves through its enclosing
+  namespaces like a non-generic one.** `Widgets.Box<int> b` reached the exact-qualified lookup
+  with its type-argument list still attached, and since no definition is stored with one, only the
+  dotted-suffix step could answer it -- which is a decision about the enclosing namespace that the
+  declaration itself had already made. The list comes off that lookup now, held to the argument
+  count the declaration recorded or, with none recorded, to the count the written list carries, so
+  `Widgets.Box<int>` binds exactly what `Box` with one type parameter binds and never a
+  same-named definition of another count. A written path that is not one well-formed list closing
+  its final segment -- a list on an earlier segment, an alias-qualified path, an unbalanced or
+  empty list -- keeps the previous lookup.
+
+- **Two environment-reference corrections.** `SCOUT_MTIME_REUSE` no longer claims to be read for
+  an existing script's sake: the variable is not read at all, and the page lists it as retired
+  with no effect. `SCOUT_EDGE_PROVENANCE`, which `map` writes and which had no row, is documented
+  with its effect and default, and the environment page's table is now checked against the names
+  the source actually reads, in both directions.
+
+- **The two committed .NET oracle snapshots are now reproducible from one declared SDK install,
+  and the tests that build temporary projects select it explicitly.** `compiler-facts.json` and
+  `context.json` record the resolved SDK and MSBuild versions, every reference assembly's MVID,
+  the hash of every imported file and the fingerprint folded from all of it, so two installs of one
+  SDK patch -- a macOS installer layout and a `dotnet-install` tarball layout, or a machine that
+  resolves a newer default -- disagreed on their bytes with no source change. `tools/dotnet-snapshots.py`
+  is now the only producer of those two files: it validates the supplied `--sdk-root` against the
+  new pin in `tools/dotnet-snapshot-sdk.json` (exact SDK, the reference pack's and the workload
+  manifests' own content inventories, the published archive digest per host) and refuses anything
+  else before either file changes, then regenerates both and compares raw bytes with nothing
+  masked. CI extracts the declared archive into a root of its own and runs the same check instead
+  of trusting the SDK the runner selects, and every other step of that job which re-produces one of
+  the two snapshots -- the compiler-facts and context producers, the capability-restricted run and
+  the repeat-run check -- invokes the oracle through that root too, so no producer is left on the
+  runner's own install of the same version. `OfflineRestoreCliTests` and the tests sharing its
+  helpers take their host, their `global.json` pin and their stub's reference assemblies from
+  `SNAPSHOT_DOTNET_ROOT`, so a project they create under the system temporary directory compiles
+  under the pinned install whether or not the machine's own default SDK is newer. Both the tool and
+  those helpers drop the
+  SDK-selection variables a host exports to its children (`MSBuildSDKsPath`, `MSBuildExtensionsPath`,
+  `DOTNET_HOST_PATH` and the `DOTNET_MSBUILD_SDK_RESOLVER_*` set) before applying the pinned root:
+  a host keeps a value it finds already set, so a 10.0-band launcher would otherwise hand its own
+  targets and tasks to the pinned child and fail the offline restores it was meant to pin.
+
+- A query no longer reports `fresh` for an index that does not describe the working tree. Comparing
+  `HEAD` and dirty-path membership was not enough: a file that was already dirty when the index was
+  built was never re-checked, so editing it a second time -- even keeping its size and modification
+  time -- left the old answer labelled `fresh`.
+
+- **A qualified name written with spaces, line breaks or comments between its parts now resolves like
+  its plain spelling.** Every dotted name the C# extractor records -- a receiver's declared type, a
+  type reference, a base-list entry, a DI registration's two types, a namespace name, and a `using`
+  target or alias -- is rebuilt from the name's own tokens, so `Widgets . Widget`,
+  `Widgets./*c*/Widget` and `Widgets.` followed by a line break and `Widget` all read as
+  `Widgets.Widget`. The raw source text used to reach the resolution ladder, match no def path, and
+  drop a precise edge to a guess. A name whose subtree holds a parse error keeps its source text and
+  so binds nothing new. This slice used the `fragments-v34.json` cache generation, superseded by
+  v44 in this release.
+
+- **An interpolated string argument binds an in-graph `[InterpolatedStringHandler]` parameter.** A call
+  whose argument is written `$"…"` — regular, verbatim (`$@"…"`, `@$"…"`) or raw (`$"""…"""`), with or
+  without holes, parenthesized or not — is recorded apart from a plain string and is admitted at a
+  parameter whose type resolves to a type declared with `[InterpolatedStringHandler]` (bare, with the
+  `Attribute` suffix, namespace-qualified or `global::`-qualified, on any one of a type's partial
+  declarations), so the call binds the handler parameter's declaring type precisely again. Every other
+  comparison still reads the argument as `string`: a string literal or a string-typed local against a
+  handler parameter that declares no implicit conversion keeps the argument-type veto, an interpolated
+  string against an unmarked in-graph parameter keeps it too, so the calls that bind an extension method
+  behind an instance overload taking a `StopContext` bind it as before. This slice used the
+  `fragments-v35.json` cache generation, superseded by v44 in this release.
+
+- **A bare name a member's own declarations cannot vouch for at its use no longer takes a type.**
+  Every name a `var (…)` deconstruction designates -- a local `var (a, b) = …`, nested
+  designations, `foreach (var (k, v) in …)`, a `var (x, y)` pattern in `is` or a switch arm, and
+  each `var` element of `(var a, var b) = …` -- is now a declared name of unknown type, so it no
+  longer falls through to a same-named field. Each local, lambda, anonymous-method and
+  local-function parameter, `foreach`, `catch` and query variable, and pattern or `out`
+  designation is also scoped to the construct that declares it: a use outside every such
+  construct -- a field read before a nested block declares a local of the same name, or a lambda
+  parameter's name read after the lambda -- records no type rather than the local's. A `foreach`
+  over a generic type whose argument is a name (`foreach (Box<Item> x in xs)`), which the parser
+  misreads, now declares its variable too. These rules apply to a call argument, whose type no
+  longer vetoes the overload C# selects, and to a call receiver; a use inside its declaring
+  construct keeps the type it had. This slice used the `fragments-v40.json` cache generation,
+  superseded by v44 in this release.
+
+- **A sent message in a method result, property or field type no longer admits a registered
+  type's handler base.** A registered type's generic base joins the handler vocabulary only when
+  the type declares a parameter of the sent message or binds it through a property. A member such
+  as `Dictionary<OrderPlaced, TKey> Index<TKey>()` on a registered type no longer counts, so the
+  wrong `bus-hop` edges to that type and to other carriers of its base go away. A method with a
+  verbatim name, such as `@event(OrderPlaced order)`, still counts. The fix changes neither the
+  fragment format nor the graph schema. The release moves the fragment cache to
+  `fragments-v44.json`, so the first `map` after the upgrade rebuilds the graph.
+
 ## [0.9.0] - 2026-10-12
 
 A query-answer and second-language release: every resolved answer states its full count and the next

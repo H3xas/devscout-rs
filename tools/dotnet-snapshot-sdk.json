@@ -1,0 +1,28 @@
+{
+  "manifestVersion": 1,
+  "sdkVersion": "9.0.305",
+  "referencePack": {
+    "id": "Microsoft.NETCore.App.Ref",
+    "version": "9.0.9",
+    "targetFramework": "net9.0",
+    "fileCount": 268,
+    "treeDigest": "sha256:8b771aa15d490a4f2e3e8fe7317aec01d49f2b97a84331c6fb78d5d20e1f1c9c"
+  },
+  "workloadManifests": {
+    "band": "9.0.100",
+    "fileCount": 87,
+    "treeDigest": "sha256:dfc210195aea665b520381ba57d2c3a8da18cba215223e03f9a7c00fdd6f73fb"
+  },
+  "archives": {
+    "osx-arm64": {
+      "name": "dotnet-sdk-9.0.305-osx-arm64.tar.gz",
+      "url": "https://builds.dotnet.microsoft.com/dotnet/Sdk/9.0.305/dotnet-sdk-9.0.305-osx-arm64.tar.gz",
+      "sha512": "57f3d64fcf03cfdcac4e4ce0fc8b553255dd538007b6e05daf7f425a286a044de54ff67b1ccca0e9601e67e322810cc059021ef805b02de83d5828b7872941cf"
+    },
+    "linux-x64": {
+      "name": "dotnet-sdk-9.0.305-linux-x64.tar.gz",
+      "url": "https://builds.dotnet.microsoft.com/dotnet/Sdk/9.0.305/dotnet-sdk-9.0.305-linux-x64.tar.gz",
+      "sha512": "f9140e141d731d37de9b6e1eab0b25726f0b9de24d2888a4200649880e9e43671ebb3897a249f4324c214d56eb3e7f0ef0cfa56b32850a9c03811b21e6377bca"
+    }
+  }
+}

@@ -228,6 +228,91 @@ fn written_type_path(qualified: &str) -> std::borrow::Cow<'_, str> {
     std::borrow::Cow::Owned(out)
 }
 
+// `written_type_path` for ONE segment: the path up to its final `.` with the
+// final segment's own type-argument list removed, plus that list's top-level
+// argument count (its own commas, read outside parentheses and square
+// brackets). `None` for every other shape -- no list at all, a list on an
+// earlier segment, an alias qualifier, an unbalanced bracket of any of the
+// three kinds, an empty argument -- which is what keeps a written path this
+// rule cannot read on the caller's verbatim lookup.
+//
+// Only the FINAL segment's list may come off, unlike `written_type_path`'s
+// every-segment strip. Def ids join nesting with `+`, so a `.`-joined candidate
+// can never name a nested type and a list on an earlier segment always belongs
+// to one; stripping it there would let a namespace-level `App.Outer.Inner`
+// answer for `Outer<int>.Inner`.
+fn final_type_argument_list(qualified: &str) -> Option<(&str, usize)> {
+    let bytes = qualified.as_bytes();
+    if bytes.last() != Some(&b'>') {
+        return None;
+    }
+    // The `<` opening the group the final `>` closes: recording only the
+    // 0-to-1 transitions leaves the LAST such opening, and a depth that ever
+    // goes negative or ends away from zero is unbalanced.
+    let mut depth = 0usize;
+    let mut open = None;
+    for (i, &b) in bytes.iter().enumerate() {
+        match b {
+            b'<' => {
+                if depth == 0 {
+                    open = Some(i);
+                }
+                depth += 1;
+            }
+            b'>' => depth = depth.checked_sub(1)?,
+            _ => {}
+        }
+    }
+    if depth != 0 {
+        return None;
+    }
+    let open = open?;
+    // A path segment holds no bracket, no comma and no alias qualifier, so any
+    // of them before the opening `<` means the list belongs to an earlier
+    // segment or to an alias-qualified path.
+    let path = &qualified[..open];
+    if path.is_empty()
+        || path.ends_with('.')
+        || path.bytes().any(|b| {
+            matches!(
+                b,
+                b'<' | b'>' | b'(' | b')' | b'[' | b']' | b':' | b',' | b' '
+            )
+        })
+    {
+        return None;
+    }
+    let arguments = &qualified[open + 1..qualified.len() - 1];
+    let mut angles = 0usize;
+    let mut parens = 0usize;
+    let mut squares = 0usize;
+    let mut count = 1usize;
+    let mut argument_written = false;
+    for &b in arguments.as_bytes() {
+        match b {
+            b'<' => angles += 1,
+            b'>' => angles = angles.checked_sub(1)?,
+            b'(' => parens += 1,
+            b')' => parens = parens.checked_sub(1)?,
+            b'[' => squares += 1,
+            b']' => squares = squares.checked_sub(1)?,
+            b',' if angles == 0 && parens == 0 && squares == 0 => {
+                if !argument_written {
+                    return None;
+                }
+                count += 1;
+                argument_written = false;
+            }
+            b' ' | b'\t' | b'\r' | b'\n' => {}
+            _ => argument_written = true,
+        }
+    }
+    if angles != 0 || parens != 0 || squares != 0 || !argument_written {
+        return None;
+    }
+    Some((path, count))
+}
+
 // Whether a def id, read with `+` as `.`, ends with `written` at a segment
 // boundary -- `App.Widgets.Outer+Inner` ends with `Outer.Inner` and with
 // `App.Widgets.Outer.Inner`, never with `Widgets.Outer` or `ter.Inner`.
@@ -317,14 +402,31 @@ pub(super) fn resolve_ref(
 
     // Step 1: exact qualified name, walking enclosing namespaces innermost
     // first, only for dotted references.
+    //
+    // A written final-segment type-argument list comes off before the walk.
+    // A receiver DECLARED with one (`Widgets.Box<int> b`) reaches this step
+    // with the list still attached -- the extractor keeps it, because
+    // normalizing a written path is this ladder's job -- and no def id
+    // carries a list, so the walk can only miss and the enclosing-namespace
+    // decision is lost to the dotted-suffix step below. The stripped lookup is
+    // keyed by the probe's own recorded arity when that is one or more, and by
+    // the written list's top-level count otherwise: an arity-less probe (the
+    // field and property fallbacks) would reach `qualified_name_to_def`, where
+    // `Box` and `Box<T>` share one slot and the first-indexed def wins.
     if let Some(qualified) = &ref_.qualified {
+        let arguments = final_type_argument_list(qualified);
+        let stripped = arguments.map_or(qualified.as_str(), |(path, _)| path);
+        let arity = match arguments {
+            Some((_, count)) => Some(ref_.type_arg_count.filter(|&n| n >= 1).unwrap_or(count)),
+            None => ref_.type_arg_count,
+        };
         for prefix in &prefixes {
             let candidate = if prefix.is_empty() {
-                qualified.clone()
+                stripped.to_string()
             } else {
-                format!("{prefix}.{qualified}")
+                format!("{prefix}.{stripped}")
             };
-            if let Some(idx) = type_candidate(index, &candidate, ref_.type_arg_count) {
+            if let Some(idx) = type_candidate(index, &candidate, arity) {
                 return Resolution::Resolved(idx, Via::Qualified);
             }
         }

@@ -272,7 +272,7 @@ fn usage_and_flag_conflicts_keep_their_own_codes_and_silence() {
     assert_eq!(missing.status.code(), Some(2), "{missing:?}");
     assert_eq!(
         stdout_of(&missing),
-        "usage: devscout read <symbol> [--no-guess] [--no-dispatch] [--no-bus] [--pick N] [--json|--compact]\n"
+        "usage: devscout read <symbol> [--no-guess] [--no-dispatch] [--no-bus] [--pick N] [--json|--compact]\n       --pick <n> answers candidate <n> of an ambiguous seed, and --pick all answers every candidate in its own section\n"
     );
 
     let conflict = fx.run(&["read", "IThing", "--compact", "--json"]);
@@ -325,7 +325,7 @@ fn map_rerun_reuses_fragments_and_a_missing_cache_re_extracts_with_spans() {
     );
 
     let graph_dir = fx.graph_dir();
-    let current_cache = graph_dir.join("fragments-v33.json");
+    let current_cache = graph_dir.join("fragments-v44.json");
     assert!(
         current_cache.exists(),
         "the current cache generation is on disk"
@@ -339,7 +339,7 @@ fn map_rerun_reuses_fragments_and_a_missing_cache_re_extracts_with_spans() {
     // superseded generation.
     fs::write(graph_dir.join("fragments-v16.json"), b"{}").unwrap();
     fs::remove_file(&current_cache).unwrap();
-    fs::remove_file(graph_dir.join("fragments-index-v33.json")).unwrap();
+    fs::remove_file(graph_dir.join("fragments-index-v44.json")).unwrap();
 
     let rebuild = fx.run(&["map", "."]);
     assert!(rebuild.status.success(), "{rebuild:?}");

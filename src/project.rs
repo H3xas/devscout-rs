@@ -62,6 +62,10 @@ use crate::graph;
 use crate::repo;
 use crate::walk;
 
+use scan::ConfigDigests;
+
+mod scan;
+
 /// One `.csproj` project discovered under the repo.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Unit {
@@ -119,34 +123,48 @@ pub struct ProjectModel {
 /// See the module docs for the full discovery, ownership, test-detection and
 /// closure rules.
 pub fn discover(root: &Path, scope: &[String]) -> io::Result<Option<ProjectModel>> {
+    let ignored = walk::Ignored::for_scope(root, scope)?;
+    discover_with_digests(root, scope, &ignored, &mut ConfigDigests::new())
+}
+
+/// [`discover`] recording a content digest for every configuration file it
+/// parsed.
+///
+/// A caller that has to certify what the model was built from then reads the
+/// same bytes discovery read, rather than reading them again.
+///
+/// `ignored` is the caller's one ignore set for the run, so a project file the
+/// source walk skipped cannot enter the model.
+pub fn discover_with_digests(
+    root: &Path,
+    scope: &[String],
+    ignored: &walk::Ignored,
+    digests: &mut ConfigDigests,
+) -> io::Result<Option<ProjectModel>> {
     let mut csproj_files: HashSet<PathBuf> = HashSet::new();
     let mut props_by_dir: HashMap<PathBuf, String> = HashMap::new();
 
     // Recursive walk of each scope directory.
-    let found = walk::list_files_with_ext(root, scope, &[".csproj", ".props"])?;
+    let found = walk::list_files_with_ext(root, scope, &[".csproj", ".props"], ignored)?;
     for rel in found {
         let abs = root.join(&rel);
         if rel.ends_with(".csproj") {
             csproj_files.insert(abs);
-        } else if is_directory_build_props(&abs) {
-            if let (Some(dir), Some(text)) = (abs.parent(), read_lossy(&abs)) {
+        } else if scan::is_directory_build_props(&abs) {
+            if let (Some(dir), Some(text)) = (abs.parent(), scan::read_lossy(root, &abs, digests)) {
                 props_by_dir.insert(dir.to_path_buf(), text);
             }
         }
     }
 
-    // Each scope dir's ancestors up to root, checked non-recursively (one
-    // `read_dir` per ancestor, no descent into siblings).
-    for d in scope {
-        let scope_abs = if d == "." {
-            root.to_path_buf()
-        } else {
-            root.join(d)
-        };
-        for ancestor in ancestors_up_to(root, &scope_abs) {
-            scan_ancestor_dir(&ancestor, &mut csproj_files, &mut props_by_dir);
-        }
-    }
+    scan::scan_ancestor_dirs(
+        root,
+        scope,
+        ignored,
+        &mut csproj_files,
+        &mut props_by_dir,
+        digests,
+    );
 
     if csproj_files.is_empty() {
         return Ok(None);
@@ -154,74 +172,10 @@ pub fn discover(root: &Path, scope: &[String]) -> io::Result<Option<ProjectModel
 
     let mut units = Vec::with_capacity(csproj_files.len());
     for csproj_path in &csproj_files {
-        units.push(build_unit(root, csproj_path, &props_by_dir)?);
+        units.push(build_unit(root, csproj_path, &props_by_dir, digests)?);
     }
 
     Ok(Some(ProjectModel::from_units(units)))
-}
-
-// The ancestor directories of `dir`, starting at its parent and continuing
-// up to and including `root`. Empty when `dir == root` (no ancestors left to
-// check within the repo) or when `dir` is not under `root` at all.
-fn ancestors_up_to(root: &Path, dir: &Path) -> Vec<PathBuf> {
-    let mut out = Vec::new();
-    let mut cur = dir.to_path_buf();
-    while cur != root {
-        let Some(parent) = cur.parent() else {
-            break;
-        };
-        out.push(parent.to_path_buf());
-        if parent == root {
-            break;
-        }
-        cur = parent.to_path_buf();
-    }
-    out
-}
-
-// Non-recursive `.csproj`/`Directory.Build.props` scan of a single
-// directory's direct entries. A missing or unreadable directory (e.g. an
-// ancestor computed lexically from a scope element that does not exist on
-// disk) is silently skipped, matching `walk`'s "nonexistent scope element"
-// behavior rather than failing the whole discovery.
-fn scan_ancestor_dir(
-    dir: &Path,
-    csproj_files: &mut HashSet<PathBuf>,
-    props_by_dir: &mut HashMap<PathBuf, String>,
-) {
-    let Ok(entries) = fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let Ok(file_type) = entry.file_type() else {
-            continue;
-        };
-        if !file_type.is_file() {
-            continue;
-        }
-        let path = entry.path();
-        if path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .is_some_and(|n| n.ends_with(".csproj"))
-        {
-            csproj_files.insert(path);
-        } else if is_directory_build_props(&path) {
-            if let Some(text) = read_lossy(&path) {
-                props_by_dir.insert(dir.to_path_buf(), text);
-            }
-        }
-    }
-}
-
-fn is_directory_build_props(path: &Path) -> bool {
-    path.file_name().and_then(|n| n.to_str()) == Some("Directory.Build.props")
-}
-
-fn read_lossy(path: &Path) -> Option<String> {
-    fs::read(path)
-        .ok()
-        .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
 }
 
 // Reads and scans one discovered `.csproj` into its `Unit`. `props_by_dir`
@@ -233,6 +187,7 @@ fn build_unit(
     root: &Path,
     csproj_path: &Path,
     props_by_dir: &HashMap<PathBuf, String>,
+    digests: &mut ConfigDigests,
 ) -> io::Result<Unit> {
     let id = repo::rel_path(root, csproj_path);
     let dir_abs = csproj_path.parent().unwrap_or(root).to_path_buf();
@@ -244,6 +199,7 @@ fn build_unit(
         .to_string();
 
     let bytes = fs::read(csproj_path)?;
+    digests.insert(id.clone(), crate::freshness::record::sha256_hex(&bytes));
     let text = String::from_utf8_lossy(&bytes).into_owned();
     let facts = scan_csproj(&text);
 

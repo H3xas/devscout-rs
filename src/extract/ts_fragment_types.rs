@@ -19,8 +19,7 @@ use serde::{Deserialize, Serialize};
 // relationship at all.
 // ---------------------------------------------------------------------------
 
-/// One exported top-level declaration, in the shape the fragment serializes:
-/// `name`, `kind`, `line`, in that order.
+/// One file-scope declaration, with a marker for names not exported.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TsFragmentDef {
     /// The name value.
@@ -32,6 +31,9 @@ pub struct TsFragmentDef {
     #[serde(rename = "endLine")]
     /// The end line value.
     pub end_line: usize,
+    #[serde(default, skip_serializing_if = "is_false")]
+    /// Whether this declaration is private to its file.
+    pub local: bool,
 }
 
 /// One local name an import statement binds, and the export it names in the
@@ -54,6 +56,9 @@ pub struct TsImport {
     pub line: usize,
     /// The bindings value.
     pub bindings: Vec<TsBinding>,
+    /// Whether resolution uses the `CommonJS` require condition.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub require: bool,
 }
 
 /// `export { A as B } from 'm'` re-exports A under the name B: `exported` is
@@ -78,6 +83,18 @@ pub struct TsReexport {
     pub star: bool,
     /// The names value.
     pub names: Vec<TsReexportName>,
+    /// The name bound by a namespace re-export.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub namespace: Option<String>,
+}
+
+/// A module named by a literal dynamic import.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TsDynamicImport {
+    /// The module specifier.
+    pub spec: String,
+    /// The import call's one-based line.
+    pub line: usize,
 }
 
 /// One recorded reference. Field order (`kind`, `name`, optional `member`,
@@ -122,6 +139,39 @@ pub struct TsFragment {
     /// every added fact.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default: Option<String>,
+    /// The top-level name assigned with `export =`.
+    #[serde(
+        rename = "exportEquals",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub export_equals: Option<String>,
+    /// Literal dynamic imports in source order.
+    #[serde(
+        rename = "dynamicImports",
+        default,
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub dynamic_imports: Vec<TsDynamicImport>,
+    /// Dynamic imports whose first argument is not a literal.
+    #[serde(
+        rename = "nonLiteralDynamicImports",
+        default,
+        skip_serializing_if = "is_zero"
+    )]
+    pub non_literal_dynamic_imports: usize,
+    /// The file's `@Component` classes, appended LAST and omitted when the
+    /// file declares none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub components: Vec<super::ts_component::TsComponent>,
+}
+
+fn is_zero(value: &usize) -> bool {
+    *value == 0
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 impl Default for TsFragment {
@@ -133,6 +183,10 @@ impl Default for TsFragment {
             reexports: Vec::new(),
             refs: Vec::new(),
             default: None,
+            export_equals: None,
+            dynamic_imports: Vec::new(),
+            non_literal_dynamic_imports: 0,
+            components: Vec::new(),
         }
     }
 }

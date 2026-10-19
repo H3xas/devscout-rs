@@ -3,24 +3,20 @@
 // renderers, the not-found fallback, and the one telemetry call every
 // resolved query makes.
 
+use std::cell::RefCell;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use crate::freshness::{self, FreshnessState};
+use crate::exit::{EXIT_FAILURE, EXIT_NO_RESULT};
+use crate::freshness::{validate, FreshnessState};
 use crate::graph;
-use crate::manifest;
 use crate::query;
 use crate::query::json::J;
 use crate::suggest;
 use crate::telemetry;
 
 use super::root::require_repo;
-
-// A zero-hit answer is neither success nor failure: the index was read and the
-// answer is empty. Distinct from 1 (environment, refusal) and 2 (usage) so a
-// caller can branch on it instead of rephrasing the query.
-pub(crate) const EXIT_NO_RESULT: i32 = 3;
 
 // These four notes go to STDERR, never stdout, so a zero hit leaves stdout
 // exactly as empty as it was -- a caller parsing stdout sees no difference, and
@@ -59,20 +55,72 @@ pub(crate) fn emit_zero_hit_note(code: i32, note: Option<&str>, cwd: &Path, quer
         .and_then(|()| lock.write_all(b"\n"));
 }
 
+// This invocation's one freshness validation, opened by the verb BEFORE it
+// reads `graph.json` or `manifest.json` and finished once, by `finish_query` or
+// by the stderr path. `--json` and stderr therefore describe one reading of one
+// moment, and a query pays for exactly one `git status`.
+//
+// The slot is per-thread and per-invocation: a `begin_validation` replaces
+// whatever the previous call in this process left, so an in-process test that
+// runs two queries in a row can never inherit the first one's verdict.
+thread_local! {
+    static SLOT: RefCell<Option<Slot>> = const { RefCell::new(None) };
+}
+
+struct Slot {
+    root: PathBuf,
+    begin: validate::Begin,
+    finished: Option<validate::Validation>,
+}
+
+// Opens the invocation's validation. Every query verb calls this as soon as it
+// has a root, before any index artifact is read, so the snapshot it takes is
+// genuinely earlier than the answer.
+pub(crate) fn begin_validation(root: &Path, invocation_dir: &Path) {
+    let begin = validate::begin(root, invocation_dir);
+    SLOT.with(|slot| {
+        *slot.borrow_mut() = Some(Slot {
+            root: root.to_path_buf(),
+            begin,
+            finished: None,
+        });
+    });
+}
+
+// The finished validation for `root`, running it on first use. `None` when the
+// slot belongs to another root -- a verb whose root came from its own path
+// argument rather than the invocation directory -- so the caller falls back to
+// a fresh validation of its own.
+fn validation_for(root: &Path) -> Option<validate::Validation> {
+    SLOT.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        let entry = slot.as_mut()?;
+        if entry.root != root {
+            return None;
+        }
+        if entry.finished.is_none() {
+            entry.finished = Some(entry.begin.finish());
+        }
+        entry.finished.clone()
+    })
+}
+
 // Query-time index freshness, `find`/`refs`/`read`/`impact`/`tests` only: `map`
 // just rebuilt the index and has nothing to say about it being stale relative to
 // itself. Root resolution mirrors `require_repo`'s plain climb, never
-// `require_repo_for_path`'s argument-named-file fallback -- a query that only
-// resolved its root through an argument gets no freshness check, silently, the
-// safe default. Called BEFORE `emit_zero_hit_note` so the two lines land on
-// stderr in a fixed order when both fire for the same query. Never touches
-// stdout, never changes the exit code.
+// `require_repo_for_path`'s argument-named-file fallback. Called BEFORE
+// `emit_zero_hit_note` so the two lines land on stderr in a fixed order when
+// both fire for the same query. Never touches stdout, never changes the exit
+// code.
 pub(crate) fn emit_freshness_warning(cwd: &Path) {
     let Some(root) = crate::repo::find_scout_root(cwd).or_else(|| crate::repo::find_repo_root(cwd))
     else {
         return;
     };
-    let Some(warning) = manifest::freshness_warning(&root) else {
+    // The verb's own validation when it opened one at this root; otherwise this
+    // invocation never reached a verb, and the check runs here, once.
+    let validation = validation_for(&root).unwrap_or_else(|| validate::begin(&root, cwd).finish());
+    let Some(warning) = validation.warning else {
         return;
     };
     let stderr = std::io::stderr();
@@ -112,6 +160,29 @@ fn ambiguous_json(q: &str, candidates: Vec<J>) -> String {
     .to_json_string()
 }
 
+// The refusal's own candidate objects, one per row, in the SAME order the
+// rows print -- both are built from `query::pick`'s own refusal order, so the
+// list a caller reads and the numbers `--pick` answers with cannot disagree.
+pub(crate) fn type_candidate_object(index: &query::GraphIndex, id: &str) -> J {
+    let d = query::candidate_def(index, id);
+    J::Obj(vec![
+        ("id", J::Str(id.to_string())),
+        ("file", J::Str(d.file.clone())),
+        ("line", J::UInt(d.line as u64)),
+        ("kind", J::Str(d.kind.clone())),
+    ])
+}
+
+// One member candidate as the refusal's own JSON object.
+pub(crate) fn member_candidate_object(c: &query::MemberCandidate) -> J {
+    J::Obj(vec![
+        ("owner", J::Str(c.owner.clone())),
+        ("name", J::Str(c.name.clone())),
+        ("file", J::Str(c.file.clone())),
+        ("line", J::UInt(c.line as u64)),
+    ])
+}
+
 // Shared by the four graph-reading verbs -- the "never guess" house rule: name
 // every candidate's `{id, def site, kind}` and exit 1. `--compact` is inert here
 // (a candidate list has no wide form to narrow); `--json` carries the same facts
@@ -122,44 +193,24 @@ pub(crate) fn ambiguous_candidates_out(
     ids: &[String],
     json: bool,
 ) -> (i32, String) {
-    let mut rows: Vec<(String, &String, &graph::Def)> = ids
-        .iter()
-        .map(|id| {
-            // Every id here was sourced from `index.by_simple_name`/
-            // `by_lower_name`, both built from `index.by_id`'s own keys during
-            // construction -- `index.def(id)` cannot miss. `.expect` fails loud
-            // if that invariant ever broke.
-            let d = index
-                .def(id)
-                .expect("ambiguous candidate id must resolve to a graph def");
-            (format!("{id}  {}:{}  {}", d.file, d.line, d.kind), id, d)
-        })
-        .collect();
-    // Sorting on the rendered row compares by UTF-8 byte order, which for the
-    // ASCII identifier/path/kind text these rows are built from is a stable,
-    // total order (the same seam resolve.rs's candidate sort documents), and
-    // gives the JSON array below the order the text list prints.
-    rows.sort_by(|a, b| a.0.cmp(&b.0));
+    let ordered = query::type_candidates_in_refusal_order(index, ids);
     if json {
-        let candidates = rows
+        let candidates = ordered
             .iter()
-            .map(|(_, id, d)| {
-                J::Obj(vec![
-                    ("id", J::Str((*id).clone())),
-                    ("file", J::Str(d.file.clone())),
-                    ("line", J::UInt(d.line as u64)),
-                    ("kind", J::Str(d.kind.clone())),
-                ])
-            })
+            .map(|id| type_candidate_object(index, id))
             .collect();
-        return (1, ambiguous_json(q, candidates));
+        return (EXIT_FAILURE, ambiguous_json(q, candidates));
     }
     let mut out = vec![format!(
         "ambiguous symbol \"{q}\" — {} candidates:",
-        rows.len()
+        ordered.len()
     )];
-    out.extend(rows.into_iter().map(|(row, _, _)| row));
-    (1, out.join("\n"))
+    out.extend(
+        ordered
+            .iter()
+            .map(|id| query::type_candidate_row(id, query::candidate_def(index, id))),
+    );
+    (EXIT_FAILURE, out.join("\n"))
 }
 
 // Renders a member-ambiguous outcome (`RefsResult::MemberAmbiguous` and its
@@ -174,27 +225,15 @@ pub(crate) fn member_ambiguous_out(
     json: bool,
 ) -> (i32, String) {
     if json {
-        let rows = candidates
-            .iter()
-            .map(|c| {
-                J::Obj(vec![
-                    ("owner", J::Str(c.owner.clone())),
-                    ("name", J::Str(c.name.clone())),
-                    ("file", J::Str(c.file.clone())),
-                    ("line", J::UInt(c.line as u64)),
-                ])
-            })
-            .collect();
-        return (1, ambiguous_json(q, rows));
+        let rows = candidates.iter().map(member_candidate_object).collect();
+        return (EXIT_FAILURE, ambiguous_json(q, rows));
     }
     let mut out = vec![format!(
         "ambiguous member \"{q}\" — {} candidates:",
         candidates.len()
     )];
-    for c in candidates {
-        out.push(format!("{}.{}  {}:{}", c.owner, c.name, c.file, c.line));
-    }
-    (1, out.join("\n"))
+    out.extend(candidates.iter().map(query::member_candidate_row));
+    (EXIT_FAILURE, out.join("\n"))
 }
 
 // Renders a fully-unresolved query (`NotFound` on every one of `refs`/`read`/
@@ -224,7 +263,9 @@ pub(crate) fn fallback_advised_out(q: &str, json: bool, plain: String) -> (i32, 
 // `indexedHead`/`currentHead` mirror `freshness_warning`'s own truncated
 // stderr wording in spirit but are written full-length here -- a
 // programmatic consumer should not have to guess where a short hash was cut.
-fn freshness_json(state: &FreshnessState) -> J {
+// `pub(crate)`: the fact export states the same freshness the queries answer
+// with, through this one renderer, so the two can never drift apart.
+pub(crate) fn freshness_json(state: &FreshnessState) -> J {
     match state {
         FreshnessState::Fresh => J::Obj(vec![("state", J::Str("fresh".to_string()))]),
         FreshnessState::Stale {
@@ -293,7 +334,10 @@ pub(crate) fn finish_query(
 ) -> (i32, String) {
     let (code, mut out, outcome, candidate_count) = answer;
     if json {
-        out = append_freshness(&out, &freshness::index_freshness_state(root));
+        let state = validation_for(root)
+            .map(|v| v.state)
+            .unwrap_or_else(|| validate::begin(root, root).finish().state);
+        out = append_freshness(&out, &state);
     }
     telemetry::record(
         root,

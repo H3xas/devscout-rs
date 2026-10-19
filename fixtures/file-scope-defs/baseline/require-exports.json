@@ -1,0 +1,188 @@
+{
+  "defs": [
+    {
+      "endLine": 1,
+      "file": "esm.ts",
+      "id": "esm.ts#lib",
+      "kind": "const",
+      "line": 1,
+      "name": "lib",
+      "namespace": ""
+    },
+    {
+      "endLine": 3,
+      "file": "esm.ts",
+      "id": "esm.ts#useLib",
+      "kind": "function",
+      "line": 3,
+      "name": "useLib",
+      "namespace": ""
+    },
+    {
+      "endLine": 1,
+      "file": "impl.js",
+      "id": "impl.js#run",
+      "kind": "function",
+      "line": 1,
+      "name": "run",
+      "namespace": ""
+    },
+    {
+      "endLine": 1,
+      "file": "prop.js",
+      "id": "prop.js#impl",
+      "kind": "const",
+      "line": 1,
+      "name": "impl",
+      "namespace": ""
+    },
+    {
+      "endLine": 3,
+      "file": "user.js",
+      "id": "user.js#go",
+      "kind": "function",
+      "line": 3,
+      "name": "go",
+      "namespace": ""
+    },
+    {
+      "endLine": 3,
+      "file": "user2.ts",
+      "id": "user2.ts#z",
+      "kind": "function",
+      "line": 3,
+      "name": "z",
+      "namespace": ""
+    },
+    {
+      "endLine": 1,
+      "file": "whole.js",
+      "id": "whole.js#impl",
+      "kind": "const",
+      "line": 1,
+      "name": "impl",
+      "namespace": ""
+    }
+  ],
+  "edges": [
+    {
+      "from_file": "dflt.js",
+      "from_line": 1,
+      "kind": "import",
+      "target": "./impl",
+      "to_file": "impl.js"
+    },
+    {
+      "from_file": "esm.ts",
+      "from_line": 1,
+      "kind": "import",
+      "target": "./impl",
+      "to_file": "impl.js"
+    },
+    {
+      "from_file": "esm.ts",
+      "from_line": 3,
+      "kind": "call",
+      "to": "impl.js#run",
+      "to_file": "impl.js"
+    },
+    {
+      "from_file": "prop.js",
+      "from_line": 1,
+      "kind": "import",
+      "target": "./impl",
+      "to_file": "impl.js"
+    },
+    {
+      "from_file": "user.js",
+      "from_line": 1,
+      "kind": "import",
+      "target": "./whole",
+      "to_file": "whole.js"
+    },
+    {
+      "bound_defs": [
+        "prop.js#impl"
+      ],
+      "from_file": "user.js",
+      "from_line": 2,
+      "kind": "import",
+      "target": "./prop",
+      "to_file": "prop.js"
+    },
+    {
+      "from_file": "user.js",
+      "from_line": 3,
+      "kind": "call",
+      "to": "prop.js#impl",
+      "to_file": "prop.js"
+    },
+    {
+      "bound_defs": [
+        "esm.ts#lib"
+      ],
+      "from_file": "user2.ts",
+      "from_line": 1,
+      "kind": "import",
+      "target": "./esm",
+      "to_file": "esm.ts"
+    },
+    {
+      "from_file": "user2.ts",
+      "from_line": 2,
+      "kind": "import",
+      "target": "./dflt",
+      "to_file": "dflt.js"
+    },
+    {
+      "from_file": "user2.ts",
+      "from_line": 3,
+      "kind": "call",
+      "to": "esm.ts#lib",
+      "to_file": "esm.ts"
+    },
+    {
+      "from_file": "whole.js",
+      "from_line": 1,
+      "kind": "import",
+      "target": "./impl",
+      "to_file": "impl.js"
+    }
+  ],
+  "manifest": {
+    "dflt.js": {
+      "purpose": "default impl",
+      "source": "ast"
+    },
+    "esm.ts": {
+      "purpose": "function useLib",
+      "source": "ast"
+    },
+    "impl.js": {
+      "purpose": "function run",
+      "source": "ast"
+    },
+    "prop.js": {
+      "purpose": "const impl",
+      "source": "ast"
+    },
+    "user.js": {
+      "purpose": "function go",
+      "source": "ast"
+    },
+    "user2.ts": {
+      "purpose": "function z",
+      "source": "ast"
+    },
+    "whole.js": {
+      "purpose": "default impl",
+      "source": "ast"
+    }
+  },
+  "tsStats": {
+    "external_import_count": 0,
+    "ts_def_count": 7,
+    "ts_file_count": 7,
+    "unresolved_ref_count": 2
+  }
+}

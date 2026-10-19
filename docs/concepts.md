@@ -25,11 +25,17 @@ C# (`.cs`) is the complete story: declarations, inheritance, type and member usa
 preprocessor-aware extraction. TypeScript / TSX / JavaScript (`.ts`, `.tsx`, `.mts`, `.cts`,
 `.js`, `.jsx`, `.mjs`, `.cjs`) are indexed for `find` and file purposes, and are resolved into
 `import`, `call`, `jsx-use` and `dispatch` edges, which `refs`, `read`, `impact` and `tests` read as
-their own tables; `tests` also counts a `.ts`/`.tsx`/`.js`/`.mjs`/`.cjs` file named `*.spec.*`,
-`*.test.*` or placed below `__tests__/` as a test file.
+their own tables; `tests` also counts a `.ts`/`.tsx`/`.mts`/`.cts`/`.js`/`.jsx`/`.mjs`/`.cjs`
+file named `*.spec.*`, `*.test.*` or placed below `__tests__/` as a test file.
 JavaScript files answer through the same edges but that surface is not measured. Rust edges come
 from path resolution. How each
 language's references become edges is in [How names resolve](explanation/resolution.md).
+
+An Angular component's members are name rows too. A member read in the component's template is a
+`uses-member` edge from the template line to the component class. The template is the
+component's `templateUrl` file or its inline `template` string. TypeScript member reads are not
+indexed, so the rows of such a member answer are Angular template reads only
+([Angular templates](explanation/resolution.md#angular-templates)).
 
 ## Tiers
 
@@ -55,7 +61,20 @@ own inbound references.
 A member seed carried by more than one type lists one row per **candidate** — its declaring type,
 file, and line — rather than guessing between them or printing a bare list of types. Pass
 `--pick N` (one-based) to select the nth row from that list; an out-of-range `N` is a usage error
-(exit code 2).
+(exit code 2). A type name more than one def shares is a candidate list of the same kind, and
+`--pick N` narrows that too.
+
+Pass `--pick all` to answer every candidate instead of one, each in its own section. A section
+opens with a label line, `candidate <i> of <n>: <the refusal's own row>`, and its body is exactly
+what `--pick <i>` prints for that candidate. One blank line separates two sections, and no row
+moves between them. The answer as a whole is a hit when at least one section is, and a
+[zero hit](reference/json-output.md#outcome) otherwise. Under `--json` the sections arrive as a
+`sections` array rather than as one merged answer
+([JSON output](reference/json-output.md#the-sections-envelope)).
+
+A member of an Angular component takes the class name as its qualifier (`ProfileCard.caption`),
+because the component's def id is `file#ProfileCard`. Use the qualified seed when two components
+declare a member with the same name.
 
 A Rust item is named by its name, by its id (`src/shelf.rs#Widget::new`), or by a `::` path such
 as `Widget::new` or `cabinet::Hinge::oil`; a path two items share within a file (two trait impls
@@ -79,9 +98,21 @@ symbol on your behalf, and an ambiguous name prints every candidate instead of p
 ## Freshness
 
 Re-run `devscout map .` after edits; it re-parses only what changed and leaves the graph alone when
-nothing moved. If the index falls behind `HEAD`, queries print a staleness warning on stderr rather
-than silently answering from stale data. There is no watch mode: `map` is fast and incremental, but
-you run it; nothing watches the filesystem for you.
+nothing moved. Reuse is keyed on content, so a file rewritten to the same bytes -- or rewritten with
+its size and modification time preserved -- is still seen.
+
+An index belongs to one worktree at a time: the worktree that last ran `map` in the repository. A
+query from any other linked worktree reports `unknown` with reason `other-worktree` until that
+worktree maps. Within the owning worktree, an index is `fresh` only when the bytes it recorded --
+dirty files included, compared by digest -- still match the working tree, and the two artifacts it
+certified are the ones still on disk. Anything else is `stale`, or `unknown` with a reason a script
+can branch on; the same verdict reaches stderr as a line and `--json` as the `freshness` object, from
+one validation per invocation. Validation is capped (5,000 `git status` entries, 2,048 candidate
+paths, 16 MiB of candidate bytes), and a tree past a cap answers `unknown` with reason
+`validation-budget` rather than a verdict it could not earn.
+
+There is no watch mode: `map` is fast and incremental, but you run it; nothing watches the
+filesystem for you.
 
 **Freshness** also names two narrower records: the agent hooks' read-freshness cache, which
 remembers what a session has already read (see [Agent hooks](guides/agent-hooks.md)), and the
@@ -114,5 +145,5 @@ and records the same answer as `stats.lane` in `graph.json`; see
 | seed | The symbol or file a query starts from. |
 | member seed | A seed that names a member: `Show`, `Widget.Show` or `App.Widgets.Widget.Show`. |
 | outcome | The answer's kind: `hit`, `zero-hit`, `ambiguous` or `fallback-advised`. |
-| freshness | Whether the index is current with `HEAD`; a query warns on stderr when it has fallen behind. |
+| freshness | Whether the index describes the working tree: this worktree published it, at the current `HEAD`, and no indexed byte differs. A query reports it on stderr and under `--json`. |
 | lane | Which graph a `map` built: syntax-only, or enriched by an admitted compiler-fact artifact. |

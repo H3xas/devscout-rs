@@ -3,7 +3,7 @@
 // a mismatch makes reuse break silently.
 //
 // This module owns every serde struct for graph.json + the fragments-cache
-// pair (fragments-v33.json, fragments-index-v33.json), plus their path resolution,
+// pair (fragments-v44.json, fragments-index-v44.json), plus their path resolution,
 // atomic I/O, and the cache-then-resolve-then-write orchestration
 // (`rebuild_graph`). The pure resolution ladder that
 // turns fragments into `defs`/`edges` lives in `resolve.rs` and returns the
@@ -87,17 +87,25 @@ mod fragment;
 mod fragment_types;
 mod imports;
 mod lane;
+mod messaging_types;
 mod ordered;
 mod paths;
 mod rebuild;
 
 pub use artifact::{read_graph, Graph, GraphName, GraphUnit, Stats, GRAPH_SCHEMA_VERSION};
-pub use cache::{index_is_stale, read_fragments_index, FragmentCacheEntry};
+// Test-only: production code writes these artifacts through `map`, never through
+// a direct writer.
+#[cfg(test)]
+pub(crate) use artifact::write_graph;
+#[cfg(test)]
+pub(crate) use cache::write_fragments_cache;
+pub use cache::{index_is_stale, read_fragments_index, FragMessaging, FragmentCacheEntry};
+pub(crate) use cache::{read_fragments_messaging, superseded_cache_present, StrictCacheError};
 pub use call_shape_types::{FragDelegateSignature, FragLambdaShape};
 pub use compiler_facts::{
-    admit, admit_and_publish, compiler_facts_json_path, expectations_for, locate_engine,
-    read_compiler_facts, run_engine, AdmissionExpectations, AdmittedFacts, CompilationTally,
-    Coverage, IncompleteUnit, Profile, PublishError, RefusalReason,
+    admit, admit_and_publish, compiler_facts_file_name, compiler_facts_json_path, expectations_for,
+    locate_engine, read_compiler_facts, run_engine, AdmissionExpectations, AdmittedFacts,
+    CompilationTally, Coverage, IncompleteUnit, Profile, PublishError, RefusalReason,
     COMPILER_FACTS_ARTIFACT_SCHEMA_VERSION, COMPILER_FACTS_CONTRACT_VERSION, COMPILER_FACTS_FORMAT,
     DEFAULT_OUTPUT_CAP, DEFAULT_TIMEOUT, EXPECTED_CONTEXT_SCHEMA_VERSION,
     EXPECTED_DEPENDENCY_FINGERPRINT, EXPECTED_ENGINE_REVISION, EXPECTED_PRODUCER_NAME,
@@ -109,19 +117,23 @@ pub use def::{AlsoIn, Def};
 pub use edge::{
     Candidate, Edge, EdgesByKind, HeuristicByTier, HeuristicTier, SemanticProvenance, SemanticStats,
 };
-pub use fragment::{fragment_from_extraction, markup_fragment};
+pub use fragment::{fragment_from_extraction, markup_fragment, markup_fragment_text};
 pub use fragment_types::{
-    AnyFragment, FragArgType, FragDef, FragExtensionMethod, FragFact, FragLambdaSlot, FragName,
-    FragRef, FragRegistration, FragUsing, Fragment,
+    AnyFragment, FragArgType, FragDef, FragEnclosingCall, FragExtensionMethod, FragFact,
+    FragHandlerRegistration, FragLambdaSlot, FragName, FragPublish, FragRef, FragRegistration,
+    FragUsing, Fragment, HtmlFragment,
 };
 pub use imports::{
     imported_edges_json_path, parse_imported_edges, read_imported_edges, write_imported_edges,
-    EdgeEnd, ImportRecord, ImportedEdges, Provenance, IMPORTED_EDGES_FORMAT,
-    IMPORTED_EDGES_SCHEMA_VERSION, IMPORTED_EDGE_KINDS,
+    EdgeEnd, ImportRecord, ImportedEdges, Provenance, IMPORTED_EDGES_ARTIFACT_SCHEMA_VERSION,
+    IMPORTED_EDGES_FORMAT, IMPORTED_EDGES_SCHEMA_VERSION, IMPORTED_EDGE_KINDS,
 };
 pub use lane::{LaneCompilations, LaneReason, LaneStats};
 pub use ordered::{OrderedMap, Percent1};
-pub use paths::{graph_json_path, project_units_path, rust_crates_path};
+pub(crate) use paths::atomic_write_json;
+pub use paths::fragment_generation;
+pub(crate) use paths::fragments_cache_path;
+pub use paths::{graph_json_path, project_units_path, rust_crates_path, transport_inputs_path};
 pub use rebuild::{rebuild_graph, rebuild_graph_with_crates, GraphFile, RebuildOutcome};
 
 #[cfg(test)]

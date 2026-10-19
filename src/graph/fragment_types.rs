@@ -4,6 +4,9 @@ use crate::extract;
 
 pub use super::argument_types::FragArgType;
 use super::call_shape_types::{FragDelegateSignature, FragLambdaShape, FragOverloadSites};
+pub use super::messaging_types::{
+    FragEnclosingCall, FragHandlerRegistration, FragPublish, FragRegistration,
+};
 use super::ordered::OrderedMap;
 
 // ---------------------------------------------------------------------------
@@ -272,101 +275,6 @@ pub struct FragDef {
     #[serde(default, rename = "endLine", skip_serializing_if = "is_zero")]
     /// The end line value.
     pub end_line: usize,
-}
-
-/// One two-type-argument DI service registration a file's invocations
-/// record -- see `extract::RegistrationRecord`.
-///
-/// `service` is the first type argument (the interface), `implementation`
-/// the second (the concrete type). Field order (`service`,
-/// `implementation`, `namespace`, `line`) is significant; neither type name
-/// carries its enclosing-namespace qualification here (that is the
-/// resolver's job, against the registration site's OWN using/alias context,
-/// read from `namespace`).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct FragRegistration {
-    /// The service (first type argument) name.
-    pub service: String,
-    /// The implementation (second type argument) name.
-    pub implementation: String,
-    /// The registration call's enclosing namespace.
-    pub namespace: String,
-    /// The registration call's 1-based line.
-    pub line: usize,
-}
-
-/// One message-bus publish-site fact a file's invocations record -- see
-/// `extract::PublishRecord`. Field order (`verb`, `message`, `namespace`,
-/// `line`, `outerTypes`, `enclosingMethod`, `argCount`, `enclosingCall`) is
-/// significant; `outerTypes` is omitted when empty, `enclosingMethod` when
-/// absent, `argCount` when zero and `enclosingCall` when absent.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct FragPublish {
-    /// The invoked method name.
-    pub verb: String,
-    /// The resolved message-type descriptor.
-    pub message: String,
-    /// The call's enclosing namespace.
-    pub namespace: String,
-    /// The call's 1-based line.
-    pub line: usize,
-    /// Enclosing-type stack (see `FragRef::outer_types`).
-    #[serde(default, rename = "outerTypes", skip_serializing_if = "Vec::is_empty")]
-    pub outer_types: Vec<String>,
-    /// The enclosing method's name, set only when this publish hands on its
-    /// own caller's message -- see `extract::PublishRecord::enclosing_method`.
-    /// Appended LAST, omitted when absent. Joined the schema with the v21
-    /// cache bump.
-    #[serde(
-        default,
-        rename = "enclosingMethod",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub enclosing_method: Option<String>,
-    /// The call's own argument count -- see `extract::PublishRecord::arg_count`.
-    /// Appended LAST, after `enclosingMethod`, omitted when zero. Stays
-    /// within the v22 generation (no accepted or released build has ever
-    /// written v22).
-    #[serde(default, rename = "argCount", skip_serializing_if = "is_zero")]
-    pub arg_count: usize,
-    /// The enclosing invocation the call's own lambda sits inside, when it
-    /// sits inside one -- see `extract::PublishRecord::enclosing_call`.
-    /// Appended LAST, after `argCount`, omitted when absent.
-    #[serde(
-        default,
-        rename = "enclosingCall",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub enclosing_call: Option<FragEnclosingCall>,
-}
-
-/// One publish call's own enclosing-lambda-argument fact -- see
-/// `extract::EnclosingCallFact`. Field order (`verb`, `argPosition`,
-/// `argCount`) is significant.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct FragEnclosingCall {
-    /// The enclosing invocation's own callee bare name.
-    pub verb: String,
-    /// The 0-based position the lambda occupies among the enclosing
-    /// invocation's arguments.
-    #[serde(rename = "argPosition")]
-    pub arg_position: usize,
-    /// The enclosing invocation's own total argument count.
-    #[serde(rename = "argCount")]
-    pub arg_count: usize,
-}
-
-/// One one-type-argument handler registration a file's invocations record
-/// -- see `extract::HandlerRegistrationRecord`. Field order (`handler`,
-/// `namespace`, `line`) is significant.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct FragHandlerRegistration {
-    /// The registered type's descriptor, as written.
-    pub handler: String,
-    /// The registration call's enclosing namespace.
-    pub namespace: String,
-    /// The registration call's 1-based line.
-    pub line: usize,
 }
 
 /// One declared type fact: the type NAME, plus its top-level
@@ -759,16 +667,48 @@ pub struct Fragment {
         skip_serializing_if = "Vec::is_empty"
     )]
     pub handler_registrations: Vec<FragHandlerRegistration>,
+    /// The file's provisional transport sites, appended LAST after
+    /// `handlerRegistrations` and omitted when empty. Joined the schema with
+    /// the v41 cache bump.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub transport: Vec<crate::transport::TransportSite>,
 }
 
-/// The three shapes a cached fragment can have. Each rel is keyed to
+/// An external Angular template's fragment: the scan of the file alone.
+/// Which component the template belongs to is decided at graph time, so an
+/// edit to only the template moves only this file's cache key.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HtmlFragment {
+    /// The routing tag, always `1` and always FIRST, as `ts` is for a TS
+    /// fragment.
+    pub html: u8,
+    /// The reads no template local hides, omitted when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reads: Vec<crate::ngtemplate::TemplateRead>,
+    /// The scanner's own gaps, omitted when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub gaps: Vec<crate::ngtemplate::TemplateGap>,
+}
+
+impl HtmlFragment {
+    /// The fragment of one template scan.
+    pub fn from_scan(scan: crate::ngtemplate::TemplateScan) -> Self {
+        HtmlFragment {
+            html: 1,
+            reads: scan.reads,
+            gaps: scan.gaps,
+        }
+    }
+}
+
+/// The four shapes a cached fragment can have. Each rel is keyed to
 /// whichever shape the file's grammar produced; a required key tells them
-/// apart, on disk and at the resolver's door. Untagged, TS first, Rust last:
-/// a TS fragment carries `ts`, a C#/markup fragment carries `usings` (and
-/// `defs`, `refs`), and a Rust fragment carries `rs` and neither of the
-/// others' required keys. Each arm fails on the other two shapes, so the
-/// discrimination is total in every direction, never a first-match-wins
-/// guess.
+/// apart, on disk and at the resolver's door. Untagged, TS first, template
+/// last: a TS fragment carries `ts`, a C#/markup fragment carries `usings`
+/// (and `defs`, `refs`), a Rust fragment carries `rs`, and a template
+/// fragment carries `html` and none of the others' required keys. Each arm
+/// fails on the other shapes, so the discrimination is total in every
+/// direction, never a first-match-wins guess.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum AnyFragment {
@@ -778,6 +718,8 @@ pub enum AnyFragment {
     Cs(Fragment),
     /// A Rust fragment: items with spans, no references.
     Rs(extract::RsFragment),
+    /// An external Angular template: reads and gaps, no defs.
+    Html(HtmlFragment),
 }
 
 impl From<Fragment> for AnyFragment {
@@ -795,5 +737,11 @@ impl From<extract::TsFragment> for AnyFragment {
 impl From<extract::RsFragment> for AnyFragment {
     fn from(f: extract::RsFragment) -> Self {
         AnyFragment::Rs(f)
+    }
+}
+
+impl From<HtmlFragment> for AnyFragment {
+    fn from(f: HtmlFragment) -> Self {
+        AnyFragment::Html(f)
     }
 }

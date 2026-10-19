@@ -113,17 +113,30 @@ pub(crate) fn impact_model_to_json_with_imports_and_next(
 /// wrapper carries what the members' lists amount to together. The wrapper is
 /// itself a resolved answer, so it states its own suggestions rather than
 /// leaving a reader to union the members by hand.
+///
+/// A member whose `template_only` flag is set carries
+/// `"memberReads":"angular-templates-only"` just before its `next`: its rows
+/// are Angular template reads, and no TypeScript member read is indexed.
 pub(crate) fn member_refs_to_json_with_next(
     query_str: &str,
     models: &[query::RefsModel],
     outcome: query::Outcome,
     members_next: &[Vec<Vec<String>>],
     wrapper_next: &[Vec<String>],
+    template_only: &[bool],
 ) -> String {
     let members: Vec<J> = models
         .iter()
         .zip(members_next)
-        .map(|(model, next)| refs_j_with_next(model, outcome, next))
+        .zip(template_only)
+        .map(|((model, next), &only)| {
+            let mut fields = refs_model_fields(model, outcome);
+            if only {
+                let at = fields.len().saturating_sub(1);
+                fields.insert(at, ("memberReads", J::Str("angular-templates-only".into())));
+            }
+            J::Obj(with_next(fields, next))
+        })
         .collect();
     J::Obj(member_refs_fields(
         query_str,

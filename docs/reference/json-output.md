@@ -60,8 +60,8 @@ therefore be run as it stands -- it exits `0`, or `3` with `outcome: "zero-hit"`
 names turns out to resolve to nothing. Nothing here can exit `1` or `2`.
 
 `next` is present on `hit` and `zero-hit` answers, on the wrapper object and on every member object
-of a `members` answer, and it is absent from the `ambiguous` envelope, from the `fallback-advised`
-answer and from `freshness`.
+of a `members` answer, on the `sections` wrapper and on every section answer under it, and it is
+absent from the `ambiguous` envelope, from the `fallback-advised` answer and from `freshness`.
 
 ## The text count line
 
@@ -131,6 +131,50 @@ devscout refs Run --json
 }
 ```
 
+## The `sections` envelope
+
+`--pick all` answers every candidate of an ambiguous seed, each in its own section, on all four
+verbs. The `--json` shape is `schema_version` first, `status: "sections"`, the `query` string as
+typed, a `sections` array, `next`, `outcome`, and `freshness` once at the end -- the key order the
+`members` wrapper already uses, so a consumer learns one arrangement.
+
+Each `sections` entry carries `pick` (its one-based number, matching `--pick N`), `candidate` (the
+refusal's own candidate object at that position, in the refusal's own order) and `answer` (that
+candidate's `--json` answer, byte for byte what `--pick N --json` prints, minus the `freshness`
+key the wrapper carries once). The sections are never merged, deduplicated or reordered, so a row
+always belongs to exactly one candidate.
+
+`next` is the union of the sections' own `next` lists, by the same merge the `members` wrapper
+applies to its members. `outcome` is `hit` when at least one section is, and `zero-hit` otherwise,
+with exit code 0 or 3 to match. `schema_version` stays 1 and the `outcome` set keeps its four
+values: `sections` is a `status`, not a fifth outcome.
+
+```json
+{
+  "schema_version": 1,
+  "status": "sections",
+  "query": "Run",
+  "sections": [
+    {
+      "pick": 1,
+      "candidate": { "owner": "App.Alpha.Widget", "name": "Run", "file": "src/A.cs", "line": 5 },
+      "answer": { "schema_version": 1, "status": "members", "query": "App.Alpha.Widget.Run", "members": [], "next": [], "outcome": "hit" }
+    },
+    {
+      "pick": 2,
+      "candidate": { "owner": "App.Beta.Widget", "name": "Run", "file": "src/B.cs", "line": 5 },
+      "answer": { "schema_version": 1, "status": "members", "query": "App.Beta.Widget.Run", "members": [], "next": [], "outcome": "hit" }
+    }
+  ],
+  "next": [],
+  "outcome": "hit",
+  "freshness": { "state": "fresh" }
+}
+```
+
+Without `--pick`, the same seed still refuses under the `ambiguous` envelope above. `--pick N`
+alone answers candidate `N` and prints that candidate's own shape, with no wrapper.
+
 ## `why`
 
 Every hit row -- an inbound/outbound/import row on `refs`/`read`, a row of `impact`'s blast
@@ -158,7 +202,7 @@ why they are *unresolved*, a different question from which rule produced a settl
 | `jsx-use` | A TS/TSX/JS `jsx-use` edge: a JSX tag naming the component. |
 | `dispatch` | A TS/TSX/JS `dispatch` edge: an action creator handed to a dispatching call (`dispatch(...)`, `ofType(...)`). |
 | `import` | A TS/TSX/JS `import` edge whose bindings name the definition: a named, default or type-only import, or a named re-export. |
-| `test-path` | A `tests` row earned because the file is a TS/TSX/JS file named as a test (`*.spec.*` or `*.test.*` in `.ts`, `.tsx`, `.js`, `.mjs` or `.cjs`, or below a directory named `__tests__`), with neither an attributed def nor a test project behind it. |
+| `test-path` | A `tests` row earned because the file has one of the eight TypeScript/JavaScript suffixes (`.ts`, `.tsx`, `.mts`, `.cts`, `.js`, `.jsx`, `.mjs`, `.cjs`) and is either named `*.spec.*` or `*.test.*`, or below a directory segment exactly `__tests__`, with neither an attributed def nor a test project behind it. |
 
 **Vocabulary growth.** `why` and `outcome` may each gain a new word over time without a
 `schema_version` bump, the same way an added key never bumps it. A consumer must treat a `why`
@@ -176,6 +220,17 @@ definition of one statement, so a statement binding two names is two rows, each 
 `to`. The kinds are read by edge kind, not by the file's language, so a JavaScript caller answers
 too; that surface is not measured.
 
+**`local`.** A TS/JS file-scope definition that is not exported carries `"local": true` after
+`endLine` in `graph.json` and the fragment cache. A definition named by statement-form
+`export default <name>` does not clear the marker. It stays `"local": true`, and access by its own
+name from another file stays unbound. A definition named by clause-form
+`export { <name> as default }` is exported, so its row omits the key. An import by its own name
+binds it as for any exported definition. A default import binds the definition in both forms.
+Exported definitions omit the key, as do C# and Rust definitions. Each TS/JS definition also
+contributes a `names` row with its declaration line and no `owner`; this lets `find` show the
+declaration. `read` and `refs` do not add a local marker to their output. An exported definition
+wins a bare-name tie, while an exact id selects the local.
+
 **`bound_defs`.** In `graph.json`, a TS `import` edge carries `bound_defs` after `via`, present
 only when non-empty: the ids of the definitions its named, default and type-only bindings (or a
 named re-export's names) resolve to, in binding order with duplicates dropped. Each id is declared
@@ -185,12 +240,20 @@ side-effect or `export *` statement binds no name and yields no `import` row; it
 calls still answer as `call` rows. A `graph.json` written before the field existed loads and
 answers with no `import` table until the next `map` rewrites it.
 
-**Test files by name.** `tests` counts a `.ts`/`.tsx`/`.js`/`.mjs`/`.cjs` file named as a test
-(see `test-path` above) when neither the attribute nor the project vouch reaches it. Such a row
+**Unresolved TypeScript imports.** `graph.json` schema 3 appends `unresolved_imports` only when a
+declared-mode scope has imports without an indexed implementation target. A row has `from_file`,
+`from_line`, `target` (the source specifier) and one closed `reason`; see the
+[reason vocabulary](typescript-modules.md#unresolved-imports). `stats.ts` appends
+`unresolved_import_reasons` (reason to count), `unsupported_mode_scopes` (config and mode),
+`refused_config` (file and failing field), and `non_literal_dynamic_import_count` when those values
+are non-empty. An absent key means there are no records of that kind. These graph additions do not
+change its schema version or the query-answer `schema_version`.
+
+**Test files by name.** `tests` counts a file ending in `.ts`, `.tsx`, `.mts`, `.cts`,
+`.js`, `.jsx`, `.mjs` or `.cjs` when its name matches the `test-path` rule above
+and neither the attribute nor the project vouch reaches it. Such a row
 writes `via: "path"` where a project-vouched row writes `via: "project"`, and the default
-renderer marks it ` (test path)`. `impact`'s `testsAffected` reads the same definition. The `.jsx`
-and `.mts`/`.cts` suffixes are read and graphed, but a file naming one of them is not classified
-as a test by its name.
+renderer marks it ` (test path)`. `impact`'s `testsAffected` reads the same definition.
 
 None of these additions changes `schema_version`; it stays `1`.
 
@@ -223,17 +286,33 @@ query.
 
 | `state` | Meaning | Other keys |
 | --- | --- | --- |
-| `"fresh"` | The index was built at the working tree's current HEAD and no indexed file has gone dirty since. | none |
-| `"stale"` | The index is behind the working tree. | `indexedHead`, `currentHead` (both full-length, unlike the truncated stderr warning), `changedFiles` (indexed files dirty now but not at index time) |
-| `"unknown"` | Freshness could not be established either way. | `reason`: `"no-index-state"` (no `index-state.json` sidecar, or it did not parse -- an index built before this key existed, or a corrupt one) or `"git-unavailable"` (`git rev-parse HEAD` did not resolve) |
+| `"fresh"` | The worktree asking published this index, at the working tree's current HEAD, and no indexed byte differs from what the index recorded. | none |
+| `"stale"` | The index is behind the working tree. | `indexedHead`, `currentHead` (both full-length, unlike the truncated stderr warning), `changedFiles` (indexed files and configuration inputs whose bytes differ from the indexed bytes, plus added and deleted relevant files) |
+| `"unknown"` | Freshness could not be established either way. | `reason`, one of the words below |
 
-This exposes, to a programmatic consumer, exactly the condition
-`src/manifest.rs::freshness_warning` already prints as a one-line stderr note for a human -- the
-two are computed from the same primitives and can never disagree about the underlying facts. The
-stderr note collapses "no index-state.json", "git unavailable" and "genuinely fresh" into the same
-silence; `freshness.state` keeps them apart, because a script cannot read stderr silence as three
-different things. No native precise tier is upgraded or downgraded by this key -- it says whether
-the index is current, not whether any individual row is trustworthy.
+`freshness.reason` is one of five words:
+
+| `reason` | Meaning |
+| --- | --- |
+| `"no-index-state"` | No `index-state.json`, or one this build cannot certify: an index built by 0.9.0, an interrupted one, or a corrupt one. The stderr line distinguishes a missing record, which stays silent, from an uncertifiable one, which asks for a re-run. |
+| `"git-unavailable"` | `git rev-parse HEAD` did not resolve, or the `git status` read failed or produced output this build cannot parse. |
+| `"other-worktree"` | The index was published by a different worktree of this repository. Run `devscout map` here to publish this worktree's own index. |
+| `"validation-budget"` | The change set exceeded one of the validation caps (5,000 `git status` entries, 2,048 candidate paths, or 16 MiB of candidate bytes), so freshness could not be verified inside the budget. |
+| `"index-changed"` | The record or one of the two artifacts changed while the query ran, or a `map` is running or was interrupted. |
+
+`changedFiles` counts files by their bytes, never by size or modification time, and includes
+configuration inputs that model discovery reads: an edited `.csproj`, `Directory.Build.props` or
+`Cargo.toml`, and a new file the walk would index.
+
+Both stderr and `--json` come from one validation per invocation, so they describe one reading of
+one moment. Every verdict but a genuinely fresh index and two silent cases has its own stderr
+line; stderr stays silent for a missing record and for unavailable Git. The stale line keeps the
+wording earlier releases used.
+
+This exposes, to a programmatic consumer, exactly the conditions the stderr lines describe for a
+human, computed from the same validation and never able to disagree with it. No native precise
+tier is upgraded or downgraded by this key -- it says whether the index is current, not whether
+any individual row is trustworthy.
 
 ## `occurrenceIndex`
 
@@ -257,6 +336,32 @@ or implied an `occurrenceIndex` -- truncation stays truncation, never a silent m
 
 This key is additive under the forward-compatibility rule above: it is new, appended last, and
 `schema_version` does not move.
+
+## Angular template reads
+
+A `refs` or `read` member answer whose owner is a TypeScript class carries
+`"memberReads":"angular-templates-only"` in each member object, just before `next`. Its rows are
+Angular template reads only, because TypeScript member reads are not indexed. The text and
+`--compact` answers print one line before the `next:` trailer:
+`note: rows are Angular template reads only. TypeScript member reads are not indexed.` The key and
+the line are absent from every other answer, C# member answers included.
+
+`graph.json` appends `template_unsupported` last, only when it has a row. Each row is
+`{file, line, reason}`, sorted by file, then line, then reason in the order below:
+
+| `reason` | The site |
+|---|---|
+| `control-flow-block` | a line that opens a built-in control flow block (`@if`, `@for`, `@switch`, `@defer`, `@let`, ...). The markup inside the block is still scanned. |
+| `unparsed-expression` | a binding or interpolation expression the scanner cannot parse |
+| `template-url-unresolved` | a literal `templateUrl` that names no file in the indexed root |
+| `template-url-non-literal` | a `templateUrl` whose value is not one plain string literal |
+| `unknown-member` | a read that is not a template local, not `true`, `false`, `null`, `undefined`, `this` or `$any`, and not a member of the component class. A member inherited from a base class is one. |
+| `inline-template-substitution` | a `template` whose value is not one plain string literal |
+
+`stats.ts.template_unsupported_count` is the row count, also omitted when zero. A repository
+without a component class has neither key. Template edges count in
+`stats.edges_by_kind.uses-member`. These graph additions do not change the graph schema version,
+and `schema_version` stays `1`.
 
 ## `bus-hop`
 
@@ -567,4 +672,26 @@ devscout tests InMemoryCatalogStore --json
 `CatalogStoreTests` earns its row because it declares `CountItems_StartsAtZero`, a def carrying
 xUnit's `[Fact]` attribute -- `why: "test-attribute"`. The other ways a `tests` row is earned are
 `test-project` (the file's unit is in a project marked `test`, with no attributed def of its own)
-and `test-path` (a TS/TSX/JS file named as a test, with neither of the other two).
+and `test-path` (a TypeScript/JavaScript file with one of the eight listed suffixes
+named as a test, with neither of the other two).
+
+#### `nameHint`
+
+`nameHint` is additive. When the answer has no row and no possible route, the key can appear. A
+matching test file in the index is the other condition. The value is one object per matching file,
+in path order:
+
+```json
+"nameHint": [
+  {
+    "file": "FooTests.cs",
+    "references": ["App.Bar"],
+    "referenceTotal": 1
+  }
+]
+```
+
+The key is a file-name hint and not test evidence. A name match means the file and the symbol share
+a stem. It does not mean that the file tests the symbol. A consumer must not read `nameHint` as
+coverage. A symbol with at least one row carries no `nameHint` key at all. So does a file reached
+over a possible route. `schema_version` stays `1`.

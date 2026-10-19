@@ -287,6 +287,7 @@ pub fn fragment_from_extraction(e: &extract::Extraction) -> Fragment {
                 line: r.line,
             })
             .collect(),
+        transport: e.transport.clone(),
     }
 }
 
@@ -301,8 +302,16 @@ pub fn markup_fragment(root: &Path, rel: &str) -> Option<Fragment> {
     // Lossy read: an invalid byte becomes U+FFFD rather than dropping the
     // file.
     let text = String::from_utf8_lossy(&fs::read(root.join(rel)).ok()?).into_owned();
-    let facts = crate::markup::markup_facts(rel, &text);
-    Some(Fragment {
+    Some(markup_fragment_text(rel, &text))
+}
+
+/// [`markup_fragment`] over text the caller already read, so a `map` that
+/// hashes a file derives its markup fragment from the very bytes the digest
+/// describes rather than reading the file again.
+#[must_use]
+pub fn markup_fragment_text(rel: &str, text: &str) -> Fragment {
+    let facts = crate::markup::markup_facts(rel, text);
+    Fragment {
         defs: facts
             .defs
             .into_iter()
@@ -386,5 +395,6 @@ pub fn markup_fragment(root: &Path, rel: &str) -> Option<Fragment> {
         registrations: Vec::new(),
         publishes: Vec::new(),
         handler_registrations: Vec::new(),
-    })
+        transport: Vec::new(),
+    }
 }

@@ -490,6 +490,39 @@ pub struct RefRecord {
     pub arg_types: Option<Vec<Option<ArgTypeRecord>>>,
 }
 
+/// The descriptor an interpolated string argument records instead of `string`.
+///
+/// C# may bind `$"..."` to an `[InterpolatedStringHandler]` parameter, so the
+/// resolver must tell the two apart; every other comparison reads it as
+/// `string`. Reserved like the `@`-prefixed `methodParams` keys, and never a
+/// type descriptor `type_descriptor` produces from source.
+pub const INTERPOLATED_ARG_DESCRIPTOR: &str = "@interpolated-string";
+
+/// The reserved `methodParams` key marking a type declared with
+/// `[InterpolatedStringHandler]`, beside `@implicit-conversion`.
+///
+/// It carries one empty overload, so the merged type carries the mark however
+/// many partial declarations spell the attribute, and no member projection
+/// reads parameters from it.
+pub const INTERPOLATED_HANDLER_MARK: &str = "@interpolated-string-handler";
+
+/// Whether a `methodParams` key is a reserved entry rather than a declared
+/// method: a method result, property or field type, or a type mark.
+///
+/// This is the one list of reserved spellings; a new reserved key joins it
+/// here. A bare `@` test is wrong: a verbatim method name such as `@event`
+/// keeps its `@` in the key, and `@result` is itself a legal verbatim name,
+/// so each prefix carries its colon.
+pub fn is_reserved_method_params_key(key: &str) -> bool {
+    ["@result:", "@property:", "@field:"]
+        .iter()
+        .any(|prefix| key.starts_with(prefix))
+        || matches!(
+            key,
+            "@variant" | "@implicit-conversion" | INTERPOLATED_HANDLER_MARK
+        )
+}
+
 /// A type known at extraction, or a member whose declared type needs the
 /// resolver's cross-file declaration index.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -557,6 +590,9 @@ pub struct Extraction {
     /// record, appended LAST after `publishes`. See
     /// `HandlerRegistrationRecord`.
     pub handler_registrations: Vec<HandlerRegistrationRecord>,
+    /// Every provisional transport site the file states, appended LAST
+    /// after `handler_registrations`. See `transport::TransportSite`.
+    pub transport: Vec<crate::transport::TransportSite>,
 }
 
 /// One one-type-argument handler registration: an invocation whose name

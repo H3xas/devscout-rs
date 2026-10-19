@@ -29,6 +29,7 @@ pub fn render_tests_text(model: &query::TestsModel) -> String {
     )];
     if model.rows.is_empty() && model.bus.total == 0 {
         out.push("no test references found".to_string());
+        name_hint_lines(&mut out, &model.name_hint);
         return out.join("\n");
     }
     out.push(format!(
@@ -69,6 +70,39 @@ pub fn render_tests_text(model: &query::TestsModel) -> String {
     out.join("\n")
 }
 
+// The ` (+n more)` tail a capped reference list carries, and nothing when the
+// list already holds every distinct id the file references.
+fn more_suffix(total: usize, listed: usize) -> String {
+    match total.checked_sub(listed) {
+        Some(n) if n > 0 => format!(" (+{n} more)"),
+        _ => String::new(),
+    }
+}
+
+// The hint block under `no test references found`. The heading states what
+// the block is IN the answer itself -- a file NAME, not a reference -- so a
+// reader who skips the docs still cannot mistake it for coverage. An empty
+// hint writes nothing at all, which is what keeps every other answer's bytes
+// as they were.
+fn name_hint_lines(out: &mut Vec<String>, hint: &[query::NameHintRow]) {
+    if hint.is_empty() {
+        return;
+    }
+    out.push("hint (file name only, not a test reference):".to_string());
+    for row in hint {
+        out.push(if row.references.is_empty() {
+            format!("  {}  references no indexed production symbol", row.file)
+        } else {
+            format!(
+                "  {}  references {}{}",
+                row.file,
+                row.references.join(", "),
+                more_suffix(row.reference_total, row.references.len())
+            )
+        });
+    }
+}
+
 /// `--compact` `devscout tests` output.
 ///
 /// The same model with the def ids and the
@@ -89,6 +123,18 @@ pub fn render_tests_compact(model: &query::TestsModel) -> String {
         model.ref_count,
         count_suffix("files", files, files)
     )];
+    for row in &model.name_hint {
+        let refs = if row.references.is_empty() {
+            "none".to_string()
+        } else {
+            format!(
+                "{}{}",
+                row.references.join(","),
+                more_suffix(row.reference_total, row.references.len())
+            )
+        };
+        out.push(format!("hint {} -> {refs}", row.file));
+    }
     for r in &model.rows {
         let lines = r
             .lines

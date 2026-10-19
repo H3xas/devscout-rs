@@ -1308,21 +1308,10 @@ pub fn resolve_graph_with_model(
         // Appended LAST and empty without a model, which is what keeps a
         // csproj-less repo's graph.json byte-identical to what it was.
         units: model.map(crate::project::graph_units).unwrap_or_default(),
+        unresolved_imports: Vec::new(),
+        transport: Vec::new(),
+        template_unsupported: Vec::new(),
     };
-    if !ts_fragments_by_file.is_empty() {
-        let alias = crate::tsgraph::read_ts_alias_scopes(
-            root,
-            ts_fragments_by_file.iter().map(|(f, _)| f.as_str()),
-        );
-        let ts = crate::tsgraph::resolve_ts_graph(ts_fragments_by_file, &alias);
-        graph.defs.extend(ts.defs);
-        graph.edges.extend(ts.edges);
-        graph.stats.def_count = graph.defs.len();
-        graph.stats.edges_by_kind.import = Some(ts.edges_by_kind.import);
-        graph.stats.edges_by_kind.call = Some(ts.edges_by_kind.call);
-        graph.stats.edges_by_kind.jsx_use = Some(ts.edges_by_kind.jsx_use);
-        graph.stats.edges_by_kind.dispatch = Some(ts.edges_by_kind.dispatch);
-        graph.stats.ts = Some(ts.stats);
-    }
+    crate::tsgraph::extend_graph(root, ts_fragments_by_file, &mut graph);
     graph
 }

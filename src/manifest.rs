@@ -13,7 +13,7 @@
 // so full ties resolve by manifest on-disk key order -- see
 // `find_in_manifest_detailed`'s doc comment for the full chain.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fmt;
 use std::fs;
 use std::io;
@@ -24,6 +24,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::de::{Deserialize, Deserializer, MapAccess, SeqAccess, Visitor};
 use serde::ser::{Serialize, SerializeMap, SerializeSeq, Serializer};
 
+use crate::layout::{MANIFEST_FILE, SCOUT_DIR};
 use crate::repo::{entry_for, git_common_dir, scout_dir, RegistryEntry, RegistryError};
 
 // ---------------------------------------------------------------------------
@@ -226,7 +227,7 @@ impl Serialize for Value {
 // path), else `legacy_manifest_path(root)`. Kept private deliberately.
 fn manifest_path(root: &Path) -> PathBuf {
     match git_common_dir(root) {
-        Some(common) => common.join("scout").join("manifest.json"),
+        Some(common) => common.join(SCOUT_DIR).join(MANIFEST_FILE),
         None => legacy_manifest_path(root),
     }
 }
@@ -234,7 +235,7 @@ fn manifest_path(root: &Path) -> PathBuf {
 /// `<root>/.scout/manifest.json`, still consulted on read so pre-existing
 /// enriched manifests are not orphaned by the shared-path move.
 pub fn legacy_manifest_path(root: &Path) -> PathBuf {
-    scout_dir(root).join("manifest.json")
+    scout_dir(root).join(MANIFEST_FILE)
 }
 
 // ---------------------------------------------------------------------------
@@ -330,7 +331,7 @@ pub fn write_manifest(root: &Path, value: &Value) -> io::Result<()> {
         "{}.tmp.{}.{suffix}",
         path.file_name()
             .and_then(|n| n.to_str())
-            .unwrap_or("manifest.json"),
+            .unwrap_or(MANIFEST_FILE),
         std::process::id(),
     );
     let tmp_path = path.with_file_name(tmp_name);
@@ -409,11 +410,9 @@ struct Scored {
 }
 
 /// AND across whitespace-split, lowercased tokens over `path + ' ' + purpose`;
-/// when no entry matches every token, fall back to entries matching ANY token,
-/// ranked by hit count descending.
+/// no all-token match falls back to ANY-token matches, best hit first.
 ///
-/// Reads every entry's inbound-edge count at 0 -- see
-/// `find_in_manifest_detailed` for the ranked variant.
+/// Reads every entry's inbound-edge count at 0 -- see `find_in_manifest_detailed`.
 pub fn find_in_manifest(root: &Path, query: &str) -> Result<Vec<FindHit>, FindError> {
     Ok(find_in_manifest_detailed(root, query, &HashMap::new())?.hits)
 }
@@ -572,215 +571,6 @@ pub fn scope_for(
         }
     }
     Ok(vec![".".to_string()])
-}
-
-// ---------------------------------------------------------------------------
-// Index freshness. `index-state.json` sits beside `manifest.json` (same
-// git-common-dir-vs-legacy-`.scout` split). It is never compared byte-identical
-// against anything the way manifest.json / graph.json are -- `indexed_at` is
-// wall-clock, so no two runs could ever produce the same bytes regardless of
-// intent.
-// ---------------------------------------------------------------------------
-
-fn index_state_dir(root: &Path) -> PathBuf {
-    match git_common_dir(root) {
-        Some(common) => common.join("scout"),
-        None => scout_dir(root),
-    }
-}
-
-/// Returns the path of the repository's index-state artifact.
-pub fn index_state_path(root: &Path) -> PathBuf {
-    index_state_dir(root).join("index-state.json")
-}
-
-/// Writes the index-state sidecar. Written on every successful `devscout map`,
-/// the same cadence `manifest.json`'s own `built_at_head` refreshes on.
-/// `dirty_indexed_files` -- the indexed files git ALREADY considered changed at
-/// index time (a repo mapped before its source was ever `git add`ed is the
-/// common case, not an edge case) -- is the baseline `freshness_warning` diffs
-/// against, so those same files staying exactly as dirty as they were is never
-/// mistaken for having changed SINCE the map. Sorted so two writes of the same
-/// set are byte-identical.
-pub fn write_index_state(
-    root: &Path,
-    head: Option<String>,
-    dirty: bool,
-    dirty_indexed_files: &[String],
-    file_count: i64,
-) -> io::Result<()> {
-    let path = index_state_path(root);
-    if let Some(dir) = path.parent() {
-        fs::create_dir_all(dir)?;
-    }
-    let mut sorted = dirty_indexed_files.to_vec();
-    sorted.sort();
-    let value = Value::object(vec![
-        ("head", head.map(Value::string).unwrap_or(Value::Null)),
-        ("dirty", Value::Bool(dirty)),
-        ("indexed_at", Value::string(crate::hookio::iso8601_now())),
-        ("file_count", Value::number(file_count)),
-        (
-            "dirty_indexed_files",
-            Value::array(sorted.into_iter().map(Value::string).collect()),
-        ),
-    ]);
-    let json = serde_json::to_string_pretty(&value)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-    fs::write(&path, format!("{json}\n"))
-}
-
-/// Tolerant read of the index-state sidecar -- `None` on a missing OR corrupt
-/// sidecar (an index built by a build that predates this sidecar), never a panic
-/// and never an `Err` a caller has to handle.
-pub fn read_index_state(root: &Path) -> Option<Value> {
-    let text = fs::read_to_string(index_state_path(root)).ok()?;
-    serde_json::from_str::<Value>(&text).ok()
-}
-
-// Cap on parsed `git status` lines.
-const STATUS_LINE_CAP: usize = 5000;
-
-// A capped, scoped `git status --porcelain` -- cheap on a large repo mapped with
-// a narrow scope -- as the set of repo-relative paths it reports as changed
-// (modified, staged, or untracked; a rename's OLD and NEW path both count).
-// `--untracked-files=all` matters: without it, git collapses an
-// entirely-untracked directory to one `?? dir/` line instead of one line per
-// file inside it, and the path-set intersection below would never match anything
-// for a freshly-mapped, not-yet-`git add`-ed tree. `None` on any failure (no git
-// binary, not a repo), distinct from an empty set (git ran and found nothing) so
-// callers never mistake "could not check" for "confirmed clean".
-fn git_status_paths(root: &Path, scope: &[String]) -> Option<HashSet<String>> {
-    let mut cmd = Command::new("git");
-    cmd.arg("-C")
-        .arg(root)
-        .args(["status", "--porcelain", "--untracked-files=all", "--"]);
-    for s in scope {
-        cmd.arg(s);
-    }
-    let output = cmd.output().ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let text = String::from_utf8(output.stdout).ok()?;
-    let mut paths = HashSet::new();
-    for line in text
-        .split('\n')
-        .filter(|l| !l.is_empty())
-        .take(STATUS_LINE_CAP)
-    {
-        if line.len() < 3 {
-            continue;
-        }
-        for part in line[3..].split(" -> ") {
-            paths.insert(part.to_string());
-        }
-    }
-    Some(paths)
-}
-
-/// Index-time convenience over `git_status_paths` -- a plain bool, fail-open to
-/// `false` (a non-git root, or git being unavailable, is not "dirty"; it is
-/// unknown, and `false` is the safer default to persist for it).
-pub fn is_working_tree_dirty(root: &Path, scope: &[String]) -> bool {
-    git_status_paths(root, scope)
-        .map(|p| !p.is_empty())
-        .unwrap_or(false)
-}
-
-/// The indexed files currently dirty -- `git_status_paths` intersected with the
-/// manifest's own entries -- sorted for a stable, comparable list. Called once
-/// at index time (the baseline `write_index_state` stores) and once at query
-/// time (what `freshness_warning` diffs the baseline against).
-pub fn dirty_indexed_files_at(
-    root: &Path,
-    scope: &[String],
-    indexed_files: &HashSet<String>,
-) -> Vec<String> {
-    let Some(changed) = git_status_paths(root, scope) else {
-        return Vec::new();
-    };
-    let mut out: Vec<String> = changed
-        .into_iter()
-        .filter(|p| indexed_files.contains(p))
-        .collect();
-    out.sort();
-    out
-}
-
-/// Query-time check for `find`/`refs`/`impact`: cheap enough to run on every
-/// call (one `git rev-parse HEAD`, one scoped `git status --porcelain`, the same
-/// two costs `devscout map` itself already pays). Returns the one-line stderr
-/// warning, or `None` when there is nothing to say: no index-state.json (never
-/// mapped since this feature shipped, or the root was not a git repo when last
-/// mapped), git unavailable or this root not a repo, or the index is genuinely
-/// fresh.
-///
-/// "Changed" is deliberately NOT "currently dirty and indexed" -- a repo mapped
-/// before its source was ever `git add`ed would then show every file as changed
-/// FOREVER, indistinguishable from a genuinely fresh index. It is
-/// "dirty-and-indexed now but wasn't at index time" -- the set
-/// `write_index_state` recorded as the baseline. The one gap this leaves: a file
-/// already dirty at index time that is edited AGAIN afterward stays in both sets
-/// and is not counted (a known, accepted limitation, not silently swallowed).
-pub fn freshness_warning(root: &Path) -> Option<String> {
-    let state = read_index_state(root)?;
-    let stored_head = state.get("head")?.as_str()?.to_string();
-
-    let current_head = git_head(root)?;
-
-    let manifest = read_manifest(root).ok().flatten();
-    let indexed_files: HashSet<String> = manifest
-        .as_ref()
-        .and_then(|m| m.get("entries"))
-        .and_then(|v| v.as_object())
-        .map(|entries| entries.iter().map(|(k, _)| k.clone()).collect())
-        .unwrap_or_default();
-    let scope: Vec<String> = manifest
-        .as_ref()
-        .and_then(|m| m.get("scoped_dirs"))
-        .and_then(|v| match v {
-            Value::Array(items) => Some(
-                items
-                    .iter()
-                    .filter_map(Value::as_str)
-                    .map(str::to_string)
-                    .collect::<Vec<_>>(),
-            ),
-            _ => None,
-        })
-        .filter(|v: &Vec<String>| !v.is_empty())
-        .unwrap_or_else(|| vec![".".to_string()]);
-
-    let current_dirty = dirty_indexed_files_at(root, &scope, &indexed_files);
-    let baseline_dirty: HashSet<String> = state
-        .get("dirty_indexed_files")
-        .and_then(|v| match v {
-            Value::Array(items) => Some(
-                items
-                    .iter()
-                    .filter_map(Value::as_str)
-                    .map(str::to_string)
-                    .collect(),
-            ),
-            _ => None,
-        })
-        .unwrap_or_default();
-    let changed_count = current_dirty
-        .iter()
-        .filter(|p| !baseline_dirty.contains(*p))
-        .count();
-
-    if current_head == stored_head && changed_count == 0 {
-        return None;
-    }
-
-    let repo_id = root.file_name().and_then(|n| n.to_str()).unwrap_or("repo");
-    let indexed_short = &stored_head[..stored_head.len().min(7)];
-    let head_short = &current_head[..current_head.len().min(7)];
-    Some(format!(
-        "devscout: index for {repo_id} is stale (indexed at {indexed_short}, HEAD {head_short}; {changed_count} changed files) — rebuild with devscout map"
-    ))
 }
 
 // ---------------------------------------------------------------------------

@@ -1,0 +1,39 @@
+{
+  "defs": [
+    {
+      "endLine": 1,
+      "file": "main.js",
+      "id": "main.js#publicFn",
+      "kind": "function",
+      "line": 1,
+      "name": "publicFn",
+      "namespace": ""
+    },
+    {
+      "endLine": 1,
+      "file": "main.ts",
+      "id": "main.ts#publicTs",
+      "kind": "function",
+      "line": 1,
+      "name": "publicTs",
+      "namespace": ""
+    }
+  ],
+  "edges": [],
+  "manifest": {
+    "main.js": {
+      "purpose": "function publicFn",
+      "source": "ast"
+    },
+    "main.ts": {
+      "purpose": "function publicTs",
+      "source": "ast"
+    }
+  },
+  "tsStats": {
+    "external_import_count": 0,
+    "ts_def_count": 2,
+    "ts_file_count": 2,
+    "unresolved_ref_count": 0
+  }
+}

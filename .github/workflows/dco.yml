@@ -1,0 +1,34 @@
+name: DCO
+
+# A pull request that targets main or a release branch may add only commits
+# carrying a DCO sign-off. This is its own workflow rather than a step in
+# ci.yml so that release-target pull requests get the sign-off check without
+# starting ci.yml's main-only build, benchmark and semantic lanes.
+#
+# The check reads the commit range a pull request event reports -- the target
+# base tip and the submitted head -- so the synthetic merge commit GitHub
+# checks out for a `pull_request` run is never charged to the contributor.
+# Full history is fetched so both commits are present, including for a fork.
+on:
+  pull_request:
+    branches:
+      - main
+      - "release/**"
+
+permissions:
+  contents: read
+
+jobs:
+  signoff:
+    name: Signed-off-by
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Check the pull request commits are signed off
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: sh tools/check-dco.sh "$BASE_SHA" "$HEAD_SHA"

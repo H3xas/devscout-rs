@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::Serialize;
 
+use crate::layout;
 use crate::repo::{git_common_dir, scout_dir};
 
 // ---------------------------------------------------------------------------
@@ -16,14 +17,14 @@ use crate::repo::{git_common_dir, scout_dir};
 // back to `<root>/.scout/graph/`.
 pub(crate) fn graph_dir(root: &Path) -> PathBuf {
     match git_common_dir(root) {
-        Some(common) => common.join("scout").join("graph"),
-        None => scout_dir(root).join("graph"),
+        Some(common) => common.join(layout::SCOUT_DIR).join(layout::GRAPH_DIR),
+        None => scout_dir(root).join(layout::GRAPH_DIR),
     }
 }
 
 /// Path to the graph artifact (`graph.json`) for `root`.
 pub fn graph_json_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("graph.json")
+    graph_dir(root).join(layout::GRAPH_FILE)
 }
 
 /// Path to the project-model staleness sidecar for `root`.
@@ -37,7 +38,7 @@ pub fn graph_json_path(root: &Path) -> PathBuf {
 /// so a repo that never had a `.csproj` never grows the file and one whose
 /// last `.csproj` was removed still sees a difference on the next run.
 pub fn project_units_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("project-units.json")
+    graph_dir(root).join(layout::PROJECT_UNITS_FILE)
 }
 
 /// Path to the Rust crate-model sidecar for `root`.
@@ -48,7 +49,18 @@ pub fn project_units_path(root: &Path) -> PathBuf {
 /// walked mtime. Written only when a package is in scope and deleted
 /// otherwise, the same rule as `project_units_path`.
 pub fn rust_crates_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("rust-crates.json")
+    graph_dir(root).join(layout::RUST_CRATES_FILE)
+}
+
+/// Path to the transport-input sidecar for `root`.
+///
+/// Holds the serialized `transport::TransportInputs` the last rebuild read.
+/// `map` compares it with freshly discovered inputs to notice an edit of a
+/// settings file or of a project's implicit usings, which moves no graph
+/// source. Written only when a fragment holds a transport site and deleted
+/// otherwise.
+pub fn transport_inputs_path(root: &Path) -> PathBuf {
+    graph_dir(root).join(layout::TRANSPORT_INPUTS_FILE)
 }
 
 // The version in both cache filenames is the fragment SCHEMA version, bumped
@@ -177,16 +189,75 @@ pub fn rust_crates_path(root: &Path) -> PathBuf {
 // in the existing `methodParams` table. A cached v32 fragment has none of
 // these facts, so a same-count overload that rejects the arguments could
 // still bind precisely ahead of an applicable base or extension method.
+// v34 records every dotted name the C# extractor builds out of a qualified
+// name's own tokens, with the whitespace, line breaks and comments between
+// them left out, so `Widgets . Widget` reads as `Widgets.Widget`. A cached
+// v33 fragment of an unchanged file keeps the raw text in its receiver and
+// type-reference fields, and no lookup matches that text: the written path
+// reaches the ladder with trivia inside it, the last-dot split yields a name
+// with a blank or a comment in it, and every precise edge the name earned
+// degrades to a bare-name guess. A fresh extraction of the same unchanged
+// bytes disagrees, which is why the pair has to move.
+// v35 records an interpolated string argument under its own descriptor and marks a type declared
+// `[InterpolatedStringHandler]` in the `methodParams` table. A cached v33 fragment has neither, and
+// a cached v34 pair carries the other change's facts only, so a map that reused either would still
+// compare the interpolated string as a plain `string` and veto the overload C# selects.
+// v36 adds no extraction field: it stamps the pair with the worktree that
+// wrote it, and changes the file shape from a bare rel-keyed object to an
+// `{owner, entries}` one. The owner is the writing worktree's Git
+// administrative directory, so a fragment another worktree extracted is
+// never reused here even when the relative path and the content key both
+// match: another worktree's scope and its own configuration are what those
+// bytes were read under. A v35 payload carries no owner and does not parse
+// as this generation either, so the bump is also what stops a pre-stamp
+// cache from being read.
+// v37 records identifier-argument publish sites for unguarded dispatch-root
+// verbs. A cached v36 fragment of an unchanged file lacks those records, so
+// its newly admitted calls would still produce no hop until re-extracted.
+// v38 appends import-equals, export-equals, namespace re-export and dynamic
+// import facts to TS fragments. Older fragments cannot supply those facts.
+// v39 is another extractor change's generation (file-scope TS/JS
+// declarations), so it is skipped here rather than reused for different facts.
+// v40 scopes every C# member-table entry to the constructs that declare it and
+// enters `var (…)` deconstruction names as taken-but-unknown. A cached v38
+// fragment of an unchanged file still types a bare argument or receiver from a
+// declaration its use never sees, so a map reusing it would keep vetoing the
+// overload C# selects.
+// v41 appends the transport configuration sites a C# file states. A cached v40
+// fragment of an unchanged file carries none, so a map reusing it would record
+// no transport fact for that file.
+// v42 appends the `@Component` facts of a TS file and adds the `.html`
+// template fragment. A cached v41 fragment of an unchanged component carries
+// no members and no template, so a map reusing it would give no template edge.
+// v43 joins the v42 facts with the file-scope TS/JS declarations and local
+// references that v39 carried on its own. A cached v42 fragment has no local
+// declarations, and a cached v39 one has no v40-v42 facts, so neither is reused.
+// v44 moves how a default export binds: a cached v43 fragment of a file whose
+// `export { X as default }` clause names a local declaration carries no
+// `default` name, so a map reusing it would keep the importer unbound.
 // The rename IS the invalidation mechanism:
 // pre-bump caches stop being found, every file reparses
 // once, no reader carries version-compat logic. Writers delete every
 // superseded generation (see `remove_superseded_caches`).
 pub(crate) fn fragments_cache_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-v33.json")
+    graph_dir(root).join(layout::FRAGMENT_CACHE_FILE)
+}
+
+/// The fragment generation this build reads and writes.
+///
+/// Parsed from the cache file name: the rename IS the invalidation mechanism,
+/// so the number a reader reports can only ever be the one this build's own
+/// path carries.
+pub fn fragment_generation() -> u32 {
+    layout::FRAGMENT_CACHE_FILE
+        .trim_start_matches("fragments-v")
+        .trim_end_matches(".json")
+        .parse()
+        .expect("the fragment cache file name carries its generation")
 }
 
 pub(crate) fn fragments_index_path(root: &Path) -> PathBuf {
-    graph_dir(root).join("fragments-index-v33.json")
+    graph_dir(root).join(layout::FRAGMENT_INDEX_FILE)
 }
 
 // Every generation below the current one, not just the immediately previous:
@@ -257,6 +328,28 @@ pub(crate) const SUPERSEDED_CACHE_FILES: &[&str] = &[
     "fragments-index-v31.json",
     "fragments-v32.json",
     "fragments-index-v32.json",
+    "fragments-v33.json",
+    "fragments-index-v33.json",
+    "fragments-v34.json",
+    "fragments-index-v34.json",
+    "fragments-v35.json",
+    "fragments-index-v35.json",
+    "fragments-v36.json",
+    "fragments-index-v36.json",
+    "fragments-v37.json",
+    "fragments-index-v37.json",
+    "fragments-v38.json",
+    "fragments-index-v38.json",
+    "fragments-v39.json",
+    "fragments-index-v39.json",
+    "fragments-v40.json",
+    "fragments-index-v40.json",
+    "fragments-v41.json",
+    "fragments-index-v41.json",
+    "fragments-v42.json",
+    "fragments-index-v42.json",
+    "fragments-v43.json",
+    "fragments-index-v43.json",
 ];
 
 pub(crate) fn remove_superseded_caches(root: &Path) {

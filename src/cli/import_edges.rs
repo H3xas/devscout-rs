@@ -8,11 +8,11 @@
 use std::fs;
 use std::path::Path;
 
+use crate::exit::{EXIT_FAILURE, EXIT_OK, EXIT_USAGE};
 use crate::graph;
+use crate::usage::IMPORT_EDGES_USAGE;
 
 use super::root::require_repo;
-
-const IMPORT_EDGES_USAGE: &str = "usage: devscout import-edges <file> --repo <id>";
 
 // The `--repo <id>` value: its own presence check, distinct from a missing
 // file path, so the usage message always fires for the argument actually
@@ -45,36 +45,39 @@ fn parse_file_arg(args: &[String]) -> Option<&str> {
 /// THEN `require_repo`, THEN the file read and validation.
 pub(crate) fn cmd_import_edges(cwd: &Path, args: &[String]) -> (i32, String) {
     let Some(repo_id) = parse_repo_flag(args) else {
-        return (2, IMPORT_EDGES_USAGE.to_string());
+        return (EXIT_USAGE, IMPORT_EDGES_USAGE.to_string());
     };
     let Some(path) = parse_file_arg(args) else {
-        return (2, IMPORT_EDGES_USAGE.to_string());
+        return (EXIT_USAGE, IMPORT_EDGES_USAGE.to_string());
     };
 
     let root = match require_repo(cwd) {
         Ok(r) => r,
-        Err(e) => return (1, format!("error: {e}")),
+        Err(e) => return (EXIT_FAILURE, format!("error: {e}")),
     };
 
     let abs = crate::repo::resolve_from(cwd, Path::new(path));
     let bytes = match fs::read(&abs) {
         Ok(b) => b,
-        Err(e) => return (1, format!("error: cannot read \"{path}\": {e}")),
+        Err(e) => return (EXIT_FAILURE, format!("error: cannot read \"{path}\": {e}")),
     };
 
     let parsed = match graph::parse_imported_edges(&bytes, repo_id) {
         Ok(p) => p,
-        Err(msg) => return (1, format!("error: {msg}")),
+        Err(msg) => return (EXIT_FAILURE, format!("error: {msg}")),
     };
 
     let count = parsed.edges.len();
     if let Err(e) = graph::write_imported_edges(&root, &parsed) {
-        return (1, format!("error: cannot write imported edges: {e}"));
+        return (
+            EXIT_FAILURE,
+            format!("error: cannot write imported edges: {e}"),
+        );
     }
 
     let suffix = if count == 1 { "" } else { "s" };
     (
-        0,
+        EXIT_OK,
         format!("imported {count} edge{suffix} from \"{path}\" for repo \"{repo_id}\""),
     )
 }

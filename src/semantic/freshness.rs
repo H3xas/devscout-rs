@@ -147,7 +147,7 @@ pub fn evaluate(
             reason: "source-snapshot-missing".to_string(),
         };
     };
-    if manifest::is_working_tree_dirty(root, &[".".to_string()]) {
+    if crate::freshness::status::is_working_tree_dirty(root, &[".".to_string()]) {
         return Freshness::Stale {
             reason: "working-tree-dirty".to_string(),
         };

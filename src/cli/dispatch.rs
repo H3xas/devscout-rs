@@ -12,10 +12,12 @@ use std::io::{Read, Write};
 use std::process;
 
 use crate::audit;
+use crate::exit::{EXIT_FAILURE, EXIT_OK};
 use crate::extract;
 use crate::hookio;
 use crate::initcmd;
 use crate::parse;
+use crate::usage;
 
 use super::admin::{cmd_clear, cmd_map, cmd_stats};
 use super::answer::{
@@ -49,7 +51,13 @@ fn print_out(out: &str) {
 // `devscout help` / `--help`. Written to stdout with exit 0 so a shell
 // `devscout --help` is a success, unlike the usage line the unknown-command
 // arm sends to stderr.
-const HELP: &str = "\
+//
+// The footer's URL is folded from the crate metadata at compile time, so a
+// released binary points at the documentation of its own tag rather than at a
+// page that has moved on since. The version bump is therefore also a
+// regeneration of the CLI reference, which carries this text verbatim.
+const HELP: &str = concat!(
+    "\
 devscout -- fast code index for C# and TypeScript codebases.
 
 usage: devscout <command> [args]
@@ -63,12 +71,13 @@ index
 
 query
   find <query> [--resources] search the manifest by name or purpose
-  refs <symbol>              references to a symbol   [--out --all --no-guess --no-dispatch --no-bus --pick N --json|--compact]
-  read <symbol>              decl span + inbound refs [--no-guess --no-dispatch --no-bus --pick N --json|--compact]
-  impact <file|symbol>       blast radius             [--hops N --no-guess --no-dispatch --no-bus --no-imports --pick N --json|--compact]
-  tests <symbol>             tests reaching a symbol  [--no-guess --no-dispatch --no-bus --pick N --json|--compact]
+  refs <symbol>              references to a symbol   [--out --all --no-guess --no-dispatch --no-bus --pick N|all --json|--compact]
+  read <symbol>              decl span + inbound refs [--no-guess --no-dispatch --no-bus --pick N|all --json|--compact]
+  impact <file|symbol>       blast radius             [--hops N --no-guess --no-dispatch --no-bus --no-imports --pick N|all --json|--compact]
+  tests <symbol>             tests reaching a symbol  [--no-guess --no-dispatch --no-bus --pick N|all --json|--compact]
   import-edges <file> --repo <id>  load a cross-repo edge export for `impact` to read
   compiler-facts run|import|status  optional engine-derived facts [--target --configuration --platform]
+  export [--out FILE]        write this repository's whole fact set as NDJSON
   stats                      index + cache summary for this repo
 
 plumbing
@@ -82,7 +91,14 @@ plumbing
   -C <dir>                   run as if devscout started in <dir>
   -h, --help                 show this help
   -V, --version              show the version
-";
+
+",
+    "docs: ",
+    env!("CARGO_PKG_REPOSITORY"),
+    "/tree/v",
+    env!("CARGO_PKG_VERSION"),
+    "/docs\n",
+);
 
 /// Parses and executes a `devscout` command from its argument vector.
 #[allow(
@@ -94,37 +110,37 @@ pub fn dispatch(args: Vec<String>) {
         Ok(v) => v,
         Err(e) => {
             print_out(&format!("error: {e}"));
-            process::exit(1);
+            process::exit(EXIT_FAILURE);
         }
     };
     match args.get(1).map(String::as_str) {
-        Some("noop") => process::exit(0),
+        Some("noop") => process::exit(EXIT_OK),
         Some("help") | Some("--help") | Some("-h") => {
             print!("{HELP}");
-            process::exit(0);
+            process::exit(EXIT_OK);
         }
         Some("--version") | Some("-V") => {
             println!("devscout {}", env!("CARGO_PKG_VERSION"));
-            process::exit(0);
+            process::exit(EXIT_OK);
         }
         Some("parse") => {
             let Some(path) = args.get(2) else {
-                eprintln!("usage: devscout parse <file.cs>");
-                process::exit(1);
+                eprintln!("{}", usage::PARSE_USAGE);
+                process::exit(EXIT_FAILURE);
             };
             parse::run_parse(path);
         }
         Some("spans") => {
             let Some(path) = args.get(2) else {
-                eprintln!("usage: devscout spans <file.cs>");
-                process::exit(1);
+                eprintln!("{}", usage::SPANS_USAGE);
+                process::exit(EXIT_FAILURE);
             };
             parse::run_spans(path);
         }
         Some("extract-dump") => {
             let Some(path) = args.get(2) else {
-                eprintln!("usage: devscout extract-dump <file.cs>");
-                process::exit(1);
+                eprintln!("{}", usage::EXTRACT_DUMP_USAGE);
+                process::exit(EXIT_FAILURE);
             };
             extract::run_extract_dump(path);
         }
@@ -140,8 +156,8 @@ pub fn dispatch(args: Vec<String>) {
             Some("read") => run_hook(hookio::run_read),
             Some("bash") => run_hook(hookio::run_bash),
             _ => {
-                eprintln!("usage: devscout hook <read|bash>");
-                process::exit(1);
+                eprintln!("{}", usage::HOOK_USAGE);
+                process::exit(EXIT_FAILURE);
             }
         },
         Some("refs") => {
@@ -199,6 +215,9 @@ pub fn dispatch(args: Vec<String>) {
             print_out(&out);
             process::exit(code);
         }
+        // The one verb that writes its own output: `print_out` appends a
+        // newline, and the export already terminates every line it writes.
+        Some("export") => process::exit(super::export::cmd_export(&cwd, &args[2..])),
         Some("map") => {
             let (code, out) = cmd_map(&cwd, &args[2..]);
             print_out(&out);
@@ -220,8 +239,8 @@ pub fn dispatch(args: Vec<String>) {
             process::exit(code);
         }
         _ => {
-            eprintln!("usage: devscout <noop|parse|spans|extract-dump|hook|refs|read|impact|tests|find|import-edges|compiler-facts|map|stats|clear|init> [args]");
-            process::exit(1);
+            eprintln!("{}", usage::COMMANDS_USAGE);
+            process::exit(EXIT_FAILURE);
         }
     }
 }
@@ -239,5 +258,5 @@ fn run_hook(handler: fn(&[u8]) -> Vec<u8>) {
     if !out.is_empty() {
         let _ = std::io::stdout().write_all(&out);
     }
-    process::exit(0);
+    process::exit(EXIT_OK);
 }

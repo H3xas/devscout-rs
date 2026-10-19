@@ -6,22 +6,18 @@
 use std::path::Path;
 use std::time::Instant;
 
+use crate::exit::{EXIT_FAILURE, EXIT_NO_RESULT, EXIT_OK, EXIT_USAGE};
 use crate::query;
 use crate::render;
+use crate::usage::REFS_USAGE;
 
 use super::answer::{
-    ambiguous_candidates_out, fallback_advised_out, finish_query, member_ambiguous_out,
-    with_next_trailer, EXIT_NO_RESULT, ZERO_HIT_REFS,
+    ambiguous_candidates_out, begin_validation, fallback_advised_out, finish_query,
+    member_ambiguous_out, with_next_trailer, ZERO_HIT_REFS,
 };
 use super::args::{first_positional, index_options, output_flags, parse_pick};
 use super::root::{require_graph, require_repo};
-
-// `refs`. Check order: `--compact`+`--json` conflict, then missing query, THEN
-// `require_repo`, THEN the graph-present check -- a query run with no repo
-// present reports the missing-repo error even if the query itself is also
-// absent-adjacent.
-const REFS_USAGE: &str =
-    "usage: devscout refs <symbol> [--out] [--all] [--no-guess] [--no-dispatch] [--no-bus] [--pick N] [--json|--compact]";
+use super::sections::{self, SectionAnswer};
 
 // The row count `refs`/`read` telemetry reports for a resolved answer: every
 // inbound row plus, under `--out`, every outbound row -- the same rows the
@@ -47,6 +43,20 @@ fn ts_row_count<R>(tables: &query::TsTables<R>) -> usize {
     tables.named().iter().map(|(_, t)| t.rows.len()).sum()
 }
 
+// The rows of a member answer whose owner is a TypeScript class come from
+// Angular templates alone, because the index reads no TypeScript member
+// access. The answer says so, so that zero rows never reads as "unused".
+const TEMPLATE_READS_NOTE: &str =
+    "note: rows are Angular template reads only. TypeScript member reads are not indexed.";
+
+fn template_reads_only(index: &query::GraphIndex, model: &query::RefsModel) -> bool {
+    model
+        .id
+        .rsplit_once('.')
+        .and_then(|(owner, _)| index.by_id.get(owner))
+        .is_some_and(|&i| crate::parse::ts_grammar_for(&index.graph.defs[i].file).is_some())
+}
+
 // A bare member answers with one ordinary refs model per declaring type, so
 // each block renders through the very renderer a type uses and `--json` wraps
 // those same objects in an array rather than reshaping them. A member the
@@ -59,32 +69,50 @@ pub(crate) fn member_models_out(
     json: bool,
     compact: bool,
     models: &[query::RefsModel],
-) -> (i32, String, query::Outcome, usize) {
+) -> SectionAnswer {
     let (code, outcome) = if models.iter().all(|m| m.inbound.uses_member.total == 0) {
         (EXIT_NO_RESULT, query::Outcome::ZeroHit)
     } else {
-        (0, query::Outcome::Hit)
+        (EXIT_OK, query::Outcome::Hit)
     };
     // Each member answers for itself; the union is what the answer as a whole
     // suggests, and it is what the text trailer states once, after every block.
     let member_next: Vec<Vec<query::NextArgv>> =
         models.iter().map(|m| query::refs_next(index, m)).collect();
     let union = query::merge_suggestions(member_next.clone());
+    let template_only: Vec<bool> = models
+        .iter()
+        .map(|m| template_reads_only(index, m))
+        .collect();
     let out = if json {
-        query::json::member_refs_to_json_with_next(q, models, outcome, &member_next, &union)
+        query::json::member_refs_to_json_with_next(
+            q,
+            models,
+            outcome,
+            &member_next,
+            &union,
+            &template_only,
+        )
     } else {
         let render: fn(&query::RefsModel) -> String = if compact {
             render::render_refs_compact
         } else {
             render::render_refs_text
         };
-        let body = models.iter().map(render).collect::<Vec<_>>().join("\n");
+        let mut body = models.iter().map(render).collect::<Vec<_>>().join("\n");
+        if template_only.contains(&true) {
+            body = format!("{}\n{TEMPLATE_READS_NOTE}", body.trim_end_matches('\n'));
+        }
         with_next_trailer(body, &union)
     };
     let count = models.iter().map(refs_model_row_count).sum();
-    (code, out, outcome, count)
+    SectionAnswer::new(code, out, outcome, count, union)
 }
 
+// `refs`. Check order: `--compact`+`--json` conflict, then missing query, THEN
+// `require_repo`, THEN the graph-present check -- a query run with no repo
+// present reports the missing-repo error even if the query itself is also
+// absent-adjacent.
 pub(crate) fn cmd_refs(cwd: &Path, args: &[String]) -> (i32, String, Option<&'static str>) {
     let start = Instant::now();
     let (json, compact) = match output_flags("refs", args) {
@@ -92,10 +120,10 @@ pub(crate) fn cmd_refs(cwd: &Path, args: &[String]) -> (i32, String, Option<&'st
         Err((code, out)) => return (code, out, None),
     };
     let Ok(pick) = parse_pick(args) else {
-        return (2, REFS_USAGE.to_string(), None);
+        return (EXIT_USAGE, REFS_USAGE.to_string(), None);
     };
     let Some(q) = first_positional(args) else {
-        return (2, REFS_USAGE.to_string(), None);
+        return (EXIT_USAGE, REFS_USAGE.to_string(), None);
     };
     let out = args.iter().any(|a| a == "--out");
     // `--all` lifts only `query::OUTBOUND_CAP`; it is otherwise inert without
@@ -103,8 +131,10 @@ pub(crate) fn cmd_refs(cwd: &Path, args: &[String]) -> (i32, String, Option<&'st
     let all_out = args.iter().any(|a| a == "--all");
     let root = match require_repo(cwd) {
         Ok(r) => r,
-        Err(e) => return (1, format!("error: {e}"), None),
+        Err(e) => return (EXIT_FAILURE, format!("error: {e}"), None),
     };
+    // One validation per invocation, opened before any index artifact is read.
+    begin_validation(&root, cwd);
     let g = match require_graph(&root) {
         Ok(g) => g,
         Err((code, out)) => return (code, out, None),
@@ -122,50 +152,98 @@ pub(crate) fn cmd_refs(cwd: &Path, args: &[String]) -> (i32, String, Option<&'st
             all_out,
         )
     };
-    // `--pick n` only ever narrows a `MemberAmbiguous` answer: it re-resolves
-    // against the SAME synthetic `Owner.Member` seed a caller could have typed
-    // by hand, rather than adding a second resolution path only `--pick`
-    // takes. An out-of-range `n` is a usage error; `--pick` is silently
-    // inert on every other outcome.
-    let result = match build(q) {
-        query::RefsResult::MemberAmbiguous(candidates) => match pick {
-            Some(n) if n <= candidates.len() => build(&query::qualified_seed(&candidates[n - 1])),
-            Some(_) => return (2, REFS_USAGE.to_string(), None),
-            None => query::RefsResult::MemberAmbiguous(candidates),
-        },
-        other => other,
+    // A `--pick` answer narrows ONE candidate of an ambiguous seed: a member
+    // name several types declare, or a type name several defs carry. Both
+    // `--pick <n>` and a `--pick all` section go through the same per-candidate
+    // builder below, so the two cannot disagree about a candidate. Without
+    // `--pick`, an ambiguous seed still refuses and lists its candidates.
+    let answer = match (pick, build(q)) {
+        (Some(pick), query::RefsResult::MemberAmbiguous(candidates)) => {
+            let picked = sections::narrow(
+                sections::Candidates::from_members(q, &candidates),
+                pick,
+                json,
+                REFS_USAGE,
+                |picked| refs_candidate_out(&index, q, json, compact, picked, out, all_out),
+            );
+            match picked {
+                Ok(a) => a,
+                Err(e) => return (e.0, e.1, None),
+            }
+        }
+        (Some(pick), query::RefsResult::Ambiguous(ids)) => {
+            let picked = sections::narrow(
+                sections::Candidates::from_types(q, &index, &ids),
+                pick,
+                json,
+                REFS_USAGE,
+                |picked| refs_candidate_out(&index, q, json, compact, picked, out, all_out),
+            );
+            match picked {
+                Ok(a) => a,
+                Err(e) => return (e.0, e.1, None),
+            }
+        }
+        (_, result) => refs_answer(&index, q, json, compact, result),
     };
 
-    let answer = refs_result_out(&index, q, json, compact, result);
-    let note = (answer.2 != query::Outcome::ZeroHit).then_some(ZERO_HIT_REFS);
-    let (code, out) = finish_query(&root, "refs", q, start, json, answer);
+    let note = (answer.outcome != query::Outcome::ZeroHit).then_some(ZERO_HIT_REFS);
+    let (code, out) = finish_query(&root, "refs", q, start, json, answer.into_tuple());
     (code, out, note)
 }
 
-// The rendering AND telemetry facts (`Outcome`, row count) for a `refs`
-// answer, derived together at the single point the answer is rendered so the
-// telemetry line can never disagree with the bytes that went to stdout.
-fn refs_result_out(
+// One `--pick` candidate's answer: the candidate's own seed run through the
+// same model builder the typed seed uses.
+fn refs_candidate_out(
+    index: &query::GraphIndex,
+    q: &str,
+    json: bool,
+    compact: bool,
+    picked: &query::PickedSeed,
+    out: bool,
+    all_out: bool,
+) -> SectionAnswer {
+    refs_answer(
+        index,
+        q,
+        json,
+        compact,
+        query::pick_refs(
+            index,
+            picked,
+            out,
+            query::DEFAULT_CAP,
+            query::INBOUND_CAP,
+            query::OUTBOUND_CAP,
+            all_out,
+        ),
+    )
+}
+
+// The rendering AND telemetry facts (`Outcome`, row count, suggestions) for a
+// `refs` answer, derived together at the single point the answer is rendered
+// so the telemetry line can never disagree with the bytes that went to stdout.
+fn refs_answer(
     index: &query::GraphIndex,
     q: &str,
     json: bool,
     compact: bool,
     result: query::RefsResult,
-) -> (i32, String, query::Outcome, usize) {
+) -> SectionAnswer {
     match result {
         query::RefsResult::NotFound => {
             let (code, out) = fallback_advised_out(q, json, format!("no symbol matches \"{q}\""));
-            (code, out, query::Outcome::FallbackAdvised, 0)
+            SectionAnswer::new(code, out, query::Outcome::FallbackAdvised, 0, Vec::new())
         }
         query::RefsResult::Ambiguous(ids) => {
             let count = ids.len();
             let (code, out) = ambiguous_candidates_out(index, q, &ids, json);
-            (code, out, query::Outcome::Ambiguous, count)
+            SectionAnswer::new(code, out, query::Outcome::Ambiguous, count, Vec::new())
         }
         query::RefsResult::MemberAmbiguous(candidates) => {
             let count = candidates.len();
             let (code, out) = member_ambiguous_out(q, &candidates, json);
-            (code, out, query::Outcome::Ambiguous, count)
+            SectionAnswer::new(code, out, query::Outcome::Ambiguous, count, Vec::new())
         }
         query::RefsResult::Members(models) => member_models_out(index, q, json, compact, &models),
         query::RefsResult::Resolved(model) => {
@@ -178,7 +256,7 @@ fn refs_result_out(
             } else {
                 with_next_trailer(render::render_refs_text(&model), &next)
             };
-            (0, out, query::Outcome::Hit, count)
+            SectionAnswer::new(EXIT_OK, out, query::Outcome::Hit, count, next)
         }
     }
 }

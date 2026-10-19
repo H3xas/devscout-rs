@@ -1,0 +1,68 @@
+{
+  "defs": [
+    {
+      "endLine": 5,
+      "file": "CatalogBadge.tsx",
+      "id": "CatalogBadge.tsx#CatalogBadgeProps",
+      "kind": "interface",
+      "line": 3,
+      "name": "CatalogBadgeProps",
+      "namespace": ""
+    },
+    {
+      "endLine": 9,
+      "file": "CatalogBadge.tsx",
+      "id": "CatalogBadge.tsx#CatalogBadge",
+      "kind": "function",
+      "line": 7,
+      "name": "CatalogBadge",
+      "namespace": ""
+    },
+    {
+      "endLine": 4,
+      "file": "catalogTypes.ts",
+      "id": "catalogTypes.ts#CatalogItem",
+      "kind": "interface",
+      "line": 1,
+      "name": "CatalogItem",
+      "namespace": ""
+    },
+    {
+      "endLine": 6,
+      "file": "catalogTypes.ts",
+      "id": "catalogTypes.ts#CatalogItemStatus",
+      "kind": "type",
+      "line": 6,
+      "name": "CatalogItemStatus",
+      "namespace": ""
+    }
+  ],
+  "edges": [
+    {
+      "bound_defs": [
+        "catalogTypes.ts#CatalogItem"
+      ],
+      "from_file": "CatalogBadge.tsx",
+      "from_line": 1,
+      "kind": "import",
+      "target": "./catalogTypes",
+      "to_file": "catalogTypes.ts"
+    }
+  ],
+  "manifest": {
+    "CatalogBadge.tsx": {
+      "purpose": "function CatalogBadge | interface CatalogBadgeProps",
+      "source": "ast"
+    },
+    "catalogTypes.ts": {
+      "purpose": "interface CatalogItem | type CatalogItemStatus",
+      "source": "ast"
+    }
+  },
+  "tsStats": {
+    "external_import_count": 0,
+    "ts_def_count": 4,
+    "ts_file_count": 2,
+    "unresolved_ref_count": 0
+  }
+}
