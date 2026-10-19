@@ -98,13 +98,15 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   TS/JS declaration rows. `graph.json` and the fragment cache mark non-exported definitions with
   `"local": true`, while exported rows keep their earlier shape; `extract-dump` also lists local
   declarations. The `fragments-v43.json` cache generation re-extracts unchanged files once.
-- `devscout map` binds a default import of a TypeScript or JavaScript file-local declaration. The
-  file must name the declaration in `export default <name>` or `export { <name> as default }`. The
-  importer's import row, calls, JSX uses and dispatch references then reach the declaration,
-  including through an `export { default as <alias> } from` or `export { default } from` barrel and
-  through `ns.default`. The declaration keeps `"local": true`, so named imports, named re-exports
-  and access by its own name from another file stay unbound. The `fragments-v44.json` cache
-  generation re-extracts unchanged files once.
+- `devscout map` binds a default import of a TypeScript or JavaScript declaration. The file must
+  name the declaration in `export default <name>` or `export { <name> as default }`. The importer's
+  import row, calls, JSX uses and dispatch references then reach the declaration, including through
+  an `export { default as <alias> } from` or `export { default } from` barrel and through
+  `ns.default`. Only the statement form `export default <name>` keeps the declaration
+  `"local": true`. Named imports, named re-exports and access by its own name from another file
+  stay unbound. The clause form `export { <name> as default }` exports the declaration, so its row
+  omits `"local"`. An import by its own name binds it as for any exported definition. The
+  `fragments-v44.json` cache generation re-extracts unchanged files once.
 
 ### Changed
 

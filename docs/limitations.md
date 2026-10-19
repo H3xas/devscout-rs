@@ -3,8 +3,9 @@
 Known, rather than hidden. One line per limit; each links the page that details it.
 
 - TypeScript and JavaScript file-scope and top-level IIFE declarations are indexed, and their edges stay in the same file.
-  A default import binds one that its file names in a default export.
-  Access by the local name from another file stays unbound, and an exported definition wins a bare-name tie:
+  A default import binds one that its file names in either default-export form.
+  Only `export default <name>` leaves the declaration file-private by its own name;
+  `export { <name> as default }` exports it, and an exported definition wins a bare-name tie:
   [TypeScript imports](explanation/resolution.md#typescript-imports).
 - TypeScript references cover imports, calls, JSX tags and dispatches only; declared module modes resolve repository workspace packages, but external dependencies and unrecorded `require()` forms remain outside the graph, configuration-only edits need another `map`, and JavaScript query answers have no separate parity measurement: [TypeScript modules](reference/typescript-modules.md).
 - Angular template reads are indexed only for an exported `@Component` class with a literal `templateUrl` or `template`. TypeScript member reads, inherited members, static members, built-in control flow block bodies and ICU messages give no edge, and each unbound template site is a `template_unsupported` row: [Angular templates](explanation/resolution.md#angular-templates).

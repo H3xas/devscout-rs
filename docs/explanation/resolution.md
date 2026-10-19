@@ -165,11 +165,13 @@ TypeScript and JavaScript file-scope declarations, including declarations in a t
 become definitions even when they are not exported. Calls, JSX tags and dispatch references to
 those definitions resolve within the same file only, except for one binding. A default import
 binds a definition that its file names in `export default <name>` or `export { <name> as default }`,
-including through a default re-export barrel and through `ns.default`. The definition keeps
-`"local": true`, so a named import, a named re-export and a namespace member that use its own name
-bind it no more than before. A bare name shared by an exported definition and a file-local
-definition resolves to the exported one; an exact `<file>#<name>` id can name the local definition.
-Manifest purposes still describe exports only.
+including through a default re-export barrel and through `ns.default`. Only the statement form
+`export default <name>` keeps the definition `"local": true`. A named import, a named re-export and
+a namespace member that use its own name bind it no more than before. The clause form
+`export { <name> as default }` exports the definition, so its row omits `"local"`. An import by its
+own name binds it as for any exported definition. A bare name shared by an exported definition and
+a file-local definition resolves to the exported one; an exact `<file>#<name>` id can name the
+local definition. Manifest purposes still describe exports only.
 
 Import specifiers use the owning `tsconfig.json` chain's `paths`, `baseUrl` and declared
 `moduleResolution`, then the package and workspace rules that mode selects. A nested config that

@@ -221,12 +221,15 @@ definition of one statement, so a statement binding two names is two rows, each 
 too; that surface is not measured.
 
 **`local`.** A TS/JS file-scope definition that is not exported carries `"local": true` after
-`endLine` in `graph.json` and the fragment cache. A default export does not clear the marker: a
-definition named by `export default <name>` or `export { <name> as default }` stays `"local": true`
-and a default import still binds it. Exported definitions omit the key, as do C# and Rust
-definitions. Each TS/JS definition also contributes a `names` row with its declaration line
-and no `owner`; this lets `find` show the declaration. `read` and `refs` do not add a local marker
-to their output. An exported definition wins a bare-name tie, while an exact id selects the local.
+`endLine` in `graph.json` and the fragment cache. A definition named by statement-form
+`export default <name>` does not clear the marker. It stays `"local": true`, and access by its own
+name from another file stays unbound. A definition named by clause-form
+`export { <name> as default }` is exported, so its row omits the key. An import by its own name
+binds it as for any exported definition. A default import binds the definition in both forms.
+Exported definitions omit the key, as do C# and Rust definitions. Each TS/JS definition also
+contributes a `names` row with its declaration line and no `owner`; this lets `find` show the
+declaration. `read` and `refs` do not add a local marker to their output. An exported definition
+wins a bare-name tie, while an exact id selects the local.
 
 **`bound_defs`.** In `graph.json`, a TS `import` edge carries `bound_defs` after `via`, present
 only when non-empty: the ids of the definitions its named, default and type-only bindings (or a

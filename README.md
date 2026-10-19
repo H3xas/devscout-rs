@@ -94,9 +94,11 @@ barrels), calls, JSX usage and dispatch. `refs`, `read`, `impact` and `tests` re
 TypeScript and JavaScript alike. File-scope declarations, including declarations in a top-level
 IIFE body, are indexed even without an export. Their references resolve within the same file only,
 except that a default import binds a declaration its file names in `export default <name>` or
-`export { <name> as default }`. The declaration keeps `"local": true`, so access by its own name
-from another file stays unbound. An exported definition wins a bare-name tie. JavaScript query
-quality is not measured.
+`export { <name> as default }`. Only the statement form `export default <name>` keeps the
+declaration `"local": true`. Access by its own name from another file stays unbound. The clause
+form `export { <name> as default }` exports the declaration, so its row omits `"local"`. An import
+by its own name binds it as for any exported definition. An exported definition wins a bare-name
+tie. JavaScript query quality is not measured.
 
 **Angular templates** (`.html`) are read for the components that name them. Each member of an
 exported `@Component({...})` class gets a name row. A member read in the component's
