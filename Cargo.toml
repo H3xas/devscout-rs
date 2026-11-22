@@ -33,7 +33,7 @@ sha1 = "=0.11.0"
 # both implement/consume the same tree-sitter-language ABI, so there is no
 # version lock between them to satisfy beyond "recent enough".
 tree-sitter = "=0.27.0"
-tree-sitter-c-sharp = "=0.23.5"
+tree-sitter-c-sharp = "=0.24.0"
 # The TypeScript/JavaScript grammars, a second grammar set behind the same
 # seam. Both crates declare `tree-sitter-language` (^0.1) as their only
 # *normal* dependency and `tree-sitter` itself only as a *dev* dependency --
